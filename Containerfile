@@ -5,27 +5,20 @@
 # ---------------------------------------------------------------------------
 FROM docker.io/library/node:22-bookworm-slim AS deps
 WORKDIR /app
-# SHARP_WASM=1: sharp als WebAssembly statt nativer Binärdatei installieren.
-# Nötig auf CPUs ohne SSE4.2/x86-64-v2 (z. B. VMs mit qemu64/kvm64-CPU-Typ),
-# sonst stürzt der Build/Start mit SIGILL ab. deploy.sh erkennt das automatisch.
-ARG SHARP_WASM=0
+# LOW_CPU=1: für CPUs ohne SSE4.2/x86-64-v2 (z. B. Intel Atom/Bonnell oder
+# VMs mit qemu64/kvm64-CPU-Typ). sharps native Bibliothek würde dort mit
+# SIGILL abstürzen; stattdessen nutzt die Bildpipeline die Debian-libvips-CLI
+# (IMAGE_BACKEND=vips, gesetzt vom Entrypoint). deploy.sh erkennt das selbst.
+ARG LOW_CPU=0
 COPY package.json package-lock.json ./
-# Wichtig: die nativen @img-Pakete müssen ENTFERNT werden — sharps Loader
-# probiert sie sonst zuerst, und ein SIGILL ist nicht abfangbar.
-RUN npm ci --no-audit --no-fund \
- && if [ "$SHARP_WASM" = "1" ]; then \
-      echo ">> Installiere sharp als WASM (CPU ohne SSE4.2)"; \
-      npm install --no-audit --no-fund --cpu=wasm32 sharp; \
-      rm -rf node_modules/@img/sharp-linux-x64 \
-             node_modules/@img/sharp-linuxmusl-x64 \
-             node_modules/@img/sharp-libvips-linux-x64 \
-             node_modules/@img/sharp-libvips-linuxmusl-x64; \
-    fi
+RUN npm ci --no-audit --no-fund
 # Schnelltest der nativen Module — schlägt hier gezielt fehl (mit Modulname
-# im Log), statt später anonym im Next-Build (SIGILL bei inkompatibler CPU).
+# im Log), statt später anonym im Next-Build. sharp wird auf LOW_CPU nie
+# geladen und daher dort auch nicht getestet.
 RUN node -e "require('better-sqlite3')" && echo "OK better-sqlite3" \
  && node -e "require('@node-rs/argon2')" && echo "OK @node-rs/argon2" \
- && node -e "require('sharp')" && echo "OK sharp"
+ && if [ "$LOW_CPU" != "1" ]; then node -e "require('sharp')" && echo "OK sharp"; \
+    else echo "LOW_CPU=1 — sharp übersprungen (Bildpipeline nutzt libvips-CLI)"; fi
 
 FROM docker.io/library/node:22-bookworm-slim AS build
 WORKDIR /app
@@ -45,6 +38,15 @@ ENV NODE_ENV=production \
     DATA_DIR=/data \
     HOSTNAME=0.0.0.0 \
     PORT=3000
+
+# LOW_CPU=1: Debians libvips-CLI als Bild-Backend (Baseline-x86-64, läuft
+# auf jeder CPU). Der Entrypoint setzt dann IMAGE_BACKEND=vips.
+ARG LOW_CPU=0
+RUN if [ "$LOW_CPU" = "1" ]; then \
+      apt-get update -qq \
+      && apt-get install -y --no-install-recommends libvips-tools \
+      && rm -rf /var/lib/apt/lists/*; \
+    fi
 
 ARG APP_COMMIT=unbekannt
 ENV APP_COMMIT=$APP_COMMIT
