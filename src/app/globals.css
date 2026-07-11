@@ -1,0 +1,30 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: var(--font-body), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-heading), var(--font-body), ui-serif, Georgia, serif;
+
+  /* Warme, freundliche Food-Blog-Palette */
+  --color-rose-primary: #b0413e;
+  --color-rose-primary-dark: #8f3230;
+  --color-cream: #faf6f0;
+  --color-ink: #2d2a26;
+  --color-ink-soft: #5c564e;
+  --color-sage: #7a8b6f;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+:focus-visible {
+  outline: 3px solid var(--color-rose-primary);
+  outline-offset: 2px;
+}

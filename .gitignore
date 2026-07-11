@@ -1,0 +1,19 @@
+node_modules/
+.next/
+out/
+dist/
+coverage/
+
+# lokale Daten & Secrets
+.env
+.env.local
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+data/
+
+# Sonstiges
+.DS_Store
+*.tsbuildinfo
+next-env.d.ts

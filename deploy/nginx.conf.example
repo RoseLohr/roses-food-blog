@@ -1,0 +1,33 @@
+# /etc/nginx/sites-available/roses-blog
+# Reverse Proxy vor dem Podman-Container (127.0.0.1:3000).
+# TLS via certbot: sudo certbot --nginx -d www.example.de -d example.de
+# certbot ergänzt die TLS-Direktiven und die Weiterleitung von Port 80 selbst.
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name www.example.de example.de;
+
+    # Uploads (Medienbibliothek) bis 20 MB zulassen
+    client_max_body_size 20m;
+
+    # Security-Header (App setzt zusätzlich CSP etc.; HSTS gehört auf den Host)
+    # Nach TLS-Einrichtung aktivieren:
+    # add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;
+
+    gzip on;
+    gzip_types text/css application/javascript application/json image/svg+xml text/xml application/xml;
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 60s;
+    }
+
+    # Statische Next-Assets aggressiv cachen lassen (Cache-Header setzt die App;
+    # hier nur Weiterleitung — kein eigenes Caching nötig bei dieser Größe).
+}

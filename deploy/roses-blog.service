@@ -1,0 +1,25 @@
+# Alternative zum podman-restart.service: klassische systemd-User-Unit.
+# Installation (als Deploy-Benutzer):
+#   mkdir -p ~/.config/systemd/user
+#   cp deploy/roses-blog.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now roses-blog.service
+#   loginctl enable-linger $USER   # Start auch ohne aktive Login-Session
+#
+# Hinweis: WorkingDirectory an den tatsächlichen Klonpfad anpassen.
+
+[Unit]
+Description=Roses Food Blog (Podman Compose)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=true
+WorkingDirectory=%h/roses-food-blog
+ExecStart=/usr/bin/podman compose up -d app
+ExecStop=/usr/bin/podman compose down
+TimeoutStartSec=300
+
+[Install]
+WantedBy=default.target
