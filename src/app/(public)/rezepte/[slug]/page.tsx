@@ -6,6 +6,7 @@ import { imageUrl } from "@/lib/media";
 import { JsonLd, breadcrumbJsonLd, recipeJsonLd } from "@/lib/jsonld";
 import { RecipeView } from "@/components/recipe-view";
 import { LikeButton } from "@/components/like-button";
+import { PageTracker } from "@/components/page-tracker";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -56,6 +57,11 @@ export default async function RecipePage(props: {
 
   return (
     <main>
+      <PageTracker
+        contentType="rezept"
+        contentId={full.recipe.id}
+        path={`/rezepte/${full.recipe.slug}`}
+      />
       <JsonLd data={recipeJsonLd(full)} />
       <JsonLd
         data={breadcrumbJsonLd([

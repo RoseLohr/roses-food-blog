@@ -5,6 +5,7 @@ import { getBaseUrl } from "@/lib/base-url";
 import { imageUrl } from "@/lib/media";
 import { JsonLd, breadcrumbJsonLd } from "@/lib/jsonld";
 import { TravelView } from "@/components/travel-view";
+import { PageTracker } from "@/components/page-tracker";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -80,6 +81,11 @@ export default async function TravelPostPage(props: {
 
   return (
     <main>
+      <PageTracker
+        contentType="reise"
+        contentId={full.post.id}
+        path={`/reisen/${full.post.slug}`}
+      />
       <JsonLd data={articleJsonLd(full)} />
       <JsonLd
         data={breadcrumbJsonLd([

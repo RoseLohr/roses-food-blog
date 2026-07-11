@@ -4,6 +4,7 @@ import { desc, eq } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { ResponsiveImg } from "@/components/responsive-img";
 import { t } from "@/i18n/de";
+import { PageTracker } from "@/components/page-tracker";
 
 const dict = t();
 
@@ -39,6 +40,7 @@ export default async function TravelListPage() {
 
   return (
     <main>
+      <PageTracker contentType="seite" path="/reisen" />
       <h1 className="font-display text-3xl font-bold md:text-4xl">
         {dict.travelList.title}
       </h1>

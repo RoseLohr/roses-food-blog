@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { RecipeCard } from "@/components/recipe-card";
 import { publishedRecipeCards } from "@/lib/recipe-list";
 import { t } from "@/i18n/de";
+import { PageTracker } from "@/components/page-tracker";
 
 const dict = t();
 
@@ -18,6 +19,7 @@ export default async function RecipesPage() {
 
   return (
     <main>
+      <PageTracker contentType="seite" path="/rezepte" />
       <h1 className="font-display text-3xl font-bold md:text-4xl">
         {dict.recipeList.title}
       </h1>

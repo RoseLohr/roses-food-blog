@@ -712,7 +712,7 @@ export const sequenceLog = sqliteTable(
       .references(() => contact.id, { onDelete: "cascade" }),
     dueAt: integer("due_at", { mode: "timestamp_ms" }).notNull(),
     status: text("status", {
-      enum: ["geplant", "versendet", "fehlgeschlagen", "abgebrochen"],
+      enum: ["geplant", "eingereiht", "versendet", "fehlgeschlagen", "abgebrochen"],
     })
       .notNull()
       .default("geplant"),

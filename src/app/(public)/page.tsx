@@ -8,6 +8,7 @@ import { publishedRecipeCards } from "@/lib/recipe-list";
 import { imageUrl, srcset } from "@/lib/media";
 import { JsonLd, websiteJsonLd } from "@/lib/jsonld";
 import { t } from "@/i18n/de";
+import { PageTracker } from "@/components/page-tracker";
 
 const dict = t();
 
@@ -72,6 +73,7 @@ export default async function HomePage() {
   return (
     <main>
       <JsonLd data={websiteJsonLd()} />
+      <PageTracker contentType="seite" path="/" />
       <h1 className="sr-only">{dict.home.welcome}</h1>
 
       <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_17rem]">
