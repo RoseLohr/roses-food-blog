@@ -5,6 +5,7 @@ import { getBaseUrl } from "@/lib/base-url";
 import { imageUrl } from "@/lib/media";
 import { JsonLd, breadcrumbJsonLd, recipeJsonLd } from "@/lib/jsonld";
 import { RecipeView } from "@/components/recipe-view";
+import { LikeButton } from "@/components/like-button";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -63,7 +64,16 @@ export default async function RecipePage(props: {
           [full.recipe.title, `/rezepte/${full.recipe.slug}`],
         ])}
       />
-      <RecipeView full={full} baseUrl={getBaseUrl()} />
+      <RecipeView
+        full={full}
+        baseUrl={getBaseUrl()}
+        extraActions={
+          <LikeButton
+            recipeId={full.recipe.id}
+            initialCount={full.recipe.likeCount}
+          />
+        }
+      />
     </main>
   );
 }
