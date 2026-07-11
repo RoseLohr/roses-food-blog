@@ -10,9 +10,17 @@
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
+# Das komplette Skript läuft in einer Funktion: bash liest so die ganze Datei
+# ein, BEVOR etwas ausgeführt wird — wichtig, weil der git pull unten dieses
+# Skript selbst aktualisieren kann.
+main() {
+
 cd "$(dirname "$0")"
 
-BRANCH="${DEPLOY_BRANCH:-main}"
+# Deployt standardmäßig den aktuell ausgecheckten Branch (Override: DEPLOY_BRANCH)
+CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)"
+[[ "$CURRENT_BRANCH" == "HEAD" ]] && CURRENT_BRANCH="main"
+BRANCH="${DEPLOY_BRANCH:-$CURRENT_BRANCH}"
 COMPOSE="podman compose"
 command -v podman >/dev/null || { echo "FEHLER: podman ist nicht installiert."; exit 1; }
 podman compose version >/dev/null 2>&1 || {
@@ -120,6 +128,11 @@ fi
 
 # --- 8. Status ----------------------------------------------------------------
 log "Deployment erfolgreich"
+echo "Branch:   $BRANCH"
 echo "Commit:   $COMMIT"
 curl -fsS "http://127.0.0.1:$PORT/health" && echo
 podman ps --filter name=roses-blog --format "Container: {{.Names}} ({{.Status}})"
+
+}
+
+main "$@"
