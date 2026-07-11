@@ -10,11 +10,22 @@ WORKDIR /app
 # sonst stürzt der Build/Start mit SIGILL ab. deploy.sh erkennt das automatisch.
 ARG SHARP_WASM=0
 COPY package.json package-lock.json ./
+# Wichtig: die nativen @img-Pakete müssen ENTFERNT werden — sharps Loader
+# probiert sie sonst zuerst, und ein SIGILL ist nicht abfangbar.
 RUN npm ci --no-audit --no-fund \
  && if [ "$SHARP_WASM" = "1" ]; then \
       echo ">> Installiere sharp als WASM (CPU ohne SSE4.2)"; \
       npm install --no-audit --no-fund --cpu=wasm32 sharp; \
+      rm -rf node_modules/@img/sharp-linux-x64 \
+             node_modules/@img/sharp-linuxmusl-x64 \
+             node_modules/@img/sharp-libvips-linux-x64 \
+             node_modules/@img/sharp-libvips-linuxmusl-x64; \
     fi
+# Schnelltest der nativen Module — schlägt hier gezielt fehl (mit Modulname
+# im Log), statt später anonym im Next-Build (SIGILL bei inkompatibler CPU).
+RUN node -e "require('better-sqlite3')" && echo "OK better-sqlite3" \
+ && node -e "require('@node-rs/argon2')" && echo "OK @node-rs/argon2" \
+ && node -e "require('sharp')" && echo "OK sharp"
 
 FROM docker.io/library/node:22-bookworm-slim AS build
 WORKDIR /app
