@@ -1,0 +1,20 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1783763588517,
+      "tag": "0000_medical_vision",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1783763598474,
+      "tag": "0001_fts",
+      "breakpoints": true
+    }
+  ]
+}
