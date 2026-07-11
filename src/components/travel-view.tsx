@@ -1,114 +1,178 @@
 /**
- * Vollständige Ansicht eines Reiseberichts (Server-Komponente):
- * Inhalt (Markdown), Restaurants mit Gerichten, Bildern und Zutaten.
- * Genutzt von öffentlicher Seite und Admin-Vorschau.
+ * Reisebericht im Tiny-Salt-Stil: weiße Karte mit Hero-Bild und
+ * Teilen-Button, Serifen-Titel, Icon-Meta-Zeile (Land/Reiseziel),
+ * Markdown-Inhalt, Restaurants mit Gerichten (Bild links, Zutaten
+ * mit Tag-Icon) und Bildergalerie.
  */
 import type { FullTravelPost } from "@/lib/travel";
 import { renderMarkdown } from "@/lib/markdown";
+import { getBaseUrl } from "@/lib/base-url";
 import { t } from "@/i18n/de";
 import { ResponsiveImg } from "./responsive-img";
+import { HeroActions } from "./hero-actions";
+import { IconTag } from "./icons";
 
 const dict = t();
 
-export function TravelView({ full }: { full: FullTravelPost }) {
+function MetaChip({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center gap-3">
+      <span
+        aria-hidden
+        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-cream text-ink-soft"
+      >
+        <IconTag className="h-5 w-5" />
+      </span>
+      <div>
+        <p className="text-xs font-bold uppercase tracking-wider text-ink">
+          {label}
+        </p>
+        <p className="text-sm text-ink-soft">{children}</p>
+      </div>
+    </div>
+  );
+}
+
+export function TravelView({
+  full,
+  interactive = true,
+}: {
+  full: FullTravelPost;
+  interactive?: boolean;
+}) {
   const { post } = full;
+  const url = `${getBaseUrl()}/reisen/${post.slug}`;
 
   return (
-    <article className="mx-auto max-w-3xl">
-      <header>
-        <p className="text-sm font-semibold uppercase tracking-wide text-rose-primary">
-          {[post.country, post.destination].filter(Boolean).join(" · ")}
-        </p>
-        <h1 className="mt-1 font-display text-3xl font-bold md:text-4xl">
-          {post.title}
-        </h1>
-        {post.teaser && <p className="mt-3 text-lg text-ink-soft">{post.teaser}</p>}
-      </header>
-
+    <article className="overflow-hidden rounded-2xl bg-white shadow-sm">
       {full.heroImage && (
-        <div className="mt-6 overflow-hidden rounded-2xl">
+        <div className="relative">
           <ResponsiveImg
             image={full.heroImage}
-            sizes="(max-width: 768px) 100vw, 768px"
+            sizes="(max-width: 820px) 100vw, 768px"
             priority
-            className="w-full object-cover"
+            className="aspect-[2/1] w-full object-cover"
           />
+          {interactive && <HeroActions title={post.title} url={url} />}
         </div>
       )}
 
-      {post.content && (
-        <div
-          className="prose-content mt-6"
-          dangerouslySetInnerHTML={{ __html: renderMarkdown(post.content) }}
-        />
-      )}
+      <div className="p-6 md:p-10">
+        <header>
+          <h1 className="font-display text-3xl font-bold tracking-tight md:text-[2.6rem] md:leading-tight">
+            {post.title}
+          </h1>
+          {post.teaser && (
+            <p className="mt-4 leading-relaxed text-ink-soft">{post.teaser}</p>
+          )}
+          <div className="mt-6 flex flex-wrap gap-x-8 gap-y-4">
+            {post.country && (
+              <MetaChip label={dict.admin.travel.fieldCountry}>
+                {post.country}
+              </MetaChip>
+            )}
+            {post.destination && (
+              <MetaChip label={dict.admin.travel.fieldDestination}>
+                {post.destination}
+              </MetaChip>
+            )}
+          </div>
+        </header>
 
-      {full.images.length > 0 && (
-        <div className="mt-6 grid grid-cols-2 gap-3">
-          {full.images.map((img) => (
-            <ResponsiveImg
-              key={img.id}
-              image={img}
-              sizes="(max-width: 768px) 50vw, 384px"
-              className="w-full rounded-xl object-cover"
+        {post.content && (
+          <>
+            <hr className="my-8 border-ink/10" />
+            <div
+              className="prose-content"
+              dangerouslySetInnerHTML={{ __html: renderMarkdown(post.content) }}
             />
-          ))}
-        </div>
-      )}
+          </>
+        )}
 
-      {full.restaurants.length > 0 && (
-        <section className="mt-10">
-          <h2 className="font-display text-2xl font-bold">
-            {dict.travelList.restaurantsTitle}
-          </h2>
-          <div className="mt-4 flex flex-col gap-6">
-            {full.restaurants.map((r) => (
-              <div key={r.id} className="rounded-2xl bg-white p-5 shadow-sm">
-                <h3 className="font-display text-xl font-bold">
-                  {r.name}
-                  {r.city && (
-                    <span className="ml-2 text-sm font-normal text-ink-soft">
-                      {r.city}
-                    </span>
-                  )}
-                </h3>
-                {r.description && (
-                  <p className="mt-1 text-sm text-ink-soft">{r.description}</p>
-                )}
-                <ul className="mt-4 flex flex-col gap-4">
-                  {r.dishes.map((dish) => (
-                    <li key={dish.id} className="flex flex-col gap-3 sm:flex-row">
-                      {dish.images[0] && (
-                        <div className="sm:w-40 sm:shrink-0">
-                          <ResponsiveImg
-                            image={dish.images[0]}
-                            sizes="(max-width: 640px) 100vw, 160px"
-                            className="aspect-[4/3] w-full rounded-lg object-cover"
-                          />
-                        </div>
-                      )}
-                      <div>
-                        <h4 className="font-semibold">{dish.name}</h4>
-                        {dish.description && (
-                          <p className="mt-0.5 text-sm text-ink-soft">
-                            {dish.description}
-                          </p>
-                        )}
-                        {dish.ingredients.length > 0 && (
-                          <p className="mt-1.5 text-xs text-ink-soft">
-                            {dict.travelList.dishIngredients}:{" "}
-                            {dish.ingredients.map((i) => i.name).join(", ")}
-                          </p>
-                        )}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              </div>
+        {full.images.length > 0 && (
+          <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {full.images.map((img) => (
+              <ResponsiveImg
+                key={img.id}
+                image={img}
+                sizes="(max-width: 640px) 100vw, 384px"
+                className="w-full rounded-lg object-cover"
+              />
             ))}
           </div>
-        </section>
-      )}
+        )}
+
+        {full.restaurants.length > 0 && (
+          <>
+            <hr className="my-8 border-ink/10" />
+            <section>
+              <h2 className="font-display text-2xl font-bold tracking-tight md:text-3xl">
+                {dict.travelList.restaurantsTitle}
+              </h2>
+              <div className="mt-6 flex flex-col gap-8">
+                {full.restaurants.map((r) => (
+                  <div key={r.id}>
+                    <h3 className="font-display text-xl font-bold">
+                      {r.name}
+                      {r.city && (
+                        <span className="ml-2 text-sm font-normal text-ink-soft">
+                          · {r.city}
+                        </span>
+                      )}
+                    </h3>
+                    {r.description && (
+                      <p className="mt-1 leading-relaxed text-ink-soft">
+                        {r.description}
+                      </p>
+                    )}
+                    <ul className="mt-4 flex flex-col gap-5">
+                      {r.dishes.map((dish) => (
+                        <li
+                          key={dish.id}
+                          className="flex flex-col gap-4 rounded-xl bg-cream/60 p-4 sm:flex-row"
+                        >
+                          {dish.images[0] && (
+                            <div className="sm:w-44 sm:shrink-0">
+                              <ResponsiveImg
+                                image={dish.images[0]}
+                                sizes="(max-width: 640px) 100vw, 176px"
+                                className="aspect-[4/3] w-full rounded-lg object-cover"
+                              />
+                            </div>
+                          )}
+                          <div>
+                            <h4 className="font-semibold">{dish.name}</h4>
+                            {dish.description && (
+                              <p className="mt-1 text-sm leading-relaxed text-ink-soft">
+                                {dish.description}
+                              </p>
+                            )}
+                            {dish.ingredients.length > 0 && (
+                              <p className="mt-2 flex items-center gap-1.5 text-xs text-ink-soft">
+                                <IconTag className="h-3.5 w-3.5" />
+                                <strong className="font-semibold text-ink">
+                                  {dict.travelList.dishIngredients}:
+                                </strong>{" "}
+                                {dish.ingredients.map((i) => i.name).join(", ")}
+                              </p>
+                            )}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            </section>
+          </>
+        )}
+      </div>
     </article>
   );
 }

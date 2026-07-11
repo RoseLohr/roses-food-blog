@@ -178,6 +178,18 @@ podman compose up -d app
 curl -fsS http://127.0.0.1:3000/health
 ```
 
+## Fehlerbehebung
+
+**Build bricht mit `SIGILL` ab („Next.js build worker exited … signal: SIGILL")**
+Die CPU des Servers unterstützt kein SSE4.2/x86-64-v2 — die vorkompilierte
+native Bibliothek von sharp stürzt dann ab. Typisch für VMs mit CPU-Typ
+`qemu64`/`kvm64`. `deploy.sh` erkennt das automatisch (Check auf `sse4_2` in
+`/proc/cpuinfo`) und baut mit der WebAssembly-Variante von sharp
+(etwas langsamere Bildverarbeitung, sonst identisch). Erzwingen:
+`FORCE_SHARP_WASM=1 ./deploy.sh`. Die schnellere Lösung ist, in der
+Virtualisierung den CPU-Typ auf „host“ zu stellen (z. B. Proxmox:
+VM → Hardware → Prozessoren → Typ „host“) und neu zu deployen.
+
 ## Betrieb — Spickzettel
 
 | Aufgabe            | Befehl                                        |

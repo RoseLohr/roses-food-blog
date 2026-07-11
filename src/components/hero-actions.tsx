@@ -20,7 +20,8 @@ export function HeroActions({
 }: {
   title: string;
   url: string;
-  printPath: string;
+  /** ohne Angabe wird kein Druck-Button angezeigt */
+  printPath?: string;
 }) {
   const [copied, setCopied] = useState(false);
 
@@ -40,9 +41,11 @@ export function HeroActions({
 
   return (
     <div className="absolute right-4 top-4 flex gap-2 print:hidden">
-      <a href={printPath} className={circle} aria-label={dict.recipe.print} title={dict.recipe.print}>
-        <IconPrinter className="h-5 w-5" />
-      </a>
+      {printPath && (
+        <a href={printPath} className={circle} aria-label={dict.recipe.print} title={dict.recipe.print}>
+          <IconPrinter className="h-5 w-5" />
+        </a>
+      )}
       <button
         type="button"
         onClick={share}

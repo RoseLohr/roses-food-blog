@@ -59,8 +59,20 @@ fi
 mkdir -p "$DATA_DIR"/{uploads,geoip,backups}
 
 # --- 3. Image bauen ----------------------------------------------------------
+# CPU-Check: sharps native Binärdatei braucht SSE4.2 (x86-64-v2). Fehlt das
+# Flag (z. B. VM mit qemu64/kvm64-CPU-Typ), stürzt Build/Start mit SIGILL ab —
+# dann automatisch die WebAssembly-Variante von sharp verwenden.
+SHARP_WASM="${FORCE_SHARP_WASM:-0}"
+if [[ "$SHARP_WASM" != "1" ]] && ! grep -qm1 sse4_2 /proc/cpuinfo; then
+  SHARP_WASM=1
+  echo "HINWEIS: CPU ohne SSE4.2 erkannt — baue mit sharp-WASM-Fallback."
+  echo "         (Schneller wäre nativer Betrieb: in der VM den CPU-Typ auf"
+  echo "         'host' stellen, z. B. Proxmox → Hardware → Prozessoren → Typ.)"
+fi
+
 log "Baue Container-Image (Commit $COMMIT)"
-podman build --build-arg "APP_COMMIT=$COMMIT" -t localhost/roses-blog:latest -f Containerfile .
+podman build --build-arg "APP_COMMIT=$COMMIT" --build-arg "SHARP_WASM=$SHARP_WASM" \
+  -t localhost/roses-blog:latest -f Containerfile .
 
 # --- 4. DB-Backup vor Migration/Neustart -------------------------------------
 if [[ -f "$DATA_DIR/app.db" ]]; then
