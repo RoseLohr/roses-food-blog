@@ -50,5 +50,15 @@ Annahmen, die während der Umsetzung getroffen wurden:
 - **B17 — Container-Basisimage:** `node:22-bookworm-slim` (glibc) statt Alpine,
   damit better-sqlite3/sharp/argon2 als Prebuilds funktionieren — kein
   Compiler-Toolchain im Image nötig.
+- **B19 — Schriften:** Statt heruntergeladener Webfonts werden hochwertige
+  System-Schrift-Stacks verwendet (Serif für Überschriften, Sans für Text).
+  Das erfüllt „selbst gehostet/keine externen CDNs" (A7) mit 0 KB Font-Payload
+  und bestmöglicher Ladezeit. Eigene Font-Dateien können später einfach unter
+  `public/fonts` + `@font-face` ergänzt werden.
+- **B20 — CSP und Inline-Skripte:** Die CSP erlaubt `'unsafe-inline'` für
+  script-src, weil Next.js Bootstrap-Inline-Skripte nutzt; sämtliche externen
+  Quellen bleiben blockiert (default-src 'self'). Nonce-basierte CSP wäre mit
+  Middleware nachrüstbar, wurde aber als Over-Engineering für dieses
+  Bedrohungsmodell eingestuft.
 - **B18 — Healthcheck:** `/health` prüft auch die DB-Verbindung (einfaches
   `SELECT 1`) und liefert Commit/Version aus dem Build.

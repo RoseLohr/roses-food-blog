@@ -469,6 +469,19 @@ export const de = {
       privacyNote:
         "First-Party-Tracking ohne Cookies: keine IP-Adressen, keine personenbezogenen Daten.",
     },
+    pages: {
+      title: "Seiten",
+      newPage: "Neue Seite",
+      editPage: "Seite bearbeiten",
+      fieldTitle: "Titel",
+      fieldSlug: "URL-Slug",
+      fieldContent: "Inhalt (Markdown)",
+      fieldHeroImage: "Titelbild (optional)",
+      saved: "Seite gespeichert.",
+      deleted: "Seite gelöscht.",
+      protectedSlug:
+        "Diese Seite ist eine Kernseite (Über mich/Datenschutz/Impressum) und kann nicht gelöscht werden.",
+    },
     homepage: {
       title: "Startseite",
       intervalLabel: "Slider-Wechselintervall (Sekunden)",
