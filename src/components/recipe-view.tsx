@@ -1,8 +1,9 @@
 /**
- * Vollständige Rezeptansicht (Server-Komponente). Genutzt von der
- * öffentlichen Rezeptseite, der Admin-Vorschau und der Druckansicht.
- * Mengen werden serverseitig für die Originalportionen gerendert;
- * der Portionsrechner (Client) skaliert sie über data-Attribute.
+ * Rezept-Karte im Tiny-Salt-Stil: Hero mit runden Aktions-Buttons,
+ * Serifen-Titel, Icon-Meta-Zeile, zweispaltig Equipment/Zutaten mit
+ * grünen Häkchen, nummerierte Schritte (grüne Kreise), Notizen-Box
+ * und Tag-Zeile. Mengen werden serverseitig für die Originalportionen
+ * gerendert; der Portionsrechner (Client) skaliert über data-Attribute.
  */
 import type { FullRecipe } from "@/lib/recipes";
 import { formatAmount } from "@/lib/servings";
@@ -10,21 +11,59 @@ import { renderMarkdown } from "@/lib/markdown";
 import { t } from "@/i18n/de";
 import { ResponsiveImg } from "./responsive-img";
 import { ServingsControl } from "./servings-control";
-import { ShareButtons } from "./share-buttons";
+import { HeroActions } from "./hero-actions";
+import {
+  IconCheck,
+  IconClock,
+  IconFlame,
+  IconServings,
+  IconTag,
+} from "./icons";
 
 const dict = t();
+const r = dict.recipe;
 
-function Chips({ label, items }: { label: string; items: Array<{ id: number; name: string; slug: string }>; }) {
-  if (items.length === 0) return null;
+function MetaChip({
+  icon,
+  label,
+  children,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="flex flex-wrap items-center gap-1.5 text-sm">
-      <span className="font-medium text-ink-soft">{label}:</span>
-      {items.map((item) => (
-        <span key={item.id} className="rounded-full bg-cream px-2.5 py-0.5">
-          {item.name}
-        </span>
-      ))}
+    <div className="flex items-center gap-3">
+      <span
+        aria-hidden
+        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-cream text-ink-soft"
+      >
+        {icon}
+      </span>
+      <div>
+        <p className="text-xs font-bold uppercase tracking-wider text-ink">
+          {label}
+        </p>
+        <p className="text-sm text-ink-soft">{children}</p>
+      </div>
     </div>
+  );
+}
+
+function CheckItem({ children }: { children: React.ReactNode }) {
+  return (
+    <li className="flex gap-3">
+      <IconCheck className="mt-1 h-4 w-4 shrink-0 text-leaf" />
+      <span className="leading-relaxed">{children}</span>
+    </li>
+  );
+}
+
+function SerifHeading({ children }: { children: React.ReactNode }) {
+  return (
+    <h2 className="font-display text-2xl font-bold tracking-tight md:text-3xl">
+      {children}
+    </h2>
   );
 }
 
@@ -38,192 +77,273 @@ export function RecipeView({
   baseUrl: string;
   /** false in der Druckansicht: keine Client-Buttons */
   interactive?: boolean;
-  /** z. B. Like-Button (E7) */
+  /** z. B. Like-Button */
   extraActions?: React.ReactNode;
 }) {
   const { recipe } = full;
   const containerId = `rezept-${recipe.id}`;
   const url = `${baseUrl}/rezepte/${recipe.slug}`;
 
-  const meta: Array<[string, string]> = [
-    [dict.recipe.prepTime, `${recipe.prepMinutes} ${dict.recipe.minutes}`],
-    [dict.recipe.cookTime, `${recipe.cookMinutes} ${dict.recipe.minutes}`],
-    [dict.recipe.totalTime, `${recipe.totalMinutes} ${dict.recipe.minutes}`],
-    [
-      dict.recipe.difficulty,
-      dict.admin.recipes.difficulties[recipe.difficulty] ?? recipe.difficulty,
-    ],
+  const minutes = (m: number) => {
+    const h = Math.floor(m / 60);
+    const rest = m % 60;
+    if (h === 0) return `${rest} ${r.minutes}`;
+    return rest === 0 ? `${h} Std.` : `${h} Std. ${rest} ${r.minutes}`;
+  };
+
+  const tagRows: Array<[React.ReactNode, string, string] | null> = [
+    recipe.kcal
+      ? [
+          <IconFlame key="k" className="h-4 w-4" />,
+          r.calories,
+          `${recipe.kcal} ${r.kcalUnit} ${r.perServing}`,
+        ]
+      : null,
+    full.categories.length
+      ? [
+          <IconTag key="c" className="h-4 w-4" />,
+          r.course,
+          full.categories.map((c) => c.name).join(", "),
+        ]
+      : null,
+    full.cuisines.length
+      ? [
+          <IconTag key="cu" className="h-4 w-4" />,
+          r.cuisineShort,
+          full.cuisines.map((c) => c.name).join(", "),
+        ]
+      : null,
+    full.dietTypes.length
+      ? [
+          <IconTag key="d" className="h-4 w-4" />,
+          r.dietShort,
+          full.dietTypes.map((d) => d.name).join(", "),
+        ]
+      : null,
+    full.tags.length
+      ? [
+          <IconTag key="t" className="h-4 w-4" />,
+          r.keywords,
+          full.tags.map((tg) => tg.name).join(", "),
+        ]
+      : null,
   ];
-  if (recipe.kcal) meta.push([dict.recipe.kcalPerServing, String(recipe.kcal)]);
 
   return (
-    <article id={containerId} className="mx-auto max-w-3xl">
-      <header>
-        <h1 className="font-display text-3xl font-bold md:text-4xl">
-          {recipe.title}
-        </h1>
-        {recipe.teaser && (
-          <p className="mt-3 text-lg text-ink-soft">{recipe.teaser}</p>
-        )}
-        <dl className="mt-4 flex flex-wrap gap-x-6 gap-y-1 text-sm">
-          {meta.map(([label, value]) => (
-            <div key={label} className="flex gap-1.5">
-              <dt className="font-medium text-ink-soft">{label}:</dt>
-              <dd>{value}</dd>
-            </div>
-          ))}
-        </dl>
-        <div className="mt-3 flex flex-col gap-1.5">
-          <Chips label={dict.recipe.categories} items={full.categories} />
-          <Chips label={dict.recipe.diet} items={full.dietTypes} />
-          <Chips label={dict.recipe.cuisine} items={full.cuisines} />
-          <Chips label={dict.recipe.equipment} items={full.equipment} />
-          <Chips label={dict.recipe.tagsLabel} items={full.tags} />
-        </div>
-      </header>
-
+    <article
+      id={containerId}
+      className="overflow-hidden rounded-2xl bg-white shadow-sm print:rounded-none print:shadow-none"
+    >
+      {/* Hero mit Aktions-Buttons */}
       {full.heroImage && (
-        <div className="mt-6 overflow-hidden rounded-2xl">
+        <div className="relative">
           <ResponsiveImg
             image={full.heroImage}
-            sizes="(max-width: 768px) 100vw, 768px"
+            sizes="(max-width: 820px) 100vw, 768px"
             priority
-            className="w-full object-cover"
+            className="aspect-[2/1] w-full object-cover"
           />
-        </div>
-      )}
-
-      {interactive && (
-        <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
-          <ServingsControl
-            baseServings={recipe.servings}
-            containerId={containerId}
-          />
-          <div className="flex items-center gap-2">
-            {extraActions}
-            <ShareButtons
+          {interactive && (
+            <HeroActions
               title={recipe.title}
               url={url}
               printPath={`/drucken/rezepte/${recipe.slug}`}
             />
-          </div>
+          )}
         </div>
       )}
-      {!interactive && (
-        <p className="mt-4 text-sm font-medium">
-          {recipe.servings}{" "}
-          {recipe.servings === 1 ? dict.recipe.servingsOne : dict.recipe.servings}
-        </p>
-      )}
 
-      {/* Zutaten */}
-      <section className="mt-8">
-        <h2 className="font-display text-2xl font-bold">
-          {dict.recipe.ingredients}
-        </h2>
-        {full.sections
-          .filter((s) => s.ingredients.length > 0)
-          .map((section) => (
-            <div key={`ing-${section.id}`} className="mt-4">
-              {section.name && (
-                <h3 className="mb-2 font-semibold">{section.name}</h3>
+      <div className="p-6 md:p-10">
+        <header>
+          <h1 className="font-display text-3xl font-bold tracking-tight md:text-[2.6rem] md:leading-tight">
+            {recipe.title}
+          </h1>
+          {recipe.teaser && (
+            <p className="mt-4 leading-relaxed text-ink-soft">{recipe.teaser}</p>
+          )}
+
+          {/* Meta-Zeile */}
+          <div className="mt-6 flex flex-wrap gap-x-8 gap-y-4">
+            <MetaChip icon={<IconServings className="h-5 w-5" />} label={r.metaServings}>
+              {interactive ? (
+                <ServingsControl
+                  baseServings={recipe.servings}
+                  containerId={containerId}
+                />
+              ) : (
+                <>
+                  {recipe.servings}{" "}
+                  {recipe.servings === 1 ? r.servingsOne : r.servings}
+                </>
               )}
-              <ul className="flex flex-col gap-1.5 border-l-2 border-rose-primary/30 pl-4">
-                {section.ingredients.map((ing) => (
-                  <li key={ing.id} className="flex flex-wrap gap-1.5">
-                    <span className="min-w-16 font-medium tabular-nums">
-                      <span data-menge={ing.amount ?? undefined} data-einheit={ing.unit}>
-                        {ing.amount !== null
-                          ? formatAmount(ing.amount, ing.unit)
-                          : ""}
-                      </span>
-                      {ing.amount !== null && ing.unit ? ` ${ing.unit}` : ""}
-                      {ing.amount === null && (
-                        <span className="font-normal text-ink-soft">
-                          {dict.recipe.toTaste}
-                        </span>
-                      )}
-                    </span>
-                    <span>
-                      {ing.name}
-                      {ing.note && (
-                        <span className="text-ink-soft"> ({ing.note})</span>
-                      )}
-                    </span>
+            </MetaChip>
+            {recipe.prepMinutes > 0 && (
+              <MetaChip icon={<IconClock className="h-5 w-5" />} label={r.metaPrep}>
+                {minutes(recipe.prepMinutes)}
+              </MetaChip>
+            )}
+            {recipe.cookMinutes > 0 && (
+              <MetaChip icon={<IconClock className="h-5 w-5" />} label={r.metaCook}>
+                {minutes(recipe.cookMinutes)}
+              </MetaChip>
+            )}
+            <MetaChip icon={<IconClock className="h-5 w-5" />} label={r.metaTotal}>
+              {minutes(recipe.totalMinutes)}
+            </MetaChip>
+            <MetaChip icon={<IconFlame className="h-5 w-5" />} label={r.metaDifficulty}>
+              {dict.admin.recipes.difficulties[recipe.difficulty] ?? recipe.difficulty}
+            </MetaChip>
+          </div>
+
+          {extraActions && (
+            <div className="mt-5 print:hidden">{extraActions}</div>
+          )}
+        </header>
+
+        <hr className="my-8 border-ink/10" />
+
+        {/* Equipment + Zutaten */}
+        <div className="grid gap-10 md:grid-cols-[2fr_3fr]">
+          {full.equipment.length > 0 && (
+            <section>
+              <SerifHeading>{r.equipmentHeading}</SerifHeading>
+              <ul className="mt-5 flex flex-col gap-3">
+                {full.equipment.map((e) => (
+                  <CheckItem key={e.id}>{e.name}</CheckItem>
+                ))}
+              </ul>
+            </section>
+          )}
+          <section className={full.equipment.length === 0 ? "md:col-span-2" : ""}>
+            <SerifHeading>{r.ingredients}</SerifHeading>
+            <div className="mt-5 flex flex-col gap-5">
+              {full.sections
+                .filter((s) => s.ingredients.length > 0)
+                .map((section) => (
+                  <div key={`ing-${section.id}`}>
+                    {section.name && (
+                      <h3 className="mb-2 font-display text-lg font-bold">
+                        {section.name}
+                      </h3>
+                    )}
+                    <ul className="flex flex-col gap-3">
+                      {section.ingredients.map((ing) => (
+                        <CheckItem key={ing.id}>
+                          <span data-menge={ing.amount ?? undefined} data-einheit={ing.unit}>
+                            {ing.amount !== null
+                              ? formatAmount(ing.amount, ing.unit)
+                              : ""}
+                          </span>
+                          {ing.amount !== null && ing.unit ? ` ${ing.unit} ` : " "}
+                          <strong className="font-semibold">{ing.name}</strong>
+                          {ing.amount === null && (
+                            <span className="text-ink-soft"> ({r.toTaste})</span>
+                          )}
+                          {ing.note && (
+                            <span className="text-ink-soft"> ({ing.note})</span>
+                          )}
+                        </CheckItem>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+            </div>
+          </section>
+        </div>
+
+        <hr className="my-8 border-ink/10" />
+
+        {/* Zubereitung */}
+        <section>
+          <SerifHeading>{r.preparation}</SerifHeading>
+          {(() => {
+            let step = 0;
+            return full.sections
+              .filter((s) => s.steps.length > 0)
+              .map((section) => (
+                <div key={`steps-${section.id}`} className="mt-6">
+                  {section.name && (
+                    <h3 className="mb-3 font-display text-lg font-bold">
+                      {section.name}
+                    </h3>
+                  )}
+                  <ol className="flex list-none flex-col gap-6">
+                    {section.steps.map((st) => {
+                      step += 1;
+                      return (
+                        <li key={st.id} className="flex gap-4">
+                          <span
+                            aria-hidden
+                            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-leaf-soft text-base font-semibold text-white"
+                          >
+                            {step}
+                          </span>
+                          <p className="pt-1.5 leading-relaxed">{st.text}</p>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                </div>
+              ));
+          })()}
+
+          {/* Weitere Bilder */}
+          {full.images.length > 0 && (
+            <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 print:hidden">
+              {full.images.map((img) => (
+                <ResponsiveImg
+                  key={img.id}
+                  image={img}
+                  sizes="(max-width: 640px) 100vw, 384px"
+                  className="w-full rounded-lg object-cover"
+                />
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* Notizen / Tipps */}
+        {(recipe.tips || full.publicNotes.length > 0) && (
+          <section className="mt-10 rounded-xl bg-cream-deep/60 p-6 md:p-8">
+            <h2 className="font-display text-2xl font-bold tracking-tight">
+              {r.notes}
+            </h2>
+            {recipe.tips && (
+              <div
+                className="prose-content mt-3"
+                dangerouslySetInnerHTML={{ __html: renderMarkdown(recipe.tips) }}
+              />
+            )}
+            {full.publicNotes.length > 0 && (
+              <ul className="mt-3 flex flex-col gap-2">
+                {full.publicNotes.map((n) => (
+                  <li key={n.id} className="leading-relaxed">
+                    {n.text}
                   </li>
                 ))}
               </ul>
-            </div>
-          ))}
-      </section>
+            )}
+          </section>
+        )}
 
-      {/* Zubereitung */}
-      <section className="mt-8">
-        <h2 className="font-display text-2xl font-bold">
-          {dict.recipe.preparation}
-        </h2>
-        {full.sections
-          .filter((s) => s.steps.length > 0)
-          .map((section) => (
-            <div key={`steps-${section.id}`} className="mt-4">
-              {section.name && (
-                <h3 className="mb-2 font-semibold">{section.name}</h3>
-              )}
-              <ol className="flex list-none flex-col gap-3">
-                {section.steps.map((step, i) => (
-                  <li key={step.id} className="flex gap-3">
-                    <span
-                      aria-hidden
-                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-rose-primary text-sm font-bold text-white"
-                    >
-                      {i + 1}
-                    </span>
-                    <p className="pt-0.5">{step.text}</p>
-                  </li>
-                ))}
-              </ol>
-            </div>
-          ))}
-      </section>
-
-      {/* Weitere Bilder */}
-      {full.images.length > 0 && (
-        <section className="mt-8 grid grid-cols-2 gap-3 print:hidden">
-          {full.images.map((img) => (
-            <ResponsiveImg
-              key={img.id}
-              image={img}
-              sizes="(max-width: 768px) 50vw, 384px"
-              className="w-full rounded-xl object-cover"
-            />
-          ))}
-        </section>
-      )}
-
-      {/* Tipps & Varianten */}
-      {recipe.tips && (
-        <section className="mt-8 rounded-2xl bg-cream p-5">
-          <h2 className="font-display text-xl font-bold">{dict.recipe.tips}</h2>
-          <div
-            className="prose-content mt-2"
-            dangerouslySetInnerHTML={{ __html: renderMarkdown(recipe.tips) }}
-          />
-        </section>
-      )}
-
-      {/* Öffentliche Notizen */}
-      {full.publicNotes.length > 0 && (
-        <section className="mt-6">
-          <h2 className="font-display text-xl font-bold">{dict.recipe.notes}</h2>
-          <ul className="mt-2 flex flex-col gap-2">
-            {full.publicNotes.map((n) => (
-              <li key={n.id} className="rounded-xl border border-ink/10 p-3 text-sm">
-                {n.text}
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+        {/* Tag-Zeile */}
+        {tagRows.some(Boolean) && (
+          <footer className="mt-8 flex flex-wrap gap-x-8 gap-y-3 border-t border-ink/10 pt-6 text-sm">
+            {tagRows.filter(Boolean).map((row) => {
+              const [icon, label, value] = row!;
+              return (
+                <p key={label} className="flex items-center gap-2">
+                  <span aria-hidden className="text-ink-soft">
+                    {icon}
+                  </span>
+                  <strong className="font-semibold">{label}:</strong>
+                  <span className="text-ink-soft">{value}</span>
+                </p>
+              );
+            })}
+          </footer>
+        )}
+      </div>
     </article>
   );
 }

@@ -31,17 +31,20 @@ export function ServingsControl({
     }
   }, [servings, baseServings, containerId]);
 
+  const btn =
+    "flex h-6 w-6 items-center justify-center rounded-full border border-ink/20 text-sm font-bold leading-none hover:border-leaf hover:text-leaf";
+
   return (
-    <div className="flex items-center gap-2 print:hidden">
+    <span className="inline-flex items-center gap-2 print:hidden">
       <button
         type="button"
         onClick={() => setServings((s) => Math.max(1, s - 1))}
         aria-label={dict.recipe.decreaseServings}
-        className="h-9 w-9 rounded-full border border-ink/20 text-lg font-bold hover:bg-cream"
+        className={btn}
       >
         −
       </button>
-      <span aria-live="polite" className="min-w-24 text-center font-semibold">
+      <span aria-live="polite" className="min-w-10 text-center">
         {servings}{" "}
         {servings === 1 ? dict.recipe.servingsOne : dict.recipe.servings}
       </span>
@@ -49,10 +52,10 @@ export function ServingsControl({
         type="button"
         onClick={() => setServings((s) => Math.min(99, s + 1))}
         aria-label={dict.recipe.increaseServings}
-        className="h-9 w-9 rounded-full border border-ink/20 text-lg font-bold hover:bg-cream"
+        className={btn}
       >
         +
       </button>
-    </div>
+    </span>
   );
 }
