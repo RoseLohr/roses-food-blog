@@ -1,0 +1,171 @@
+import type { Metadata } from "next";
+import { asc, eq, sql } from "drizzle-orm";
+import { db, schema } from "@/db";
+import { requireAdmin } from "@/lib/auth";
+import { imageUrl } from "@/lib/media";
+import { t } from "@/i18n/de";
+import {
+  createIngredientAction,
+  deleteIngredientAction,
+  updateIngredientAction,
+} from "./actions";
+
+const dict = t();
+
+export const metadata: Metadata = { title: dict.admin.ingredients.title };
+
+export default async function IngredientsPage(props: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  await requireAdmin();
+  const searchParams = await props.searchParams;
+  const message =
+    typeof searchParams.meldung === "string" ? searchParams.meldung : null;
+
+  const ingredients = await db
+    .select({
+      id: schema.ingredient.id,
+      name: schema.ingredient.name,
+      imageId: schema.ingredient.imageId,
+      fileKey: schema.mediaImage.fileKey,
+      variantWidths: schema.mediaImage.variantWidths,
+      recipeCount: sql<number>`(SELECT COUNT(*) FROM recipe_ingredient ri WHERE ri.ingredient_id = ${schema.ingredient.id})`,
+      dishCount: sql<number>`(SELECT COUNT(*) FROM dish_ingredient di WHERE di.ingredient_id = ${schema.ingredient.id})`,
+    })
+    .from(schema.ingredient)
+    .leftJoin(schema.mediaImage, eq(schema.ingredient.imageId, schema.mediaImage.id))
+    .orderBy(asc(schema.ingredient.name));
+
+  const images = await db
+    .select({
+      id: schema.mediaImage.id,
+      name: schema.mediaImage.originalName,
+      alt: schema.mediaImage.altText,
+    })
+    .from(schema.mediaImage)
+    .orderBy(asc(schema.mediaImage.originalName));
+
+  const imagePicker = (fieldId: string, current: number | null) => (
+    <select
+      id={fieldId}
+      name="imageId"
+      defaultValue={current ?? ""}
+      className="w-full rounded-lg border border-ink-soft/30 px-2 py-1 text-sm"
+    >
+      <option value="">{dict.admin.recipes.noImage}</option>
+      {images.map((img) => (
+        <option key={img.id} value={img.id}>
+          {img.alt || img.name}
+        </option>
+      ))}
+    </select>
+  );
+
+  return (
+    <>
+      <h1 className="mb-2 text-2xl font-bold">{dict.admin.ingredients.title}</h1>
+      <p className="mb-6 text-sm text-ink-soft">
+        {dict.admin.ingredients.imageHint}
+      </p>
+      {message && (
+        <p role="status" className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
+          {message}
+        </p>
+      )}
+
+      <form
+        action={createIngredientAction}
+        className="mb-8 flex max-w-xl flex-wrap items-end gap-3 rounded-2xl bg-white p-5 shadow-sm"
+      >
+        <div className="grow">
+          <label className="mb-1 block text-sm font-medium" htmlFor="neu-name">
+            {dict.admin.ingredients.newIngredient}
+          </label>
+          <input
+            id="neu-name"
+            name="name"
+            required
+            className="w-full rounded-lg border border-ink-soft/30 px-3 py-2"
+          />
+        </div>
+        <div className="grow">
+          <label className="mb-1 block text-sm font-medium" htmlFor="neu-bild">
+            {dict.admin.ingredients.image}
+          </label>
+          {imagePicker("neu-bild", null)}
+        </div>
+        <button
+          type="submit"
+          className="rounded-lg bg-rose-primary px-4 py-2 font-semibold text-white hover:bg-rose-primary-dark"
+        >
+          {dict.common.create}
+        </button>
+      </form>
+
+      <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {ingredients.map((ing) => (
+          <li key={ing.id} className="flex gap-3 rounded-2xl bg-white p-4 shadow-sm">
+            {ing.fileKey ? (
+              <img
+                src={imageUrl(ing.fileKey, JSON.parse(ing.variantWidths ?? "[320]")[0] ?? 320)}
+                alt=""
+                width={64}
+                height={64}
+                loading="lazy"
+                className="h-16 w-16 shrink-0 rounded-lg object-cover"
+              />
+            ) : (
+              <div
+                aria-hidden
+                className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg bg-cream text-xs text-ink-soft"
+              >
+                {dict.admin.recipes.noImage}
+              </div>
+            )}
+            <div className="min-w-0 grow">
+              <form action={updateIngredientAction} className="flex flex-col gap-1">
+                <input type="hidden" name="id" value={ing.id} />
+                <label className="sr-only" htmlFor={`name-${ing.id}`}>
+                  {dict.admin.ingredients.name}
+                </label>
+                <input
+                  id={`name-${ing.id}`}
+                  name="name"
+                  defaultValue={ing.name}
+                  className="rounded-lg border border-ink-soft/30 px-2 py-1 text-sm font-medium"
+                />
+                <label className="sr-only" htmlFor={`bild-${ing.id}`}>
+                  {dict.admin.ingredients.image}
+                </label>
+                {imagePicker(`bild-${ing.id}`, ing.imageId)}
+                <div className="mt-1 flex items-center justify-between">
+                  <p className="text-xs text-ink-soft">
+                    {ing.recipeCount} {dict.admin.ingredients.recipesCount} ·{" "}
+                    {ing.dishCount} {dict.admin.ingredients.dishesCount}
+                  </p>
+                  <button
+                    type="submit"
+                    className="rounded border border-ink/20 px-2 py-0.5 text-xs hover:bg-cream"
+                  >
+                    {dict.common.save}
+                  </button>
+                </div>
+              </form>
+              {ing.recipeCount === 0 && ing.dishCount === 0 && (
+                <form action={deleteIngredientAction} className="mt-1 text-right">
+                  <input type="hidden" name="id" value={ing.id} />
+                  <button
+                    type="submit"
+                    className="text-xs text-red-700 underline-offset-2 hover:underline"
+                  >
+                    {dict.common.delete}
+                  </button>
+                </form>
+              )}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
