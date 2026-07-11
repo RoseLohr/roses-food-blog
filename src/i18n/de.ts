@@ -117,6 +117,40 @@ export const de = {
     publishedOn: "Veröffentlicht am",
     backToOverview: "Alle Rezepte",
   },
+  newsletter: {
+    formTitle: "Neues aus Roses Küche",
+    formIntro:
+      "Neue Rezepte und Reiseberichte direkt ins Postfach — kostenlos und jederzeit abbestellbar.",
+    email: "E-Mail-Adresse",
+    firstName: "Vorname",
+    lastName: "Nachname",
+    interests: "Was interessiert dich?",
+    consentPrefix: "Ich möchte den Newsletter erhalten und akzeptiere die",
+    consentLinkText: "Datenschutzerklärung",
+    consentSuffix: ". Abmeldung jederzeit über den Link in jeder E-Mail.",
+    submit: "Anmelden",
+    successMessage:
+      "Fast geschafft! Bitte bestätige deine Anmeldung über den Link in der E-Mail, die wir dir gerade geschickt haben.",
+    errorInvalid:
+      "Bitte E-Mail-Adresse prüfen und der Datenschutzerklärung zustimmen.",
+    errorMail:
+      "Die Bestätigungsmail konnte nicht gesendet werden. Bitte später erneut versuchen.",
+    confirmMailSubject: "Bitte bestätige deine Newsletter-Anmeldung",
+    confirmMailBody: (url: string) =>
+      `Hallo {{vorname}},\n\nschön, dass du dabei sein möchtest! Bitte bestätige deine Anmeldung zum Newsletter mit einem Klick:\n\n[Anmeldung bestätigen](${url})\n\nFalls du dich nicht angemeldet hast, ignoriere diese E-Mail einfach — es passiert nichts.\n\nHerzliche Grüße\nRose`,
+    confirmPageTitle: "Newsletter-Bestätigung",
+    confirmSuccess:
+      "Deine Anmeldung ist bestätigt — willkommen! Ab sofort bekommst du Neuigkeiten aus Roses Küche.",
+    confirmAlready: "Deine Anmeldung war bereits bestätigt.",
+    confirmInvalid:
+      "Dieser Bestätigungslink ist ungültig oder abgelaufen. Bitte melde dich erneut an.",
+    unsubscribePageTitle: "Abmeldung",
+    unsubscribeSuccess:
+      "Du wurdest abgemeldet und erhältst keine weiteren E-Mails von uns. Schade, dass du gehst!",
+    unsubscribeInvalid: "Dieser Abmeldelink ist ungültig.",
+    sourceRecipePrefix: "Rezeptseite",
+    sourceFooter: "Footer",
+  },
   email: {
     unsubscribe: "Newsletter abbestellen",
     footerSender: "Gesendet von",
@@ -302,6 +336,46 @@ export const de = {
       exists: "Eintrag existiert bereits.",
       created: "Eintrag angelegt.",
       deletedEntry: "Eintrag gelöscht.",
+    },
+    contacts: {
+      title: "Kontakte",
+      name: "Name",
+      email: "E-Mail",
+      status: "Status",
+      statusLabels: {
+        unbestaetigt: "Unbestätigt",
+        aktiv: "Aktiv",
+        abgemeldet: "Abgemeldet",
+      } as Record<string, string>,
+      allStatuses: "Alle Status",
+      interests: "Interessen",
+      allInterests: "Alle Interessen",
+      segments: "Segmente",
+      tags: "Interne Tags",
+      source: "Quelle",
+      signupAt: "Anmeldung",
+      consentAt: "Einwilligung",
+      lastContact: "Letzter Kontakt",
+      notes: "Notizen",
+      activity: "Aktivitätsverlauf",
+      activityTypes: {
+        anmeldung: "Anmeldung",
+        bestaetigung: "Bestätigung",
+        kampagne: "Kampagne",
+        sequenzmail: "Sequenzmail",
+        abmeldung: "Abmeldung",
+        notiz: "Notiz",
+      } as Record<string, string>,
+      filter: "Filtern",
+      exportCsv: "CSV exportieren",
+      anonymize: "Löschen/Anonymisieren",
+      anonymized: "Kontakt anonymisiert.",
+      anonymizedLabel: "anonymisiert",
+      empty: "Keine Kontakte gefunden.",
+      detailTitle: "Kontakt",
+      saved: "Kontakt gespeichert.",
+      confirmAnonymize:
+        "Kontakt unwiderruflich anonymisieren? E-Mail und Name werden entfernt.",
     },
     tracking: {
       title: "Statistik",

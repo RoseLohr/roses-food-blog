@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { NewsletterSection } from "@/components/newsletter-section";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -51,6 +52,11 @@ export default function PublicLayout({
       </div>
 
       <footer className="mt-auto border-t border-ink/10 bg-white print:hidden">
+        <div className="mx-auto max-w-6xl px-4 pt-8">
+          <div className="max-w-md">
+            <NewsletterSection source={dict.newsletter.sourceFooter} compact />
+          </div>
+        </div>
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-4 py-6 text-sm text-ink-soft">
           <p>
             © {new Date().getFullYear()} {dict.site.name}. {dict.footer.rights}
