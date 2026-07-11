@@ -17,6 +17,26 @@ export const de = {
     intro:
       "Hier entstehen gesunde Rezepte für jeden Tag und Reiseberichte übers Essen in aller Welt.",
   },
+  nav: {
+    recipes: "Rezepte",
+    travel: "Reisen",
+    about: "Über mich",
+    search: "Suche",
+    menu: "Menü",
+  },
+  footer: {
+    imprint: "Impressum",
+    privacy: "Datenschutz",
+    aboutMe: "Über mich",
+    newsletterTitle: "Neues aus der Küche ins Postfach",
+    rights: "Alle Rechte vorbehalten.",
+  },
+  recipeList: {
+    title: "Alle Rezepte",
+    intro: "Gesunde Rezepte für jeden Tag — zum Suchen, Filtern und Nachkochen.",
+    empty: "Keine Rezepte gefunden.",
+    likesSuffix: "Likes",
+  },
   recipe: {
     servings: "Portionen",
     servingsOne: "Portion",

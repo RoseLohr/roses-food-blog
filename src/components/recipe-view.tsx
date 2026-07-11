@@ -101,7 +101,11 @@ export function RecipeView({
           />
           <div className="flex items-center gap-2">
             {extraActions}
-            <ShareButtons title={recipe.title} url={url} />
+            <ShareButtons
+              title={recipe.title}
+              url={url}
+              printPath={`/drucken/rezepte/${recipe.slug}`}
+            />
           </div>
         </div>
       )}

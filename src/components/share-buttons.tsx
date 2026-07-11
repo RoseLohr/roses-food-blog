@@ -9,7 +9,16 @@ import { t } from "@/i18n/de";
 
 const dict = t();
 
-export function ShareButtons({ title, url }: { title: string; url: string }) {
+export function ShareButtons({
+  title,
+  url,
+  printPath,
+}: {
+  title: string;
+  url: string;
+  /** Pfad zur dedizierten Druckansicht; ohne Angabe wird die Seite selbst gedruckt */
+  printPath?: string;
+}) {
   const [copied, setCopied] = useState(false);
   const canShare =
     typeof navigator !== "undefined" && typeof navigator.share === "function";
@@ -49,9 +58,15 @@ export function ShareButtons({ title, url }: { title: string; url: string }) {
       >
         {dict.recipe.shareByEmail}
       </a>
-      <button type="button" className={btn} onClick={() => window.print()}>
-        {dict.recipe.print}
-      </button>
+      {printPath ? (
+        <a className={btn} href={printPath}>
+          {dict.recipe.print}
+        </a>
+      ) : (
+        <button type="button" className={btn} onClick={() => window.print()}>
+          {dict.recipe.print}
+        </button>
+      )}
     </div>
   );
 }
