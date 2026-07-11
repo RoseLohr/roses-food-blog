@@ -18,7 +18,35 @@ npm run dev                 # http://localhost:3000
 npm test                    # Unit- & Integrationstests
 ```
 
-## Ersteinrichtung auf dem Server (einmalig)
+## Schnellstart: Ersteinrichtung mit einem Befehl
+
+Auf einem frischen Ubuntu-Server (LTS) genügt:
+
+```bash
+git clone https://github.com/RoseLohr/roses-food-blog.git && cd roses-food-blog && ./bootstrap.sh
+```
+
+Bei privatem Repository die Clone-URL mit Token bzw. Deploy-Key verwenden
+(siehe unten, Abschnitt 1). `bootstrap.sh` übernimmt den Rest:
+
+1. installiert fehlende Pakete (podman, podman-compose, curl, openssl),
+2. fragt die Konfiguration ab und schreibt die `.env`
+   (`SESSION_SECRET` wird automatisch erzeugt),
+3. legt das Datenverzeichnis an,
+4. baut und startet den Container über `./deploy.sh`
+   (Migrationen, Admin-Konto, Healthcheck, Autostart inklusive),
+5. richtet auf Wunsch direkt nginx + Let's-Encrypt-TLS für die Domain ein.
+
+Alle Werte lassen sich auch nicht-interaktiv vorgeben, z. B.:
+
+```bash
+BASE_URL=https://www.example.de ADMIN_EMAIL=ich@example.de ADMIN_PASSWORD=… \
+SMTP_HOST=… SMTP_USER=… SMTP_PASS=… SETUP_NGINX=j ./bootstrap.sh
+```
+
+Danach gilt für jedes Update dauerhaft: `./deploy.sh`.
+
+## Manuelle Ersteinrichtung (Alternative zu bootstrap.sh)
 
 Voraussetzungen: Ubuntu LTS, [Podman](https://podman.io) (rootless empfohlen),
 nginx, certbot, git, curl. Die Domain zeigt bereits auf den Server.
