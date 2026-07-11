@@ -182,13 +182,15 @@ curl -fsS http://127.0.0.1:3000/health
 
 **Build bricht mit `SIGILL` ab („Next.js build worker exited … signal: SIGILL")**
 Die CPU des Servers unterstützt kein SSE4.2/x86-64-v2 — die vorkompilierte
-native Bibliothek von sharp stürzt dann ab. Typisch für VMs mit CPU-Typ
-`qemu64`/`kvm64`. `deploy.sh` erkennt das automatisch (Check auf `sse4_2` in
-`/proc/cpuinfo`) und baut mit der WebAssembly-Variante von sharp
-(etwas langsamere Bildverarbeitung, sonst identisch). Erzwingen:
-`FORCE_SHARP_WASM=1 ./deploy.sh`. Die schnellere Lösung ist, in der
-Virtualisierung den CPU-Typ auf „host“ zu stellen (z. B. Proxmox:
-VM → Hardware → Prozessoren → Typ „host“) und neu zu deployen.
+native Bibliothek von sharp stürzt dann ab. Betrifft VMs mit CPU-Typ
+`qemu64`/`kvm64` sowie alte physische CPUs (z. B. Intel Atom N2xxx/Bonnell).
+`deploy.sh` erkennt das automatisch (Check auf `sse4_2` in `/proc/cpuinfo`)
+und baut mit der WebAssembly-Variante von sharp — Bild-Uploads dauern damit
+etwas länger, alles andere ist identisch. Erzwingen: `FORCE_SHARP_WASM=1
+./deploy.sh`. Bei VMs ist die schnellere Alternative, den CPU-Typ der VM auf
+„host“ zu stellen (z. B. Proxmox: VM → Hardware → Prozessoren) und neu zu
+deployen; bei alter physischer Hardware ist der WASM-Modus die dauerhafte
+Lösung.
 
 ## Betrieb — Spickzettel
 
