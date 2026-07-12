@@ -350,6 +350,8 @@ export const de = {
       placeholder:
         "Text hier einfügen … z. B. Zutatenliste und grobe Zubereitung, oder ein Rezept von einer anderen Seite.",
       generate: "Mit KI erzeugen",
+      testConnection: "Verbindung testen",
+      testing: "Teste …",
       generating: "KI arbeitet …",
       generatingHint: "Das kann bis zu einer Minute dauern.",
       failed: "Erzeugung fehlgeschlagen. Bitte erneut versuchen.",

@@ -24,6 +24,29 @@ export function RecipeAiAssistant({
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<RecipeDraft | null>(null);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+  async function testConnection() {
+    if (testing) return;
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const res = await fetch("/api/admin/ai/ping", { cache: "no-store" });
+      const data = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        message?: string;
+      };
+      setTestResult({
+        ok: Boolean(data.ok),
+        message: data.message || a.failed,
+      });
+    } catch {
+      setTestResult({ ok: false, message: a.failed });
+    } finally {
+      setTesting(false);
+    }
+  }
 
   async function generate() {
     if (!text.trim() || busy) return;
@@ -114,8 +137,30 @@ export function RecipeAiAssistant({
         >
           {busy ? a.generating : a.generate}
         </button>
+        <button
+          type="button"
+          onClick={testConnection}
+          disabled={testing}
+          className="rounded-lg border border-ink/20 px-3 py-2 text-sm hover:bg-cream disabled:opacity-60"
+        >
+          {testing ? a.testing : a.testConnection}
+        </button>
         {busy && <span className="text-sm text-ink-soft">{a.generatingHint}</span>}
       </div>
+
+      {testResult && (
+        <p
+          role="status"
+          className={`mt-3 rounded-lg p-3 text-sm ${
+            testResult.ok
+              ? "bg-leaf-soft/20 text-leaf"
+              : "bg-amber-50 text-amber-900"
+          }`}
+        >
+          {testResult.ok ? "✓ " : "⚠ "}
+          {testResult.message}
+        </p>
+      )}
 
       {error && (
         <p role="alert" className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-800">

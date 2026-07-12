@@ -91,13 +91,13 @@ function toAiError(err: unknown): AiRecipeError {
     );
   if (err instanceof Anthropic.APIConnectionTimeoutError)
     return new AiRecipeError(
-      "timeout",
-      "Zeitüberschreitung bei der KI. Bitte erneut versuchen — ggf. mit weniger Text.",
+      "network",
+      "Der Server konnte api.anthropic.com nicht erreichen (Zeitüberschreitung beim Verbindungsaufbau). Das ist fast immer eine Egress-/Firewall-Sperre oder ein DNS-Problem auf dem Server — nicht der Schlüssel. Über „Verbindung testen“ prüfen.",
     );
   if (err instanceof Anthropic.APIConnectionError)
     return new AiRecipeError(
       "network",
-      "Keine Verbindung zu api.anthropic.com. Erreicht der Server das Internet (Firewall/Proxy)?",
+      "Keine Verbindung zu api.anthropic.com. Erreicht der Server das Internet (Firewall/DNS/Proxy)? Über „Verbindung testen“ prüfen.",
     );
   if (err instanceof Anthropic.APIError)
     return new AiRecipeError(
@@ -202,4 +202,33 @@ export async function generateRecipeDraft(
       "Die KI hat keine verwertbare Antwort geliefert. Bitte erneut versuchen.",
     );
   return res.parsed_output;
+}
+
+/**
+ * Diagnose: prüft in einem leichten Aufruf, ob der Server api.anthropic.com
+ * erreicht und der Schlüssel gültig ist. Unterscheidet damit klar zwischen
+ * Netzwerk-/Egress-Problem und Schlüssel-/Guthaben-Problem.
+ */
+export async function testConnection(): Promise<{
+  ok: boolean;
+  message: string;
+}> {
+  const apiKey = getAnthropicApiKey();
+  if (!apiKey)
+    return {
+      ok: false,
+      message:
+        "Kein Anthropic-API-Schlüssel hinterlegt (Einstellungen → KI-Assistent).",
+    };
+  const client = new Anthropic({ apiKey, maxRetries: 0, timeout: 15_000 });
+  const start = Date.now();
+  try {
+    const model = await client.models.retrieve("claude-opus-4-8");
+    return {
+      ok: true,
+      message: `Verbindung ok (${Date.now() - start} ms). Schlüssel gültig, Modell „${model.display_name ?? model.id}“ verfügbar.`,
+    };
+  } catch (err) {
+    return { ok: false, message: toAiError(err).message };
+  }
 }
