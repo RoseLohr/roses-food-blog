@@ -93,6 +93,31 @@ if [[ -f "$DATA_DIR/app.db" ]]; then
 fi
 
 # --- 5. Container (neu) starten — Migrationen laufen im Entrypoint ----------
+log "Stoppe alten Container (falls vorhanden) und gebe Port $PORT frei"
+# Erst über Compose herunterfahren; anschließend den Container zusätzlich
+# direkt per Namen entfernen. Nötig, weil ein früherer Lauf ihn mit einem
+# anderen Compose-Provider (podman-compose vs. docker-compose) angelegt
+# haben kann — dann kennt der aktuelle Provider ihn nicht und der Port
+# bliebe belegt ("address already in use").
+$COMPOSE down --remove-orphans >/dev/null 2>&1 || true
+podman rm -f roses-blog >/dev/null 2>&1 || true
+
+# Falls trotzdem noch etwas auf dem Port lauscht: klar melden statt kryptisch
+# zu scheitern. (Rootless-Leftover, oder ein fremder Dienst auf Port $PORT.)
+if command -v ss >/dev/null 2>&1 && ss -ltn "( sport = :$PORT )" 2>/dev/null | grep -q ":$PORT"; then
+  echo
+  echo "WARNUNG: Port $PORT ist noch belegt. Blockierende Container:"
+  podman ps --filter "publish=$PORT" --format "  {{.Names}} ({{.Image}}, {{.Status}})" || true
+  echo "Versuche verbliebene Roses-Blog-Container zu entfernen ..."
+  podman ps -aq --filter "publish=$PORT" | xargs -r podman rm -f >/dev/null 2>&1 || true
+  # Rootlessport-Reste einer abgestürzten Sitzung aufräumen
+  pkill -f "rootlessport" >/dev/null 2>&1 || true
+  sleep 2
+  if ss -ltn "( sport = :$PORT )" 2>/dev/null | grep -q ":$PORT"; then
+    fail "Port $PORT ist weiterhin belegt (evtl. anderer Dienst). Prüfen: sudo ss -ltnp 'sport = :$PORT'"
+  fi
+fi
+
 log "Starte Container neu"
 $COMPOSE up -d --force-recreate app
 
