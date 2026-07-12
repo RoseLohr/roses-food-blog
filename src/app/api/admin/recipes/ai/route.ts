@@ -7,7 +7,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getCurrentAdmin } from "@/lib/auth";
 import { isSameOriginRequest } from "@/lib/csrf";
-import { AI_NO_KEY, generateRecipeDraft } from "@/lib/ai-recipe";
+import { AiRecipeError, generateRecipeDraft } from "@/lib/ai-recipe";
 
 const bodySchema = z.object({ text: z.string().trim().min(1).max(20000) });
 
@@ -30,8 +30,12 @@ export async function POST(req: Request) {
     const draft = await generateRecipeDraft(body.text);
     return NextResponse.json(draft);
   } catch (err) {
-    const message = err instanceof Error ? err.message : "server";
-    const status = message === AI_NO_KEY ? 400 : 502;
-    return NextResponse.json({ error: message }, { status });
+    const code = err instanceof AiRecipeError ? err.code : "unknown";
+    const message =
+      err instanceof Error ? err.message : "Unbekannter Fehler.";
+    // Konfigurations-/Eingabefehler → 400, Upstream/Netz → 502.
+    const clientErrors = ["no_key", "auth", "forbidden", "model", "refused"];
+    const status = clientErrors.includes(code) ? 400 : 502;
+    return NextResponse.json({ error: message, code }, { status });
   }
 }

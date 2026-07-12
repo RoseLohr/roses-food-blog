@@ -37,8 +37,10 @@ export function RecipeAiAssistant({
         body: JSON.stringify({ text: text.trim() }),
       });
       if (!res.ok) {
+        // Serverseitige, verständliche Meldung anzeigen; sonst wenigstens den
+        // HTTP-Status (z. B. 504 = Timeout am Reverse-Proxy).
         const data = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(data.error === "KEIN_API_KEY" ? a.noKey : a.failed);
+        throw new Error(data.error || `${a.failed} (HTTP ${res.status})`);
       }
       setDraft((await res.json()) as RecipeDraft);
     } catch (err) {

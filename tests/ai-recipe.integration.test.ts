@@ -63,10 +63,13 @@ afterAll(() => {
 });
 
 describe("KI-Rezeptassistent", () => {
-  it("wirft ohne API-Schlüssel", async () => {
+  it("wirft mit klarer Meldung ohne API-Schlüssel", async () => {
     delete process.env.ANTHROPIC_API_KEY;
-    const { generateRecipeDraft, AI_NO_KEY } = await import("@/lib/ai-recipe");
-    await expect(generateRecipeDraft("Rührei")).rejects.toThrow(AI_NO_KEY);
+    const { generateRecipeDraft, AiRecipeError } = await import("@/lib/ai-recipe");
+    await expect(generateRecipeDraft("Rührei")).rejects.toBeInstanceOf(
+      AiRecipeError,
+    );
+    await expect(generateRecipeDraft("Rührei")).rejects.toThrow(/API-Schlüssel/);
     expect(parseMock).not.toHaveBeenCalled();
   });
 
@@ -79,11 +82,10 @@ describe("KI-Rezeptassistent", () => {
     expect(draft.difficulty).toBe("leicht");
     expect(draft.sections[0].ingredients[0].unit).toBe("Stück");
 
-    // Modell mit Opus 4.8, adaptivem Thinking und JSON-Schema-Format aufgerufen
+    // Modell mit Opus 4.8 und JSON-Schema-Format aufgerufen
     expect(parseMock).toHaveBeenCalledTimes(1);
     const args = parseMock.mock.calls[0][0];
     expect(args.model).toBe("claude-opus-4-8");
-    expect(args.thinking).toEqual({ type: "adaptive" });
     const outputConfig = args.output_config as { effort: string; format: unknown };
     expect(outputConfig.effort).toBe("high");
     expect(outputConfig.format).toBeTruthy(); // zodOutputFormat(recipeDraftSchema)

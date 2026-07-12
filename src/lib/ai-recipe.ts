@@ -51,10 +51,64 @@ export const recipeDraftSchema = z.object({
 
 export type RecipeDraft = z.infer<typeof recipeDraftSchema>;
 
-/** Fehlercodes, die die Route auswertet, um klare Meldungen zu zeigen. */
-export const AI_NO_KEY = "KEIN_API_KEY";
-export const AI_REFUSED = "ABGELEHNT";
-export const AI_EMPTY = "KEINE_ANTWORT";
+/**
+ * Fehler mit klarer, anzeigbarer Meldung (Deutsch). `code` erlaubt der Route,
+ * einen passenden HTTP-Status zu wählen. Die Meldung wird im Panel angezeigt,
+ * damit man tatsächlich sieht, was schiefging.
+ */
+export class AiRecipeError extends Error {
+  constructor(
+    public code: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = "AiRecipeError";
+  }
+}
+
+/** Anthropic-/Netzwerkfehler in eine verständliche deutsche Meldung übersetzen. */
+function toAiError(err: unknown): AiRecipeError {
+  if (err instanceof AiRecipeError) return err;
+  if (err instanceof Anthropic.AuthenticationError)
+    return new AiRecipeError(
+      "auth",
+      "Ungültiger Anthropic-API-Schlüssel. Bitte unter Einstellungen → KI-Assistent prüfen.",
+    );
+  if (err instanceof Anthropic.PermissionDeniedError)
+    return new AiRecipeError(
+      "forbidden",
+      "Zugriff verweigert — der API-Schlüssel hat kein Guthaben oder keine Freigabe für dieses Modell.",
+    );
+  if (err instanceof Anthropic.NotFoundError)
+    return new AiRecipeError(
+      "model",
+      "Das KI-Modell ist für diesen Schlüssel nicht verfügbar.",
+    );
+  if (err instanceof Anthropic.RateLimitError)
+    return new AiRecipeError(
+      "rate",
+      "Rate-Limit erreicht. Bitte in ein paar Minuten erneut versuchen.",
+    );
+  if (err instanceof Anthropic.APIConnectionTimeoutError)
+    return new AiRecipeError(
+      "timeout",
+      "Zeitüberschreitung bei der KI. Bitte erneut versuchen — ggf. mit weniger Text.",
+    );
+  if (err instanceof Anthropic.APIConnectionError)
+    return new AiRecipeError(
+      "network",
+      "Keine Verbindung zu api.anthropic.com. Erreicht der Server das Internet (Firewall/Proxy)?",
+    );
+  if (err instanceof Anthropic.APIError)
+    return new AiRecipeError(
+      "api",
+      `KI-Fehler${err.status ? ` (HTTP ${err.status})` : ""}: ${err.message}`,
+    );
+  return new AiRecipeError(
+    "unknown",
+    err instanceof Error ? err.message : "Unbekannter Fehler beim KI-Aufruf.",
+  );
+}
 
 const INTERNAL_TEMPLATE = `## Darüber freust du dich
 Ein einladender Einstieg (2–4 Sätze): worum geht es, warum lohnt sich das Rezept, wozu passt es, wie schmeckt es.
@@ -97,7 +151,11 @@ export async function generateRecipeDraft(
   sourceText: string,
 ): Promise<RecipeDraft> {
   const apiKey = getAnthropicApiKey();
-  if (!apiKey) throw new Error(AI_NO_KEY);
+  if (!apiKey)
+    throw new AiRecipeError(
+      "no_key",
+      "Kein Anthropic-API-Schlüssel hinterlegt. Bitte unter Einstellungen → KI-Assistent eintragen.",
+    );
 
   const refs = await styleReferences();
   const styleInstruction = refs.length
@@ -108,17 +166,36 @@ export async function generateRecipeDraft(
 
   const userText = `Erstelle aus dem folgenden Ausgangstext ein vollständiges, redaktionell aufbereitetes Rezept auf Deutsch und fülle ALLE Felder aus.\n\n${styleInstruction}\n\n=== Ausgangstext ===\n${sourceText}`;
 
-  const client = new Anthropic({ apiKey });
-  const res = await client.messages.parse({
-    model: "claude-opus-4-8",
-    max_tokens: 16000,
-    thinking: { type: "adaptive" },
-    output_config: { effort: "high", format: zodOutputFormat(recipeDraftSchema) },
-    system: SYSTEM,
-    messages: [{ role: "user", content: userText }],
-  });
+  const client = new Anthropic({ apiKey, maxRetries: 1 });
+  let res;
+  try {
+    // Bestes Modell (Opus 4.8), hohe Effort-Stufe. Thinking bewusst NICHT
+    // aktiviert: die Ausgabe ist ohnehin per JSON-Schema strikt gebunden, und
+    // ohne Thinking ist die Antwort schnell genug, um nicht in ein Proxy-Timeout
+    // zu laufen (die Anfrage läuft synchron über den Reverse-Proxy).
+    res = await client.messages.parse({
+      model: "claude-opus-4-8",
+      max_tokens: 8000,
+      output_config: {
+        effort: "high",
+        format: zodOutputFormat(recipeDraftSchema),
+      },
+      system: SYSTEM,
+      messages: [{ role: "user", content: userText }],
+    });
+  } catch (err) {
+    throw toAiError(err);
+  }
 
-  if (res.stop_reason === "refusal") throw new Error(AI_REFUSED);
-  if (!res.parsed_output) throw new Error(AI_EMPTY);
+  if (res.stop_reason === "refusal")
+    throw new AiRecipeError(
+      "refused",
+      "Die KI hat die Anfrage abgelehnt. Bitte den Text anpassen und erneut versuchen.",
+    );
+  if (!res.parsed_output)
+    throw new AiRecipeError(
+      "empty",
+      "Die KI hat keine verwertbare Antwort geliefert. Bitte erneut versuchen.",
+    );
   return res.parsed_output;
 }
