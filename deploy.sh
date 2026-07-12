@@ -18,14 +18,33 @@ main() {
 cd "$(dirname "$0")"
 SCRIPT_DIR="$(pwd)"
 
-# Ergebnis fürs Admin-Panel: bei jedem Abbruch "fehlgeschlagen", am Ende
-# "erfolgreich". Der EXIT-Trap schreibt deploy-status.json (best effort).
-DEPLOY_STATUS_RESULT="fehlgeschlagen"
-write_deploy_status() {
-  [[ -n "${DATA_DIR:-}" && -d "${DATA_DIR:-/nonexistent}" ]] || return 0
-  printf '{"at":%s000,"result":"%s","commit":"%s"}\n' \
-    "$(date +%s)" "$DEPLOY_STATUS_RESULT" "${COMMIT:-}" \
+# Live-Rückmeldung fürs Admin-Panel (Bereich „Aktualisierung“): deploy.sh
+# schreibt fortlaufend eine Statusdatei (aktuelle Phase, läuft ja/nein, Ergebnis)
+# und ein Log. Das Panel pollt beides und zeigt so, dass wirklich etwas passiert.
+DEPLOY_STATUS_RESULT=""        # während des Laufs unbekannt
+DEPLOY_PHASE="gestartet"
+DEPLOY_RUNNING=1
+_status_ready() { [[ -n "${DATA_DIR:-}" && -d "${DATA_DIR:-/nonexistent}" ]]; }
+status_write() {
+  _status_ready || return 0
+  local running=false; [[ "$DEPLOY_RUNNING" == "1" ]] && running=true
+  local phase=${DEPLOY_PHASE//\\/\\\\}; phase=${phase//\"/\\\"}
+  printf '{"at":%s000,"running":%s,"phase":"%s","result":"%s","commit":"%s"}\n' \
+    "$(date +%s)" "$running" "$phase" "$DEPLOY_STATUS_RESULT" "${COMMIT:-}" \
     > "$DATA_DIR/deploy-status.json" 2>/dev/null || true
+}
+deploy_log() {
+  _status_ready && printf '[%s] %s\n' "$(date '+%H:%M:%S')" "$*" \
+    >> "$DATA_DIR/deploy.log" 2>/dev/null || true
+}
+# EXIT-Trap: Ergebnis festhalten (leer = wir haben das Ende nie erreicht).
+write_deploy_status() {
+  DEPLOY_RUNNING=0
+  [[ -z "$DEPLOY_STATUS_RESULT" ]] && DEPLOY_STATUS_RESULT="fehlgeschlagen"
+  [[ "$DEPLOY_STATUS_RESULT" == "erfolgreich" ]] \
+    && DEPLOY_PHASE="abgeschlossen" || DEPLOY_PHASE="fehlgeschlagen"
+  deploy_log "Deployment $DEPLOY_STATUS_RESULT."
+  status_write
 }
 trap write_deploy_status EXIT
 
@@ -43,8 +62,17 @@ podman compose version >/dev/null 2>&1 || {
   }
 }
 
-log()  { printf '\n\033[1;32m==> %s\033[0m\n' "$*"; }
-fail() { printf '\n\033[1;31mFEHLER: %s\033[0m\n' "$*"; exit 1; }
+log()  {
+  printf '\n\033[1;32m==> %s\033[0m\n' "$*"
+  DEPLOY_PHASE="$*"
+  deploy_log "$*"
+  status_write
+}
+fail() {
+  printf '\n\033[1;31mFEHLER: %s\033[0m\n' "$*"
+  deploy_log "FEHLER: $*"
+  exit 1
+}
 
 # --- 0. Erstlauf: .env prüfen ----------------------------------------------
 if [[ ! -f .env ]]; then
@@ -81,6 +109,11 @@ mkdir -p "$DATA_DIR"/{uploads,geoip,backups}
 # Etwaige Deploy-Anfrage aus dem Admin-Panel als "verbraucht" markieren
 # (der Watcher-Dienst entfernt sie ebenfalls; hier für manuelle Läufe).
 rm -f "$DATA_DIR/deploy-request" 2>/dev/null || true
+
+# Live-Log/Status fürs Panel zurücksetzen und Start markieren.
+: > "$DATA_DIR/deploy.log" 2>/dev/null || true
+DEPLOY_RUNNING=1; DEPLOY_STATUS_RESULT=""
+log "Deployment gestartet (Commit $(git rev-parse --short HEAD 2>/dev/null || echo '?'))"
 
 # --- 3. Image bauen ----------------------------------------------------------
 # CPU-Check: sharps native Binärdatei braucht SSE4.2 (x86-64-v2). Fehlt das

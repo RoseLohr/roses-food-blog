@@ -38,7 +38,7 @@ const FIXTURE = {
 };
 
 // Nur den Netzwerk-Client mocken; zodOutputFormat + Schema laufen echt.
-const parseMock = vi.fn(async () => ({
+const parseMock = vi.fn(async (_args: Record<string, unknown>) => ({
   stop_reason: "end_turn",
   parsed_output: FIXTURE,
 }));
@@ -81,7 +81,7 @@ describe("KI-Rezeptassistent", () => {
 
     // Modell mit Opus 4.8, adaptivem Thinking und JSON-Schema-Format aufgerufen
     expect(parseMock).toHaveBeenCalledTimes(1);
-    const args = parseMock.mock.calls[0][0] as Record<string, unknown>;
+    const args = parseMock.mock.calls[0][0];
     expect(args.model).toBe("claude-opus-4-8");
     expect(args.thinking).toEqual({ type: "adaptive" });
     const outputConfig = args.output_config as { effort: string; format: unknown };

@@ -5,33 +5,36 @@ import {
   checkRemote,
   currentCommit,
   isDeployPending,
+  readDeployLog,
+  readDeployRequestedAt,
   readDeployStatus,
 } from "@/lib/deploy";
+import { DeployMonitor } from "@/components/admin/deploy-monitor";
 import { t } from "@/i18n/de";
-import { requestDeployAction } from "./actions";
 
 const dict = t();
 const d = dict.admin.deploy;
 
 export const metadata: Metadata = { title: d.title };
+export const dynamic = "force-dynamic";
 
-export default async function DeployPage(props: {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}) {
+export default async function DeployPage() {
   await requireAdmin();
-  const searchParams = await props.searchParams;
-  const message =
-    typeof searchParams.meldung === "string" ? searchParams.meldung : null;
 
   const { repo, branch } = getDeployConfig();
   const current = currentCommit();
-  const pending = isDeployPending();
-  const status = readDeployStatus();
   const remote = await checkRemote();
 
   const configured = Boolean(repo && branch);
   const updateAvailable =
     remote.ok && remote.latest !== undefined && remote.latest !== current;
+
+  const snapshot = {
+    pending: isDeployPending(),
+    requestedAt: readDeployRequestedAt(),
+    status: readDeployStatus(),
+    log: readDeployLog(),
+  };
 
   const badge = (text: string, tone: "ok" | "warn" | "info") => {
     const cls =
@@ -51,11 +54,6 @@ export default async function DeployPage(props: {
     <>
       <h1 className="mb-2 text-2xl font-bold">{d.title}</h1>
       <p className="mb-6 max-w-2xl text-sm text-ink-soft">{d.intro}</p>
-      {message && (
-        <p role="status" className="mb-4 max-w-2xl rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
-          {message}
-        </p>
-      )}
 
       <div className="max-w-2xl space-y-6">
         <section className="rounded-2xl bg-white p-5 shadow-sm">
@@ -89,23 +87,9 @@ export default async function DeployPage(props: {
                   : badge(d.upToDate, "ok")}
           </div>
 
-          <form action={requestDeployAction} className="mt-5">
-            <button
-              type="submit"
-              disabled={pending}
-              className="rounded-lg bg-rose-primary px-5 py-2 font-semibold text-white hover:bg-rose-primary-dark disabled:opacity-60"
-            >
-              {pending ? d.pending : d.updateButton}
-            </button>
-          </form>
-
-          {status && (
-            <p className="mt-4 text-xs text-ink-soft">
-              {d.lastDeploy}: {new Date(status.at).toLocaleString("de-DE")} · {d.lastResult}:{" "}
-              {status.result}
-              {status.commit ? ` (${status.commit})` : ""}
-            </p>
-          )}
+          <div className="mt-5">
+            <DeployMonitor initial={snapshot} />
+          </div>
         </section>
 
         <section className="rounded-2xl border border-ink/10 bg-cream/40 p-5 text-sm">

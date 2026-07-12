@@ -333,6 +333,15 @@ export const de = {
       setupBody:
         "Der Auslöser wird nur wirksam, wenn der Host-Watcher installiert ist. „./deploy.sh“ richtet ihn automatisch ein (systemd-User-Dienst roses-blog-deploy.path).",
       requestError: "Aktualisierung konnte nicht angestoßen werden.",
+      triggering: "Wird angestoßen …",
+      starting: "Angefordert — der Server legt gleich los …",
+      running: "Deployment läuft",
+      serverRestarting: "Server startet neu … (gleich wieder erreichbar)",
+      elapsed: "läuft seit",
+      logTitle: "Protokoll",
+      triggerFailed: "Aktualisierung konnte nicht angestoßen werden.",
+      stallWarning:
+        "Der Server reagiert nicht auf die Anfrage. Läuft der Deploy-Watcher? Bitte einmalig „./deploy.sh“ im Projektordner auf dem Server ausführen — das richtet den Watcher ein; danach funktioniert die Aktualisierung aus dem Panel.",
     },
     aiRecipe: {
       title: "KI-Assistent",

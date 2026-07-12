@@ -17,6 +17,7 @@ function dataDir(): string {
 
 const REQUEST_FILE = "deploy-request";
 const STATUS_FILE = "deploy-status.json";
+const LOG_FILE = "deploy.log";
 
 /** Aktuell laufende Version (Kurz-Commit; beim Build ins Image gesetzt). */
 export function currentCommit(): string {
@@ -26,6 +27,17 @@ export function currentCommit(): string {
 
 export function isDeployPending(): boolean {
   return fs.existsSync(path.join(dataDir(), REQUEST_FILE));
+}
+
+/** Zeitpunkt der offenen Auslöse-Anfrage (ms), falls vorhanden. */
+export function readDeployRequestedAt(): number | null {
+  try {
+    const raw = fs.readFileSync(path.join(dataDir(), REQUEST_FILE), "utf8");
+    const data = JSON.parse(raw);
+    return typeof data?.at === "number" ? data.at : 0;
+  } catch {
+    return null;
+  }
 }
 
 /** Schreibt die Auslöse-Datei (idempotent). */
@@ -39,22 +51,42 @@ export function requestDeploy(by: string): void {
 
 export interface DeployStatus {
   at: number;
+  running: boolean;
+  phase: string;
   result: string;
   commit?: string;
 }
 
-/** Letztes Deployment-Ergebnis (von deploy.sh geschrieben), falls vorhanden. */
+/** Aktueller/letzter Deploy-Status (von deploy.sh geschrieben), falls vorhanden. */
 export function readDeployStatus(): DeployStatus | null {
   try {
     const raw = fs.readFileSync(path.join(dataDir(), STATUS_FILE), "utf8");
     const data = JSON.parse(raw);
-    if (typeof data?.at === "number" && typeof data?.result === "string") {
-      return data as DeployStatus;
-    }
+    if (typeof data?.at !== "number") return null;
+    return {
+      at: data.at,
+      running: Boolean(data.running),
+      phase: typeof data.phase === "string" ? data.phase : "",
+      result: typeof data.result === "string" ? data.result : "",
+      commit: typeof data.commit === "string" ? data.commit : undefined,
+    };
   } catch {
     /* keine Statusdatei */
   }
   return null;
+}
+
+/** Letzte Zeilen des Deploy-Logs (Live-Ausgabe fürs Panel). */
+export function readDeployLog(maxLines = 60): string[] {
+  try {
+    const raw = fs.readFileSync(path.join(dataDir(), LOG_FILE), "utf8");
+    return raw
+      .split("\n")
+      .filter((l) => l.trim() !== "")
+      .slice(-maxLines);
+  } catch {
+    return [];
+  }
 }
 
 export interface RemoteCheck {
