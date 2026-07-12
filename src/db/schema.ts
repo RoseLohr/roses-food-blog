@@ -758,3 +758,13 @@ export const emailQueue = sqliteTable(
   },
   (t) => [index("email_queue_status_idx").on(t.status, t.scheduledAt)],
 );
+
+// ---------------------------------------------------------------------------
+// Einstellungen (Key-Value): SMTP-Zugang, Versandrate, Deploy-Repo/Branch …
+// In der DB überschreibbar, mit .env als Rückfallebene (siehe lib/settings.ts).
+// ---------------------------------------------------------------------------
+export const setting = sqliteTable("setting", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull().default(""),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+});

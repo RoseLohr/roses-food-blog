@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { db, schema } from "@/db";
 import { requireAdmin } from "@/lib/auth";
 import { QuickAddSelect } from "@/components/admin/quick-add-select";
+import { RichTextEditor } from "@/components/admin/rich-text-editor";
 import { t } from "@/i18n/de";
 import {
   saveCampaignAction,
@@ -102,19 +103,13 @@ export default async function CampaignDetailPage(props: {
               emptyLabel={d.noSegment}
               disabled={!editable}
             />
-            <div>
-              <label className={labelCls} htmlFor="ka-inhalt">
-                {d.content}
-              </label>
-              <textarea
-                id="ka-inhalt"
-                name="inhalt"
-                rows={12}
-                defaultValue={campaign?.content ?? ""}
-                readOnly={!editable}
-                className={inputCls}
-              />
-            </div>
+            <RichTextEditor
+              name="inhalt"
+              label={d.content}
+              initialMarkdown={campaign?.content ?? ""}
+              readOnly={!editable}
+              minHeightClass="min-h-52"
+            />
             {editable && (
               <button
                 type="submit"

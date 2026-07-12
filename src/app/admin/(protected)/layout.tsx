@@ -11,27 +11,47 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-const NAV_GROUPS: Array<Array<[string, keyof typeof dict.admin.nav]>> = [
-  [["/admin", "dashboard"]],
-  [
-    ["/admin/rezepte", "recipes"],
-    ["/admin/reisen", "travel"],
-    ["/admin/seiten", "pages"],
-    ["/admin/medien", "media"],
-    ["/admin/zutaten", "ingredients"],
-    ["/admin/taxonomien", "taxonomies"],
-    ["/admin/startseite", "homepage"],
-  ],
-  [
-    ["/admin/kontakte", "contacts"],
-    ["/admin/segmente", "segments"],
-    ["/admin/kampagnen", "campaigns"],
-    ["/admin/sequenzen", "sequences"],
-  ],
-  [
-    ["/admin/statistik", "tracking"],
-    ["/admin/benutzer", "users"],
-  ],
+type NavKey = keyof typeof dict.admin.nav;
+interface NavGroup {
+  label?: string;
+  items: Array<[string, NavKey]>;
+}
+
+const NAV_GROUPS: NavGroup[] = [
+  { items: [["/admin", "dashboard"]] },
+  {
+    label: dict.admin.nav.groupContent,
+    items: [
+      ["/admin/rezepte", "recipes"],
+      ["/admin/reisen", "travel"],
+      ["/admin/seiten", "pages"],
+      ["/admin/startseite", "homepage"],
+      ["/admin/medien", "media"],
+      ["/admin/zutaten", "ingredients"],
+      ["/admin/taxonomien", "taxonomies"],
+    ],
+  },
+  {
+    label: dict.admin.nav.groupNewsletter,
+    items: [
+      ["/admin/kontakte", "contacts"],
+      ["/admin/segmente", "segments"],
+      ["/admin/kampagnen", "campaigns"],
+      ["/admin/sequenzen", "sequences"],
+    ],
+  },
+  {
+    label: dict.admin.nav.groupAnalytics,
+    items: [["/admin/statistik", "tracking"]],
+  },
+  {
+    label: dict.admin.nav.groupSystem,
+    items: [
+      ["/admin/benutzer", "users"],
+      ["/admin/einstellungen", "settings"],
+      ["/admin/aktualisierung", "deploy"],
+    ],
+  },
 ];
 
 export default async function AdminLayout({
@@ -47,18 +67,25 @@ export default async function AdminLayout({
         </Link>
         <nav aria-label={dict.admin.title} className="flex flex-1 flex-col gap-4">
           {NAV_GROUPS.map((group, i) => (
-            <ul key={i} className="flex flex-col gap-1 border-t border-ink/5 pt-3 first:border-t-0 first:pt-0">
-              {group.map(([href, key]) => (
-                <li key={href}>
-                  <Link
-                    href={href}
-                    className="block rounded-lg px-3 py-1.5 text-sm text-ink-soft hover:bg-cream hover:text-ink"
-                  >
-                    {dict.admin.nav[key]}
-                  </Link>
-                </li>
-              ))}
-            </ul>
+            <div key={i} className="border-t border-ink/5 pt-3 first:border-t-0 first:pt-0">
+              {group.label && (
+                <p className="mb-1 px-3 text-xs font-semibold uppercase tracking-wide text-ink-soft/70">
+                  {group.label}
+                </p>
+              )}
+              <ul className="flex flex-col gap-1">
+                {group.items.map(([href, key]) => (
+                  <li key={href}>
+                    <Link
+                      href={href}
+                      className="block rounded-lg px-3 py-1.5 text-sm text-ink-soft hover:bg-cream hover:text-ink"
+                    >
+                      {dict.admin.nav[key]}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
           ))}
         </nav>
         <a
@@ -76,12 +103,21 @@ export default async function AdminLayout({
             </summary>
             <nav
               aria-label={dict.admin.title}
-              className="absolute z-20 mt-1 rounded-xl border border-ink/10 bg-white p-3 shadow-lg"
+              className="absolute z-20 mt-1 max-h-[80vh] overflow-y-auto rounded-xl border border-ink/10 bg-white p-3 shadow-lg"
             >
-              {NAV_GROUPS.flat().map(([href, key]) => (
-                <Link key={href} href={href} className="block px-2 py-1 text-sm">
-                  {dict.admin.nav[key]}
-                </Link>
+              {NAV_GROUPS.map((group, i) => (
+                <div key={i} className="mb-2 last:mb-0">
+                  {group.label && (
+                    <p className="px-2 pb-0.5 pt-1 text-xs font-semibold uppercase tracking-wide text-ink-soft/70">
+                      {group.label}
+                    </p>
+                  )}
+                  {group.items.map(([href, key]) => (
+                    <Link key={href} href={href} className="block px-2 py-1 text-sm">
+                      {dict.admin.nav[key]}
+                    </Link>
+                  ))}
+                </div>
               ))}
             </nav>
           </details>

@@ -5,6 +5,7 @@ import { db, schema } from "@/db";
 import { requireAdmin } from "@/lib/auth";
 import { thumbUrl } from "@/lib/media";
 import { ImagePicker } from "@/components/admin/image-picker";
+import { RichTextEditor } from "@/components/admin/rich-text-editor";
 import { t } from "@/i18n/de";
 import { savePageAction } from "../actions";
 
@@ -78,18 +79,12 @@ export default async function EditPagePage(props: {
           </label>
           <input id="s-slug" name="slug" defaultValue={page?.slug ?? ""} className={inputCls} />
         </div>
-        <div>
-          <label className={labelCls} htmlFor="s-inhalt">
-            {d.fieldContent}
-          </label>
-          <textarea
-            id="s-inhalt"
-            name="inhalt"
-            rows={16}
-            defaultValue={page?.content ?? ""}
-            className={inputCls}
-          />
-        </div>
+        <RichTextEditor
+          name="inhalt"
+          label={d.fieldContent}
+          initialMarkdown={page?.content ?? ""}
+          minHeightClass="min-h-64"
+        />
         <ImagePicker
           name="titelbild"
           legend={d.fieldHeroImage}

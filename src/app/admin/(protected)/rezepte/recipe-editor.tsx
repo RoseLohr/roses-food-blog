@@ -9,6 +9,7 @@ import { useActionState, useState } from "react";
 import { saveRecipeAction, type RecipeFormState } from "./actions";
 import { QuickAddCheckboxes } from "@/components/admin/quick-add-checkboxes";
 import { ImagePicker, type ImageChoice } from "@/components/admin/image-picker";
+import { RichTextEditor } from "@/components/admin/rich-text-editor";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -463,15 +464,11 @@ export function RecipeEditor({
 
       {/* Tipps, Notizen, SEO, Status */}
       <section className="rounded-2xl bg-white p-5 shadow-sm">
-        <label className={labelCls} htmlFor="f-tipps">
-          {d.fieldTips}
-        </label>
-        <textarea
-          id="f-tipps"
+        <RichTextEditor
           name="tipps"
-          rows={3}
-          defaultValue={initial.tips}
-          className={inputCls}
+          label={d.fieldTips}
+          initialMarkdown={initial.tips}
+          minHeightClass="min-h-32"
         />
 
         <h2 className="mb-2 mt-5 text-lg font-semibold">{d.notes}</h2>

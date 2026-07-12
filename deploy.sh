@@ -16,6 +16,18 @@ set -euo pipefail
 main() {
 
 cd "$(dirname "$0")"
+SCRIPT_DIR="$(pwd)"
+
+# Ergebnis fürs Admin-Panel: bei jedem Abbruch "fehlgeschlagen", am Ende
+# "erfolgreich". Der EXIT-Trap schreibt deploy-status.json (best effort).
+DEPLOY_STATUS_RESULT="fehlgeschlagen"
+write_deploy_status() {
+  [[ -n "${DATA_DIR:-}" && -d "${DATA_DIR:-/nonexistent}" ]] || return 0
+  printf '{"at":%s000,"result":"%s","commit":"%s"}\n' \
+    "$(date +%s)" "$DEPLOY_STATUS_RESULT" "${COMMIT:-}" \
+    > "$DATA_DIR/deploy-status.json" 2>/dev/null || true
+}
+trap write_deploy_status EXIT
 
 # Deployt standardmäßig den aktuell ausgecheckten Branch (Override: DEPLOY_BRANCH)
 CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)"
@@ -65,6 +77,10 @@ if [[ ! -d "$DATA_DIR" ]]; then
     || fail "Konnte $DATA_DIR nicht anlegen (ggf. einmalig: sudo mkdir -p $DATA_DIR && sudo chown \$USER $DATA_DIR)"
 fi
 mkdir -p "$DATA_DIR"/{uploads,geoip,backups}
+
+# Etwaige Deploy-Anfrage aus dem Admin-Panel als "verbraucht" markieren
+# (der Watcher-Dienst entfernt sie ebenfalls; hier für manuelle Läufe).
+rm -f "$DATA_DIR/deploy-request" 2>/dev/null || true
 
 # --- 3. Image bauen ----------------------------------------------------------
 # CPU-Check: sharps native Binärdatei braucht SSE4.2 (x86-64-v2). Fehlt das
@@ -174,12 +190,52 @@ if [[ "$(loginctl show-user "$USER" --property=Linger --value 2>/dev/null)" != "
   fi
 fi
 
+# --- 7c. Deploy-Watcher: Aktualisierung aus dem Admin-Panel ------------------
+# Ein Klick im Panel schreibt $DATA_DIR/deploy-request. Dieser systemd-User-
+# Path-Unit erkennt die Datei und startet EINMALIG das feste Kommando
+# ./deploy.sh (keine Parameter aus dem Container — die Isolation bleibt
+# gewahrt). So lässt sich ohne Terminal-Zugriff neu deployen.
+if command -v systemctl >/dev/null 2>&1; then
+  UNIT_DIR="$HOME/.config/systemd/user"
+  mkdir -p "$UNIT_DIR"
+  cat > "$UNIT_DIR/roses-blog-deploy.service" <<EOF
+[Unit]
+Description=Roses Food Blog – Pull & Deploy (aus dem Admin-Panel angestoßen)
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=$SCRIPT_DIR
+# Anfrage vor dem Lauf entfernen, damit der Path-Unit erneut auslösen kann.
+ExecStartPre=-/usr/bin/rm -f $DATA_DIR/deploy-request
+ExecStart=/usr/bin/env bash $SCRIPT_DIR/deploy.sh
+EOF
+  cat > "$UNIT_DIR/roses-blog-deploy.path" <<EOF
+[Unit]
+Description=Beobachtet Deploy-Anfragen aus dem Admin-Panel (Roses Food Blog)
+
+[Path]
+PathExists=$DATA_DIR/deploy-request
+Unit=roses-blog-deploy.service
+
+[Install]
+WantedBy=default.target
+EOF
+  systemctl --user daemon-reload >/dev/null 2>&1 || true
+  if systemctl --user enable --now roses-blog-deploy.path >/dev/null 2>&1; then
+    echo "Panel-Deploy: Watcher aktiv (roses-blog-deploy.path)."
+  else
+    echo "HINWEIS: Deploy-Watcher nicht aktivierbar — Panel-Aktualisierung inaktiv."
+  fi
+fi
+
 # --- 8. Aufräumen: alte, nun unbenutzte Images entfernen ---------------------
 # Jeder Build hinterlässt das vorige Image als dangling <none>; ohne Prune
 # läuft die Platte voll. Nur dangling entfernen — das laufende Image bleibt.
 podman image prune -f >/dev/null 2>&1 || true
 
 # --- 9. Status ----------------------------------------------------------------
+DEPLOY_STATUS_RESULT="erfolgreich"   # EXIT-Trap schreibt deploy-status.json
 log "Deployment erfolgreich"
 echo "Branch:   $BRANCH"
 echo "Commit:   $COMMIT"

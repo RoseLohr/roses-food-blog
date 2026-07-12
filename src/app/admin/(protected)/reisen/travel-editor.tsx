@@ -8,6 +8,7 @@
 import { useActionState, useState } from "react";
 import { saveTravelAction, type TravelFormState } from "./actions";
 import { ImagePicker, type ImageChoice } from "@/components/admin/image-picker";
+import { RichTextEditor } from "@/components/admin/rich-text-editor";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -141,10 +142,12 @@ export function TravelEditor({ initial, images, message }: TravelEditorProps) {
             <textarea id="t-teaser" name="teaser" rows={2} defaultValue={initial.teaser} className={inputCls} />
           </div>
           <div className="md:col-span-2">
-            <label className={labelCls} htmlFor="t-inhalt">
-              {d.fieldContent}
-            </label>
-            <textarea id="t-inhalt" name="inhalt" rows={8} defaultValue={initial.content} className={inputCls} />
+            <RichTextEditor
+              name="inhalt"
+              label={d.fieldContent}
+              initialMarkdown={initial.content}
+              minHeightClass="min-h-52"
+            />
           </div>
           <div>
             <ImagePicker
