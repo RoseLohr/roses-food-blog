@@ -24,6 +24,7 @@ export default async function SettingsPage(props: {
   // Effektiver Anzeigewert: DB-Wert, sonst .env-Vorgabe (nur zur Anzeige).
   const eff = (dbKey: string, envKey: string) => s[dbKey] || process.env[envKey] || "";
   const passIsSet = Boolean(s.smtp_pass || process.env.SMTP_PASS);
+  const aiKeyIsSet = Boolean(s.anthropic_api_key || process.env.ANTHROPIC_API_KEY);
 
   return (
     <>
@@ -104,6 +105,28 @@ export default async function SettingsPage(props: {
               <input id="smtp_from" name="smtp_from" defaultValue={eff("smtp_from", "SMTP_FROM")} className={inputCls} />
               <p className="mt-1 text-xs text-ink-soft">{d.smtpFromHint}</p>
             </div>
+          </div>
+        </section>
+
+        <section className="rounded-2xl bg-white p-5 shadow-sm">
+          <h2 className="text-lg font-semibold">{d.aiTitle}</h2>
+          <p className="mb-4 text-sm text-ink-soft">{d.aiIntro}</p>
+          <div>
+            <label className={labelCls} htmlFor="anthropic_api_key">
+              {d.aiKey}{" "}
+              <span className="font-normal text-ink-soft">
+                ({aiKeyIsSet ? d.passwordSet : d.passwordUnset})
+              </span>
+            </label>
+            <input
+              id="anthropic_api_key"
+              name="anthropic_api_key"
+              type="password"
+              autoComplete="new-password"
+              placeholder="sk-ant-…"
+              className={inputCls}
+            />
+            <p className="mt-1 text-xs text-ink-soft">{d.aiKeyHint}</p>
           </div>
         </section>
 

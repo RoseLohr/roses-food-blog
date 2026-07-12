@@ -292,6 +292,12 @@ export const de = {
         "Repository und Branch für die Update-Prüfung im Bereich „Aktualisierung“.",
       deployRepo: "Repository (owner/name)",
       deployBranch: "Branch",
+      aiTitle: "KI-Assistent (Claude)",
+      aiIntro:
+        "API-Schlüssel für den KI-Rezeptassistenten. Wird nur serverseitig verwendet.",
+      aiKey: "Anthropic API-Schlüssel",
+      aiKeyHint:
+        "Leer lassen, um den gespeicherten Schlüssel beizubehalten. Schlüssel unter console.anthropic.com erstellen.",
       testTitle: "Testmail senden",
       testIntro: "Sendet eine Testmail an die eigene Admin-Adresse.",
       sendTest: "Testmail senden",
@@ -327,6 +333,33 @@ export const de = {
       setupBody:
         "Der Auslöser wird nur wirksam, wenn der Host-Watcher installiert ist. „./deploy.sh“ richtet ihn automatisch ein (systemd-User-Dienst roses-blog-deploy.path).",
       requestError: "Aktualisierung konnte nicht angestoßen werden.",
+    },
+    aiRecipe: {
+      title: "KI-Assistent",
+      intro:
+        "Füge Notizen oder einen Rohtext ein — die KI erstellt daraus einen vollständigen Rezeptentwurf (Felder, Abschnitte, Zutaten, Schritte, Kategorien). Vorschau prüfen und übernehmen.",
+      placeholder:
+        "Text hier einfügen … z. B. Zutatenliste und grobe Zubereitung, oder ein Rezept von einer anderen Seite.",
+      generate: "Mit KI erzeugen",
+      generating: "KI arbeitet …",
+      generatingHint: "Das kann einen Moment dauern.",
+      failed: "Erzeugung fehlgeschlagen. Bitte erneut versuchen.",
+      noKey:
+        "Kein Anthropic-API-Schlüssel hinterlegt. Bitte unter Einstellungen → KI-Assistent eintragen.",
+      previewTitle: "Vorschau",
+      apply: "Übernehmen",
+      applying: "Wird übernommen …",
+      discard: "Verwerfen",
+      metaPrep: "Vorbereitung",
+      metaCook: "Kochzeit",
+      metaServings: "Portionen",
+      metaDifficulty: "Schwierigkeit",
+      metaKcal: "kcal/Portion",
+      minutesSuffix: "Min.",
+      sectionsTitle: "Abschnitte",
+      taxonomyTitle: "Vorgeschlagene Zuordnungen",
+      applyHint:
+        "Übernehmen füllt das Formular und legt fehlende Kategorien/Tags automatisch an. Zum Speichern anschließend unten „Speichern“ klicken.",
     },
     recipes: {
       title: "Rezepte",

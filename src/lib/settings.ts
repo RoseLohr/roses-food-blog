@@ -19,6 +19,7 @@ export const SETTING_KEYS = [
   "email_rate",
   "deploy_repo",
   "deploy_branch",
+  "anthropic_api_key",
 ] as const;
 export type SettingKey = (typeof SETTING_KEYS)[number];
 
@@ -92,4 +93,9 @@ export function getDeployConfig(): DeployConfig {
     repo: getSetting("deploy_repo") || process.env.DEPLOY_REPO || "",
     branch: getSetting("deploy_branch") || process.env.DEPLOY_BRANCH || "",
   };
+}
+
+/** Anthropic-API-Schlüssel für den KI-Rezeptassistenten (DB > .env). */
+export function getAnthropicApiKey(): string {
+  return getSetting("anthropic_api_key") || process.env.ANTHROPIC_API_KEY || "";
 }
