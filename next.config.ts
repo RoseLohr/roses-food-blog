@@ -18,8 +18,16 @@ const CSP = [
 
 const nextConfig: NextConfig = {
   output: "standalone",
-  serverExternalPackages: ["better-sqlite3", "sharp", "@node-rs/argon2"],
+  // hash-wasm extern halten, damit es als auflösbares Paket im Standalone-
+  // node_modules liegt (scripts/migrate.mjs importiert es zur Laufzeit).
+  serverExternalPackages: ["better-sqlite3", "sharp", "hash-wasm"],
   poweredByHeader: false,
+  // Der eingebaute /_next/image-Optimizer lädt zur Laufzeit natives sharp —
+  // das würde auf CPUs ohne SSE4.2 (LOW_CPU) einen unabfangbaren SIGILL
+  // auslösen und den ganzen Serverprozess killen. Die App nutzt ihn ohnehin
+  // nicht (eigene WebP-Varianten via <img srcSet> aus der Medienbibliothek),
+  // daher komplett deaktivieren.
+  images: { unoptimized: true },
   experimental: {
     serverActions: {
       // Bild-Uploads in der Medienbibliothek (max. 15 MB + Formular-Overhead)

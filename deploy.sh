@@ -10,9 +10,29 @@
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
-cd "$(dirname "$0")"
+# Das komplette Skript läuft in einer Funktion: bash liest so die ganze Datei
+# ein, BEVOR etwas ausgeführt wird — wichtig, weil der git pull unten dieses
+# Skript selbst aktualisieren kann.
+main() {
 
-BRANCH="${DEPLOY_BRANCH:-main}"
+cd "$(dirname "$0")"
+SCRIPT_DIR="$(pwd)"
+
+# Ergebnis fürs Admin-Panel: bei jedem Abbruch "fehlgeschlagen", am Ende
+# "erfolgreich". Der EXIT-Trap schreibt deploy-status.json (best effort).
+DEPLOY_STATUS_RESULT="fehlgeschlagen"
+write_deploy_status() {
+  [[ -n "${DATA_DIR:-}" && -d "${DATA_DIR:-/nonexistent}" ]] || return 0
+  printf '{"at":%s000,"result":"%s","commit":"%s"}\n' \
+    "$(date +%s)" "$DEPLOY_STATUS_RESULT" "${COMMIT:-}" \
+    > "$DATA_DIR/deploy-status.json" 2>/dev/null || true
+}
+trap write_deploy_status EXIT
+
+# Deployt standardmäßig den aktuell ausgecheckten Branch (Override: DEPLOY_BRANCH)
+CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)"
+[[ "$CURRENT_BRANCH" == "HEAD" ]] && CURRENT_BRANCH="main"
+BRANCH="${DEPLOY_BRANCH:-$CURRENT_BRANCH}"
 COMPOSE="podman compose"
 command -v podman >/dev/null || { echo "FEHLER: podman ist nicht installiert."; exit 1; }
 podman compose version >/dev/null 2>&1 || {
@@ -58,22 +78,80 @@ if [[ ! -d "$DATA_DIR" ]]; then
 fi
 mkdir -p "$DATA_DIR"/{uploads,geoip,backups}
 
+# Etwaige Deploy-Anfrage aus dem Admin-Panel als "verbraucht" markieren
+# (der Watcher-Dienst entfernt sie ebenfalls; hier für manuelle Läufe).
+rm -f "$DATA_DIR/deploy-request" 2>/dev/null || true
+
 # --- 3. Image bauen ----------------------------------------------------------
+# CPU-Check: sharps native Binärdatei braucht SSE4.2 (x86-64-v2). Fehlt das
+# Flag (alte CPUs wie Intel Atom/Bonnell, VMs mit qemu64/kvm64-CPU-Typ),
+# nutzt die Bildpipeline stattdessen die Debian-libvips-CLI (LOW_CPU-Image).
+LOW_CPU="${FORCE_LOW_CPU:-0}"
+if [[ "$LOW_CPU" != "1" ]] && ! grep -qm1 sse4_2 /proc/cpuinfo; then
+  LOW_CPU=1
+  echo "HINWEIS: CPU ohne SSE4.2 erkannt — baue LOW_CPU-Image"
+  echo "         (Bildverarbeitung über Debians libvips-CLI statt sharp)."
+fi
+
 log "Baue Container-Image (Commit $COMMIT)"
-podman build --build-arg "APP_COMMIT=$COMMIT" -t localhost/roses-blog:latest -f Containerfile .
+podman build --build-arg "APP_COMMIT=$COMMIT" --build-arg "LOW_CPU=$LOW_CPU" \
+  -t localhost/roses-blog:latest -f Containerfile .
 
 # --- 4. DB-Backup vor Migration/Neustart -------------------------------------
 if [[ -f "$DATA_DIR/app.db" ]]; then
   log "Sichere Datenbank vor dem Update"
   BACKUP_FILE="$DATA_DIR/backups/pre-deploy-$(date +%Y%m%d-%H%M%S).db"
-  podman run --rm -v "$DATA_DIR:/data" localhost/roses-blog:latest \
-    node -e "const db=require('better-sqlite3')('/data/app.db',{readonly:true});db.backup('/data/backups/'+process.argv[1]).then(()=>{db.close();console.log('Backup ok')}).catch(e=>{console.error(e);process.exit(1)})" \
+  # --entrypoint node: das Image-Entrypoint (entry.sh) startet sonst den Server
+  # und ignoriert diese Argumente.
+  podman run --rm --entrypoint node -v "$DATA_DIR:/data" localhost/roses-blog:latest \
+    -e "const db=require('better-sqlite3')('/data/app.db',{readonly:true});db.backup('/data/backups/'+process.argv[1]).then(()=>{db.close();console.log('Backup ok')}).catch(e=>{console.error(e);process.exit(1)})" \
     "$(basename "$BACKUP_FILE")" || fail "DB-Backup fehlgeschlagen — Deployment abgebrochen."
   # Nur die letzten 10 Pre-Deploy-Backups behalten
   ls -1t "$DATA_DIR"/backups/pre-deploy-*.db 2>/dev/null | tail -n +11 | xargs -r rm -f
 fi
 
 # --- 5. Container (neu) starten — Migrationen laufen im Entrypoint ----------
+log "Stoppe alten Container (falls vorhanden) und gebe Port $PORT frei"
+# Erst über Compose herunterfahren; anschließend den Container zusätzlich
+# direkt per Namen entfernen. Nötig, weil ein früherer Lauf ihn mit einem
+# anderen Compose-Provider (podman-compose vs. docker-compose) angelegt
+# haben kann — dann kennt der aktuelle Provider ihn nicht und der Port
+# bliebe belegt ("address already in use").
+$COMPOSE down --remove-orphans >/dev/null 2>&1 || true
+podman rm -f roses-blog >/dev/null 2>&1 || true
+
+# Falls trotzdem noch etwas auf dem Port lauscht: klar melden statt kryptisch
+# zu scheitern. (Rootless-Leftover, oder ein fremder Dienst auf Port $PORT.)
+if command -v ss >/dev/null 2>&1 && ss -ltn "( sport = :$PORT )" 2>/dev/null | grep -q ":$PORT"; then
+  echo
+  echo "WARNUNG: Port $PORT ist noch belegt."
+  # Verbliebene Container suchen, die den Port veröffentlichen (podman kennt den
+  # 'publish'-Filter nicht — daher über die Portspalte statt --filter).
+  podman ps -a --format '{{.ID}} {{.Names}} {{.Ports}}' 2>/dev/null \
+    | grep ":$PORT->" | awk '{print $1}' | xargs -r podman rm -f >/dev/null 2>&1 || true
+  sleep 2
+  if ss -ltn "( sport = :$PORT )" 2>/dev/null | grep -q ":$PORT"; then
+    fail "Port $PORT ist weiterhin belegt (evtl. anderer Dienst). Prüfen: sudo ss -ltnp 'sport = :$PORT'"
+  fi
+fi
+
+# Besitz von DATA_DIR normalisieren: unter rootless podman ist Container-root
+# der Host-User. Dateien, die ein FRÜHERER Container als 'node' (uid 1000, auf
+# eine Subuid gemappt) angelegt hat, gehören dann einer fremden Uid und wären
+# für den jetzigen Container nur lesbar ("attempt to write a readonly
+# database"). 'podman unshare chown 0:0' setzt sie im User-Namespace auf den
+# Host-User zurück. Idempotent, best effort.
+podman unshare chown -R 0:0 "$DATA_DIR" >/dev/null 2>&1 || true
+
+# Preflight: kann der Container das Datenverzeichnis UND eine bestehende Datei
+# darin beschreiben? Fängt Rechteprobleme klar ab, statt später mit kryptischem
+# Fehler im Container-Log zu scheitern.
+if ! podman run --rm --entrypoint sh -v "$DATA_DIR:/data" localhost/roses-blog:latest \
+     -c 'touch /data/.write-test && rm -f /data/.write-test' >/dev/null 2>&1; then
+  fail "Container kann $DATA_DIR nicht beschreiben. Rootless betreiben (podman als \
+Nicht-root-User), oder einmalig: podman unshare chown -R 0:0 \"$DATA_DIR\"."
+fi
+
 log "Starte Container neu"
 $COMPOSE up -d --force-recreate app
 
@@ -92,22 +170,78 @@ if [[ "${HEALTH_OK:-0}" != "1" ]]; then
   fail "Healthcheck fehlgeschlagen. Vollständige Logs: podman logs roses-blog"
 fi
 
-# --- 7. Erstlauf: Autostart nach Reboot --------------------------------------
-if systemctl --user is-enabled podman-restart.service >/dev/null 2>&1; then
-  : # Autostart bereits eingerichtet
-else
-  log "Richte Autostart nach Reboot ein (podman-restart.service)"
-  if systemctl --user enable --now podman-restart.service >/dev/null 2>&1; then
-    loginctl enable-linger "$USER" >/dev/null 2>&1 || true
-    echo "Autostart aktiv (rootless, restart-policy 'always' + Linger)."
+# --- 7. Autostart nach Reboot -------------------------------------------------
+# Zwei unabhängige Voraussetzungen — beide bei JEDEM Lauf sicherstellen, sonst
+# startet der Container nach einem Reboot nicht (Autostart still kaputt).
+# (a) User-Service podman-restart.service (startet Container mit restart:always)
+if ! systemctl --user is-enabled podman-restart.service >/dev/null 2>&1; then
+  log "Aktiviere Autostart-Service (podman-restart.service)"
+  systemctl --user enable --now podman-restart.service >/dev/null 2>&1 \
+    || echo "HINWEIS: podman-restart.service nicht aktivierbar — siehe deploy/roses-blog.service"
+fi
+# (b) Linger — ohne das startet der User-systemd-Manager beim Boot nicht,
+# der Service liefe nie. Bei jedem Lauf explizit prüfen (nicht still schlucken).
+if [[ "$(loginctl show-user "$USER" --property=Linger --value 2>/dev/null)" != "yes" ]]; then
+  if loginctl enable-linger "$USER" >/dev/null 2>&1; then
+    echo "Autostart: Linger für $USER aktiviert."
   else
-    echo "HINWEIS: Autostart konnte nicht automatisch aktiviert werden."
-    echo "         Siehe README.md Abschnitt 'Autostart' bzw. deploy/roses-blog.service"
+    echo "WARNUNG: Linger konnte nicht aktiviert werden — Autostart nach Reboot INAKTIV."
+    echo "         Einmalig ausführen: sudo loginctl enable-linger $USER"
   fi
 fi
 
-# --- 8. Status ----------------------------------------------------------------
+# --- 7c. Deploy-Watcher: Aktualisierung aus dem Admin-Panel ------------------
+# Ein Klick im Panel schreibt $DATA_DIR/deploy-request. Dieser systemd-User-
+# Path-Unit erkennt die Datei und startet EINMALIG das feste Kommando
+# ./deploy.sh (keine Parameter aus dem Container — die Isolation bleibt
+# gewahrt). So lässt sich ohne Terminal-Zugriff neu deployen.
+if command -v systemctl >/dev/null 2>&1; then
+  UNIT_DIR="$HOME/.config/systemd/user"
+  mkdir -p "$UNIT_DIR"
+  cat > "$UNIT_DIR/roses-blog-deploy.service" <<EOF
+[Unit]
+Description=Roses Food Blog – Pull & Deploy (aus dem Admin-Panel angestoßen)
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=$SCRIPT_DIR
+# Anfrage vor dem Lauf entfernen, damit der Path-Unit erneut auslösen kann.
+ExecStartPre=-/usr/bin/rm -f $DATA_DIR/deploy-request
+ExecStart=/usr/bin/env bash $SCRIPT_DIR/deploy.sh
+EOF
+  cat > "$UNIT_DIR/roses-blog-deploy.path" <<EOF
+[Unit]
+Description=Beobachtet Deploy-Anfragen aus dem Admin-Panel (Roses Food Blog)
+
+[Path]
+PathExists=$DATA_DIR/deploy-request
+Unit=roses-blog-deploy.service
+
+[Install]
+WantedBy=default.target
+EOF
+  systemctl --user daemon-reload >/dev/null 2>&1 || true
+  if systemctl --user enable --now roses-blog-deploy.path >/dev/null 2>&1; then
+    echo "Panel-Deploy: Watcher aktiv (roses-blog-deploy.path)."
+  else
+    echo "HINWEIS: Deploy-Watcher nicht aktivierbar — Panel-Aktualisierung inaktiv."
+  fi
+fi
+
+# --- 8. Aufräumen: alte, nun unbenutzte Images entfernen ---------------------
+# Jeder Build hinterlässt das vorige Image als dangling <none>; ohne Prune
+# läuft die Platte voll. Nur dangling entfernen — das laufende Image bleibt.
+podman image prune -f >/dev/null 2>&1 || true
+
+# --- 9. Status ----------------------------------------------------------------
+DEPLOY_STATUS_RESULT="erfolgreich"   # EXIT-Trap schreibt deploy-status.json
 log "Deployment erfolgreich"
+echo "Branch:   $BRANCH"
 echo "Commit:   $COMMIT"
 curl -fsS "http://127.0.0.1:$PORT/health" && echo
 podman ps --filter name=roses-blog --format "Container: {{.Names}} ({{.Status}})"
+
+}
+
+main "$@"

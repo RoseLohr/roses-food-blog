@@ -7,6 +7,11 @@
  */
 import { useActionState, useState } from "react";
 import { saveRecipeAction, type RecipeFormState } from "./actions";
+import { QuickAddCheckboxes } from "@/components/admin/quick-add-checkboxes";
+import { ImagePicker, type ImageChoice } from "@/components/admin/image-picker";
+import { RichTextEditor } from "@/components/admin/rich-text-editor";
+import { RecipeAiAssistant } from "@/components/admin/recipe-ai-assistant";
+import type { RecipeDraft } from "@/lib/ai-recipe";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -32,10 +37,7 @@ export interface TaxonomyOption {
   id: number;
   name: string;
 }
-export interface ImageOption {
-  id: number;
-  label: string;
-}
+export type ImageOption = ImageChoice;
 
 export interface RecipeEditorProps {
   initial: {
@@ -79,12 +81,13 @@ const UNIT_SUGGESTIONS = [
   "Packung",
 ];
 
-const TAXONOMY_FIELDS: Array<[string, string]> = [
-  ["kategorien", d.categories],
-  ["schlagwoerter", d.tags],
-  ["ernaehrungsformen", d.dietTypes],
-  ["kuechen", d.cuisines],
-  ["geraete", d.equipment],
+// [Formularfeld, Label, Taxonomie-Typ für die Sofort-Anlage]
+const TAXONOMY_FIELDS: Array<[string, string, string]> = [
+  ["kategorien", d.categories, "kategorie"],
+  ["schlagwoerter", d.tags, "schlagwort"],
+  ["ernaehrungsformen", d.dietTypes, "ernaehrungsform"],
+  ["kuechen", d.cuisines, "kueche"],
+  ["geraete", d.equipment, "geraet"],
 ];
 
 const inputCls =
@@ -111,17 +114,91 @@ export function RecipeEditor({
     saveRecipeAction,
     {},
   );
+  // Statische Felder (Titel, Zeiten, SEO … + Taxonomie-Auswahl) als State, damit
+  // der KI-Assistent sie befüllen kann. Die unkontrollierten Felder lesen ihren
+  // defaultValue neu, wenn das Formular via formKey neu gemountet wird.
+  const [form, setForm] = useState(initial);
+  const [taxonomyOptions, setTaxonomyOptions] =
+    useState<Record<string, TaxonomyOption[]>>(taxonomies);
+  const [formKey, setFormKey] = useState(0);
   const [sections, setSections] = useState<EditorSection[]>(
-    initial.sections.length ? initial.sections : [emptySection()],
+    form.sections.length ? form.sections : [emptySection()],
   );
-  const [notes, setNotes] = useState<EditorNote[]>(initial.notes);
+  const [notes, setNotes] = useState<EditorNote[]>(form.notes);
 
   const updateSection = (i: number, patch: Partial<EditorSection>) =>
     setSections((prev) => prev.map((s, idx) => (idx === i ? { ...s, ...patch } : s)));
 
+  // KI-Entwurf ins Formular übernehmen: Taxonomie-Namen zu IDs auflösen
+  // (idempotent anlegen), Felder setzen, Abschnitte übernehmen, Formular neu
+  // mounten, damit die defaultValues greifen.
+  async function applyDraft(draft: RecipeDraft) {
+    const draftByField: Record<string, { type: string; names: string[] }> = {
+      kategorien: { type: "kategorie", names: draft.categories },
+      schlagwoerter: { type: "schlagwort", names: draft.tags },
+      ernaehrungsformen: { type: "ernaehrungsform", names: draft.dietTypes },
+      kuechen: { type: "kueche", names: draft.cuisines },
+      geraete: { type: "geraet", names: draft.equipment },
+    };
+    const nextOptions: Record<string, TaxonomyOption[]> = { ...taxonomyOptions };
+    const selections: Record<string, number[]> = {};
+    for (const [field, { type, names }] of Object.entries(draftByField)) {
+      const ids: number[] = [];
+      const opts = [...(nextOptions[field] ?? [])];
+      await Promise.all(
+        names.map(async (name) => {
+          try {
+            const res = await fetch("/api/admin/quick-add", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ kind: "taxonomy", type, name }),
+            });
+            if (!res.ok) return;
+            const entry: TaxonomyOption = await res.json();
+            ids.push(entry.id);
+            if (!opts.some((o) => o.id === entry.id)) opts.push(entry);
+          } catch {
+            /* einzelne Fehlschläge ignorieren */
+          }
+        }),
+      );
+      opts.sort((x, y) => x.name.localeCompare(y.name, "de"));
+      nextOptions[field] = opts;
+      selections[field] = ids;
+    }
+    setTaxonomyOptions(nextOptions);
+    setForm((prev) => ({
+      ...prev,
+      title: draft.title,
+      slug: "",
+      teaser: draft.teaser,
+      prepMinutes: draft.prepMinutes,
+      cookMinutes: draft.cookMinutes,
+      servings: draft.servings,
+      difficulty: draft.difficulty,
+      kcal: draft.kcal,
+      tips: draft.tips,
+      seoTitle: draft.seoTitle,
+      seoDescription: draft.seoDescription,
+      taxonomySelections: selections,
+    }));
+    setSections(
+      draft.sections.length
+        ? draft.sections.map((s) => ({
+            name: s.name,
+            ingredients: s.ingredients.length ? s.ingredients : [emptyIngredient()],
+            steps: s.steps.length ? s.steps : [""],
+          }))
+        : [emptySection()],
+    );
+    setFormKey((k) => k + 1);
+  }
+
   return (
-    <form action={formAction} className="flex max-w-4xl flex-col gap-6">
-      {initial.id !== null && <input type="hidden" name="id" value={initial.id} />}
+    <div className="flex max-w-4xl flex-col gap-6">
+      <RecipeAiAssistant onApply={applyDraft} />
+      <form key={formKey} action={formAction} className="flex flex-col gap-6">
+      {form.id !== null && <input type="hidden" name="id" value={form.id} />}
       <input type="hidden" name="abschnitte" value={JSON.stringify(sections)} />
       <input type="hidden" name="notizen" value={JSON.stringify(notes)} />
 
@@ -149,7 +226,7 @@ export function RecipeEditor({
               id="f-titel"
               name="titel"
               required
-              defaultValue={initial.title}
+              defaultValue={form.title}
               className={inputCls}
             />
           </div>
@@ -157,7 +234,7 @@ export function RecipeEditor({
             <label className={labelCls} htmlFor="f-slug">
               {d.fieldSlug}
             </label>
-            <input id="f-slug" name="slug" defaultValue={initial.slug} className={inputCls} />
+            <input id="f-slug" name="slug" defaultValue={form.slug} className={inputCls} />
           </div>
           <div className="md:col-span-2">
             <label className={labelCls} htmlFor="f-teaser">
@@ -167,43 +244,27 @@ export function RecipeEditor({
               id="f-teaser"
               name="teaser"
               rows={2}
-              defaultValue={initial.teaser}
+              defaultValue={form.teaser}
               className={inputCls}
             />
           </div>
           <div>
-            <label className={labelCls} htmlFor="f-titelbild">
-              {d.fieldHeroImage}
-            </label>
-            <select
-              id="f-titelbild"
+            <ImagePicker
               name="titelbild"
-              defaultValue={initial.heroImageId ?? ""}
-              className={inputCls}
-            >
-              <option value="">{d.noImage}</option>
-              {images.map((img) => (
-                <option key={img.id} value={img.id}>
-                  {img.label}
-                </option>
-              ))}
-            </select>
+              legend={d.fieldHeroImage}
+              options={images}
+              selectedIds={form.heroImageId ? [form.heroImageId] : []}
+              multiple={false}
+            />
           </div>
           <div>
-            <span className={labelCls}>{d.fieldImages}</span>
-            <div className="max-h-32 overflow-y-auto rounded-lg border border-ink-soft/20 p-2">
-              {images.map((img) => (
-                <label key={img.id} className="flex items-center gap-2 py-0.5 text-sm">
-                  <input
-                    type="checkbox"
-                    name="bilder"
-                    value={img.id}
-                    defaultChecked={initial.imageIds.includes(img.id)}
-                  />
-                  {img.label}
-                </label>
-              ))}
-            </div>
+            <ImagePicker
+              name="bilder"
+              legend={d.fieldImages}
+              options={images}
+              selectedIds={form.imageIds}
+              multiple
+            />
           </div>
           <div>
             <label className={labelCls} htmlFor="f-vorb">
@@ -214,7 +275,7 @@ export function RecipeEditor({
               name="vorbereitung"
               type="number"
               min={0}
-              defaultValue={initial.prepMinutes}
+              defaultValue={form.prepMinutes}
               className={inputCls}
             />
           </div>
@@ -227,7 +288,7 @@ export function RecipeEditor({
               name="kochzeit"
               type="number"
               min={0}
-              defaultValue={initial.cookMinutes}
+              defaultValue={form.cookMinutes}
               className={inputCls}
             />
           </div>
@@ -241,7 +302,7 @@ export function RecipeEditor({
               type="number"
               min={1}
               required
-              defaultValue={initial.servings}
+              defaultValue={form.servings}
               className={inputCls}
             />
           </div>
@@ -252,7 +313,7 @@ export function RecipeEditor({
             <select
               id="f-schwierigkeit"
               name="schwierigkeit"
-              defaultValue={initial.difficulty}
+              defaultValue={form.difficulty}
               className={inputCls}
             >
               {Object.entries(d.difficulties).map(([value, label]) => (
@@ -271,7 +332,7 @@ export function RecipeEditor({
               name="kcal"
               type="number"
               min={0}
-              defaultValue={initial.kcal ?? ""}
+              defaultValue={form.kcal ?? ""}
               className={inputCls}
             />
           </div>
@@ -281,25 +342,16 @@ export function RecipeEditor({
       {/* Taxonomien */}
       <section className="rounded-2xl bg-white p-5 shadow-sm">
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {TAXONOMY_FIELDS.map(([field, label]) => (
-            <fieldset key={field}>
-              <legend className="mb-1 text-sm font-medium">{label}</legend>
-              <div className="max-h-36 overflow-y-auto rounded-lg border border-ink-soft/20 p-2">
-                {(taxonomies[field] ?? []).map((opt) => (
-                  <label key={opt.id} className="flex items-center gap-2 py-0.5 text-sm">
-                    <input
-                      type="checkbox"
-                      name={field}
-                      value={opt.id}
-                      defaultChecked={(initial.taxonomySelections[field] ?? []).includes(
-                        opt.id,
-                      )}
-                    />
-                    {opt.name}
-                  </label>
-                ))}
-              </div>
-            </fieldset>
+          {TAXONOMY_FIELDS.map(([field, label, type]) => (
+            <QuickAddCheckboxes
+              key={field}
+              name={field}
+              legend={label}
+              options={taxonomyOptions[field] ?? []}
+              selectedIds={form.taxonomySelections[field] ?? []}
+              kind="taxonomy"
+              type={type}
+            />
           ))}
         </div>
       </section>
@@ -488,15 +540,11 @@ export function RecipeEditor({
 
       {/* Tipps, Notizen, SEO, Status */}
       <section className="rounded-2xl bg-white p-5 shadow-sm">
-        <label className={labelCls} htmlFor="f-tipps">
-          {d.fieldTips}
-        </label>
-        <textarea
-          id="f-tipps"
+        <RichTextEditor
           name="tipps"
-          rows={3}
-          defaultValue={initial.tips}
-          className={inputCls}
+          label={d.fieldTips}
+          initialMarkdown={form.tips}
+          minHeightClass="min-h-32"
         />
 
         <h2 className="mb-2 mt-5 text-lg font-semibold">{d.notes}</h2>
@@ -557,7 +605,7 @@ export function RecipeEditor({
             <input
               id="f-seo-titel"
               name="seoTitel"
-              defaultValue={initial.seoTitle}
+              defaultValue={form.seoTitle}
               className={inputCls}
             />
           </div>
@@ -568,7 +616,7 @@ export function RecipeEditor({
             <input
               id="f-seo-beschreibung"
               name="seoBeschreibung"
-              defaultValue={initial.seoDescription}
+              defaultValue={form.seoDescription}
               className={inputCls}
             />
           </div>
@@ -582,7 +630,7 @@ export function RecipeEditor({
         <select
           id="f-status"
           name="status"
-          defaultValue={initial.status}
+          defaultValue={form.status}
           className="rounded-lg border border-ink-soft/30 px-3 py-2 text-sm"
         >
           <option value="entwurf">{d.statusDraft}</option>
@@ -595,15 +643,16 @@ export function RecipeEditor({
         >
           {dict.common.save}
         </button>
-        {initial.id !== null && (
+        {form.id !== null && (
           <a
-            href={`/admin/rezepte/${initial.id}/vorschau`}
+            href={`/admin/rezepte/${form.id}/vorschau`}
             className="text-sm text-ink-soft underline-offset-2 hover:underline"
           >
             {d.preview}
           </a>
         )}
       </div>
-    </form>
+      </form>
+    </div>
   );
 }

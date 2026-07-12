@@ -48,7 +48,9 @@ Danach gilt für jedes Update dauerhaft: `./deploy.sh`.
 
 ## Manuelle Ersteinrichtung (Alternative zu bootstrap.sh)
 
-Voraussetzungen: Ubuntu LTS, [Podman](https://podman.io) (rootless empfohlen),
+Voraussetzungen: Ubuntu LTS, [Podman](https://podman.io) — **rootless**
+betreiben (der Container läuft als root, was unter rootless dem
+unprivilegierten Host-User entspricht; siehe docs/ASSUMPTIONS.md B21),
 nginx, certbot, git, curl. Die Domain zeigt bereits auf den Server.
 
 ```bash
@@ -177,6 +179,23 @@ tar -xzf /srv/roses-blog/data/backups/uploads-JJJJMMTT-HHMMSS.tar.gz \
 podman compose up -d app
 curl -fsS http://127.0.0.1:3000/health
 ```
+
+## Fehlerbehebung
+
+**Build bricht mit `SIGILL` ab („Next.js build worker exited … signal: SIGILL")**
+Die CPU des Servers unterstützt kein SSE4.2/x86-64-v2 — die vorkompilierte
+native Bibliothek von sharp stürzt dann ab. Betrifft alte physische CPUs
+(z. B. Intel Atom N2xxx/Bonnell) und VMs mit CPU-Typ `qemu64`/`kvm64`.
+`deploy.sh` erkennt das automatisch (Check auf `sse4_2` in `/proc/cpuinfo`)
+und baut ein **LOW_CPU-Image**: Die Bildverarbeitung läuft dann über Debians
+libvips-Kommandozeilen-Tools (für Baseline-x86-64 kompiliert, laufen überall,
+minimaler Speicherbedarf) statt über sharp — Ergebnis (WebP-Varianten,
+EXIF-Entfernung, Rotation) ist identisch. Erzwingen: `FORCE_LOW_CPU=1
+./deploy.sh`. Bei VMs ist die Alternative, den CPU-Typ der VM auf „host“ zu
+stellen (z. B. Proxmox: VM → Hardware → Prozessoren) und normal zu deployen.
+Hinweis: Die WASM-Variante von sharp ist bewusst KEINE Option — sie
+alloziert beim Laden bis zu 2 GB geteilten Speicher und scheitert auf
+RAM-armen Geräten.
 
 ## Betrieb — Spickzettel
 

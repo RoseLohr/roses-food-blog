@@ -21,12 +21,18 @@ STAMP="$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$BACKUP_DIR"
 
 # 1. SQLite konsistent sichern (Online-Backup-API, funktioniert bei laufender App)
+# DB-Fehler darf das Uploads-Backup NICHT verhindern — daher gekapselt (kein
+# Abbruch durch set -e), Uploads werden anschließend trotzdem gesichert.
 if [[ -f "$DATA_DIR/app.db" ]]; then
-  podman run --rm -v "$DATA_DIR:/data" localhost/roses-blog:latest \
-    node -e "const db=require('better-sqlite3')('/data/app.db',{readonly:true});db.backup('/data/backups/'+process.argv[1]).then(()=>{db.close()}).catch(e=>{console.error(e);process.exit(1)})" \
-    "app-$STAMP.db"
-  gzip "$BACKUP_DIR/app-$STAMP.db"
-  echo "DB-Backup:      $BACKUP_DIR/app-$STAMP.db.gz"
+  if podman run --rm --entrypoint node -v "$DATA_DIR:/data" localhost/roses-blog:latest \
+       -e "const db=require('better-sqlite3')('/data/app.db',{readonly:true});db.backup('/data/backups/'+process.argv[1]).then(()=>{db.close()}).catch(e=>{console.error(e);process.exit(1)})" \
+       "app-$STAMP.db" \
+     && gzip "$BACKUP_DIR/app-$STAMP.db"; then
+    echo "DB-Backup:      $BACKUP_DIR/app-$STAMP.db.gz"
+  else
+    echo "WARNUNG: DB-Backup fehlgeschlagen — fahre mit Uploads-Backup fort."
+    rm -f "$BACKUP_DIR/app-$STAMP.db"   # evtl. Teil-Datei entfernen
+  fi
 else
   echo "WARNUNG: $DATA_DIR/app.db nicht gefunden — kein DB-Backup."
 fi
@@ -37,8 +43,9 @@ if [[ -d "$DATA_DIR/uploads" ]]; then
   echo "Uploads-Backup: $BACKUP_DIR/uploads-$STAMP.tar.gz"
 fi
 
-# 3. Rotation
+# 3. Rotation (auch etwaige unkomprimierte Reste fehlgeschlagener Läufe)
 find "$BACKUP_DIR" -maxdepth 1 -name 'app-*.db.gz' -mtime "+$KEEP_DAYS" -delete
+find "$BACKUP_DIR" -maxdepth 1 -name 'app-*.db' -mtime "+$KEEP_DAYS" -delete
 find "$BACKUP_DIR" -maxdepth 1 -name 'uploads-*.tar.gz' -mtime "+$KEEP_DAYS" -delete
 
 echo "Backup abgeschlossen: $STAMP"

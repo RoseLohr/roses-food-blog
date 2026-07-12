@@ -8,13 +8,16 @@
   --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia,
     ui-serif, serif;
 
-  /* Warme, freundliche Food-Blog-Palette */
+  /* Warme, freundliche Food-Blog-Palette (angelehnt an Tiny Salt) */
   --color-rose-primary: #b0413e;
   --color-rose-primary-dark: #8f3230;
   --color-cream: #faf6f0;
+  --color-cream-deep: #f3ead9;
   --color-ink: #2d2a26;
   --color-ink-soft: #5c564e;
   --color-sage: #7a8b6f;
+  --color-leaf: #6db983;
+  --color-leaf-soft: #8fce9d;
 }
 
 @media (prefers-reduced-motion: reduce) {

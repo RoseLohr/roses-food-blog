@@ -3,6 +3,9 @@ import { asc, eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { db, schema } from "@/db";
 import { requireAdmin } from "@/lib/auth";
+import { thumbUrl } from "@/lib/media";
+import { ImagePicker } from "@/components/admin/image-picker";
+import { RichTextEditor } from "@/components/admin/rich-text-editor";
 import { t } from "@/i18n/de";
 import { savePageAction } from "../actions";
 
@@ -30,14 +33,21 @@ export default async function EditPagePage(props: {
     : null;
   if (!isNew && !page) notFound();
 
-  const images = await db
+  const imageRows = await db
     .select({
       id: schema.mediaImage.id,
       originalName: schema.mediaImage.originalName,
       altText: schema.mediaImage.altText,
+      fileKey: schema.mediaImage.fileKey,
+      variantWidths: schema.mediaImage.variantWidths,
     })
     .from(schema.mediaImage)
     .orderBy(asc(schema.mediaImage.originalName));
+  const imageChoices = imageRows.map((i) => ({
+    id: i.id,
+    label: i.altText || i.originalName,
+    thumbUrl: thumbUrl(i.fileKey, i.variantWidths),
+  }));
 
   const message =
     typeof searchParams.meldung === "string" ? searchParams.meldung : null;
@@ -69,36 +79,19 @@ export default async function EditPagePage(props: {
           </label>
           <input id="s-slug" name="slug" defaultValue={page?.slug ?? ""} className={inputCls} />
         </div>
-        <div>
-          <label className={labelCls} htmlFor="s-inhalt">
-            {d.fieldContent}
-          </label>
-          <textarea
-            id="s-inhalt"
-            name="inhalt"
-            rows={16}
-            defaultValue={page?.content ?? ""}
-            className={inputCls}
-          />
-        </div>
-        <div>
-          <label className={labelCls} htmlFor="s-bild">
-            {d.fieldHeroImage}
-          </label>
-          <select
-            id="s-bild"
-            name="titelbild"
-            defaultValue={page?.heroImageId ?? ""}
-            className={inputCls}
-          >
-            <option value="">{dict.admin.recipes.noImage}</option>
-            {images.map((img) => (
-              <option key={img.id} value={img.id}>
-                {img.altText || img.originalName}
-              </option>
-            ))}
-          </select>
-        </div>
+        <RichTextEditor
+          name="inhalt"
+          label={d.fieldContent}
+          initialMarkdown={page?.content ?? ""}
+          minHeightClass="min-h-64"
+        />
+        <ImagePicker
+          name="titelbild"
+          legend={d.fieldHeroImage}
+          options={imageChoices}
+          selectedIds={page?.heroImageId ? [page.heroImageId] : []}
+          multiple={false}
+        />
         <div className="grid gap-4 md:grid-cols-2">
           <div>
             <label className={labelCls} htmlFor="s-seo-titel">

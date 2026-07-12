@@ -1,20 +1,31 @@
 /** Editor-Daten für Reiseberichte laden. */
 import { asc } from "drizzle-orm";
 import { db, schema } from "@/db";
+import { imageUrl } from "@/lib/media";
 import { getFullTravelPost } from "@/lib/travel";
 import type { TravelEditorProps } from "./travel-editor";
 
 export async function buildTravelEditorProps(
   travelId: number | null,
 ): Promise<TravelEditorProps | null> {
-  const images = await db
+  const imageRows = await db
     .select({
       id: schema.mediaImage.id,
       originalName: schema.mediaImage.originalName,
       altText: schema.mediaImage.altText,
+      fileKey: schema.mediaImage.fileKey,
+      variantWidths: schema.mediaImage.variantWidths,
     })
     .from(schema.mediaImage)
     .orderBy(asc(schema.mediaImage.originalName));
+  const images = imageRows.map((i) => {
+    const widths: number[] = JSON.parse(i.variantWidths);
+    return {
+      id: i.id,
+      label: i.altText || i.originalName,
+      thumbUrl: imageUrl(i.fileKey, widths[0] ?? 320),
+    };
+  });
 
   const base: TravelEditorProps = {
     initial: {
@@ -32,7 +43,7 @@ export async function buildTravelEditorProps(
       status: "entwurf",
       restaurants: [],
     },
-    images: images.map((i) => ({ id: i.id, label: i.altText || i.originalName })),
+    images,
   };
 
   if (travelId === null) return base;

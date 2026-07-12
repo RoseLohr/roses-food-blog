@@ -1,12 +1,12 @@
-# Podman-Compose-Definition. Start via ./deploy.sh (empfohlen) oder:
-#   podman compose up -d
+# Podman-Compose-Definition. Das Image wird IMMER von deploy.sh gebaut
+# (mit der zur CPU passenden Variante, u. a. --build-arg LOW_CPU). Hier
+# bewusst KEIN build:-Block — sonst könnte "podman compose up" auf einem
+# Server ohne SSE4.2 versehentlich die falsche (sharp/SIGILL-)Variante
+# bauen. Erststart daher über ./deploy.sh bzw. ./bootstrap.sh.
 services:
   app:
     image: localhost/roses-blog:latest
     container_name: roses-blog
-    build:
-      context: .
-      dockerfile: Containerfile
     env_file: .env
     environment:
       DATA_DIR: /data
@@ -18,6 +18,10 @@ services:
     volumes:
       - ${DATA_DIR:-/srv/roses-blog/data}:/data
     restart: always
+    # Healthcheck ist beratend: er markiert den Container als (un)healthy für
+    # `podman ps`. Ein Neustart bei "unhealthy" ist mit dem docker-compose-
+    # Provider nicht ausdrückbar; restart:always deckt Prozess-Crash + Reboot
+    # ab. deploy.sh prüft die Gesundheit zusätzlich per eigenem /health-Poll.
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s

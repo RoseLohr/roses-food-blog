@@ -6,28 +6,35 @@
 import nodemailer, { type Transporter } from "nodemailer";
 import { renderMarkdown } from "./markdown";
 import { getBaseUrl } from "./base-url";
+import { getSmtpConfig } from "./settings";
 import { t } from "@/i18n/de";
 
 const dict = t();
 
-let transporter: Transporter | null = null;
+let cached: { key: string; tp: Transporter } | null = null;
+let testTransporter: Transporter | null = null;
 
 export function getTransporter(): Transporter {
-  if (transporter) return transporter;
-  transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: Number(process.env.SMTP_PORT ?? 587),
-    secure: Number(process.env.SMTP_PORT ?? 587) === 465,
-    auth: process.env.SMTP_USER
-      ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
-      : undefined,
+  if (testTransporter) return testTransporter;
+  // SMTP-Zugang aus den Einstellungen (DB > .env). Ändert sich die Konfiguration,
+  // wird der Transport automatisch neu aufgebaut (Cache-Key = Konfiguration).
+  const cfg = getSmtpConfig();
+  const key = JSON.stringify(cfg);
+  if (cached && cached.key === key) return cached.tp;
+  const tp = nodemailer.createTransport({
+    host: cfg.host,
+    port: cfg.port,
+    secure: cfg.port === 465,
+    auth: cfg.user ? { user: cfg.user, pass: cfg.pass } : undefined,
   });
-  return transporter;
+  cached = { key, tp };
+  return tp;
 }
 
 /** Nur für Tests: Transport ersetzen. */
 export function setTransporterForTesting(tp: Transporter | null): void {
-  transporter = tp;
+  testTransporter = tp;
+  cached = null;
 }
 
 export interface RenderedEmail {
@@ -55,7 +62,7 @@ export function renderEmail(options: {
     <hr style="border:none;border-top:1px solid #e5ddd1;margin:24px 0;">
     <p style="font-size:12px;color:#8a8378;line-height:1.6;">
       ${dict.email.footerSender}: ${dict.site.name} · <a href="${getBaseUrl()}" style="color:#b0413e;">${getBaseUrl()}</a><br>
-      ${process.env.SMTP_FROM ?? ""}<br>
+      ${getSmtpConfig().from}<br>
       <a href="${options.unsubscribeUrl}" style="color:#8a8378;">${dict.email.unsubscribe}</a>
     </p>`;
 
@@ -85,7 +92,7 @@ export async function sendEmail(options: {
   unsubscribeUrl?: string;
 }): Promise<void> {
   await getTransporter().sendMail({
-    from: process.env.SMTP_FROM,
+    from: getSmtpConfig().from || undefined,
     to: options.to,
     subject: options.subject,
     html: options.html,

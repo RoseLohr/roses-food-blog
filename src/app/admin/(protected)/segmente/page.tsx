@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { asc } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { requireAdmin } from "@/lib/auth";
+import { QuickAddCheckboxes } from "@/components/admin/quick-add-checkboxes";
 import { contactIdsForSegment, parseRuleInterestIds } from "@/lib/segments";
 import { t } from "@/i18n/de";
 import {
@@ -115,23 +116,16 @@ export default async function SegmentsPage(props: {
             </span>
           )}
         </div>
-        <fieldset>
-          <legend className="mb-1 text-sm font-medium">{d.ruleInterests}</legend>
-          <p className="mb-1 text-xs text-ink-soft">{d.ruleHint}</p>
-          <div className="flex flex-wrap gap-x-4 gap-y-1">
-            {interests.map((i) => (
-              <label key={i.id} className="flex items-center gap-1.5 text-sm">
-                <input
-                  type="checkbox"
-                  name="regelInteressen"
-                  value={i.id}
-                  defaultChecked={selectedRules.includes(i.id)}
-                />
-                {i.name}
-              </label>
-            ))}
-          </div>
-        </fieldset>
+        <div>
+          <QuickAddCheckboxes
+            name="regelInteressen"
+            legend={d.ruleInterests}
+            options={interests}
+            selectedIds={selectedRules}
+            kind="interest"
+          />
+          <p className="mt-1 text-xs text-ink-soft">{d.ruleHint}</p>
+        </div>
         <div className="flex gap-3">
           <button
             type="submit"

@@ -3,6 +3,8 @@ import { asc, desc, eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { db, schema } from "@/db";
 import { requireAdmin } from "@/lib/auth";
+import { QuickAddSelect } from "@/components/admin/quick-add-select";
+import { RichTextEditor } from "@/components/admin/rich-text-editor";
 import { t } from "@/i18n/de";
 import {
   saveCampaignAction,
@@ -92,38 +94,22 @@ export default async function CampaignDetailPage(props: {
                 className={inputCls}
               />
             </div>
-            <div>
-              <label className={labelCls} htmlFor="ka-segment">
-                {d.segment}
-              </label>
-              <select
-                id="ka-segment"
-                name="segment"
-                defaultValue={campaign?.segmentId ?? ""}
-                disabled={!editable}
-                className={inputCls}
-              >
-                <option value="">{d.noSegment}</option>
-                {segments.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className={labelCls} htmlFor="ka-inhalt">
-                {d.content}
-              </label>
-              <textarea
-                id="ka-inhalt"
-                name="inhalt"
-                rows={12}
-                defaultValue={campaign?.content ?? ""}
-                readOnly={!editable}
-                className={inputCls}
-              />
-            </div>
+            <QuickAddSelect
+              name="segment"
+              label={d.segment}
+              options={segments}
+              selectedId={campaign?.segmentId ?? null}
+              kind="segment"
+              emptyLabel={d.noSegment}
+              disabled={!editable}
+            />
+            <RichTextEditor
+              name="inhalt"
+              label={d.content}
+              initialMarkdown={campaign?.content ?? ""}
+              readOnly={!editable}
+              minHeightClass="min-h-52"
+            />
             {editable && (
               <button
                 type="submit"

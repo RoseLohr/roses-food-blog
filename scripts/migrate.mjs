@@ -2,7 +2,16 @@
  * Wendet alle Drizzle-SQL-Migrationen aus ./drizzle an und legt beim
  * Erstlauf das Admin-Konto aus ADMIN_EMAIL/ADMIN_PASSWORD an.
  * Läuft im Container-Entrypoint vor dem Serverstart und ist idempotent.
+ *
+ * WICHTIG: bewusst OHNE drizzle-orm. Im Next-Standalone-Image ist
+ * drizzle-orm in die Server-Chunks gebündelt und NICHT als auflösbares
+ * node_modules-Paket vorhanden — nur externe Pakete (better-sqlite3,
+ * hash-wasm) liegen dort. Dieses Skript repliziert daher drizzles
+ * Migrator (Tabelle __drizzle_migrations, gleiche Spalten/Logik) direkt
+ * mit better-sqlite3 und bleibt so kompatibel zu bereits per drizzle
+ * migrierten Datenbanken.
  */
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -18,32 +27,84 @@ if (!fs.existsSync(path.join(migrationsDir, "meta", "_journal.json"))) {
 }
 
 const { default: Database } = await import("better-sqlite3");
-const { drizzle } = await import("drizzle-orm/better-sqlite3");
-const { migrate } = await import("drizzle-orm/better-sqlite3/migrator");
 
 const sqlite = new Database(dbFile);
 sqlite.pragma("journal_mode = WAL");
 sqlite.pragma("foreign_keys = ON");
 
-const db = drizzle(sqlite);
-migrate(db, { migrationsFolder: migrationsDir });
-console.log("[migrate] Migrationen angewendet.");
+// --- Migrationen einlesen (entspricht drizzles readMigrationFiles) ----------
+const journal = JSON.parse(
+  fs.readFileSync(path.join(migrationsDir, "meta", "_journal.json"), "utf8"),
+);
+const migrations = journal.entries.map((entry) => {
+  const file = path.join(migrationsDir, `${entry.tag}.sql`);
+  const query = fs.readFileSync(file, "utf8");
+  return {
+    statements: query.split("--> statement-breakpoint"),
+    folderMillis: entry.when,
+    hash: crypto.createHash("sha256").update(query).digest("hex"),
+  };
+});
 
-// Admin-Konto beim Erstlauf anlegen (falls Tabelle existiert und leer ist)
+// --- Anwenden (entspricht drizzles SQLiteDialect.migrate) --------------------
+// Gleiche Tabellendefinition wie drizzle, damit bestehende DBs kompatibel sind.
+sqlite.exec(
+  "CREATE TABLE IF NOT EXISTS __drizzle_migrations (id SERIAL PRIMARY KEY, hash text NOT NULL, created_at numeric)",
+);
+const lastRow = sqlite
+  .prepare(
+    "SELECT created_at FROM __drizzle_migrations ORDER BY created_at DESC LIMIT 1",
+  )
+  .get();
+const lastAppliedAt = lastRow ? Number(lastRow.created_at) : null;
+
+const insertMigration = sqlite.prepare(
+  'INSERT INTO __drizzle_migrations ("hash", "created_at") VALUES (?, ?)',
+);
+
+let applied = 0;
+const runAll = sqlite.transaction(() => {
+  for (const migration of migrations) {
+    if (lastAppliedAt !== null && lastAppliedAt >= migration.folderMillis) {
+      continue; // bereits angewendet
+    }
+    for (const stmt of migration.statements) {
+      if (stmt.trim()) sqlite.exec(stmt);
+    }
+    insertMigration.run(migration.hash, migration.folderMillis);
+    applied += 1;
+  }
+});
+runAll();
+console.log(
+  applied === 0
+    ? "[migrate] Datenbank ist aktuell — keine neuen Migrationen."
+    : `[migrate] ${applied} Migration(en) angewendet.`,
+);
+
+// --- Admin-Konto beim Erstlauf anlegen --------------------------------------
 try {
   const hasTable = sqlite
-    .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='admin_user'")
+    .prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='admin_user'",
+    )
     .get();
   if (hasTable) {
     const count = sqlite.prepare("SELECT COUNT(*) AS n FROM admin_user").get();
     const email = process.env.ADMIN_EMAIL;
     const password = process.env.ADMIN_PASSWORD;
     if (count.n === 0 && email && password) {
-      const { hash } = await import("@node-rs/argon2");
-      const passwordHash = await hash(password, {
-        memoryCost: 19456,
-        timeCost: 2,
+      // argon2id via hash-wasm (WASM, CPU-portabel — kein SIGILL auf alten
+      // CPUs). hash-wasm liegt als externes Paket im Standalone-Image.
+      const { argon2id } = await import("hash-wasm");
+      const passwordHash = await argon2id({
+        password,
+        salt: crypto.randomBytes(16),
         parallelism: 1,
+        iterations: 2,
+        memorySize: 19456,
+        hashLength: 32,
+        outputType: "encoded",
       });
       sqlite
         .prepare(

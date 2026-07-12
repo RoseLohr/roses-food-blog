@@ -7,6 +7,7 @@
 import { and, asc, eq, lte, sql } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { sendEmail } from "./mailer";
+import { getEmailRatePerMinute } from "./settings";
 
 const MAX_ATTEMPTS = 3;
 
@@ -41,7 +42,7 @@ export async function processEmailQueue(): Promise<{
   sent: number;
   failed: number;
 }> {
-  const rate = Math.max(1, Number(process.env.EMAIL_RATE_PER_MINUTE ?? 30));
+  const rate = getEmailRatePerMinute();
   const now = new Date();
 
   const due = await db

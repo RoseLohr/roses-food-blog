@@ -116,18 +116,30 @@ if [[ "$DOMAIN" != "localhost:${PORT:-3000}" && "$DOMAIN" != "localhost" && -n "
   if [[ "$SETUP_NGINX" =~ ^[jJyY] ]]; then
     log "Richte nginx + certbot für $DOMAIN ein"
     $SUDO apt-get install -y nginx certbot python3-certbot-nginx
-    $SUDO tee /etc/nginx/sites-available/roses-blog >/dev/null < <(
-      sed -e "s/www\.example\.de example\.de/$DOMAIN/" \
-          -e "s/127\.0\.0\.1:3000/127.0.0.1:${PORT:-3000}/" \
-          deploy/nginx.conf.example
-    )
-    $SUDO ln -sf /etc/nginx/sites-available/roses-blog /etc/nginx/sites-enabled/roses-blog
-    $SUDO nginx -t
-    $SUDO systemctl reload nginx
-    $SUDO certbot --nginx -d "$DOMAIN" --redirect || {
-      echo "HINWEIS: certbot fehlgeschlagen (DNS zeigt evtl. noch nicht auf diesen Server)."
-      echo "         Später manuell: sudo certbot --nginx -d $DOMAIN"
-    }
+    # nginx-Config nur beim ersten Mal aus der HTTP-Vorlage schreiben. Ein
+    # Re-Run darf certbots eingefügten TLS-/443-Block NICHT überschreiben.
+    if [[ ! -e /etc/nginx/sites-available/roses-blog ]]; then
+      $SUDO tee /etc/nginx/sites-available/roses-blog >/dev/null < <(
+        sed -e "s/www\.example\.de example\.de/$DOMAIN/" \
+            -e "s/127\.0\.0\.1:3000/127.0.0.1:${PORT:-3000}/" \
+            deploy/nginx.conf.example
+      )
+      $SUDO ln -sf /etc/nginx/sites-available/roses-blog /etc/nginx/sites-enabled/roses-blog
+      $SUDO nginx -t
+      $SUDO systemctl reload nginx
+    else
+      echo "nginx-Config existiert bereits — unverändert gelassen."
+    fi
+    # certbot nur, wenn noch kein Zertifikat existiert (sonst Re-Run-Rausch /
+    # Rate-Limit-Risiko).
+    if [[ -d "/etc/letsencrypt/live/$DOMAIN" ]]; then
+      echo "TLS-Zertifikat für $DOMAIN existiert bereits — certbot übersprungen."
+    else
+      $SUDO certbot --nginx -d "$DOMAIN" --redirect || {
+        echo "HINWEIS: certbot fehlgeschlagen (DNS zeigt evtl. noch nicht auf diesen Server)."
+        echo "         Später manuell: sudo certbot --nginx -d $DOMAIN"
+      }
+    fi
   else
     echo "nginx-Einrichtung übersprungen — Anleitung: README.md Abschnitt 4."
   fi
