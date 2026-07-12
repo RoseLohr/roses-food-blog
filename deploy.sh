@@ -108,27 +108,32 @@ podman rm -f roses-blog >/dev/null 2>&1 || true
 # zu scheitern. (Rootless-Leftover, oder ein fremder Dienst auf Port $PORT.)
 if command -v ss >/dev/null 2>&1 && ss -ltn "( sport = :$PORT )" 2>/dev/null | grep -q ":$PORT"; then
   echo
-  echo "WARNUNG: Port $PORT ist noch belegt. Blockierende Container:"
-  podman ps --filter "publish=$PORT" --format "  {{.Names}} ({{.Image}}, {{.Status}})" || true
-  echo "Versuche verbliebene Roses-Blog-Container zu entfernen ..."
-  # Nur Container, die genau diesen Port veröffentlichen — entfernt auch deren
-  # eigenen rootlessport-Forwarder. Bewusst KEIN pauschales 'pkill rootlessport',
-  # das würde die Port-Weiterleitung anderer rootless-Container mit abschießen.
-  podman ps -aq --filter "publish=$PORT" | xargs -r podman rm -f >/dev/null 2>&1 || true
+  echo "WARNUNG: Port $PORT ist noch belegt."
+  # Verbliebene Container suchen, die den Port veröffentlichen (podman kennt den
+  # 'publish'-Filter nicht — daher über die Portspalte statt --filter).
+  podman ps -a --format '{{.ID}} {{.Names}} {{.Ports}}' 2>/dev/null \
+    | grep ":$PORT->" | awk '{print $1}' | xargs -r podman rm -f >/dev/null 2>&1 || true
   sleep 2
   if ss -ltn "( sport = :$PORT )" 2>/dev/null | grep -q ":$PORT"; then
     fail "Port $PORT ist weiterhin belegt (evtl. anderer Dienst). Prüfen: sudo ss -ltnp 'sport = :$PORT'"
   fi
 fi
 
-# Preflight: kann der Container das Datenverzeichnis beschreiben? Rootless
-# betrieben ist Container-root der Host-User, dem DATA_DIR gehört — der Test
-# muss durchlaufen. Falls nicht (z. B. rootful podman + fremde Rechte), hier
-# klar melden statt später mit kryptischem SQLITE_CANTOPEN im Container-Log.
+# Besitz von DATA_DIR normalisieren: unter rootless podman ist Container-root
+# der Host-User. Dateien, die ein FRÜHERER Container als 'node' (uid 1000, auf
+# eine Subuid gemappt) angelegt hat, gehören dann einer fremden Uid und wären
+# für den jetzigen Container nur lesbar ("attempt to write a readonly
+# database"). 'podman unshare chown 0:0' setzt sie im User-Namespace auf den
+# Host-User zurück. Idempotent, best effort.
+podman unshare chown -R 0:0 "$DATA_DIR" >/dev/null 2>&1 || true
+
+# Preflight: kann der Container das Datenverzeichnis UND eine bestehende Datei
+# darin beschreiben? Fängt Rechteprobleme klar ab, statt später mit kryptischem
+# Fehler im Container-Log zu scheitern.
 if ! podman run --rm --entrypoint sh -v "$DATA_DIR:/data" localhost/roses-blog:latest \
      -c 'touch /data/.write-test && rm -f /data/.write-test' >/dev/null 2>&1; then
   fail "Container kann $DATA_DIR nicht beschreiben. Rootless betreiben (podman als \
-Nicht-root-User), oder Verzeichnis dem Deploy-User geben: sudo chown -R \$USER \"$DATA_DIR\"."
+Nicht-root-User), oder einmalig: podman unshare chown -R 0:0 \"$DATA_DIR\"."
 fi
 
 log "Starte Container neu"
