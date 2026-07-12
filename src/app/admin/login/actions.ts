@@ -44,9 +44,10 @@ export async function loginAction(
     .where(eq(schema.adminUser.email, parsed.data.email))
     .limit(1);
   const user = users[0];
-  // Auch bei unbekannter E-Mail einen Hash prüfen (Timing-Angleichung)
+  // Auch bei unbekannter E-Mail einen echten Hash prüfen (Timing-Angleichung).
+  // Gültiger argon2id-PHC-String, damit argon2Verify echte Arbeit leistet.
   const DUMMY_HASH =
-    "$argon2id$v=19$m=19456,t=2,p=1$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+    "$argon2id$v=19$m=19456,t=2,p=1$LE313si0DPpZI0S8FoNLng$r/Vw4KZsRdlb+dBARHNGeIhY6nb9bfT18oQuAj4LJRc";
   const ok = await verifyPassword(
     user?.passwordHash ?? DUMMY_HASH,
     parsed.data.password,

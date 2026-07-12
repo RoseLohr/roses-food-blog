@@ -2,7 +2,7 @@
  * Auth-Kernlogik ohne Next.js-Abhängigkeiten (testbar):
  * argon2id-Hashing und DB-Sessions mit Token-Hash (SHA-256).
  */
-import { hash, verify } from "@node-rs/argon2";
+import { argon2id, argon2Verify } from "hash-wasm";
 import crypto from "node:crypto";
 import { eq, lt } from "drizzle-orm";
 import { db, schema } from "@/db";
@@ -10,10 +10,25 @@ import { db, schema } from "@/db";
 export const SESSION_LIFETIME_MS = 14 * 24 * 60 * 60 * 1000; // 14 Tage
 export const RENEW_BELOW_MS = 7 * 24 * 60 * 60 * 1000;
 
-const ARGON2_OPTS = { memoryCost: 19456, timeCost: 2, parallelism: 1 };
+// argon2id via hash-wasm (WebAssembly). Bewusst NICHT @node-rs/argon2: dessen
+// native Binärdatei nutzt CPU-Befehle (SIMD), die auf alten CPUs ohne SSE4.2
+// (z. B. Intel Atom/Bonnell) einen SIGILL auslösen. WASM läuft prozessor-
+// unabhängig; das Ausgabeformat ist Standard-PHC ($argon2id$...), also
+// kompatibel zu evtl. vorhandenen @node-rs/argon2-Hashes.
+const ARGON2_PARAMS = {
+  parallelism: 1,
+  iterations: 2,
+  memorySize: 19456, // KiB
+  hashLength: 32,
+} as const;
 
 export async function hashPassword(password: string): Promise<string> {
-  return hash(password, ARGON2_OPTS);
+  return argon2id({
+    password,
+    salt: crypto.randomBytes(16),
+    ...ARGON2_PARAMS,
+    outputType: "encoded",
+  });
 }
 
 export async function verifyPassword(
@@ -21,7 +36,7 @@ export async function verifyPassword(
   password: string,
 ): Promise<boolean> {
   try {
-    return await verify(passwordHash, password);
+    return await argon2Verify({ password, hash: passwordHash });
   } catch {
     return false;
   }

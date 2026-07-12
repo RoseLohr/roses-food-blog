@@ -20,10 +20,11 @@ ARG LOW_CPU=0
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
 # Schnelltest der nativen Module — schlägt hier gezielt fehl (mit Modulname
-# im Log), statt später anonym im Next-Build. sharp wird auf LOW_CPU nie
-# geladen und daher dort auch nicht getestet.
+# im Log), statt später anonym im Next-Build. Passworthashing läuft über
+# hash-wasm (WASM, CPU-portabel) — kein nativer Test nötig. sharp wird auf
+# LOW_CPU nie geladen und daher dort auch nicht getestet.
 RUN node -e "require('better-sqlite3')" && echo "OK better-sqlite3" \
- && node -e "require('@node-rs/argon2')" && echo "OK @node-rs/argon2" \
+ && node -e "require('hash-wasm')" && echo "OK hash-wasm" \
  && if [ "$LOW_CPU" != "1" ]; then node -e "require('sharp')" && echo "OK sharp"; \
     else echo "LOW_CPU=1 — sharp übersprungen (Bildpipeline nutzt libvips-CLI)"; fi
 

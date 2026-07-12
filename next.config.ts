@@ -18,7 +18,9 @@ const CSP = [
 
 const nextConfig: NextConfig = {
   output: "standalone",
-  serverExternalPackages: ["better-sqlite3", "sharp", "@node-rs/argon2"],
+  // hash-wasm extern halten, damit es als auflösbares Paket im Standalone-
+  // node_modules liegt (scripts/migrate.mjs importiert es zur Laufzeit).
+  serverExternalPackages: ["better-sqlite3", "sharp", "hash-wasm"],
   poweredByHeader: false,
   // Der eingebaute /_next/image-Optimizer lädt zur Laufzeit natives sharp —
   // das würde auf CPUs ohne SSE4.2 (LOW_CPU) einen unabfangbaren SIGILL

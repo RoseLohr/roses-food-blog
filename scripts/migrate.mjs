@@ -6,7 +6,7 @@
  * WICHTIG: bewusst OHNE drizzle-orm. Im Next-Standalone-Image ist
  * drizzle-orm in die Server-Chunks gebündelt und NICHT als auflösbares
  * node_modules-Paket vorhanden — nur externe Pakete (better-sqlite3,
- * @node-rs/argon2) liegen dort. Dieses Skript repliziert daher drizzles
+ * hash-wasm) liegen dort. Dieses Skript repliziert daher drizzles
  * Migrator (Tabelle __drizzle_migrations, gleiche Spalten/Logik) direkt
  * mit better-sqlite3 und bleibt so kompatibel zu bereits per drizzle
  * migrierten Datenbanken.
@@ -94,11 +94,17 @@ try {
     const email = process.env.ADMIN_EMAIL;
     const password = process.env.ADMIN_PASSWORD;
     if (count.n === 0 && email && password) {
-      const { hash } = await import("@node-rs/argon2");
-      const passwordHash = await hash(password, {
-        memoryCost: 19456,
-        timeCost: 2,
+      // argon2id via hash-wasm (WASM, CPU-portabel — kein SIGILL auf alten
+      // CPUs). hash-wasm liegt als externes Paket im Standalone-Image.
+      const { argon2id } = await import("hash-wasm");
+      const passwordHash = await argon2id({
+        password,
+        salt: crypto.randomBytes(16),
         parallelism: 1,
+        iterations: 2,
+        memorySize: 19456,
+        hashLength: 32,
+        outputType: "encoded",
       });
       sqlite
         .prepare(

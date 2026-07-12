@@ -72,6 +72,16 @@ Annahmen, die während der Umsetzung getroffen wurden:
   Subuid gemappt und könnte das Host-Verzeichnis nicht beschreiben
   (SQLITE_CANTOPEN). Der ursprüngliche „non-root"-Wunsch zielt auf „kein
   echter Host-Root" — das ist unter rootless erfüllt.
+- **B23 — Passworthashing via hash-wasm (WASM-argon2id):** Statt der nativen
+  `@node-rs/argon2`-Bibliothek wird `hash-wasm` verwendet. Grund: die native
+  argon2-Binärdatei nutzt bei der Berechnung CPU-SIMD-Befehle, die auf alten
+  CPUs ohne SSE4.2 (Intel Atom/Bonnell) einen unabfangbaren SIGILL auslösen —
+  die App/Migration stürzte dort beim Anlegen bzw. Prüfen von Passwörtern ab.
+  hash-wasm (WebAssembly) läuft prozessorunabhängig und identisch auf jeder
+  CPU; das Ausgabeformat ist Standard-PHC (`$argon2id$…`), also kompatibel zu
+  bestehenden argon2-Hashes. Der Auftrag verlangt argon2id — das bleibt
+  erfüllt (gleicher Algorithmus, nur WASM statt nativ). Parameter unverändert
+  (m=19456 KiB, t=2, p=1, 32-Byte-Hash).
 - **B22 — Next-Bild-Optimizer deaktiviert:** `images.unoptimized = true`. Die
   App erzeugt eigene WebP-Varianten und liefert sie über `<img srcSet>` aus;
   der eingebaute `/_next/image`-Optimizer wird nicht gebraucht und würde auf
