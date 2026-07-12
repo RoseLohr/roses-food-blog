@@ -17,6 +17,14 @@ services:
       - "127.0.0.1:${PORT:-3000}:3000"
     volumes:
       - ${DATA_DIR:-/srv/roses-blog/data}:/data
+    # Feste öffentliche DNS-Server. Der rootless-Podman-interne DNS (aardvark,
+    # 10.89.2.1) leitet externe Namen auf manchen Hosts nicht zuverlässig
+    # weiter (Symptom: EAI_AGAIN, Container erreicht z. B. api.anthropic.com
+    # oder api.github.com nicht). Diese Server werden als Upstream genutzt,
+    # sodass die Namensauflösung im Container wieder funktioniert.
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     restart: always
     # Healthcheck ist beratend: er markiert den Container als (un)healthy für
     # `podman ps`. Ein Neustart bei "unhealthy" ist mit dem docker-compose-
