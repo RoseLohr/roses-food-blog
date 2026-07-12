@@ -4,6 +4,7 @@
  */
 import { asc } from "drizzle-orm";
 import { db, schema } from "@/db";
+import { imageUrl } from "@/lib/media";
 import { getFullRecipe } from "@/lib/recipes";
 import type { RecipeEditorProps } from "./recipe-editor";
 
@@ -22,6 +23,8 @@ export async function buildEditorProps(
           id: schema.mediaImage.id,
           originalName: schema.mediaImage.originalName,
           altText: schema.mediaImage.altText,
+          fileKey: schema.mediaImage.fileKey,
+          variantWidths: schema.mediaImage.variantWidths,
         })
         .from(schema.mediaImage)
         .orderBy(asc(schema.mediaImage.originalName)),
@@ -61,7 +64,14 @@ export async function buildEditorProps(
       taxonomySelections: {},
     },
     taxonomies,
-    images: images.map((i) => ({ id: i.id, label: i.altText || i.originalName })),
+    images: images.map((i) => {
+      const widths: number[] = JSON.parse(i.variantWidths);
+      return {
+        id: i.id,
+        label: i.altText || i.originalName,
+        thumbUrl: imageUrl(i.fileKey, widths[0] ?? 320),
+      };
+    }),
     ingredientNames: ingredients.map((i) => i.name),
   };
 

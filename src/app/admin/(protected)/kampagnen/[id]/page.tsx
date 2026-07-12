@@ -3,6 +3,7 @@ import { asc, desc, eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { db, schema } from "@/db";
 import { requireAdmin } from "@/lib/auth";
+import { QuickAddSelect } from "@/components/admin/quick-add-select";
 import { t } from "@/i18n/de";
 import {
   saveCampaignAction,
@@ -92,25 +93,15 @@ export default async function CampaignDetailPage(props: {
                 className={inputCls}
               />
             </div>
-            <div>
-              <label className={labelCls} htmlFor="ka-segment">
-                {d.segment}
-              </label>
-              <select
-                id="ka-segment"
-                name="segment"
-                defaultValue={campaign?.segmentId ?? ""}
-                disabled={!editable}
-                className={inputCls}
-              >
-                <option value="">{d.noSegment}</option>
-                {segments.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <QuickAddSelect
+              name="segment"
+              label={d.segment}
+              options={segments}
+              selectedId={campaign?.segmentId ?? null}
+              kind="segment"
+              emptyLabel={d.noSegment}
+              disabled={!editable}
+            />
             <div>
               <label className={labelCls} htmlFor="ka-inhalt">
                 {d.content}

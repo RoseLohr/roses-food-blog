@@ -7,6 +7,7 @@
  */
 import { useActionState, useState } from "react";
 import { saveTravelAction, type TravelFormState } from "./actions";
+import { ImagePicker, type ImageChoice } from "@/components/admin/image-picker";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -42,7 +43,7 @@ export interface TravelEditorProps {
     status: string;
     restaurants: EditorRestaurant[];
   };
-  images: Array<{ id: number; label: string }>;
+  images: ImageChoice[];
   message?: string | null;
 }
 
@@ -146,38 +147,22 @@ export function TravelEditor({ initial, images, message }: TravelEditorProps) {
             <textarea id="t-inhalt" name="inhalt" rows={8} defaultValue={initial.content} className={inputCls} />
           </div>
           <div>
-            <label className={labelCls} htmlFor="t-titelbild">
-              {d.fieldHeroImage}
-            </label>
-            <select
-              id="t-titelbild"
+            <ImagePicker
               name="titelbild"
-              defaultValue={initial.heroImageId ?? ""}
-              className={inputCls}
-            >
-              <option value="">{dict.admin.recipes.noImage}</option>
-              {images.map((img) => (
-                <option key={img.id} value={img.id}>
-                  {img.label}
-                </option>
-              ))}
-            </select>
+              legend={d.fieldHeroImage}
+              options={images}
+              selectedIds={initial.heroImageId ? [initial.heroImageId] : []}
+              multiple={false}
+            />
           </div>
           <div>
-            <span className={labelCls}>{d.fieldImages}</span>
-            <div className="max-h-32 overflow-y-auto rounded-lg border border-ink-soft/20 p-2">
-              {images.map((img) => (
-                <label key={img.id} className="flex items-center gap-2 py-0.5 text-sm">
-                  <input
-                    type="checkbox"
-                    name="bilder"
-                    value={img.id}
-                    defaultChecked={initial.imageIds.includes(img.id)}
-                  />
-                  {img.label}
-                </label>
-              ))}
-            </div>
+            <ImagePicker
+              name="bilder"
+              legend={d.fieldImages}
+              options={images}
+              selectedIds={initial.imageIds}
+              multiple
+            />
           </div>
         </div>
       </section>
@@ -274,39 +259,19 @@ export function TravelEditor({ initial, images, message }: TravelEditorProps) {
                         }
                         className={inputCls}
                       />
-                      <div>
-                        <label className="mb-1 block text-xs text-ink-soft" htmlFor={`dish-img-${ri}-${di}`}>
-                          {d.dishImages}
-                        </label>
-                        <select
-                          id={`dish-img-${ri}-${di}`}
-                          multiple
-                          size={3}
-                          value={dish.imageIds.map(String)}
-                          onChange={(e) =>
-                            updateRestaurant(ri, {
-                              dishes: r.dishes.map((x, idx) =>
-                                idx === di
-                                  ? {
-                                      ...x,
-                                      imageIds: Array.from(
-                                        e.target.selectedOptions,
-                                        (o) => Number(o.value),
-                                      ),
-                                    }
-                                  : x,
-                              ),
-                            })
-                          }
-                          className={inputCls}
-                        >
-                          {images.map((img) => (
-                            <option key={img.id} value={img.id}>
-                              {img.label}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
+                      <ImagePicker
+                        legend={d.dishImages}
+                        options={images}
+                        value={dish.imageIds}
+                        onChange={(ids) =>
+                          updateRestaurant(ri, {
+                            dishes: r.dishes.map((x, idx) =>
+                              idx === di ? { ...x, imageIds: ids } : x,
+                            ),
+                          })
+                        }
+                        multiple
+                      />
                     </div>
                     <button
                       type="button"

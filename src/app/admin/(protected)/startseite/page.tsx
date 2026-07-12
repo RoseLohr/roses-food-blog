@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { asc, eq } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { requireAdmin } from "@/lib/auth";
+import { thumbUrl } from "@/lib/media";
+import { ImagePicker } from "@/components/admin/image-picker";
 import { t } from "@/i18n/de";
 import { saveHomepageAction } from "./actions";
 import { SliderEditor, type SlideRow } from "./slider-editor";
@@ -30,14 +32,21 @@ export default async function HomepageAdminPage(props: {
     .select()
     .from(schema.sliderItem)
     .orderBy(asc(schema.sliderItem.sortOrder));
-  const images = await db
+  const imageRows = await db
     .select({
       id: schema.mediaImage.id,
       originalName: schema.mediaImage.originalName,
       altText: schema.mediaImage.altText,
+      fileKey: schema.mediaImage.fileKey,
+      variantWidths: schema.mediaImage.variantWidths,
     })
     .from(schema.mediaImage)
     .orderBy(asc(schema.mediaImage.originalName));
+  const imageChoices = imageRows.map((i) => ({
+    id: i.id,
+    label: i.altText || i.originalName,
+    thumbUrl: thumbUrl(i.fileKey, i.variantWidths),
+  }));
   const recipes = await db
     .select({ id: schema.recipe.id, title: schema.recipe.title })
     .from(schema.recipe)
@@ -89,24 +98,15 @@ export default async function HomepageAdminPage(props: {
                 className={inputCls}
               />
             </div>
-            <div>
-              <label className={labelCls} htmlFor="hp-about-bild">
-                {d.aboutImageLabel}
-              </label>
-              <select
-                id="hp-about-bild"
-                name="aboutBild"
-                defaultValue={config?.aboutTeaserImageId ?? ""}
-                className={inputCls}
-              >
-                <option value="">{dict.admin.recipes.noImage}</option>
-                {images.map((img) => (
-                  <option key={img.id} value={img.id}>
-                    {img.altText || img.originalName}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <ImagePicker
+              name="aboutBild"
+              legend={d.aboutImageLabel}
+              options={imageChoices}
+              selectedIds={
+                config?.aboutTeaserImageId ? [config.aboutTeaserImageId] : []
+              }
+              multiple={false}
+            />
             <div>
               <label className={labelCls} htmlFor="hp-about-link">
                 {d.aboutLinkLabel}
@@ -137,10 +137,7 @@ export default async function HomepageAdminPage(props: {
           <h2 className="mb-4 text-lg font-semibold">{d.sliderTitle}</h2>
           <SliderEditor
             initial={initialSlides}
-            images={images.map((i) => ({
-              id: i.id,
-              label: i.altText || i.originalName,
-            }))}
+            images={imageChoices}
             recipes={recipes}
           />
         </section>

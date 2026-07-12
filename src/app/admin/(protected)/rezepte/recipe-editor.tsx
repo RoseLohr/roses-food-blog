@@ -7,6 +7,8 @@
  */
 import { useActionState, useState } from "react";
 import { saveRecipeAction, type RecipeFormState } from "./actions";
+import { QuickAddCheckboxes } from "@/components/admin/quick-add-checkboxes";
+import { ImagePicker, type ImageChoice } from "@/components/admin/image-picker";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -32,10 +34,7 @@ export interface TaxonomyOption {
   id: number;
   name: string;
 }
-export interface ImageOption {
-  id: number;
-  label: string;
-}
+export type ImageOption = ImageChoice;
 
 export interface RecipeEditorProps {
   initial: {
@@ -79,12 +78,13 @@ const UNIT_SUGGESTIONS = [
   "Packung",
 ];
 
-const TAXONOMY_FIELDS: Array<[string, string]> = [
-  ["kategorien", d.categories],
-  ["schlagwoerter", d.tags],
-  ["ernaehrungsformen", d.dietTypes],
-  ["kuechen", d.cuisines],
-  ["geraete", d.equipment],
+// [Formularfeld, Label, Taxonomie-Typ für die Sofort-Anlage]
+const TAXONOMY_FIELDS: Array<[string, string, string]> = [
+  ["kategorien", d.categories, "kategorie"],
+  ["schlagwoerter", d.tags, "schlagwort"],
+  ["ernaehrungsformen", d.dietTypes, "ernaehrungsform"],
+  ["kuechen", d.cuisines, "kueche"],
+  ["geraete", d.equipment, "geraet"],
 ];
 
 const inputCls =
@@ -172,38 +172,22 @@ export function RecipeEditor({
             />
           </div>
           <div>
-            <label className={labelCls} htmlFor="f-titelbild">
-              {d.fieldHeroImage}
-            </label>
-            <select
-              id="f-titelbild"
+            <ImagePicker
               name="titelbild"
-              defaultValue={initial.heroImageId ?? ""}
-              className={inputCls}
-            >
-              <option value="">{d.noImage}</option>
-              {images.map((img) => (
-                <option key={img.id} value={img.id}>
-                  {img.label}
-                </option>
-              ))}
-            </select>
+              legend={d.fieldHeroImage}
+              options={images}
+              selectedIds={initial.heroImageId ? [initial.heroImageId] : []}
+              multiple={false}
+            />
           </div>
           <div>
-            <span className={labelCls}>{d.fieldImages}</span>
-            <div className="max-h-32 overflow-y-auto rounded-lg border border-ink-soft/20 p-2">
-              {images.map((img) => (
-                <label key={img.id} className="flex items-center gap-2 py-0.5 text-sm">
-                  <input
-                    type="checkbox"
-                    name="bilder"
-                    value={img.id}
-                    defaultChecked={initial.imageIds.includes(img.id)}
-                  />
-                  {img.label}
-                </label>
-              ))}
-            </div>
+            <ImagePicker
+              name="bilder"
+              legend={d.fieldImages}
+              options={images}
+              selectedIds={initial.imageIds}
+              multiple
+            />
           </div>
           <div>
             <label className={labelCls} htmlFor="f-vorb">
@@ -281,25 +265,16 @@ export function RecipeEditor({
       {/* Taxonomien */}
       <section className="rounded-2xl bg-white p-5 shadow-sm">
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {TAXONOMY_FIELDS.map(([field, label]) => (
-            <fieldset key={field}>
-              <legend className="mb-1 text-sm font-medium">{label}</legend>
-              <div className="max-h-36 overflow-y-auto rounded-lg border border-ink-soft/20 p-2">
-                {(taxonomies[field] ?? []).map((opt) => (
-                  <label key={opt.id} className="flex items-center gap-2 py-0.5 text-sm">
-                    <input
-                      type="checkbox"
-                      name={field}
-                      value={opt.id}
-                      defaultChecked={(initial.taxonomySelections[field] ?? []).includes(
-                        opt.id,
-                      )}
-                    />
-                    {opt.name}
-                  </label>
-                ))}
-              </div>
-            </fieldset>
+          {TAXONOMY_FIELDS.map(([field, label, type]) => (
+            <QuickAddCheckboxes
+              key={field}
+              name={field}
+              legend={label}
+              options={taxonomies[field] ?? []}
+              selectedIds={initial.taxonomySelections[field] ?? []}
+              kind="taxonomy"
+              type={type}
+            />
           ))}
         </div>
       </section>

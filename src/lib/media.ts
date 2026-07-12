@@ -37,6 +37,20 @@ export function srcset(fileKey: string, widths: number[]): string {
   return widths.map((w) => `${imageUrl(fileKey, w)} ${w}w`).join(", ");
 }
 
+/**
+ * URL der kleinsten verfügbaren Variante — als Thumbnail für Auswahl-Vorschauen
+ * (ImagePicker). `variantWidths` ist der JSON-String aus der DB.
+ */
+export function thumbUrl(fileKey: string, variantWidths: string): string {
+  let widths: number[] = [];
+  try {
+    widths = JSON.parse(variantWidths || "[]");
+  } catch {
+    widths = [];
+  }
+  return imageUrl(fileKey, widths[0] ?? 320);
+}
+
 export interface StoredImage {
   id: number;
   fileKey: string;

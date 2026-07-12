@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import { asc, eq, sql } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { requireAdmin } from "@/lib/auth";
-import { imageUrl } from "@/lib/media";
+import { imageUrl, thumbUrl } from "@/lib/media";
+import { ImagePicker } from "@/components/admin/image-picker";
 import { t } from "@/i18n/de";
 import {
   createIngredientAction,
@@ -36,30 +37,21 @@ export default async function IngredientsPage(props: {
     .leftJoin(schema.mediaImage, eq(schema.ingredient.imageId, schema.mediaImage.id))
     .orderBy(asc(schema.ingredient.name));
 
-  const images = await db
+  const imageRows = await db
     .select({
       id: schema.mediaImage.id,
       name: schema.mediaImage.originalName,
       alt: schema.mediaImage.altText,
+      fileKey: schema.mediaImage.fileKey,
+      variantWidths: schema.mediaImage.variantWidths,
     })
     .from(schema.mediaImage)
     .orderBy(asc(schema.mediaImage.originalName));
-
-  const imagePicker = (fieldId: string, current: number | null) => (
-    <select
-      id={fieldId}
-      name="imageId"
-      defaultValue={current ?? ""}
-      className="w-full rounded-lg border border-ink-soft/30 px-2 py-1 text-sm"
-    >
-      <option value="">{dict.admin.recipes.noImage}</option>
-      {images.map((img) => (
-        <option key={img.id} value={img.id}>
-          {img.alt || img.name}
-        </option>
-      ))}
-    </select>
-  );
+  const imageChoices = imageRows.map((i) => ({
+    id: i.id,
+    label: i.alt || i.name,
+    thumbUrl: thumbUrl(i.fileKey, i.variantWidths),
+  }));
 
   return (
     <>
@@ -88,11 +80,14 @@ export default async function IngredientsPage(props: {
             className="w-full rounded-lg border border-ink-soft/30 px-3 py-2"
           />
         </div>
-        <div className="grow">
-          <label className="mb-1 block text-sm font-medium" htmlFor="neu-bild">
-            {dict.admin.ingredients.image}
-          </label>
-          {imagePicker("neu-bild", null)}
+        <div className="w-full">
+          <ImagePicker
+            name="imageId"
+            legend={dict.admin.ingredients.image}
+            options={imageChoices}
+            selectedIds={[]}
+            multiple={false}
+          />
         </div>
         <button
           type="submit"
@@ -134,10 +129,13 @@ export default async function IngredientsPage(props: {
                   defaultValue={ing.name}
                   className="rounded-lg border border-ink-soft/30 px-2 py-1 text-sm font-medium"
                 />
-                <label className="sr-only" htmlFor={`bild-${ing.id}`}>
-                  {dict.admin.ingredients.image}
-                </label>
-                {imagePicker(`bild-${ing.id}`, ing.imageId)}
+                <ImagePicker
+                  name="imageId"
+                  legend={dict.admin.ingredients.image}
+                  options={imageChoices}
+                  selectedIds={ing.imageId ? [ing.imageId] : []}
+                  multiple={false}
+                />
                 <div className="mt-1 flex items-center justify-between">
                   <p className="text-xs text-ink-soft">
                     {ing.recipeCount} {dict.admin.ingredients.recipesCount} ·{" "}

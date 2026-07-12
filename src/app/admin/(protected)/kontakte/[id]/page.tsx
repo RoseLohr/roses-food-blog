@@ -3,6 +3,7 @@ import { desc, eq, asc } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { db, schema } from "@/db";
 import { requireAdmin } from "@/lib/auth";
+import { QuickAddCheckboxes } from "@/components/admin/quick-add-checkboxes";
 import { t } from "@/i18n/de";
 import { anonymizeContactAction, updateContactAction } from "./actions";
 
@@ -57,29 +58,6 @@ export default async function ContactDetailPage(props: {
         .orderBy(desc(schema.contactActivity.createdAt))
         .limit(50),
     ]);
-
-  const checkboxGroup = (
-    name: string,
-    options: Array<{ id: number; name: string }>,
-    selected: number[],
-  ) => (
-    <div className="flex flex-wrap gap-x-4 gap-y-1">
-      {options.map((o) => (
-        <label key={o.id} className="flex items-center gap-1.5 text-sm">
-          <input
-            type="checkbox"
-            name={name}
-            value={o.id}
-            defaultChecked={selected.includes(o.id)}
-          />
-          {o.name}
-        </label>
-      ))}
-      {options.length === 0 && (
-        <span className="text-sm text-ink-soft">{dict.common.none}</span>
-      )}
-    </div>
-  );
 
   const facts: Array<[string, string]> = [
     [d.email, contact.email],
@@ -144,18 +122,27 @@ export default async function ContactDetailPage(props: {
                 />
               </div>
             </div>
-            <fieldset>
-              <legend className={labelCls}>{d.interests}</legend>
-              {checkboxGroup("interessen", interests, myInterests.map((x) => x.id))}
-            </fieldset>
-            <fieldset>
-              <legend className={labelCls}>{d.tags}</legend>
-              {checkboxGroup("tags", tags, myTags.map((x) => x.id))}
-            </fieldset>
-            <fieldset>
-              <legend className={labelCls}>{d.segments}</legend>
-              {checkboxGroup("segmente", segments, mySegments.map((x) => x.id))}
-            </fieldset>
+            <QuickAddCheckboxes
+              name="interessen"
+              legend={d.interests}
+              options={interests}
+              selectedIds={myInterests.map((x) => x.id)}
+              kind="interest"
+            />
+            <QuickAddCheckboxes
+              name="tags"
+              legend={d.tags}
+              options={tags}
+              selectedIds={myTags.map((x) => x.id)}
+              kind="contactTag"
+            />
+            <QuickAddCheckboxes
+              name="segmente"
+              legend={d.segments}
+              options={segments}
+              selectedIds={mySegments.map((x) => x.id)}
+              kind="segment"
+            />
             <div>
               <label className={labelCls} htmlFor="k-notizen">
                 {d.notes}
