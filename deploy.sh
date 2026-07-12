@@ -85,8 +85,10 @@ podman build --build-arg "APP_COMMIT=$COMMIT" --build-arg "LOW_CPU=$LOW_CPU" \
 if [[ -f "$DATA_DIR/app.db" ]]; then
   log "Sichere Datenbank vor dem Update"
   BACKUP_FILE="$DATA_DIR/backups/pre-deploy-$(date +%Y%m%d-%H%M%S).db"
-  podman run --rm -v "$DATA_DIR:/data" localhost/roses-blog:latest \
-    node -e "const db=require('better-sqlite3')('/data/app.db',{readonly:true});db.backup('/data/backups/'+process.argv[1]).then(()=>{db.close();console.log('Backup ok')}).catch(e=>{console.error(e);process.exit(1)})" \
+  # --entrypoint node: das Image-Entrypoint (entry.sh) startet sonst den Server
+  # und ignoriert diese Argumente.
+  podman run --rm --entrypoint node -v "$DATA_DIR:/data" localhost/roses-blog:latest \
+    -e "const db=require('better-sqlite3')('/data/app.db',{readonly:true});db.backup('/data/backups/'+process.argv[1]).then(()=>{db.close();console.log('Backup ok')}).catch(e=>{console.error(e);process.exit(1)})" \
     "$(basename "$BACKUP_FILE")" || fail "DB-Backup fehlgeschlagen — Deployment abgebrochen."
   # Nur die letzten 10 Pre-Deploy-Backups behalten
   ls -1t "$DATA_DIR"/backups/pre-deploy-*.db 2>/dev/null | tail -n +11 | xargs -r rm -f
@@ -109,13 +111,24 @@ if command -v ss >/dev/null 2>&1 && ss -ltn "( sport = :$PORT )" 2>/dev/null | g
   echo "WARNUNG: Port $PORT ist noch belegt. Blockierende Container:"
   podman ps --filter "publish=$PORT" --format "  {{.Names}} ({{.Image}}, {{.Status}})" || true
   echo "Versuche verbliebene Roses-Blog-Container zu entfernen ..."
+  # Nur Container, die genau diesen Port veröffentlichen — entfernt auch deren
+  # eigenen rootlessport-Forwarder. Bewusst KEIN pauschales 'pkill rootlessport',
+  # das würde die Port-Weiterleitung anderer rootless-Container mit abschießen.
   podman ps -aq --filter "publish=$PORT" | xargs -r podman rm -f >/dev/null 2>&1 || true
-  # Rootlessport-Reste einer abgestürzten Sitzung aufräumen
-  pkill -f "rootlessport" >/dev/null 2>&1 || true
   sleep 2
   if ss -ltn "( sport = :$PORT )" 2>/dev/null | grep -q ":$PORT"; then
     fail "Port $PORT ist weiterhin belegt (evtl. anderer Dienst). Prüfen: sudo ss -ltnp 'sport = :$PORT'"
   fi
+fi
+
+# Preflight: kann der Container das Datenverzeichnis beschreiben? Rootless
+# betrieben ist Container-root der Host-User, dem DATA_DIR gehört — der Test
+# muss durchlaufen. Falls nicht (z. B. rootful podman + fremde Rechte), hier
+# klar melden statt später mit kryptischem SQLITE_CANTOPEN im Container-Log.
+if ! podman run --rm --entrypoint sh -v "$DATA_DIR:/data" localhost/roses-blog:latest \
+     -c 'touch /data/.write-test && rm -f /data/.write-test' >/dev/null 2>&1; then
+  fail "Container kann $DATA_DIR nicht beschreiben. Rootless betreiben (podman als \
+Nicht-root-User), oder Verzeichnis dem Deploy-User geben: sudo chown -R \$USER \"$DATA_DIR\"."
 fi
 
 log "Starte Container neu"
@@ -136,21 +149,32 @@ if [[ "${HEALTH_OK:-0}" != "1" ]]; then
   fail "Healthcheck fehlgeschlagen. Vollständige Logs: podman logs roses-blog"
 fi
 
-# --- 7. Erstlauf: Autostart nach Reboot --------------------------------------
-if systemctl --user is-enabled podman-restart.service >/dev/null 2>&1; then
-  : # Autostart bereits eingerichtet
-else
-  log "Richte Autostart nach Reboot ein (podman-restart.service)"
-  if systemctl --user enable --now podman-restart.service >/dev/null 2>&1; then
-    loginctl enable-linger "$USER" >/dev/null 2>&1 || true
-    echo "Autostart aktiv (rootless, restart-policy 'always' + Linger)."
+# --- 7. Autostart nach Reboot -------------------------------------------------
+# Zwei unabhängige Voraussetzungen — beide bei JEDEM Lauf sicherstellen, sonst
+# startet der Container nach einem Reboot nicht (Autostart still kaputt).
+# (a) User-Service podman-restart.service (startet Container mit restart:always)
+if ! systemctl --user is-enabled podman-restart.service >/dev/null 2>&1; then
+  log "Aktiviere Autostart-Service (podman-restart.service)"
+  systemctl --user enable --now podman-restart.service >/dev/null 2>&1 \
+    || echo "HINWEIS: podman-restart.service nicht aktivierbar — siehe deploy/roses-blog.service"
+fi
+# (b) Linger — ohne das startet der User-systemd-Manager beim Boot nicht,
+# der Service liefe nie. Bei jedem Lauf explizit prüfen (nicht still schlucken).
+if [[ "$(loginctl show-user "$USER" --property=Linger --value 2>/dev/null)" != "yes" ]]; then
+  if loginctl enable-linger "$USER" >/dev/null 2>&1; then
+    echo "Autostart: Linger für $USER aktiviert."
   else
-    echo "HINWEIS: Autostart konnte nicht automatisch aktiviert werden."
-    echo "         Siehe README.md Abschnitt 'Autostart' bzw. deploy/roses-blog.service"
+    echo "WARNUNG: Linger konnte nicht aktiviert werden — Autostart nach Reboot INAKTIV."
+    echo "         Einmalig ausführen: sudo loginctl enable-linger $USER"
   fi
 fi
 
-# --- 8. Status ----------------------------------------------------------------
+# --- 8. Aufräumen: alte, nun unbenutzte Images entfernen ---------------------
+# Jeder Build hinterlässt das vorige Image als dangling <none>; ohne Prune
+# läuft die Platte voll. Nur dangling entfernen — das laufende Image bleibt.
+podman image prune -f >/dev/null 2>&1 || true
+
+# --- 9. Status ----------------------------------------------------------------
 log "Deployment erfolgreich"
 echo "Branch:   $BRANCH"
 echo "Commit:   $COMMIT"

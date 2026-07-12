@@ -60,5 +60,22 @@ Annahmen, die während der Umsetzung getroffen wurden:
   Quellen bleiben blockiert (default-src 'self'). Nonce-basierte CSP wäre mit
   Middleware nachrüstbar, wurde aber als Over-Engineering für dieses
   Bedrohungsmodell eingestuft.
+- **B21 — Container läuft als root unter rootless Podman:** Der Container
+  wird als root gestartet, aber ausschließlich **rootless** betrieben. Dann
+  ist Container-„root" via User-Namespace der unprivilegierte Host-Benutzer —
+  kein echter Root auf dem Host. Das ist die zuverlässigste Lösung für die
+  Bind-Mount-Rechte (das dem Host-User gehörende `DATA_DIR` ist beschreibbar,
+  erzeugte Dateien gehören dem Host-User, sodass host-seitige Backup-Tools
+  gzip/tar/rm funktionieren) und ist provider-unabhängig (kein `userns_mode`
+  nötig, das der externe docker-compose-Provider evtl. nicht durchreicht).
+  Ein fest verdrahtetes `USER node` (uid 1000) würde unter rootless auf eine
+  Subuid gemappt und könnte das Host-Verzeichnis nicht beschreiben
+  (SQLITE_CANTOPEN). Der ursprüngliche „non-root"-Wunsch zielt auf „kein
+  echter Host-Root" — das ist unter rootless erfüllt.
+- **B22 — Next-Bild-Optimizer deaktiviert:** `images.unoptimized = true`. Die
+  App erzeugt eigene WebP-Varianten und liefert sie über `<img srcSet>` aus;
+  der eingebaute `/_next/image`-Optimizer wird nicht gebraucht und würde auf
+  CPUs ohne SSE4.2 (LOW_CPU) beim Laden von sharp einen unabfangbaren SIGILL
+  auslösen. Deaktiviert liefert die Route sofort 404, ohne sharp zu laden.
 - **B18 — Healthcheck:** `/health` prüft auch die DB-Verbindung (einfaches
   `SELECT 1`) und liefert Commit/Version aus dem Build.

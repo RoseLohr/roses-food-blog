@@ -48,7 +48,9 @@ Danach gilt für jedes Update dauerhaft: `./deploy.sh`.
 
 ## Manuelle Ersteinrichtung (Alternative zu bootstrap.sh)
 
-Voraussetzungen: Ubuntu LTS, [Podman](https://podman.io) (rootless empfohlen),
+Voraussetzungen: Ubuntu LTS, [Podman](https://podman.io) — **rootless**
+betreiben (der Container läuft als root, was unter rootless dem
+unprivilegierten Host-User entspricht; siehe docs/ASSUMPTIONS.md B21),
 nginx, certbot, git, curl. Die Domain zeigt bereits auf den Server.
 
 ```bash

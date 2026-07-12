@@ -15,6 +15,12 @@ export function startScheduler(): void {
 
   const tz = process.env.TZ ?? "Europe/Berlin";
 
+  // Überlappungsschutz: node-cron serialisiert Läufe NICHT. Dauert ein Lauf
+  // länger als sein Intervall (z. B. langsames/nicht erreichbares SMTP),
+  // startet der nächste Tick sonst parallel und würde dieselben "wartend"-
+  // Zeilen erneut versenden. Ein Flag je Job verhindert das.
+  const running = { email: false, sequence: false };
+
   // Nachts: Tracking-Tagesaggregation (idempotent)
   cron.schedule(
     "30 2 * * *",
@@ -32,21 +38,29 @@ export function startScheduler(): void {
 
   // Minütlich: E-Mail-Warteschlange (Ratenbegrenzung siehe email-queue.ts)
   cron.schedule("* * * * *", async () => {
+    if (running.email) return; // vorheriger Lauf noch aktiv
+    running.email = true;
     try {
       const { processEmailQueue } = await import("@/lib/email-queue");
       await processEmailQueue();
     } catch (err) {
       console.error("[cron] Mail-Queue fehlgeschlagen:", err);
+    } finally {
+      running.email = false;
     }
   });
 
   // Alle 5 Minuten: fällige Sequenz-Schritte einreihen
   cron.schedule("*/5 * * * *", async () => {
+    if (running.sequence) return;
+    running.sequence = true;
     try {
       const { enqueueDueSequenceSteps } = await import("@/lib/sequences");
       await enqueueDueSequenceSteps();
     } catch (err) {
       console.error("[cron] Sequenz-Planung fehlgeschlagen:", err);
+    } finally {
+      running.sequence = false;
     }
   });
 
