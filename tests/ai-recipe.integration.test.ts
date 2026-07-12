@@ -90,4 +90,30 @@ describe("KI-Rezeptassistent", () => {
     expect(outputConfig.effort).toBe("high");
     expect(outputConfig.format).toBeTruthy(); // zodOutputFormat(recipeDraftSchema)
   });
+
+  it("führt einen Hintergrund-Job aus und liefert den Entwurf", async () => {
+    process.env.ANTHROPIC_API_KEY = "sk-ant-test";
+    const { startRecipeJob, getRecipeJob } = await import("@/lib/ai-recipe-jobs");
+    const id = startRecipeJob("Zucchini, Feta, Ofen");
+    expect(getRecipeJob(id)?.status).toBe("running");
+    for (let i = 0; i < 100 && getRecipeJob(id)?.status === "running"; i++) {
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    const job = getRecipeJob(id);
+    expect(job?.status).toBe("done");
+    expect(job?.draft?.title).toBe("Ofengemüse mit Feta");
+  });
+
+  it("hält einen Job-Fehler mit klarer Meldung fest", async () => {
+    delete process.env.ANTHROPIC_API_KEY;
+    const { startRecipeJob, getRecipeJob } = await import("@/lib/ai-recipe-jobs");
+    const id = startRecipeJob("egal");
+    for (let i = 0; i < 100 && getRecipeJob(id)?.status === "running"; i++) {
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    const job = getRecipeJob(id);
+    expect(job?.status).toBe("error");
+    expect(job?.code).toBe("no_key");
+    expect(job?.error).toMatch(/API-Schlüssel/);
+  });
 });

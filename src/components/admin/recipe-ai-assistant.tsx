@@ -31,23 +31,55 @@ export function RecipeAiAssistant({
     setError(null);
     setDraft(null);
     try {
-      const res = await fetch("/api/admin/recipes/ai", {
+      // 1) Job starten — antwortet sofort (kein Proxy-Timeout).
+      const startRes = await fetch("/api/admin/recipes/ai", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: text.trim() }),
       });
-      if (!res.ok) {
-        // Serverseitige, verständliche Meldung anzeigen; sonst wenigstens den
-        // HTTP-Status (z. B. 504 = Timeout am Reverse-Proxy).
-        const data = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(data.error || `${a.failed} (HTTP ${res.status})`);
+      if (!startRes.ok) {
+        const data = (await startRes.json().catch(() => ({}))) as {
+          error?: string;
+        };
+        throw new Error(data.error || `${a.failed} (HTTP ${startRes.status})`);
       }
-      setDraft((await res.json()) as RecipeDraft);
+      const { jobId } = (await startRes.json()) as { jobId?: string };
+      if (!jobId) throw new Error(a.failed);
+
+      // 2) Ergebnis pollen.
+      setDraft(await pollJob(jobId));
     } catch (err) {
       setError(err instanceof Error ? err.message : a.failed);
     } finally {
       setBusy(false);
     }
+  }
+
+  async function pollJob(jobId: string): Promise<RecipeDraft> {
+    const deadline = Date.now() + 5 * 60 * 1000; // 5 Minuten Obergrenze
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 2500));
+      let res: Response;
+      try {
+        res = await fetch(
+          `/api/admin/recipes/ai?job=${encodeURIComponent(jobId)}`,
+          { cache: "no-store" },
+        );
+      } catch {
+        continue; // vorübergehend nicht erreichbar (z. B. Neustart)
+      }
+      if (res.status === 404) throw new Error(a.failed);
+      if (!res.ok) continue;
+      const data = (await res.json().catch(() => ({}))) as {
+        status?: string;
+        draft?: RecipeDraft;
+        error?: string;
+      };
+      if (data.status === "done" && data.draft) return data.draft;
+      if (data.status === "error") throw new Error(data.error || a.failed);
+      // status === "running" → weiter pollen
+    }
+    throw new Error(a.timeout);
   }
 
   async function apply() {

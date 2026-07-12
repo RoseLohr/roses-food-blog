@@ -166,7 +166,11 @@ export async function generateRecipeDraft(
 
   const userText = `Erstelle aus dem folgenden Ausgangstext ein vollständiges, redaktionell aufbereitetes Rezept auf Deutsch und fülle ALLE Felder aus.\n\n${styleInstruction}\n\n=== Ausgangstext ===\n${sourceText}`;
 
-  const client = new Anthropic({ apiKey, maxRetries: 1 });
+  // Timeout, damit ein hängender Aufruf (z. B. blockierter Egress) nicht ewig
+  // offen bleibt, sondern als klarer Fehler endet. Der Aufruf läuft als
+  // Hintergrund-Job (siehe ai-recipe-jobs.ts), daher stört die Dauer die
+  // HTTP-Antwort nicht.
+  const client = new Anthropic({ apiKey, maxRetries: 1, timeout: 90_000 });
   let res;
   try {
     // Bestes Modell (Opus 4.8), hohe Effort-Stufe. Thinking bewusst NICHT

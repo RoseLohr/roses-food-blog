@@ -351,8 +351,10 @@ export const de = {
         "Text hier einfügen … z. B. Zutatenliste und grobe Zubereitung, oder ein Rezept von einer anderen Seite.",
       generate: "Mit KI erzeugen",
       generating: "KI arbeitet …",
-      generatingHint: "Das kann einen Moment dauern.",
+      generatingHint: "Das kann bis zu einer Minute dauern.",
       failed: "Erzeugung fehlgeschlagen. Bitte erneut versuchen.",
+      timeout:
+        "Die KI hat zu lange gebraucht. Bitte erneut versuchen — ggf. mit weniger Text.",
       noKey:
         "Kein Anthropic-API-Schlüssel hinterlegt. Bitte unter Einstellungen → KI-Assistent eintragen.",
       previewTitle: "Vorschau",
