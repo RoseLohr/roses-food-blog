@@ -4,7 +4,6 @@ import { desc } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { requireAdmin } from "@/lib/auth";
 import { imageUrl } from "@/lib/media";
-import { FilenameInput } from "@/components/admin/filename-input";
 import { MediaThumb } from "@/components/admin/media-thumb";
 import { t } from "@/i18n/de";
 import {
@@ -73,16 +72,6 @@ export default async function MediaPage(props: {
           required
           className="border border-ink-soft/30 px-3 py-2"
         />
-        <label className="text-sm font-medium" htmlFor="upload-name">
-          {m.fileName}
-        </label>
-        <FilenameInput
-          id="upload-name"
-          name="dateiname"
-          placeholder="pasta-alla-norma"
-          className="border border-ink-soft/30 px-3 py-2"
-        />
-        <p className="-mt-1 text-xs text-ink-soft">{m.fileNameHint}</p>
         <label className="text-sm font-medium" htmlFor="upload-alt">
           {m.altText}
         </label>

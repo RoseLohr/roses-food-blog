@@ -87,10 +87,20 @@ export default async function SearchPage(props: {
       ])
     : [[], [], []];
 
+  // Rezepte, die bereits unter einem Zutaten-Treffer erscheinen, nicht ein
+  // zweites Mal (in der allgemeinen Rezeptliste) zeigen oder mitzählen.
+  const ingredientRecipeSlugs = new Set(
+    ingredientHits.flatMap((h) => h.recipes.map((r) => r.slug)),
+  );
+  const uniqueRecipes = recipes.filter(
+    (r) => !ingredientRecipeSlugs.has(r.slug),
+  );
+  const dishCount = ingredientHits.reduce((n, h) => n + h.dishes.length, 0);
   const totalResults =
-    recipes.length +
+    ingredientRecipeSlugs.size +
+    uniqueRecipes.length +
     travel.length +
-    ingredientHits.reduce((n, h) => n + h.recipes.length + h.dishes.length, 0);
+    dishCount;
 
   return (
     <main>
@@ -239,13 +249,13 @@ export default async function SearchPage(props: {
             </section>
           ))}
 
-          {recipes.length > 0 && (
+          {uniqueRecipes.length > 0 && (
             <section className="mb-8">
               <h2 className="mb-3 font-display text-2xl font-bold">
                 {dict.search.recipesHeading}
               </h2>
               <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                {recipes.map((r) => (
+                {uniqueRecipes.map((r) => (
                   <RecipeCard key={r.slug} recipe={r} />
                 ))}
               </div>

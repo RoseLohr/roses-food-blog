@@ -21,90 +21,6 @@ import { db, schema } from "@/db";
 
 const execFileAsync = promisify(execFile);
 
-/** Max. Länge eines benutzerdefinierten Dateinamens (→ Bild-URL). */
-const FILEKEY_MAX = 60;
-
-/**
- * Fehler bei einem ungültigen/vergebenen Wunsch-Dateinamen. Enthält einen
- * bereinigten Vorschlag, den das Upload-Formular direkt übernehmen kann.
- */
-export class ImageNameError extends Error {
-  suggestion: string;
-  constructor(message: string, suggestion: string) {
-    super(message);
-    this.name = "ImageNameError";
-    this.suggestion = suggestion;
-  }
-}
-
-/**
- * Wandelt eine Eingabe in einen URL-sicheren Dateinamen (Slug): deutsche
- * Umlaute werden transliteriert, alles andere auf a–z, 0–9 und Bindestrich
- * reduziert. Basis der öffentlichen Bild-URL (SEO).
- */
-export function slugifyFilename(input: string): string {
-  return input
-    .trim()
-    .replace(
-      /[ÄäÖöÜüß]/g,
-      (c) =>
-        ({ Ä: "Ae", ä: "ae", Ö: "Oe", ö: "oe", Ü: "Ue", ü: "ue", ß: "ss" })[c] ??
-        c,
-    )
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "") // verbliebene Akzente entfernen
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, FILEKEY_MAX)
-    .replace(/-+$/g, "");
-}
-
-async function fileKeyTaken(key: string): Promise<boolean> {
-  const [row] = await db
-    .select({ id: schema.mediaImage.id })
-    .from(schema.mediaImage)
-    .where(eq(schema.mediaImage.fileKey, key))
-    .limit(1);
-  return Boolean(row) || fs.existsSync(path.join(uploadsDir(), key));
-}
-
-async function nextFreeKey(base: string): Promise<string> {
-  for (let i = 2; i < 1000; i++) {
-    const candidate = `${base.slice(0, FILEKEY_MAX - 4)}-${i}`;
-    if (!(await fileKeyTaken(candidate))) return candidate;
-  }
-  return `${base.slice(0, FILEKEY_MAX - 12)}-${crypto.randomBytes(4).toString("hex")}`;
-}
-
-/**
- * Ermittelt den fileKey (= Bild-URL-Segment). Ohne Wunschnamen: zufälliger
- * Hex-Schlüssel. Mit Wunschnamen: strenge Prüfung; bei Fehleingaben oder
- * Namenskonflikt wird ImageNameError mit Vorschlag geworfen.
- */
-async function resolveFileKey(desired?: string): Promise<string> {
-  const wanted = (desired ?? "").trim();
-  if (!wanted) return crypto.randomBytes(10).toString("hex");
-
-  // Eingabe automatisch bereinigen (Kleinbuchstaben, Umlaute, „-"), nicht
-  // ablehnen. Nur wenn nichts Verwertbares übrig bleibt oder der Name schon
-  // vergeben ist, gibt es eine Meldung mit Vorschlag.
-  const slug = slugifyFilename(wanted);
-  if (!slug) {
-    throw new ImageNameError(
-      "Der Dateiname enthält keine verwendbaren Zeichen. Bitte Buchstaben oder Ziffern verwenden.",
-      "",
-    );
-  }
-  if (await fileKeyTaken(slug)) {
-    throw new ImageNameError(
-      "Dieser Dateiname ist bereits vergeben.",
-      await nextFreeKey(slug),
-    );
-  }
-  return slug;
-}
-
 export const VARIANT_WIDTHS = [320, 640, 960, 1280, 1920] as const;
 export const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
 export const ALLOWED_MIME = ["image/jpeg", "image/png", "image/webp"];
@@ -253,15 +169,13 @@ export async function storeImage(
   buffer: Buffer,
   originalName: string,
   altText = "",
-  /** Optionaler Wunsch-Dateiname → bestimmt die Bild-URL (SEO). */
-  desiredKey?: string,
 ): Promise<StoredImage> {
   if (buffer.length > MAX_UPLOAD_BYTES) {
     throw new Error("Datei zu groß (maximal 15 MB).");
   }
 
-  // Wirft ImageNameError (mit Vorschlag) bei ungültigem/vergebenem Namen.
-  const fileKey = await resolveFileKey(desiredKey);
+  // Zufälliger, URL-sicherer Schlüssel (= Bild-URL-Segment).
+  const fileKey = crypto.randomBytes(10).toString("hex");
 
   // Geo-Position aus EXIF lesen, BEVOR die Varianten die Metadaten entfernen.
   const { lat, lng } = await readGeo(buffer);

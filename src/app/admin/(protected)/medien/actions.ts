@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { db, schema } from "@/db";
 import { requireAdmin } from "@/lib/auth";
-import { deleteImageFiles, ImageNameError, storeImage } from "@/lib/media";
+import { deleteImageFiles, storeImage } from "@/lib/media";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -18,20 +18,12 @@ export async function uploadImageAction(formData: FormData): Promise<void> {
   await requireAdmin();
   const file = formData.get("datei");
   const altText = String(formData.get("altText") ?? "").trim();
-  const desiredKey = String(formData.get("dateiname") ?? "").trim();
   if (!(file instanceof File) || file.size === 0) back(dict.common.error);
 
   try {
     const buffer = Buffer.from(await file.arrayBuffer());
-    await storeImage(buffer, file.name, altText, desiredKey);
+    await storeImage(buffer, file.name, altText);
   } catch (err) {
-    if (err instanceof ImageNameError) {
-      back(
-        err.suggestion
-          ? `${err.message} Vorschlag: ${err.suggestion}`
-          : err.message,
-      );
-    }
     back(err instanceof Error ? err.message : dict.common.error);
   }
   back(dict.admin.media.uploaded);

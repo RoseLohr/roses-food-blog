@@ -13,7 +13,6 @@
  */
 import { useEffect, useId, useState } from "react";
 import { createPortal } from "react-dom";
-import { sanitizeFilenameLive } from "@/components/admin/filename-input";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -178,10 +177,8 @@ function LibraryModal({
 }) {
   const uid = useId();
   const [busy, setBusy] = useState(false);
-  const [fileName, setFileName] = useState("");
   const [desc, setDesc] = useState("");
   const [err, setErr] = useState<string | null>(null);
-  const [suggestion, setSuggestion] = useState<string | null>(null);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -199,11 +196,9 @@ function LibraryModal({
     if (busy) return;
     setBusy(true);
     setErr(null);
-    setSuggestion(null);
     try {
       const fd = new FormData();
       fd.append("datei", file);
-      if (fileName.trim()) fd.append("dateiname", fileName.trim());
       if (desc.trim()) fd.append("altText", desc.trim());
       const res = await fetch("/api/admin/media", { method: "POST", body: fd });
       const data = (await res.json().catch(() => ({}))) as {
@@ -211,11 +206,9 @@ function LibraryModal({
         label?: string;
         thumbUrl?: string;
         error?: string;
-        suggestion?: string;
       };
       if (!res.ok) {
         setErr(data.error || dict.quickAdd.uploadError);
-        if (res.status === 422 && data.suggestion) setSuggestion(data.suggestion);
         return;
       }
       if (data.id && data.thumbUrl) {
@@ -224,7 +217,6 @@ function LibraryModal({
           label: data.label ?? "",
           thumbUrl: data.thumbUrl,
         });
-        setFileName("");
         setDesc("");
       }
     } catch {
@@ -261,29 +253,15 @@ function LibraryModal({
         {/* Upload */}
         <div className="border-b border-ink/10 bg-cream/40 px-4 py-3">
           <p className="mb-2 text-sm font-medium">{ip.uploadTitle}</p>
-          <div className="grid gap-2 sm:grid-cols-2">
-            <label className="text-xs text-ink-soft">
-              {ip.fileName}
-              <input
-                value={fileName}
-                onChange={(e) => setFileName(sanitizeFilenameLive(e.target.value))}
-                placeholder={ip.fileNamePlaceholder}
-                autoCapitalize="none"
-                autoCorrect="off"
-                spellCheck={false}
-                className="mt-1 w-full border border-ink-soft/30 bg-white px-2 py-1.5 text-sm text-ink"
-              />
-            </label>
-            <label className="text-xs text-ink-soft">
-              {ip.description}
-              <input
-                value={desc}
-                onChange={(e) => setDesc(e.target.value)}
-                placeholder={ip.descriptionPlaceholder}
-                className="mt-1 w-full border border-ink-soft/30 bg-white px-2 py-1.5 text-sm text-ink"
-              />
-            </label>
-          </div>
+          <label className="block text-xs text-ink-soft">
+            {ip.description}
+            <input
+              value={desc}
+              onChange={(e) => setDesc(e.target.value)}
+              placeholder={ip.descriptionPlaceholder}
+              className="mt-1 w-full border border-ink-soft/30 bg-white px-2 py-1.5 text-sm text-ink"
+            />
+          </label>
           <div className="mt-2 flex items-center gap-2">
             <label
               htmlFor={`${uid}-file`}
@@ -309,22 +287,6 @@ function LibraryModal({
           {err && (
             <p role="alert" className="mt-2 text-xs text-red-700">
               {err}
-              {suggestion && (
-                <>
-                  {" "}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setFileName(suggestion);
-                      setErr(null);
-                      setSuggestion(null);
-                    }}
-                    className="font-semibold text-leaf underline underline-offset-2"
-                  >
-                    {ip.useSuggestion}: {suggestion}
-                  </button>
-                </>
-              )}
             </p>
           )}
         </div>

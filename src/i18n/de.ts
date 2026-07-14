@@ -443,6 +443,7 @@ export const de = {
       noteVisibility: "Öffentlich sichtbar",
       addNote: "Notiz hinzufügen",
       preview: "Vorschau",
+      viewPublic: "Öffentliche Seite ansehen",
       internalNotes: "Interne Notizen (nur für Admins sichtbar)",
       previewBanner:
         "Vorschau — dieser Stand ist für Besucher erst nach Veröffentlichung sichtbar.",

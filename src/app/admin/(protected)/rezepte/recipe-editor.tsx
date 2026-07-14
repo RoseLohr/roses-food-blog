@@ -666,6 +666,18 @@ export function RecipeEditor({
             {d.preview}
           </a>
         )}
+        {form.id !== null &&
+          form.slug &&
+          form.status === "veroeffentlicht" && (
+            <a
+              href={`/rezepte/${form.slug}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm text-leaf underline-offset-2 hover:underline"
+            >
+              {d.viewPublic}
+            </a>
+          )}
       </div>
       </form>
     </div>

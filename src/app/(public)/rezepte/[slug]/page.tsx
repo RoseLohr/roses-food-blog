@@ -7,7 +7,6 @@ import { JsonLd, breadcrumbJsonLd, recipeJsonLd } from "@/lib/jsonld";
 import { RecipeView } from "@/components/recipe-view";
 import { LikeButton } from "@/components/like-button";
 import { PageTracker } from "@/components/page-tracker";
-import { NewsletterSection } from "@/components/newsletter-section";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -80,9 +79,6 @@ export default async function RecipePage(props: {
             initialCount={full.recipe.likeCount}
           />
         }
-      />
-      <NewsletterSection
-        source={`${dict.newsletter.sourceRecipePrefix}: ${full.recipe.slug}`}
       />
     </main>
   );
