@@ -28,7 +28,7 @@ export const de = {
     byCuisineTitle: "Nach Art der Küche wählen",
     byDietTitle: "Nach Ernährungsform wählen",
     aboutTitle: "Über mich",
-    aboutMore: "Mehr über mich",
+    aboutMore: "Lies mehr",
     filterTitle: "Rezepte filtern",
     filterTime: "Nach Zeit",
     filterDiet: "Nach Ernährungsform",

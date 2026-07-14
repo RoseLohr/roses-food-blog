@@ -212,22 +212,25 @@ export default async function HomePage() {
                 {dict.home.aboutTitle}
               </h2>
               {aboutImage && (
-                <div className="mt-3 flex justify-center">
-                  <ResponsiveImg
-                    image={aboutImage}
-                    sizes="160px"
-                    className="h-32 w-32 rounded-full object-cover"
-                  />
+                <div className="mt-4 flex justify-center">
+                  {/* Ovales Bild mit gestricheltem Rahmen (wie Referenz) */}
+                  <div className="rounded-[50%] border-2 border-dashed border-leaf/60 p-2">
+                    <ResponsiveImg
+                      image={aboutImage}
+                      sizes="160px"
+                      className="h-44 w-36 rounded-[50%] object-cover"
+                    />
+                  </div>
                 </div>
               )}
               {config.aboutTeaserText && (
-                <p className="mt-3 text-sm text-ink-soft">{config.aboutTeaserText}</p>
+                <p className="mt-4 text-sm text-ink-soft">{config.aboutTeaserText}</p>
               )}
               <Link
                 href={config.aboutTeaserLink || "/ueber-mich"}
-                className="mt-3 inline-block text-sm font-semibold text-rose-primary underline-offset-2 hover:underline"
+                className="mt-5 inline-block rounded-full bg-rose-primary px-7 py-2.5 text-xs font-semibold uppercase tracking-[0.15em] text-white transition-colors hover:bg-rose-primary-dark"
               >
-                {dict.home.aboutMore} →
+                {dict.home.aboutMore}
               </Link>
             </section>
           )}
