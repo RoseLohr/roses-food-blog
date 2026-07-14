@@ -14,6 +14,7 @@ export interface RecipeCardData {
   teaser: string;
   totalMinutes: number;
   likeCount: number;
+  category?: string | null;
   image: MediaImageLike | null;
 }
 
@@ -31,7 +32,12 @@ export function RecipeCard({ recipe }: { recipe: RecipeCardData }) {
           <div aria-hidden className="aspect-[3/2] w-full bg-cream" />
         )}
         <div className="p-5">
-          <h3 className="font-display text-lg font-bold tracking-tight group-hover:text-rose-primary">
+          {recipe.category && (
+            <p className="mb-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-leaf">
+              {recipe.category}
+            </p>
+          )}
+          <h3 className="font-display text-lg font-bold tracking-tight group-hover:text-leaf">
             {recipe.title}
           </h3>
           {recipe.teaser && (

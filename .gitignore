@@ -17,3 +17,8 @@ data/
 .DS_Store
 *.tsbuildinfo
 next-env.d.ts
+
+# Playwright (E2E-Frontend-Tests)
+.pw-data/
+playwright-report/
+test-results/

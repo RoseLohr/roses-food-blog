@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, inArray } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { HeroSlider, type SlideData } from "@/components/hero-slider";
 import { RecipeCard } from "@/components/recipe-card";
@@ -25,26 +25,59 @@ async function loadHomepage() {
       id: schema.sliderItem.id,
       caption: schema.sliderItem.caption,
       img: schema.mediaImage,
+      recipeId: schema.recipe.id,
       recipeSlug: schema.recipe.slug,
       recipeStatus: schema.recipe.status,
+      recipeLikes: schema.recipe.likeCount,
     })
     .from(schema.sliderItem)
     .innerJoin(schema.mediaImage, eq(schema.sliderItem.imageId, schema.mediaImage.id))
     .leftJoin(schema.recipe, eq(schema.sliderItem.recipeId, schema.recipe.id))
     .orderBy(asc(schema.sliderItem.sortOrder));
 
+  // Kategorien der verknüpften (veröffentlichten) Rezepte in EINER Abfrage
+  // laden (nur lesend, kein Schema-Eingriff) — für das Kategorie-Label im
+  // Slider (Tiny-Salt-Optik).
+  const recipeIds = sliderRows
+    .filter((s) => s.recipeId != null && s.recipeStatus === "veroeffentlicht")
+    .map((s) => s.recipeId as number);
+  const catByRecipe = new Map<number, string[]>();
+  if (recipeIds.length > 0) {
+    const catRows = await db
+      .select({
+        recipeId: schema.recipeCategory.recipeId,
+        name: schema.category.name,
+      })
+      .from(schema.recipeCategory)
+      .innerJoin(
+        schema.category,
+        eq(schema.recipeCategory.categoryId, schema.category.id),
+      )
+      .where(inArray(schema.recipeCategory.recipeId, recipeIds));
+    for (const c of catRows) {
+      const arr = catByRecipe.get(c.recipeId) ?? [];
+      arr.push(c.name);
+      catByRecipe.set(c.recipeId, arr);
+    }
+  }
+
   const slides: SlideData[] = sliderRows.map((s) => {
     const widths: number[] = JSON.parse(s.img.variantWidths);
+    const linked =
+      s.recipeId != null && s.recipeStatus === "veroeffentlicht"
+        ? s.recipeId
+        : null;
     return {
       id: s.id,
       imgSrc: imageUrl(s.img.fileKey, widths.at(-1) ?? 1280),
       imgSrcSet: srcset(s.img.fileKey, widths),
       alt: s.img.altText,
       caption: s.caption,
-      href:
-        s.recipeSlug && s.recipeStatus === "veroeffentlicht"
-          ? `/rezepte/${s.recipeSlug}`
-          : null,
+      href: linked ? `/rezepte/${s.recipeSlug}` : null,
+      category: linked
+        ? (catByRecipe.get(linked)?.slice(0, 2).join(" / ") ?? null)
+        : null,
+      likeCount: linked ? s.recipeLikes : null,
     };
   });
 
@@ -76,17 +109,22 @@ export default async function HomePage() {
       <PageTracker contentType="seite" path="/" />
       <h1 className="sr-only">{dict.home.welcome}</h1>
 
-      <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_17rem]">
-        {/* Hauptspalte */}
-        <div className="min-w-0">
+      {/* Vollbreiter Hero-Slider (Tiny-Salt-Look) direkt unter dem Header */}
+      {slides.length > 0 && (
+        <div className="full-bleed -mt-8">
           <HeroSlider
             slides={slides}
             intervalSeconds={config?.sliderIntervalSeconds ?? 6}
           />
+        </div>
+      )}
 
+      <div className="mt-10 grid gap-8 lg:grid-cols-[minmax(0,1fr)_17rem]">
+        {/* Hauptspalte */}
+        <div className="min-w-0">
           {/* Beliebteste Rezepte (nach Likes) */}
           {popular.length > 0 && (
-            <section className="mt-10">
+            <section>
               <h2 className="font-display text-2xl font-bold md:text-3xl">
                 {dict.home.popularTitle}
               </h2>

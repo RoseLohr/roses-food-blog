@@ -1,12 +1,18 @@
 "use client";
 
 /**
- * Startseiten-Slider: konfigurierbares Wechselintervall, pausierbar
- * (Button + automatisch bei prefers-reduced-motion), Tastaturbedienung
- * über Vor/Zurück-Buttons und Punkte.
+ * Startseiten-Hero im Tiny-Salt-Look („slider-style-2"):
+ * - Vollflächiges Bild mit dunklem Overlay, mittig Kategorie (grün),
+ *   Playfair-Titel und Like-Meta.
+ * - Runde Vor/Zurück-Pfeile.
+ * - Darunter eine synchronisierte Thumbnail-Leiste (aktives Bild hell mit
+ *   weißem Rahmen, inaktive abgedunkelt), die den Rand überlappt.
+ * Bedienbar per Maus, Tastatur (Pfeiltasten + Buttons) und mit Auto-Wechsel,
+ * der pausierbar ist und bei prefers-reduced-motion automatisch stoppt.
  */
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { IconHeart } from "@/components/icons";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -18,6 +24,8 @@ export interface SlideData {
   alt: string;
   caption: string;
   href: string | null;
+  category?: string | null;
+  likeCount?: number | null;
 }
 
 export function HeroSlider({
@@ -28,107 +36,185 @@ export function HeroSlider({
   intervalSeconds: number;
 }) {
   const [index, setIndex] = useState(0);
-  const [paused, setPaused] = useState(false);
-  const reducedMotion = useRef(false);
+  // Explizite Nutzer-Pause (Button) getrennt von der transienten Pause bei
+  // Hover/Fokus — sonst würde Hovern den Button-Zustand überschreiben.
+  const [userPaused, setUserPaused] = useState(false);
+  const [interacting, setInteracting] = useState(false);
+  const baseId = useId();
 
   useEffect(() => {
-    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-    reducedMotion.current = mq.matches;
-    if (mq.matches) setPaused(true);
+    // prefers-reduced-motion: nicht automatisch wechseln; Steuerung zeigt „Play".
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setUserPaused(true);
+    }
   }, []);
 
-  const next = useCallback(
-    () => setIndex((i) => (i + 1) % slides.length),
-    [slides.length],
+  const count = slides.length;
+  const goTo = useCallback(
+    (i: number) => setIndex(((i % count) + count) % count),
+    [count],
   );
+  const next = useCallback(() => goTo(index + 1), [goTo, index]);
+  const prev = useCallback(() => goTo(index - 1), [goTo, index]);
+
+  const multi = count > 1;
+  const autoplay = multi && !userPaused && !interacting;
 
   useEffect(() => {
-    if (paused || slides.length < 2) return;
+    if (!autoplay) return;
     const timer = setInterval(next, Math.max(2, intervalSeconds) * 1000);
     return () => clearInterval(timer);
-  }, [paused, intervalSeconds, next, slides.length]);
+  }, [autoplay, intervalSeconds, next]);
 
-  if (slides.length === 0) return null;
+  if (count === 0) return null;
   const slide = slides[index];
+
+  function onKeyDown(e: React.KeyboardEvent) {
+    if (!multi) return;
+    if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      prev();
+    } else if (e.key === "ArrowRight") {
+      e.preventDefault();
+      next();
+    }
+  }
 
   return (
     <section
       aria-roledescription="Karussell"
       aria-label={dict.home.sliderLabel}
-      className="relative overflow-hidden"
+      // mb reserviert Platz für die nach unten überlappende Thumbnail-Leiste.
+      className={`featured-slider relative select-none ${multi ? "mb-20 sm:mb-24" : ""}`}
+      // Transiente Pause bei Hover/Fokus (getrennt vom Pause-Button-Zustand).
+      onMouseEnter={() => setInteracting(true)}
+      onMouseLeave={() => setInteracting(false)}
+      onFocusCapture={() => setInteracting(true)}
+      onBlurCapture={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+          setInteracting(false);
+        }
+      }}
+      onKeyDown={onKeyDown}
     >
-      <div aria-live={paused ? "polite" : "off"}>
-        {slide.href ? (
-          <Link href={slide.href} className="block">
-            <img
-              src={slide.imgSrc}
-              srcSet={slide.imgSrcSet}
-              sizes="(max-width: 1024px) 100vw, 768px"
-              alt={slide.alt}
-              width={1280}
-              height={720}
-              decoding="async"
-              className="aspect-[16/9] w-full object-cover"
-            />
-            {slide.caption && (
-              <p className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-4 pt-10 font-display text-xl font-bold text-white md:text-2xl">
+      {/* Hauptbühne */}
+      <div
+        id={baseId}
+        className="relative min-h-[22rem] overflow-hidden bg-ink sm:min-h-[28rem] lg:min-h-[32rem]"
+      >
+        {/* Hintergrundbild + Overlay */}
+        <img
+          key={slide.id}
+          src={slide.imgSrc}
+          srcSet={slide.imgSrcSet}
+          sizes="(max-width: 1024px) 100vw, 1024px"
+          alt={slide.alt}
+          width={1280}
+          height={720}
+          decoding="async"
+          fetchPriority="high"
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+        <div aria-hidden className="absolute inset-0 bg-black/50" />
+
+        {/* Inhalt */}
+        <div
+          aria-live={autoplay ? "off" : "polite"}
+          className="absolute inset-0 flex flex-col items-center justify-center gap-5 px-14 pb-16 text-center text-white sm:px-20"
+        >
+          {slide.category && (
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-leaf-soft">
+              {slide.category}
+            </p>
+          )}
+          <h2 className="font-display text-[1.75rem] font-semibold leading-tight drop-shadow-sm sm:text-[2.25rem] lg:text-[2.75rem]">
+            {slide.href ? (
+              <Link href={slide.href} className="hover:text-white/90">
                 {slide.caption}
-              </p>
+              </Link>
+            ) : (
+              slide.caption
             )}
-          </Link>
-        ) : (
-          <img
-            src={slide.imgSrc}
-            srcSet={slide.imgSrcSet}
-            sizes="(max-width: 1024px) 100vw, 768px"
-            alt={slide.alt}
-            width={1280}
-            height={720}
-            decoding="async"
-            className="aspect-[16/9] w-full object-cover"
-          />
+          </h2>
+          {typeof slide.likeCount === "number" && (
+            <p className="flex items-center gap-1.5 text-sm tracking-wide">
+              <IconHeart className="h-4 w-4" filled />
+              {slide.likeCount} {dict.recipeList.likesSuffix}
+            </p>
+          )}
+        </div>
+
+        {/* Pfeile */}
+        {multi && (
+          <>
+            <button
+              type="button"
+              onClick={prev}
+              aria-label={dict.home.sliderPrev}
+              className="absolute left-3 top-1/2 z-20 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full text-2xl text-white/90 drop-shadow-lg transition hover:bg-white/15 hover:text-white"
+            >
+              ‹
+            </button>
+            <button
+              type="button"
+              onClick={next}
+              aria-label={dict.home.sliderNext}
+              className="absolute right-3 top-1/2 z-20 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full text-2xl text-white/90 drop-shadow-lg transition hover:bg-white/15 hover:text-white"
+            >
+              ›
+            </button>
+            {/* Pause/Play (dezent) */}
+            <button
+              type="button"
+              onClick={() => setUserPaused((p) => !p)}
+              aria-pressed={userPaused}
+              aria-label={userPaused ? dict.home.sliderPlay : dict.home.sliderPause}
+              className="absolute right-3 top-3 z-20 flex h-8 w-8 items-center justify-center rounded-full bg-black/30 text-xs text-white/90 transition hover:bg-black/50"
+            >
+              {userPaused ? "▶" : "❚❚"}
+            </button>
+          </>
         )}
       </div>
 
-      {slides.length > 1 && (
-        <div className="absolute bottom-3 right-3 flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => setIndex((i) => (i - 1 + slides.length) % slides.length)}
-            aria-label={dict.home.sliderPrev}
-            className="flex h-8 w-8 items-center justify-center rounded-full bg-white/90 font-bold shadow hover:bg-white"
-          >
-            ‹
-          </button>
-          {slides.map((s, i) => (
-            <button
-              key={s.id}
-              type="button"
-              onClick={() => setIndex(i)}
-              aria-label={`${dict.home.sliderGoTo} ${i + 1}`}
-              aria-current={i === index}
-              className={`h-2.5 w-2.5 rounded-full shadow ${
-                i === index ? "bg-white" : "bg-white/50 hover:bg-white/80"
-              }`}
-            />
-          ))}
-          <button
-            type="button"
-            onClick={next}
-            aria-label={dict.home.sliderNext}
-            className="flex h-8 w-8 items-center justify-center rounded-full bg-white/90 font-bold shadow hover:bg-white"
-          >
-            ›
-          </button>
-          <button
-            type="button"
-            onClick={() => setPaused((p) => !p)}
-            aria-pressed={paused}
-            aria-label={paused ? dict.home.sliderPlay : dict.home.sliderPause}
-            className="ml-1 flex h-8 w-8 items-center justify-center rounded-full bg-white/90 shadow hover:bg-white"
-          >
-            {paused ? "▶" : "⏸"}
-          </button>
+      {/* Thumbnail-Navigation — überlappt den unteren Rand */}
+      {multi && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 translate-y-1/2">
+          <ul className="pointer-events-auto mx-auto flex max-w-4xl items-stretch justify-center gap-2 px-4 sm:gap-3 sm:px-8">
+            {slides.map((s, i) => {
+              const active = i === index;
+              return (
+                <li key={s.id} className="min-w-0 flex-1 basis-40 sm:max-w-[13rem]">
+                  <button
+                    type="button"
+                    onClick={() => goTo(i)}
+                    aria-label={`${dict.home.sliderGoTo} ${i + 1}`}
+                    aria-current={active}
+                    aria-controls={baseId}
+                    className={`group relative block aspect-[3/2] w-full overflow-hidden border-2 shadow-md transition ${
+                      active ? "border-white" : "border-white/70"
+                    }`}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={s.imgSrc}
+                      alt=""
+                      aria-hidden
+                      loading="lazy"
+                      decoding="async"
+                      className="h-full w-full object-cover"
+                    />
+                    <span
+                      aria-hidden
+                      className={`absolute inset-0 transition-opacity ${
+                        active ? "bg-black/0" : "bg-black/60 group-hover:bg-black/40"
+                      }`}
+                    />
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
         </div>
       )}
     </section>

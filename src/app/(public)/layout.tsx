@@ -1,15 +1,9 @@
 import Link from "next/link";
 import { NewsletterSection } from "@/components/newsletter-section";
+import { SiteHeader } from "@/components/site-header";
 import { t } from "@/i18n/de";
 
 const dict = t();
-
-const NAV: Array<[string, string]> = [
-  ["/rezepte", dict.nav.recipes],
-  ["/reisen", dict.nav.travel],
-  ["/ueber-mich", dict.nav.about],
-  ["/suche", dict.nav.search],
-];
 
 export default function PublicLayout({
   children,
@@ -22,62 +16,54 @@ export default function PublicLayout({
       >
         {dict.site.skipToContent}
       </a>
-      <header className="border-b border-ink/10 bg-white print:hidden">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3">
-          <Link
-            href="/"
-            className="font-display text-xl font-bold text-rose-primary"
-          >
-            {dict.site.name}
-          </Link>
-          <nav aria-label={dict.nav.menu}>
-            <ul className="flex flex-wrap items-center gap-1 md:gap-2">
-              {NAV.map(([href, label]) => (
-                <li key={href}>
-                  <Link
-                    href={href}
-                    className="px-3 py-1.5 text-sm font-medium hover:bg-cream hover:text-rose-primary"
-                  >
-                    {label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </nav>
-        </div>
-      </header>
+
+      <SiteHeader />
 
       <div id="inhalt" className="mx-auto w-full max-w-6xl grow px-4 py-8">
         {children}
       </div>
 
-      <footer className="mt-auto border-t border-ink/10 bg-white print:hidden">
-        <div className="mx-auto max-w-6xl px-4 pt-8">
-          <div className="max-w-md">
-            <NewsletterSection source={dict.newsletter.sourceFooter} compact />
+      <footer className="mt-auto print:hidden">
+        <div className="border-t border-ink/10 bg-white">
+          <div className="mx-auto max-w-6xl px-4 pt-8">
+            <div className="max-w-md">
+              <NewsletterSection source={dict.newsletter.sourceFooter} compact />
+            </div>
+          </div>
+          <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-4 py-6 text-sm text-ink-soft">
+            <ul className="flex flex-wrap gap-4">
+              <li>
+                <Link href="/ueber-mich" className="hover:text-leaf">
+                  {dict.footer.aboutMe}
+                </Link>
+              </li>
+              <li>
+                <Link href="/datenschutz" className="hover:text-leaf">
+                  {dict.footer.privacy}
+                </Link>
+              </li>
+              <li>
+                <Link href="/impressum" className="hover:text-leaf">
+                  {dict.footer.imprint}
+                </Link>
+              </li>
+            </ul>
           </div>
         </div>
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-4 py-6 text-sm text-ink-soft">
-          <p>
-            © {new Date().getFullYear()} {dict.site.name}. {dict.footer.rights}
-          </p>
-          <ul className="flex gap-4">
-            <li>
-              <Link href="/ueber-mich" className="hover:text-rose-primary">
-                {dict.footer.aboutMe}
-              </Link>
-            </li>
-            <li>
-              <Link href="/datenschutz" className="hover:text-rose-primary">
-                {dict.footer.privacy}
-              </Link>
-            </li>
-            <li>
-              <Link href="/impressum" className="hover:text-rose-primary">
-                {dict.footer.imprint}
-              </Link>
-            </li>
-          </ul>
+
+        {/* Dunkle Fußleiste im Tiny-Salt-Stil */}
+        <div className="bg-ink text-white">
+          <div className="mx-auto flex max-w-6xl flex-col items-center gap-1 px-4 py-6 text-center text-sm">
+            <p className="flex items-center gap-1.5 text-white/90">
+              Cook &amp; Write with
+              <span className="text-red-500" aria-hidden>
+                ♥
+              </span>
+            </p>
+            <p className="text-white/60">
+              © {new Date().getFullYear()} {dict.site.name}. {dict.footer.rights}
+            </p>
+          </div>
         </div>
       </footer>
     </>

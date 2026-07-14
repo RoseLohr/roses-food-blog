@@ -17,6 +17,11 @@ WORKDIR /app
 # SIGILL abstürzen; stattdessen nutzt die Bildpipeline die Debian-libvips-CLI
 # (IMAGE_BACKEND=vips, gesetzt vom Entrypoint). deploy.sh erkennt das selbst.
 ARG LOW_CPU=0
+# @playwright/test ist eine reine Test-Abhängigkeit (E2E-Frontend-Tests). Seine
+# postinstall würde sonst ~150 MB Browser herunterladen — im Produktions-Build
+# unnötig und auf schwacher Hardware/eingeschränktem Netz fehleranfällig. Die
+# Browser werden nur lokal/CI zum Testen gebraucht, nie zur Laufzeit.
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
 # Schnelltest der nativen Module — schlägt hier gezielt fehl (mit Modulname

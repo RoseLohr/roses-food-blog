@@ -1,23 +1,55 @@
 @import "tailwindcss";
 
-@theme {
-  /* Selbst gehostete System-Schrift-Stacks — keine externen Fonts,
-     keine Font-Downloads zur Laufzeit (Annahme B19). */
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
-    "Helvetica Neue", Arial, sans-serif;
-  --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia,
-    ui-serif, serif;
+/* Selbst gehostete Webfonts (Tiny-Salt-Look): Playfair Display für
+   Überschriften, Nunito Sans für Fließtext. Variable Fonts, latin-Subset
+   (deckt deutsche Umlaute ab). Ausgeliefert vom eigenen Origin unter
+   /fonts — keine externen CDNs, kein Font-Download zur Laufzeit (Annahme
+   B19). font-display: swap hält den Text sofort sichtbar. */
+@font-face {
+  font-family: "Playfair Display";
+  font-style: normal;
+  font-weight: 400 900;
+  font-display: swap;
+  src: url("/fonts/playfair-display.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Nunito Sans";
+  font-style: normal;
+  font-weight: 200 1000;
+  font-display: swap;
+  src: url("/fonts/nunito-sans.woff2") format("woff2");
+}
 
-  /* Warme, freundliche Food-Blog-Palette (angelehnt an Tiny Salt) */
-  --color-rose-primary: #b0413e;
-  --color-rose-primary-dark: #8f3230;
-  --color-cream: #faf6f0;
-  --color-cream-deep: #f3ead9;
-  --color-ink: #2d2a26;
-  --color-ink-soft: #5c564e;
+@theme {
+  --font-sans: "Nunito Sans", ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-display: "Playfair Display", "Iowan Old Style", "Palatino Linotype",
+    Palatino, Georgia, ui-serif, serif;
+
+  /* Tiny-Salt-Palette: grüner Akzent (#4FD675 → Teal #4FD6C8),
+     tiefes Tinten­schwarz, weicher Grau-Fließtext, weißer Grund.
+     Die Token-NAMEN bleiben (rose-primary = Marken-Akzent), damit die
+     Umstellung zentral hier passiert und nicht in dutzenden Dateien. */
+  --color-rose-primary: #2fb457; /* grüner Akzent, kontraststark auf Weiß */
+  --color-rose-primary-dark: #249247;
+  --color-accent: #4fd675; /* helles Tiny-Salt-Grün (Kategorien, Highlights) */
+  --color-accent-2: #4fd6c8; /* Teal-Ende des Verlaufs */
+  --color-cream: #f4f6f5; /* sehr helles Grau statt Creme */
+  --color-cream-deep: #e8ebea;
+  --color-ink: #111111;
+  --color-ink-soft: #4c4b5b;
   --color-sage: #7a8b6f;
-  --color-leaf: #6db983;
-  --color-leaf-soft: #8fce9d;
+  --color-leaf: #2fb457;
+  --color-leaf-soft: #4fd675;
+}
+
+/* Full-Bleed: Element auf volle Viewportbreite ziehen (Startseiten-Hero),
+   auch aus einem zentrierten max-w-Container heraus. `overflow-x: clip` am
+   Body (siehe Root-Layout) verhindert horizontales Scrollen, ohne
+   position:sticky zu brechen (anders als overflow-x:hidden). */
+.full-bleed {
+  width: 100vw;
+  margin-inline: calc(50% - 50vw);
 }
 
 @media (prefers-reduced-motion: reduce) {
