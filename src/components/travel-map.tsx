@@ -137,6 +137,11 @@ export function TravelMap({ pins }: { pins: TravelMapPin[] }) {
 
       // „Beim Zoomen“ verschwindet ein offenes Popup wieder.
       map.on("zoomstart", () => map?.closePopup());
+
+      // Manche mobilen Browser (u. a. iOS Safari) vermessen den Container beim
+      // Init noch nicht endgültig — Größe kurz danach neu berechnen, sonst
+      // bleibt die Karte gelegentlich leer/grau.
+      setTimeout(() => map?.invalidateSize(), 250);
     })();
 
     return () => {

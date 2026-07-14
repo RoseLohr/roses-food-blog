@@ -203,8 +203,8 @@ export default async function SearchPage(props: {
                 {hit.image && (
                   <ResponsiveImg
                     image={hit.image}
-                    sizes="80px"
-                    className="h-20 w-20 rounded-full object-cover"
+                    sizes="160px"
+                    className="h-24 w-auto max-w-[10rem] object-contain"
                   />
                 )}
                 <h2 className="font-display text-2xl font-bold">
