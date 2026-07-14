@@ -8,9 +8,6 @@ export const de = {
     name: "Roses Food Blog",
     tagline: "Gesunde Rezepte & kulinarische Reisen",
     skipToContent: "Zum Inhalt springen",
-    /* Logo-Schriftzug im Kopfbereich (Tiny-Salt-Look, wie Referenz). */
-    logo: "tinysalt.studio",
-    logoTagline: "Cook & Write",
     searchPlaceholder: "Zum Suchen Enter drücken",
   },
   health: {

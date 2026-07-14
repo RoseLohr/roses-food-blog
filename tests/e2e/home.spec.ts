@@ -4,14 +4,16 @@ import { t } from "../../src/i18n/de";
 const dict = t();
 
 test.describe("Öffentliche Startseite — Tiny-Salt-Optik", () => {
-  test("Header zeigt Logo-Lockup und Suchpille", async ({ page }) => {
+  test("Header zeigt Logo-Lockup (Name + Slogan) und Suchpille", async ({
+    page,
+  }) => {
     await page.goto("/");
     const header = page.locator("header");
     await expect(
-      header.getByText(dict.site.logo, { exact: true }),
+      header.getByText(dict.site.name, { exact: true }),
     ).toBeVisible();
     await expect(
-      header.getByText(dict.site.logoTagline, { exact: true }),
+      header.getByText(dict.site.tagline, { exact: true }),
     ).toBeVisible();
     await expect(
       page.getByPlaceholder(dict.site.searchPlaceholder),

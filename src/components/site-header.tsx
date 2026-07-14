@@ -102,13 +102,13 @@ export function SiteHeader() {
       className="sticky top-0 z-40 border-b border-ink/10 bg-white print:hidden"
     >
       <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-4 sm:gap-6">
-        {/* Logo-Lockup */}
+        {/* Logo-Lockup: Blogname + Slogan */}
         <Link href="/" className="mr-auto shrink-0 leading-none" aria-label={dict.site.name}>
-          <span className="block font-sans text-2xl font-extrabold lowercase tracking-tight text-ink">
-            {dict.site.logo}
+          <span className="block font-display text-2xl font-bold tracking-tight text-ink">
+            {dict.site.name}
           </span>
-          <span className="mt-1 block text-[0.62rem] font-semibold uppercase tracking-[0.32em] text-ink-soft">
-            {dict.site.logoTagline}
+          <span className="mt-1 block text-[0.58rem] font-semibold uppercase tracking-[0.16em] text-ink-soft">
+            {dict.site.tagline}
           </span>
         </Link>
 
