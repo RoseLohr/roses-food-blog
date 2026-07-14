@@ -88,19 +88,39 @@ export function TravelMap({ pins }: { pins: TravelMapPin[] }) {
       map.attributionControl.setPrefix("Leaflet");
       map.setView([20, 0], 2);
 
-      // Gemeinfreie Weltkarte (Natural Earth) als Vektor-Hintergrund, keine Kacheln.
+      // Gemeinfreie Weltkarte (Natural Earth 50 m) als Vektor-Hintergrund:
+      // cremefarbenes Land auf blauem Wasser (Container-Hintergrund) plus
+      // Ländernamen. Keine Kacheln → keine Fremd-Requests, strikte CSP bleibt.
+      const labelLayer = L.layerGroup();
+      const labels: { marker: import("leaflet").Marker; min: number }[] = [];
       try {
-        const geo = await fetch("/geo/world-110m.geojson").then((r) => r.json());
+        const geo = await fetch("/geo/world-50m.geojson").then((r) => r.json());
         if (cancelled || !map) return;
         L.geoJSON(geo, {
           interactive: false,
           style: {
-            color: "#c3ccca", // Ländergrenzen
-            weight: 0.6,
-            fillColor: "#e8ebea", // Landfläche
+            color: "#cdbfa6", // dezente Ländergrenzen
+            weight: 0.5,
+            fillColor: "#f4efe6", // cremefarbenes Land
             fillOpacity: 1,
           },
         }).addTo(map);
+        labelLayer.addTo(map);
+        for (const f of geo.features ?? []) {
+          const pr = f?.properties;
+          if (!pr?.name || typeof pr.lx !== "number" || typeof pr.ly !== "number")
+            continue;
+          const marker = L.marker([pr.ly, pr.lx], {
+            interactive: false,
+            keyboard: false,
+            icon: L.divIcon({
+              className: "travel-map-label",
+              html: `<span style="display:inline-block;transform:translate(-50%,-50%);white-space:nowrap;pointer-events:none;color:#4b4550;font-family:'Nunito Sans',system-ui,sans-serif;font-size:11px;font-weight:600;text-shadow:0 0 2px #fff,0 0 3px #fff">${esc(String(pr.name))}</span>`,
+              iconSize: [0, 0],
+            }),
+          });
+          labels.push({ marker, min: typeof pr.min === "number" ? pr.min : 0 });
+        }
         map.attributionControl.addAttribution(
           "Karte: Natural Earth (gemeinfrei)",
         );
@@ -108,6 +128,20 @@ export function TravelMap({ pins }: { pins: TravelMapPin[] }) {
         /* Ohne Basemap bleibt die Karte nutzbar (nur Pins auf Hintergrund). */
       }
       if (cancelled || !map) return;
+
+      // Beschriftungen zoomabhängig ein-/ausblenden (kleinere Länder erst beim
+      // Reinzoomen), damit die Weltansicht nicht überladen wirkt.
+      const refreshLabels = () => {
+        if (!map) return;
+        const z = map.getZoom();
+        for (const { marker, min } of labels) {
+          const show = z >= min - 0.5;
+          const has = labelLayer.hasLayer(marker);
+          if (show && !has) labelLayer.addLayer(marker);
+          else if (!show && has) labelLayer.removeLayer(marker);
+        }
+      };
+      map.on("zoomend", refreshLabels);
 
       const icon = L.divIcon({
         html: PIN_SVG,
@@ -134,6 +168,7 @@ export function TravelMap({ pins }: { pins: TravelMapPin[] }) {
         const group = L.featureGroup(markers);
         map.fitBounds(group.getBounds().pad(0.3), { maxZoom: 6 });
       }
+      refreshLabels();
 
       // „Beim Zoomen“ verschwindet ein offenes Popup wieder.
       map.on("zoomstart", () => map?.closePopup());
@@ -156,8 +191,8 @@ export function TravelMap({ pins }: { pins: TravelMapPin[] }) {
         ref={containerRef}
         role="application"
         aria-label={dict.travelList.mapLabel}
-        className="h-[360px] w-full bg-cream shadow-sm sm:h-[440px]"
-        style={{ background: "#eef2f3" }}
+        className="h-[360px] w-full shadow-sm sm:h-[440px]"
+        style={{ background: "#a8d1e0" }}
       />
     </section>
   );
