@@ -81,7 +81,7 @@ export function QuickAddCheckboxes({
   return (
     <fieldset>
       <legend className="mb-1 text-sm font-medium">{legend}</legend>
-      <div className="max-h-40 overflow-y-auto rounded-lg border border-ink-soft/20 p-2">
+      <div className="max-h-40 overflow-y-auto border border-ink-soft/20 p-2">
         {options.length === 0 && (
           <p className="px-1 py-0.5 text-sm text-ink-soft">—</p>
         )}
@@ -112,7 +112,7 @@ export function QuickAddCheckboxes({
             }
           }}
           placeholder={dict.quickAdd.placeholder}
-          className="w-full min-w-0 rounded-lg border border-ink-soft/30 px-2 py-1 text-sm"
+          className="w-full min-w-0 border border-ink-soft/30 px-2 py-1 text-sm"
         />
         <button
           type="button"

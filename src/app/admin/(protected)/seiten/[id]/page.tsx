@@ -14,7 +14,7 @@ const d = dict.admin.pages;
 
 export const metadata: Metadata = { title: d.editPage };
 
-const inputCls = "w-full rounded-lg border border-ink-soft/30 px-3 py-2 text-sm";
+const inputCls = "w-full border border-ink-soft/30 px-3 py-2 text-sm";
 const labelCls = "mb-1 block text-sm font-medium";
 
 export default async function EditPagePage(props: {
@@ -58,13 +58,13 @@ export default async function EditPagePage(props: {
         {isNew ? d.newPage : `${d.editPage}: ${page!.title}`}
       </h1>
       {message && (
-        <p role="status" className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
+        <p role="status" className="mb-4 bg-amber-50 p-3 text-sm text-amber-900">
           {message}
         </p>
       )}
       <form
         action={savePageAction}
-        className="flex max-w-3xl flex-col gap-4 rounded-2xl bg-white p-5 shadow-sm"
+        className="flex max-w-3xl flex-col gap-4 bg-white p-5 shadow-sm"
       >
         {page && <input type="hidden" name="id" value={page.id} />}
         <div>
@@ -119,7 +119,7 @@ export default async function EditPagePage(props: {
             id="s-status"
             name="status"
             defaultValue={page?.status ?? "entwurf"}
-            className="rounded-lg border border-ink-soft/30 px-3 py-2 text-sm"
+            className="border border-ink-soft/30 px-3 py-2 text-sm"
           >
             <option value="entwurf">{dict.admin.recipes.statusDraft}</option>
             <option value="veroeffentlicht">

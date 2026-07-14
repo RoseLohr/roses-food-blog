@@ -32,13 +32,13 @@ export default async function TaxonomiesPage(props: {
     <>
       <h1 className="mb-6 text-2xl font-bold">{dict.admin.taxonomies.title}</h1>
       {message && (
-        <p role="status" className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
+        <p role="status" className="mb-4 bg-amber-50 p-3 text-sm text-amber-900">
           {message}
         </p>
       )}
       <div className="grid gap-6 lg:grid-cols-2 xl:grid-cols-3">
         {lists.map(([type, entries]) => (
-          <section key={type} className="rounded-2xl bg-white p-5 shadow-sm">
+          <section key={type} className="bg-white p-5 shadow-sm">
             <h2 className="mb-3 text-lg font-semibold">
               {dict.admin.taxonomies.types[type]}
             </h2>
@@ -46,7 +46,7 @@ export default async function TaxonomiesPage(props: {
               {entries.map((e) => (
                 <li
                   key={e.id}
-                  className="flex items-center gap-1 rounded-full bg-cream px-3 py-1 text-sm"
+                  className="flex items-center gap-1 bg-cream px-3 py-1 text-sm"
                 >
                   {e.name}
                   <form action={deleteTaxonomyEntryAction} className="inline">
@@ -73,7 +73,7 @@ export default async function TaxonomiesPage(props: {
                 name="name"
                 required
                 placeholder={dict.admin.taxonomies.newEntry}
-                className="w-full min-w-0 rounded-lg border border-ink-soft/30 px-3 py-1.5 text-sm"
+                className="w-full min-w-0 border border-ink-soft/30 px-3 py-1.5 text-sm"
               />
               <button
                 type="submit"

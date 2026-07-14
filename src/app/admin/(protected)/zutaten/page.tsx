@@ -60,14 +60,14 @@ export default async function IngredientsPage(props: {
         {dict.admin.ingredients.imageHint}
       </p>
       {message && (
-        <p role="status" className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
+        <p role="status" className="mb-4 bg-amber-50 p-3 text-sm text-amber-900">
           {message}
         </p>
       )}
 
       <form
         action={createIngredientAction}
-        className="mb-8 flex max-w-xl flex-wrap items-end gap-3 rounded-2xl bg-white p-5 shadow-sm"
+        className="mb-8 flex max-w-xl flex-wrap items-end gap-3 bg-white p-5 shadow-sm"
       >
         <div className="grow">
           <label className="mb-1 block text-sm font-medium" htmlFor="neu-name">
@@ -77,7 +77,7 @@ export default async function IngredientsPage(props: {
             id="neu-name"
             name="name"
             required
-            className="w-full rounded-lg border border-ink-soft/30 px-3 py-2"
+            className="w-full border border-ink-soft/30 px-3 py-2"
           />
         </div>
         <div className="w-full">
@@ -99,7 +99,7 @@ export default async function IngredientsPage(props: {
 
       <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {ingredients.map((ing) => (
-          <li key={ing.id} className="flex gap-3 rounded-2xl bg-white p-4 shadow-sm">
+          <li key={ing.id} className="flex gap-3 bg-white p-4 shadow-sm">
             {ing.fileKey ? (
               <img
                 src={imageUrl(ing.fileKey, JSON.parse(ing.variantWidths ?? "[320]")[0] ?? 320)}
@@ -107,12 +107,12 @@ export default async function IngredientsPage(props: {
                 width={64}
                 height={64}
                 loading="lazy"
-                className="h-16 w-16 shrink-0 rounded-lg object-cover"
+                className="h-16 w-16 shrink-0 object-cover"
               />
             ) : (
               <div
                 aria-hidden
-                className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg bg-cream text-xs text-ink-soft"
+                className="flex h-16 w-16 shrink-0 items-center justify-center bg-cream text-xs text-ink-soft"
               >
                 {dict.admin.recipes.noImage}
               </div>
@@ -127,7 +127,7 @@ export default async function IngredientsPage(props: {
                   id={`name-${ing.id}`}
                   name="name"
                   defaultValue={ing.name}
-                  className="rounded-lg border border-ink-soft/30 px-2 py-1 text-sm font-medium"
+                  className="border border-ink-soft/30 px-2 py-1 text-sm font-medium"
                 />
                 <ImagePicker
                   name="imageId"

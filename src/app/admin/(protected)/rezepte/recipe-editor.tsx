@@ -91,7 +91,7 @@ const TAXONOMY_FIELDS: Array<[string, string, string]> = [
 ];
 
 const inputCls =
-  "w-full rounded-lg border border-ink-soft/30 px-3 py-2 text-sm";
+  "w-full border border-ink-soft/30 px-3 py-2 text-sm";
 const labelCls = "mb-1 block text-sm font-medium";
 const btnSecondary =
   "rounded-lg border border-ink/20 px-3 py-1.5 text-sm hover:bg-cream";
@@ -207,8 +207,8 @@ export function RecipeEditor({
           role={state.error ? "alert" : "status"}
           className={
             state.error
-              ? "rounded-lg bg-red-50 p-3 text-sm text-red-800"
-              : "rounded-lg bg-amber-50 p-3 text-sm text-amber-900"
+              ? "bg-red-50 p-3 text-sm text-red-800"
+              : "bg-amber-50 p-3 text-sm text-amber-900"
           }
         >
           {state.error ?? message}
@@ -216,7 +216,7 @@ export function RecipeEditor({
       )}
 
       {/* Stammdaten */}
-      <section className="rounded-2xl bg-white p-5 shadow-sm">
+      <section className="bg-white p-5 shadow-sm">
         <div className="grid gap-4 md:grid-cols-2">
           <div className="md:col-span-2">
             <label className={labelCls} htmlFor="f-titel">
@@ -340,7 +340,7 @@ export function RecipeEditor({
       </section>
 
       {/* Taxonomien */}
-      <section className="rounded-2xl bg-white p-5 shadow-sm">
+      <section className="bg-white p-5 shadow-sm">
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {TAXONOMY_FIELDS.map(([field, label, type]) => (
             <QuickAddCheckboxes
@@ -357,7 +357,7 @@ export function RecipeEditor({
       </section>
 
       {/* Abschnitte */}
-      <section className="rounded-2xl bg-white p-5 shadow-sm">
+      <section className="bg-white p-5 shadow-sm">
         <h2 className="mb-4 text-lg font-semibold">{d.sections}</h2>
         <datalist id="zutaten-liste">
           {ingredientNames.map((n) => (
@@ -372,7 +372,7 @@ export function RecipeEditor({
 
         <div className="flex flex-col gap-6">
           {sections.map((section, si) => (
-            <div key={si} className="rounded-xl border border-ink/10 p-4">
+            <div key={si} className="border border-ink/10 p-4">
               <div className="mb-3 flex items-end gap-2">
                 <div className="grow">
                   <label className={labelCls} htmlFor={`sek-name-${si}`}>
@@ -539,7 +539,7 @@ export function RecipeEditor({
       </section>
 
       {/* Tipps, Notizen, SEO, Status */}
-      <section className="rounded-2xl bg-white p-5 shadow-sm">
+      <section className="bg-white p-5 shadow-sm">
         <RichTextEditor
           name="tipps"
           label={d.fieldTips}
@@ -623,7 +623,7 @@ export function RecipeEditor({
         </div>
       </section>
 
-      <div className="sticky bottom-0 flex items-center gap-3 rounded-2xl border border-ink/10 bg-white p-4 shadow-lg">
+      <div className="sticky bottom-0 flex items-center gap-3 border border-ink/10 bg-white p-4 shadow-lg">
         <label className="text-sm font-medium" htmlFor="f-status">
           {d.fieldStatus}
         </label>
@@ -631,7 +631,7 @@ export function RecipeEditor({
           id="f-status"
           name="status"
           defaultValue={form.status}
-          className="rounded-lg border border-ink-soft/30 px-3 py-2 text-sm"
+          className="border border-ink-soft/30 px-3 py-2 text-sm"
         >
           <option value="entwurf">{d.statusDraft}</option>
           <option value="veroeffentlicht">{d.statusPublished}</option>

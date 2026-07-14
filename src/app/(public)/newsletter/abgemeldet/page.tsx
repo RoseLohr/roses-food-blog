@@ -22,7 +22,7 @@ export default async function UnsubscribedPage(props: {
       </h1>
       <p
         role="status"
-        className={`mt-6 rounded-2xl p-5 ${
+        className={`mt-6 p-5 ${
           ok ? "bg-green-50 text-green-900" : "bg-red-50 text-red-900"
         }`}
       >

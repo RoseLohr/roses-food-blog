@@ -78,7 +78,7 @@ export default async function AdminLayout({
                   <li key={href}>
                     <Link
                       href={href}
-                      className="block rounded-lg px-3 py-1.5 text-sm text-ink-soft hover:bg-cream hover:text-ink"
+                      className="block px-3 py-1.5 text-sm text-ink-soft hover:bg-cream hover:text-ink"
                     >
                       {dict.admin.nav[key]}
                     </Link>
@@ -90,7 +90,7 @@ export default async function AdminLayout({
         </nav>
         <a
           href="/"
-          className="mt-4 block rounded-lg px-3 py-1.5 text-sm text-ink-soft hover:bg-cream"
+          className="mt-4 block px-3 py-1.5 text-sm text-ink-soft hover:bg-cream"
         >
           {dict.admin.nav.viewSite}
         </a>
@@ -98,12 +98,12 @@ export default async function AdminLayout({
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex items-center justify-between border-b border-ink/10 bg-white px-4 py-2 md:px-6">
           <details className="md:hidden">
-            <summary className="cursor-pointer rounded-lg px-2 py-1 text-sm font-semibold">
+            <summary className="cursor-pointer px-2 py-1 text-sm font-semibold">
               Menü
             </summary>
             <nav
               aria-label={dict.admin.title}
-              className="absolute z-20 mt-1 max-h-[80vh] overflow-y-auto rounded-xl border border-ink/10 bg-white p-3 shadow-lg"
+              className="absolute z-20 mt-1 max-h-[80vh] overflow-y-auto border border-ink/10 bg-white p-3 shadow-lg"
             >
               {NAV_GROUPS.map((group, i) => (
                 <div key={i} className="mb-2 last:mb-0">

@@ -91,7 +91,7 @@ export function RichTextEditor({
       {/* Markdown wird versteckt mitgesendet; ohne JS bleibt der Ausgangswert erhalten. */}
       <textarea name={name} value={markdown} readOnly hidden />
       {!readOnly && (
-        <div className="flex flex-wrap gap-1 rounded-t-lg border border-b-0 border-ink-soft/30 bg-cream/60 p-1">
+        <div className="flex flex-wrap gap-1 border border-b-0 border-ink-soft/30 bg-cream/60 p-1">
           {buttons.map((b) => (
             <button
               key={b.title}
@@ -118,7 +118,7 @@ export function RichTextEditor({
         onBlur={sync}
         onPaste={handlePaste}
         className={`prose-content ${minHeightClass} max-w-none border border-ink-soft/30 bg-white p-3 focus:outline-none focus:ring-2 focus:ring-rose-primary/40 ${
-          readOnly ? "rounded-lg opacity-90" : "rounded-b-lg"
+          readOnly ? "opacity-90" : ""
         }`}
       />
     </div>

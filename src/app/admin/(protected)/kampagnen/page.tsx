@@ -44,11 +44,11 @@ export default async function CampaignsPage(props: {
         </Link>
       </div>
       {message && (
-        <p role="status" className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
+        <p role="status" className="mb-4 bg-amber-50 p-3 text-sm text-amber-900">
           {message}
         </p>
       )}
-      <div className="overflow-x-auto rounded-2xl bg-white shadow-sm">
+      <div className="overflow-x-auto bg-white shadow-sm">
         <table className="w-full text-left text-sm">
           <thead>
             <tr className="border-b border-ink/10 text-ink-soft">
@@ -73,10 +73,10 @@ export default async function CampaignsPage(props: {
                   <span
                     className={
                       c.status === "versendet"
-                        ? "rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-900"
+                        ? "bg-green-100 px-2 py-0.5 text-xs text-green-900"
                         : c.status === "laeuft"
-                          ? "rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-900"
-                          : "rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-900"
+                          ? "bg-blue-100 px-2 py-0.5 text-xs text-blue-900"
+                          : "bg-amber-100 px-2 py-0.5 text-xs text-amber-900"
                     }
                   >
                     {d.statusLabels[c.status]}

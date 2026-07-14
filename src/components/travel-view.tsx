@@ -50,7 +50,7 @@ export function TravelView({
   const url = `${getBaseUrl()}/reisen/${post.slug}`;
 
   return (
-    <article className="overflow-hidden rounded-2xl bg-white shadow-sm">
+    <article className="overflow-hidden bg-white shadow-sm">
       {full.heroImage && (
         <div className="relative">
           <ResponsiveImg
@@ -102,7 +102,7 @@ export function TravelView({
                 key={img.id}
                 image={img}
                 sizes="(max-width: 640px) 100vw, 384px"
-                className="w-full rounded-lg object-cover"
+                className="w-full object-cover"
               />
             ))}
           </div>
@@ -135,14 +135,14 @@ export function TravelView({
                       {r.dishes.map((dish) => (
                         <li
                           key={dish.id}
-                          className="flex flex-col gap-4 rounded-xl bg-cream/60 p-4 sm:flex-row"
+                          className="flex flex-col gap-4 bg-cream/60 p-4 sm:flex-row"
                         >
                           {dish.images[0] && (
                             <div className="sm:w-44 sm:shrink-0">
                               <ResponsiveImg
                                 image={dish.images[0]}
                                 sizes="(max-width: 640px) 100vw, 176px"
-                                className="aspect-[4/3] w-full rounded-lg object-cover"
+                                className="aspect-[4/3] w-full object-cover"
                               />
                             </div>
                           )}

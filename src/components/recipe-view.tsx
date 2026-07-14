@@ -132,7 +132,7 @@ export function RecipeView({
   return (
     <article
       id={containerId}
-      className="overflow-hidden rounded-2xl bg-white shadow-sm print:rounded-none print:shadow-none"
+      className="overflow-hidden bg-white shadow-sm print:shadow-none"
     >
       {/* Hero mit Aktions-Buttons */}
       {full.heroImage && (
@@ -295,7 +295,7 @@ export function RecipeView({
                   key={img.id}
                   image={img}
                   sizes="(max-width: 640px) 100vw, 384px"
-                  className="w-full rounded-lg object-cover"
+                  className="w-full object-cover"
                 />
               ))}
             </div>
@@ -304,7 +304,7 @@ export function RecipeView({
 
         {/* Notizen / Tipps */}
         {(recipe.tips || full.publicNotes.length > 0) && (
-          <section className="mt-10 rounded-xl bg-cream-deep/60 p-6 md:p-8">
+          <section className="mt-10 bg-cream-deep/60 p-6 md:p-8">
             <h2 className="font-display text-2xl font-bold tracking-tight">
               {r.notes}
             </h2>

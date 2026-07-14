@@ -19,7 +19,7 @@ export interface RecipeCardData {
 
 export function RecipeCard({ recipe }: { recipe: RecipeCardData }) {
   return (
-    <article className="group overflow-hidden rounded-2xl bg-white shadow-sm transition-shadow hover:shadow-md">
+    <article className="group overflow-hidden bg-white shadow-sm transition-shadow hover:shadow-md">
       <Link href={`/rezepte/${recipe.slug}`} className="block">
         {recipe.image ? (
           <ResponsiveImg

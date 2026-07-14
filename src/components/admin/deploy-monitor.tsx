@@ -154,7 +154,7 @@ export function DeployMonitor({ initial }: { initial: DeploySnapshot }) {
           {stalled && (
             <p
               role="alert"
-              className="mt-2 rounded-lg bg-amber-50 p-3 text-sm text-amber-900"
+              className="mt-2 bg-amber-50 p-3 text-sm text-amber-900"
             >
               {d.stallWarning}
             </p>
@@ -184,7 +184,7 @@ export function DeployMonitor({ initial }: { initial: DeploySnapshot }) {
       )}
 
       {triggerError && (
-        <p role="alert" className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-800">
+        <p role="alert" className="mt-3 bg-red-50 p-3 text-sm text-red-800">
           {triggerError}
         </p>
       )}
@@ -192,7 +192,7 @@ export function DeployMonitor({ initial }: { initial: DeploySnapshot }) {
       {snap.log.length > 0 && (
         <div className="mt-4">
           <p className="mb-1 text-xs font-medium text-ink-soft">{d.logTitle}</p>
-          <pre className="max-h-64 overflow-auto rounded-lg bg-ink/90 p-3 text-xs leading-relaxed text-cream">
+          <pre className="max-h-64 overflow-auto bg-ink/90 p-3 text-xs leading-relaxed text-cream">
             {snap.log.join("\n")}
           </pre>
         </div>

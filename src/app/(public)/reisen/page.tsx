@@ -52,7 +52,7 @@ export default async function TravelListPage() {
           {posts.map((p) => (
             <article
               key={p.slug}
-              className="group overflow-hidden rounded-2xl bg-white shadow-sm transition-shadow hover:shadow-md"
+              className="group overflow-hidden bg-white shadow-sm transition-shadow hover:shadow-md"
             >
               <Link href={`/reisen/${p.slug}`} className="block">
                 {p.fileKey ? (

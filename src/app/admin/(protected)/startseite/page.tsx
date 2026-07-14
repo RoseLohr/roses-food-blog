@@ -13,7 +13,7 @@ const d = dict.admin.homepage;
 
 export const metadata: Metadata = { title: d.title };
 
-const inputCls = "w-full rounded-lg border border-ink-soft/30 px-3 py-2 text-sm";
+const inputCls = "w-full border border-ink-soft/30 px-3 py-2 text-sm";
 const labelCls = "mb-1 block text-sm font-medium";
 
 export default async function HomepageAdminPage(props: {
@@ -62,13 +62,13 @@ export default async function HomepageAdminPage(props: {
     <>
       <h1 className="mb-6 text-2xl font-bold">{d.title}</h1>
       {message && (
-        <p role="status" className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
+        <p role="status" className="mb-4 bg-amber-50 p-3 text-sm text-amber-900">
           {message}
         </p>
       )}
 
       <form action={saveHomepageAction} className="flex max-w-3xl flex-col gap-6">
-        <section className="rounded-2xl bg-white p-5 shadow-sm">
+        <section className="bg-white p-5 shadow-sm">
           <div className="grid gap-4 md:grid-cols-2">
             <div>
               <label className={labelCls} htmlFor="hp-intervall">
@@ -133,7 +133,7 @@ export default async function HomepageAdminPage(props: {
           </div>
         </section>
 
-        <section className="rounded-2xl bg-white p-5 shadow-sm">
+        <section className="bg-white p-5 shadow-sm">
           <h2 className="mb-4 text-lg font-semibold">{d.sliderTitle}</h2>
           <SliderEditor
             initial={initialSlides}

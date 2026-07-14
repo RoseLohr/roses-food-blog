@@ -35,7 +35,7 @@ export default async function ConfirmPage(props: {
       </h1>
       <p
         role="status"
-        className={`mt-6 rounded-2xl p-5 ${
+        className={`mt-6 p-5 ${
           result === "ungueltig"
             ? "bg-red-50 text-red-900"
             : "bg-green-50 text-green-900"

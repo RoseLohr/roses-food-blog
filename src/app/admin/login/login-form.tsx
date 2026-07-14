@@ -16,7 +16,7 @@ export function LoginForm() {
     <form action={formAction} className="flex flex-col gap-4">
       <h2 className="sr-only">{dict.auth.loginTitle}</h2>
       {state.error && (
-        <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-800">
+        <p role="alert" className="bg-red-50 p-3 text-sm text-red-800">
           {state.error}
         </p>
       )}
@@ -30,7 +30,7 @@ export function LoginForm() {
           type="email"
           autoComplete="username"
           required
-          className="w-full rounded-lg border border-ink-soft/30 px-3 py-2"
+          className="w-full border border-ink-soft/30 px-3 py-2"
         />
       </div>
       <div>
@@ -43,7 +43,7 @@ export function LoginForm() {
           type="password"
           autoComplete="current-password"
           required
-          className="w-full rounded-lg border border-ink-soft/30 px-3 py-2"
+          className="w-full border border-ink-soft/30 px-3 py-2"
         />
       </div>
       <button

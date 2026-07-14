@@ -18,7 +18,7 @@ export default function PublicLayout({
     <>
       <a
         href="#inhalt"
-        className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-50 focus:rounded-lg focus:bg-white focus:px-4 focus:py-2 focus:shadow-lg"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-50 focus:bg-white focus:px-4 focus:py-2 focus:shadow-lg"
       >
         {dict.site.skipToContent}
       </a>
@@ -36,7 +36,7 @@ export default function PublicLayout({
                 <li key={href}>
                   <Link
                     href={href}
-                    className="rounded-lg px-3 py-1.5 text-sm font-medium hover:bg-cream hover:text-rose-primary"
+                    className="px-3 py-1.5 text-sm font-medium hover:bg-cream hover:text-rose-primary"
                   >
                     {label}
                   </Link>

@@ -55,7 +55,7 @@ export function HeroSlider({
     <section
       aria-roledescription="Karussell"
       aria-label={dict.home.sliderLabel}
-      className="relative overflow-hidden rounded-2xl"
+      className="relative overflow-hidden"
     >
       <div aria-live={paused ? "polite" : "off"}>
         {slide.href ? (

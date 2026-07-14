@@ -17,7 +17,7 @@ const d = dict.admin.campaigns;
 
 export const metadata: Metadata = { title: d.title };
 
-const inputCls = "w-full rounded-lg border border-ink-soft/30 px-3 py-2 text-sm";
+const inputCls = "w-full border border-ink-soft/30 px-3 py-2 text-sm";
 const labelCls = "mb-1 block text-sm font-medium";
 
 export default async function CampaignDetailPage(props: {
@@ -72,13 +72,13 @@ export default async function CampaignDetailPage(props: {
         {isNew ? d.newCampaign : campaign!.subject}
       </h1>
       {message && (
-        <p role="status" className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
+        <p role="status" className="mb-4 bg-amber-50 p-3 text-sm text-amber-900">
           {message}
         </p>
       )}
 
       <div className="grid max-w-5xl gap-6 lg:grid-cols-2">
-        <section className="rounded-2xl bg-white p-5 shadow-sm">
+        <section className="bg-white p-5 shadow-sm">
           <form action={saveCampaignAction} className="flex flex-col gap-4">
             {campaign && <input type="hidden" name="id" value={campaign.id} />}
             <div>
@@ -147,7 +147,7 @@ export default async function CampaignDetailPage(props: {
         </section>
 
         {campaign && log.length > 0 && (
-          <section className="rounded-2xl bg-white p-5 shadow-sm">
+          <section className="bg-white p-5 shadow-sm">
             <h2 className="mb-3 text-lg font-semibold">
               {d.log} ({log.length})
             </h2>

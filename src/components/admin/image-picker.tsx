@@ -106,7 +106,7 @@ export function ImagePicker({
         ))}
 
       {options.length > 0 && (
-        <div className="grid max-h-56 grid-cols-3 gap-2 overflow-y-auto rounded-lg border border-ink-soft/20 p-2 sm:grid-cols-4">
+        <div className="grid max-h-56 grid-cols-3 gap-2 overflow-y-auto border border-ink-soft/20 p-2 sm:grid-cols-4">
           {options.map((o) => {
             const active = selected.includes(o.id);
             return (

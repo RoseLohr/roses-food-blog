@@ -118,7 +118,7 @@ export function RecipeAiAssistant({
   }
 
   return (
-    <section className="rounded-2xl border border-leaf/40 bg-leaf-soft/10 p-5 shadow-sm">
+    <section className="border border-leaf/40 bg-leaf-soft/10 p-5 shadow-sm">
       <h2 className="text-lg font-semibold text-leaf">✨ {a.title}</h2>
       <p className="mb-3 mt-1 text-sm text-ink-soft">{a.intro}</p>
       <textarea
@@ -126,7 +126,7 @@ export function RecipeAiAssistant({
         onChange={(e) => setText(e.target.value)}
         rows={5}
         placeholder={a.placeholder}
-        className="w-full rounded-lg border border-ink-soft/30 bg-white px-3 py-2 text-sm"
+        className="w-full border border-ink-soft/30 bg-white px-3 py-2 text-sm"
       />
       <div className="mt-2 flex flex-wrap items-center gap-3">
         <button
@@ -151,7 +151,7 @@ export function RecipeAiAssistant({
       {testResult && (
         <p
           role="status"
-          className={`mt-3 rounded-lg p-3 text-sm ${
+          className={`mt-3 p-3 text-sm ${
             testResult.ok
               ? "bg-leaf-soft/20 text-leaf"
               : "bg-amber-50 text-amber-900"
@@ -163,13 +163,13 @@ export function RecipeAiAssistant({
       )}
 
       {error && (
-        <p role="alert" className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-800">
+        <p role="alert" className="mt-3 bg-red-50 p-3 text-sm text-red-800">
           {error}
         </p>
       )}
 
       {draft && (
-        <div className="mt-4 rounded-xl border border-ink/10 bg-white p-4">
+        <div className="mt-4 border border-ink/10 bg-white p-4">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-base font-semibold">{a.previewTitle}</h3>
             <div className="flex gap-2">
@@ -205,7 +205,7 @@ function Chips({ label, items }: { label: string; items: string[] }) {
     <div className="flex flex-wrap items-baseline gap-1.5">
       <span className="text-xs font-medium text-ink-soft">{label}:</span>
       {items.map((x) => (
-        <span key={x} className="rounded-full bg-cream px-2 py-0.5 text-xs">
+        <span key={x} className="bg-cream px-2 py-0.5 text-xs">
           {x}
         </span>
       ))}
@@ -248,7 +248,7 @@ function DraftPreview({ draft }: { draft: RecipeDraft }) {
         <h4 className="mb-1 font-semibold">{a.sectionsTitle}</h4>
         <div className="flex flex-col gap-3">
           {draft.sections.map((s, i) => (
-            <div key={i} className="rounded-lg bg-cream/50 p-3">
+            <div key={i} className="bg-cream/50 p-3">
               {s.name && <p className="mb-1 font-medium">{s.name}</p>}
               <ul className="mb-2 list-disc pl-5 text-ink-soft">
                 {s.ingredients.map((ing, j) => (

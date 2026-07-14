@@ -44,7 +44,7 @@ export default async function DeployPage() {
           ? "bg-amber-100 text-amber-900"
           : "bg-cream text-ink-soft";
     return (
-      <span className={`rounded-full px-3 py-1 text-sm font-medium ${cls}`}>
+      <span className={`px-3 py-1 text-sm font-medium ${cls}`}>
         {text}
       </span>
     );
@@ -56,16 +56,16 @@ export default async function DeployPage() {
       <p className="mb-6 max-w-2xl text-sm text-ink-soft">{d.intro}</p>
 
       <div className="max-w-2xl space-y-6">
-        <section className="rounded-2xl bg-white p-5 shadow-sm">
+        <section className="bg-white p-5 shadow-sm">
           <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
             <dt className="font-medium text-ink-soft">{d.currentVersion}</dt>
             <dd>
-              <code className="rounded bg-cream px-1.5 py-0.5">{current}</code>
+              <code className="bg-cream px-1.5 py-0.5">{current}</code>
             </dd>
             <dt className="font-medium text-ink-soft">{d.latestVersion}</dt>
             <dd>
               {remote.ok ? (
-                <code className="rounded bg-cream px-1.5 py-0.5">{remote.latest}</code>
+                <code className="bg-cream px-1.5 py-0.5">{remote.latest}</code>
               ) : (
                 <span className="text-ink-soft">{d.unknown}</span>
               )}
@@ -92,7 +92,7 @@ export default async function DeployPage() {
           </div>
         </section>
 
-        <section className="rounded-2xl border border-ink/10 bg-cream/40 p-5 text-sm">
+        <section className="border border-ink/10 bg-cream/40 p-5 text-sm">
           <h2 className="mb-2 font-semibold">{d.scopeTitle}</h2>
           <p className="mb-4 text-ink-soft">{d.scopeBody}</p>
           <h2 className="mb-2 font-semibold">{d.setupTitle}</h2>

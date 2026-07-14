@@ -31,11 +31,11 @@ export function NewsletterForm({
   const uid = useId();
 
   const inputCls =
-    "w-full rounded-lg border border-ink-soft/30 bg-white px-3 py-2 text-sm";
+    "w-full border border-ink-soft/30 bg-white px-3 py-2 text-sm";
 
   if (state.success) {
     return (
-      <p role="status" className="rounded-xl bg-green-50 p-4 text-sm text-green-900">
+      <p role="status" className="bg-green-50 p-4 text-sm text-green-900">
         {state.success}
       </p>
     );
@@ -45,7 +45,7 @@ export function NewsletterForm({
     <form action={formAction} className="flex flex-col gap-3">
       <input type="hidden" name="quelle" value={source} />
       {state.error && (
-        <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-800">
+        <p role="alert" className="bg-red-50 p-3 text-sm text-red-800">
           {state.error}
         </p>
       )}

@@ -48,7 +48,7 @@ export interface TravelEditorProps {
   message?: string | null;
 }
 
-const inputCls = "w-full rounded-lg border border-ink-soft/30 px-3 py-2 text-sm";
+const inputCls = "w-full border border-ink-soft/30 px-3 py-2 text-sm";
 const labelCls = "mb-1 block text-sm font-medium";
 const btnSecondary =
   "rounded-lg border border-ink/20 px-3 py-1.5 text-sm hover:bg-cream";
@@ -101,15 +101,15 @@ export function TravelEditor({ initial, images, message }: TravelEditorProps) {
           role={state.error ? "alert" : "status"}
           className={
             state.error
-              ? "rounded-lg bg-red-50 p-3 text-sm text-red-800"
-              : "rounded-lg bg-amber-50 p-3 text-sm text-amber-900"
+              ? "bg-red-50 p-3 text-sm text-red-800"
+              : "bg-amber-50 p-3 text-sm text-amber-900"
           }
         >
           {state.error ?? message}
         </p>
       )}
 
-      <section className="rounded-2xl bg-white p-5 shadow-sm">
+      <section className="bg-white p-5 shadow-sm">
         <div className="grid gap-4 md:grid-cols-2">
           <div className="md:col-span-2">
             <label className={labelCls} htmlFor="t-titel">
@@ -171,11 +171,11 @@ export function TravelEditor({ initial, images, message }: TravelEditorProps) {
       </section>
 
       {/* Restaurants */}
-      <section className="rounded-2xl bg-white p-5 shadow-sm">
+      <section className="bg-white p-5 shadow-sm">
         <h2 className="mb-4 text-lg font-semibold">{d.restaurants}</h2>
         <div className="flex flex-col gap-6">
           {restaurants.map((r, ri) => (
-            <div key={ri} className="rounded-xl border border-ink/10 p-4">
+            <div key={ri} className="border border-ink/10 p-4">
               <div className="grid gap-3 md:grid-cols-2">
                 <div>
                   <label className={labelCls} htmlFor={`r-name-${ri}`}>
@@ -218,7 +218,7 @@ export function TravelEditor({ initial, images, message }: TravelEditorProps) {
               <h3 className="mb-2 mt-4 text-sm font-semibold">{d.dishes}</h3>
               <div className="flex flex-col gap-4">
                 {r.dishes.map((dish, di) => (
-                  <div key={di} className="rounded-lg bg-cream/60 p-3">
+                  <div key={di} className="bg-cream/60 p-3">
                     <div className="grid gap-2 md:grid-cols-2">
                       <input
                         aria-label={d.dishName}
@@ -322,7 +322,7 @@ export function TravelEditor({ initial, images, message }: TravelEditorProps) {
       </section>
 
       {/* SEO + Status */}
-      <section className="rounded-2xl bg-white p-5 shadow-sm">
+      <section className="bg-white p-5 shadow-sm">
         <div className="grid gap-4 md:grid-cols-2">
           <div>
             <label className={labelCls} htmlFor="t-seo-titel">
@@ -344,7 +344,7 @@ export function TravelEditor({ initial, images, message }: TravelEditorProps) {
         </div>
       </section>
 
-      <div className="sticky bottom-0 flex items-center gap-3 rounded-2xl border border-ink/10 bg-white p-4 shadow-lg">
+      <div className="sticky bottom-0 flex items-center gap-3 border border-ink/10 bg-white p-4 shadow-lg">
         <label className="text-sm font-medium" htmlFor="t-status">
           {dict.admin.recipes.fieldStatus}
         </label>
@@ -352,7 +352,7 @@ export function TravelEditor({ initial, images, message }: TravelEditorProps) {
           id="t-status"
           name="status"
           defaultValue={initial.status}
-          className="rounded-lg border border-ink-soft/30 px-3 py-2 text-sm"
+          className="border border-ink-soft/30 px-3 py-2 text-sm"
         >
           <option value="entwurf">{dict.admin.recipes.statusDraft}</option>
           <option value="veroeffentlicht">{dict.admin.recipes.statusPublished}</option>

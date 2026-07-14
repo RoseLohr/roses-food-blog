@@ -9,7 +9,7 @@ const d = dict.admin.settings;
 
 export const metadata: Metadata = { title: d.title };
 
-const inputCls = "w-full rounded-lg border border-ink-soft/30 px-3 py-2 text-sm";
+const inputCls = "w-full border border-ink-soft/30 px-3 py-2 text-sm";
 const labelCls = "mb-1 block text-sm font-medium";
 
 export default async function SettingsPage(props: {
@@ -31,13 +31,13 @@ export default async function SettingsPage(props: {
       <h1 className="mb-2 text-2xl font-bold">{d.title}</h1>
       <p className="mb-6 max-w-2xl text-sm text-ink-soft">{d.intro}</p>
       {message && (
-        <p role="status" className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
+        <p role="status" className="mb-4 bg-amber-50 p-3 text-sm text-amber-900">
           {message}
         </p>
       )}
 
       <form action={saveSettingsAction} className="flex max-w-2xl flex-col gap-6">
-        <section className="rounded-2xl bg-white p-5 shadow-sm">
+        <section className="bg-white p-5 shadow-sm">
           <h2 className="text-lg font-semibold">{d.smtpTitle}</h2>
           <p className="mb-4 text-sm text-ink-soft">{d.smtpIntro}</p>
           <div className="grid gap-4 sm:grid-cols-2">
@@ -108,7 +108,7 @@ export default async function SettingsPage(props: {
           </div>
         </section>
 
-        <section className="rounded-2xl bg-white p-5 shadow-sm">
+        <section className="bg-white p-5 shadow-sm">
           <h2 className="text-lg font-semibold">{d.aiTitle}</h2>
           <p className="mb-4 text-sm text-ink-soft">{d.aiIntro}</p>
           <div>
@@ -130,7 +130,7 @@ export default async function SettingsPage(props: {
           </div>
         </section>
 
-        <section className="rounded-2xl bg-white p-5 shadow-sm">
+        <section className="bg-white p-5 shadow-sm">
           <h2 className="text-lg font-semibold">{d.deployTitle}</h2>
           <p className="mb-4 text-sm text-ink-soft">{d.deployIntro}</p>
           <div className="grid gap-4 sm:grid-cols-2">
@@ -169,7 +169,7 @@ export default async function SettingsPage(props: {
         </button>
       </form>
 
-      <section className="mt-6 max-w-2xl rounded-2xl bg-white p-5 shadow-sm">
+      <section className="mt-6 max-w-2xl bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold">{d.testTitle}</h2>
         <p className="mb-4 text-sm text-ink-soft">{d.testIntro}</p>
         <form action={sendTestEmailAction}>

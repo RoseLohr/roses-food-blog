@@ -63,7 +63,7 @@ export default async function CmsPage(props: {
       />
       <h1 className="font-display text-3xl font-bold md:text-4xl">{page.title}</h1>
       {heroImage && (
-        <div className="mt-6 overflow-hidden rounded-2xl">
+        <div className="mt-6 overflow-hidden">
           <ResponsiveImg
             image={heroImage}
             sizes="(max-width: 768px) 100vw, 768px"

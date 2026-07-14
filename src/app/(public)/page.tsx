@@ -146,7 +146,7 @@ export default async function HomePage() {
         <aside className="flex flex-col gap-6 print:hidden">
           {/* Über-mich-Teaser */}
           {config && (config.aboutTeaserText || aboutImage) && (
-            <section className="rounded-2xl bg-white p-5 text-center shadow-sm">
+            <section className="bg-white p-5 text-center shadow-sm">
               <h2 className="font-display text-lg font-bold">
                 {dict.home.aboutTitle}
               </h2>
@@ -172,7 +172,7 @@ export default async function HomePage() {
           )}
 
           {/* Filter */}
-          <section className="rounded-2xl bg-white p-5 shadow-sm">
+          <section className="bg-white p-5 shadow-sm">
             <h2 className="font-display text-lg font-bold">
               {dict.home.filterTitle}
             </h2>
@@ -184,7 +184,7 @@ export default async function HomePage() {
                 <li key={m}>
                   <Link
                     href={`/suche?zeit=${m}`}
-                    className="block rounded-full bg-cream px-3 py-1 text-sm hover:bg-rose-primary hover:text-white"
+                    className="block bg-cream px-3 py-1 text-sm hover:bg-rose-primary hover:text-white"
                   >
                     {dict.search.timeUpTo(m)}
                   </Link>
@@ -199,7 +199,7 @@ export default async function HomePage() {
                 <li key={d.id}>
                   <Link
                     href={`/suche?ernaehrung=${d.slug}`}
-                    className="block rounded-full bg-cream px-3 py-1 text-sm hover:bg-rose-primary hover:text-white"
+                    className="block bg-cream px-3 py-1 text-sm hover:bg-rose-primary hover:text-white"
                   >
                     {d.name}
                   </Link>

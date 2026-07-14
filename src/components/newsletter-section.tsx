@@ -27,7 +27,7 @@ export async function NewsletterSection({
       className={
         compact
           ? ""
-          : "mx-auto mt-12 max-w-3xl rounded-2xl bg-rose-primary/5 p-6 md:p-8 print:hidden"
+          : "mx-auto mt-12 max-w-3xl bg-rose-primary/5 p-6 md:p-8 print:hidden"
       }
     >
       <h2 className="font-display text-xl font-bold">

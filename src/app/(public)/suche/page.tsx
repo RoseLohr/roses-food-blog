@@ -100,7 +100,7 @@ export default async function SearchPage(props: {
 
       <div className="mt-6 grid gap-8 lg:grid-cols-[16rem_1fr]">
         {/* Filter-Formular */}
-        <form method="get" className="flex flex-col gap-5 self-start rounded-2xl bg-white p-5 shadow-sm">
+        <form method="get" className="flex flex-col gap-5 self-start bg-white p-5 shadow-sm">
           <div>
             <label htmlFor="such-q" className="mb-1 block text-sm font-semibold">
               {dict.search.title}
@@ -111,7 +111,7 @@ export default async function SearchPage(props: {
               name="q"
               defaultValue={filters.q}
               placeholder={dict.search.placeholder}
-              className="w-full rounded-lg border border-ink-soft/30 px-3 py-2 text-sm"
+              className="w-full border border-ink-soft/30 px-3 py-2 text-sm"
             />
           </div>
           <div>
@@ -122,7 +122,7 @@ export default async function SearchPage(props: {
               id="such-zeit"
               name="zeit"
               defaultValue={filters.maxTime ?? ""}
-              className="w-full rounded-lg border border-ink-soft/30 px-3 py-2 text-sm"
+              className="w-full border border-ink-soft/30 px-3 py-2 text-sm"
             >
               <option value="">{dict.search.timeAny}</option>
               {TIME_OPTIONS.map((m) => (
@@ -187,7 +187,7 @@ export default async function SearchPage(props: {
           {ingredientHits.map((hit) => (
             <section
               key={hit.ingredient.id}
-              className="mb-8 rounded-2xl bg-white p-5 shadow-sm"
+              className="mb-8 bg-white p-5 shadow-sm"
             >
               <div className="flex items-center gap-4">
                 {hit.image && (
@@ -220,7 +220,7 @@ export default async function SearchPage(props: {
                   </h3>
                   <ul className="flex flex-col gap-2">
                     {hit.dishes.map((d, i) => (
-                      <li key={i} className="rounded-xl border border-ink/10 p-3 text-sm">
+                      <li key={i} className="border border-ink/10 p-3 text-sm">
                         <strong>{d.dishName}</strong> {dict.search.inRestaurant}{" "}
                         {d.restaurantName}
                         {d.restaurantCity ? ` (${d.restaurantCity})` : ""} —{" "}
@@ -259,7 +259,7 @@ export default async function SearchPage(props: {
               </h2>
               <ul className="flex flex-col gap-3">
                 {travel.map((p) => (
-                  <li key={p.slug} className="rounded-2xl bg-white p-4 shadow-sm">
+                  <li key={p.slug} className="bg-white p-4 shadow-sm">
                     <Link
                       href={`/reisen/${p.slug}`}
                       className="font-display text-lg font-bold hover:text-rose-primary"

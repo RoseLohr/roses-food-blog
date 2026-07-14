@@ -19,7 +19,7 @@ const d = dict.admin.segments;
 
 export const metadata: Metadata = { title: d.title };
 
-const inputCls = "w-full min-w-0 rounded-lg border border-ink-soft/30 px-3 py-2 text-sm";
+const inputCls = "w-full min-w-0 border border-ink-soft/30 px-3 py-2 text-sm";
 
 function SimpleList({
   title,
@@ -35,11 +35,11 @@ function SimpleList({
   newLabel: string;
 }) {
   return (
-    <section className="rounded-2xl bg-white p-5 shadow-sm">
+    <section className="bg-white p-5 shadow-sm">
       <h2 className="mb-3 text-lg font-semibold">{title}</h2>
       <ul className="mb-4 flex flex-wrap gap-2">
         {entries.map((e) => (
-          <li key={e.id} className="flex items-center gap-1 rounded-full bg-cream px-3 py-1 text-sm">
+          <li key={e.id} className="flex items-center gap-1 bg-cream px-3 py-1 text-sm">
             {e.name}
             <form action={deleteAction} className="inline">
               <input type="hidden" name="id" value={e.id} />
@@ -95,7 +95,7 @@ export default async function SegmentsPage(props: {
     return (
       <form
         action={saveSegmentAction}
-        className="flex flex-col gap-3 rounded-xl border border-ink/10 p-4"
+        className="flex flex-col gap-3 border border-ink/10 p-4"
       >
         {segment && <input type="hidden" name="id" value={segment.id} />}
         <div className="flex items-center justify-between gap-3">
@@ -111,7 +111,7 @@ export default async function SegmentsPage(props: {
             className={inputCls}
           />
           {segment && (
-            <span className="shrink-0 rounded-full bg-cream px-3 py-1 text-sm">
+            <span className="shrink-0 bg-cream px-3 py-1 text-sm">
               {memberCounts.get(segment.id)} {d.members}
             </span>
           )}
@@ -142,13 +142,13 @@ export default async function SegmentsPage(props: {
     <>
       <h1 className="mb-6 text-2xl font-bold">{d.title}</h1>
       {message && (
-        <p role="status" className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
+        <p role="status" className="mb-4 bg-amber-50 p-3 text-sm text-amber-900">
           {message}
         </p>
       )}
 
       <div className="grid max-w-5xl gap-6 lg:grid-cols-2">
-        <section className="rounded-2xl bg-white p-5 shadow-sm">
+        <section className="bg-white p-5 shadow-sm">
           <h2 className="mb-3 text-lg font-semibold">{d.title}</h2>
           <div className="flex flex-col gap-4">
             {segments.map((s) => (

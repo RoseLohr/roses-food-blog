@@ -30,14 +30,14 @@ export default async function MediaPage(props: {
     <>
       <h1 className="mb-6 text-2xl font-bold">{dict.admin.media.title}</h1>
       {message && (
-        <p role="status" className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
+        <p role="status" className="mb-4 bg-amber-50 p-3 text-sm text-amber-900">
           {message}
         </p>
       )}
 
       <form
         action={uploadImageAction}
-        className="mb-8 flex max-w-xl flex-col gap-3 rounded-2xl bg-white p-5 shadow-sm"
+        className="mb-8 flex max-w-xl flex-col gap-3 bg-white p-5 shadow-sm"
       >
         <h2 className="text-lg font-semibold">{dict.admin.media.upload}</h2>
         <p className="text-sm text-ink-soft">{dict.admin.media.uploadHint}</p>
@@ -50,7 +50,7 @@ export default async function MediaPage(props: {
           type="file"
           accept="image/jpeg,image/png,image/webp"
           required
-          className="rounded-lg border border-ink-soft/30 px-3 py-2"
+          className="border border-ink-soft/30 px-3 py-2"
         />
         <label className="text-sm font-medium" htmlFor="upload-alt">
           {dict.admin.media.altText}
@@ -59,7 +59,7 @@ export default async function MediaPage(props: {
           id="upload-alt"
           name="altText"
           placeholder={dict.admin.media.altTextHint}
-          className="rounded-lg border border-ink-soft/30 px-3 py-2"
+          className="border border-ink-soft/30 px-3 py-2"
         />
         <button
           type="submit"
@@ -74,14 +74,14 @@ export default async function MediaPage(props: {
       ) : (
         <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
           {images.map((img) => (
-            <li key={img.id} className="rounded-2xl bg-white p-3 shadow-sm">
+            <li key={img.id} className="bg-white p-3 shadow-sm">
               <img
                 src={imageUrl(img.fileKey, JSON.parse(img.variantWidths)[0] ?? 320)}
                 alt={img.altText}
                 width={320}
                 height={Math.round((320 / img.width) * img.height)}
                 loading="lazy"
-                className="mb-2 aspect-square w-full rounded-lg object-cover"
+                className="mb-2 aspect-square w-full object-cover"
               />
               <p className="truncate text-xs text-ink-soft" title={img.originalName}>
                 {img.originalName} · {img.width}×{img.height}
@@ -96,7 +96,7 @@ export default async function MediaPage(props: {
                   name="altText"
                   defaultValue={img.altText}
                   placeholder={dict.admin.media.altText}
-                  className="w-full min-w-0 rounded border border-ink-soft/30 px-2 py-1 text-xs"
+                  className="w-full min-w-0 border border-ink-soft/30 px-2 py-1 text-xs"
                 />
                 <button
                   type="submit"
