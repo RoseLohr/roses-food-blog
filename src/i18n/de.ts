@@ -79,6 +79,8 @@ export const de = {
     cuisines: "Art der Küche",
     tags: "Schlagwörter",
     ingredients: "Zutaten",
+    ingredientSearchPlaceholder: "Zutat eingeben (ab 2 Zeichen) …",
+    ingredientRemove: "entfernen",
     reset: "Filter zurücksetzen",
     recipesHeading: "Rezepte",
     travelHeading: "Reiseberichte",

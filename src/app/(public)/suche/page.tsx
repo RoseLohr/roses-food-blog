@@ -4,6 +4,7 @@ import { asc } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { RecipeCard } from "@/components/recipe-card";
 import { ResponsiveImg } from "@/components/responsive-img";
+import { IngredientFilter } from "@/components/ingredient-filter";
 import {
   parseSearchParams,
   searchIngredients,
@@ -156,11 +157,10 @@ export default async function SearchPage(props: {
             options={tags}
             selected={filters.tagSlugs}
           />
-          <FilterGroup
-            legend={dict.search.ingredients}
-            name="zutat"
-            options={ingredients}
-            selected={filters.ingredientSlugs}
+          <IngredientFilter
+            initial={ingredients.filter((i) =>
+              filters.ingredientSlugs.includes(i.slug),
+            )}
           />
           <div className="flex items-center gap-3">
             <button
