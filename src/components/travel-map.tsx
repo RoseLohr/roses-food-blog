@@ -66,7 +66,7 @@ export function TravelMap({ pins }: { pins: TravelMapPin[] }) {
 
   useEffect(() => {
     const el = containerRef.current;
-    if (!el || pins.length === 0) return;
+    if (!el) return;
 
     let cancelled = false;
     let map: import("leaflet").Map | null = null;
@@ -128,9 +128,12 @@ export function TravelMap({ pins }: { pins: TravelMapPin[] }) {
         markers.push(marker);
       }
 
-      // Auf die Pins zoomen (bei nur einem Pin nicht zu nah heran).
-      const group = L.featureGroup(markers);
-      map.fitBounds(group.getBounds().pad(0.3), { maxZoom: 6 });
+      // Mit Pins: auf sie zoomen (bei einem Pin nicht zu nah). Ohne Pins bleibt
+      // die ganze Welt sichtbar (setView oben).
+      if (markers.length > 0) {
+        const group = L.featureGroup(markers);
+        map.fitBounds(group.getBounds().pad(0.3), { maxZoom: 6 });
+      }
 
       // „Beim Zoomen“ verschwindet ein offenes Popup wieder.
       map.on("zoomstart", () => map?.closePopup());
@@ -141,8 +144,6 @@ export function TravelMap({ pins }: { pins: TravelMapPin[] }) {
       if (map) map.remove();
     };
   }, [pins]);
-
-  if (pins.length === 0) return null;
 
   return (
     <section aria-label={dict.travelList.mapLabel} className="mt-8">
