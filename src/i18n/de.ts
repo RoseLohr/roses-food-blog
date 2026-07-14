@@ -433,6 +433,7 @@ export const de = {
       addIngredient: "Zutat hinzufügen",
       remove: "Entfernen",
       steps: "Zubereitungsschritte",
+      stepImage: "Bild zum Schritt (optional)",
       addStep: "Schritt hinzufügen",
       notes: "Notizen",
       noteVisibility: "Öffentlich sichtbar",

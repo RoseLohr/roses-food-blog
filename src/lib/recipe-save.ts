@@ -32,7 +32,23 @@ const sectionsSchema = z.array(
         }),
       )
       .default([]),
-    steps: z.array(z.string().trim().max(4000)).default([]),
+    // Schritt: Markdown-Text + optionales Bild. Akzeptiert auch das alte
+    // reine String-Format (Rückwärtskompatibilität) und normalisiert es.
+    steps: z
+      .array(
+        z.union([
+          z
+            .string()
+            .trim()
+            .max(8000)
+            .transform((text) => ({ text, imageId: null as number | null })),
+          z.object({
+            text: z.string().trim().max(8000).default(""),
+            imageId: z.number().int().positive().nullable().default(null),
+          }),
+        ]),
+      )
+      .default([]),
   }),
 );
 
@@ -109,7 +125,7 @@ export async function saveRecipeFromForm(
     .map((s) => ({
       ...s,
       ingredients: s.ingredients.filter((i) => i.name.trim() !== ""),
-      steps: s.steps.filter((st) => st !== ""),
+      steps: s.steps.filter((st) => st.text.trim() !== ""),
     }))
     .filter(
       (s, idx) =>
@@ -135,7 +151,6 @@ export async function saveRecipeFromForm(
   const heroImageId = formData.get("titelbild")
     ? Number(formData.get("titelbild"))
     : null;
-  const imageIds = idList(formData, "bilder");
 
   // Slug bestimmen (eindeutig, eigenes Rezept ausgenommen)
   const slugInput = String(formData.get("slug") ?? "").trim();
@@ -215,7 +230,12 @@ export async function saveRecipeFromForm(
       .returning();
     if (s.steps.length) {
       await db.insert(schema.recipeStep).values(
-        s.steps.map((text, j) => ({ sectionId: sec.id, text, sortOrder: j })),
+        s.steps.map((step, j) => ({
+          sectionId: sec.id,
+          text: step.text,
+          imageId: step.imageId ?? null,
+          sortOrder: j,
+        })),
       );
     }
     if (s.ingredients.length) {
@@ -265,13 +285,8 @@ export async function saveRecipeFromForm(
     }
   }
 
-  // Zusätzliche Bilder ersetzen
+  // „Zusätzliche Bilder" wurden entfernt — evtl. vorhandene Altdaten aufräumen.
   await db.delete(schema.recipeImage).where(eq(schema.recipeImage.recipeId, recipeId));
-  if (imageIds.length) {
-    await db.insert(schema.recipeImage).values(
-      imageIds.map((imgId, i) => ({ recipeId, imageId: imgId, sortOrder: i })),
-    );
-  }
 
   return { recipeId };
 }

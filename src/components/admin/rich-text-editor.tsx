@@ -22,27 +22,37 @@ export function RichTextEditor({
   label,
   readOnly = false,
   minHeightClass = "min-h-40",
+  onChange,
 }: {
-  name: string;
+  /** Formularfeldname; ohne wird kein Hidden-Feld gerendert (kontrolliert). */
+  name?: string;
   initialMarkdown: string;
   label?: string;
   readOnly?: boolean;
   minHeightClass?: string;
+  /** Kontrollierte Nutzung: Markdown bei jeder Änderung nach außen geben. */
+  onChange?: (markdown: string) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [markdown, setMarkdown] = useState(initialMarkdown);
 
-  // Editor einmalig aus dem gespeicherten Markdown befüllen; danach nicht mehr
-  // von React überschreiben (sonst springt der Cursor beim Tippen).
+  // Editor aus dem Markdown befüllen — aber NICHT, während der Nutzer darin
+  // tippt (sonst springt der Cursor bei kontrollierter Nutzung, z. B.
+  // Schritt-Editoren). Beim (Neu-)Mounten ist der Editor nicht fokussiert.
   useEffect(() => {
-    if (ref.current) {
-      const html = renderMarkdown(initialMarkdown).trim();
-      ref.current.innerHTML = html || "<p><br></p>";
-    }
+    if (!ref.current) return;
+    if (typeof document !== "undefined" && document.activeElement === ref.current)
+      return;
+    const html = renderMarkdown(initialMarkdown).trim();
+    ref.current.innerHTML = html || "<p><br></p>";
   }, [initialMarkdown]);
 
   const sync = () => {
-    if (ref.current) setMarkdown(htmlToMarkdown(ref.current));
+    if (ref.current) {
+      const md = htmlToMarkdown(ref.current);
+      setMarkdown(md);
+      onChange?.(md);
+    }
   };
 
   const exec = (command: string, value?: string) => {
@@ -89,7 +99,7 @@ export function RichTextEditor({
     <div>
       {label && <span className="mb-1 block text-sm font-medium">{label}</span>}
       {/* Markdown wird versteckt mitgesendet; ohne JS bleibt der Ausgangswert erhalten. */}
-      <textarea name={name} value={markdown} readOnly hidden />
+      {name && <textarea name={name} value={markdown} readOnly hidden />}
       {!readOnly && (
         <div className="flex flex-wrap gap-1 border border-b-0 border-ink-soft/30 bg-cream/60 p-1">
           {buttons.map((b) => (

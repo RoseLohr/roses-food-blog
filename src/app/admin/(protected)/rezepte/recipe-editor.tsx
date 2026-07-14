@@ -23,10 +23,14 @@ export interface EditorIngredient {
   unit: string;
   note: string;
 }
+export interface EditorStep {
+  text: string;
+  imageId: number | null;
+}
 export interface EditorSection {
   name: string;
   ingredients: EditorIngredient[];
-  steps: string[];
+  steps: EditorStep[];
 }
 export interface EditorNote {
   text: string;
@@ -97,7 +101,10 @@ const btnSecondary =
   "rounded-lg border border-ink/20 px-3 py-1.5 text-sm hover:bg-cream";
 
 function emptySection(): EditorSection {
-  return { name: "", ingredients: [emptyIngredient()], steps: [""] };
+  return { name: "", ingredients: [emptyIngredient()], steps: [emptyStep()] };
+}
+function emptyStep(): EditorStep {
+  return { text: "", imageId: null };
 }
 function emptyIngredient(): EditorIngredient {
   return { name: "", amount: "", unit: "", note: "" };
@@ -187,7 +194,9 @@ export function RecipeEditor({
         ? draft.sections.map((s) => ({
             name: s.name,
             ingredients: s.ingredients.length ? s.ingredients : [emptyIngredient()],
-            steps: s.steps.length ? s.steps : [""],
+            steps: s.steps.length
+              ? s.steps.map((text) => ({ text, imageId: null }))
+              : [emptyStep()],
           }))
         : [emptySection()],
     );
@@ -237,33 +246,20 @@ export function RecipeEditor({
             <input id="f-slug" name="slug" defaultValue={form.slug} className={inputCls} />
           </div>
           <div className="md:col-span-2">
-            <label className={labelCls} htmlFor="f-teaser">
-              {d.fieldTeaser}
-            </label>
-            <textarea
-              id="f-teaser"
+            <RichTextEditor
               name="teaser"
-              rows={2}
-              defaultValue={form.teaser}
-              className={inputCls}
+              label={d.fieldTeaser}
+              initialMarkdown={form.teaser}
+              minHeightClass="min-h-20"
             />
           </div>
-          <div>
+          <div className="md:col-span-2">
             <ImagePicker
               name="titelbild"
               legend={d.fieldHeroImage}
               options={images}
               selectedIds={form.heroImageId ? [form.heroImageId] : []}
               multiple={false}
-            />
-          </div>
-          <div>
-            <ImagePicker
-              name="bilder"
-              legend={d.fieldImages}
-              options={images}
-              selectedIds={form.imageIds}
-              multiple
             />
           </div>
           <div>
@@ -485,43 +481,62 @@ export function RecipeEditor({
               </div>
 
               <h3 className="mb-2 mt-4 text-sm font-semibold">{d.steps}</h3>
-              <ol className="flex flex-col gap-2">
+              <ol className="flex flex-col gap-3">
                 {section.steps.map((step, sti) => (
-                  <li key={sti} className="flex gap-2">
-                    <span className="mt-2 w-6 shrink-0 text-right text-sm text-ink-soft">
-                      {sti + 1}.
-                    </span>
-                    <textarea
-                      aria-label={`${d.steps} ${sti + 1}`}
-                      value={step}
-                      rows={2}
-                      onChange={(e) =>
+                  <li key={sti} className="border border-ink/10 bg-cream/30 p-3">
+                    <div className="mb-2 flex items-center justify-between">
+                      <span className="text-sm font-medium text-ink-soft">
+                        {d.steps} {sti + 1}
+                      </span>
+                      <button
+                        type="button"
+                        aria-label={`${d.steps} ${sti + 1} ${d.remove}`}
+                        onClick={() =>
+                          updateSection(si, {
+                            steps: section.steps.filter((_, idx) => idx !== sti),
+                          })
+                        }
+                        className={btnSecondary}
+                      >
+                        ×
+                      </button>
+                    </div>
+                    <RichTextEditor
+                      initialMarkdown={step.text}
+                      minHeightClass="min-h-20"
+                      onChange={(md) =>
                         updateSection(si, {
                           steps: section.steps.map((x, idx) =>
-                            idx === sti ? e.target.value : x,
+                            idx === sti ? { ...x, text: md } : x,
                           ),
                         })
                       }
-                      className={inputCls}
                     />
-                    <button
-                      type="button"
-                      aria-label={`${d.steps} ${sti + 1} ${d.remove}`}
-                      onClick={() =>
-                        updateSection(si, {
-                          steps: section.steps.filter((_, idx) => idx !== sti),
-                        })
-                      }
-                      className={`${btnSecondary} self-start`}
-                    >
-                      ×
-                    </button>
+                    <div className="mt-2">
+                      <ImagePicker
+                        legend={d.stepImage}
+                        options={images}
+                        multiple={false}
+                        value={step.imageId ? [step.imageId] : []}
+                        onChange={(ids) =>
+                          updateSection(si, {
+                            steps: section.steps.map((x, idx) =>
+                              idx === sti
+                                ? { ...x, imageId: ids[0] ?? null }
+                                : x,
+                            ),
+                          })
+                        }
+                      />
+                    </div>
                   </li>
                 ))}
               </ol>
               <button
                 type="button"
-                onClick={() => updateSection(si, { steps: [...section.steps, ""] })}
+                onClick={() =>
+                  updateSection(si, { steps: [...section.steps, emptyStep()] })
+                }
                 className={`${btnSecondary} mt-2`}
               >
                 + {d.addStep}

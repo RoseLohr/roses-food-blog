@@ -107,7 +107,10 @@ export async function buildEditorProps(
           unit: ing.unit,
           note: ing.note,
         })),
-        steps: s.steps.map((st) => st.text),
+        steps: s.steps.map((st) => ({
+          text: st.text,
+          imageId: st.imageId ?? null,
+        })),
       })),
       notes: [
         ...full.publicNotes.map((n) => ({ text: n.text, isPublic: true })),

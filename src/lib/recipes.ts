@@ -24,7 +24,13 @@ export interface FullRecipeSection {
   id: number;
   name: string;
   sortOrder: number;
-  steps: Array<{ id: number; text: string; sortOrder: number }>;
+  steps: Array<{
+    id: number;
+    text: string;
+    imageId: number | null;
+    image: MediaImage | null;
+    sortOrder: number;
+  }>;
   ingredients: FullRecipeIngredient[];
 }
 
@@ -81,8 +87,19 @@ export async function getFullRecipe(
 
   const stepRows = sectionIds.length
     ? await db
-        .select()
+        .select({
+          id: schema.recipeStep.id,
+          sectionId: schema.recipeStep.sectionId,
+          text: schema.recipeStep.text,
+          imageId: schema.recipeStep.imageId,
+          sortOrder: schema.recipeStep.sortOrder,
+          img: schema.mediaImage,
+        })
         .from(schema.recipeStep)
+        .leftJoin(
+          schema.mediaImage,
+          eq(schema.recipeStep.imageId, schema.mediaImage.id),
+        )
         .where(inArray(schema.recipeStep.sectionId, sectionIds))
         .orderBy(asc(schema.recipeStep.sortOrder))
     : [];
@@ -113,7 +130,13 @@ export async function getFullRecipe(
     sortOrder: s.sortOrder,
     steps: stepRows
       .filter((st) => st.sectionId === s.id)
-      .map(({ id, text, sortOrder }) => ({ id, text, sortOrder })),
+      .map(({ id, text, imageId, img, sortOrder }) => ({
+        id,
+        text,
+        imageId: imageId ?? null,
+        image: imageId && img ? img : null,
+        sortOrder,
+      })),
     ingredients: ingredientRows
       .filter((ing) => ing.sectionId === s.id)
       .map(({ sectionId: _s, ...rest }) => rest),

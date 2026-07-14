@@ -159,7 +159,10 @@ export function RecipeView({
             {recipe.title}
           </h1>
           {recipe.teaser && (
-            <p className="mt-4 leading-relaxed text-ink-soft">{recipe.teaser}</p>
+            <div
+              className="prose-content mt-4 text-ink-soft"
+              dangerouslySetInnerHTML={{ __html: renderMarkdown(recipe.teaser) }}
+            />
           )}
 
           {/* Meta-Zeile */}
@@ -278,7 +281,21 @@ export function RecipeView({
                           >
                             {step}
                           </span>
-                          <p className="pt-1.5 leading-relaxed">{st.text}</p>
+                          <div className="min-w-0 flex-1 pt-1.5">
+                            <div
+                              className="prose-content"
+                              dangerouslySetInnerHTML={{
+                                __html: renderMarkdown(st.text),
+                              }}
+                            />
+                            {st.image && (
+                              <ResponsiveImg
+                                image={st.image}
+                                sizes="(max-width: 640px) 100vw, 400px"
+                                className="mt-3 w-full max-w-sm object-cover"
+                              />
+                            )}
+                          </div>
                         </li>
                       );
                     })}
@@ -287,19 +304,6 @@ export function RecipeView({
               ));
           })()}
 
-          {/* Weitere Bilder */}
-          {full.images.length > 0 && (
-            <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 print:hidden">
-              {full.images.map((img) => (
-                <ResponsiveImg
-                  key={img.id}
-                  image={img}
-                  sizes="(max-width: 640px) 100vw, 384px"
-                  className="w-full object-cover"
-                />
-              ))}
-            </div>
-          )}
         </section>
 
         {/* Notizen / Tipps */}
