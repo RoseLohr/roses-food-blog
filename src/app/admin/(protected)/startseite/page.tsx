@@ -68,22 +68,37 @@ export default async function HomepageAdminPage(props: {
       )}
 
       <form action={saveHomepageAction} className="flex max-w-3xl flex-col gap-6">
+        {/* Alle Slider-Einstellungen zusammen, ganz oben */}
         <section className="bg-white p-5 shadow-sm">
+          <h2 className="mb-4 text-lg font-semibold">{d.sliderTitle}</h2>
+          <div className="mb-5 max-w-xs">
+            <label className={labelCls} htmlFor="hp-intervall">
+              {d.intervalLabel}
+            </label>
+            <input
+              id="hp-intervall"
+              name="intervall"
+              type="number"
+              min={2}
+              max={60}
+              defaultValue={config?.sliderIntervalSeconds ?? 6}
+              className={inputCls}
+            />
+          </div>
+          <h3 className="mb-3 text-sm font-semibold text-ink-soft">
+            {d.sliderEntriesTitle}
+          </h3>
+          <SliderEditor
+            initial={initialSlides}
+            images={imageChoices}
+            recipes={recipes}
+          />
+        </section>
+
+        {/* Weitere Startseiten-Einstellungen */}
+        <section className="bg-white p-5 shadow-sm">
+          <h2 className="mb-4 text-lg font-semibold">{d.otherTitle}</h2>
           <div className="grid gap-4 md:grid-cols-2">
-            <div>
-              <label className={labelCls} htmlFor="hp-intervall">
-                {d.intervalLabel}
-              </label>
-              <input
-                id="hp-intervall"
-                name="intervall"
-                type="number"
-                min={2}
-                max={60}
-                defaultValue={config?.sliderIntervalSeconds ?? 6}
-                className={inputCls}
-              />
-            </div>
             <div>
               <label className={labelCls} htmlFor="hp-beliebteste">
                 {d.popularCountLabel}
@@ -131,15 +146,6 @@ export default async function HomepageAdminPage(props: {
               />
             </div>
           </div>
-        </section>
-
-        <section className="bg-white p-5 shadow-sm">
-          <h2 className="mb-4 text-lg font-semibold">{d.sliderTitle}</h2>
-          <SliderEditor
-            initial={initialSlides}
-            images={imageChoices}
-            recipes={recipes}
-          />
         </section>
 
         <button
