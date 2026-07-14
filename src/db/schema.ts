@@ -52,6 +52,9 @@ export const mediaImage = sqliteTable("media_image", {
   sizeBytes: integer("size_bytes").notNull(),
   /** JSON-Array der verfügbaren Varianten-Breiten, z. B. [320,640,960] */
   variantWidths: text("variant_widths").notNull().default("[]"),
+  /** Geo-Position aus den EXIF-Daten (falls vorhanden) — für Karten-Ansicht */
+  lat: real("lat"),
+  lng: real("lng"),
   createdAt: now(),
 });
 
@@ -156,6 +159,10 @@ export const recipeStep = sqliteTable(
       .notNull()
       .references(() => recipeSection.id, { onDelete: "cascade" }),
     text: text("text").notNull(),
+    /** Optionales Bild zum Zubereitungsschritt */
+    imageId: integer("image_id").references(() => mediaImage.id, {
+      onDelete: "set null",
+    }),
     sortOrder: integer("sort_order").notNull().default(0),
   },
   (t) => [index("recipe_step_section_idx").on(t.sectionId)],
@@ -319,7 +326,13 @@ export const travelPost = sqliteTable(
     /** Markdown */
     content: text("content").notNull().default(""),
     country: text("country").notNull().default(""),
+    /** @deprecated ersetzt durch region + city; bleibt als Spalte erhalten,
+     *  wird aber nicht mehr im UI verwendet (Daten wandern nach city). */
     destination: text("destination").notNull().default(""),
+    /** Region/Gebiet (z. B. „Sizilien") */
+    region: text("region").notNull().default(""),
+    /** Stadt/Ort (früher „Reiseziel"/destination) */
+    city: text("city").notNull().default(""),
     heroImageId: integer("hero_image_id").references(() => mediaImage.id, {
       onDelete: "set null",
     }),
@@ -361,7 +374,12 @@ export const restaurant = sqliteTable(
       .references(() => travelPost.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     city: text("city").notNull().default(""),
+    /** Markdown */
     description: text("description").notNull().default(""),
+    /** Optionales Foto des Restaurants */
+    imageId: integer("image_id").references(() => mediaImage.id, {
+      onDelete: "set null",
+    }),
     sortOrder: integer("sort_order").notNull().default(0),
   },
   (t) => [index("restaurant_travel_idx").on(t.travelPostId)],

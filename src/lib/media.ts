@@ -16,9 +16,98 @@ import { execFile } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
+import { eq } from "drizzle-orm";
 import { db, schema } from "@/db";
 
 const execFileAsync = promisify(execFile);
+
+/** Max. Länge eines benutzerdefinierten Dateinamens (→ Bild-URL). */
+const FILEKEY_MAX = 60;
+
+/**
+ * Fehler bei einem ungültigen/vergebenen Wunsch-Dateinamen. Enthält einen
+ * bereinigten Vorschlag, den das Upload-Formular direkt übernehmen kann.
+ */
+export class ImageNameError extends Error {
+  suggestion: string;
+  constructor(message: string, suggestion: string) {
+    super(message);
+    this.name = "ImageNameError";
+    this.suggestion = suggestion;
+  }
+}
+
+/**
+ * Wandelt eine Eingabe in einen URL-sicheren Dateinamen (Slug): deutsche
+ * Umlaute werden transliteriert, alles andere auf a–z, 0–9 und Bindestrich
+ * reduziert. Basis der öffentlichen Bild-URL (SEO).
+ */
+export function slugifyFilename(input: string): string {
+  return input
+    .trim()
+    .replace(
+      /[ÄäÖöÜüß]/g,
+      (c) =>
+        ({ Ä: "Ae", ä: "ae", Ö: "Oe", ö: "oe", Ü: "Ue", ü: "ue", ß: "ss" })[c] ??
+        c,
+    )
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "") // verbliebene Akzente entfernen
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, FILEKEY_MAX)
+    .replace(/-+$/g, "");
+}
+
+async function fileKeyTaken(key: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: schema.mediaImage.id })
+    .from(schema.mediaImage)
+    .where(eq(schema.mediaImage.fileKey, key))
+    .limit(1);
+  return Boolean(row) || fs.existsSync(path.join(uploadsDir(), key));
+}
+
+async function nextFreeKey(base: string): Promise<string> {
+  for (let i = 2; i < 1000; i++) {
+    const candidate = `${base.slice(0, FILEKEY_MAX - 4)}-${i}`;
+    if (!(await fileKeyTaken(candidate))) return candidate;
+  }
+  return `${base.slice(0, FILEKEY_MAX - 12)}-${crypto.randomBytes(4).toString("hex")}`;
+}
+
+/**
+ * Ermittelt den fileKey (= Bild-URL-Segment). Ohne Wunschnamen: zufälliger
+ * Hex-Schlüssel. Mit Wunschnamen: strenge Prüfung; bei Fehleingaben oder
+ * Namenskonflikt wird ImageNameError mit Vorschlag geworfen.
+ */
+async function resolveFileKey(desired?: string): Promise<string> {
+  const wanted = (desired ?? "").trim();
+  if (!wanted) return crypto.randomBytes(10).toString("hex");
+
+  const slug = slugifyFilename(wanted);
+  if (!slug) {
+    throw new ImageNameError(
+      "Der Dateiname enthält keine verwendbaren Zeichen. Bitte Buchstaben oder Ziffern verwenden.",
+      "",
+    );
+  }
+  // „Fehlerhaft" = Eingabe war nicht bereits ein sauberer Slug.
+  if (wanted !== slug) {
+    throw new ImageNameError(
+      "Ungültiger Dateiname. Erlaubt sind nur Kleinbuchstaben, Ziffern und Bindestriche.",
+      slug,
+    );
+  }
+  if (await fileKeyTaken(slug)) {
+    throw new ImageNameError(
+      "Dieser Dateiname ist bereits vergeben.",
+      await nextFreeKey(slug),
+    );
+  }
+  return slug;
+}
 
 export const VARIANT_WIDTHS = [320, 640, 960, 1280, 1920] as const;
 export const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
@@ -135,6 +224,32 @@ function backend(): ImageBackend {
 }
 
 /**
+ * Liest die GPS-Position aus den EXIF-Daten (falls vorhanden). Rein in JS
+ * (exifr, CPU-portabel). Fehler/kein GPS → null/null.
+ */
+async function readGeo(
+  buffer: Buffer,
+): Promise<{ lat: number | null; lng: number | null }> {
+  try {
+    const { gps } = await import("exifr");
+    const pos = await gps(buffer);
+    if (
+      pos &&
+      Number.isFinite(pos.latitude) &&
+      Number.isFinite(pos.longitude) &&
+      Math.abs(pos.latitude) <= 90 &&
+      Math.abs(pos.longitude) <= 180 &&
+      !(pos.latitude === 0 && pos.longitude === 0)
+    ) {
+      return { lat: pos.latitude, lng: pos.longitude };
+    }
+  } catch {
+    /* keine oder defekte EXIF-Daten */
+  }
+  return { lat: null, lng: null };
+}
+
+/**
  * Verarbeitet einen Bild-Buffer: Validierung, Neuverarbeitung, Varianten.
  * Wirft Error mit deutscher Meldung bei ungültigen Daten.
  */
@@ -142,12 +257,19 @@ export async function storeImage(
   buffer: Buffer,
   originalName: string,
   altText = "",
+  /** Optionaler Wunsch-Dateiname → bestimmt die Bild-URL (SEO). */
+  desiredKey?: string,
 ): Promise<StoredImage> {
   if (buffer.length > MAX_UPLOAD_BYTES) {
     throw new Error("Datei zu groß (maximal 15 MB).");
   }
 
-  const fileKey = crypto.randomBytes(10).toString("hex");
+  // Wirft ImageNameError (mit Vorschlag) bei ungültigem/vergebenem Namen.
+  const fileKey = await resolveFileKey(desiredKey);
+
+  // Geo-Position aus EXIF lesen, BEVOR die Varianten die Metadaten entfernen.
+  const { lat, lng } = await readGeo(buffer);
+
   const dir = path.join(uploadsDir(), fileKey);
   fs.mkdirSync(dir, { recursive: true });
   const tmpFile = path.join(dir, "original.tmp");
@@ -185,6 +307,8 @@ export async function storeImage(
         height: meta.height,
         sizeBytes: buffer.length,
         variantWidths: JSON.stringify(usedWidths),
+        lat,
+        lng,
         createdAt: new Date(),
       })
       .returning();
@@ -205,8 +329,9 @@ export async function storeImage(
 }
 
 export function deleteImageFiles(fileKey: string): void {
-  // fileKey ist ein von uns erzeugter Hex-String — zur Sicherheit validieren,
-  // damit nie außerhalb von uploads/ gelöscht wird.
-  if (!/^[a-f0-9]{20}$/.test(fileKey)) return;
+  // fileKey ist entweder ein Hex-Schlüssel oder ein Slug (a–z, 0–9, „-").
+  // Streng validieren (keine Punkte/Schrägstriche), damit nie außerhalb von
+  // uploads/ gelöscht wird.
+  if (!/^[a-z0-9][a-z0-9-]{0,59}$/.test(fileKey)) return;
   fs.rmSync(path.join(uploadsDir(), fileKey), { recursive: true, force: true });
 }
