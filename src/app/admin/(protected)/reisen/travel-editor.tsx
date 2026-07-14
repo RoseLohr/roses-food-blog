@@ -367,33 +367,52 @@ export function TravelEditor({ initial, images, message }: TravelEditorProps) {
         </div>
       </section>
 
-      <div className="sticky bottom-0 flex items-center gap-3 border border-ink/10 bg-white p-4 shadow-lg">
-        <label className="text-sm font-medium" htmlFor="t-status">
-          {dict.admin.recipes.fieldStatus}
-        </label>
-        <select
-          id="t-status"
-          name="status"
-          defaultValue={initial.status}
-          className="border border-ink-soft/30 px-3 py-2 text-sm"
-        >
-          <option value="entwurf">{dict.admin.recipes.statusDraft}</option>
-          <option value="veroeffentlicht">{dict.admin.recipes.statusPublished}</option>
-        </select>
+      <div className="sticky bottom-0 flex flex-col gap-3 border border-ink/10 bg-white p-4 shadow-lg sm:flex-row sm:flex-wrap sm:items-center">
+        <div className="flex items-center gap-2">
+          <label
+            className="whitespace-nowrap text-sm font-medium"
+            htmlFor="t-status"
+          >
+            {dict.admin.recipes.fieldStatus}
+          </label>
+          <select
+            id="t-status"
+            name="status"
+            defaultValue={initial.status}
+            className="min-w-0 flex-1 border border-ink-soft/30 px-3 py-2 text-sm sm:flex-none"
+          >
+            <option value="entwurf">{dict.admin.recipes.statusDraft}</option>
+            <option value="veroeffentlicht">
+              {dict.admin.recipes.statusPublished}
+            </option>
+          </select>
+        </div>
         <button
           type="submit"
           disabled={pending}
-          className="rounded-lg bg-rose-primary px-5 py-2 font-semibold text-white hover:bg-rose-primary-dark disabled:opacity-60"
+          className="w-full rounded-lg bg-rose-primary px-5 py-2 font-semibold text-white hover:bg-rose-primary-dark disabled:opacity-60 sm:w-auto"
         >
           {dict.common.save}
         </button>
         {initial.id !== null && (
-          <a
-            href={`/admin/reisen/${initial.id}/vorschau`}
-            className="text-sm text-ink-soft underline-offset-2 hover:underline"
-          >
-            {dict.admin.recipes.preview}
-          </a>
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-1 sm:ml-auto">
+            <a
+              href={`/admin/reisen/${initial.id}/vorschau`}
+              className="py-1 text-sm text-ink-soft underline-offset-2 hover:underline"
+            >
+              {dict.admin.recipes.preview}
+            </a>
+            {initial.slug && initial.status === "veroeffentlicht" && (
+              <a
+                href={`/reisen/${initial.slug}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="py-1 text-sm text-leaf underline-offset-2 hover:underline"
+              >
+                {dict.admin.recipes.viewPublic}
+              </a>
+            )}
+          </div>
         )}
       </div>
     </form>

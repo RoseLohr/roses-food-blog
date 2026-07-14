@@ -111,27 +111,42 @@ export default async function EditPagePage(props: {
             />
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          <label className="text-sm font-medium" htmlFor="s-status">
-            {dict.admin.recipes.fieldStatus}
-          </label>
-          <select
-            id="s-status"
-            name="status"
-            defaultValue={page?.status ?? "entwurf"}
-            className="border border-ink-soft/30 px-3 py-2 text-sm"
-          >
-            <option value="entwurf">{dict.admin.recipes.statusDraft}</option>
-            <option value="veroeffentlicht">
-              {dict.admin.recipes.statusPublished}
-            </option>
-          </select>
+        <div className="sticky bottom-0 flex flex-col gap-3 border border-ink/10 bg-white p-4 shadow-lg sm:flex-row sm:flex-wrap sm:items-center">
+          <div className="flex items-center gap-2">
+            <label
+              className="whitespace-nowrap text-sm font-medium"
+              htmlFor="s-status"
+            >
+              {dict.admin.recipes.fieldStatus}
+            </label>
+            <select
+              id="s-status"
+              name="status"
+              defaultValue={page?.status ?? "entwurf"}
+              className="min-w-0 flex-1 border border-ink-soft/30 px-3 py-2 text-sm sm:flex-none"
+            >
+              <option value="entwurf">{dict.admin.recipes.statusDraft}</option>
+              <option value="veroeffentlicht">
+                {dict.admin.recipes.statusPublished}
+              </option>
+            </select>
+          </div>
           <button
             type="submit"
-            className="rounded-lg bg-rose-primary px-5 py-2 font-semibold text-white hover:bg-rose-primary-dark"
+            className="w-full rounded-lg bg-rose-primary px-5 py-2 font-semibold text-white hover:bg-rose-primary-dark sm:w-auto"
           >
             {dict.common.save}
           </button>
+          {page && page.status === "veroeffentlicht" && page.slug && (
+            <a
+              href={`/${page.slug}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="py-1 text-sm text-leaf underline-offset-2 hover:underline sm:ml-auto"
+            >
+              {dict.admin.recipes.viewPublic}
+            </a>
+          )}
         </div>
       </form>
     </>
