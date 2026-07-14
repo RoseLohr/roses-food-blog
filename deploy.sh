@@ -25,12 +25,17 @@ DEPLOY_STATUS_RESULT=""        # während des Laufs unbekannt
 DEPLOY_PHASE="gestartet"
 DEPLOY_RUNNING=1
 _status_ready() { [[ -n "${DATA_DIR:-}" && -d "${DATA_DIR:-/nonexistent}" ]]; }
+# Zeitstempel in MILLISEKUNDEN (wie Date.now() im Panel). Früher wurde auf
+# Sekunden gerundet (…000) — dann konnte status.at knapp KLEINER als der
+# Auslöse-Zeitpunkt (ms) sein und das Panel den frischen Status als „alt“
+# verwerfen (Dauer-„startet gleich …“). Millisekunden vermeiden das.
+_now_ms() { local ms; ms=$(date +%s%3N 2>/dev/null); [[ "$ms" =~ ^[0-9]+$ ]] && printf '%s' "$ms" || printf '%s000' "$(date +%s)"; }
 status_write() {
   _status_ready || return 0
   local running=false; [[ "$DEPLOY_RUNNING" == "1" ]] && running=true
   local phase=${DEPLOY_PHASE//\\/\\\\}; phase=${phase//\"/\\\"}
-  printf '{"at":%s000,"running":%s,"phase":"%s","result":"%s","commit":"%s"}\n' \
-    "$(date +%s)" "$running" "$phase" "$DEPLOY_STATUS_RESULT" "${COMMIT:-}" \
+  printf '{"at":%s,"running":%s,"phase":"%s","result":"%s","commit":"%s"}\n' \
+    "$(_now_ms)" "$running" "$phase" "$DEPLOY_STATUS_RESULT" "${COMMIT:-}" \
     > "$DATA_DIR/deploy-status.json" 2>/dev/null || true
 }
 deploy_log() {
@@ -48,20 +53,10 @@ write_deploy_status() {
 }
 trap write_deploy_status EXIT
 
-# Deployt standardmäßig den aktuell ausgecheckten Branch (Override: DEPLOY_BRANCH)
-CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)"
-[[ "$CURRENT_BRANCH" == "HEAD" ]] && CURRENT_BRANCH="main"
-BRANCH="${DEPLOY_BRANCH:-$CURRENT_BRANCH}"
-COMPOSE="podman compose"
-command -v podman >/dev/null || { echo "FEHLER: podman ist nicht installiert."; exit 1; }
-podman compose version >/dev/null 2>&1 || {
-  command -v podman-compose >/dev/null && COMPOSE="podman-compose" || {
-    echo "FEHLER: Weder 'podman compose' noch 'podman-compose' verfügbar."
-    echo "        Installation: sudo apt install podman-compose"
-    exit 1
-  }
-}
-
+# log()/fail() ZUERST definieren — damit auch frühe Fehler (fehlende Tools,
+# fehlende .env) über die Statusdatei im Panel landen. Wird deploy.sh vom
+# Panel-Watcher (systemd) angestoßen, sieht man so den ECHTEN Grund statt nur
+# „Server reagiert nicht“.
 log()  {
   printf '\n\033[1;32m==> %s\033[0m\n' "$*"
   DEPLOY_PHASE="$*"
@@ -70,20 +65,47 @@ log()  {
 }
 fail() {
   printf '\n\033[1;31mFEHLER: %s\033[0m\n' "$*"
+  DEPLOY_PHASE="Fehler: $*"
   deploy_log "FEHLER: $*"
+  status_write
   exit 1
 }
 
-# --- 0. Erstlauf: .env prüfen ----------------------------------------------
-if [[ ! -f .env ]]; then
-  echo "Keine .env gefunden. Ersteinrichtung:"
-  echo "  cp .env.example .env   # und alle Werte befüllen (siehe README.md)"
-  exit 1
+# DATA_DIR so FRÜH wie möglich auflösen, damit ab hier jeder Fehler sichtbar
+# wird. .env liefert DATA_DIR/PORT; fehlt sie, greift der Standardpfad (wie in
+# compose.yml). Die verpflichtende .env-Prüfung folgt gleich darunter.
+if [[ -f .env ]]; then
+  # nur einfache KEY=VALUE-Zeilen laden
+  set -a; source <(grep -E '^[A-Z_]+=' .env); set +a
 fi
-# .env laden (für DATA_DIR/PORT); nur einfache KEY=VALUE-Zeilen
-set -a; source <(grep -E '^[A-Z_]+=' .env); set +a
 DATA_DIR="${DATA_DIR:-/srv/roses-blog/data}"
 PORT="${PORT:-3000}"
+mkdir -p "$DATA_DIR" 2>/dev/null || true
+
+# Sofortiger Herzschlag ans Panel: „angenommen, läuft an“. Ohne diesen Status
+# würde ein Abbruch VOR Abschnitt 0 (z. B. podman nicht im PATH des systemd-
+# Dienstes) gar keinen Status schreiben — das Panel meldete dann fälschlich
+# „Watcher läuft nicht“, obwohl er sehr wohl lief.
+: > "$DATA_DIR/deploy.log" 2>/dev/null || true
+DEPLOY_RUNNING=1; DEPLOY_STATUS_RESULT=""
+log "Deployment angenommen — Umgebung wird geprüft"
+
+# Deployt standardmäßig den aktuell ausgecheckten Branch (Override: DEPLOY_BRANCH)
+CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)"
+[[ "$CURRENT_BRANCH" == "HEAD" ]] && CURRENT_BRANCH="main"
+BRANCH="${DEPLOY_BRANCH:-$CURRENT_BRANCH}"
+COMPOSE="podman compose"
+command -v podman >/dev/null \
+  || fail "podman nicht gefunden. PATH des Dienstes: ${PATH}"
+podman compose version >/dev/null 2>&1 || {
+  command -v podman-compose >/dev/null && COMPOSE="podman-compose" \
+    || fail "Weder 'podman compose' noch 'podman-compose' im PATH (${PATH}). Installation: sudo apt install podman-compose"
+}
+
+# --- 0. .env verpflichtend --------------------------------------------------
+if [[ ! -f .env ]]; then
+  fail "Keine .env gefunden. Ersteinrichtung: cp .env.example .env und Werte befüllen (siehe README.md)."
+fi
 
 for var in BASE_URL SESSION_SECRET ADMIN_EMAIL ADMIN_PASSWORD; do
   [[ -n "${!var:-}" ]] || fail ".env unvollständig: $var ist nicht gesetzt."
@@ -239,6 +261,15 @@ After=network-online.target
 [Service]
 Type=oneshot
 WorkingDirectory=$SCRIPT_DIR
+# WICHTIG: Ein systemd-User-Dienst startet mit MINIMALEM PATH — ohne
+# ~/.local/bin (dort liegt z. B. ein per pip installiertes podman-compose)
+# und ggf. ohne /usr/local/bin. deploy.sh bräche dann schon an der
+# podman/podman-compose-Prüfung ab (Symptom: Panel meldet „Server reagiert
+# nicht“, während der manuelle Aufruf im Terminal problemlos läuft). Wir
+# setzen daher einen vollständigen PATH — die Standardorte plus den PATH,
+# den der installierende Aufruf hatte.
+Environment=HOME=$HOME
+Environment=PATH=$HOME/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH
 # Anfrage vor dem Lauf entfernen, damit der Path-Unit erneut auslösen kann.
 ExecStartPre=-/usr/bin/rm -f $DATA_DIR/deploy-request
 ExecStart=/usr/bin/env bash $SCRIPT_DIR/deploy.sh
