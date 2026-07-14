@@ -10,15 +10,17 @@ import { getBaseUrl } from "@/lib/base-url";
 import { t } from "@/i18n/de";
 import { ResponsiveImg } from "./responsive-img";
 import { HeroActions } from "./hero-actions";
-import { IconTag } from "./icons";
+import { IconCity, IconCountry, IconRegion, IconTag } from "./icons";
 
 const dict = t();
 
 function MetaChip({
   label,
+  icon,
   children,
 }: {
   label: string;
+  icon: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
@@ -27,7 +29,7 @@ function MetaChip({
         aria-hidden
         className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-cream text-ink-soft"
       >
-        <IconTag className="h-5 w-5" />
+        {icon}
       </span>
       <div>
         <p className="text-xs font-bold uppercase tracking-wider text-ink">
@@ -76,17 +78,26 @@ export function TravelView({
           )}
           <div className="mt-6 flex flex-wrap gap-x-8 gap-y-4">
             {post.country && (
-              <MetaChip label={dict.admin.travel.fieldCountry}>
+              <MetaChip
+                label={dict.admin.travel.fieldCountry}
+                icon={<IconCountry className="h-5 w-5" />}
+              >
                 {post.country}
               </MetaChip>
             )}
             {post.region && (
-              <MetaChip label={dict.admin.travel.fieldRegion}>
+              <MetaChip
+                label={dict.admin.travel.fieldRegion}
+                icon={<IconRegion className="h-5 w-5" />}
+              >
                 {post.region}
               </MetaChip>
             )}
             {post.city && (
-              <MetaChip label={dict.admin.travel.fieldCity}>
+              <MetaChip
+                label={dict.admin.travel.fieldCity}
+                icon={<IconCity className="h-5 w-5" />}
+              >
                 {post.city}
               </MetaChip>
             )}

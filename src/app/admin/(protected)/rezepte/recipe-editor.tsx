@@ -397,21 +397,7 @@ export function RecipeEditor({
               <h3 className="mb-2 text-sm font-semibold">{d.ingredients}</h3>
               <div className="flex flex-col gap-2">
                 {section.ingredients.map((ing, ii) => (
-                  <div key={ii} className="grid grid-cols-[1fr_5rem_6rem_1fr_auto] gap-2">
-                    <input
-                      aria-label={d.ingredientName}
-                      list="zutaten-liste"
-                      value={ing.name}
-                      onChange={(e) =>
-                        updateSection(si, {
-                          ingredients: section.ingredients.map((x, idx) =>
-                            idx === ii ? { ...x, name: e.target.value } : x,
-                          ),
-                        })
-                      }
-                      placeholder={d.ingredientName}
-                      className={inputCls}
-                    />
+                  <div key={ii} className="grid grid-cols-[5rem_6rem_1fr_1fr_auto] gap-2">
                     <input
                       aria-label={d.amount}
                       value={ing.amount}
@@ -438,6 +424,20 @@ export function RecipeEditor({
                         })
                       }
                       placeholder={d.unit}
+                      className={inputCls}
+                    />
+                    <input
+                      aria-label={d.ingredientName}
+                      list="zutaten-liste"
+                      value={ing.name}
+                      onChange={(e) =>
+                        updateSection(si, {
+                          ingredients: section.ingredients.map((x, idx) =>
+                            idx === ii ? { ...x, name: e.target.value } : x,
+                          ),
+                        })
+                      }
+                      placeholder={d.ingredientName}
                       className={inputCls}
                     />
                     <input

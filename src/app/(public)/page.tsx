@@ -91,7 +91,7 @@ async function loadHomepage() {
 
   const [popular, latest, cuisines, diets] = await Promise.all([
     publishedRecipeCards({ limit: config?.popularCount ?? 6, orderByLikes: true }),
-    publishedRecipeCards({ limit: 6 }),
+    publishedRecipeCards({ limit: config?.latestCount ?? 6 }),
     db.select().from(schema.cuisine).orderBy(asc(schema.cuisine.name)),
     db.select().from(schema.dietType).orderBy(asc(schema.dietType.name)),
   ]);

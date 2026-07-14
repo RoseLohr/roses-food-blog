@@ -130,23 +130,12 @@ export function TravelEditor({ initial, images, message }: TravelEditorProps) {
             <label className={labelCls} htmlFor="t-land">
               {d.fieldCountry}
             </label>
-            <div className="relative">
-              <span
-                aria-hidden
-                className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-leaf"
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <circle cx="12" cy="12" r="9" />
-                  <path d="M3 12h18M12 3c2.5 2.5 3.8 5.7 3.8 9s-1.3 6.5-3.8 9c-2.5-2.5-3.8-5.7-3.8-9S9.5 5.5 12 3Z" />
-                </svg>
-              </span>
-              <input
-                id="t-land"
-                name="land"
-                defaultValue={initial.country}
-                className={`${inputCls} pl-9`}
-              />
-            </div>
+            <input
+              id="t-land"
+              name="land"
+              defaultValue={initial.country}
+              className={inputCls}
+            />
           </div>
           <div>
             <label className={labelCls} htmlFor="t-region">

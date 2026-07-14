@@ -86,18 +86,14 @@ async function resolveFileKey(desired?: string): Promise<string> {
   const wanted = (desired ?? "").trim();
   if (!wanted) return crypto.randomBytes(10).toString("hex");
 
+  // Eingabe automatisch bereinigen (Kleinbuchstaben, Umlaute, „-"), nicht
+  // ablehnen. Nur wenn nichts Verwertbares übrig bleibt oder der Name schon
+  // vergeben ist, gibt es eine Meldung mit Vorschlag.
   const slug = slugifyFilename(wanted);
   if (!slug) {
     throw new ImageNameError(
       "Der Dateiname enthält keine verwendbaren Zeichen. Bitte Buchstaben oder Ziffern verwenden.",
       "",
-    );
-  }
-  // „Fehlerhaft" = Eingabe war nicht bereits ein sauberer Slug.
-  if (wanted !== slug) {
-    throw new ImageNameError(
-      "Ungültiger Dateiname. Erlaubt sind nur Kleinbuchstaben, Ziffern und Bindestriche.",
-      slug,
     );
   }
   if (await fileKeyTaken(slug)) {

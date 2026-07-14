@@ -13,6 +13,7 @@
  */
 import { useEffect, useId, useState } from "react";
 import { createPortal } from "react-dom";
+import { sanitizeFilenameLive } from "@/components/admin/filename-input";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -265,8 +266,11 @@ function LibraryModal({
               {ip.fileName}
               <input
                 value={fileName}
-                onChange={(e) => setFileName(e.target.value)}
+                onChange={(e) => setFileName(sanitizeFilenameLive(e.target.value))}
                 placeholder={ip.fileNamePlaceholder}
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
                 className="mt-1 w-full border border-ink-soft/30 bg-white px-2 py-1.5 text-sm text-ink"
               />
             </label>

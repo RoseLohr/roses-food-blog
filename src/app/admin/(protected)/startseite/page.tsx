@@ -113,6 +113,20 @@ export default async function HomepageAdminPage(props: {
                 className={inputCls}
               />
             </div>
+            <div>
+              <label className={labelCls} htmlFor="hp-neueste">
+                {d.latestCountLabel}
+              </label>
+              <input
+                id="hp-neueste"
+                name="neueste"
+                type="number"
+                min={1}
+                max={12}
+                defaultValue={config?.latestCount ?? 6}
+                className={inputCls}
+              />
+            </div>
             <ImagePicker
               name="aboutBild"
               legend={d.aboutImageLabel}

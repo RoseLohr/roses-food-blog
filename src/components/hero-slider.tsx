@@ -117,10 +117,20 @@ export function HeroSlider({
         />
         <div aria-hidden className="absolute inset-0 bg-black/50" />
 
-        {/* Inhalt */}
+        {/* Ganze Bildfläche als Link zum Rezept (unter Pfeilen/Thumbs). */}
+        {slide.href && (
+          <Link
+            href={slide.href}
+            aria-label={slide.caption}
+            className="absolute inset-0 z-10"
+          />
+        )}
+
+        {/* Inhalt — pointer-events-none, damit der Klick die Bildflächen-
+            Verlinkung erreicht; nur der Titel-Link bleibt separat klickbar. */}
         <div
           aria-live={autoplay ? "off" : "polite"}
-          className="absolute inset-0 flex flex-col items-center justify-center gap-5 px-14 pb-16 text-center text-white sm:px-20"
+          className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-5 px-14 pb-16 text-center text-white sm:px-20"
         >
           {slide.category && (
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-leaf-soft">
@@ -129,7 +139,10 @@ export function HeroSlider({
           )}
           <h2 className="font-display text-[1.75rem] font-semibold leading-tight drop-shadow-sm sm:text-[2.25rem] lg:text-[2.75rem]">
             {slide.href ? (
-              <Link href={slide.href} className="hover:text-white/90">
+              <Link
+                href={slide.href}
+                className="pointer-events-auto hover:text-white/90"
+              >
                 {slide.caption}
               </Link>
             ) : (

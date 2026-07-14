@@ -4,6 +4,8 @@ import { desc } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { requireAdmin } from "@/lib/auth";
 import { imageUrl } from "@/lib/media";
+import { FilenameInput } from "@/components/admin/filename-input";
+import { MediaThumb } from "@/components/admin/media-thumb";
 import { t } from "@/i18n/de";
 import {
   deleteImageAction,
@@ -40,6 +42,10 @@ export default async function MediaPage(props: {
 
   const thumb = (img: (typeof images)[number]) =>
     imageUrl(img.fileKey, JSON.parse(img.variantWidths)[0] ?? 320);
+  const full = (img: (typeof images)[number]) => {
+    const widths: number[] = JSON.parse(img.variantWidths);
+    return imageUrl(img.fileKey, widths.at(-1) ?? widths[0] ?? 320);
+  };
 
   return (
     <>
@@ -70,7 +76,7 @@ export default async function MediaPage(props: {
         <label className="text-sm font-medium" htmlFor="upload-name">
           {m.fileName}
         </label>
-        <input
+        <FilenameInput
           id="upload-name"
           name="dateiname"
           placeholder="pasta-alla-norma"
@@ -129,15 +135,14 @@ export default async function MediaPage(props: {
               key={img.id}
               className="flex items-center gap-4 bg-white p-3 shadow-sm"
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={thumb(img)}
-                alt={img.altText}
-                width={80}
-                height={80}
-                loading="lazy"
-                className="h-16 w-16 shrink-0 object-cover"
-              />
+              <div className="h-16 w-16 shrink-0">
+                <MediaThumb
+                  thumbUrl={thumb(img)}
+                  fullUrl={full(img)}
+                  alt={img.altText}
+                  className="h-16 w-16 object-cover"
+                />
+              </div>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium" title={img.fileKey}>
                   {img.originalName}
@@ -182,15 +187,14 @@ export default async function MediaPage(props: {
         <ul className="grid grid-cols-3 gap-4 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
           {images.map((img) => (
             <li key={img.id} className="bg-white p-2.5 shadow-sm">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={thumb(img)}
-                alt={img.altText}
-                width={256}
-                height={256}
-                loading="lazy"
-                className="mb-2 aspect-square w-full object-cover"
-              />
+              <div className="mb-2">
+                <MediaThumb
+                  thumbUrl={thumb(img)}
+                  fullUrl={full(img)}
+                  alt={img.altText}
+                  className="aspect-square w-full object-cover"
+                />
+              </div>
               <p className="truncate text-xs text-ink-soft" title={img.originalName}>
                 {img.originalName}
               </p>

@@ -12,6 +12,7 @@ coverage/
 *.db-wal
 *.db-shm
 data/
+.admin-data/
 
 # Sonstiges
 .DS_Store

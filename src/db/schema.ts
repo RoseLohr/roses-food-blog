@@ -440,6 +440,8 @@ export const homepageConfig = sqliteTable("homepage_config", {
     .notNull()
     .default(6),
   popularCount: integer("popular_count").notNull().default(6),
+  /** Anzahl neuer Rezepte auf der Startseite. */
+  latestCount: integer("latest_count").notNull().default(6),
   aboutTeaserImageId: integer("about_teaser_image_id").references(
     () => mediaImage.id,
     { onDelete: "set null" },

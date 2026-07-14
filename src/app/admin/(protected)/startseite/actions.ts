@@ -34,6 +34,10 @@ export async function saveHomepageAction(formData: FormData): Promise<void> {
     12,
     Math.max(1, Number(formData.get("beliebteste")) || 6),
   );
+  const latestCount = Math.min(
+    12,
+    Math.max(1, Number(formData.get("neueste")) || 6),
+  );
   const aboutImageId = formData.get("aboutBild")
     ? Number(formData.get("aboutBild"))
     : null;
@@ -44,6 +48,7 @@ export async function saveHomepageAction(formData: FormData): Promise<void> {
       id: 1,
       sliderIntervalSeconds: interval,
       popularCount,
+      latestCount,
       aboutTeaserImageId: aboutImageId,
       aboutTeaserText: String(formData.get("aboutText") ?? "").trim(),
       aboutTeaserLink:
@@ -54,6 +59,7 @@ export async function saveHomepageAction(formData: FormData): Promise<void> {
       set: {
         sliderIntervalSeconds: interval,
         popularCount,
+        latestCount,
         aboutTeaserImageId: aboutImageId,
         aboutTeaserText: String(formData.get("aboutText") ?? "").trim(),
         aboutTeaserLink:
