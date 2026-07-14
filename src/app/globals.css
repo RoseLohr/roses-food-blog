@@ -80,7 +80,6 @@
 .prose-content code {
   background: var(--color-cream);
   padding: 0.1em 0.35em;
-  border-radius: 0.25em;
   font-size: 0.9em;
 }
 
