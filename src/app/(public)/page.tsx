@@ -69,6 +69,7 @@ async function loadHomepage() {
         : null;
     return {
       id: s.id,
+      recipeId: linked,
       imgSrc: imageUrl(s.img.fileKey, widths.at(-1) ?? 1280),
       imgSrcSet: srcset(s.img.fileKey, widths),
       alt: s.img.altText,

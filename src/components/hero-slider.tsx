@@ -12,13 +12,15 @@
  */
 import Link from "next/link";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { IconHeart } from "@/components/icons";
+import { CompactLike } from "@/components/compact-like";
 import { t } from "@/i18n/de";
 
 const dict = t();
 
 export interface SlideData {
   id: number;
+  /** Rezept-ID des verlinkten Rezepts (für Likes); null wenn nicht verlinkt. */
+  recipeId: number | null;
   imgSrc: string;
   imgSrcSet: string;
   alt: string;
@@ -149,11 +151,13 @@ export function HeroSlider({
               slide.caption
             )}
           </h2>
-          {typeof slide.likeCount === "number" && (
-            <p className="flex items-center gap-1.5 text-sm tracking-wide">
-              <IconHeart className="h-4 w-4" filled />
-              {slide.likeCount} {dict.recipeList.likesSuffix}
-            </p>
+          {typeof slide.likeCount === "number" && slide.recipeId != null && (
+            <CompactLike
+              recipeId={slide.recipeId}
+              initialCount={slide.likeCount}
+              iconClassName="h-4 w-4"
+              className="pointer-events-auto text-sm tracking-wide text-white hover:text-white/90"
+            />
           )}
         </div>
 

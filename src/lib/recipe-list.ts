@@ -66,6 +66,7 @@ export async function publishedRecipeCards(options?: {
   }
 
   return rows.map((r) => ({
+    id: r.id,
     slug: r.slug,
     title: r.title,
     teaser: r.teaser,
