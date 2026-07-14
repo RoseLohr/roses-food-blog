@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { AdminMobileNav } from "@/components/admin/admin-mobile-nav";
 import { logoutAction } from "./actions";
 import { requireAdmin } from "@/lib/auth";
 import { t } from "@/i18n/de";
@@ -97,30 +98,16 @@ export default async function AdminLayout({
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex items-center justify-between border-b border-ink/10 bg-white px-4 py-2 md:px-6">
-          <details className="md:hidden">
-            <summary className="cursor-pointer px-2 py-1 text-sm font-semibold">
-              Menü
-            </summary>
-            <nav
-              aria-label={dict.admin.title}
-              className="absolute z-20 mt-1 max-h-[80vh] overflow-y-auto border border-ink/10 bg-white p-3 shadow-lg"
-            >
-              {NAV_GROUPS.map((group, i) => (
-                <div key={i} className="mb-2 last:mb-0">
-                  {group.label && (
-                    <p className="px-2 pb-0.5 pt-1 text-xs font-semibold uppercase tracking-wide text-ink-soft/70">
-                      {group.label}
-                    </p>
-                  )}
-                  {group.items.map(([href, key]) => (
-                    <Link key={href} href={href} className="block px-2 py-1 text-sm">
-                      {dict.admin.nav[key]}
-                    </Link>
-                  ))}
-                </div>
-              ))}
-            </nav>
-          </details>
+          <AdminMobileNav
+            menuLabel={dict.admin.nav.menu}
+            label={dict.admin.title}
+            groups={NAV_GROUPS.map((group) => ({
+              label: group.label ?? "",
+              items: group.items.map(
+                ([href, key]) => [href, dict.admin.nav[key]] as [string, string],
+              ),
+            }))}
+          />
           <p className="hidden text-sm text-ink-soft md:block">
             {dict.auth.loggedInAs} <strong>{admin.name}</strong> ({admin.email})
           </p>

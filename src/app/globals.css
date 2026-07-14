@@ -30,17 +30,19 @@
      tiefes Tinten­schwarz, weicher Grau-Fließtext, weißer Grund.
      Die Token-NAMEN bleiben (rose-primary = Marken-Akzent), damit die
      Umstellung zentral hier passiert und nicht in dutzenden Dateien. */
-  --color-rose-primary: #2fb457; /* grüner Akzent, kontraststark auf Weiß */
-  --color-rose-primary-dark: #249247;
-  --color-accent: #4fd675; /* helles Tiny-Salt-Grün (Kategorien, Highlights) */
-  --color-accent-2: #4fd6c8; /* Teal-Ende des Verlaufs */
+  /* Einheitlicher Marken-Grünton #339E92 (Teal-Grün) mit abgeleiteten
+     Schattierungen: dunkler für Hover, heller für dunkle Hintergründe. */
+  --color-rose-primary: #339e92; /* Marken-Akzent, kontraststark auf Weiß */
+  --color-rose-primary-dark: #2b857b; /* Hover/aktiv (dunkler) */
+  --color-accent: #339e92;
+  --color-accent-2: #38b0a3; /* leicht helleres Teal fürs Verlaufs-Ende */
   --color-cream: #f4f6f5; /* sehr helles Grau statt Creme */
   --color-cream-deep: #e8ebea;
   --color-ink: #111111;
   --color-ink-soft: #4c4b5b;
   --color-sage: #7a8b6f;
-  --color-leaf: #2fb457;
-  --color-leaf-soft: #4fd675;
+  --color-leaf: #339e92;
+  --color-leaf-soft: #5cc4b8; /* heller Ton für Text auf dunklem Grund */
 }
 
 /* Full-Bleed: Element auf volle Viewportbreite ziehen (Startseiten-Hero),

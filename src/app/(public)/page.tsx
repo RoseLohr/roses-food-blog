@@ -158,24 +158,47 @@ export default async function HomePage() {
             </section>
           )}
 
-          {/* Nach Art der Küche wählen */}
-          {cuisines.length > 0 && (
-            <section className="mt-10">
-              <h2 className="font-display text-2xl font-bold md:text-3xl">
-                {dict.home.byCuisineTitle}
-              </h2>
-              <ul className="mt-4 flex flex-wrap gap-2">
-                {cuisines.map((c) => (
-                  <li key={c.id}>
-                    <Link
-                      href={`/suche?kueche=${c.slug}`}
-                      className="block rounded-full border border-rose-primary/40 bg-white px-4 py-1.5 text-sm font-medium text-rose-primary hover:bg-rose-primary hover:text-white"
-                    >
-                      {c.name}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
+          {/* Nach Küche & Ernährungsform wählen — nebeneinander */}
+          {(cuisines.length > 0 || diets.length > 0) && (
+            <section className="mt-10 grid gap-8 sm:grid-cols-2">
+              {cuisines.length > 0 && (
+                <div>
+                  <h2 className="font-display text-2xl font-bold md:text-3xl">
+                    {dict.home.byCuisineTitle}
+                  </h2>
+                  <ul className="mt-4 flex flex-wrap gap-2">
+                    {cuisines.map((c) => (
+                      <li key={c.id}>
+                        <Link
+                          href={`/suche?kueche=${c.slug}`}
+                          className="block rounded-full border border-rose-primary/40 bg-white px-4 py-1.5 text-sm font-medium text-rose-primary hover:bg-rose-primary hover:text-white"
+                        >
+                          {c.name}
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {diets.length > 0 && (
+                <div>
+                  <h2 className="font-display text-2xl font-bold md:text-3xl">
+                    {dict.home.byDietTitle}
+                  </h2>
+                  <ul className="mt-4 flex flex-wrap gap-2">
+                    {diets.map((dt) => (
+                      <li key={dt.id}>
+                        <Link
+                          href={`/suche?ernaehrung=${dt.slug}`}
+                          className="block rounded-full border border-rose-primary/40 bg-white px-4 py-1.5 text-sm font-medium text-rose-primary hover:bg-rose-primary hover:text-white"
+                        >
+                          {dt.name}
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </section>
           )}
         </div>

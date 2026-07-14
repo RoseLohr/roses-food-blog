@@ -60,7 +60,9 @@ function SearchField({
         onChange={(e) => setQ(e.target.value)}
         aria-label={dict.nav.search}
         placeholder={dict.site.searchPlaceholder}
-        className="w-full rounded-full border border-ink/15 bg-white py-2.5 pl-11 pr-4 text-sm text-ink placeholder:text-ink-soft/70 focus:border-leaf focus:outline-none focus:ring-2 focus:ring-leaf/30"
+        // text-base (16px) verhindert das automatische Reinzoomen von iOS
+        // Safari beim Fokussieren des Feldes.
+        className="w-full rounded-full border border-ink/15 bg-white py-2.5 pl-11 pr-4 text-base text-ink placeholder:text-ink-soft/70 focus:border-leaf focus:outline-none focus:ring-2 focus:ring-leaf/30"
       />
     </form>
   );
@@ -112,19 +114,41 @@ export function SiteHeader() {
           </span>
         </Link>
 
+        {/* Permanentes horizontales Menü ab md */}
+        <nav className="hidden md:block" aria-label={dict.nav.menu}>
+          <ul className="flex items-center gap-1">
+            {NAV.map(([href, label]) => {
+              const active =
+                pathname === href || pathname.startsWith(href + "/");
+              return (
+                <li key={href}>
+                  <Link
+                    href={href}
+                    className={`block px-3 py-2 text-sm font-semibold transition-colors hover:text-leaf ${
+                      active ? "text-leaf" : "text-ink"
+                    }`}
+                  >
+                    {label}
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </nav>
+
         {/* Suchpille (ab sm sichtbar) */}
-        <div className="hidden w-64 max-w-[42vw] sm:block">
+        <div className="hidden w-56 max-w-[42vw] sm:block">
           <SearchField />
         </div>
 
-        {/* Hamburger */}
+        {/* Hamburger — nur auf kleinen Screens */}
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
           aria-expanded={open}
           aria-controls={menuId}
           aria-label={open ? dict.nav.closeMenu : dict.nav.openMenu}
-          className="flex h-11 w-11 shrink-0 items-center justify-center text-ink transition-colors hover:text-leaf"
+          className="flex h-11 w-11 shrink-0 items-center justify-center text-ink transition-colors hover:text-leaf md:hidden"
         >
           {open ? (
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -138,9 +162,9 @@ export function SiteHeader() {
         </button>
       </div>
 
-      {/* Menü-Panel */}
+      {/* Menü-Panel (nur mobil) */}
       {open && (
-        <div id={menuId} className="border-t border-ink/10 bg-white">
+        <div id={menuId} className="border-t border-ink/10 bg-white md:hidden">
           <div className="mx-auto max-w-6xl px-4 py-4">
             {/* Suche auf kleinen Screens im Panel */}
             <div className="mb-4 sm:hidden">

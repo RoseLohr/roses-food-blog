@@ -71,14 +71,14 @@ test.describe("Startseiten-Hero-Slider (slider-style-2)", () => {
     await expect(thumbs(page).nth(0)).toHaveAttribute("aria-current", "true");
   });
 
-  test("Pause/Play schaltet um (aria-pressed + Label)", async ({ page }) => {
+  test("kein Play/Pause-Button (auf Wunsch entfernt)", async ({ page }) => {
     await page.goto("/");
-    const pause = hero(page).getByRole("button", { name: H.sliderPause });
-    await expect(pause).toHaveAttribute("aria-pressed", "false");
-    await pause.click();
+    await expect(
+      hero(page).getByRole("button", { name: H.sliderPause }),
+    ).toHaveCount(0);
     await expect(
       hero(page).getByRole("button", { name: H.sliderPlay }),
-    ).toHaveAttribute("aria-pressed", "true");
+    ).toHaveCount(0);
   });
 
   test("Auto-Wechsel läuft ohne Interaktion", async ({ page }) => {
@@ -96,10 +96,7 @@ test.describe("Startseiten-Hero-Slider (slider-style-2)", () => {
     const context = await browser.newContext({ reducedMotion: "reduce" });
     const page = await context.newPage();
     await page.goto("/");
-    // Slider startet pausiert (Play-Button aktiv)
-    await expect(
-      hero(page).getByRole("button", { name: H.sliderPlay }),
-    ).toHaveAttribute("aria-pressed", "true");
+    // Bei reduzierter Bewegung kein automatischer Wechsel.
     const first = await text(title(page));
     await page.waitForTimeout(8000);
     expect(await text(title(page))).toBe(first);
