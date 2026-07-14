@@ -23,7 +23,8 @@ export default async function TravelListPage() {
       title: schema.travelPost.title,
       teaser: schema.travelPost.teaser,
       country: schema.travelPost.country,
-      destination: schema.travelPost.destination,
+      region: schema.travelPost.region,
+      city: schema.travelPost.city,
       fileKey: schema.mediaImage.fileKey,
       altText: schema.mediaImage.altText,
       width: schema.mediaImage.width,
@@ -72,7 +73,7 @@ export default async function TravelListPage() {
                 )}
                 <div className="p-4">
                   <p className="text-xs font-semibold uppercase tracking-wide text-rose-primary">
-                    {[p.country, p.destination].filter(Boolean).join(" · ")}
+                    {[p.country, p.region, p.city].filter(Boolean).join(" · ")}
                   </p>
                   <h2 className="mt-1 font-display text-xl font-bold group-hover:text-rose-primary">
                     {p.title}

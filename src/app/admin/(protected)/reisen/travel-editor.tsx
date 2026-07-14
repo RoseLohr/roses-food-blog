@@ -25,6 +25,7 @@ interface EditorRestaurant {
   name: string;
   city: string;
   description: string;
+  imageId: number | null;
   dishes: EditorDish[];
 }
 
@@ -36,7 +37,8 @@ export interface TravelEditorProps {
     teaser: string;
     content: string;
     country: string;
-    destination: string;
+    region: string;
+    city: string;
     heroImageId: number | null;
     imageIds: number[];
     seoTitle: string;
@@ -57,7 +59,7 @@ function emptyDish(): EditorDish {
   return { name: "", description: "", imageIds: [], ingredientsText: "" };
 }
 function emptyRestaurant(): EditorRestaurant {
-  return { name: "", city: "", description: "", dishes: [emptyDish()] };
+  return { name: "", city: "", description: "", imageId: null, dishes: [emptyDish()] };
 }
 
 export function TravelEditor({ initial, images, message }: TravelEditorProps) {
@@ -74,6 +76,7 @@ export function TravelEditor({ initial, images, message }: TravelEditorProps) {
       name: r.name,
       city: r.city,
       description: r.description,
+      imageId: r.imageId,
       dishes: r.dishes.map((dish) => ({
         name: dish.name,
         description: dish.description,
@@ -127,19 +130,43 @@ export function TravelEditor({ initial, images, message }: TravelEditorProps) {
             <label className={labelCls} htmlFor="t-land">
               {d.fieldCountry}
             </label>
-            <input id="t-land" name="land" defaultValue={initial.country} className={inputCls} />
+            <div className="relative">
+              <span
+                aria-hidden
+                className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-leaf"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="9" />
+                  <path d="M3 12h18M12 3c2.5 2.5 3.8 5.7 3.8 9s-1.3 6.5-3.8 9c-2.5-2.5-3.8-5.7-3.8-9S9.5 5.5 12 3Z" />
+                </svg>
+              </span>
+              <input
+                id="t-land"
+                name="land"
+                defaultValue={initial.country}
+                className={`${inputCls} pl-9`}
+              />
+            </div>
           </div>
           <div>
-            <label className={labelCls} htmlFor="t-ziel">
-              {d.fieldDestination}
+            <label className={labelCls} htmlFor="t-region">
+              {d.fieldRegion}
             </label>
-            <input id="t-ziel" name="reiseziel" defaultValue={initial.destination} className={inputCls} />
+            <input id="t-region" name="region" defaultValue={initial.region} className={inputCls} />
+          </div>
+          <div>
+            <label className={labelCls} htmlFor="t-stadt">
+              {d.fieldCity}
+            </label>
+            <input id="t-stadt" name="stadt" defaultValue={initial.city} className={inputCls} />
           </div>
           <div className="md:col-span-2">
-            <label className={labelCls} htmlFor="t-teaser">
-              {d.fieldTeaser}
-            </label>
-            <textarea id="t-teaser" name="teaser" rows={2} defaultValue={initial.teaser} className={inputCls} />
+            <RichTextEditor
+              name="teaser"
+              label={d.fieldTeaser}
+              initialMarkdown={initial.teaser}
+              minHeightClass="min-h-20"
+            />
           </div>
           <div className="md:col-span-2">
             <RichTextEditor
@@ -200,17 +227,24 @@ export function TravelEditor({ initial, images, message }: TravelEditorProps) {
                   />
                 </div>
                 <div className="md:col-span-2">
-                  <label className={labelCls} htmlFor={`r-beschr-${ri}`}>
-                    {d.restaurantDescription}
-                  </label>
-                  <textarea
-                    id={`r-beschr-${ri}`}
-                    rows={2}
-                    value={r.description}
-                    onChange={(e) =>
-                      updateRestaurant(ri, { description: e.target.value })
+                  <span className={labelCls}>{d.restaurantDescription}</span>
+                  <RichTextEditor
+                    initialMarkdown={r.description}
+                    minHeightClass="min-h-20"
+                    onChange={(md) =>
+                      updateRestaurant(ri, { description: md })
                     }
-                    className={inputCls}
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <ImagePicker
+                    legend={d.restaurantImage}
+                    options={images}
+                    multiple={false}
+                    value={r.imageId ? [r.imageId] : []}
+                    onChange={(ids) =>
+                      updateRestaurant(ri, { imageId: ids[0] ?? null })
+                    }
                   />
                 </div>
               </div>
@@ -248,20 +282,20 @@ export function TravelEditor({ initial, images, message }: TravelEditorProps) {
                         }
                         className={inputCls}
                       />
-                      <textarea
-                        aria-label={d.dishDescription}
-                        placeholder={d.dishDescription}
-                        rows={2}
-                        value={dish.description}
-                        onChange={(e) =>
-                          updateRestaurant(ri, {
-                            dishes: r.dishes.map((x, idx) =>
-                              idx === di ? { ...x, description: e.target.value } : x,
-                            ),
-                          })
-                        }
-                        className={inputCls}
-                      />
+                      <div className="md:col-span-2">
+                        <span className={labelCls}>{d.dishDescription}</span>
+                        <RichTextEditor
+                          initialMarkdown={dish.description}
+                          minHeightClass="min-h-20"
+                          onChange={(md) =>
+                            updateRestaurant(ri, {
+                              dishes: r.dishes.map((x, idx) =>
+                                idx === di ? { ...x, description: md } : x,
+                              ),
+                            })
+                          }
+                        />
+                      </div>
                       <ImagePicker
                         legend={d.dishImages}
                         options={images}

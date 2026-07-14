@@ -267,7 +267,7 @@ export default async function SearchPage(props: {
                       {p.title}
                     </Link>
                     <p className="text-xs font-semibold uppercase tracking-wide text-rose-primary">
-                      {[p.country, p.destination].filter(Boolean).join(" · ")}
+                      {[p.country, p.region, p.city].filter(Boolean).join(" · ")}
                     </p>
                     {p.teaser && (
                       <p className="mt-1 text-sm text-ink-soft">{p.teaser}</p>

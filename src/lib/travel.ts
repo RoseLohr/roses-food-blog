@@ -22,6 +22,8 @@ export interface FullRestaurant {
   name: string;
   city: string;
   description: string;
+  imageId: number | null;
+  image: MediaImage | null;
   sortOrder: number;
   dishes: FullDish[];
 }
@@ -73,6 +75,18 @@ export async function getFullTravelPost(
     .orderBy(asc(schema.restaurant.sortOrder));
   const restaurantIds = restaurantRows.map((r) => r.id);
 
+  // Restaurant-Fotos (optional) in einer Abfrage laden.
+  const restImageIds = restaurantRows
+    .map((r) => r.imageId)
+    .filter((x): x is number => x != null);
+  const restImages = restImageIds.length
+    ? await db
+        .select()
+        .from(schema.mediaImage)
+        .where(inArray(schema.mediaImage.id, restImageIds))
+    : [];
+  const restImageById = new Map(restImages.map((i) => [i.id, i]));
+
   const dishRows = restaurantIds.length
     ? await db
         .select()
@@ -116,6 +130,8 @@ export async function getFullTravelPost(
     name: r.name,
     city: r.city,
     description: r.description,
+    imageId: r.imageId ?? null,
+    image: r.imageId ? (restImageById.get(r.imageId) ?? null) : null,
     sortOrder: r.sortOrder,
     dishes: dishRows
       .filter((d) => d.restaurantId === r.id)

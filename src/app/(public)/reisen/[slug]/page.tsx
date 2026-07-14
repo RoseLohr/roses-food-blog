@@ -68,7 +68,9 @@ function articleJsonLd(full: NonNullable<Awaited<ReturnType<typeof loadPublished
         ]
       : undefined,
     publisher: { "@type": "Organization", name: dict.site.name, url: base },
-    about: [post.country, post.destination].filter(Boolean).join(", ") || undefined,
+    about:
+      [post.country, post.region, post.city].filter(Boolean).join(", ") ||
+      undefined,
   };
 }
 

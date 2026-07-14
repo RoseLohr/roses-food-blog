@@ -380,7 +380,8 @@ async function main() {
         "In **Palermo** führt kein Weg an den Märkten Ballarò und Vucciria vorbei. " +
         "In **Catania** lohnt der Fischmarkt am Morgen — und abends die Trattorien rund um die Via Plebiscito.",
       country: "Italien",
-      destination: "Sizilien",
+      region: "Sizilien",
+      city: "Palermo & Catania",
       heroImageId: travelHero,
       seoTitle: "Sizilien kulinarisch: Streetfood & Trattorien",
       seoDescription:

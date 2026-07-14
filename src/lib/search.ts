@@ -165,7 +165,8 @@ export interface TravelSearchHit {
   title: string;
   teaser: string;
   country: string;
-  destination: string;
+  region: string;
+  city: string;
 }
 
 export async function searchTravelPosts(q: string): Promise<TravelSearchHit[]> {
@@ -178,7 +179,8 @@ export async function searchTravelPosts(q: string): Promise<TravelSearchHit[]> {
       title: schema.travelPost.title,
       teaser: schema.travelPost.teaser,
       country: schema.travelPost.country,
-      destination: schema.travelPost.destination,
+      region: schema.travelPost.region,
+      city: schema.travelPost.city,
     })
     .from(schema.travelPost)
     .where(

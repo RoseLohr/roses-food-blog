@@ -69,7 +69,10 @@ export function TravelView({
             {post.title}
           </h1>
           {post.teaser && (
-            <p className="mt-4 leading-relaxed text-ink-soft">{post.teaser}</p>
+            <div
+              className="prose-content mt-4 text-ink-soft"
+              dangerouslySetInnerHTML={{ __html: renderMarkdown(post.teaser) }}
+            />
           )}
           <div className="mt-6 flex flex-wrap gap-x-8 gap-y-4">
             {post.country && (
@@ -77,9 +80,14 @@ export function TravelView({
                 {post.country}
               </MetaChip>
             )}
-            {post.destination && (
-              <MetaChip label={dict.admin.travel.fieldDestination}>
-                {post.destination}
+            {post.region && (
+              <MetaChip label={dict.admin.travel.fieldRegion}>
+                {post.region}
+              </MetaChip>
+            )}
+            {post.city && (
+              <MetaChip label={dict.admin.travel.fieldCity}>
+                {post.city}
               </MetaChip>
             )}
           </div>
@@ -126,10 +134,22 @@ export function TravelView({
                         </span>
                       )}
                     </h3>
+                    {r.image && (
+                      <div className="mt-3 sm:max-w-sm">
+                        <ResponsiveImg
+                          image={r.image}
+                          sizes="(max-width: 640px) 100vw, 384px"
+                          className="aspect-[3/2] w-full object-cover"
+                        />
+                      </div>
+                    )}
                     {r.description && (
-                      <p className="mt-1 leading-relaxed text-ink-soft">
-                        {r.description}
-                      </p>
+                      <div
+                        className="prose-content mt-2 text-ink-soft"
+                        dangerouslySetInnerHTML={{
+                          __html: renderMarkdown(r.description),
+                        }}
+                      />
                     )}
                     <ul className="mt-4 flex flex-col gap-5">
                       {r.dishes.map((dish) => (
@@ -149,9 +169,12 @@ export function TravelView({
                           <div>
                             <h4 className="font-semibold">{dish.name}</h4>
                             {dish.description && (
-                              <p className="mt-1 text-sm leading-relaxed text-ink-soft">
-                                {dish.description}
-                              </p>
+                              <div
+                                className="prose-content mt-1 text-sm text-ink-soft"
+                                dangerouslySetInnerHTML={{
+                                  __html: renderMarkdown(dish.description),
+                                }}
+                              />
                             )}
                             {dish.ingredients.length > 0 && (
                               <p className="mt-2 flex items-center gap-1.5 text-xs text-ink-soft">

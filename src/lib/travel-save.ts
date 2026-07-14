@@ -16,6 +16,7 @@ const restaurantsSchema = z.array(
     name: z.string().trim().max(200),
     city: z.string().trim().max(120).default(""),
     description: z.string().trim().max(4000).default(""),
+    imageId: z.number().int().positive().nullable().default(null),
     dishes: z
       .array(
         z.object({
@@ -107,7 +108,8 @@ export async function saveTravelFromForm(
     teaser: String(formData.get("teaser") ?? "").trim(),
     content: String(formData.get("inhalt") ?? "").trim(),
     country: String(formData.get("land") ?? "").trim(),
-    destination: String(formData.get("reiseziel") ?? "").trim(),
+    region: String(formData.get("region") ?? "").trim(),
+    city: String(formData.get("stadt") ?? "").trim(),
     heroImageId: Number.isInteger(heroImageId) ? heroImageId : null,
     seoTitle: String(formData.get("seoTitel") ?? "").trim(),
     seoDescription: String(formData.get("seoBeschreibung") ?? "").trim(),
@@ -173,6 +175,7 @@ export async function saveTravelFromForm(
         name: r.name,
         city: r.city,
         description: r.description,
+        imageId: r.imageId ?? null,
         sortOrder: ri,
       })
       .returning();
