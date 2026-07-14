@@ -186,7 +186,10 @@ export function TravelMap({ pins }: { pins: TravelMapPin[] }) {
   }, [pins]);
 
   return (
-    <section aria-label={dict.travelList.mapLabel} className="mt-8">
+    // relative z-0: eigener Stacking-Context, damit Leaflets hohe z-index-Werte
+    // (Steuerelemente bis ~800) nicht über den klebenden Header/das mobile Menü
+    // (z-40) hinausragen.
+    <section aria-label={dict.travelList.mapLabel} className="relative z-0 mt-8">
       <div
         ref={containerRef}
         role="application"
