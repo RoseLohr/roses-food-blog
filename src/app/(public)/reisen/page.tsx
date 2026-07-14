@@ -3,6 +3,8 @@ import Link from "next/link";
 import { desc, eq } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { ResponsiveImg } from "@/components/responsive-img";
+import { TravelMap } from "@/components/travel-map";
+import { getTravelMapPins } from "@/lib/travel-map";
 import { t } from "@/i18n/de";
 import { PageTracker } from "@/components/page-tracker";
 
@@ -17,6 +19,7 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function TravelListPage() {
+  const mapPins = await getTravelMapPins();
   const posts = await db
     .select({
       slug: schema.travelPost.slug,
@@ -46,6 +49,10 @@ export default async function TravelListPage() {
         {dict.travelList.title}
       </h1>
       <p className="mt-2 max-w-2xl text-ink-soft">{dict.travelList.intro}</p>
+
+      {/* Weltkarte der Restaurant-Standorte (aus den Gericht-Foto-GPS-Daten) */}
+      <TravelMap pins={mapPins} />
+
       {posts.length === 0 ? (
         <p className="mt-8 text-ink-soft">{dict.travelList.empty}</p>
       ) : (
