@@ -49,18 +49,36 @@ test.describe("Öffentliche Startseite — Tiny-Salt-Optik", () => {
     expect(g).toBeGreaterThan(b);
   });
 
-  test("Hamburger öffnet ein Menü mit Navigationslinks", async ({ page }) => {
+  test("Desktop zeigt ein permanentes horizontales Menü", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto("/");
     const header = page.locator("header");
-    const menu = header.locator("nav");
-    // Menü ist zunächst zu
-    await expect(menu.getByRole("link", { name: dict.nav.recipes, exact: true })).toHaveCount(0);
+    // Navigationslinks direkt sichtbar (ohne Hamburger)
+    await expect(
+      header.getByRole("link", { name: dict.nav.recipes, exact: true }),
+    ).toBeVisible();
+    // Kein Hamburger auf großen Screens
+    await expect(
+      header.getByRole("button", { name: dict.nav.openMenu }),
+    ).toHaveCount(0);
+  });
+
+  test("Mobil: Hamburger öffnet ein Menü mit Navigationslinks", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 800 });
+    await page.goto("/");
+    const header = page.locator("header");
+    // Menü ist zunächst zu (Desktop-Nav ist display:none auf Mobil)
+    await expect(
+      header.getByRole("link", { name: dict.nav.recipes, exact: true }),
+    ).toHaveCount(0);
     await header.getByRole("button", { name: dict.nav.openMenu }).click();
     await expect(
-      menu.getByRole("link", { name: dict.nav.recipes, exact: true }),
+      header.getByRole("link", { name: dict.nav.recipes, exact: true }),
     ).toBeVisible();
     await expect(
-      menu.getByRole("link", { name: dict.nav.travel, exact: true }),
+      header.getByRole("link", { name: dict.nav.travel, exact: true }),
     ).toBeVisible();
   });
 
