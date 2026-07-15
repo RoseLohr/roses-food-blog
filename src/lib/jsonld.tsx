@@ -76,7 +76,19 @@ export function recipeJsonLd(full: FullRecipe) {
     recipeYield: `${recipe.servings} Portionen`,
     recipeCategory: full.categories.map((c) => c.name).join(", ") || undefined,
     recipeCuisine: full.cuisines.map((c) => c.name).join(", ") || undefined,
-    keywords: full.tags.map((tg) => tg.name).join(", ") || undefined,
+    // SEO-Keywords: Tags („Zubereitung") + Ernährungsform, ohne Dubletten.
+    keywords:
+      [
+        ...full.tags.map((tg) => tg.name),
+        ...full.dietTypes.map((d) => d.name),
+      ]
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .filter(
+          (v, i, a) =>
+            a.findIndex((x) => x.toLowerCase() === v.toLowerCase()) === i,
+        )
+        .join(", ") || undefined,
     nutrition: recipe.kcal
       ? { "@type": "NutritionInformation", calories: `${recipe.kcal} kcal` }
       : undefined,
