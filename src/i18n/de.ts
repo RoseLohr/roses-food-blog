@@ -268,6 +268,7 @@ export const de = {
       users: "Benutzer",
       settings: "Einstellungen",
       deploy: "Aktualisierung",
+      data: "Daten (Export/Import)",
       viewSite: "Website ansehen",
       menu: "Menü",
       groupContent: "Inhalte",
@@ -370,6 +371,63 @@ export const de = {
       triggerFailed: "Aktualisierung konnte nicht angestoßen werden.",
       stallWarning:
         "Der Server reagiert nicht auf die Anfrage. Läuft der Deploy-Watcher? Bitte einmalig „./deploy.sh“ im Projektordner auf dem Server ausführen — das richtet den Watcher ein; danach funktioniert die Aktualisierung aus dem Panel.",
+    },
+    data: {
+      title: "Daten — Export, Import & Löschen",
+      intro:
+        "Sichere deine Inhalte als Download, spiele einen früheren Export wieder ein oder lösche Inhalte gezielt. Bilder werden immer mitgesichert und mit importiert.",
+      // Export
+      exportTitle: "Exportieren (Sicherung herunterladen)",
+      exportIntro:
+        "Lädt eine ZIP-Datei mit allen ausgewählten Inhalten und den zugehörigen Fotos herunter. Diese Datei kannst du aufbewahren und später wieder importieren.",
+      exportWhat: "Was ist enthalten?",
+      exportWhatBody:
+        "Rezepte (inkl. Abschnitte, Zutaten, Schritte, Notizen, Kategorien), Reiseberichte (inkl. Restaurants & Gerichte) und statische Seiten — je nach Auswahl. Enthalten sind die Texte, die Struktur, die Fotos und die Zeitstempel. Nicht enthalten sind Kontakte/Newsletter, Statistik, Benutzer und Einstellungen (personenbezogene bzw. Betriebsdaten).",
+      exportButton: "Export herunterladen",
+      exportScope: "Umfang",
+      // Import
+      importTitle: "Importieren (Export einspielen)",
+      importIntro:
+        "Wähle eine zuvor hier erstellte Export-ZIP und welche Inhaltstypen eingespielt werden sollen. Der Import legt immer NEUE Einträge an (Kopien) — bestehende Inhalte werden nie überschrieben oder gelöscht.",
+      importFormatTitle: "Welches Format wird benötigt?",
+      importFormatBody:
+        "Genau die ZIP-Datei, die der Export oben erzeugt (enthält „content.json“ + einen Ordner „uploads/“ mit den Fotos). Ältere und neuere Export-Versionen werden automatisch mitgelesen (abwärtskompatibel). Bei Namensgleichheit wird der Adressteil (Slug) automatisch eindeutig gemacht.",
+      importFile: "Export-ZIP auswählen",
+      importWhat: "Was importieren?",
+      importButton: "Import starten",
+      importing: "Import läuft … bitte warten.",
+      importDone: "Import abgeschlossen.",
+      importFailed: "Import fehlgeschlagen.",
+      importResult:
+        "Angelegt: {recipes} Rezepte, {travel} Reisen, {pages} Seiten, {images} Fotos, {ingredients} neue Zutaten.",
+      importMissingImages: "{n} Foto(s) fehlten im Archiv und wurden übersprungen.",
+      importNoFile: "Bitte zuerst eine Export-ZIP auswählen.",
+      importNoType: "Bitte mindestens einen Inhaltstyp auswählen.",
+      // Delete
+      deleteTitle: "Löschen",
+      deleteIntro:
+        "Löscht Inhalte unwiderruflich aus der Datenbank. Zugehörige Zutaten und Fotos, die danach nirgends mehr verwendet werden, werden automatisch mit entfernt. Kernseiten (Über mich, Datenschutz, Impressum) bleiben immer erhalten.",
+      deleteWarn:
+        "Achtung: Löschen kann nicht rückgängig gemacht werden. Bitte vorher exportieren!",
+      deleteScope: "Was löschen?",
+      deleteCountHint: "Betroffen: {recipes} Rezepte, {travel} Reisen, {pages} Seiten.",
+      deleteConfirmLabel: "Zum Bestätigen „LÖSCHEN“ eingeben",
+      deleteConfirmWord: "LÖSCHEN",
+      deleteButton: "Endgültig löschen",
+      deleting: "Wird gelöscht …",
+      deleteDone: "Gelöscht.",
+      deleteFailed: "Löschen fehlgeschlagen.",
+      deleteResult:
+        "Gelöscht: {recipes} Rezepte, {travel} Reisen, {pages} Seiten, {ingredients} Zutaten, {images} Fotos.",
+      // Scope-Optionen (gemeinsam)
+      scopeAll: "Alles",
+      scopeRecipes: "Rezepte",
+      scopeTravel: "Reisen",
+      scopePages: "Seiten",
+      typeRecipes: "Rezepte",
+      typeTravel: "Reisen",
+      typePages: "Seiten",
+      genericError: "Etwas ist schiefgelaufen. Bitte erneut versuchen.",
     },
     aiRecipe: {
       title: "KI-Assistent",

@@ -49,6 +49,7 @@ const NAV_SECTIONS: AdminNavSection[] = [
     entries: [
       { href: "/admin/benutzer", label: nav.users },
       { href: "/admin/einstellungen", label: nav.settings },
+      { href: "/admin/daten", label: nav.data },
       { href: "/admin/aktualisierung", label: nav.deploy },
     ],
   },
