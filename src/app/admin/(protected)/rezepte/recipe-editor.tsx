@@ -95,7 +95,7 @@ const TAXONOMY_FIELDS: Array<[string, string, string]> = [
 ];
 
 const inputCls =
-  "w-full border border-ink-soft/30 px-3 py-2 text-sm";
+  "w-full min-w-0 border border-ink-soft/30 px-3 py-2 text-sm";
 const labelCls = "mb-1 block text-sm font-medium";
 const btnSecondary =
   "rounded-lg border border-ink/20 px-3 py-1.5 text-sm hover:bg-cream";
@@ -397,7 +397,7 @@ export function RecipeEditor({
               <h3 className="mb-2 text-sm font-semibold">{d.ingredients}</h3>
               <div className="flex flex-col gap-2">
                 {section.ingredients.map((ing, ii) => (
-                  <div key={ii} className="grid grid-cols-[5rem_6rem_1fr_1fr_auto] gap-2">
+                  <div key={ii} className="zutat-row">
                     <input
                       aria-label={d.amount}
                       value={ing.amount}
@@ -438,7 +438,7 @@ export function RecipeEditor({
                         })
                       }
                       placeholder={d.ingredientName}
-                      className={inputCls}
+                      className={`${inputCls} zutat-name`}
                     />
                     <input
                       aria-label={d.ingredientNote}
@@ -451,7 +451,7 @@ export function RecipeEditor({
                         })
                       }
                       placeholder={d.ingredientNote}
-                      className={inputCls}
+                      className={`${inputCls} zutat-note`}
                     />
                     <button
                       type="button"
@@ -461,7 +461,7 @@ export function RecipeEditor({
                           ingredients: section.ingredients.filter((_, idx) => idx !== ii),
                         })
                       }
-                      className={btnSecondary}
+                      className={`${btnSecondary} zutat-remove`}
                     >
                       ×
                     </button>

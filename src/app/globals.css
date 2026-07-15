@@ -54,6 +54,48 @@
   margin-inline: calc(50% - 50vw);
 }
 
+/* Zutatenzeile im Rezept-Editor: auf schmalen Bildschirmen (Handy hochkant)
+   gestapelt, damit ALLE Felder sichtbar und gut bedienbar sind; ab 640px in
+   einer Zeile (Menge · Einheit · Name · Zusatz · Entfernen). Bewusst als eigene
+   Regel statt Utility-Klassen, damit das Layout unabhängig vom CSS-Chunking
+   zuverlässig greift. */
+.zutat-row {
+  display: grid;
+  gap: 0.5rem;
+  align-items: start;
+  grid-template-columns: 5rem 1fr; /* Handy: Menge | Einheit */
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid rgb(17 17 17 / 0.1);
+}
+.zutat-row > .zutat-name,
+.zutat-row > .zutat-note,
+.zutat-row > .zutat-remove {
+  grid-column: 1 / -1; /* volle Breite auf dem Handy */
+}
+.zutat-row > .zutat-remove {
+  justify-self: end;
+}
+.zutat-row > .zutat-remove::before {
+  content: "Entfernen "; /* auf dem Handy Beschriftung, Desktop nur „×“ */
+}
+@media (min-width: 640px) {
+  .zutat-row {
+    align-items: center;
+    grid-template-columns: 5rem 6rem 1fr 1fr auto;
+    padding-bottom: 0;
+    border-bottom: 0;
+  }
+  .zutat-row > .zutat-name,
+  .zutat-row > .zutat-note,
+  .zutat-row > .zutat-remove {
+    grid-column: auto;
+    justify-self: auto;
+  }
+  .zutat-row > .zutat-remove::before {
+    content: "";
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
