@@ -62,6 +62,7 @@ export const de = {
       "Reiseberichte übers Essen in aller Welt — mit den besten Restaurants und Gerichten.",
     empty: "Noch keine Reiseberichte vorhanden.",
     mapLabel: "Weltkarte der Restaurants",
+    mapOpenInMaps: "In Google Maps öffnen",
     restaurantsTitle: "Restaurants & Gerichte",
     dishIngredients: "Zutaten",
     backToOverview: "Alle Reiseberichte",

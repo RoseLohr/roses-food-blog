@@ -40,10 +40,25 @@ function esc(s: string): string {
   );
 }
 
-/** Popup-Inhalt: Bild, darunter Restaurant, darunter Gericht. */
+/** Google-Maps-Link zur GPS-Position des Fotos (EXIF), plattformübergreifend. */
+function mapsUrl(lat: number, lng: number): string {
+  return `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+}
+
+/**
+ * Popup-Inhalt: Bild, darunter Restaurant + „Ort", darunter Gericht.
+ * Der Ort (Restaurant-Stadt) ist ein Link auf Google Maps an die EXIF-Position
+ * des Fotos — öffnet in einem neuen Tab. Die Koordinaten stammen aus den
+ * EXIF-Daten des Gericht-Fotos (bereits im Pin enthalten).
+ */
 function popupHtml(p: TravelMapPin): string {
-  const location = p.restaurantCity
-    ? `${esc(p.restaurantName)} · ${esc(p.restaurantCity)}`
+  const cityLink = p.restaurantCity
+    ? `<a href="${esc(mapsUrl(p.lat, p.lng))}" target="_blank" rel="noopener noreferrer"
+         title="${esc(dict.travelList.mapOpenInMaps)}"
+         style="color:#2b857b;text-decoration:underline">${esc(p.restaurantCity)}</a>`
+    : "";
+  const location = cityLink
+    ? `${esc(p.restaurantName)} · ${cityLink}`
     : esc(p.restaurantName);
   return `
     <div style="width:180px">
@@ -129,8 +144,46 @@ export function TravelMap({ pins }: { pins: TravelMapPin[] }) {
       }
       if (cancelled || !map) return;
 
-      // Beschriftungen zoomabhängig ein-/ausblenden (kleinere Länder erst beim
-      // Reinzoomen), damit die Weltansicht nicht überladen wirkt.
+      // Nationale Hauptstädte: erst ab höherem Zoom (in ein Land hinein)
+      // einblenden. Eigene, gemeinfreie Punktdaten (Natural Earth), lokal
+      // ausgeliefert — weiterhin keine externen Kartenserver.
+      const capitalLayer = L.layerGroup();
+      const capitals: { marker: import("leaflet").Marker; min: number }[] = [];
+      try {
+        const caps: Array<{ n: string; lat: number; lng: number; min?: number }> =
+          await fetch("/geo/capitals.json").then((r) => r.json());
+        if (!cancelled && map && Array.isArray(caps)) {
+          capitalLayer.addTo(map);
+          for (const c of caps) {
+            if (
+              typeof c?.lat !== "number" ||
+              typeof c?.lng !== "number" ||
+              !c?.n
+            )
+              continue;
+            const marker = L.marker([c.lat, c.lng], {
+              interactive: false,
+              keyboard: false,
+              icon: L.divIcon({
+                className: "travel-map-capital",
+                html: `<span style="display:inline-flex;align-items:center;gap:3px;transform:translateY(-50%);white-space:nowrap;pointer-events:none;font-family:'Nunito Sans',system-ui,sans-serif;font-size:10px;font-weight:600;color:#3a3540;text-shadow:0 0 2px #fff,0 0 3px #fff"><span style="width:5px;height:5px;border-radius:9999px;background:#b23b3b;box-shadow:0 0 0 1.5px #fff;flex:none"></span>${esc(String(c.n))}</span>`,
+                iconSize: [0, 0],
+              }),
+            });
+            capitals.push({
+              marker,
+              min: typeof c.min === "number" ? c.min : 4,
+            });
+          }
+        }
+      } catch {
+        /* Hauptstädte sind optional — Karte bleibt ohne sie nutzbar. */
+      }
+      if (cancelled || !map) return;
+
+      // Beschriftungen zoomabhängig ein-/ausblenden (kleinere Länder und die
+      // Hauptstädte erst beim Reinzoomen), damit die Weltansicht nicht
+      // überladen wirkt.
       const refreshLabels = () => {
         if (!map) return;
         const z = map.getZoom();
@@ -139,6 +192,12 @@ export function TravelMap({ pins }: { pins: TravelMapPin[] }) {
           const has = labelLayer.hasLayer(marker);
           if (show && !has) labelLayer.addLayer(marker);
           else if (!show && has) labelLayer.removeLayer(marker);
+        }
+        for (const { marker, min } of capitals) {
+          const show = z >= min;
+          const has = capitalLayer.hasLayer(marker);
+          if (show && !has) capitalLayer.addLayer(marker);
+          else if (!show && has) capitalLayer.removeLayer(marker);
         }
       };
       map.on("zoomend", refreshLabels);
