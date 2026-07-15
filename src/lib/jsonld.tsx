@@ -50,32 +50,73 @@ export function recipeJsonLd(full: FullRecipe) {
       return [amount, i.name].filter(Boolean).join(" ");
     }),
   );
-  const instructions = full.sections.flatMap((s) =>
-    s.steps.map((st) => ({ "@type": "HowToStep", text: st.text })),
-  );
+  // Absolute URL der größten Bildvariante (robust gegen defektes variantWidths).
+  const imageAbs = (img: FullRecipe["heroImage"]): string | undefined => {
+    if (!img) return undefined;
+    let widths: number[] = [];
+    try {
+      const parsed = JSON.parse(img.variantWidths);
+      if (Array.isArray(parsed)) widths = parsed;
+    } catch {
+      /* Fallback auf 1280 unten */
+    }
+    return `${base}${imageUrl(img.fileKey, widths.at(-1) ?? 1280)}`;
+  };
+
+  // Ein Zubereitungsschritt (mit optionalem Schritt-Bild).
+  const stepObj = (
+    st: FullRecipe["sections"][number]["steps"][number],
+  ) => {
+    const img = imageAbs(st.image);
+    return img
+      ? { "@type": "HowToStep", text: st.text, image: img }
+      : { "@type": "HowToStep", text: st.text };
+  };
+
+  // Anweisungen: mehrere benannte Abschnitte → je Abschnitt eine HowToSection
+  // (spiegelt die Rezeptstruktur sauber wider); sonst eine flache Schrittliste.
+  const sectionsWithSteps = full.sections.filter((s) => s.steps.length > 0);
+  const useSections =
+    sectionsWithSteps.length > 1 &&
+    sectionsWithSteps.some((s) => s.name.trim() !== "");
+  const instructions = useSections
+    ? sectionsWithSteps.map((s) => ({
+        "@type": "HowToSection",
+        name: s.name.trim() || dict.recipe.preparation,
+        itemListElement: s.steps.map(stepObj),
+      }))
+    : sectionsWithSteps.flatMap((s) => s.steps.map(stepObj));
+
+  // Zeitangaben nur ausgeben, wenn > 0 (kein „PT0M"-Rauschen).
+  const dur = (min: number) => (min > 0 ? `PT${min}M` : undefined);
+
+  // Der Blog selbst als Autor/Herausgeber — eine Organisation, kein
+  // Personenbezug (Akzeptanzkriterium 14: Autor wird Besuchern nie angezeigt).
+  const org = { "@type": "Organization", name: dict.site.name, url: base };
+  const url = `${base}/rezepte/${recipe.slug}`;
 
   return {
     "@context": "https://schema.org",
     "@type": "Recipe",
     name: recipe.title,
     description: recipe.seoDescription || recipe.teaser,
-    url: `${base}/rezepte/${recipe.slug}`,
+    url,
+    mainEntityOfPage: url,
     inLanguage: "de",
-    image: full.heroImage
-      ? [
-          `${base}${imageUrl(
-            full.heroImage.fileKey,
-            JSON.parse(full.heroImage.variantWidths).at(-1) ?? 1280,
-          )}`,
-        ]
-      : undefined,
+    author: org,
+    publisher: org,
+    image: full.heroImage ? [imageAbs(full.heroImage)] : undefined,
     datePublished: recipe.publishedAt?.toISOString(),
-    prepTime: `PT${recipe.prepMinutes}M`,
-    cookTime: `PT${recipe.cookMinutes}M`,
-    totalTime: `PT${recipe.totalMinutes}M`,
+    dateModified: recipe.updatedAt?.toISOString(),
+    prepTime: dur(recipe.prepMinutes),
+    cookTime: dur(recipe.cookMinutes),
+    totalTime: dur(recipe.totalMinutes),
     recipeYield: `${recipe.servings} Portionen`,
     recipeCategory: full.categories.map((c) => c.name).join(", ") || undefined,
     recipeCuisine: full.cuisines.map((c) => c.name).join(", ") || undefined,
+    tool: full.equipment.length
+      ? full.equipment.map((e) => e.name)
+      : undefined,
     // SEO-Keywords: Tags („Zubereitung") + Ernährungsform, ohne Dubletten.
     keywords:
       [
