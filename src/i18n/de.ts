@@ -271,6 +271,7 @@ export const de = {
       viewSite: "Website ansehen",
       menu: "Menü",
       groupContent: "Inhalte",
+      groupPosts: "Beiträge",
       groupNewsletter: "Newsletter & CRM",
       groupAnalytics: "Auswertung",
       groupSystem: "System",

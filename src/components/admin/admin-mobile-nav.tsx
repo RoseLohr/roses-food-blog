@@ -2,18 +2,19 @@
 
 /**
  * Mobiles Admin-Menü: klappt nach der Auswahl eines Menüpunkts (und bei
- * jedem Routenwechsel) automatisch wieder ein.
+ * jedem Routenwechsel) automatisch wieder ein. Nutzt dieselbe AdminNav wie
+ * die Desktop-Sidebar (inkl. aufklappbarer Gruppe „Beiträge").
  */
-import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import { AdminNav, type AdminNavSection } from "@/components/admin/admin-nav";
 
 export function AdminMobileNav({
-  groups,
+  sections,
   label,
   menuLabel,
 }: {
-  groups: Array<{ label: string; items: Array<[string, string]> }>;
+  sections: AdminNavSection[];
   label: string;
   menuLabel: string;
 }) {
@@ -37,27 +38,9 @@ export function AdminMobileNav({
       {open && (
         <nav
           aria-label={label}
-          className="absolute z-20 mt-1 max-h-[80vh] overflow-y-auto border border-ink/10 bg-white p-3 shadow-lg"
+          className="absolute z-20 mt-1 max-h-[80vh] w-60 overflow-y-auto border border-ink/10 bg-white p-3 shadow-lg"
         >
-          {groups.map((group, i) => (
-            <div key={i} className="mb-2 last:mb-0">
-              {group.label && (
-                <p className="px-2 pb-0.5 pt-1 text-xs font-semibold uppercase tracking-wide text-ink-soft/70">
-                  {group.label}
-                </p>
-              )}
-              {group.items.map(([href, itemLabel]) => (
-                <Link
-                  key={href}
-                  href={href}
-                  onClick={() => setOpen(false)}
-                  className="block px-2 py-1 text-sm"
-                >
-                  {itemLabel}
-                </Link>
-              ))}
-            </div>
-          ))}
+          <AdminNav sections={sections} onNavigate={() => setOpen(false)} />
         </nav>
       )}
     </div>
