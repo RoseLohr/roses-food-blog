@@ -117,19 +117,8 @@ export function recipeJsonLd(full: FullRecipe) {
     tool: full.equipment.length
       ? full.equipment.map((e) => e.name)
       : undefined,
-    // SEO-Keywords: Tags („Zubereitung") + Ernährungsform, ohne Dubletten.
-    keywords:
-      [
-        ...full.tags.map((tg) => tg.name),
-        ...full.dietTypes.map((d) => d.name),
-      ]
-        .map((s) => s.trim())
-        .filter(Boolean)
-        .filter(
-          (v, i, a) =>
-            a.findIndex((x) => x.toLowerCase() === v.toLowerCase()) === i,
-        )
-        .join(", ") || undefined,
+    // SEO-Keywords: nur Ernährungsform (Tags „Zubereitung" bewusst NICHT).
+    keywords: full.dietTypes.map((d) => d.name).join(", ") || undefined,
     nutrition: recipe.kcal
       ? { "@type": "NutritionInformation", calories: `${recipe.kcal} kcal` }
       : undefined,
