@@ -257,7 +257,7 @@ let exportedZip: Uint8Array;
 
 describe("Export", () => {
   it("sammelt Inhalte + nur referenzierte Bilder, Zeitstempel als ms", async () => {
-    const bundle = await collectExport("all");
+    const bundle = await collectExport({ recipes: true, travel: true, pages: true });
     expect(bundle.recipes).toHaveLength(1);
     expect(bundle.travel).toHaveLength(1);
     expect(bundle.pages).toHaveLength(2);
@@ -286,8 +286,28 @@ describe("Export", () => {
     expect(tv.restaurants[0].dishes[0].ingredients.map((i) => i.name).sort()).toEqual(["Basilikum", "Olivenöl"]);
   });
 
+  it("respektiert die Typ-Auswahl (nur Rezepte)", async () => {
+    const bundle = await collectExport({ recipes: true, travel: false, pages: false });
+    expect(bundle.recipes).toHaveLength(1);
+    expect(bundle.travel).toHaveLength(0);
+    expect(bundle.pages).toHaveLength(0);
+    // Nur von Rezepten referenzierte Bilder (A = Hero/Schritt/Zutat, B = Galerie);
+    // reise-exklusive Bilder tauchen nicht zusätzlich auf.
+    expect(bundle.images.map((i) => i.fileKey).sort()).toEqual(["aaaa1111", "bbbb2222"]);
+    expect(bundle.scope).toBe("recipes");
+  });
+
+  it("respektiert die Typ-Auswahl (nur Seiten — keine Bilder referenziert)", async () => {
+    const bundle = await collectExport({ recipes: false, travel: false, pages: true });
+    expect(bundle.recipes).toHaveLength(0);
+    expect(bundle.travel).toHaveLength(0);
+    expect(bundle.pages).toHaveLength(2);
+    expect(bundle.images).toHaveLength(0); // Seiten hier ohne Titelbild
+    expect(bundle.scope).toBe("pages");
+  });
+
   it("erzeugt Export-ZIP-Bytes (content.json + WebP) für den Round-Trip", async () => {
-    const bundle = await collectExport("all");
+    const bundle = await collectExport({ recipes: true, travel: true, pages: true });
     exportedZip = buildExportZip(bundle);
     expect(exportedZip.byteLength).toBeGreaterThan(0);
     const { unzipSync } = await import("fflate");

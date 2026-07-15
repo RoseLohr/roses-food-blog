@@ -159,5 +159,3 @@ export const bundleSchema = z.object({
   pages: z.array(pageSchema).default([]),
 });
 export type ExportBundle = z.infer<typeof bundleSchema>;
-
-export type ExportScope = "all" | "recipes" | "travel" | "pages";

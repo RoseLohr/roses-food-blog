@@ -85,7 +85,9 @@ describe("checkRemote / Release-Notizen", () => {
 
   it("nutzt die Commits-API ohne bekannte laufende Version (kein APP_COMMIT)", async () => {
     delete process.env.APP_COMMIT;
-    const fetchMock = vi.fn(async () => jsonResponse({ sha: "5555555abcdef" }));
+    const fetchMock = vi.fn(async (_url: string) =>
+      jsonResponse({ sha: "5555555abcdef" }),
+    );
     vi.stubGlobal("fetch", fetchMock);
     const res = await checkRemote();
     expect(res.ok).toBe(true);

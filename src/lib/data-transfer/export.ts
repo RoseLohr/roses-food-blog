@@ -14,11 +14,17 @@ import {
   type ExportImage,
   type ExportPage,
   type ExportRecipe,
-  type ExportScope,
   type ExportTravel,
 } from "./types";
 
 export { CONTENT_FILENAME };
+
+/** Auswahl der zu exportierenden Inhaltstypen (mehrere gleichzeitig möglich). */
+export interface ExportSelection {
+  recipes: boolean;
+  travel: boolean;
+  pages: boolean;
+}
 
 type MediaRow = typeof schema.mediaImage.$inferSelect;
 type IngredientRow = typeof schema.ingredient.$inferSelect;
@@ -370,24 +376,32 @@ async function collectPages(images: ImageCollector): Promise<ExportPage[]> {
   }));
 }
 
-/** Baut das komplette Export-Bündel für den gewählten Umfang. */
-export async function collectExport(scope: ExportScope): Promise<ExportBundle> {
+/** Baut das komplette Export-Bündel für die gewählten Inhaltstypen. */
+export async function collectExport(
+  selection: ExportSelection,
+): Promise<ExportBundle> {
   const [mediaMap, ingredientMap] = await Promise.all([
     loadMediaMap(),
     loadIngredientMap(),
   ]);
   const images = new ImageCollector(mediaMap);
 
-  const recipes =
-    scope === "all" || scope === "recipes"
-      ? await collectRecipes(images, ingredientMap)
-      : [];
-  const travel =
-    scope === "all" || scope === "travel"
-      ? await collectTravel(images, ingredientMap)
-      : [];
-  const pages =
-    scope === "all" || scope === "pages" ? await collectPages(images) : [];
+  const recipes = selection.recipes
+    ? await collectRecipes(images, ingredientMap)
+    : [];
+  const travel = selection.travel
+    ? await collectTravel(images, ingredientMap)
+    : [];
+  const pages = selection.pages ? await collectPages(images) : [];
+
+  // Umfang-Kennung nur informativ im JSON (der Import richtet sich nach der
+  // Auswahl beim Import, nicht nach diesem Feld).
+  const parts = [
+    selection.recipes && "recipes",
+    selection.travel && "travel",
+    selection.pages && "pages",
+  ].filter(Boolean) as string[];
+  const scope = parts.length === 3 ? "all" : parts.join(",") || "none";
 
   return {
     format: EXPORT_FORMAT,

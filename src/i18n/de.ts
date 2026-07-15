@@ -388,6 +388,7 @@ export const de = {
         "Rezepte (inkl. Abschnitte, Zutaten, Schritte, Notizen, Kategorien), Reiseberichte (inkl. Restaurants & Gerichte) und statische Seiten — je nach Auswahl. Enthalten sind die Texte, die Struktur, die Fotos und die Zeitstempel. Nicht enthalten sind Kontakte/Newsletter, Statistik, Benutzer und Einstellungen (personenbezogene bzw. Betriebsdaten).",
       exportButton: "Export herunterladen",
       exportScope: "Umfang",
+      exportWhat2: "Was exportieren?",
       // Import
       importTitle: "Importieren (Export einspielen)",
       importIntro:

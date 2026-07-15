@@ -39,27 +39,27 @@ export default async function DatenPage() {
           <form
             method="get"
             action="/api/admin/daten/export"
-            className="flex flex-wrap items-end gap-4"
+            className="space-y-4"
           >
-            <div>
-              <label
-                htmlFor="export-scope"
-                className="block text-sm font-medium"
-              >
-                {d.exportScope}
-              </label>
-              <select
-                id="export-scope"
-                name="scope"
-                defaultValue="all"
-                className="mt-1 block w-full max-w-xs border border-ink/20 bg-white px-3 py-2 text-sm"
-              >
-                <option value="all">{d.scopeAll}</option>
-                <option value="recipes">{d.scopeRecipes}</option>
-                <option value="travel">{d.scopeTravel}</option>
-                <option value="pages">{d.scopePages}</option>
-              </select>
-            </div>
+            <fieldset>
+              <legend className="block text-sm font-medium">
+                {d.exportWhat2}
+              </legend>
+              <div className="mt-2 flex flex-wrap gap-4">
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" name="typ" value="recipes" defaultChecked />
+                  {d.typeRecipes}
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" name="typ" value="travel" defaultChecked />
+                  {d.typeTravel}
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" name="typ" value="pages" defaultChecked />
+                  {d.typePages}
+                </label>
+              </div>
+            </fieldset>
             <button
               type="submit"
               className="bg-leaf px-4 py-2 text-sm font-medium text-white hover:bg-leaf/90"
