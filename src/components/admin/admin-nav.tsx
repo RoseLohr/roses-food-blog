@@ -2,10 +2,13 @@
 
 /**
  * Admin-Navigation (Desktop-Sidebar + mobiles Panel teilen sich diese
- * Komponente). Unterstützt aufklappbare Gruppen wie „Beiträge": ein Klick auf
- * die Gruppe zeigt/versteckt die Unterpunkte. Eine Gruppe ist automatisch
- * offen, wenn man gerade in einem ihrer Bereiche ist; der aktive Punkt wird
- * hervorgehoben.
+ * Komponente). Zwei Ebenen sind aufklappbar:
+ *  - jeder Ober-Bereich mit Titel (Inhalte, Newsletter, Auswertung, System),
+ *  - die Gruppe „Beiträge" innerhalb von „Inhalte".
+ * Ein Bereich/eine Gruppe ist automatisch offen, wenn man sich gerade darin
+ * befindet; der aktive Punkt wird hervorgehoben. Bereiche mit
+ * `defaultCollapsed` (z. B. Newsletter) starten eingeklappt, sofern man nicht
+ * gerade in ihnen navigiert.
  */
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -25,6 +28,8 @@ export interface AdminNavEntry {
 export interface AdminNavSection {
   label?: string;
   entries: AdminNavEntry[];
+  /** Startet eingeklappt (außer man ist gerade in diesem Bereich). */
+  defaultCollapsed?: boolean;
 }
 
 const activeCls = "bg-leaf/10 font-medium text-leaf";
@@ -33,6 +38,31 @@ const idleCls = "text-ink-soft hover:bg-cream hover:text-ink";
 function isActivePath(pathname: string, href: string): boolean {
   if (href === "/admin") return pathname === "/admin";
   return pathname === href || pathname.startsWith(href + "/");
+}
+
+function entryIsActive(entry: AdminNavEntry, pathname: string): boolean {
+  if (entry.href) return isActivePath(pathname, entry.href);
+  return (entry.children ?? []).some((c) => isActivePath(pathname, c.href));
+}
+
+/** Nach rechts weisender Pfeil, der beim Aufklappen um 90° rotiert. */
+function Chevron({ open, className = "" }: { open: boolean; className?: string }) {
+  return (
+    <svg
+      className={`shrink-0 transition-transform duration-200 motion-reduce:transition-none ${
+        open ? "rotate-90" : ""
+      } ${className}`}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M9 6l6 6-6 6" />
+    </svg>
+  );
 }
 
 function CollapsibleGroup({
@@ -63,20 +93,7 @@ function CollapsibleGroup({
           hasActiveChild ? "font-medium text-leaf" : "text-ink-soft hover:bg-cream hover:text-ink"
         }`}
       >
-        <svg
-          className={`h-3.5 w-3.5 shrink-0 transition-transform duration-200 motion-reduce:transition-none ${
-            open ? "rotate-90" : ""
-          }`}
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2.4"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
-        >
-          <path d="M9 6l6 6-6 6" />
-        </svg>
+        <Chevron open={open} className="h-3.5 w-3.5" />
         {entry.label}
       </button>
       {open && (
@@ -101,6 +118,83 @@ function CollapsibleGroup({
   );
 }
 
+/** Liste der Einträge eines Bereichs (Links + aufklappbare Gruppen). */
+function NavEntries({
+  entries,
+  pathname,
+  onNavigate,
+}: {
+  entries: AdminNavEntry[];
+  pathname: string;
+  onNavigate?: () => void;
+}) {
+  return (
+    <ul className="flex flex-col gap-0.5">
+      {entries.map((entry) =>
+        entry.children ? (
+          <CollapsibleGroup
+            key={entry.label}
+            entry={entry}
+            pathname={pathname}
+            onNavigate={onNavigate}
+          />
+        ) : (
+          <li key={entry.href}>
+            <Link
+              href={entry.href!}
+              onClick={onNavigate}
+              aria-current={isActivePath(pathname, entry.href!) ? "page" : undefined}
+              className={`block px-3 py-1.5 text-sm ${
+                isActivePath(pathname, entry.href!) ? activeCls : idleCls
+              }`}
+            >
+              {entry.label}
+            </Link>
+          </li>
+        ),
+      )}
+    </ul>
+  );
+}
+
+/** Aufklappbarer Ober-Bereich mit Titel (Inhalte, Newsletter, …). */
+function CollapsibleSection({
+  section,
+  pathname,
+  onNavigate,
+}: {
+  section: AdminNavSection;
+  pathname: string;
+  onNavigate?: () => void;
+}) {
+  const hasActive = section.entries.some((e) => entryIsActive(e, pathname));
+  const [open, setOpen] = useState(hasActive || !section.defaultCollapsed);
+
+  // Beim Navigieren in diesen Bereich offen halten (überschreibt defaultCollapsed).
+  useEffect(() => {
+    if (hasActive) setOpen(true);
+  }, [hasActive]);
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className={`mb-1 flex w-full items-center gap-1 px-3 py-0.5 text-xs font-semibold uppercase tracking-wide ${
+          hasActive ? "text-leaf" : "text-ink-soft/70 hover:text-ink"
+        }`}
+      >
+        <Chevron open={open} className="h-3 w-3" />
+        {section.label}
+      </button>
+      {open && (
+        <NavEntries entries={section.entries} pathname={pathname} onNavigate={onNavigate} />
+      )}
+    </>
+  );
+}
+
 export function AdminNav({
   sections,
   onNavigate,
@@ -116,38 +210,19 @@ export function AdminNav({
           key={i}
           className="mt-3 border-t border-ink/5 pt-3 first:mt-0 first:border-t-0 first:pt-0"
         >
-          {section.label && (
-            <p className="mb-1 px-3 text-xs font-semibold uppercase tracking-wide text-ink-soft/70">
-              {section.label}
-            </p>
+          {section.label ? (
+            <CollapsibleSection
+              section={section}
+              pathname={pathname}
+              onNavigate={onNavigate}
+            />
+          ) : (
+            <NavEntries
+              entries={section.entries}
+              pathname={pathname}
+              onNavigate={onNavigate}
+            />
           )}
-          <ul className="flex flex-col gap-0.5">
-            {section.entries.map((entry) =>
-              entry.children ? (
-                <CollapsibleGroup
-                  key={entry.label}
-                  entry={entry}
-                  pathname={pathname}
-                  onNavigate={onNavigate}
-                />
-              ) : (
-                <li key={entry.href}>
-                  <Link
-                    href={entry.href!}
-                    onClick={onNavigate}
-                    aria-current={
-                      isActivePath(pathname, entry.href!) ? "page" : undefined
-                    }
-                    className={`block px-3 py-1.5 text-sm ${
-                      isActivePath(pathname, entry.href!) ? activeCls : idleCls
-                    }`}
-                  >
-                    {entry.label}
-                  </Link>
-                </li>
-              ),
-            )}
-          </ul>
         </div>
       ))}
     </div>

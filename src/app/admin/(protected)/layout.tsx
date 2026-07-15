@@ -36,6 +36,9 @@ const NAV_SECTIONS: AdminNavSection[] = [
   },
   {
     label: nav.groupNewsletter,
+    // Newsletter/CRM ist der größte Bereich und wird selten gebraucht — beim
+    // Öffnen des Menüs eingeklappt lassen (öffnet automatisch, wenn man darin ist).
+    defaultCollapsed: true,
     entries: [
       { href: "/admin/kontakte", label: nav.contacts },
       { href: "/admin/segmente", label: nav.segments },
