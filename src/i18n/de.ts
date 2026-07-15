@@ -344,6 +344,9 @@ export const de = {
       unknown: "unbekannt",
       upToDate: "Die laufende Version ist aktuell.",
       updateAvailable: "Ein neuer Stand ist verfügbar.",
+      releaseNotesTitle: "Was ist neu?",
+      releaseNotesSub: "Änderungen seit der laufenden Version:",
+      releaseNotesMore: "… und {n} weitere Änderungen",
       checkFailed:
         "Der neueste Stand konnte nicht von GitHub geprüft werden (Repository/Branch in den Einstellungen prüfen, Internetzugang nötig).",
       notConfigured:

@@ -87,6 +87,38 @@ export default async function DeployPage() {
                   : badge(d.upToDate, "ok")}
           </div>
 
+          {updateAvailable && remote.notes && remote.notes.length > 0 && (
+            <div className="mt-4 border-t border-ink/5 pt-3">
+              <p className="text-sm font-semibold">{d.releaseNotesTitle}</p>
+              <p className="mb-2 text-xs text-ink-soft">{d.releaseNotesSub}</p>
+              <ul className="space-y-1 text-sm">
+                {remote.notes.slice(0, 12).map((n) => (
+                  <li key={n.sha} className="flex gap-2">
+                    <span className="text-leaf" aria-hidden="true">
+                      •
+                    </span>
+                    <span className="min-w-0">
+                      {n.subject}
+                      {n.sha && (
+                        <code className="ml-1.5 bg-cream px-1 py-0.5 text-xs text-ink-soft">
+                          {n.sha}
+                        </code>
+                      )}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {remote.notes.length > 12 && (
+                <p className="mt-1.5 text-xs text-ink-soft">
+                  {d.releaseNotesMore.replace(
+                    "{n}",
+                    String(remote.notes.length - 12),
+                  )}
+                </p>
+              )}
+            </div>
+          )}
+
           <div className="mt-5">
             <DeployMonitor initial={snapshot} />
           </div>
