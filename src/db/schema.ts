@@ -69,7 +69,7 @@ function taxonomyTable(name: string) {
   });
 }
 
-/** Kategorien bilden auch den „Gerichtstyp" ab (Annahme A11) */
+/** Kategorien bilden auch die „Art des Gerichts" ab (Annahme A11) */
 export const category = taxonomyTable("category");
 export const tag = taxonomyTable("tag");
 export const dietType = taxonomyTable("diet_type");
