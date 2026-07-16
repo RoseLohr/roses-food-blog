@@ -201,6 +201,26 @@ export default async function HomepageAdminPage(props: {
           </div>
         </section>
 
+        {/* Saisonale-Rezepte-Box */}
+        <section className="bg-white p-5 shadow-sm">
+          <h2 className="mb-1 text-lg font-semibold">{d.seasonalSection}</h2>
+          <p className="mb-4 text-sm text-ink-soft">{d.seasonalIntro}</p>
+          <div className="max-w-xs">
+            <label className={labelCls} htmlFor="hp-seasonal-count">
+              {d.seasonalCountLabel}
+            </label>
+            <input
+              id="hp-seasonal-count"
+              name="seasonalBoxCount"
+              type="number"
+              min={1}
+              max={12}
+              defaultValue={config?.seasonalBoxCount ?? 4}
+              className={inputCls}
+            />
+          </div>
+        </section>
+
         {/* Ernährungsform-Box */}
         <section className="bg-white p-5 shadow-sm">
           <h2 className="mb-1 text-lg font-semibold">{d.dietBoxSection}</h2>

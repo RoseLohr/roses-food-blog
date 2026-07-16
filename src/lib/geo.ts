@@ -38,3 +38,17 @@ export function lookupCountry(ip: string): string {
     return "??";
   }
 }
+
+/**
+ * Ist die GeoIP-Datenbank vorhanden? Ohne sie ist JEDES Land „unbekannt" —
+ * die Statistik-Seite zeigt dann einen Hinweis mit Abhilfe
+ * (scripts/update-geoip.sh + monatlicher Cron, siehe README).
+ */
+export function geoDbAvailable(): boolean {
+  try {
+    fs.accessSync(mmdbPath(), fs.constants.R_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}

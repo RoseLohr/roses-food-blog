@@ -60,6 +60,12 @@ export async function saveHomepageAction(formData: FormData): Promise<void> {
   );
   const dietBoxTitle = String(formData.get("dietBoxTitle") ?? "").trim().slice(0, 80);
 
+  // „Saisonale Rezepte"-Box: Anzahl (Default 4).
+  const seasonalBoxCount = Math.min(
+    12,
+    Math.max(1, Number(formData.get("seasonalBoxCount")) || 4),
+  );
+
   const values = {
     sliderIntervalSeconds: interval,
     popularCount,
@@ -72,6 +78,7 @@ export async function saveHomepageAction(formData: FormData): Promise<void> {
     dietBoxDietTypeId,
     dietBoxTitle,
     dietBoxCount,
+    seasonalBoxCount,
   };
 
   await db

@@ -8,6 +8,7 @@ import { DietBox, type DietBoxItem } from "@/components/diet-box";
 import { publishedRecipeCards } from "@/lib/recipe-list";
 import { imageUrl, srcset, thumbUrl } from "@/lib/media";
 import { JsonLd, websiteJsonLd } from "@/lib/jsonld";
+import { currentIsoWeek, isWeekInSeason } from "@/lib/season";
 import { t } from "@/i18n/de";
 import { PageTracker } from "@/components/page-tracker";
 
@@ -123,6 +124,11 @@ async function loadHomepage() {
       }
     : null;
 
+  // „Saisonale Rezepte" (aktuelle Kalenderwoche); leer = Box erscheint nicht.
+  const seasonalItems = await loadSeasonalBoxItems(
+    config?.seasonalBoxCount ?? 4,
+  );
+
   return {
     config,
     slides,
@@ -135,6 +141,7 @@ async function loadHomepage() {
     tags,
     filterGroups,
     dietBox,
+    seasonalItems,
   };
 }
 
@@ -164,6 +171,48 @@ async function loadDietBoxItems(
     )
     .orderBy(desc(schema.recipe.publishedAt))
     .limit(limit);
+  return boxItemsForRecipes(recRows);
+}
+
+/**
+ * „Saisonale Rezepte": veröffentlichte saisonale Rezepte, deren
+ * Kalenderwochen-Saison die aktuelle ISO-Woche einschließt (Bereich darf
+ * über den Jahreswechsel gehen) — neueste zuerst.
+ */
+async function loadSeasonalBoxItems(count: number): Promise<DietBoxItem[]> {
+  const limit = Math.min(12, Math.max(1, count));
+  const rows = await db
+    .select({
+      id: schema.recipe.id,
+      slug: schema.recipe.slug,
+      title: schema.recipe.title,
+      heroImageId: schema.recipe.heroImageId,
+      seasonStartWeek: schema.recipe.seasonStartWeek,
+      seasonEndWeek: schema.recipe.seasonEndWeek,
+    })
+    .from(schema.recipe)
+    .where(
+      and(
+        eq(schema.recipe.status, "veroeffentlicht"),
+        eq(schema.recipe.isSeasonal, true),
+      ),
+    )
+    .orderBy(desc(schema.recipe.publishedAt));
+  const week = currentIsoWeek();
+  const inSeason = rows
+    .filter((r) => isWeekInSeason(week, r.seasonStartWeek, r.seasonEndWeek))
+    .slice(0, limit);
+  return boxItemsForRecipes(inSeason);
+}
+
+async function boxItemsForRecipes(
+  recRows: Array<{
+    id: number;
+    slug: string;
+    title: string;
+    heroImageId: number | null;
+  }>,
+): Promise<DietBoxItem[]> {
   if (recRows.length === 0) return [];
 
   const ids = recRows.map((r) => r.id);
@@ -221,6 +270,7 @@ export default async function HomePage() {
     tags,
     filterGroups,
     dietBox,
+    seasonalItems,
   } = await loadHomepage();
 
   const d = dict.home;
@@ -367,6 +417,12 @@ export default async function HomePage() {
                 {dict.home.aboutMore}
               </Link>
             </section>
+          )}
+
+          {/* „Saisonale Rezepte" (aktuelle Kalenderwoche) — erscheint nur,
+              wenn gerade Rezepte in Saison sind */}
+          {seasonalItems.length > 0 && (
+            <DietBox title={d.seasonalTitle} items={seasonalItems} />
           )}
 
           {/* Ernährungsform-Box (Admin-konfigurierbar) — zwischen

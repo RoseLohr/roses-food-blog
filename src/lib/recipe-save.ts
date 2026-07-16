@@ -144,6 +144,15 @@ export async function saveRecipeFromForm(
     : "leicht";
   const kcalRaw = String(formData.get("kcal") ?? "").trim();
   const kcal = kcalRaw ? intOr(kcalRaw, 0) : null;
+
+  // Saison: Kalenderwochen nur im gültigen Bereich (1–53) übernehmen.
+  const isSeasonal = formData.get("saisonal") === "ja";
+  const weekOrNull = (v: FormDataEntryValue | null): number | null => {
+    const n = Number(String(v ?? "").trim());
+    return Number.isInteger(n) && n >= 1 && n <= 53 ? n : null;
+  };
+  const seasonStartWeek = weekOrNull(formData.get("saisonVon"));
+  const seasonEndWeek = weekOrNull(formData.get("saisonBis"));
   const status =
     String(formData.get("status")) === "veroeffentlicht"
       ? ("veroeffentlicht" as const)
@@ -172,6 +181,9 @@ export async function saveRecipeFromForm(
     servings,
     difficulty,
     kcal,
+    isSeasonal,
+    seasonStartWeek,
+    seasonEndWeek,
     tips: String(formData.get("tipps") ?? "").trim(),
     seoTitle: String(formData.get("seoTitel") ?? "").trim(),
     seoDescription: String(formData.get("seoBeschreibung") ?? "").trim(),

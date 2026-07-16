@@ -25,6 +25,7 @@ export const de = {
     sliderPlay: "Slider fortsetzen",
     popularTitle: "Beliebteste Rezepte",
     latestTitle: "Neueste Rezepte",
+    seasonalTitle: "Saisonale Rezepte",
     byCuisineTitle: "Nach Art der Küche wählen",
     aboutTitle: "Über mich",
     aboutMore: "Lies mehr",
@@ -515,6 +516,11 @@ export const de = {
         schwer: "Schwer",
       } as Record<string, string>,
       fieldKcal: "Kalorien pro Portion (kcal, optional)",
+      fieldSeasonal: "Saisonales Rezept",
+      fieldSeasonStart: "Saison von (KW)",
+      fieldSeasonEnd: "Saison bis (KW)",
+      seasonHint:
+        "Kalenderwochen 1–53; die Saison darf über den Jahreswechsel gehen (z. B. von KW 44 bis KW 8). Saisonale Rezepte erscheinen in der passenden Zeit in der „Saisonale Rezepte“-Box auf der Startseite.",
       fieldTips: "Tipps & Varianten (Markdown)",
       fieldSeoTitle: "SEO-Titel",
       fieldSeoDescription: "SEO-Beschreibung",
@@ -751,6 +757,8 @@ export const de = {
       colViews: "Aufrufe",
       colAvgDuration: "Ø Dauer",
       byCountry: "Länder",
+      geoDbMissing:
+        "GeoIP-Datenbank fehlt — alle Länder werden als „unbekannt“ erfasst. Abhilfe: einmal ./scripts/update-geoip.sh auf dem Server ausführen und den monatlichen Cron aus der README einrichten.",
       byBrowser: "Browser",
       byType: "Aufrufart",
       typeLabels: {
@@ -809,6 +817,10 @@ export const de = {
         "Zeigt eine Liste von Rezepten einer Ernährungsform (mit Bild). Leer lassen = Box aus.",
       dietBoxSelect: "Ernährungsform",
       dietBoxNone: "— keine (Box aus) —",
+      seasonalSection: "Saisonale Rezepte",
+      seasonalIntro:
+        "Zeigt Rezepte, deren Saison (Kalenderwochen im Rezept-Editor) die aktuelle Woche einschließt — als Box in der Seitenleiste. Ohne passende Rezepte erscheint die Box nicht.",
+      seasonalCountLabel: "Anzahl der Rezepte",
       dietBoxTitleLabel: "Titel der Box (leer = Name der Ernährungsform)",
       dietBoxCountLabel: "Anzahl Rezepte",
     },

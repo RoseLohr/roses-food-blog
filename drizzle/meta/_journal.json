@@ -57,6 +57,13 @@
       "when": 1784600000000,
       "tag": "0007_travel_content_blocks",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1784700000000,
+      "tag": "0008_seasonal_recipes",
+      "breakpoints": true
     }
   ]
 }

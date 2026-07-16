@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { requireAdmin } from "@/lib/auth";
+import { geoDbAvailable } from "@/lib/geo";
 import {
   avgDurationSeconds,
   getTrackingStats,
@@ -80,6 +81,12 @@ export default async function TrackingPage(props: {
 
   return (
     <>
+      {/* Ohne GeoIP-Datenbank ist jedes Land „unbekannt" — sichtbar machen */}
+      {!geoDbAvailable() && (
+        <p className="mb-4 bg-amber-50 p-3 text-sm text-amber-900">
+          {d.geoDbMissing}
+        </p>
+      )}
       <div className="mb-2 flex items-center justify-between">
         <h1 className="text-2xl font-bold">{d.title}</h1>
         <nav aria-label={d.title} className="flex gap-1">

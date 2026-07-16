@@ -102,6 +102,14 @@ export const recipe = sqliteTable(
     tips: text("tips").notNull().default(""),
     /** Kalorien pro Portion (Annahme B16), optional */
     kcal: integer("kcal"),
+    /** Saisonales Rezept: sichtbar in der „Saisonale Rezepte"-Box, wenn die
+     *  aktuelle ISO-Kalenderwoche zwischen Start- und End-KW liegt (der
+     *  Bereich darf über den Jahreswechsel gehen, z. B. KW 44 → KW 8). */
+    isSeasonal: integer("is_seasonal", { mode: "boolean" })
+      .notNull()
+      .default(false),
+    seasonStartWeek: integer("season_start_week"),
+    seasonEndWeek: integer("season_end_week"),
     seoTitle: text("seo_title").notNull().default(""),
     seoDescription: text("seo_description").notNull().default(""),
     status: text("status", { enum: ["entwurf", "veroeffentlicht"] })
@@ -532,6 +540,8 @@ export const homepageConfig = sqliteTable("homepage_config", {
   dietBoxTitle: text("diet_box_title").notNull().default(""),
   /** Anzahl der Rezepte in der Ernährungsform-Box. */
   dietBoxCount: integer("diet_box_count").notNull().default(4),
+  /** Anzahl der Rezepte in der „Saisonale Rezepte"-Box. */
+  seasonalBoxCount: integer("seasonal_box_count").notNull().default(4),
 });
 
 export const sliderItem = sqliteTable(
