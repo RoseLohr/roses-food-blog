@@ -198,7 +198,8 @@ type VisibleProduct = {
   /** Nicht-Deutschland-Einträge (als „Import“-Aggregat). */
   foreign: SeasonEntry[];
   countries: number;
-  footnotes: number[];
+  /** Nur die Fußnote des ersten Eintrags — der Rest steht an den Unterzeilen. */
+  footnote: number | undefined;
 };
 
 function ProductRow({
@@ -236,7 +237,9 @@ function ProductRow({
           <span className="sk-name sk-pname">
             <span>
               {item.product.name}
-              <FootnoteMarks numbers={item.footnotes} />
+              {item.footnote !== undefined && (
+                <FootnoteMarks numbers={[item.footnote]} />
+              )}
             </span>
             {item.countries > 1 && (
               <span className="sk-count">
@@ -365,7 +368,7 @@ export function SeasonCalendar({ currentWeek }: { currentWeek: number }) {
         german,
         foreign,
         countries: originCountries(entries).length,
-        footnotes: [],
+        footnote: undefined,
       });
     }
 
@@ -375,12 +378,13 @@ export function SeasonCalendar({ currentWeek }: { currentWeek: number }) {
       items: visible.filter(({ product }) => product.category === key),
     })).filter((g) => g.items.length > 0);
 
-    // Fußnoten: Quelltexte in Anzeige-Reihenfolge durchnummerieren.
+    // Fußnoten: Quelltexte in Anzeige-Reihenfolge durchnummerieren. Am
+    // Produkt selbst nur die Nummer des ersten Eintrags — die übrigen
+    // stehen an den Unterzeilen.
     const numberOf = new Map<string, number>();
     const sources: string[] = [];
     for (const group of groups) {
       for (const item of group.items) {
-        const own = new Set<number>();
         for (const entry of [...item.german, ...item.foreign]) {
           let n = numberOf.get(entry.source);
           if (n === undefined) {
@@ -388,9 +392,8 @@ export function SeasonCalendar({ currentWeek }: { currentWeek: number }) {
             numberOf.set(entry.source, n);
             sources.push(entry.source);
           }
-          own.add(n);
+          if (item.footnote === undefined) item.footnote = n;
         }
-        item.footnotes = [...own].sort((a, b) => a - b);
       }
     }
 
