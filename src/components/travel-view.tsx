@@ -73,53 +73,56 @@ function MetaChip({
 }
 
 /** Platzhalter, wenn ein Vorschlags-Rezept (noch) kein Bild hat — dezentes
- *  Symbol statt einer großen leeren Fläche. */
+ *  Symbol statt einer leeren Fläche. */
 function TilePlaceholder() {
   return (
     <span
       aria-hidden
       className="flex aspect-[4/3] w-full items-center justify-center bg-cream-deep text-ink-soft/40"
     >
-      <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
         <path d="M4 3v7a3 3 0 0 0 3 3v8M7 3v6M10 3v6M18 3c-1.5 0-2.5 2-2.5 5s1 4 2.5 4v9" />
       </svg>
     </span>
   );
 }
 
-/** „Ähnliche Rezepte selbst machen" — bis zu 3 Kacheln, unterhalb (nicht
- *  innerhalb) der grauen Gericht-Box. */
+/** „Ähnliche Rezepte selbst machen" — bis zu 3 kompakte Kacheln, unterhalb
+ *  (nicht innerhalb) der grauen Gericht-Box. Feste, kleine Kachelbreite. */
 function SimilarRecipeTiles({ recipes }: { recipes: RecipeCardData[] }) {
   if (recipes.length === 0) return null;
   return (
-    <div className="border-t border-ink/10 pt-4">
-      <h5 className="mb-3 text-xs font-bold uppercase tracking-wider text-ink-soft">
+    <div className="border-t border-ink/10 pt-3">
+      <h5 className="mb-2.5 text-xs font-bold uppercase tracking-wider text-ink-soft">
         {dict.travelList.similarTitle}
       </h5>
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="flex flex-wrap gap-3">
         {recipes.map((rec) => (
-          <div key={rec.slug} className="overflow-hidden bg-white shadow-sm">
+          <div
+            key={rec.slug}
+            className="w-36 max-w-full overflow-hidden bg-white shadow-sm"
+          >
             {/* Bild als Link zum Rezept */}
             <Link href={`/rezepte/${rec.slug}`} aria-label={rec.title}>
               {rec.image ? (
                 <ResponsiveImg
                   image={rec.image}
-                  sizes="(max-width: 640px) 100vw, 220px"
+                  sizes="144px"
                   className="aspect-[4/3] w-full object-cover"
                 />
               ) : (
                 <TilePlaceholder />
               )}
             </Link>
-            <div className="p-3">
+            <div className="p-2.5">
               <Link
                 href={`/rezepte/${rec.slug}`}
-                className="text-sm font-semibold leading-snug hover:text-leaf"
+                className="line-clamp-2 text-[0.8rem] font-semibold leading-snug hover:text-leaf"
               >
                 {rec.title}
               </Link>
               {rec.teaser && (
-                <p className="mt-1 line-clamp-2 text-xs text-ink-soft">
+                <p className="mt-1 line-clamp-2 text-[0.7rem] leading-snug text-ink-soft">
                   {rec.teaser}
                 </p>
               )}
