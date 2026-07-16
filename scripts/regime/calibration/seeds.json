@@ -1,0 +1,54 @@
+{
+  "_comment": "A-36 Kalibrier-Korpus: die 6 Seeded-Defect-Klassen aus Phase 2. Für jede AKTIVE Klasse ist die fangende Kontrolle benannt; N/A-Klassen tragen eine architektur-referenzierte Begründung (Ausnahmen-Ledger F1).",
+  "seeds": [
+    {
+      "id": "S1-hardcoded-credential",
+      "klasse": "Hartcodiertes Geheimnis im Quelltext",
+      "aktiv": true,
+      "kontrolle": "secret-scan (B-06)",
+      "control_cmd": "node scripts/regime/secret-scan.mjs --selftest",
+      "beispiel": "const key = \"sk-ant-<30+ Zeichen>\""
+    },
+    {
+      "id": "S2-cross-tenant-ownership",
+      "klasse": "Fehlende Cross-Tenant-Ownership-Prüfung",
+      "aktiv": false,
+      "na_begruendung": "Kein Mandanten-Modell — ein Admin, keine fremden Tenants. Tripwire: Einführung eines zweiten Mandanten (Ausnahmen-Ledger F1).",
+      "kontrolle": null,
+      "control_cmd": null
+    },
+    {
+      "id": "S3-nonexistent-package",
+      "klasse": "Abhängigkeit auf nicht-existentes Paket (Slopsquatting)",
+      "aktiv": true,
+      "kontrolle": "deps-existence (B-04)",
+      "control_cmd": "node scripts/regime/deps-existence.mjs",
+      "beispiel": "\"dependencies\": { \"react-recipe-helperz\": \"^1.0.0\" }"
+    },
+    {
+      "id": "S4-swallowed-exception",
+      "klasse": "Verschluckte Exception (leerer catch)",
+      "aktiv": true,
+      "kontrolle": "ESLint no-empty + Gate-Selbsttest (A-26/A-01)",
+      "control_cmd": "node scripts/regime/gate-selftest.mjs",
+      "beispiel": "try { risky(); } catch {}"
+    },
+    {
+      "id": "S5-vacuous-assertion",
+      "klasse": "Vacuous/wirkungslose Test-Assertion",
+      "aktiv": true,
+      "kontrolle": "Mutation-Testing Kernlogik (A-02)",
+      "control_cmd": null,
+      "pending": "Stryker-Aufbau ausstehend — Residualrisiko R-A02 bis dahin",
+      "beispiel": "expect(true).toBe(true)"
+    },
+    {
+      "id": "S6-untrusted-to-tool",
+      "klasse": "Untrusted Text erreicht einen Tool-Aufruf",
+      "aktiv": false,
+      "na_begruendung": "KI-Feature hat keinen Tool-Use — Modell liefert nur JSON, das der Admin prüft; kein steuerbarer Egress. Tripwire: erster tools:-Aufruf im KI-Pfad (Ausnahmen-Ledger F1).",
+      "kontrolle": null,
+      "control_cmd": null
+    }
+  ]
+}

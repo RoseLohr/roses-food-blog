@@ -26,3 +26,7 @@ next-env.d.ts
 .pw-data/
 playwright-report/
 test-results/
+
+# Regime: Temp des Gate-Selbsttests + generierte SBOM
+.gate-selftest-*/
+sbom.json

@@ -21,6 +21,7 @@ export default tseslint.config(
       "*.config.*",
       "next-env.d.ts",
       "scripts/**", // reine Node-Skripte (.mjs), kein App-Code
+      ".gate-selftest-*/**",
     ],
   },
   js.configs.recommended,

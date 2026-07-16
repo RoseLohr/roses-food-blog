@@ -33,6 +33,14 @@ jobs:
         run: npm run lint
       - name: Quelltext-Gates (Stubs A-16, Modell-Aliase B-13)
         run: node scripts/regime/source-gates.mjs
+      - name: Secret-Scan (B-06, STOP-SHIP)
+        run: node scripts/regime/secret-scan.mjs
+      - name: Gewaltenteilung (B-35, CODEOWNERS deckt geschützte Pfade)
+        run: node scripts/regime/separation-check.mjs
+      - name: Gate-Selbsttest (A-01/B-01, Gate blockiert nachweislich)
+        run: node scripts/regime/gate-selftest.mjs
+      - name: Kalibrierung (A-36, Kontrollen fangen ihre Seeds)
+        run: node scripts/regime/calibration/inject.mjs
       - name: Tests (vitest)
         run: npm test
       - name: Build (next, standalone)
