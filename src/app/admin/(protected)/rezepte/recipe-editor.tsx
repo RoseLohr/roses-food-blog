@@ -190,6 +190,14 @@ export function RecipeEditor({
       tips: draft.tips,
       seoTitle: draft.seoTitle,
       seoDescription: draft.seoDescription,
+      // Saison-Vorschlag aus dem Saisonkalender (Zutaten-Matching)
+      ...(draft.seasonSuggestion
+        ? {
+            isSeasonal: draft.seasonSuggestion.isSeasonal,
+            seasonStartWeek: draft.seasonSuggestion.startWeek,
+            seasonEndWeek: draft.seasonSuggestion.endWeek,
+          }
+        : {}),
       taxonomySelections: selections,
     }));
     setSections(

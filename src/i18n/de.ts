@@ -40,6 +40,7 @@ export const de = {
   nav: {
     recipes: "Rezepte",
     travel: "Reisen",
+    seasonCalendar: "Saisonkalender",
     about: "Über mich",
     search: "Suche",
     menu: "Menü",
@@ -105,6 +106,33 @@ export const de = {
     fromTravel: "aus dem Bericht",
     noResults: "Keine Treffer. Bitte Suchbegriff oder Filter anpassen.",
     resultCount: (n: number) => (n === 1 ? "1 Treffer" : `${n} Treffer`),
+  },
+  seasonCalendar: {
+    title: "Saisonkalender",
+    intro:
+      "Wann haben Obst, Gemüse und Nüsse bei uns Saison? Der Kalender zeigt je Produkt die Verfügbarkeit über die 52 Kalenderwochen — ein Klick auf die Zeile fächert Sorten, Herkünfte und Vorhaltung auf.",
+    searchLabel: "Produkt suchen",
+    searchPlaceholder: "z. B. Erdbeere, Kürbis, Cox Orange …",
+    categoryLabel: "Kategorie",
+    categoryAll: "Alle",
+    // Anzeige-Plural statt der Singular-Labels aus dem Datensatz-Enum
+    categories: {
+      obst: "Obst",
+      gemuese: "Gemüse",
+      nuss: "Nüsse",
+    } as Record<string, string>,
+    availabilityLabel: "Vorhaltung",
+    showOtherOrigins: "Auch andere Herkunftsländer anzeigen",
+    currentWeekLabel: "Aktuelle Kalenderwoche",
+    currentWeekShort: (n: number) => `KW ${n}`,
+    resultCount: (n: number, total: number) =>
+      `${n} von ${total} Produkten`,
+    entriesCount: (n: number) => (n === 1 ? "1 Eintrag" : `${n} Einträge`),
+    noResults: "Keine Produkte passen zu Suche und Filtern.",
+    sourcePrefix: "Quelle:",
+    aboutTitle: "Über die Daten",
+    aboutHint:
+      "Balken = Verfügbarkeit am deutschen Markt je Kalenderwoche; die senkrechte Linie markiert die aktuelle Woche. Standardansicht: nur Herkunft Deutschland.",
   },
   recipe: {
     servings: "Portionen",
@@ -281,6 +309,7 @@ export const de = {
       ingredients: "Zutaten",
       taxonomies: "Kategorien & Co.",
       homepage: "Startseite",
+      seasonCalendar: "Saisonkalender",
       contacts: "Kontakte",
       segments: "Segmente",
       campaigns: "Kampagnen",
@@ -298,6 +327,24 @@ export const de = {
       groupNewsletter: "Newsletter & CRM",
       groupAnalytics: "Auswertung",
       groupSystem: "System",
+    },
+    saisonkalender: {
+      title: "Saisonkalender",
+      intro:
+        "Der Saisonkalender ist ein statischer Datensatz im Code — keine Datenbank-Inhalte, keine Pflege nötig. Er speist die öffentliche Kalenderseite und die Saison-Vorschläge des KI-Assistenten beim Rezept-Import.",
+      openPublic: "Öffentliche Seite ansehen",
+      statProducts: "Produkte",
+      statEntries: "Einträge (Sorte/Herkunft/Vorhaltung)",
+      statGerman: "Produkte mit Herkunft Deutschland",
+      version: "Modellversion",
+      inSeasonNow: (kw: number) =>
+        `Jetzt in Saison — Herkunft Deutschland (KW ${kw})`,
+      inSeasonEmpty: "Diese Woche ist kein Produkt aus deutscher Herkunft verfügbar.",
+      qualityTitle: "Datenqualität der Einträge",
+      basisTitle: "Datenbasis",
+      licenseTitle: "Lizenz & Vorbehalte",
+      trackingHint:
+        "Aufrufe der Kalenderseite erscheinen in der Statistik unter dem Pfad /saisonkalender.",
     },
     newsletterDisplay: {
       title: "Newsletter – Anzeige im Blog",
@@ -494,6 +541,13 @@ export const de = {
       minutesSuffix: "Min.",
       sectionsTitle: "Abschnitte",
       taxonomyTitle: "Vorgeschlagene Zuordnungen",
+      seasonTitle: "Saison-Vorschlag",
+      seasonYes: (von: number, bis: number) =>
+        `Saisonal · KW ${von}–${bis}`,
+      seasonNo: "Nicht saisonal",
+      seasonNoHint:
+        "Keine saisontreibende Zutat im Saisonkalender gefunden (oder ganzjährig regional verfügbar).",
+      seasonMatches: "Erkannte Kalender-Produkte",
       applyHint:
         "Übernehmen füllt das Formular und legt fehlende Kategorien/Tags automatisch an. Zum Speichern anschließend unten „Speichern“ klicken.",
     },

@@ -15,6 +15,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
 import { db, schema } from "@/db";
+import { suggestSeason, type SeasonSuggestion } from "./saisonkalender";
 import { getAnthropicApiKey } from "./settings";
 
 export const recipeDraftSchema = z.object({
@@ -49,7 +50,14 @@ export const recipeDraftSchema = z.object({
   ),
 });
 
-export type RecipeDraft = z.infer<typeof recipeDraftSchema>;
+/**
+ * Der fertige Entwurf trägt zusätzlich einen deterministisch berechneten
+ * Saison-Vorschlag: Zutaten gegen den statischen Saisonkalender gematcht
+ * (kein KI-Raten, sondern echte Kalenderdaten — siehe lib/saisonkalender).
+ */
+export type RecipeDraft = z.infer<typeof recipeDraftSchema> & {
+  seasonSuggestion: SeasonSuggestion;
+};
 
 /**
  * Fehler mit klarer, anzeigbarer Meldung (Deutsch). `code` erlaubt der Route,
@@ -201,7 +209,11 @@ export async function generateRecipeDraft(
       "empty",
       "Die KI hat keine verwertbare Antwort geliefert. Bitte erneut versuchen.",
     );
-  return res.parsed_output;
+  const draft = res.parsed_output;
+  const ingredientNames = draft.sections.flatMap((s) =>
+    s.ingredients.map((i) => i.name),
+  );
+  return { ...draft, seasonSuggestion: suggestSeason(ingredientNames) };
 }
 
 /**

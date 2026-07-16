@@ -28,6 +28,7 @@ const NAV_SECTIONS: AdminNavSection[] = [
           { href: "/admin/reisen", label: nav.travel },
           { href: "/admin/seiten", label: nav.pages },
           { href: "/admin/startseite", label: nav.homepage },
+          { href: "/admin/saisonkalender", label: nav.seasonCalendar },
         ],
       },
       { href: "/admin/medien", label: nav.media },

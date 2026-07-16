@@ -451,3 +451,260 @@ html {
     color: inherit;
   }
 }
+
+/* ---------------------------------------------------------------- */
+/* Saisonkalender (/saisonkalender)                                  */
+/* Plain CSS statt Tailwind-Utilities: 52-Spalten-Balkenraster mit   */
+/* klebender Namensspalte, farbigen Saison-Segmenten und dezentem    */
+/* Aufklappen ganzer Produktzeilen.                                  */
+/* ---------------------------------------------------------------- */
+:root {
+  --sk-freiland: #339e92; /* Freiland: Markengrün — die „echte" Saison */
+  --sk-gewaechshaus: #8ccfc6; /* Gewächshaus: heller Verwandter */
+  --sk-lager: #d9a441; /* Lager: warmes Ocker */
+  --sk-import: #b3bcc7; /* Import: zurückhaltendes Graublau */
+  --sk-name-w: 200px;
+}
+
+.sk-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+.sk-chip {
+  border: 1px solid rgba(17, 17, 17, 0.2);
+  background: #fff;
+  padding: 0.35rem 0.8rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s;
+}
+.sk-chip:hover {
+  background: var(--color-cream);
+}
+.sk-chip[aria-pressed="true"] {
+  background: var(--color-rose-primary);
+  border-color: var(--color-rose-primary);
+  color: #fff;
+}
+.sk-swatch {
+  display: inline-block;
+  width: 0.7rem;
+  height: 0.7rem;
+  margin-right: 0.4rem;
+  vertical-align: -1px;
+}
+/* Legenden-Chips: abgewählt = Farbfeld ausgegraut, Chip bleibt neutral */
+.sk-chip--legend[aria-pressed="false"] {
+  color: var(--color-ink-soft);
+}
+.sk-chip--legend[aria-pressed="false"] .sk-swatch {
+  opacity: 0.25;
+}
+.sk-chip--legend[aria-pressed="true"] {
+  background: #fff;
+  border-color: rgba(17, 17, 17, 0.35);
+  color: var(--color-ink);
+}
+
+.sk-scroll {
+  overflow-x: auto;
+  border: 1px solid rgba(17, 17, 17, 0.1);
+  background: #fff;
+}
+.sk-grid {
+  min-width: 900px;
+}
+.sk-rowgrid {
+  display: grid;
+  grid-template-columns: var(--sk-name-w) minmax(0, 1fr);
+  align-items: stretch;
+  /* Kette für die klebende Namensspalte: Zeilen-Hintergrund durchreichen,
+     damit die Spalte die Balken beim Scrollen wirklich verdeckt. */
+  background: inherit;
+}
+.sk-name {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: inherit;
+  padding: 0.45rem 0.75rem;
+  border-right: 1px solid rgba(17, 17, 17, 0.08);
+  min-width: 0;
+}
+
+/* Monatskopf */
+.sk-head {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: #fff;
+  border-bottom: 1px solid rgba(17, 17, 17, 0.12);
+}
+.sk-months {
+  display: grid;
+  grid-template-columns: repeat(52, 1fr);
+}
+.sk-month {
+  border-left: 1px solid rgba(17, 17, 17, 0.08);
+  padding: 0.35rem 0 0.35rem 0.35rem;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-ink-soft);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+/* Kategorien-Zwischenüberschrift */
+.sk-group {
+  background: var(--color-cream);
+  border-bottom: 1px solid rgba(17, 17, 17, 0.08);
+}
+.sk-group .sk-name {
+  font-family: var(--font-display);
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+/* Produktzeile: komplette Zeile ist der Aufklapp-Button — bewusst ohne
+   Pfeil; Zähler-Badge + Hover-Ton signalisieren „hier steckt mehr drin". */
+.sk-prow {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: #fff;
+  border: 0;
+  border-bottom: 1px solid rgba(17, 17, 17, 0.06);
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  transition: background-color 0.15s;
+}
+.sk-prow:hover {
+  background: var(--color-cream);
+}
+.sk-prow[aria-expanded="true"] {
+  background: var(--color-cream);
+  box-shadow: inset 3px 0 0 var(--color-rose-primary);
+}
+.sk-pname {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  min-width: 0;
+}
+.sk-pname > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sk-prow:hover .sk-pname > span:first-child,
+.sk-prow[aria-expanded="true"] .sk-pname > span:first-child {
+  color: var(--color-rose-primary-dark);
+}
+.sk-count {
+  flex: none;
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: var(--color-ink-soft);
+  background: var(--color-cream-deep);
+  padding: 0.05rem 0.4rem;
+}
+.sk-prow[aria-expanded="true"] .sk-count {
+  background: var(--color-rose-primary);
+  color: #fff;
+}
+
+/* Balkenspur: 52 Wochen, dezente Wochenlinien, Monatslinien etwas kräftiger */
+.sk-track {
+  position: relative;
+  height: 26px;
+  margin: 0;
+  background-image: repeating-linear-gradient(
+    90deg,
+    rgba(17, 17, 17, 0.045) 0,
+    rgba(17, 17, 17, 0.045) 1px,
+    transparent 1px,
+    transparent calc(100% / 52)
+  );
+}
+.sk-seg {
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+}
+.sk-seg--freiland {
+  background: var(--sk-freiland);
+}
+.sk-seg--gewaechshaus {
+  background: var(--sk-gewaechshaus);
+}
+.sk-seg--lager {
+  background: var(--sk-lager);
+}
+.sk-seg--import {
+  background: var(--sk-import);
+}
+.sk-now {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--color-ink);
+  opacity: 0.4;
+}
+
+/* Untereinträge (Sorte/Herkunft/Vorhaltung) */
+.sk-sub {
+  background: #fdfdfd;
+  border-bottom: 1px solid rgba(17, 17, 17, 0.06);
+  box-shadow: inset 3px 0 0 var(--color-cream-deep);
+}
+.sk-sub .sk-name {
+  padding-left: 1.4rem;
+}
+.sk-sub-label {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sk-sub-origin {
+  display: block;
+  font-size: 0.68rem;
+  color: var(--color-ink-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sk-sub-meta {
+  padding: 0 0.5rem 0.4rem;
+  font-size: 0.66rem;
+  line-height: 1.35;
+  color: var(--color-ink-soft);
+}
+.sk-sub .sk-track {
+  height: 22px;
+}
+.sk-sub .sk-seg {
+  top: 5px;
+  bottom: 5px;
+}
+
+@media (max-width: 640px) {
+  :root {
+    --sk-name-w: 148px;
+  }
+}

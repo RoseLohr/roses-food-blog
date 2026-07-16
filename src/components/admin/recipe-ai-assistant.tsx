@@ -213,6 +213,57 @@ function Chips({ label, items }: { label: string; items: string[] }) {
   );
 }
 
+/**
+ * Saison-Vorschlag aus dem Saisonkalender (deterministisch, keine KI):
+ * saisonal ja/nein + KW-Spanne, dazu die erkannten Kalender-Produkte.
+ */
+function SeasonSuggestionRow({
+  suggestion,
+}: {
+  suggestion: RecipeDraft["seasonSuggestion"] | undefined;
+}) {
+  // Ältere, noch laufende Jobs können Entwürfe ohne Vorschlag liefern.
+  if (!suggestion) return null;
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex flex-wrap items-baseline gap-1.5">
+        <span className="text-xs font-medium text-ink-soft">
+          {a.seasonTitle}:
+        </span>
+        {suggestion.isSeasonal &&
+        suggestion.startWeek !== null &&
+        suggestion.endWeek !== null ? (
+          <span className="bg-leaf px-2 py-0.5 text-xs font-semibold text-white">
+            {a.seasonYes(suggestion.startWeek, suggestion.endWeek)}
+          </span>
+        ) : (
+          <span className="bg-cream px-2 py-0.5 text-xs" title={a.seasonNoHint}>
+            {a.seasonNo}
+          </span>
+        )}
+      </div>
+      {suggestion.matches.length > 0 && (
+        <div className="flex flex-wrap items-baseline gap-1.5">
+          <span className="text-xs font-medium text-ink-soft">
+            {a.seasonMatches}:
+          </span>
+          {suggestion.matches.map((m) => (
+            <span
+              key={m.product}
+              className={`px-2 py-0.5 text-xs ${
+                m.seasonal ? "bg-leaf-soft/25" : "bg-cream"
+              }`}
+              title={m.ingredient}
+            >
+              {m.product}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DraftPreview({ draft }: { draft: RecipeDraft }) {
   const meta: Array<[string, string]> = [
     [a.metaPrep, `${draft.prepMinutes} ${a.minutesSuffix}`],
@@ -243,6 +294,8 @@ function DraftPreview({ draft }: { draft: RecipeDraft }) {
         <Chips label={dr.cuisines} items={draft.cuisines} />
         <Chips label={dr.equipment} items={draft.equipment} />
       </div>
+
+      <SeasonSuggestionRow suggestion={draft.seasonSuggestion} />
 
       <div>
         <h4 className="mb-1 font-semibold">{a.sectionsTitle}</h4>

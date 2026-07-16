@@ -18,6 +18,7 @@ const dict = t();
 const NAV: Array<[string, string]> = [
   ["/rezepte", dict.nav.recipes],
   ["/reisen", dict.nav.travel],
+  ["/saisonkalender", dict.nav.seasonCalendar],
   ["/ueber-mich", dict.nav.about],
   ["/suche", dict.nav.search],
 ];

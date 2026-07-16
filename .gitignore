@@ -11,7 +11,9 @@ coverage/
 *.db-journal
 *.db-wal
 *.db-shm
-data/
+# Laufzeit-Datenverzeichnis (DATA_DIR) — nur im Wurzelverzeichnis;
+# src/data/ (statische Datensätze wie der Saisonkalender) bleibt versioniert.
+/data/
 .admin-data/
 .e2e-data/
 
