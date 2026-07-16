@@ -112,6 +112,106 @@ function emptyIngredient(): EditorIngredient {
   return { name: "", amount: "", unit: "", note: "" };
 }
 
+/**
+ * Saison-Steuerung: segmentierter Umschalter „Saisonal | Ganzjährig" und —
+ * nur bei „Saisonal" — die beiden Kalenderwochen-Felder nebeneinander.
+ * Steht im Formular unter `key={formKey}`, wird also beim KI-Übernehmen mit
+ * den neuen Anfangswerten frisch gemountet. „Saisonal" schickt ein Hidden-
+ * Feld `saisonal=ja`; bei „Ganzjährig" entfallen KW-Felder und Kennzeichen.
+ */
+function SeasonFields({
+  initialSeasonal,
+  initialStart,
+  initialEnd,
+}: {
+  initialSeasonal: boolean;
+  initialStart: number | null;
+  initialEnd: number | null;
+}) {
+  const [seasonal, setSeasonal] = useState(initialSeasonal);
+  const [start, setStart] = useState(
+    initialStart != null ? String(initialStart) : "",
+  );
+  const [end, setEnd] = useState(initialEnd != null ? String(initialEnd) : "");
+
+  const seg = (active: boolean) =>
+    `px-5 py-1.5 text-sm font-semibold transition-colors ${
+      active
+        ? "bg-leaf text-white"
+        : "bg-white text-leaf hover:bg-leaf-soft/15"
+    }`;
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="text-sm font-medium">{d.seasonLabel}</span>
+        <div
+          role="group"
+          aria-label={d.seasonLabel}
+          className="inline-flex overflow-hidden rounded-lg border border-leaf"
+        >
+          <button
+            type="button"
+            aria-pressed={seasonal}
+            onClick={() => setSeasonal(true)}
+            className={seg(seasonal)}
+          >
+            {d.seasonalOn}
+          </button>
+          <button
+            type="button"
+            aria-pressed={!seasonal}
+            onClick={() => setSeasonal(false)}
+            className={`border-l border-leaf ${seg(!seasonal)}`}
+          >
+            {d.seasonalOff}
+          </button>
+        </div>
+      </div>
+
+      {/* „Saisonal" aktiv → Kennzeichen + KW-Felder; sonst nichts absenden. */}
+      {seasonal && (
+        <>
+          <input type="hidden" name="saisonal" value="ja" />
+          <div className="grid max-w-sm grid-cols-2 gap-4">
+            <div>
+              <label className={labelCls} htmlFor="f-saison-von">
+                {d.fieldSeasonStart}
+              </label>
+              <input
+                id="f-saison-von"
+                name="saisonVon"
+                type="number"
+                min={1}
+                max={53}
+                value={start}
+                onChange={(e) => setStart(e.target.value)}
+                className={inputCls}
+              />
+            </div>
+            <div>
+              <label className={labelCls} htmlFor="f-saison-bis">
+                {d.fieldSeasonEnd}
+              </label>
+              <input
+                id="f-saison-bis"
+                name="saisonBis"
+                type="number"
+                min={1}
+                max={53}
+                value={end}
+                onChange={(e) => setEnd(e.target.value)}
+                className={inputCls}
+              />
+            </div>
+          </div>
+          <p className="text-xs text-ink-soft">{d.seasonHint}</p>
+        </>
+      )}
+    </div>
+  );
+}
+
 export function RecipeEditor({
   initial,
   taxonomies,
@@ -345,49 +445,14 @@ export function RecipeEditor({
               className={inputCls}
             />
           </div>
-          {/* Saison: Checkbox + Start-/End-Kalenderwoche (darf über den
-              Jahreswechsel gehen, z. B. KW 44 → KW 8) */}
+          {/* Saison: Umschalter „Saisonal | Ganzjährig" + Start-/End-KW
+              nebeneinander (darf über den Jahreswechsel gehen, z. B. 44 → 8) */}
           <div className="md:col-span-2 xl:col-span-3">
-            <div className="flex flex-wrap items-end gap-4">
-              <label className="flex items-center gap-2 pb-2 text-sm font-medium">
-                <input
-                  type="checkbox"
-                  name="saisonal"
-                  value="ja"
-                  defaultChecked={form.isSeasonal}
-                />
-                {d.fieldSeasonal}
-              </label>
-              <div className="w-28">
-                <label className={labelCls} htmlFor="f-saison-von">
-                  {d.fieldSeasonStart}
-                </label>
-                <input
-                  id="f-saison-von"
-                  name="saisonVon"
-                  type="number"
-                  min={1}
-                  max={53}
-                  defaultValue={form.seasonStartWeek ?? ""}
-                  className={inputCls}
-                />
-              </div>
-              <div className="w-28">
-                <label className={labelCls} htmlFor="f-saison-bis">
-                  {d.fieldSeasonEnd}
-                </label>
-                <input
-                  id="f-saison-bis"
-                  name="saisonBis"
-                  type="number"
-                  min={1}
-                  max={53}
-                  defaultValue={form.seasonEndWeek ?? ""}
-                  className={inputCls}
-                />
-              </div>
-            </div>
-            <p className="mt-1 text-xs text-ink-soft">{d.seasonHint}</p>
+            <SeasonFields
+              initialSeasonal={form.isSeasonal}
+              initialStart={form.seasonStartWeek}
+              initialEnd={form.seasonEndWeek}
+            />
           </div>
         </div>
       </section>

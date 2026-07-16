@@ -686,6 +686,9 @@ export const de = {
       } as Record<string, string>,
       fieldKcal: "Kalorien pro Portion (kcal, optional)",
       fieldSeasonal: "Saisonales Rezept",
+      seasonLabel: "Saison",
+      seasonalOn: "Saisonal",
+      seasonalOff: "Ganzjährig",
       fieldSeasonStart: "Saison von (KW)",
       fieldSeasonEnd: "Saison bis (KW)",
       seasonHint:
