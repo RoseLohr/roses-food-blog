@@ -128,7 +128,11 @@ export const de = {
     resultCount: (n: number, total: number) =>
       `${n} von ${total} Produkten`,
     entriesCount: (n: number) => (n === 1 ? "1 Eintrag" : `${n} Einträge`),
+    fromCountries: (n: number) => `aus ${n} Ländern`,
+    importGroup: "Import",
+    onlySeason: "Jetzt in Saison",
     noResults: "Keine Produkte passen zu Suche und Filtern.",
+    sourcesTitle: "Quellen",
     sourcePrefix: "Quelle:",
     aboutTitle: "Über die Daten",
     aboutHint:

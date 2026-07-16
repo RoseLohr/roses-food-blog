@@ -5,6 +5,7 @@ import {
   clampWeek,
   coversWeek,
   entryIsGerman,
+  originCountries,
   saisonModel,
   suggestSeason,
   toSegments,
@@ -107,6 +108,27 @@ describe("entryIsGerman", () => {
     expect(entryIsGerman(entry({ origin: "Deutschland" }))).toBe(true);
     expect(entryIsGerman(entry({ origin: "Deutschland/Niederlande" }))).toBe(true);
     expect(entryIsGerman(entry({ origin: "Niederlande" }))).toBe(false);
+  });
+});
+
+describe("originCountries", () => {
+  it("löst Slash-Listen auf und dedupliziert", () => {
+    const countries = originCountries([
+      entry({ origin: "Deutschland" }),
+      entry({ origin: "Belgien/Italien/Niederlande" }),
+      entry({ origin: "Italien" }),
+    ]);
+    expect(countries.sort()).toEqual([
+      "Belgien",
+      "Deutschland",
+      "Italien",
+      "Niederlande",
+    ]);
+  });
+
+  it("Erdbeere: 9 Länder über alle Einträge", () => {
+    const erdbeere = saisonModel.products.find((p) => p.id === "erdbeere")!;
+    expect(originCountries(erdbeere.entries).length).toBe(9);
   });
 });
 

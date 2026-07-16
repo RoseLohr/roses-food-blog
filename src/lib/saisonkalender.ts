@@ -111,6 +111,15 @@ export function entryIsGerman(entry: SeasonEntry): boolean {
   return entry.origin.split("/").includes("Deutschland");
 }
 
+/** Alle Herkunftsländer einer Eintragsmenge (Slash-Listen aufgelöst). */
+export function originCountries(entries: SeasonEntry[]): string[] {
+  const countries = new Set<string>();
+  for (const entry of entries) {
+    for (const country of entry.origin.split("/")) countries.add(country);
+  }
+  return [...countries];
+}
+
 /**
  * Beste Vorhaltung je KW für eine (gefilterte) Eintragsmenge — wie das
  * vorberechnete `_derived.availabilityByWeek`, aber live berechenbar, damit

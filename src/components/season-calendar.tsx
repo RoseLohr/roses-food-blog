@@ -6,15 +6,23 @@
  * statisches JSON direkt in dieses Bundle (kein Server-Roundtrip, keine DB).
  *
  * Bedienung bewusst dezent: die komplette Produktzeile ist der Aufklapp-
- * Button (kein Pfeil) — Zähler-Badge, Hover-Ton und Akzentkante zeigen an,
+ * Button (kein Pfeil) — Länder-Hinweis, Hover-Ton und Akzentkante zeigen an,
  * dass mehr dahintersteckt. Standardfilter: nur Herkunft Deutschland.
+ *
+ * Quellen erscheinen als kleine Fußnoten-Ziffern am Produkt und an den
+ * Untereinträgen; das Verzeichnis mit den Texten steht unter dem Kalender.
+ * Alle Nicht-Deutschland-Einträge eines Produkts sind zu einer zuklappbaren
+ * „Import“-Sammelzeile aggregiert. „Jetzt in Saison“ blendet alle Produkte
+ * ohne aktuelle Saison und alle Monate außer dem aktuellen aus.
  */
 import { useMemo, useState } from "react";
 import {
   AVAILABILITY_ORDER,
   MONTHS,
   availabilityByWeekFor,
+  coversWeek,
   entryIsGerman,
+  originCountries,
   saisonModel,
   type AvailabilityKey,
   type CategoryKey,
@@ -28,18 +36,25 @@ const d = dict.seasonCalendar;
 
 const CATEGORY_ORDER: CategoryKey[] = ["obst", "gemuese", "nuss"];
 
+/** Sichtbarer Wochenausschnitt (normal 1–52, im Saison-Modus nur 1 Monat). */
+type WeekWindow = { from: number; to: number };
+const FULL_YEAR: WeekWindow = { from: 1, to: 52 };
+
 type Segment = { start: number; len: number; kind: AvailabilityKey };
 
-/** Wochenraster (52 × Vorhaltung|null) → zusammenhängende Farbsegmente. */
-function toBarSegments(weeks: Array<AvailabilityKey | null>): Segment[] {
+/** Wochenraster (52 × Vorhaltung|null) → Farbsegmente, auf window geclippt. */
+function toBarSegments(
+  weeks: Array<AvailabilityKey | null>,
+  window: WeekWindow,
+): Segment[] {
   const out: Segment[] = [];
   let current: Segment | null = null;
-  for (let i = 0; i < 52; i++) {
-    const kind = weeks[i];
+  for (let w = window.from; w <= window.to; w++) {
+    const kind = weeks[w - 1];
     if (kind && current && current.kind === kind) {
       current.len++;
     } else if (kind) {
-      current = { start: i + 1, len: 1, kind };
+      current = { start: w, len: 1, kind };
       out.push(current);
     } else {
       current = null;
@@ -51,54 +66,64 @@ function toBarSegments(weeks: Array<AvailabilityKey | null>): Segment[] {
 function Track({
   weeks,
   currentWeek,
+  window,
 }: {
   weeks: Array<AvailabilityKey | null>;
   currentWeek: number;
+  window: WeekWindow;
 }) {
+  const len = window.to - window.from + 1;
   return (
     <div className="sk-track" aria-hidden>
-      {toBarSegments(weeks).map((seg) => (
+      {toBarSegments(weeks, window).map((seg) => (
         <span
           key={`${seg.start}-${seg.kind}`}
           className={`sk-seg sk-seg--${seg.kind}`}
           style={{
-            left: `calc(${seg.start - 1} * 100% / 52)`,
-            width: `calc(${seg.len} * 100% / 52)`,
+            left: `calc(${seg.start - window.from} * 100% / ${len})`,
+            width: `calc(${seg.len} * 100% / ${len})`,
           }}
         />
       ))}
-      <span
-        className="sk-now"
-        style={{ left: `calc(${currentWeek - 0.5} * 100% / 52)` }}
-      />
+      {currentWeek >= window.from && currentWeek <= window.to && (
+        <span
+          className="sk-now"
+          style={{
+            left: `calc(${currentWeek - window.from + 0.5} * 100% / ${len})`,
+          }}
+        />
+      )}
     </div>
   );
 }
 
-/** Wochen eines Eintrags als Text für Screenreader („KW 20–31, KW 32–35"). */
-function weeksAsText(entry: SeasonEntry): string {
-  const spans: string[] = [];
-  for (const window of [entry.season, entry.secondSeason]) {
-    if (!window) continue;
-    spans.push(`KW ${window.fromWeek}–${window.toWeek}`);
-  }
-  return spans.join(", ");
+/** Fußnoten-Ziffern (klein, hochgestellt) für eine Nummernliste. */
+function FootnoteMarks({ numbers }: { numbers: number[] }) {
+  if (numbers.length === 0) return null;
+  return <sup className="sk-fn">{numbers.join(" ")}</sup>;
 }
 
 function SubRow({
   entry,
   currentWeek,
+  window,
+  footnote,
+  nested = false,
 }: {
   entry: SeasonEntry;
   currentWeek: number;
+  window: WeekWindow;
+  footnote: number | undefined;
+  nested?: boolean;
 }) {
   const weeks = useMemo(() => availabilityByWeekFor([entry]), [entry]);
   const quality = saisonModel.enums.dataQuality[entry.dataQuality]?.de;
   return (
-    <div className="sk-sub sk-rowgrid">
+    <div className={`sk-sub sk-rowgrid${nested ? " sk-sub--nested" : ""}`}>
       <div className="sk-name">
         <span className="sk-sub-label">
-        {entry.variety ?? entry.availabilityLabel}
+          {entry.variety ?? entry.availabilityLabel}
+          {footnote !== undefined && <FootnoteMarks numbers={[footnote]} />}
         </span>
         <span className="sk-sub-origin">
           {entry.origin}
@@ -106,30 +131,99 @@ function SubRow({
         </span>
       </div>
       <div>
-        <Track weeks={weeks} currentWeek={currentWeek} />
-        <p className="sk-sub-meta">
-          <span className="sr-only">{weeksAsText(entry)} — </span>
-          {quality} · {d.sourcePrefix} {entry.source}
-        </p>
+        <Track weeks={weeks} currentWeek={currentWeek} window={window} />
+        <p className="sk-sub-meta">{quality}</p>
       </div>
     </div>
   );
 }
 
-function ProductRow({
-  product,
+/** Zuklappbare Sammelzeile für alle Nicht-Deutschland-Einträge. */
+function ImportGroupRow({
   entries,
   currentWeek,
+  window,
   open,
   onToggle,
+  footnoteFor,
 }: {
-  product: SeasonProduct;
   entries: SeasonEntry[];
   currentWeek: number;
+  window: WeekWindow;
   open: boolean;
   onToggle: () => void;
+  footnoteFor: (entry: SeasonEntry) => number | undefined;
 }) {
   const weeks = useMemo(() => availabilityByWeekFor(entries), [entries]);
+  const countries = originCountries(entries);
+  return (
+    <>
+      <button
+        type="button"
+        className="sk-sub sk-agg"
+        aria-expanded={open}
+        onClick={onToggle}
+      >
+        <span className="sk-rowgrid">
+          <span className="sk-name">
+            <span className="sk-sub-label">{d.importGroup}</span>
+            <span className="sk-sub-origin">
+              {d.fromCountries(countries.length)}
+            </span>
+          </span>
+          <Track weeks={weeks} currentWeek={currentWeek} window={window} />
+        </span>
+      </button>
+      {open &&
+        entries.map((entry, i) => (
+          <SubRow
+            key={i}
+            entry={entry}
+            currentWeek={currentWeek}
+            window={window}
+            footnote={footnoteFor(entry)}
+            nested
+          />
+        ))}
+    </>
+  );
+}
+
+type VisibleProduct = {
+  product: SeasonProduct;
+  /** Alle sichtbaren Einträge (für Balken + Länderzahl). */
+  entries: SeasonEntry[];
+  /** Deutschland-Einträge (einzeln gelistet). */
+  german: SeasonEntry[];
+  /** Nicht-Deutschland-Einträge (als „Import“-Aggregat). */
+  foreign: SeasonEntry[];
+  countries: number;
+  footnotes: number[];
+};
+
+function ProductRow({
+  item,
+  currentWeek,
+  window,
+  open,
+  importOpen,
+  onToggle,
+  onToggleImport,
+  footnoteFor,
+}: {
+  item: VisibleProduct;
+  currentWeek: number;
+  window: WeekWindow;
+  open: boolean;
+  importOpen: boolean;
+  onToggle: () => void;
+  onToggleImport: () => void;
+  footnoteFor: (entry: SeasonEntry) => number | undefined;
+}) {
+  const weeks = useMemo(
+    () => availabilityByWeekFor(item.entries),
+    [item.entries],
+  );
   return (
     <div>
       <button
@@ -140,19 +234,40 @@ function ProductRow({
       >
         <span className="sk-rowgrid">
           <span className="sk-name sk-pname">
-            <span>{product.name}</span>
-            <span className="sk-count" title={d.entriesCount(entries.length)}>
-              {entries.length}
+            <span>
+              {item.product.name}
+              <FootnoteMarks numbers={item.footnotes} />
             </span>
+            {item.countries > 1 && (
+              <span className="sk-count">
+                {d.fromCountries(item.countries)}
+              </span>
+            )}
           </span>
-          <Track weeks={weeks} currentWeek={currentWeek} />
+          <Track weeks={weeks} currentWeek={currentWeek} window={window} />
         </span>
       </button>
       {open && (
         <div>
-          {entries.map((entry, i) => (
-            <SubRow key={i} entry={entry} currentWeek={currentWeek} />
+          {item.german.map((entry, i) => (
+            <SubRow
+              key={i}
+              entry={entry}
+              currentWeek={currentWeek}
+              window={window}
+              footnote={footnoteFor(entry)}
+            />
           ))}
+          {item.foreign.length > 0 && (
+            <ImportGroupRow
+              entries={item.foreign}
+              currentWeek={currentWeek}
+              window={window}
+              open={importOpen}
+              onToggle={onToggleImport}
+              footnoteFor={footnoteFor}
+            />
+          )}
         </div>
       )}
     </div>
@@ -166,7 +281,11 @@ export function SeasonCalendar({ currentWeek }: { currentWeek: number }) {
     () => new Set(AVAILABILITY_ORDER),
   );
   const [otherOrigins, setOtherOrigins] = useState(false);
+  const [onlySeason, setOnlySeason] = useState(false);
   const [openIds, setOpenIds] = useState<Set<string>>(() => new Set());
+  const [openImportIds, setOpenImportIds] = useState<Set<string>>(
+    () => new Set(),
+  );
 
   const toggleAvailability = (key: AvailabilityKey) =>
     setAvailability((prev) => {
@@ -176,19 +295,32 @@ export function SeasonCalendar({ currentWeek }: { currentWeek: number }) {
       return next;
     });
 
-  const toggleOpen = (id: string) =>
-    setOpenIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+  const toggleIn =
+    (setter: React.Dispatch<React.SetStateAction<Set<string>>>) =>
+    (id: string) =>
+      setter((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+      });
+  const toggleOpen = toggleIn(setOpenIds);
+  const toggleImportOpen = toggleIn(setOpenImportIds);
 
-  // Produkte + je Produkt die nach Filtern sichtbaren Einträge.
-  const visible = useMemo(() => {
+  // Saison-Modus: nur der aktuelle Monat bleibt als Zeitachse sichtbar.
+  const window: WeekWindow = useMemo(() => {
+    if (!onlySeason) return FULL_YEAR;
+    const month = MONTHS.find(
+      (m) => currentWeek >= m.fromWeek && currentWeek <= m.toWeek,
+    );
+    return month ? { from: month.fromWeek, to: month.toWeek } : FULL_YEAR;
+  }, [onlySeason, currentWeek]);
+
+  // Produkte + je Produkt die nach Filtern sichtbaren Einträge, gruppiert
+  // nach Kategorie; dazu die Fußnoten-Nummerierung in Anzeige-Reihenfolge.
+  const { groups, sources, numberOf, visibleCount } = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const result: Array<{ product: SeasonProduct; entries: SeasonEntry[] }> =
-      [];
+    const visible: VisibleProduct[] = [];
     for (const product of saisonModel.products) {
       if (category !== "alle" && product.category !== category) continue;
       if (
@@ -203,32 +335,80 @@ export function SeasonCalendar({ currentWeek }: { currentWeek: number }) {
         continue;
       const entries = product.entries.filter(
         (e) =>
-          (otherOrigins || entryIsGerman(e)) && availability.has(e.availability),
+          (otherOrigins || entryIsGerman(e)) &&
+          availability.has(e.availability),
       );
       if (entries.length === 0) continue;
-      // Deutschland zuerst, dann nach Vorhaltungs-Priorität, dann Sorte.
-      entries.sort((a, b) => {
-        const german = Number(entryIsGerman(b)) - Number(entryIsGerman(a));
-        if (german !== 0) return german;
+      if (
+        onlySeason &&
+        !entries.some(
+          (e) =>
+            coversWeek(e.season, currentWeek) ||
+            coversWeek(e.secondSeason, currentWeek),
+        )
+      )
+        continue;
+      const byPriority = (a: SeasonEntry, b: SeasonEntry) => {
         const avail =
           AVAILABILITY_ORDER.indexOf(a.availability) -
           AVAILABILITY_ORDER.indexOf(b.availability);
         if (avail !== 0) return avail;
-        return (a.variety ?? "").localeCompare(b.variety ?? "", "de");
+        const variety = (a.variety ?? "").localeCompare(b.variety ?? "", "de");
+        if (variety !== 0) return variety;
+        return a.origin.localeCompare(b.origin, "de");
+      };
+      const german = entries.filter(entryIsGerman).sort(byPriority);
+      const foreign = entries.filter((e) => !entryIsGerman(e)).sort(byPriority);
+      visible.push({
+        product,
+        entries,
+        german,
+        foreign,
+        countries: originCountries(entries).length,
+        footnotes: [],
       });
-      result.push({ product, entries });
     }
-    return result;
-  }, [query, category, availability, otherOrigins]);
 
-  const categoryLabel = (key: CategoryKey) =>
-    d.categories[key] ?? saisonModel.enums.category[key].de;
+    const groups = CATEGORY_ORDER.map((key) => ({
+      key,
+      label: d.categories[key] ?? saisonModel.enums.category[key].de,
+      items: visible.filter(({ product }) => product.category === key),
+    })).filter((g) => g.items.length > 0);
 
-  const groups = CATEGORY_ORDER.map((key) => ({
-    key,
-    label: categoryLabel(key),
-    items: visible.filter(({ product }) => product.category === key),
-  })).filter((g) => g.items.length > 0);
+    // Fußnoten: Quelltexte in Anzeige-Reihenfolge durchnummerieren.
+    const numberOf = new Map<string, number>();
+    const sources: string[] = [];
+    for (const group of groups) {
+      for (const item of group.items) {
+        const own = new Set<number>();
+        for (const entry of [...item.german, ...item.foreign]) {
+          let n = numberOf.get(entry.source);
+          if (n === undefined) {
+            n = sources.length + 1;
+            numberOf.set(entry.source, n);
+            sources.push(entry.source);
+          }
+          own.add(n);
+        }
+        item.footnotes = [...own].sort((a, b) => a - b);
+      }
+    }
+
+    return {
+      groups,
+      sources,
+      numberOf,
+      visibleCount: visible.length,
+    };
+  }, [query, category, availability, otherOrigins, onlySeason, currentWeek]);
+
+  // Nummern-Lookup für Untereinträge (aus der Memo-Berechnung abgeleitet).
+  const footnoteFor = (entry: SeasonEntry): number | undefined =>
+    numberOf.get(entry.source);
+
+  const monthsInWindow = MONTHS.filter(
+    (m) => m.toWeek >= window.from && m.fromWeek <= window.to,
+  );
 
   return (
     <div className="mt-6 flex flex-col gap-4">
@@ -245,6 +425,14 @@ export function SeasonCalendar({ currentWeek }: { currentWeek: number }) {
           placeholder={d.searchPlaceholder}
           className="w-64 max-w-full border border-ink-soft/30 bg-white px-3 py-1.5 text-sm"
         />
+        <button
+          type="button"
+          className="sk-chip"
+          aria-pressed={onlySeason}
+          onClick={() => setOnlySeason((v) => !v)}
+        >
+          {d.onlySeason}
+        </button>
         <span
           className="ml-auto text-xs text-ink-soft"
           title={d.currentWeekLabel}
@@ -269,7 +457,7 @@ export function SeasonCalendar({ currentWeek }: { currentWeek: number }) {
             aria-pressed={category === key}
             onClick={() => setCategory(key)}
           >
-            {categoryLabel(key)}
+            {d.categories[key] ?? saisonModel.enums.category[key].de}
           </button>
         ))}
         <span aria-hidden className="text-ink/20">
@@ -299,24 +487,37 @@ export function SeasonCalendar({ currentWeek }: { currentWeek: number }) {
       </div>
 
       <p className="text-xs text-ink-soft">
-        {d.resultCount(visible.length, saisonModel.products.length)} ·{" "}
+        {d.resultCount(visibleCount, saisonModel.products.length)} ·{" "}
         {d.aboutHint}
       </p>
 
-      {visible.length === 0 ? (
+      {visibleCount === 0 ? (
         <p className="bg-white p-5 text-ink-soft shadow-sm">{d.noResults}</p>
       ) : (
         <div className="sk-scroll shadow-sm">
-          <div className="sk-grid">
+          <div
+            className={`sk-grid${onlySeason ? " sk-grid--month" : ""}`}
+            style={
+              {
+                "--sk-weeks": window.to - window.from + 1,
+              } as React.CSSProperties
+            }
+          >
             {/* Monatskopf */}
             <div className="sk-head sk-rowgrid">
               <div className="sk-name" />
               <div className="sk-months">
-                {MONTHS.map((m) => (
+                {monthsInWindow.map((m) => (
                   <span
                     key={m.label}
                     className="sk-month"
-                    style={{ gridColumn: `span ${m.toWeek - m.fromWeek + 1}` }}
+                    style={{
+                      gridColumn: `span ${
+                        Math.min(m.toWeek, window.to) -
+                        Math.max(m.fromWeek, window.from) +
+                        1
+                      }`,
+                    }}
                   >
                     {m.label}
                   </span>
@@ -331,20 +532,37 @@ export function SeasonCalendar({ currentWeek }: { currentWeek: number }) {
                     <div />
                   </div>
                 )}
-                {group.items.map(({ product, entries }) => (
+                {group.items.map((item) => (
                   <ProductRow
-                    key={product.id}
-                    product={product}
-                    entries={entries}
+                    key={item.product.id}
+                    item={item}
                     currentWeek={currentWeek}
-                    open={openIds.has(product.id)}
-                    onToggle={() => toggleOpen(product.id)}
+                    window={window}
+                    open={openIds.has(item.product.id)}
+                    importOpen={openImportIds.has(item.product.id)}
+                    onToggle={() => toggleOpen(item.product.id)}
+                    onToggleImport={() => toggleImportOpen(item.product.id)}
+                    footnoteFor={footnoteFor}
                   />
                 ))}
               </div>
             ))}
           </div>
         </div>
+      )}
+
+      {/* Quellenverzeichnis zu den Fußnoten-Ziffern */}
+      {sources.length > 0 && (
+        <section className="bg-white p-5 shadow-sm">
+          <h2 className="font-display text-base font-bold">{d.sourcesTitle}</h2>
+          <ol className="sk-sources">
+            {sources.map((source, i) => (
+              <li key={i} value={i + 1}>
+                {source}
+              </li>
+            ))}
+          </ol>
+        </section>
       )}
     </div>
   );
