@@ -72,17 +72,33 @@ function MetaChip({
   );
 }
 
-/** „Ähnliche Rezepte selbst machen" — bis zu 3 Kacheln unterm Gericht. */
+/** Platzhalter, wenn ein Vorschlags-Rezept (noch) kein Bild hat — dezentes
+ *  Symbol statt einer großen leeren Fläche. */
+function TilePlaceholder() {
+  return (
+    <span
+      aria-hidden
+      className="flex aspect-[4/3] w-full items-center justify-center bg-cream-deep text-ink-soft/40"
+    >
+      <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M4 3v7a3 3 0 0 0 3 3v8M7 3v6M10 3v6M18 3c-1.5 0-2.5 2-2.5 5s1 4 2.5 4v9" />
+      </svg>
+    </span>
+  );
+}
+
+/** „Ähnliche Rezepte selbst machen" — bis zu 3 Kacheln, unterhalb (nicht
+ *  innerhalb) der grauen Gericht-Box. */
 function SimilarRecipeTiles({ recipes }: { recipes: RecipeCardData[] }) {
   if (recipes.length === 0) return null;
   return (
-    <div className="mt-4">
-      <h5 className="mb-2 text-xs font-bold uppercase tracking-wider text-ink">
+    <div className="border-t border-ink/10 pt-4">
+      <h5 className="mb-3 text-xs font-bold uppercase tracking-wider text-ink-soft">
         {dict.travelList.similarTitle}
       </h5>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {recipes.map((rec) => (
-          <div key={rec.slug} className="bg-white shadow-sm">
+          <div key={rec.slug} className="overflow-hidden bg-white shadow-sm">
             {/* Bild als Link zum Rezept */}
             <Link href={`/rezepte/${rec.slug}`} aria-label={rec.title}>
               {rec.image ? (
@@ -92,7 +108,7 @@ function SimilarRecipeTiles({ recipes }: { recipes: RecipeCardData[] }) {
                   className="aspect-[4/3] w-full object-cover"
                 />
               ) : (
-                <span aria-hidden className="block aspect-[4/3] bg-cream" />
+                <TilePlaceholder />
               )}
             </Link>
             <div className="p-3">
@@ -103,7 +119,9 @@ function SimilarRecipeTiles({ recipes }: { recipes: RecipeCardData[] }) {
                 {rec.title}
               </Link>
               {rec.teaser && (
-                <p className="mt-1 text-xs text-ink-soft">{rec.teaser}</p>
+                <p className="mt-1 line-clamp-2 text-xs text-ink-soft">
+                  {rec.teaser}
+                </p>
               )}
             </div>
           </div>
@@ -121,60 +139,62 @@ function DishItem({
   similar: RecipeCardData[];
 }) {
   return (
-    <li
-      id={`dish-${dish.id}`}
-      className="flex flex-col gap-4 bg-cream/60 p-4 sm:flex-row"
-    >
-      {dish.images[0] && (
-        <div className="sm:w-44 sm:shrink-0">
-          <ResponsiveImg
-            image={dish.images[0]}
-            sizes="(max-width: 640px) 100vw, 176px"
-            className="aspect-[4/3] w-full object-cover"
-          />
+    <li id={`dish-${dish.id}`} className="flex flex-col gap-4">
+      {/* Graue Box: nur das Gericht selbst (Bild, Name, Chips, Zutaten) */}
+      <div className="flex flex-col gap-4 bg-cream/60 p-4 sm:flex-row">
+        {dish.images[0] && (
+          <div className="sm:w-44 sm:shrink-0">
+            <ResponsiveImg
+              image={dish.images[0]}
+              sizes="(max-width: 640px) 100vw, 176px"
+              className="aspect-[4/3] w-full object-cover"
+            />
+          </div>
+        )}
+        <div className="min-w-0 grow">
+          <h4 className="font-semibold">{dish.name}</h4>
+          {(dish.categories.length > 0 || dish.dietTypes.length > 0) && (
+            <p className="mt-1.5 flex flex-wrap gap-1.5">
+              {dish.categories.map((c) => (
+                <span
+                  key={`k-${c.id}`}
+                  className="border border-leaf px-2 py-0.5 text-[0.68rem] font-semibold uppercase tracking-wide text-leaf"
+                >
+                  {c.name}
+                </span>
+              ))}
+              {dish.dietTypes.map((dt) => (
+                <span
+                  key={`e-${dt.id}`}
+                  className="bg-leaf px-2 py-0.5 text-[0.68rem] font-semibold uppercase tracking-wide text-white"
+                >
+                  {dt.name}
+                </span>
+              ))}
+            </p>
+          )}
+          {dish.description && (
+            <div
+              className="prose-content mt-1 text-sm text-ink-soft"
+              dangerouslySetInnerHTML={{
+                __html: renderMarkdown(dish.description),
+              }}
+            />
+          )}
+          {dish.ingredients.length > 0 && (
+            <p className="mt-2 flex items-center gap-1.5 text-xs text-ink-soft">
+              <IconTag className="h-3.5 w-3.5" />
+              <strong className="font-semibold text-ink">
+                {dict.travelList.dishIngredients}:
+              </strong>{" "}
+              {dish.ingredients.map((i) => i.name).join(", ")}
+            </p>
+          )}
         </div>
-      )}
-      <div className="min-w-0 grow">
-        <h4 className="font-semibold">{dish.name}</h4>
-        {(dish.categories.length > 0 || dish.dietTypes.length > 0) && (
-          <p className="mt-1.5 flex flex-wrap gap-1.5">
-            {dish.categories.map((c) => (
-              <span
-                key={`k-${c.id}`}
-                className="border border-leaf px-2 py-0.5 text-[0.68rem] font-semibold uppercase tracking-wide text-leaf"
-              >
-                {c.name}
-              </span>
-            ))}
-            {dish.dietTypes.map((dt) => (
-              <span
-                key={`e-${dt.id}`}
-                className="bg-leaf px-2 py-0.5 text-[0.68rem] font-semibold uppercase tracking-wide text-white"
-              >
-                {dt.name}
-              </span>
-            ))}
-          </p>
-        )}
-        {dish.description && (
-          <div
-            className="prose-content mt-1 text-sm text-ink-soft"
-            dangerouslySetInnerHTML={{
-              __html: renderMarkdown(dish.description),
-            }}
-          />
-        )}
-        {dish.ingredients.length > 0 && (
-          <p className="mt-2 flex items-center gap-1.5 text-xs text-ink-soft">
-            <IconTag className="h-3.5 w-3.5" />
-            <strong className="font-semibold text-ink">
-              {dict.travelList.dishIngredients}:
-            </strong>{" "}
-            {dish.ingredients.map((i) => i.name).join(", ")}
-          </p>
-        )}
-        <SimilarRecipeTiles recipes={similar} />
       </div>
+
+      {/* Rezept-Vorschläge: außerhalb der grauen Box, klar zugeordnet */}
+      <SimilarRecipeTiles recipes={similar} />
     </li>
   );
 }
