@@ -692,11 +692,14 @@ html {
   }
 }
 
-/* Balkenspur: 52 Wochen, dezente Wochenlinien, Monatslinien etwas kräftiger */
+/* Balkenspur: 52 Wochen, dezente Wochenlinien, Monatslinien etwas kräftiger.
+   Unter dem Balken liegt die KW-Zone (Lineal-Ticks + Wochenzahlen an den
+   Saisonrändern) — daher höher als der Balken selbst. */
 .sk-track {
   position: relative;
-  height: 26px;
+  height: 41px;
   margin: 0;
+  overflow: hidden;
   /* --sk-weeks kommt vom Grid-Container: 52 im Jahresmodus, 4–5 im
      „Jetzt in Saison"-Monatsmodus. */
   background-image: repeating-linear-gradient(
@@ -710,7 +713,40 @@ html {
 .sk-seg {
   position: absolute;
   top: 6px;
-  bottom: 6px;
+  bottom: 21px;
+}
+
+/* KW-Beschriftung der Saisonränder: Tick-Strich (verlängert die Balken-
+   kante nach unten) + Wochenzahl darunter */
+.sk-tick {
+  position: absolute;
+  bottom: 12px;
+  width: 1px;
+  height: 9px;
+  background: var(--color-ink-soft);
+  opacity: 0.55;
+}
+.sk-tick--end {
+  margin-left: -1px;
+}
+.sk-kw {
+  position: absolute;
+  bottom: 1px;
+  font-size: 0.56rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--color-ink-soft);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.sk-kw--start {
+  transform: translateX(-2px);
+}
+.sk-kw--end {
+  transform: translateX(-100%) translateX(2px);
+}
+.sk-kw--merged {
+  transform: translateX(-50%);
 }
 .sk-seg--freiland {
   background: var(--sk-freiland);
@@ -727,7 +763,7 @@ html {
 .sk-now {
   position: absolute;
   top: 0;
-  bottom: 0;
+  bottom: 12px; /* endet über den KW-Zahlen */
   width: 2px;
   margin-left: -1px;
   background: var(--color-ink);
@@ -760,11 +796,14 @@ html {
   white-space: nowrap;
 }
 .sk-sub .sk-track {
-  height: 22px;
+  height: 36px;
 }
 .sk-sub .sk-seg {
   top: 5px;
-  bottom: 5px;
+  bottom: 19px;
+}
+.sk-sub .sk-tick {
+  height: 7px;
 }
 
 /* „Import"-Sammelzeile: zuklappbar wie die Produktzeile, eine Ebene tiefer */
@@ -822,11 +861,14 @@ html {
   white-space: nowrap;
 }
 .sk-origin-line .sk-track {
-  height: 18px;
+  height: 32px;
 }
 .sk-origin-line .sk-seg {
   top: 3px;
-  bottom: 3px;
+  bottom: 17px;
+}
+.sk-origin-line .sk-tick {
+  height: 5px;
 }
 
 @media (max-width: 640px) {

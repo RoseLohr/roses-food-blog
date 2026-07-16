@@ -7,6 +7,7 @@ import {
   entryIsGerman,
   originCountries,
   saisonModel,
+  seasonRuns,
   suggestSeason,
   toSegments,
   type SeasonEntry,
@@ -100,6 +101,49 @@ describe("availabilityByWeekFor", () => {
     expect(weeks[0]).toBe("lager"); // KW 1
     expect(weeks[4]).toBeNull(); // KW 5
     expect(weeks[30]).toBe("lager"); // KW 31
+  });
+});
+
+describe("seasonRuns (KW-Beschriftung der Saisonränder)", () => {
+  it("fasst angrenzende Vorhaltungen zu einem Abschnitt zusammen", () => {
+    const weeks = availabilityByWeekFor([
+      entry({
+        availability: "gewaechshaus",
+        season: { fromWeek: 14, toWeek: 17, wrapsYear: false },
+      }),
+      entry({
+        availability: "freiland",
+        season: { fromWeek: 18, toWeek: 35, wrapsYear: false },
+      }),
+    ]);
+    expect(seasonRuns(weeks)).toEqual([{ start: 14, end: 35 }]);
+  });
+
+  it("trennt Abschnitte an Lücken und am Jahreswechsel", () => {
+    const weeks = availabilityByWeekFor([
+      entry({
+        availability: "lager",
+        season: { fromWeek: 45, toWeek: 12, wrapsYear: true },
+      }),
+      entry({
+        availability: "freiland",
+        season: { fromWeek: 20, toWeek: 30, wrapsYear: false },
+      }),
+    ]);
+    // Umlaufende Saison = zwei sichtbare Abschnitte (1–12 und 45–52)
+    expect(seasonRuns(weeks)).toEqual([
+      { start: 1, end: 12 },
+      { start: 20, end: 30 },
+      { start: 45, end: 52 },
+    ]);
+  });
+
+  it("leeres Raster und Ganzjahres-Saison", () => {
+    expect(seasonRuns(Array.from({ length: 52 }, () => null))).toEqual([]);
+    const yearRound = availabilityByWeekFor([
+      entry({ season: { fromWeek: 1, toWeek: 52, wrapsYear: false } }),
+    ]);
+    expect(seasonRuns(yearRound)).toEqual([{ start: 1, end: 52 }]);
   });
 });
 

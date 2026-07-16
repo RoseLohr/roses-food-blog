@@ -213,6 +213,9 @@ export const de = {
     showOtherOrigins: "Auch andere Herkunftsländer anzeigen",
     currentWeekLabel: "Aktuelle Kalenderwoche",
     currentWeekShort: (n: number) => `KW ${n}`,
+    /** Beschriftung der Saisonränder unter den Balken */
+    weekShort: (n: number) => `KW ${n}`,
+    weekRangeShort: (from: number, to: number) => `KW ${from}–${to}`,
     resultCount: (n: number, total: number) =>
       `${n} von ${total} Produkten`,
     entriesCount: (n: number) => (n === 1 ? "1 Eintrag" : `${n} Einträge`),

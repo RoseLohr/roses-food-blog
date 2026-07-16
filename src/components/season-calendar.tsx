@@ -11,11 +11,13 @@
  *
  * Quellen erscheinen als kleine Fußnoten-Ziffern am Produkt und an den
  * Untereinträgen; das Verzeichnis mit den Texten steht unter dem Kalender.
+ * Unter jedem Balken markieren feine Striche mit Kalenderwoche („KW 14")
+ * Beginn und Ende jedes Saisonabschnitts.
  * Alle Nicht-Deutschland-Einträge eines Produkts sind zu einer zuklappbaren
  * „Import“-Sammelzeile aggregiert. „Jetzt in Saison“ blendet alle Produkte
  * ohne aktuelle Saison und alle Monate außer dem aktuellen aus.
  */
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import {
   AVAILABILITY_ORDER,
   MONTHS,
@@ -24,6 +26,7 @@ import {
   entryIsGerman,
   originCountries,
   saisonModel,
+  seasonRuns,
   type AvailabilityKey,
   type CategoryKey,
   type SeasonEntry,
@@ -63,6 +66,79 @@ function toBarSegments(
   return out;
 }
 
+/** Unter dieser Abschnittslänge (Wochen) bekommen Beginn und Ende eine
+ *  kombinierte Beschriftung („KW 12–17") statt zwei einzelner Zahlen. */
+const KW_MERGE_BELOW = 8;
+
+/**
+ * KW-Beschriftung der Saisonränder („Lineal-Ticks"): feine Striche ziehen
+ * Beginn und Ende jedes zusammenhängenden Abschnitts unter den Balken,
+ * darunter steht die Kalenderwoche. Im Monatsmodus werden nur echte
+ * Saisonränder beschriftet, die im sichtbaren Fenster liegen — an der
+ * Schnittkante steht keine Zahl.
+ */
+function WeekEdgeLabels({
+  weeks,
+  window,
+}: {
+  weeks: Array<AvailabilityKey | null>;
+  window: WeekWindow;
+}) {
+  const len = window.to - window.from + 1;
+  /** Linke Kante einer KW als Prozentposition im Fenster. */
+  const x = (week: number) => `calc(${week - window.from} * 100% / ${len})`;
+  return (
+    <>
+      {seasonRuns(weeks).map((run) => {
+        const startVisible = run.start >= window.from && run.start <= window.to;
+        const endVisible = run.end >= window.from && run.end <= window.to;
+        if (!startVisible && !endVisible) return null;
+        const short = run.end - run.start + 1 < KW_MERGE_BELOW;
+        return (
+          <Fragment key={run.start}>
+            {startVisible && (
+              <span className="sk-tick" style={{ left: x(run.start) }} />
+            )}
+            {endVisible && (
+              <span
+                className="sk-tick sk-tick--end"
+                style={{ left: x(run.end + 1) }}
+              />
+            )}
+            {startVisible && endVisible && short ? (
+              <span
+                className="sk-kw sk-kw--merged"
+                style={{
+                  left: `calc(${
+                    run.start - window.from + (run.end - run.start + 1) / 2
+                  } * 100% / ${len})`,
+                }}
+              >
+                {run.start === run.end
+                  ? d.weekShort(run.start)
+                  : d.weekRangeShort(run.start, run.end)}
+              </span>
+            ) : (
+              <>
+                {startVisible && (
+                  <span className="sk-kw sk-kw--start" style={{ left: x(run.start) }}>
+                    {d.weekShort(run.start)}
+                  </span>
+                )}
+                {endVisible && (
+                  <span className="sk-kw sk-kw--end" style={{ left: x(run.end + 1) }}>
+                    {d.weekShort(run.end)}
+                  </span>
+                )}
+              </>
+            )}
+          </Fragment>
+        );
+      })}
+    </>
+  );
+}
+
 function Track({
   weeks,
   currentWeek,
@@ -85,6 +161,7 @@ function Track({
           }}
         />
       ))}
+      <WeekEdgeLabels weeks={weeks} window={window} />
       {currentWeek >= window.from && currentWeek <= window.to && (
         <span
           className="sk-now"

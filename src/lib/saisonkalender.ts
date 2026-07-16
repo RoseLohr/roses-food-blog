@@ -151,6 +151,33 @@ export function availabilityByWeekFor(
   return weeks;
 }
 
+/** Zusammenhängender Saisonabschnitt (über Vorhaltungs-Wechsel hinweg). */
+export type SeasonRun = { start: number; end: number };
+
+/**
+ * Zusammenhängende Saisonabschnitte eines Wochenrasters — Grundlage der
+ * KW-Beschriftung an den Balkenenden. Ein Wechsel der Vorhaltung (z. B.
+ * Freiland → Lager) unterbricht einen Abschnitt nicht; erst eine Lücke
+ * beendet ihn. Läuft eine Saison über den Jahreswechsel, entstehen im
+ * Raster zwei Abschnitte (… –52 und 1– …), die beide beschriftet werden.
+ */
+export function seasonRuns(
+  weeks: Array<AvailabilityKey | null>,
+): SeasonRun[] {
+  const runs: SeasonRun[] = [];
+  let start: number | null = null;
+  for (let w = 1; w <= weeks.length; w++) {
+    if (weeks[w - 1] !== null) {
+      if (start === null) start = w;
+    } else if (start !== null) {
+      runs.push({ start, end: w - 1 });
+      start = null;
+    }
+  }
+  if (start !== null) runs.push({ start, end: weeks.length });
+  return runs;
+}
+
 /* ------------------------------------------------------------------ */
 /* Saison-Vorschlag für den KI-Rezeptimport                            */
 /* ------------------------------------------------------------------ */
