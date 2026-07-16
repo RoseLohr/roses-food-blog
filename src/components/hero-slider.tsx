@@ -3,7 +3,7 @@
 /**
  * Startseiten-Hero im Tiny-Salt-Look („slider-style-2"):
  * - Vollflächiges Bild mit dunklem Overlay, mittig Kategorie (grün),
- *   Playfair-Titel und Like-Meta.
+ *   Überschriften-Titel und Like-Meta.
  * - Runde Vor/Zurück-Pfeile.
  * - Darunter eine synchronisierte Thumbnail-Leiste (aktives Bild hell mit
  *   weißem Rahmen, inaktive abgedunkelt), die den Rand überlappt.

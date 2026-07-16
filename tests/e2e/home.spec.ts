@@ -20,13 +20,13 @@ test.describe("Öffentliche Startseite — Tiny-Salt-Optik", () => {
     ).toBeVisible();
   });
 
-  test("Überschriften nutzen Playfair Display", async ({ page }) => {
+  test("Überschriften nutzen Raleway (serifenlos)", async ({ page }) => {
     await page.goto("/");
     const ff = await page
       .locator("section.featured-slider h2")
       .first()
       .evaluate((el) => getComputedStyle(el).fontFamily);
-    expect(ff).toContain("Playfair Display");
+    expect(ff).toContain("Raleway");
   });
 
   test("Fließtext nutzt Nunito Sans", async ({ page }) => {

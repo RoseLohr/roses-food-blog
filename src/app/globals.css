@@ -1,16 +1,16 @@
 @import "tailwindcss";
 
-/* Selbst gehostete Webfonts (Tiny-Salt-Look): Playfair Display für
-   Überschriften, Nunito Sans für Fließtext. Variable Fonts, latin-Subset
-   (deckt deutsche Umlaute ab). Ausgeliefert vom eigenen Origin unter
-   /fonts — keine externen CDNs, kein Font-Download zur Laufzeit (Annahme
-   B19). font-display: swap hält den Text sofort sichtbar. */
+/* Selbst gehostete Webfonts: Raleway (serifenlos) für Überschriften,
+   Nunito Sans für Fließtext. Variable Fonts, latin-Subset (deckt deutsche
+   Umlaute ab). Ausgeliefert vom eigenen Origin unter /fonts — keine externen
+   CDNs, kein Font-Download zur Laufzeit (Annahme B19). font-display: swap hält
+   den Text sofort sichtbar. Raleway steht unter der SIL Open Font License. */
 @font-face {
-  font-family: "Playfair Display";
+  font-family: "Raleway";
   font-style: normal;
   font-weight: 400 900;
   font-display: swap;
-  src: url("/fonts/playfair-display.woff2") format("woff2");
+  src: url("/fonts/raleway.woff2") format("woff2");
 }
 @font-face {
   font-family: "Nunito Sans";
@@ -23,8 +23,8 @@
 @theme {
   --font-sans: "Nunito Sans", ui-sans-serif, system-ui, -apple-system,
     "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-display: "Playfair Display", "Iowan Old Style", "Palatino Linotype",
-    Palatino, Georgia, ui-serif, serif;
+  --font-display: "Raleway", ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 
   /* Tiny-Salt-Palette: grüner Akzent (#4FD675 → Teal #4FD6C8),
      tiefes Tinten­schwarz, weicher Grau-Fließtext, weißer Grund.
