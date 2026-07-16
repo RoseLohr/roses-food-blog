@@ -1,0 +1,645 @@
+{
+  "catalogue_version": "1.0",
+  "commit": "ad3ff31",
+  "count": 79,
+  "tally": {
+    "PARTIAL": 32,
+    "FAIL": 32,
+    "N/A": 12,
+    "NO-EVIDENCE": 3
+  },
+  "findings": [
+    {
+      "id": "B-06",
+      "priority": 10,
+      "band": "STOP-SHIP",
+      "verdict": "PARTIAL",
+      "evidence": ".env nicht im Git; keine Secret-Literale; aber keine Rotation/History-Scan/CI",
+      "standing_control": null
+    },
+    {
+      "id": "A-01",
+      "priority": 9,
+      "band": "STOP-SHIP",
+      "verdict": "FAIL",
+      "evidence": "kein deterministisches Merge/Deploy-Gate, keine CI, Deploy = manuell",
+      "standing_control": null
+    },
+    {
+      "id": "A-39",
+      "priority": 5,
+      "band": "STOP-SHIP",
+      "verdict": "FAIL",
+      "evidence": "kein unabhängiger Verifier/Arbiter (eskaliert mit A-01)",
+      "standing_control": null
+    },
+    {
+      "id": "A-02",
+      "priority": 9,
+      "band": "BLOCKER-1",
+      "verdict": "PARTIAL",
+      "evidence": "28 Testdateien mit echten Assertions; kein Mutation-Gate; nur manuell",
+      "standing_control": null
+    },
+    {
+      "id": "A-06",
+      "priority": 9,
+      "band": "BLOCKER-1",
+      "verdict": "PARTIAL",
+      "evidence": "kleine atomare Commits; Rollback nie geübt/getimt",
+      "standing_control": null
+    },
+    {
+      "id": "A-08",
+      "priority": 9,
+      "band": "BLOCKER-1",
+      "verdict": "FAIL",
+      "evidence": "kein SAST/DAST/SCA/Secret-Scan-Gate, kein SBOM",
+      "standing_control": null
+    },
+    {
+      "id": "A-24",
+      "priority": 9,
+      "band": "BLOCKER-1",
+      "verdict": "FAIL",
+      "evidence": "keine SLOs/Golden-Signals/Auto-Recovery",
+      "standing_control": null
+    },
+    {
+      "id": "B-01",
+      "priority": 9,
+      "band": "BLOCKER-1",
+      "verdict": "FAIL",
+      "evidence": "keine Pipeline; nichts erzwingt Tests",
+      "standing_control": null
+    },
+    {
+      "id": "B-03",
+      "priority": 9,
+      "band": "BLOCKER-1",
+      "verdict": "FAIL",
+      "evidence": "kein OTel; keine korrelierten Logs/Metriken/Traces",
+      "standing_control": null
+    },
+    {
+      "id": "B-04",
+      "priority": 9,
+      "band": "BLOCKER-1",
+      "verdict": "PARTIAL",
+      "evidence": "lockfile pinnt; keine Existenz-/SCA-Gates",
+      "standing_control": null
+    },
+    {
+      "id": "B-11",
+      "priority": 9,
+      "band": "BLOCKER-1",
+      "verdict": "PARTIAL",
+      "evidence": "DB-Backup vor Deploy; Rollback ungeübt, kein Signal",
+      "standing_control": null
+    },
+    {
+      "id": "B-20",
+      "priority": 9,
+      "band": "BLOCKER-1",
+      "verdict": "N/A",
+      "evidence": "kein modellgesteuerter Egress/Tool-Pfad",
+      "standing_control": null
+    },
+    {
+      "id": "B-22",
+      "priority": 9,
+      "band": "BLOCKER-1",
+      "verdict": "N/A",
+      "evidence": "kein Agenten-Runtime",
+      "standing_control": null
+    },
+    {
+      "id": "A-36",
+      "priority": 6,
+      "band": "BLOCKER-1",
+      "verdict": "FAIL",
+      "evidence": "keine Seeded-Defect-Kalibrierung/Catch-Rate (eskaliert)",
+      "standing_control": null
+    },
+    {
+      "id": "A-04",
+      "priority": 8,
+      "band": "BLOCKER-2",
+      "verdict": "FAIL",
+      "evidence": "keine testbaren Akzeptanzkriterien/Spec-Gate",
+      "standing_control": null
+    },
+    {
+      "id": "A-09",
+      "priority": 8,
+      "band": "BLOCKER-2",
+      "verdict": "FAIL",
+      "evidence": "keine ADRs/Fitness-Functions",
+      "standing_control": null
+    },
+    {
+      "id": "A-10",
+      "priority": 8,
+      "band": "BLOCKER-2",
+      "verdict": "PARTIAL",
+      "evidence": "kein Tool-Use + strikte CSP; kein Injektions-Gate",
+      "standing_control": null
+    },
+    {
+      "id": "A-17",
+      "priority": 8,
+      "band": "BLOCKER-2",
+      "verdict": "FAIL",
+      "evidence": "keine NFR-Tabelle mit Zahlen/Tests",
+      "standing_control": null
+    },
+    {
+      "id": "A-22",
+      "priority": 8,
+      "band": "BLOCKER-2",
+      "verdict": "PARTIAL",
+      "evidence": "semantisches HTML/Alt; kein A11y/CWV-Gate (WCAG=EU-Pflicht)",
+      "standing_control": null
+    },
+    {
+      "id": "A-25",
+      "priority": 8,
+      "band": "BLOCKER-2",
+      "verdict": "PARTIAL",
+      "evidence": "parametrisierte Queries, FTS-Allowlist, Zod; keine Fuzz-Tests",
+      "standing_control": null
+    },
+    {
+      "id": "A-33",
+      "priority": 8,
+      "band": "BLOCKER-2",
+      "verdict": "NO-EVIDENCE",
+      "evidence": "Cold-Start-Agent-Erfolg nicht gemessen",
+      "standing_control": null
+    },
+    {
+      "id": "A-34",
+      "priority": 8,
+      "band": "BLOCKER-2",
+      "verdict": "PARTIAL",
+      "evidence": "keine irreversiblen Auto-Aktionen; kein Auto-Halt",
+      "standing_control": null
+    },
+    {
+      "id": "B-02",
+      "priority": 8,
+      "band": "BLOCKER-2",
+      "verdict": "PARTIAL",
+      "evidence": "bootstrap/deploy kohärent; nicht nächtlich verifiziert",
+      "standing_control": null
+    },
+    {
+      "id": "B-05",
+      "priority": 8,
+      "band": "BLOCKER-2",
+      "verdict": "FAIL",
+      "evidence": "kein Modell/Prompt-Registry; Prompt=Inline-String",
+      "standing_control": null
+    },
+    {
+      "id": "B-07",
+      "priority": 8,
+      "band": "BLOCKER-2",
+      "verdict": "FAIL",
+      "evidence": "kein Trace/Replay der KI-Läufe",
+      "standing_control": null
+    },
+    {
+      "id": "B-10",
+      "priority": 8,
+      "band": "BLOCKER-2",
+      "verdict": "FAIL",
+      "evidence": "kein Eval-Gate/Golden-Dataset",
+      "standing_control": null
+    },
+    {
+      "id": "B-12",
+      "priority": 8,
+      "band": "BLOCKER-2",
+      "verdict": "PARTIAL",
+      "evidence": "nginx+Header; keine Patch-SLA/WAF-Automatik",
+      "standing_control": null
+    },
+    {
+      "id": "B-13",
+      "priority": 8,
+      "band": "BLOCKER-2",
+      "verdict": "PARTIAL",
+      "evidence": "Modell gepinnt (kein latest); kein CI-Check",
+      "standing_control": null
+    },
+    {
+      "id": "B-15",
+      "priority": 8,
+      "band": "BLOCKER-2",
+      "verdict": "N/A",
+      "evidence": "keine Guardrail-Schicht vorhanden",
+      "standing_control": null
+    },
+    {
+      "id": "B-28",
+      "priority": 8,
+      "band": "BLOCKER-2",
+      "verdict": "FAIL",
+      "evidence": "keine Alert→Aktion-Automatik",
+      "standing_control": null
+    },
+    {
+      "id": "B-31",
+      "priority": 8,
+      "band": "BLOCKER-2",
+      "verdict": "PARTIAL",
+      "evidence": "Backups vorhanden; kein getimter Restore-Drill",
+      "standing_control": null
+    },
+    {
+      "id": "A-05",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "PARTIAL",
+      "evidence": "saubere Module; keine Boundary-Fitness",
+      "standing_control": null
+    },
+    {
+      "id": "A-07",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "NO-EVIDENCE",
+      "evidence": "kein Klon-Detektor gelaufen",
+      "standing_control": null
+    },
+    {
+      "id": "A-11",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "N/A",
+      "evidence": "keine Tools/Agenten",
+      "standing_control": null
+    },
+    {
+      "id": "A-12",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "PARTIAL",
+      "evidence": "gut kommentiert; keine Provenance/Reconstruction",
+      "standing_control": null
+    },
+    {
+      "id": "A-13",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "PARTIAL",
+      "evidence": "ESLint-Flat-Config fehlt; tsc grün; kein Gate",
+      "standing_control": null
+    },
+    {
+      "id": "A-18",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "PARTIAL",
+      "evidence": "einfachste Architektur; kein ADR",
+      "standing_control": null
+    },
+    {
+      "id": "A-19",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "N/A",
+      "evidence": "keine öffentliche versionierte API",
+      "standing_control": null
+    },
+    {
+      "id": "A-21",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "N/A",
+      "evidence": "kein RAG/Memory",
+      "standing_control": null
+    },
+    {
+      "id": "A-23",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "PARTIAL",
+      "evidence": "Migrationen versioniert; kein Drift/Quality-Monitor",
+      "standing_control": null
+    },
+    {
+      "id": "A-26",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "PARTIAL",
+      "evidence": "catch meist UI-Meldungen; kein Bare-Handler-Lint",
+      "standing_control": null
+    },
+    {
+      "id": "A-27",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "PARTIAL",
+      "evidence": "Timeout/max_tokens; keine erzwungenen Budgets",
+      "standing_control": null
+    },
+    {
+      "id": "A-28",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "PARTIAL",
+      "evidence": "Anthropic-Ausfall abgefangen; keine Map/Chaos",
+      "standing_control": null
+    },
+    {
+      "id": "A-32",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "PARTIAL",
+      "evidence": "README aktuell; keine Doku-als-Tests",
+      "standing_control": null
+    },
+    {
+      "id": "A-38",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "FAIL",
+      "evidence": "kein Lizenz-Scan/SBOM/IP-Position",
+      "standing_control": null
+    },
+    {
+      "id": "B-08",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "PARTIAL",
+      "evidence": "ein Aufruf, max_tokens, Rate-Limit; kein Infra-Cap",
+      "standing_control": null
+    },
+    {
+      "id": "B-09",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "FAIL",
+      "evidence": "keine signierte Provenance/Verify-on-Deploy",
+      "standing_control": null
+    },
+    {
+      "id": "B-17",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "FAIL",
+      "evidence": "kein IaC",
+      "standing_control": null
+    },
+    {
+      "id": "B-19",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "FAIL",
+      "evidence": "keine SLOs/Error-Budget",
+      "standing_control": null
+    },
+    {
+      "id": "B-23",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "N/A",
+      "evidence": "keine Agenten",
+      "standing_control": null
+    },
+    {
+      "id": "B-24",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "FAIL",
+      "evidence": "keine Online-Quality-Eval",
+      "standing_control": null
+    },
+    {
+      "id": "B-25",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "PARTIAL",
+      "evidence": "env extern; keine Prod-Cred-Assertion",
+      "standing_control": null
+    },
+    {
+      "id": "B-27",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "FAIL",
+      "evidence": "keine Artefakt-Signatur/Verify",
+      "standing_control": null
+    },
+    {
+      "id": "B-29",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "FAIL",
+      "evidence": "kein Chaos-Experiment",
+      "standing_control": null
+    },
+    {
+      "id": "B-33",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "N/A",
+      "evidence": "kein Retrieval-Korpus",
+      "standing_control": null
+    },
+    {
+      "id": "A-03",
+      "priority": 6,
+      "band": "SHOULD-FIX",
+      "verdict": "PARTIAL",
+      "evidence": "kaum modell-geurteilte Tests; Saison deterministisch",
+      "standing_control": null
+    },
+    {
+      "id": "A-14",
+      "priority": 6,
+      "band": "SHOULD-FIX",
+      "verdict": "FAIL",
+      "evidence": "keine KI-Bau-/Tier-Policy",
+      "standing_control": null
+    },
+    {
+      "id": "A-16",
+      "priority": 6,
+      "band": "SHOULD-FIX",
+      "verdict": "PARTIAL",
+      "evidence": "0 Stub-Marker; kein Stub-Lint",
+      "standing_control": null
+    },
+    {
+      "id": "A-20",
+      "priority": 6,
+      "band": "SHOULD-FIX",
+      "verdict": "FAIL",
+      "evidence": "Prompt=Inline-String; kein Gate",
+      "standing_control": null
+    },
+    {
+      "id": "A-29",
+      "priority": 6,
+      "band": "SHOULD-FIX",
+      "verdict": "FAIL",
+      "evidence": "kein TCO/Exit-Plan",
+      "standing_control": null
+    },
+    {
+      "id": "A-30",
+      "priority": 6,
+      "band": "SHOULD-FIX",
+      "verdict": "FAIL",
+      "evidence": "keine Trade-off-Records",
+      "standing_control": null
+    },
+    {
+      "id": "A-31",
+      "priority": 6,
+      "band": "SHOULD-FIX",
+      "verdict": "FAIL",
+      "evidence": "keine Unit-Economics (gering-materiell)",
+      "standing_control": null
+    },
+    {
+      "id": "A-35",
+      "priority": 6,
+      "band": "SHOULD-FIX",
+      "verdict": "PARTIAL",
+      "evidence": "deploy-request→systemd; kein blockierender Approval-Queue",
+      "standing_control": null
+    },
+    {
+      "id": "B-14",
+      "priority": 6,
+      "band": "SHOULD-FIX",
+      "verdict": "FAIL",
+      "evidence": "keine Prompt/Config-Governance",
+      "standing_control": null
+    },
+    {
+      "id": "B-16",
+      "priority": 6,
+      "band": "SHOULD-FIX",
+      "verdict": "FAIL",
+      "evidence": "keine Kostenattribution (gering-materiell)",
+      "standing_control": null
+    },
+    {
+      "id": "B-18",
+      "priority": 6,
+      "band": "SHOULD-FIX",
+      "verdict": "FAIL",
+      "evidence": "100%-Deploy, kein Canary/Auto-Abort",
+      "standing_control": null
+    },
+    {
+      "id": "B-21",
+      "priority": 6,
+      "band": "SHOULD-FIX",
+      "verdict": "PARTIAL",
+      "evidence": "KI degradiert mit Meldung; Blog unabhängig vom Modell",
+      "standing_control": null
+    },
+    {
+      "id": "B-26",
+      "priority": 6,
+      "band": "SHOULD-FIX",
+      "verdict": "PARTIAL",
+      "evidence": "Settings-Toggles; kein Auto-Tripwire",
+      "standing_control": null
+    },
+    {
+      "id": "B-30",
+      "priority": 6,
+      "band": "SHOULD-FIX",
+      "verdict": "N/A",
+      "evidence": "Solo-Traffic; kein Lasttest nötig",
+      "standing_control": null
+    },
+    {
+      "id": "B-35",
+      "priority": 6,
+      "band": "SHOULD-FIX",
+      "verdict": "FAIL",
+      "evidence": "kein Gate/Policy-Bundle; keine Segregation",
+      "standing_control": null
+    },
+    {
+      "id": "B-36",
+      "priority": 6,
+      "band": "SHOULD-FIX",
+      "verdict": "PARTIAL",
+      "evidence": "gepinnt; keine EOL-Überwachung",
+      "standing_control": null
+    },
+    {
+      "id": "A-15",
+      "priority": 5,
+      "band": "PLAN",
+      "verdict": "FAIL",
+      "evidence": "kein Gate → keine Prototyp/Prod-Grenze",
+      "standing_control": null
+    },
+    {
+      "id": "A-37",
+      "priority": 5,
+      "band": "PLAN",
+      "verdict": "PARTIAL",
+      "evidence": "README/bootstrap; nicht geübt",
+      "standing_control": null
+    },
+    {
+      "id": "B-32",
+      "priority": 5,
+      "band": "PLAN",
+      "verdict": "N/A",
+      "evidence": "kein IaC/Drift-Reconcile",
+      "standing_control": null
+    },
+    {
+      "id": "B-34",
+      "priority": 5,
+      "band": "PLAN",
+      "verdict": "NO-EVIDENCE",
+      "evidence": "Latenzperzentile nicht gemessen",
+      "standing_control": null
+    },
+    {
+      "id": "B-37",
+      "priority": 5,
+      "band": "PLAN",
+      "verdict": "PARTIAL",
+      "evidence": "Lösch-Lib vorhanden; keine e2e-Erasure über alle Stores",
+      "standing_control": null
+    },
+    {
+      "id": "B-39",
+      "priority": 5,
+      "band": "PLAN",
+      "verdict": "FAIL",
+      "evidence": "kein Referenz-Framework-Review",
+      "standing_control": null
+    },
+    {
+      "id": "A-40",
+      "priority": 4,
+      "band": "ASSESS",
+      "verdict": "N/A",
+      "evidence": "Energie immateriell",
+      "standing_control": null
+    },
+    {
+      "id": "B-38",
+      "priority": 4,
+      "band": "ASSESS",
+      "verdict": "N/A",
+      "evidence": "Inferenz-Ökonomie gering-materiell",
+      "standing_control": null
+    }
+  ]
+}
