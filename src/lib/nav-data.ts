@@ -34,7 +34,7 @@ export async function getNavMenus(): Promise<{
     .orderBy(schema.category.name);
 
   const recipeChildren: NavChild[] = catRows.map((c) => ({
-    href: `/suche?bereich=rezepte&kategorie=${encodeURIComponent(c.slug)}`,
+    href: `/rezepte/kategorie/${encodeURIComponent(c.slug)}`,
     label: c.name,
   }));
 

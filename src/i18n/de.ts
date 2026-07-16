@@ -135,6 +135,14 @@ export const de = {
     empty: "Keine Rezepte gefunden.",
     likesSuffix: "Likes",
   },
+  category: {
+    backToRecipes: "Alle Rezepte",
+    count: (n: number) => (n === 1 ? "1 Rezept" : `${n} Rezepte`),
+    empty: "Noch keine Rezepte in dieser Kategorie.",
+    metaTitle: (name: string) => `${name} – Rezepte`,
+    metaDescription: (name: string) =>
+      `Alle Rezepte der Kategorie „${name}“ auf Roses Food Blog.`,
+  },
   travelList: {
     title: "Kulinarische Reisen",
     intro:
