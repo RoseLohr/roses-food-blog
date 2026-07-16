@@ -442,25 +442,44 @@ export function SeasonCalendar({ currentWeek }: { currentWeek: number }) {
     <div className="mt-6 flex flex-col gap-4">
       {/* Filterleiste */}
       <div className="sk-toolbar">
-        <label className="sr-only" htmlFor="sk-suche">
-          {d.searchLabel}
-        </label>
-        <input
-          id="sk-suche"
-          type="search"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder={d.searchPlaceholder}
-          className="w-64 max-w-full border border-ink-soft/30 bg-white px-3 py-1.5 text-sm"
-        />
-        <button
-          type="button"
-          className="sk-chip"
-          aria-pressed={onlySeason}
-          onClick={() => setOnlySeason((v) => !v)}
+        {/* Gefiltert wird live beim Tippen; der Button macht die Suche
+            sichtbar und bestätigt die Eingabe. */}
+        <form
+          role="search"
+          className="flex items-stretch gap-2"
+          onSubmit={(e) => e.preventDefault()}
         >
-          {d.onlySeason}
-        </button>
+          <label className="sr-only" htmlFor="sk-suche">
+            {d.searchLabel}
+          </label>
+          <input
+            id="sk-suche"
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={d.searchPlaceholder}
+            className="w-64 max-w-full border border-ink-soft/30 bg-white px-3 py-1.5 text-sm"
+          />
+          <button
+            type="submit"
+            className="flex items-center gap-1.5 bg-rose-primary px-3 py-1.5 text-sm font-semibold text-white hover:bg-rose-primary-dark"
+          >
+            <svg
+              aria-hidden
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.4"
+              strokeLinecap="round"
+            >
+              <circle cx="11" cy="11" r="7" />
+              <path d="m21 21-4.3-4.3" />
+            </svg>
+            {d.searchSubmit}
+          </button>
+        </form>
         <span
           className="ml-auto text-xs text-ink-soft"
           title={d.currentWeekLabel}
@@ -469,6 +488,17 @@ export function SeasonCalendar({ currentWeek }: { currentWeek: number }) {
         </span>
       </div>
       <div className="sk-toolbar" role="group" aria-label={d.categoryLabel}>
+        <button
+          type="button"
+          className="sk-chip"
+          aria-pressed={onlySeason}
+          onClick={() => setOnlySeason((v) => !v)}
+        >
+          {d.onlySeason}
+        </button>
+        <span aria-hidden className="text-ink/20">
+          |
+        </span>
         <button
           type="button"
           className="sk-chip"

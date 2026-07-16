@@ -113,6 +113,7 @@ export const de = {
       "Wann haben Obst, Gemüse und Nüsse bei uns Saison? Der Kalender zeigt je Produkt die Verfügbarkeit über die 52 Kalenderwochen — ein Klick auf die Zeile fächert Sorten, Herkünfte und Vorhaltung auf.",
     searchLabel: "Produkt suchen",
     searchPlaceholder: "z. B. Erdbeere, Kürbis, Cox Orange …",
+    searchSubmit: "Suchen",
     categoryLabel: "Kategorie",
     categoryAll: "Alle",
     // Anzeige-Plural statt der Singular-Labels aus dem Datensatz-Enum
