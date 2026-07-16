@@ -2,15 +2,32 @@
 
 /**
  * Einklappbares Inhaltsverzeichnis für Reiseberichte (Vorbild: klassisches
- * „Inhalt [Verbergen]"): nummerierte Einträge (1, 1.1 …) in Teal, Klick
+ * „Inhalt [Verbergen]"): nummerierte Einträge in Teal über bis zu drei
+ * Ebenen (1, 1.1, 1.1.1 — z. B. Abschnitt → Restaurant → Gericht), Klick
  * springt per Anker zur Stelle (sanftes Scrollen via CSS scroll-behavior).
  */
 import { useState } from "react";
 
-export interface TocEntry {
+export interface TocLeaf {
   id: string;
   label: string;
-  children: Array<{ id: string; label: string }>;
+}
+
+export interface TocChild extends TocLeaf {
+  children?: TocLeaf[];
+}
+
+export interface TocEntry extends TocLeaf {
+  children: TocChild[];
+}
+
+function TocLink({ id, num, label }: { id: string; num: string; label: string }) {
+  return (
+    <a href={`#${id}`} className="text-leaf hover:underline">
+      <span className="mr-1.5 tabular-nums">{num}</span>
+      {label}
+    </a>
+  );
 }
 
 export function TravelToc({
@@ -44,26 +61,29 @@ export function TravelToc({
         <ol className="mt-3 flex flex-col gap-1.5">
           {entries.map((entry, i) => (
             <li key={entry.id}>
-              <a
-                href={`#${entry.id}`}
-                className="text-leaf hover:underline"
-              >
-                <span className="mr-1.5 tabular-nums">{i + 1}</span>
-                {entry.label}
-              </a>
+              <TocLink id={entry.id} num={`${i + 1}`} label={entry.label} />
               {entry.children.length > 0 && (
                 <ol className="mt-1 flex flex-col gap-1 pl-5">
                   {entry.children.map((child, j) => (
                     <li key={child.id}>
-                      <a
-                        href={`#${child.id}`}
-                        className="text-leaf hover:underline"
-                      >
-                        <span className="mr-1.5 tabular-nums">
-                          {i + 1}.{j + 1}
-                        </span>
-                        {child.label}
-                      </a>
+                      <TocLink
+                        id={child.id}
+                        num={`${i + 1}.${j + 1}`}
+                        label={child.label}
+                      />
+                      {child.children && child.children.length > 0 && (
+                        <ol className="mt-1 flex flex-col gap-1 pl-5">
+                          {child.children.map((leaf, k) => (
+                            <li key={leaf.id}>
+                              <TocLink
+                                id={leaf.id}
+                                num={`${i + 1}.${j + 1}.${k + 1}`}
+                                label={leaf.label}
+                              />
+                            </li>
+                          ))}
+                        </ol>
+                      )}
                     </li>
                   ))}
                 </ol>

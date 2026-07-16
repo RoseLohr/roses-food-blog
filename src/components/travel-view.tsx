@@ -121,7 +121,10 @@ function DishItem({
   similar: RecipeCardData[];
 }) {
   return (
-    <li className="flex flex-col gap-4 bg-cream/60 p-4 sm:flex-row">
+    <li
+      id={`dish-${dish.id}`}
+      className="flex flex-col gap-4 bg-cream/60 p-4 sm:flex-row"
+    >
       {dish.images[0] && (
         <div className="sm:w-44 sm:shrink-0">
           <ResponsiveImg
@@ -265,7 +268,12 @@ export async function TravelView({
 
   // Inhaltsverzeichnis in Blockreihenfolge: Überschriften der Textblöcke
   // (oberste Ebene = Hauptpunkte), inline platzierte Restaurants als eigene
-  // Hauptpunkte, die restlichen Restaurants gruppiert am Ende.
+  // Hauptpunkte (mit ihren Gerichten als Unterpunkte), die restlichen
+  // Restaurants gruppiert am Ende — Gerichte dort als dritte Ebene (2.1.1 …).
+  const dishLeaves = (r: FullRestaurant) =>
+    r.dishes
+      .filter((d) => d.name)
+      .map((d) => ({ id: `dish-${d.id}`, label: d.name }));
   const allHeadings = full.blocks.flatMap((b) =>
     b.type === "text" ? extractHeadings(b.markdown) : [],
   );
@@ -291,7 +299,7 @@ export async function TravelView({
         tocEntries.push({
           id: `restaurant-${r.id}`,
           label: r.name,
-          children: [],
+          children: dishLeaves(r),
         });
       }
     }
@@ -302,7 +310,11 @@ export async function TravelView({
       label: dict.travelList.restaurantsTitle,
       children: remainingRestaurants
         .filter((r) => r.name)
-        .map((r) => ({ id: `restaurant-${r.id}`, label: r.name })),
+        .map((r) => ({
+          id: `restaurant-${r.id}`,
+          label: r.name,
+          children: dishLeaves(r),
+        })),
     });
   }
 
