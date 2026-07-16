@@ -448,6 +448,19 @@ export const homepageConfig = sqliteTable("homepage_config", {
   ),
   aboutTeaserText: text("about_teaser_text").notNull().default(""),
   aboutTeaserLink: text("about_teaser_link").notNull().default("/ueber-mich"),
+  /** JSON-Array der in der „Rezepte filtern"-Box aktiven Filtergruppen,
+   *  z. B. ["zeit","ernaehrung","kategorie","kueche","zubereitung"]. */
+  filterGroups: text("filter_groups")
+    .notNull()
+    .default('["zeit","ernaehrung"]'),
+  /** Optionale „Ernährungsform-Box": ausgewählte Ernährungsform (null = aus).
+   *  Bewusst ohne FK-Constraint (ALTER-Kompatibilität) — die Startseite prüft
+   *  beim Rendern, ob die Ernährungsform noch existiert, und blendet sonst aus. */
+  dietBoxDietTypeId: integer("diet_box_diet_type_id"),
+  /** Titel der Ernährungsform-Box (leer = Name der Ernährungsform). */
+  dietBoxTitle: text("diet_box_title").notNull().default(""),
+  /** Anzahl der Rezepte in der Ernährungsform-Box. */
+  dietBoxCount: integer("diet_box_count").notNull().default(4),
 });
 
 export const sliderItem = sqliteTable(

@@ -42,30 +42,42 @@ export async function saveHomepageAction(formData: FormData): Promise<void> {
     ? Number(formData.get("aboutBild"))
     : null;
 
+  // „Rezepte filtern“-Box: nur gültige Filtergruppen speichern.
+  const ALLOWED_GROUPS = ["zeit", "kategorie", "ernaehrung", "kueche", "zubereitung"];
+  const filterGroups = formData
+    .getAll("filterGroups")
+    .map(String)
+    .filter((g) => ALLOWED_GROUPS.includes(g));
+
+  // Ernährungsform-Box.
+  const dietBoxRaw = String(formData.get("dietBox") ?? "");
+  const dietBoxDietTypeId = dietBoxRaw && Number.isInteger(Number(dietBoxRaw))
+    ? Number(dietBoxRaw)
+    : null;
+  const dietBoxCount = Math.min(
+    12,
+    Math.max(1, Number(formData.get("dietBoxCount")) || 4),
+  );
+  const dietBoxTitle = String(formData.get("dietBoxTitle") ?? "").trim().slice(0, 80);
+
+  const values = {
+    sliderIntervalSeconds: interval,
+    popularCount,
+    latestCount,
+    aboutTeaserImageId: aboutImageId,
+    aboutTeaserText: String(formData.get("aboutText") ?? "").trim(),
+    aboutTeaserLink:
+      String(formData.get("aboutLink") ?? "").trim() || "/ueber-mich",
+    filterGroups: JSON.stringify(filterGroups),
+    dietBoxDietTypeId,
+    dietBoxTitle,
+    dietBoxCount,
+  };
+
   await db
     .insert(schema.homepageConfig)
-    .values({
-      id: 1,
-      sliderIntervalSeconds: interval,
-      popularCount,
-      latestCount,
-      aboutTeaserImageId: aboutImageId,
-      aboutTeaserText: String(formData.get("aboutText") ?? "").trim(),
-      aboutTeaserLink:
-        String(formData.get("aboutLink") ?? "").trim() || "/ueber-mich",
-    })
-    .onConflictDoUpdate({
-      target: schema.homepageConfig.id,
-      set: {
-        sliderIntervalSeconds: interval,
-        popularCount,
-        latestCount,
-        aboutTeaserImageId: aboutImageId,
-        aboutTeaserText: String(formData.get("aboutText") ?? "").trim(),
-        aboutTeaserLink:
-          String(formData.get("aboutLink") ?? "").trim() || "/ueber-mich",
-      },
-    });
+    .values({ id: 1, ...values })
+    .onConflictDoUpdate({ target: schema.homepageConfig.id, set: values });
 
   await db.delete(schema.sliderItem);
   for (const [i, s] of slides.entries()) {

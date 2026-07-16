@@ -51,6 +51,26 @@ export default async function HomepageAdminPage(props: {
     .select({ id: schema.recipe.id, title: schema.recipe.title })
     .from(schema.recipe)
     .orderBy(asc(schema.recipe.title));
+  const dietTypes = await db
+    .select()
+    .from(schema.dietType)
+    .orderBy(asc(schema.dietType.name));
+
+  const activeFilterGroups: string[] = (() => {
+    try {
+      const v = JSON.parse(config?.filterGroups ?? "[]");
+      return Array.isArray(v) ? v.map(String) : [];
+    } catch {
+      return [];
+    }
+  })();
+  const FILTER_GROUPS: Array<{ key: string; label: string }> = [
+    { key: "zeit", label: d.fgZeit },
+    { key: "kategorie", label: d.fgKategorie },
+    { key: "ernaehrung", label: d.fgErnaehrung },
+    { key: "kueche", label: d.fgKueche },
+    { key: "zubereitung", label: d.fgZubereitung },
+  ];
 
   const initialSlides: SlideRow[] = sliderItems.map((s) => ({
     imageId: s.imageId,
@@ -156,6 +176,76 @@ export default async function HomepageAdminPage(props: {
                 name="aboutText"
                 rows={3}
                 defaultValue={config?.aboutTeaserText ?? ""}
+                className={inputCls}
+              />
+            </div>
+          </div>
+        </section>
+
+        {/* „Rezepte filtern“-Box: welche Filtergruppen erscheinen */}
+        <section className="bg-white p-5 shadow-sm">
+          <h2 className="mb-1 text-lg font-semibold">{d.filterBoxTitle}</h2>
+          <p className="mb-4 text-sm text-ink-soft">{d.filterBoxIntro}</p>
+          <div className="flex flex-wrap gap-x-6 gap-y-2">
+            {FILTER_GROUPS.map((g) => (
+              <label key={g.key} className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  name="filterGroups"
+                  value={g.key}
+                  defaultChecked={activeFilterGroups.includes(g.key)}
+                />
+                {g.label}
+              </label>
+            ))}
+          </div>
+        </section>
+
+        {/* Ernährungsform-Box */}
+        <section className="bg-white p-5 shadow-sm">
+          <h2 className="mb-1 text-lg font-semibold">{d.dietBoxSection}</h2>
+          <p className="mb-4 text-sm text-ink-soft">{d.dietBoxIntro}</p>
+          <div className="grid gap-4 md:grid-cols-2">
+            <div>
+              <label className={labelCls} htmlFor="hp-dietbox">
+                {d.dietBoxSelect}
+              </label>
+              <select
+                id="hp-dietbox"
+                name="dietBox"
+                defaultValue={config?.dietBoxDietTypeId ?? ""}
+                className={inputCls}
+              >
+                <option value="">{d.dietBoxNone}</option>
+                {dietTypes.map((dt) => (
+                  <option key={dt.id} value={dt.id}>
+                    {dt.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className={labelCls} htmlFor="hp-dietbox-count">
+                {d.dietBoxCountLabel}
+              </label>
+              <input
+                id="hp-dietbox-count"
+                name="dietBoxCount"
+                type="number"
+                min={1}
+                max={12}
+                defaultValue={config?.dietBoxCount ?? 4}
+                className={inputCls}
+              />
+            </div>
+            <div className="md:col-span-2">
+              <label className={labelCls} htmlFor="hp-dietbox-title">
+                {d.dietBoxTitleLabel}
+              </label>
+              <input
+                id="hp-dietbox-title"
+                name="dietBoxTitle"
+                defaultValue={config?.dietBoxTitle ?? ""}
                 className={inputCls}
               />
             </div>

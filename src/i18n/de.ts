@@ -32,6 +32,9 @@ export const de = {
     filterTitle: "Rezepte filtern",
     filterTime: "Nach Zeit",
     filterDiet: "Nach Ernährungsform",
+    filterCategory: "Nach Art des Gerichts",
+    filterCuisine: "Nach Art der Küche",
+    filterPrep: "Nach Zubereitung",
     allRecipes: "Alle Rezepte ansehen",
   },
   nav: {
@@ -747,6 +750,21 @@ export const de = {
       moveUp: "Nach oben",
       moveDown: "Nach unten",
       saved: "Startseite gespeichert.",
+      filterBoxTitle: "„Rezepte filtern“-Box (rechte Spalte)",
+      filterBoxIntro:
+        "Welche Filtergruppen sollen Besucher in der Box auf der Startseite sehen? Ohne Auswahl wird die Box ausgeblendet.",
+      fgZeit: "Zeit",
+      fgKategorie: "Art des Gerichts",
+      fgErnaehrung: "Ernährungsform",
+      fgKueche: "Art der Küche",
+      fgZubereitung: "Zubereitung",
+      dietBoxSection: "Ernährungsform-Box",
+      dietBoxIntro:
+        "Zeigt eine Liste von Rezepten einer Ernährungsform (mit Bild). Leer lassen = Box aus.",
+      dietBoxSelect: "Ernährungsform",
+      dietBoxNone: "— keine (Box aus) —",
+      dietBoxTitleLabel: "Titel der Box (leer = Name der Ernährungsform)",
+      dietBoxCountLabel: "Anzahl Rezepte",
     },
     media: {
       title: "Medienbibliothek",

@@ -1,11 +1,12 @@
 import Link from "next/link";
-import { asc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { HeroSlider, type SlideData } from "@/components/hero-slider";
 import { RecipeCard } from "@/components/recipe-card";
 import { ResponsiveImg } from "@/components/responsive-img";
+import { DietBox, type DietBoxItem } from "@/components/diet-box";
 import { publishedRecipeCards } from "@/lib/recipe-list";
-import { imageUrl, srcset } from "@/lib/media";
+import { imageUrl, srcset, thumbUrl } from "@/lib/media";
 import { JsonLd, websiteJsonLd } from "@/lib/jsonld";
 import { t } from "@/i18n/de";
 import { PageTracker } from "@/components/page-tracker";
@@ -90,19 +91,180 @@ async function loadHomepage() {
         .limit(1))[0] ?? null)
     : null;
 
-  const [popular, latest, cuisines, diets] = await Promise.all([
+  const [popular, latest, cuisines, diets, categories, tags] = await Promise.all([
     publishedRecipeCards({ limit: config?.popularCount ?? 6, orderByLikes: true }),
     publishedRecipeCards({ limit: config?.latestCount ?? 6 }),
     db.select().from(schema.cuisine).orderBy(asc(schema.cuisine.name)),
     db.select().from(schema.dietType).orderBy(asc(schema.dietType.name)),
+    db.select().from(schema.category).orderBy(asc(schema.category.name)),
+    db.select().from(schema.tag).orderBy(asc(schema.tag.name)),
   ]);
 
-  return { config, slides, aboutImage, popular, latest, cuisines, diets };
+  // Aktive Filtergruppen der „Rezepte filtern"-Box (Admin-konfigurierbar).
+  const filterGroups: string[] = (() => {
+    try {
+      const v = JSON.parse(config?.filterGroups ?? "[]");
+      return Array.isArray(v) ? v.map(String) : [];
+    } catch {
+      return [];
+    }
+  })();
+
+  // Ernährungsform-Box (Admin-konfigurierbar). Nur, wenn eine noch existierende
+  // Ernährungsform gewählt ist.
+  const dietBoxType =
+    config?.dietBoxDietTypeId != null
+      ? diets.find((d) => d.id === config.dietBoxDietTypeId) ?? null
+      : null;
+  const dietBox = dietBoxType
+    ? {
+        title: (config?.dietBoxTitle || dietBoxType.name).trim(),
+        items: await loadDietBoxItems(dietBoxType.id, config?.dietBoxCount ?? 4),
+      }
+    : null;
+
+  return {
+    config,
+    slides,
+    aboutImage,
+    popular,
+    latest,
+    cuisines,
+    diets,
+    categories,
+    tags,
+    filterGroups,
+    dietBox,
+  };
+}
+
+/** Rezepte einer Ernährungsform (neueste, veröffentlicht) für die Diet-Box. */
+async function loadDietBoxItems(
+  dietTypeId: number,
+  count: number,
+): Promise<DietBoxItem[]> {
+  const limit = Math.min(12, Math.max(1, count));
+  const recRows = await db
+    .select({
+      id: schema.recipe.id,
+      slug: schema.recipe.slug,
+      title: schema.recipe.title,
+      heroImageId: schema.recipe.heroImageId,
+    })
+    .from(schema.recipe)
+    .innerJoin(
+      schema.recipeDietType,
+      eq(schema.recipeDietType.recipeId, schema.recipe.id),
+    )
+    .where(
+      and(
+        eq(schema.recipeDietType.dietTypeId, dietTypeId),
+        eq(schema.recipe.status, "veroeffentlicht"),
+      ),
+    )
+    .orderBy(desc(schema.recipe.publishedAt))
+    .limit(limit);
+  if (recRows.length === 0) return [];
+
+  const ids = recRows.map((r) => r.id);
+  const heroIds = recRows
+    .map((r) => r.heroImageId)
+    .filter((x): x is number => x != null);
+  const imgs = heroIds.length
+    ? await db
+        .select()
+        .from(schema.mediaImage)
+        .where(inArray(schema.mediaImage.id, heroIds))
+    : [];
+  const imgById = new Map(imgs.map((i) => [i.id, i]));
+
+  const catRows = await db
+    .select({ recipeId: schema.recipeCategory.recipeId, name: schema.category.name })
+    .from(schema.recipeCategory)
+    .innerJoin(schema.category, eq(schema.recipeCategory.categoryId, schema.category.id))
+    .where(inArray(schema.recipeCategory.recipeId, ids));
+  const dtRows = await db
+    .select({ recipeId: schema.recipeDietType.recipeId, name: schema.dietType.name })
+    .from(schema.recipeDietType)
+    .innerJoin(schema.dietType, eq(schema.recipeDietType.dietTypeId, schema.dietType.id))
+    .where(inArray(schema.recipeDietType.recipeId, ids));
+  const byRecipe = (rows: { recipeId: number; name: string }[]) => {
+    const m = new Map<number, string[]>();
+    for (const r of rows) {
+      const a = m.get(r.recipeId) ?? [];
+      a.push(r.name);
+      m.set(r.recipeId, a);
+    }
+    return m;
+  };
+  const catBy = byRecipe(catRows);
+  const dtBy = byRecipe(dtRows);
+
+  return recRows.map((r) => {
+    const img = r.heroImageId != null ? imgById.get(r.heroImageId) : null;
+    const subtitle = [...(catBy.get(r.id) ?? []), ...(dtBy.get(r.id) ?? [])].join(
+      " / ",
+    );
+    return {
+      slug: r.slug,
+      title: r.title,
+      thumbUrl: img ? thumbUrl(img.fileKey, img.variantWidths) : null,
+      subtitle,
+    };
+  });
 }
 
 export default async function HomePage() {
-  const { config, slides, aboutImage, popular, latest, cuisines, diets } =
-    await loadHomepage();
+  const {
+    config,
+    slides,
+    aboutImage,
+    popular,
+    latest,
+    cuisines,
+    diets,
+    categories,
+    tags,
+    filterGroups,
+    dietBox,
+  } = await loadHomepage();
+
+  const d = dict.home;
+  // Filtergruppen-Definitionen für die „Rezepte filtern"-Box.
+  const filterBoxGroups: Array<{
+    key: string;
+    heading: string;
+    links: Array<{ label: string; href: string }>;
+  }> = [
+    {
+      key: "zeit",
+      heading: d.filterTime,
+      links: [30, 60, 90].map((m) => ({
+        label: dict.search.timeUpTo(m),
+        href: `/suche?zeit=${m}`,
+      })),
+    },
+    {
+      key: "kategorie",
+      heading: d.filterCategory,
+      links: categories.map((c) => ({ label: c.name, href: `/suche?kategorie=${c.slug}` })),
+    },
+    {
+      key: "ernaehrung",
+      heading: d.filterDiet,
+      links: diets.map((x) => ({ label: x.name, href: `/suche?ernaehrung=${x.slug}` })),
+    },
+    {
+      key: "kueche",
+      heading: d.filterCuisine,
+      links: cuisines.map((c) => ({ label: c.name, href: `/suche?kueche=${c.slug}` })),
+    },
+    {
+      key: "zubereitung",
+      heading: d.filterPrep,
+      links: tags.map((tg) => ({ label: tg.name, href: `/suche?schlagwort=${tg.slug}` })),
+    },
+  ].filter((g) => filterGroups.includes(g.key) && g.links.length > 0);
 
   return (
     <main>
@@ -158,6 +320,9 @@ export default async function HomePage() {
               </p>
             </section>
           )}
+
+          {/* Ernährungsform-Box (Admin-konfigurierbar) */}
+          {dietBox && <DietBox title={dietBox.title} items={dietBox.items} />}
 
           {/* Nach Küche & Ernährungsform wählen — nebeneinander */}
           {(cuisines.length > 0 || diets.length > 0) && (
@@ -236,42 +401,33 @@ export default async function HomePage() {
             </section>
           )}
 
-          {/* Filter */}
-          <section className="bg-white p-5 shadow-sm">
-            <h2 className="font-display text-lg font-bold">
-              {dict.home.filterTitle}
-            </h2>
-            <h3 className="mt-3 text-sm font-semibold text-ink-soft">
-              {dict.home.filterTime}
-            </h3>
-            <ul className="mt-1 flex flex-wrap gap-1.5">
-              {[30, 60, 90].map((m) => (
-                <li key={m}>
-                  <Link
-                    href={`/suche?zeit=${m}`}
-                    className="block bg-cream px-3 py-1 text-sm hover:bg-rose-primary hover:text-white"
-                  >
-                    {dict.search.timeUpTo(m)}
-                  </Link>
-                </li>
+          {/* Filter (Gruppen im Startseiten-Admin konfigurierbar) */}
+          {filterBoxGroups.length > 0 && (
+            <section className="bg-white p-5 shadow-sm">
+              <h2 className="font-display text-lg font-bold">
+                {dict.home.filterTitle}
+              </h2>
+              {filterBoxGroups.map((group) => (
+                <div key={group.key}>
+                  <h3 className="mt-4 text-sm font-semibold text-ink-soft first:mt-3">
+                    {group.heading}
+                  </h3>
+                  <ul className="mt-1 flex flex-wrap gap-1.5">
+                    {group.links.map((l) => (
+                      <li key={l.href}>
+                        <Link
+                          href={l.href}
+                          className="block bg-cream px-3 py-1 text-sm hover:bg-rose-primary hover:text-white"
+                        >
+                          {l.label}
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               ))}
-            </ul>
-            <h3 className="mt-4 text-sm font-semibold text-ink-soft">
-              {dict.home.filterDiet}
-            </h3>
-            <ul className="mt-1 flex flex-wrap gap-1.5">
-              {diets.map((d) => (
-                <li key={d.id}>
-                  <Link
-                    href={`/suche?ernaehrung=${d.slug}`}
-                    className="block bg-cream px-3 py-1 text-sm hover:bg-rose-primary hover:text-white"
-                  >
-                    {d.name}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </section>
+            </section>
+          )}
         </aside>
       </div>
     </main>
