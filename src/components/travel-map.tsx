@@ -69,6 +69,10 @@ function popupHtml(p: TravelMapPin): string {
     </div>`;
 }
 
+// Ab dieser Zoomstufe werden Hauptstädte überhaupt erst eingeblendet
+// (maxZoom der Karte ist 8) — hält Welt-/Regionalansicht frei von Städten.
+const CAPITAL_MIN_ZOOM = 7;
+
 const PIN_SVG = `
   <svg width="28" height="28" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
     <path d="M12 2C8.1 2 5 5.1 5 9c0 5.2 7 13 7 13s7-7.8 7-13c0-3.9-3.1-7-7-7z"
@@ -194,7 +198,9 @@ export function TravelMap({ pins }: { pins: TravelMapPin[] }) {
           else if (!show && has) labelLayer.removeLayer(marker);
         }
         for (const { marker, min } of capitals) {
-          const show = z >= min;
+          // Erst deutlich hineingezoomt (in ein Land/eine Region) einblenden —
+          // in der Regional-/Länderansicht bleiben die Städte ausgeblendet.
+          const show = z >= Math.max(CAPITAL_MIN_ZOOM, min);
           const has = capitalLayer.hasLayer(marker);
           if (show && !has) capitalLayer.addLayer(marker);
           else if (!show && has) capitalLayer.removeLayer(marker);

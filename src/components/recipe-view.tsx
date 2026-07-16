@@ -91,14 +91,8 @@ export function RecipeView({
     return rest === 0 ? `${h} Std.` : `${h} Std. ${rest} ${r.minutes}`;
   };
 
+  // kcal wird oben im Kennzahlen-Block gezeigt (nicht mehr in der Tag-Zeile).
   const tagRows: Array<[React.ReactNode, string, string] | null> = [
-    recipe.kcal
-      ? [
-          <IconFlame key="k" className="h-4 w-4" />,
-          r.calories,
-          `${recipe.kcal} ${r.kcalUnit} ${r.perServing}`,
-        ]
-      : null,
     full.categories.length
       ? [
           <IconTag key="c" className="h-4 w-4" />,
@@ -196,6 +190,11 @@ export function RecipeView({
             <MetaChip icon={<IconFlame className="h-5 w-5" />} label={r.metaDifficulty}>
               {dict.admin.recipes.difficulties[recipe.difficulty] ?? recipe.difficulty}
             </MetaChip>
+            {recipe.kcal != null && (
+              <MetaChip icon={<IconFlame className="h-5 w-5" />} label={r.calories}>
+                {recipe.kcal} {r.kcalUnit} {r.perServing}
+              </MetaChip>
+            )}
           </div>
 
           {extraActions && (

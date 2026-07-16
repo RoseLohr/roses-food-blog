@@ -26,11 +26,16 @@ export async function createIngredientAction(formData: FormData): Promise<void> 
     back(dict.admin.ingredients.exists);
   }
   const slugs = new Set(all.map((r) => r.slug));
-  await db.insert(schema.ingredient).values({
-    name,
-    slug: uniqueSlug(slugify(name), (s) => slugs.has(s)),
-    imageId: Number.isInteger(imageId) ? imageId : null,
-  });
+  try {
+    await db.insert(schema.ingredient).values({
+      name,
+      slug: uniqueSlug(slugify(name), (s) => slugs.has(s)),
+      imageId: Number.isInteger(imageId) ? imageId : null,
+    });
+  } catch {
+    // Absicherung gegen Race (paralleles Anlegen desselben Namens) → kein 500.
+    back(dict.admin.ingredients.exists);
+  }
   back(dict.admin.ingredients.created);
 }
 
@@ -42,10 +47,26 @@ export async function updateIngredientAction(formData: FormData): Promise<void> 
   const imageId = imageIdRaw ? Number(imageIdRaw) : null;
   if (!Number.isInteger(id) || !name) back(dict.common.error);
 
-  await db
-    .update(schema.ingredient)
-    .set({ name, imageId })
-    .where(eq(schema.ingredient.id, id));
+  // Namenskonflikt mit einer ANDEREN Zutat (case-insensitiv) sauber abfangen —
+  // sonst verletzt das UPDATE die UNIQUE-Bedingung auf ingredient.name und löst
+  // einen ungefangenen 500 aus („This page couldn't load").
+  const all = await db
+    .select({ id: schema.ingredient.id, name: schema.ingredient.name })
+    .from(schema.ingredient);
+  const clash = all.some(
+    (r) => r.id !== id && r.name.toLowerCase() === name.toLowerCase(),
+  );
+  if (clash) back(dict.admin.ingredients.exists);
+
+  try {
+    await db
+      .update(schema.ingredient)
+      .set({ name, imageId: Number.isInteger(imageId) ? imageId : null })
+      .where(eq(schema.ingredient.id, id));
+  } catch {
+    // Letzte Absicherung (z. B. Race) — niemals mit 500 abstürzen.
+    back(dict.admin.ingredients.exists);
+  }
   back(dict.common.saved);
 }
 
@@ -64,6 +85,12 @@ export async function deleteIngredientAction(formData: FormData): Promise<void> 
     .where(eq(schema.dishIngredient.ingredientId, id));
   if (inRecipes.n > 0 || inDishes.n > 0) back(dict.admin.ingredients.inUse);
 
-  await db.delete(schema.ingredient).where(eq(schema.ingredient.id, id));
+  try {
+    await db.delete(schema.ingredient).where(eq(schema.ingredient.id, id));
+  } catch {
+    // Falls die Zutat doch noch referenziert ist (FK-RESTRICT/Race):
+    // sauber melden statt mit 500 abzustürzen.
+    back(dict.admin.ingredients.inUse);
+  }
   back(dict.common.saved);
 }
