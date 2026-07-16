@@ -143,6 +143,7 @@ export const de = {
   },
   newsletter: {
     formTitle: "Neues aus Roses Küche",
+    formLead: "Kein Rezept mehr verpassen",
     formIntro:
       "Neue Rezepte und Reiseberichte direkt ins Postfach — kostenlos und jederzeit abbestellbar.",
     email: "E-Mail-Adresse",
@@ -155,6 +156,14 @@ export const de = {
     submit: "Anmelden",
     successMessage:
       "Fast geschafft! Bitte bestätige deine Anmeldung über den Link in der E-Mail, die wir dir gerade geschickt haben.",
+    // Willkommensschritt nach der Bestätigung (Name & Interessen, optional)
+    welcomeBadge: "Anmeldung bestätigt",
+    welcomeTitle: "Willkommen bei Roses Küche!",
+    welcomeIntro:
+      "Schön, dass du dabei bist. Magst du uns noch etwas über dich verraten? Ganz optional — du kannst diesen Schritt auch überspringen.",
+    welcomeSave: "Speichern",
+    welcomeSkip: "Überspringen",
+    welcomeSaved: "Danke! Schön, dass du dabei bist.",
     errorInvalid:
       "Bitte E-Mail-Adresse prüfen und der Datenschutzerklärung zustimmen.",
     errorMail:
@@ -163,8 +172,6 @@ export const de = {
     confirmMailBody: (url: string) =>
       `Hallo {{vorname}},\n\nschön, dass du dabei sein möchtest! Bitte bestätige deine Anmeldung zum Newsletter mit einem Klick:\n\n[Anmeldung bestätigen](${url})\n\nFalls du dich nicht angemeldet hast, ignoriere diese E-Mail einfach — es passiert nichts.\n\nHerzliche Grüße\nRose`,
     confirmPageTitle: "Newsletter-Bestätigung",
-    confirmSuccess:
-      "Deine Anmeldung ist bestätigt — willkommen! Ab sofort bekommst du Neuigkeiten aus Roses Küche.",
     confirmAlready: "Deine Anmeldung war bereits bestätigt.",
     confirmInvalid:
       "Dieser Bestätigungslink ist ungültig oder abgelaufen. Bitte melde dich erneut an.",

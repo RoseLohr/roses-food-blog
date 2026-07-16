@@ -96,6 +96,279 @@
   }
 }
 
+/* ===========================================================================
+   Newsletter-Box („Version 3": Teal-Band, E-Mail zuerst) und der
+   Willkommensschritt (helle Karte, fragt Name & Interessen später ab).
+   Bewusst als eigene Regeln statt Utility-Klassen, damit Verlauf und
+   Zweispalten-/Stapel-Layout unabhängig vom Turbopack-CSS-Chunking zuverlässig
+   greifen (gleiches Muster wie .zutat-row). Das Band ist immer Teal — kein
+   Dark-Mode-Umschalten nötig, weil der Blog durchgängig hell ist.
+   =========================================================================== */
+.nl-box {
+  position: relative;
+  overflow: hidden;
+  color: #fff;
+  padding: 2.5rem 1.75rem;
+  background: linear-gradient(
+    135deg,
+    var(--color-accent) 0%,
+    var(--color-accent-2) 100%
+  );
+}
+.nl-box__envelope {
+  position: absolute;
+  bottom: -2.5rem;
+  left: -2rem;
+  width: 13rem;
+  transform: rotate(-12deg);
+  opacity: 0.12;
+  pointer-events: none;
+}
+.nl-box__cols {
+  position: relative;
+  display: grid;
+  gap: 1.5rem;
+  align-items: center;
+}
+@media (min-width: 640px) {
+  .nl-box {
+    padding: 2.75rem 2.25rem;
+  }
+  .nl-box__cols {
+    grid-template-columns: 1.05fr 1fr;
+    gap: 2rem;
+  }
+}
+.nl-box__eyebrow {
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgb(255 255 255 / 0.85);
+  margin-bottom: 0.5rem;
+}
+.nl-box__title {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 700;
+  font-size: clamp(1.55rem, 4vw, 2rem);
+  line-height: 1.15;
+  margin-bottom: 0.5rem;
+}
+.nl-box__intro {
+  color: rgb(255 255 255 / 0.9);
+  font-size: 0.92rem;
+  max-width: 26rem;
+}
+.nl-box__form {
+  display: grid;
+  gap: 0.7rem;
+}
+.nl-box__row {
+  display: flex;
+  gap: 0.6rem;
+}
+.nl-box__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  background: #fff;
+  color: var(--color-ink);
+  padding: 0.85rem 1rem;
+  font: inherit;
+  font-size: 0.95rem;
+}
+.nl-box__input::placeholder {
+  color: #8b948f;
+}
+.nl-box__btn {
+  flex: 0 0 auto;
+  border: 0;
+  cursor: pointer;
+  background: #fff;
+  color: var(--color-rose-primary-dark);
+  font: inherit;
+  font-weight: 800;
+  font-size: 0.82rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  padding: 0.9rem 1.5rem;
+  border-radius: 0.5rem;
+}
+.nl-box__btn:hover {
+  background: var(--color-cream-deep);
+}
+.nl-box__btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.nl-box__consent {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  color: rgb(255 255 255 / 0.85);
+}
+.nl-box__consent input {
+  margin-top: 0.15rem;
+  accent-color: #fff;
+}
+.nl-box__consent a {
+  color: #fff;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.nl-box__note {
+  position: relative;
+  background: rgb(255 255 255 / 0.14);
+  border: 1px solid rgb(255 255 255 / 0.35);
+  padding: 1rem 1.15rem;
+  font-size: 0.9rem;
+  color: #fff;
+}
+.nl-box__note--error {
+  background: rgb(178 59 59 / 0.25);
+  border-color: rgb(255 255 255 / 0.5);
+}
+@media (max-width: 460px) {
+  .nl-box__row {
+    flex-direction: column;
+  }
+  .nl-box__btn {
+    width: 100%;
+  }
+}
+
+/* Willkommensschritt – helle Karte im Blog-Stil */
+.nl-welcome {
+  background: #fff;
+  color: var(--color-ink);
+  border: 1px solid var(--color-accent);
+  border-top: 6px solid var(--color-accent);
+  padding: 2rem 1.75rem;
+  text-align: left;
+}
+.nl-welcome__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--color-rose-primary-dark);
+  font-weight: 700;
+  font-size: 0.85rem;
+  margin-bottom: 0.6rem;
+}
+.nl-welcome__title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(1.4rem, 4vw, 1.75rem);
+  margin-bottom: 0.35rem;
+}
+.nl-welcome__intro {
+  color: var(--color-ink-soft);
+  font-size: 0.95rem;
+  margin-bottom: 1.5rem;
+  max-width: 34rem;
+}
+.nl-welcome__form {
+  display: grid;
+  gap: 1.1rem;
+  max-width: 34rem;
+}
+.nl-welcome__names {
+  display: grid;
+  gap: 0.9rem;
+}
+@media (min-width: 520px) {
+  .nl-welcome__names {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+.nl-welcome__lab {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-ink-soft);
+  margin-bottom: 0.35rem;
+}
+.nl-welcome__input {
+  width: 100%;
+  background: #fff;
+  color: var(--color-ink);
+  border: 1px solid rgb(17 17 17 / 0.18);
+  padding: 0.75rem 0.9rem;
+  font: inherit;
+  font-size: 0.95rem;
+}
+.nl-welcome__legend {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-ink-soft);
+  margin-bottom: 0.55rem;
+}
+.nl-welcome__pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.nl-welcome__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  border: 1px solid rgb(17 17 17 / 0.18);
+  padding: 0.4rem 0.85rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+  user-select: none;
+}
+.nl-welcome__pill:hover {
+  border-color: var(--color-accent);
+}
+.nl-welcome__pill input {
+  accent-color: var(--color-accent);
+}
+.nl-welcome__actions {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+}
+.nl-welcome__btn {
+  border: 0;
+  cursor: pointer;
+  background: var(--color-accent);
+  color: #fff;
+  font: inherit;
+  font-weight: 800;
+  font-size: 0.82rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  padding: 0.85rem 1.5rem;
+  border-radius: 0.5rem;
+}
+.nl-welcome__btn:hover {
+  background: var(--color-rose-primary-dark);
+}
+.nl-welcome__btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.nl-welcome__skip {
+  background: none;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.9rem;
+  color: var(--color-ink-soft);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.nl-welcome__skip:hover {
+  color: var(--color-rose-primary-dark);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

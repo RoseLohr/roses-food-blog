@@ -29,12 +29,7 @@ export default function PublicLayout({
           {/* Newsletter im Footer — nicht auf der Startseite (auf Wunsch). */}
           <HideOnHome>
             <div className="mx-auto max-w-6xl px-4 pt-8">
-              <div className="max-w-md">
-                <NewsletterSection
-                  source={dict.newsletter.sourceFooter}
-                  compact
-                />
-              </div>
+              <NewsletterSection source={dict.newsletter.sourceFooter} />
             </div>
           </HideOnHome>
           <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-4 py-6 text-sm text-ink-soft">
