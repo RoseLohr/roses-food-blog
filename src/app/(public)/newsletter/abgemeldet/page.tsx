@@ -9,6 +9,11 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
+// Rendert die (öffentliche) Layout-Fußzeile inkl. Newsletter-Box, deren
+// Sichtbarkeit aus den Einstellungen (DB) gelesen wird — daher zur Laufzeit
+// rendern statt zur Build-Zeit statisch vorzurendern.
+export const dynamic = "force-dynamic";
+
 export default async function UnsubscribedPage(props: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {

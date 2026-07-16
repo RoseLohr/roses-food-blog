@@ -275,6 +275,7 @@ export const de = {
       segments: "Segmente",
       campaigns: "Kampagnen",
       sequences: "Sequenzen",
+      newsletterDisplay: "Anzeige im Blog",
       tracking: "Statistik",
       users: "Benutzer",
       settings: "Einstellungen",
@@ -287,6 +288,17 @@ export const de = {
       groupNewsletter: "Newsletter & CRM",
       groupAnalytics: "Auswertung",
       groupSystem: "System",
+    },
+    newsletterDisplay: {
+      title: "Newsletter – Anzeige im Blog",
+      intro:
+        "Steuert, ob die Newsletter-Anmeldebox im Blog (Footer aller Seiten außer der Startseite) angezeigt wird. Die Anmeldung selbst und der Versand bleiben davon unberührt.",
+      toggleLabel: "Newsletter-Anmeldebox im Blog anzeigen",
+      toggleHint:
+        "Ausgeschaltet verschwindet die Box sofort von allen Seiten; bereits angemeldete Kontakte und laufende Kampagnen sind nicht betroffen.",
+      statusVisible: "Aktuell sichtbar im Blog.",
+      statusHidden: "Aktuell ausgeblendet.",
+      saved: "Anzeige-Einstellung gespeichert.",
     },
     dashboard: {
       welcome: "Willkommen zurück",

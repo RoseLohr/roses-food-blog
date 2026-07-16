@@ -6,12 +6,16 @@
  * zu halten. Wird im Footer eingebunden.
  */
 import { NewsletterForm } from "./newsletter-form";
+import { getNewsletterVisible } from "@/lib/settings";
 import { t } from "@/i18n/de";
 
 const dict = t();
 const d = dict.newsletter;
 
 export function NewsletterSection({ source }: { source: string }) {
+  // Im Admin (Newsletter → Anzeige) lässt sich die Box blogweit ausblenden.
+  if (!getNewsletterVisible()) return null;
+
   return (
     <section aria-label={d.formTitle} className="nl-box print:hidden">
       <svg

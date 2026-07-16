@@ -20,6 +20,7 @@ export const SETTING_KEYS = [
   "deploy_repo",
   "deploy_branch",
   "anthropic_api_key",
+  "newsletter_visible",
 ] as const;
 export type SettingKey = (typeof SETTING_KEYS)[number];
 
@@ -98,4 +99,12 @@ export function getDeployConfig(): DeployConfig {
 /** Anthropic-API-Schlüssel für den KI-Rezeptassistenten (DB > .env). */
 export function getAnthropicApiKey(): string {
   return getSetting("anthropic_api_key") || process.env.ANTHROPIC_API_KEY || "";
+}
+
+/**
+ * Ob die Newsletter-Anmeldebox(en) im Frontend angezeigt werden. Standard:
+ * sichtbar. Nur der explizite Wert "0" (im Admin ausgeschaltet) blendet sie aus.
+ */
+export function getNewsletterVisible(): boolean {
+  return getSetting("newsletter_visible") !== "0";
 }

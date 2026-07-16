@@ -44,6 +44,7 @@ const NAV_SECTIONS: AdminNavSection[] = [
       { href: "/admin/segmente", label: nav.segments },
       { href: "/admin/kampagnen", label: nav.campaigns },
       { href: "/admin/sequenzen", label: nav.sequences },
+      { href: "/admin/newsletter", label: nav.newsletterDisplay },
     ],
   },
   { label: nav.groupAnalytics, entries: [{ href: "/admin/statistik", label: nav.tracking }] },
