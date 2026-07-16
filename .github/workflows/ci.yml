@@ -1,0 +1,81 @@
+# Deterministischer Policy-Gate (Mandat A-01/B-01, Verfassung Artikel I).
+# Bis zu diesem Workflow gab es GAR KEINE CI — der Kernbefund des Audits.
+# Jeder Push/PR durchläuft hier blockierende, maschinelle Prüfungen; kein
+# manueller Promote-Schritt, kein Soft-Fail (`|| true`/continue-on-error) auf
+# den Gate-Bedingungen.
+name: CI-Gate
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  # ---- Merge-Gate: typecheck + lint(a11y/standards) + test + build ----------
+  gate:
+    runs-on: ubuntu-latest
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Typecheck (tsc --noEmit)
+        run: npm run typecheck
+      - name: Lint (Standards + Barrierefreiheit, blockierend)
+        run: npm run lint
+      - name: Tests (vitest)
+        run: npm test
+      - name: Build (next, standalone)
+        run: npm run build
+      - name: Findings-Gate (Report; scharf sobald Blocker geschlossen)
+        run: node scripts/regime/findings-gate.mjs
+      - name: Verfassung geladen & gehasht (Session-Steuer, §9.10.5)
+        run: node scripts/regime/constitution-hash.mjs --verify
+
+  # ---- Sicherheits-Gate: Abhängigkeiten, Existenz, SBOM ---------------------
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: npm audit (blockiert ab „high")
+        run: npm audit --audit-level=high
+      - name: Dependency-Existenzprüfung (Anti-Slopsquatting, B-04)
+        run: node scripts/regime/deps-existence.mjs
+      - name: SBOM erzeugen (CycloneDX, A-38/B-09)
+        run: npx --yes @cyclonedx/cyclonedx-npm@latest --output-file sbom.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.json
+
+  # ---- Deploy-Admission: beweist die fail-closed-Sperre (Artikel XV) --------
+  # Der Job ist GRÜN, wenn die Admission KORREKT VERWEIGERT wird — solange
+  # production_eligible=false (Track C ungeprüft), darf nichts nach Produktion.
+  deploy-admission-proof:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Admission muss fail-closed verweigern
+        run: |
+          if node scripts/regime/findings-gate.mjs --admission; then
+            echo "FEHLER: Admission wurde freigegeben, obwohl production_eligible=false erwartet ist."
+            exit 1
+          else
+            echo "OK: Deploy-Admission korrekt fail-closed verweigert."
+          fi
