@@ -517,9 +517,14 @@ html {
 .sk-grid {
   min-width: 900px;
 }
-/* Monatsmodus („Jetzt in Saison"): nur 4–5 Wochen → kein breites Raster nötig */
-.sk-grid--month {
-  min-width: 520px;
+/* Monatsmodus („Jetzt in Saison"): der Monat behält die Spaltenbreite der
+   Jahresansicht und sitzt linksbündig — rechts bleibt die Fläche leer. */
+.sk-grid--month .sk-months,
+.sk-grid--month .sk-track {
+  width: calc(var(--sk-weeks, 52) * 100% / 52);
+}
+.sk-grid--month .sk-month:last-child {
+  border-right: 1px solid rgba(17, 17, 17, 0.08);
 }
 .sk-rowgrid {
   display: grid;

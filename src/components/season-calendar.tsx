@@ -307,8 +307,20 @@ export function SeasonCalendar({ currentWeek }: { currentWeek: number }) {
         else next.add(id);
         return next;
       });
-  const toggleOpen = toggleIn(setOpenIds);
   const toggleImportOpen = toggleIn(setOpenImportIds);
+  // Beim Zuklappen eines Produkts auch dessen Import-Gruppe zurücksetzen,
+  // damit sie beim nächsten Aufklappen wieder eingeklappt startet.
+  const toggleOpen = (id: string) => {
+    if (openIds.has(id)) {
+      setOpenImportIds((prev) => {
+        if (!prev.has(id)) return prev;
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
+    toggleIn(setOpenIds)(id);
+  };
 
   // Saison-Modus: nur der aktuelle Monat bleibt als Zeitachse sichtbar.
   const window: WeekWindow = useMemo(() => {
