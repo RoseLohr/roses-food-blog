@@ -533,10 +533,11 @@ async function main() {
     })),
   );
 
+  // Genau die beiden inhaltlichen Säulen des Blogs — beide öffentlich
+  // (im Newsletter-Willkommensschritt anwählbar).
   await db.insert(schema.interest).values([
     { name: "Rezepte", isPublic: true },
     { name: "Reisen", isPublic: true },
-    { name: "Backen", isPublic: false },
   ]);
 
   const [seq] = await db
