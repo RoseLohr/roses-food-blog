@@ -31,6 +31,8 @@ jobs:
         run: npm run typecheck
       - name: Lint (Standards + Barrierefreiheit, blockierend)
         run: npm run lint
+      - name: Quelltext-Gates (Stubs A-16, Modell-Aliase B-13)
+        run: node scripts/regime/source-gates.mjs
       - name: Tests (vitest)
         run: npm test
       - name: Build (next, standalone)

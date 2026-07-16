@@ -67,6 +67,9 @@ export default tseslint.config(
       ],
       "@typescript-eslint/no-explicit-any": "warn",
       "@typescript-eslint/no-empty-object-type": "warn",
+      // Stehende Kontrolle A-26: kein still verschluckter Fehler. Leere
+      // catch-Blöcke sind verboten; ein bewusst leerer braucht einen Kommentar.
+      "no-empty": ["error", { allowEmptyCatch: false }],
     },
   },
 );

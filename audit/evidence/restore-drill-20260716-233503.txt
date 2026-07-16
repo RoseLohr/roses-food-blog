@@ -1,0 +1,5 @@
+Restore-Drill 20260716-233503
+Ergebnis:      ERFOLG
+Rezepte quelle/restauriert: 4 / 4
+Dauer (s):     9
+Methode:       better-sqlite3 .backup (Online-API) → leeres Verzeichnis

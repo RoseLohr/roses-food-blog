@@ -3,9 +3,12 @@
 Das Deliverable, das die Übergabe überlebt. Was **jetzt live** ist, was in
 folgenden Wellen scharf geschaltet wird, und das Ratchet-Register (S11).
 
-## Was jetzt live ist (Wave 1)
+## Was jetzt live ist (Wave 1 + 2)
 - **Deterministischer Gate** (`.github/workflows/ci.yml`): typecheck · lint
   (Standards + Barrierefreiheit) · vitest · build — blockierend, kein Soft-Fail.
+- **Bare-Handler-Verbot** (`A-26`): ESLint `no-empty` (allowEmptyCatch:false) — kein still verschluckter Fehler. Rot-grün an leerem catch bewiesen.
+- **Quelltext-Gates** (`A-16`/`B-13`): `source-gates.mjs` — keine Stubs, keine floating Modell-Aliase. Rot-grün an getrackter Datei bewiesen; Selbsttest (S12) inklusive.
+- **Restore-Drill** (`B-31`): `restore-drill.sh` monatlich; **einmal geübt** — 4/4 Rezepte wiederhergestellt, 9 s, Beleg in `audit/evidence/`.
 - **Sicherheits-Gate**: `npm audit` (≥high) · Dependency-Existenzprüfung
   (Anti-Slopsquatting) · SBOM (CycloneDX).
 - **Deploy-Admission fail-closed**: `findings-gate --admission` verweigert,
