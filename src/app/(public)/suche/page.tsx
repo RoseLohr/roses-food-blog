@@ -7,6 +7,7 @@ import { ResponsiveImg } from "@/components/responsive-img";
 import { IngredientFilter } from "@/components/ingredient-filter";
 import {
   parseSearchParams,
+  searchDishes,
   searchIngredients,
   searchRecipes,
   searchTravelPosts,
@@ -79,13 +80,27 @@ export default async function SearchPage(props: {
     db.select().from(schema.ingredient).orderBy(asc(schema.ingredient.name)),
   ]);
 
-  const [recipes, travel, ingredientHits] = hasQuery
+  // Bereich (Rezepte/Reisen/beides) steuert, welche Treffer geladen werden.
+  const wantRecipes = filters.scope !== "reisen";
+  const wantTravel = filters.scope !== "rezepte";
+
+  const [recipes, travel, dishHits, rawIngredientHits] = hasQuery
     ? await Promise.all([
-        searchRecipes(filters),
-        searchTravelPosts(filters.q),
+        wantRecipes ? searchRecipes(filters) : Promise.resolve([]),
+        wantTravel ? searchTravelPosts(filters.q) : Promise.resolve([]),
+        wantTravel ? searchDishes(filters) : Promise.resolve([]),
         searchIngredients(filters.q, filters.ingredientSlugs),
       ])
-    : [[], [], []];
+    : [[], [], [], []];
+
+  // Zutaten-Treffer an den gewählten Bereich anpassen.
+  const ingredientHits = rawIngredientHits
+    .map((h) => ({
+      ...h,
+      recipes: wantRecipes ? h.recipes : [],
+      dishes: wantTravel ? h.dishes : [],
+    }))
+    .filter((h) => h.recipes.length > 0 || h.dishes.length > 0);
 
   // Rezepte, die bereits unter einem Zutaten-Treffer erscheinen, nicht ein
   // zweites Mal (in der allgemeinen Rezeptliste) zeigen oder mitzählen.
@@ -95,12 +110,27 @@ export default async function SearchPage(props: {
   const uniqueRecipes = recipes.filter(
     (r) => !ingredientRecipeSlugs.has(r.slug),
   );
-  const dishCount = ingredientHits.reduce((n, h) => n + h.dishes.length, 0);
+  // Gerichte, die schon unter einem Zutaten-Treffer stehen, nicht doppelt
+  // in der Gerichte-Sektion aufführen.
+  const ingredientDishKeys = new Set(
+    ingredientHits.flatMap((h) =>
+      h.dishes.map((x) => `${x.travelSlug}|${x.restaurantName}|${x.dishName}`),
+    ),
+  );
+  const uniqueDishes = dishHits.filter(
+    (x) =>
+      !ingredientDishKeys.has(`${x.travelSlug}|${x.restaurantName}|${x.dishName}`),
+  );
+  const ingredientDishCount = ingredientHits.reduce(
+    (n, h) => n + h.dishes.length,
+    0,
+  );
   const totalResults =
     ingredientRecipeSlugs.size +
     uniqueRecipes.length +
     travel.length +
-    dishCount;
+    ingredientDishCount +
+    uniqueDishes.length;
 
   return (
     <main>
@@ -125,6 +155,31 @@ export default async function SearchPage(props: {
               className="w-full border border-ink-soft/30 px-3 py-2 text-sm"
             />
           </div>
+          {/* Bereich: Rezepte, Reisen (inkl. Gerichte) oder beides */}
+          <fieldset>
+            <legend className="mb-1 text-sm font-semibold">
+              {dict.search.scope}
+            </legend>
+            <div className="flex flex-col gap-0.5">
+              {(
+                [
+                  ["alle", dict.search.scopeAll],
+                  ["rezepte", dict.search.scopeRecipes],
+                  ["reisen", dict.search.scopeTravel],
+                ] as const
+              ).map(([value, label]) => (
+                <label key={value} className="flex items-center gap-2 text-sm">
+                  <input
+                    type="radio"
+                    name="bereich"
+                    value={value}
+                    defaultChecked={filters.scope === value}
+                  />
+                  {label}
+                </label>
+              ))}
+            </div>
+          </fieldset>
           <div>
             <label htmlFor="such-zeit" className="mb-1 block text-sm font-semibold">
               {dict.search.time}
@@ -259,6 +314,54 @@ export default async function SearchPage(props: {
                   <RecipeCard key={r.slug} recipe={r} />
                 ))}
               </div>
+            </section>
+          )}
+
+          {/* Gerichte aus Reiseberichten — über Kategorien & Co. gefunden */}
+          {uniqueDishes.length > 0 && (
+            <section className="mb-8">
+              <h2 className="mb-3 font-display text-2xl font-bold">
+                {dict.search.dishesHeading}
+              </h2>
+              <ul className="flex flex-col gap-3">
+                {uniqueDishes.map((x) => (
+                  <li key={x.dishId} className="bg-white p-4 shadow-sm">
+                    <p className="mb-1 flex flex-wrap items-center gap-1.5">
+                      <span className="bg-leaf px-2 py-0.5 text-[0.68rem] font-semibold uppercase tracking-wide text-white">
+                        {dict.search.fromTravelBadge}
+                      </span>
+                      {x.categories.map((c) => (
+                        <span
+                          key={`k-${c}`}
+                          className="border border-leaf px-2 py-0.5 text-[0.68rem] font-semibold uppercase tracking-wide text-leaf"
+                        >
+                          {c}
+                        </span>
+                      ))}
+                      {x.dietTypes.map((dt) => (
+                        <span
+                          key={`e-${dt}`}
+                          className="border border-leaf px-2 py-0.5 text-[0.68rem] font-semibold uppercase tracking-wide text-leaf"
+                        >
+                          {dt}
+                        </span>
+                      ))}
+                    </p>
+                    <p className="text-sm">
+                      <strong>{x.dishName}</strong> {dict.search.inRestaurant}{" "}
+                      {x.restaurantName}
+                      {x.restaurantCity ? ` (${x.restaurantCity})` : ""} —{" "}
+                      {dict.search.fromTravel}{" "}
+                      <Link
+                        href={`/reisen/${x.travelSlug}`}
+                        className="text-rose-primary underline-offset-2 hover:underline"
+                      >
+                        {x.travelTitle}
+                      </Link>
+                    </p>
+                  </li>
+                ))}
+              </ul>
             </section>
           )}
 

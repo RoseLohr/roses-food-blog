@@ -104,6 +104,11 @@ const dishSchema = z.object({
   description: z.string().default(""),
   images: z.array(z.string()).default([]),
   ingredients: z.array(ingredientRefSchema).default([]),
+  /** Gemeinsame Taxonomien mit Rezepten (optional, seit Gericht-Kategorien) */
+  categories: z.array(taxRefSchema).default([]),
+  tags: z.array(taxRefSchema).default([]),
+  dietTypes: z.array(taxRefSchema).default([]),
+  cuisines: z.array(taxRefSchema).default([]),
 });
 const restaurantSchema = z.object({
   name: z.string().default(""),

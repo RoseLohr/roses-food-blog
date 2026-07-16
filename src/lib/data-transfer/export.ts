@@ -305,6 +305,45 @@ async function collectTravel(
         .where(inArray(schema.dishIngredient.dishId, dishIds))
     : [];
 
+  // Gericht-Taxonomien (gemeinsame Tabellen mit Rezepten) als Name/Slug-Refs.
+  const dishTaxOne = async (
+    join:
+      | typeof schema.dishCategory
+      | typeof schema.dishTag
+      | typeof schema.dishDietType
+      | typeof schema.dishCuisine,
+    joinCol:
+      | typeof schema.dishCategory.categoryId
+      | typeof schema.dishTag.tagId
+      | typeof schema.dishDietType.dietTypeId
+      | typeof schema.dishCuisine.cuisineId,
+    master:
+      | typeof schema.category
+      | typeof schema.tag
+      | typeof schema.dietType
+      | typeof schema.cuisine,
+  ): Promise<Map<number, Array<{ name: string; slug: string }>>> => {
+    const map = new Map<number, Array<{ name: string; slug: string }>>();
+    if (!dishIds.length) return map;
+    const rows = await db
+      .select({ dishId: join.dishId, name: master.name, slug: master.slug })
+      .from(join)
+      .innerJoin(master, eq(joinCol, master.id))
+      .where(inArray(join.dishId, dishIds));
+    for (const r of rows) {
+      const list = map.get(r.dishId) ?? [];
+      list.push({ name: r.name, slug: r.slug });
+      map.set(r.dishId, list);
+    }
+    return map;
+  };
+  const [dishCats, dishTags, dishDiets, dishCuisines] = await Promise.all([
+    dishTaxOne(schema.dishCategory, schema.dishCategory.categoryId, schema.category),
+    dishTaxOne(schema.dishTag, schema.dishTag.tagId, schema.tag),
+    dishTaxOne(schema.dishDietType, schema.dishDietType.dietTypeId, schema.dietType),
+    dishTaxOne(schema.dishCuisine, schema.dishCuisine.cuisineId, schema.cuisine),
+  ]);
+
   const ingRef = (ingredientId: number) => {
     const ing = ingredients.get(ingredientId);
     return {
@@ -353,6 +392,10 @@ async function collectTravel(
             ingredients: dishIngs
               .filter((di) => di.dishId === d.id)
               .map((di) => ingRef(di.ingredientId)),
+            categories: dishCats.get(d.id) ?? [],
+            tags: dishTags.get(d.id) ?? [],
+            dietTypes: dishDiets.get(d.id) ?? [],
+            cuisines: dishCuisines.get(d.id) ?? [],
           })),
       })),
   }));

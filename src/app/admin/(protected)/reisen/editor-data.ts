@@ -27,6 +27,22 @@ export async function buildTravelEditorProps(
     };
   });
 
+  // Taxonomie-Optionen für die Gericht-Zuordnung (gemeinsam mit Rezepten).
+  const [categories, tags, dietTypes, cuisines] = await Promise.all([
+    db.select({ id: schema.category.id, name: schema.category.name })
+      .from(schema.category)
+      .orderBy(asc(schema.category.name)),
+    db.select({ id: schema.tag.id, name: schema.tag.name })
+      .from(schema.tag)
+      .orderBy(asc(schema.tag.name)),
+    db.select({ id: schema.dietType.id, name: schema.dietType.name })
+      .from(schema.dietType)
+      .orderBy(asc(schema.dietType.name)),
+    db.select({ id: schema.cuisine.id, name: schema.cuisine.name })
+      .from(schema.cuisine)
+      .orderBy(asc(schema.cuisine.name)),
+  ]);
+
   const base: TravelEditorProps = {
     initial: {
       id: null,
@@ -44,6 +60,7 @@ export async function buildTravelEditorProps(
       status: "entwurf",
       restaurants: [],
     },
+    taxonomies: { categories, tags, dietTypes, cuisines },
     images,
   };
 
@@ -78,6 +95,10 @@ export async function buildTravelEditorProps(
           description: d.description,
           imageIds: d.images.map((i) => i.id),
           ingredientsText: d.ingredients.map((i) => i.name).join(", "),
+          categoryIds: d.categories.map((x) => x.id),
+          tagIds: d.tags.map((x) => x.id),
+          dietTypeIds: d.dietTypes.map((x) => x.id),
+          cuisineIds: d.cuisines.map((x) => x.id),
         })),
       })),
     },

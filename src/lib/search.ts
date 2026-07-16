@@ -9,8 +9,12 @@ import type { RecipeCardData } from "@/components/recipe-card";
 import { publishedRecipeCards } from "@/lib/recipe-list";
 import type { MediaImage } from "@/lib/recipes";
 
+/** Bereich der Suche: beides, nur Rezepte oder nur Reisen (inkl. Gerichte). */
+export type SearchScope = "alle" | "rezepte" | "reisen";
+
 export interface SearchFilters {
   q: string;
+  scope: SearchScope;
   maxTime: number | null;
   categorySlugs: string[];
   tagSlugs: string[];
@@ -27,8 +31,11 @@ export function parseSearchParams(
   const maxTimeRaw = Number(
     typeof params.zeit === "string" ? params.zeit : NaN,
   );
+  const scopeRaw = typeof params.bereich === "string" ? params.bereich : "";
   return {
     q: typeof params.q === "string" ? params.q.trim().slice(0, 100) : "",
+    scope:
+      scopeRaw === "rezepte" || scopeRaw === "reisen" ? scopeRaw : "alle",
     maxTime:
       Number.isFinite(maxTimeRaw) && maxTimeRaw > 0 ? maxTimeRaw : null,
     categorySlugs: list(params.kategorie),
@@ -189,6 +196,163 @@ export async function searchTravelPosts(q: string): Promise<TravelSearchHit[]> {
         eq(schema.travelPost.status, "veroeffentlicht"),
       ),
     );
+}
+
+export interface DishHit {
+  dishId: number;
+  dishName: string;
+  dishDescription: string;
+  restaurantName: string;
+  restaurantCity: string;
+  travelSlug: string;
+  travelTitle: string;
+  /** Für die Kennzeichnung im Suchergebnis */
+  categories: string[];
+  dietTypes: string[];
+}
+
+async function dishIdsForJoin(
+  join: "category" | "tag" | "diet" | "cuisine" | "ingredient",
+  slugs: string[],
+): Promise<number[] | null> {
+  if (slugs.length === 0) return null;
+  switch (join) {
+    case "category": {
+      const rows = await db
+        .select({ id: schema.dishCategory.dishId })
+        .from(schema.dishCategory)
+        .innerJoin(schema.category, eq(schema.dishCategory.categoryId, schema.category.id))
+        .where(inArray(schema.category.slug, slugs));
+      return rows.map((r) => r.id);
+    }
+    case "tag": {
+      const rows = await db
+        .select({ id: schema.dishTag.dishId })
+        .from(schema.dishTag)
+        .innerJoin(schema.tag, eq(schema.dishTag.tagId, schema.tag.id))
+        .where(inArray(schema.tag.slug, slugs));
+      return rows.map((r) => r.id);
+    }
+    case "diet": {
+      const rows = await db
+        .select({ id: schema.dishDietType.dishId })
+        .from(schema.dishDietType)
+        .innerJoin(schema.dietType, eq(schema.dishDietType.dietTypeId, schema.dietType.id))
+        .where(inArray(schema.dietType.slug, slugs));
+      return rows.map((r) => r.id);
+    }
+    case "cuisine": {
+      const rows = await db
+        .select({ id: schema.dishCuisine.dishId })
+        .from(schema.dishCuisine)
+        .innerJoin(schema.cuisine, eq(schema.dishCuisine.cuisineId, schema.cuisine.id))
+        .where(inArray(schema.cuisine.slug, slugs));
+      return rows.map((r) => r.id);
+    }
+    case "ingredient": {
+      const rows = await db
+        .select({ id: schema.dishIngredient.dishId })
+        .from(schema.dishIngredient)
+        .innerJoin(
+          schema.ingredient,
+          eq(schema.dishIngredient.ingredientId, schema.ingredient.id),
+        )
+        .where(inArray(schema.ingredient.slug, slugs));
+      return rows.map((r) => r.id);
+    }
+  }
+}
+
+/**
+ * Gerichte aus Reiseberichten suchen — über dieselben Taxonomien wie Rezepte
+ * (Normalisierung), Zutaten und Freitext (Gerichtname/-beschreibung oder
+ * Zutat). Nur Gerichte veröffentlichter Reiseberichte; die Zeit-Filter
+ * (Zubereitungszeit) betreffen Gerichte nicht.
+ */
+export async function searchDishes(filters: SearchFilters): Promise<DishHit[]> {
+  let ids: number[] | null = null;
+
+  if (filters.q) {
+    const like = "%" + filters.q.toLowerCase() + "%";
+    const textRows = await db
+      .select({ id: schema.dish.id })
+      .from(schema.dish)
+      .where(
+        sql`lower(${schema.dish.name}) LIKE ${like} OR lower(${schema.dish.description}) LIKE ${like}`,
+      );
+    const ingRows = await db
+      .select({ id: schema.dishIngredient.dishId })
+      .from(schema.dishIngredient)
+      .innerJoin(
+        schema.ingredient,
+        eq(schema.dishIngredient.ingredientId, schema.ingredient.id),
+      )
+      .where(sql`lower(${schema.ingredient.name}) LIKE ${like}`);
+    ids = [...new Set([...textRows.map((r) => r.id), ...ingRows.map((r) => r.id)])];
+    if (ids.length === 0) return [];
+  }
+
+  ids = intersect(ids, await dishIdsForJoin("category", filters.categorySlugs));
+  ids = intersect(ids, await dishIdsForJoin("tag", filters.tagSlugs));
+  ids = intersect(ids, await dishIdsForJoin("diet", filters.dietSlugs));
+  ids = intersect(ids, await dishIdsForJoin("cuisine", filters.cuisineSlugs));
+  ids = intersect(ids, await dishIdsForJoin("ingredient", filters.ingredientSlugs));
+  // Ohne jedes inhaltliche Kriterium keine Gericht-Treffer (reiner Zeitfilter
+  // betrifft nur Rezepte).
+  if (ids === null || ids.length === 0) return [];
+
+  const rows = await db
+    .select({
+      dishId: schema.dish.id,
+      dishName: schema.dish.name,
+      dishDescription: schema.dish.description,
+      restaurantName: schema.restaurant.name,
+      restaurantCity: schema.restaurant.city,
+      travelSlug: schema.travelPost.slug,
+      travelTitle: schema.travelPost.title,
+      sortOrder: schema.dish.sortOrder,
+    })
+    .from(schema.dish)
+    .innerJoin(schema.restaurant, eq(schema.dish.restaurantId, schema.restaurant.id))
+    .innerJoin(
+      schema.travelPost,
+      eq(schema.restaurant.travelPostId, schema.travelPost.id),
+    )
+    .where(
+      and(
+        inArray(schema.dish.id, ids),
+        eq(schema.travelPost.status, "veroeffentlicht"),
+      ),
+    )
+    .orderBy(asc(schema.travelPost.title), asc(schema.dish.sortOrder));
+
+  const hitIds = rows.map((r) => r.dishId);
+  const [catRows, dietRows] = hitIds.length
+    ? await Promise.all([
+        db
+          .select({ dishId: schema.dishCategory.dishId, name: schema.category.name })
+          .from(schema.dishCategory)
+          .innerJoin(schema.category, eq(schema.dishCategory.categoryId, schema.category.id))
+          .where(inArray(schema.dishCategory.dishId, hitIds)),
+        db
+          .select({ dishId: schema.dishDietType.dishId, name: schema.dietType.name })
+          .from(schema.dishDietType)
+          .innerJoin(schema.dietType, eq(schema.dishDietType.dietTypeId, schema.dietType.id))
+          .where(inArray(schema.dishDietType.dishId, hitIds)),
+      ])
+    : [[], []];
+
+  return rows.map((r) => ({
+    dishId: r.dishId,
+    dishName: r.dishName,
+    dishDescription: r.dishDescription,
+    restaurantName: r.restaurantName,
+    restaurantCity: r.restaurantCity,
+    travelSlug: r.travelSlug,
+    travelTitle: r.travelTitle,
+    categories: catRows.filter((c) => c.dishId === r.dishId).map((c) => c.name),
+    dietTypes: dietRows.filter((c) => c.dishId === r.dishId).map((c) => c.name),
+  }));
 }
 
 export interface IngredientHit {

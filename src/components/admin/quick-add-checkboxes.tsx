@@ -6,8 +6,11 @@
  * anlegen, ohne die Seite zu verlassen — die halb ausgefüllte Form bleibt
  * erhalten. Der neue Eintrag erscheint sofort angehakt.
  *
- * Rendert echte <input type="checkbox" name={name}>, submittet also nativ mit
- * der umgebenden Form (kein zusätzlicher State-Transport nötig).
+ * Zwei Betriebsarten (wie ImagePicker):
+ * - Unkontrolliert (name + selectedIds): rendert echte
+ *   <input type="checkbox" name={name}>, submittet nativ mit der Form.
+ * - Kontrolliert (value + onChange): Auswahl lebt im State des Aufrufers
+ *   (z. B. Reise-Editor, der Gerichte als JSON serialisiert).
  */
 import { useId, useState } from "react";
 import { t } from "@/i18n/de";
@@ -30,26 +33,48 @@ export function QuickAddCheckboxes({
   name,
   legend,
   options: initialOptions,
-  selectedIds,
+  selectedIds = [],
   kind,
   type,
+  value,
+  onChange,
 }: {
-  name: string;
+  name?: string;
   legend: string;
   options: Option[];
-  selectedIds: number[];
+  selectedIds?: number[];
   kind: QuickAddKind;
   type?: string;
+  /** Kontrollierter Modus: aktuelle Auswahl (statt selectedIds). */
+  value?: number[];
+  /** Kontrollierter Modus: Auswahl geändert. */
+  onChange?: (ids: number[]) => void;
 }) {
+  const controlled = value !== undefined && onChange !== undefined;
   const [options, setOptions] = useState<Option[]>(initialOptions);
   const [checked, setChecked] = useState<Set<number>>(new Set(selectedIds));
-  const [value, setValue] = useState("");
+  const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const uid = useId();
 
+  const isChecked = (id: number) =>
+    controlled ? value.includes(id) : checked.has(id);
+  const toggle = (id: number, on: boolean) => {
+    if (controlled) {
+      onChange(on ? [...value, id] : value.filter((x) => x !== id));
+    } else {
+      setChecked((prev) => {
+        const next = new Set(prev);
+        if (on) next.add(id);
+        else next.delete(id);
+        return next;
+      });
+    }
+  };
+
   async function add() {
-    const trimmed = value.trim();
+    const trimmed = input.trim();
     if (!trimmed || busy) return;
     setBusy(true);
     setMsg(null);
@@ -68,8 +93,12 @@ export function QuickAddCheckboxes({
               a.name.localeCompare(b.name, "de"),
             ),
       );
-      setChecked((prev) => new Set(prev).add(entry.id));
-      setValue("");
+      if (controlled) {
+        if (!value.includes(entry.id)) onChange([...value, entry.id]);
+      } else {
+        setChecked((prev) => new Set(prev).add(entry.id));
+      }
+      setInput("");
       if (entry.existed) setMsg(dict.quickAdd.exists);
     } catch {
       setMsg(dict.quickAdd.error);
@@ -89,9 +118,14 @@ export function QuickAddCheckboxes({
           <label key={o.id} className="flex items-center gap-2 py-0.5 text-sm">
             <input
               type="checkbox"
-              name={name}
+              name={controlled ? undefined : name}
               value={o.id}
-              defaultChecked={checked.has(o.id)}
+              {...(controlled
+                ? {
+                    checked: isChecked(o.id),
+                    onChange: (e) => toggle(o.id, e.target.checked),
+                  }
+                : { defaultChecked: checked.has(o.id) })}
             />
             {o.name}
           </label>
@@ -103,8 +137,8 @@ export function QuickAddCheckboxes({
         </label>
         <input
           id={`${uid}-new`}
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
               e.preventDefault();
@@ -117,7 +151,7 @@ export function QuickAddCheckboxes({
         <button
           type="button"
           onClick={add}
-          disabled={busy || value.trim() === ""}
+          disabled={busy || input.trim() === ""}
           className="shrink-0 rounded-lg border border-leaf/40 bg-leaf-soft/20 px-2.5 py-1 text-sm font-medium text-leaf hover:bg-leaf-soft/40 disabled:opacity-50"
         >
           {busy ? dict.quickAdd.adding : `+ ${dict.quickAdd.add}`}

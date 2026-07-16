@@ -94,6 +94,74 @@ describe("Reise-CRUD", () => {
     expect(hits[0].dishName).toBe("Krabben-Omelett");
   });
 
+  it("ordnet Gerichten dieselben Taxonomien wie Rezepten zu und findet sie in der Suche", async () => {
+    const { saveTravelFromForm } = await import("@/lib/travel-save");
+    const { getFullTravelPost } = await import("@/lib/travel");
+    const { searchDishes, parseSearchParams } = await import("@/lib/search");
+    const { db, schema } = await import("@/db");
+
+    // Gemeinsame Taxonomie-Einträge (wie sie auch ein Rezept nutzen würde)
+    const [cat] = await db
+      .insert(schema.category)
+      .values({ name: "Pfannengericht", slug: "pfannengericht" })
+      .returning();
+    const [diet] = await db
+      .insert(schema.dietType)
+      .values({ name: "Vegetarisch", slug: "vegetarisch" })
+      .returning();
+
+    const fd = new FormData();
+    fd.set("titel", "Okonomiyaki in Osaka");
+    fd.set("status", "veroeffentlicht");
+    fd.set(
+      "restaurants",
+      JSON.stringify([
+        {
+          name: "Mizuno",
+          city: "Osaka",
+          description: "",
+          dishes: [
+            {
+              name: "Okonomiyaki",
+              description: "Herzhafter Pfannkuchen.",
+              imageIds: [],
+              ingredients: ["Kohl"],
+              categoryIds: [cat.id, 99999], // unbekannte ID wird ignoriert
+              dietTypeIds: [diet.id],
+              tagIds: [],
+              cuisineIds: [],
+            },
+          ],
+        },
+      ]),
+    );
+    const result = await saveTravelFromForm(fd, adminId);
+    const id = (result as { travelId: number }).travelId;
+
+    // Rückgelesen: Taxonomien hängen am Gericht
+    const full = await getFullTravelPost({ id });
+    const dish = full!.restaurants[0].dishes[0];
+    expect(dish.categories.map((c) => c.name)).toEqual(["Pfannengericht"]);
+    expect(dish.dietTypes.map((d) => d.name)).toEqual(["Vegetarisch"]);
+
+    // Suche: Gericht über die Kategorie-Facette finden (wie ein Rezept)
+    const filters = parseSearchParams({ kategorie: "pfannengericht" });
+    const hits = await searchDishes(filters);
+    expect(hits).toHaveLength(1);
+    expect(hits[0].dishName).toBe("Okonomiyaki");
+    expect(hits[0].travelTitle).toBe("Okonomiyaki in Osaka");
+    expect(hits[0].categories).toEqual(["Pfannengericht"]);
+    expect(hits[0].dietTypes).toEqual(["Vegetarisch"]);
+
+    // Bereichs-Parameter wird geparst
+    expect(parseSearchParams({ bereich: "reisen" }).scope).toBe("reisen");
+    expect(parseSearchParams({ bereich: "unsinn" }).scope).toBe("alle");
+
+    // Freitext findet das Gericht ebenfalls (Name)
+    const textHits = await searchDishes(parseSearchParams({ q: "okonomiyaki" }));
+    expect(textHits.some((h) => h.dishName === "Okonomiyaki")).toBe(true);
+  });
+
   it("löscht Reiseberichte samt Restaurants und Gerichten", async () => {
     const { saveTravelFromForm, deleteTravelById } = await import("@/lib/travel-save");
     const { getFullTravelPost } = await import("@/lib/travel");
@@ -103,6 +171,6 @@ describe("Reise-CRUD", () => {
     const id = (result as { travelId: number }).travelId;
     await deleteTravelById(id);
     expect(await getFullTravelPost({ id })).toBeNull();
-    expect(await db.select().from(schema.restaurant)).toHaveLength(1); // nur vom ersten Test
+    expect(await db.select().from(schema.restaurant)).toHaveLength(2); // vom ersten + Taxonomie-Test
   });
 });

@@ -8,6 +8,10 @@
 import { useActionState, useState } from "react";
 import { saveTravelAction, type TravelFormState } from "./actions";
 import { ImagePicker, type ImageChoice } from "@/components/admin/image-picker";
+import {
+  QuickAddCheckboxes,
+  type Option as TaxonomyOption,
+} from "@/components/admin/quick-add-checkboxes";
 import { RichTextEditor } from "@/components/admin/rich-text-editor";
 import { t } from "@/i18n/de";
 
@@ -20,6 +24,11 @@ interface EditorDish {
   imageIds: number[];
   /** Komma-getrennte Eingabe, als String im State gehalten */
   ingredientsText: string;
+  /** Taxonomie-Zuordnungen (gemeinsame Tabellen mit Rezepten), optional */
+  categoryIds: number[];
+  tagIds: number[];
+  dietTypeIds: number[];
+  cuisineIds: number[];
 }
 interface EditorRestaurant {
   name: string;
@@ -46,6 +55,13 @@ export interface TravelEditorProps {
     status: string;
     restaurants: EditorRestaurant[];
   };
+  /** Auswahllisten der gemeinsamen Taxonomien (für die Gericht-Zuordnung) */
+  taxonomies: {
+    categories: TaxonomyOption[];
+    tags: TaxonomyOption[];
+    dietTypes: TaxonomyOption[];
+    cuisines: TaxonomyOption[];
+  };
   images: ImageChoice[];
   message?: string | null;
 }
@@ -56,13 +72,27 @@ const btnSecondary =
   "rounded-lg border border-ink/20 px-3 py-1.5 text-sm hover:bg-cream";
 
 function emptyDish(): EditorDish {
-  return { name: "", description: "", imageIds: [], ingredientsText: "" };
+  return {
+    name: "",
+    description: "",
+    imageIds: [],
+    ingredientsText: "",
+    categoryIds: [],
+    tagIds: [],
+    dietTypeIds: [],
+    cuisineIds: [],
+  };
 }
 function emptyRestaurant(): EditorRestaurant {
   return { name: "", city: "", description: "", imageId: null, dishes: [emptyDish()] };
 }
 
-export function TravelEditor({ initial, images, message }: TravelEditorProps) {
+export function TravelEditor({
+  initial,
+  taxonomies,
+  images,
+  message,
+}: TravelEditorProps) {
   const [state, formAction, pending] = useActionState<TravelFormState, FormData>(
     saveTravelAction,
     {},
@@ -85,6 +115,10 @@ export function TravelEditor({ initial, images, message }: TravelEditorProps) {
           .split(",")
           .map((s) => s.trim())
           .filter(Boolean),
+        categoryIds: dish.categoryIds,
+        tagIds: dish.tagIds,
+        dietTypeIds: dish.dietTypeIds,
+        cuisineIds: dish.cuisineIds,
       })),
     })),
   );
@@ -92,6 +126,19 @@ export function TravelEditor({ initial, images, message }: TravelEditorProps) {
   const updateRestaurant = (i: number, patch: Partial<EditorRestaurant>) =>
     setRestaurants((prev) =>
       prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)),
+    );
+  const updateDish = (ri: number, di: number, patch: Partial<EditorDish>) =>
+    setRestaurants((prev) =>
+      prev.map((r, idx) =>
+        idx === ri
+          ? {
+              ...r,
+              dishes: r.dishes.map((x, dIdx) =>
+                dIdx === di ? { ...x, ...patch } : x,
+              ),
+            }
+          : r,
+      ),
     );
 
   return (
@@ -298,6 +345,62 @@ export function TravelEditor({ initial, images, message }: TravelEditorProps) {
                         }
                         multiple
                       />
+                      {/* Gemeinsame Taxonomien mit Rezepten — alle optional */}
+                      <details
+                        className="md:col-span-2"
+                        open={
+                          dish.categoryIds.length > 0 ||
+                          dish.tagIds.length > 0 ||
+                          dish.dietTypeIds.length > 0 ||
+                          dish.cuisineIds.length > 0
+                        }
+                      >
+                        <summary className="cursor-pointer text-sm font-medium text-ink-soft hover:text-ink">
+                          {d.dishTaxonomies}
+                        </summary>
+                        <div className="mt-3 grid gap-4 md:grid-cols-2">
+                          <QuickAddCheckboxes
+                            legend={dict.admin.recipes.categories}
+                            options={taxonomies.categories}
+                            kind="taxonomy"
+                            type="kategorie"
+                            value={dish.categoryIds}
+                            onChange={(ids) =>
+                              updateDish(ri, di, { categoryIds: ids })
+                            }
+                          />
+                          <QuickAddCheckboxes
+                            legend={dict.admin.recipes.dietTypes}
+                            options={taxonomies.dietTypes}
+                            kind="taxonomy"
+                            type="ernaehrungsform"
+                            value={dish.dietTypeIds}
+                            onChange={(ids) =>
+                              updateDish(ri, di, { dietTypeIds: ids })
+                            }
+                          />
+                          <QuickAddCheckboxes
+                            legend={dict.admin.recipes.cuisines}
+                            options={taxonomies.cuisines}
+                            kind="taxonomy"
+                            type="kueche"
+                            value={dish.cuisineIds}
+                            onChange={(ids) =>
+                              updateDish(ri, di, { cuisineIds: ids })
+                            }
+                          />
+                          <QuickAddCheckboxes
+                            legend={dict.admin.recipes.tags}
+                            options={taxonomies.tags}
+                            kind="taxonomy"
+                            type="schlagwort"
+                            value={dish.tagIds}
+                            onChange={(ids) =>
+                              updateDish(ri, di, { tagIds: ids })
+                            }
+                          />
+                        </div>
+                      </details>
                     </div>
                     <button
                       type="button"

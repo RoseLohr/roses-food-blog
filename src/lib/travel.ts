@@ -8,6 +8,12 @@ import type { MediaImage } from "@/lib/recipes";
 
 export type TravelPost = typeof schema.travelPost.$inferSelect;
 
+export interface TaxonomyRef {
+  id: number;
+  name: string;
+  slug: string;
+}
+
 export interface FullDish {
   id: number;
   name: string;
@@ -15,6 +21,11 @@ export interface FullDish {
   sortOrder: number;
   images: MediaImage[];
   ingredients: Array<{ id: number; name: string; slug: string }>;
+  /** Gemeinsame Taxonomien mit Rezepten (Normalisierung) */
+  categories: TaxonomyRef[];
+  tags: TaxonomyRef[];
+  dietTypes: TaxonomyRef[];
+  cuisines: TaxonomyRef[];
 }
 
 export interface FullRestaurant {
@@ -125,6 +136,48 @@ export async function getFullTravelPost(
         .where(inArray(schema.dishIngredient.dishId, dishIds))
     : [];
 
+  // Taxonomie-Zuordnungen aller Gerichte (jeweils eine Abfrage pro Taxonomie).
+  type DishTax = { dishId: number; id: number; name: string; slug: string };
+  const loadDishTax = async (
+    joinTable:
+      | typeof schema.dishCategory
+      | typeof schema.dishTag
+      | typeof schema.dishDietType
+      | typeof schema.dishCuisine,
+    joinColumn:
+      | typeof schema.dishCategory.categoryId
+      | typeof schema.dishTag.tagId
+      | typeof schema.dishDietType.dietTypeId
+      | typeof schema.dishCuisine.cuisineId,
+    taxTable:
+      | typeof schema.category
+      | typeof schema.tag
+      | typeof schema.dietType
+      | typeof schema.cuisine,
+  ): Promise<DishTax[]> =>
+    dishIds.length
+      ? db
+          .select({
+            dishId: joinTable.dishId,
+            id: taxTable.id,
+            name: taxTable.name,
+            slug: taxTable.slug,
+          })
+          .from(joinTable)
+          .innerJoin(taxTable, eq(joinColumn, taxTable.id))
+          .where(inArray(joinTable.dishId, dishIds))
+      : Promise.resolve([]);
+  const [dishCats, dishTags, dishDiets, dishCuisines] = await Promise.all([
+    loadDishTax(schema.dishCategory, schema.dishCategory.categoryId, schema.category),
+    loadDishTax(schema.dishTag, schema.dishTag.tagId, schema.tag),
+    loadDishTax(schema.dishDietType, schema.dishDietType.dietTypeId, schema.dietType),
+    loadDishTax(schema.dishCuisine, schema.dishCuisine.cuisineId, schema.cuisine),
+  ]);
+  const taxFor = (rows: DishTax[], dishId: number) =>
+    rows
+      .filter((r) => r.dishId === dishId)
+      .map(({ id, name, slug }) => ({ id, name, slug }));
+
   const restaurants: FullRestaurant[] = restaurantRows.map((r) => ({
     id: r.id,
     name: r.name,
@@ -144,6 +197,10 @@ export async function getFullTravelPost(
         ingredients: dishIngredientRows
           .filter((di) => di.dishId === d.id)
           .map(({ id, name, slug }) => ({ id, name, slug })),
+        categories: taxFor(dishCats, d.id),
+        tags: taxFor(dishTags, d.id),
+        dietTypes: taxFor(dishDiets, d.id),
+        cuisines: taxFor(dishCuisines, d.id),
       })),
   }));
 

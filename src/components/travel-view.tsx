@@ -179,6 +179,27 @@ export function TravelView({
                           )}
                           <div>
                             <h4 className="font-semibold">{dish.name}</h4>
+                            {(dish.categories.length > 0 ||
+                              dish.dietTypes.length > 0) && (
+                              <p className="mt-1.5 flex flex-wrap gap-1.5">
+                                {dish.categories.map((c) => (
+                                  <span
+                                    key={`k-${c.id}`}
+                                    className="border border-leaf px-2 py-0.5 text-[0.68rem] font-semibold uppercase tracking-wide text-leaf"
+                                  >
+                                    {c.name}
+                                  </span>
+                                ))}
+                                {dish.dietTypes.map((dt) => (
+                                  <span
+                                    key={`e-${dt.id}`}
+                                    className="bg-leaf px-2 py-0.5 text-[0.68rem] font-semibold uppercase tracking-wide text-white"
+                                  >
+                                    {dt.name}
+                                  </span>
+                                ))}
+                              </p>
+                            )}
                             {dish.description && (
                               <div
                                 className="prose-content mt-1 text-sm text-ink-soft"

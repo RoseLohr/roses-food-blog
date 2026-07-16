@@ -430,6 +430,73 @@ export const dishIngredient = sqliteTable(
   ],
 );
 
+// Taxonomie-Zuordnungen der Gerichte (n:m) — DIESELBEN Taxonomie-Tabellen wie
+// bei Rezepten (Normalisierung): ein „Okonomiyaki"-Gericht im Reisebericht und
+// das Okonomiyaki-Rezept teilen sich z. B. denselben Kategorie-Eintrag.
+export const dishCategory = sqliteTable(
+  "dish_category",
+  {
+    dishId: integer("dish_id")
+      .notNull()
+      .references(() => dish.id, { onDelete: "cascade" }),
+    categoryId: integer("category_id")
+      .notNull()
+      .references(() => category.id, { onDelete: "cascade" }),
+  },
+  (t) => [
+    primaryKey({ columns: [t.dishId, t.categoryId] }),
+    index("dish_category_category_idx").on(t.categoryId),
+  ],
+);
+
+export const dishTag = sqliteTable(
+  "dish_tag",
+  {
+    dishId: integer("dish_id")
+      .notNull()
+      .references(() => dish.id, { onDelete: "cascade" }),
+    tagId: integer("tag_id")
+      .notNull()
+      .references(() => tag.id, { onDelete: "cascade" }),
+  },
+  (t) => [
+    primaryKey({ columns: [t.dishId, t.tagId] }),
+    index("dish_tag_tag_idx").on(t.tagId),
+  ],
+);
+
+export const dishDietType = sqliteTable(
+  "dish_diet_type",
+  {
+    dishId: integer("dish_id")
+      .notNull()
+      .references(() => dish.id, { onDelete: "cascade" }),
+    dietTypeId: integer("diet_type_id")
+      .notNull()
+      .references(() => dietType.id, { onDelete: "cascade" }),
+  },
+  (t) => [
+    primaryKey({ columns: [t.dishId, t.dietTypeId] }),
+    index("dish_diet_type_diet_idx").on(t.dietTypeId),
+  ],
+);
+
+export const dishCuisine = sqliteTable(
+  "dish_cuisine",
+  {
+    dishId: integer("dish_id")
+      .notNull()
+      .references(() => dish.id, { onDelete: "cascade" }),
+    cuisineId: integer("cuisine_id")
+      .notNull()
+      .references(() => cuisine.id, { onDelete: "cascade" }),
+  },
+  (t) => [
+    primaryKey({ columns: [t.dishId, t.cuisineId] }),
+    index("dish_cuisine_cuisine_idx").on(t.cuisineId),
+  ],
+);
+
 // ---------------------------------------------------------------------------
 // Startseite
 // ---------------------------------------------------------------------------

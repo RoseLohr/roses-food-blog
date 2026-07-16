@@ -43,6 +43,13 @@
       "when": 1784400000000,
       "tag": "0005_homepage_boxes",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1784500000000,
+      "tag": "0006_dish_taxonomies",
+      "breakpoints": true
     }
   ]
 }

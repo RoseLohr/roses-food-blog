@@ -25,6 +25,11 @@ const restaurantsSchema = z.array(
           imageIds: z.array(z.number().int().positive()).default([]),
           /** Zutatennamen (Komma-getrennt im UI, hier bereits Array) */
           ingredients: z.array(z.string().trim().max(120)).default([]),
+          /** Taxonomie-IDs (gemeinsame Tabellen mit Rezepten), alle optional */
+          categoryIds: z.array(z.number().int().positive()).default([]),
+          tagIds: z.array(z.number().int().positive()).default([]),
+          dietTypeIds: z.array(z.number().int().positive()).default([]),
+          cuisineIds: z.array(z.number().int().positive()).default([]),
         }),
       )
       .default([]),
@@ -167,6 +172,33 @@ export async function saveTravelFromForm(
     restaurants.flatMap((r) => r.dishes.flatMap((d) => d.ingredients)),
   );
 
+  // Gültige Taxonomie-IDs einmalig ermitteln (verhindert FK-Fehler durch
+  // z. B. zwischenzeitlich gelöschte Einträge — unbekannte IDs werden ignoriert).
+  const allDishes = restaurants.flatMap((r) => r.dishes);
+  const validTaxIds = async (
+    table:
+      | typeof schema.category
+      | typeof schema.tag
+      | typeof schema.dietType
+      | typeof schema.cuisine,
+    ids: number[],
+  ): Promise<Set<number>> => {
+    const unique = [...new Set(ids)];
+    if (!unique.length) return new Set();
+    const rows = await db
+      .select({ id: table.id })
+      .from(table)
+      .where(inArray(table.id, unique));
+    return new Set(rows.map((r) => r.id));
+  };
+  const [validCategoryIds, validTagIds, validDietIds, validCuisineIds] =
+    await Promise.all([
+      validTaxIds(schema.category, allDishes.flatMap((d) => d.categoryIds)),
+      validTaxIds(schema.tag, allDishes.flatMap((d) => d.tagIds)),
+      validTaxIds(schema.dietType, allDishes.flatMap((d) => d.dietTypeIds)),
+      validTaxIds(schema.cuisine, allDishes.flatMap((d) => d.cuisineIds)),
+    ]);
+
   for (const [ri, r] of restaurants.entries()) {
     const [rest] = await db
       .insert(schema.restaurant)
@@ -207,6 +239,32 @@ export async function saveTravelFromForm(
             dishId: dishRow.id,
             ingredientId: ingredientIds.get(key)!,
           })),
+        );
+      }
+
+      // Taxonomie-Zuordnungen des Gerichts (dedupliziert + validiert)
+      const catIds = [...new Set(d.categoryIds)].filter((x) => validCategoryIds.has(x));
+      if (catIds.length) {
+        await db.insert(schema.dishCategory).values(
+          catIds.map((categoryId) => ({ dishId: dishRow.id, categoryId })),
+        );
+      }
+      const tagIds = [...new Set(d.tagIds)].filter((x) => validTagIds.has(x));
+      if (tagIds.length) {
+        await db.insert(schema.dishTag).values(
+          tagIds.map((tagId) => ({ dishId: dishRow.id, tagId })),
+        );
+      }
+      const dietIds = [...new Set(d.dietTypeIds)].filter((x) => validDietIds.has(x));
+      if (dietIds.length) {
+        await db.insert(schema.dishDietType).values(
+          dietIds.map((dietTypeId) => ({ dishId: dishRow.id, dietTypeId })),
+        );
+      }
+      const cuiIds = [...new Set(d.cuisineIds)].filter((x) => validCuisineIds.has(x));
+      if (cuiIds.length) {
+        await db.insert(schema.dishCuisine).values(
+          cuiIds.map((cuisineId) => ({ dishId: dishRow.id, cuisineId })),
         );
       }
     }

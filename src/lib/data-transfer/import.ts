@@ -507,6 +507,59 @@ export async function importBundle(
             dishIngIds.map((ingredientId) => ({ dishId, ingredientId })),
           );
         }
+
+        // Gericht-Taxonomien (gemeinsame Tabellen mit Rezepten) — Einträge
+        // werden wie bei Rezepten per Name/Slug angelegt bzw. wiederverwendet.
+        const dishTaxJoins: {
+          kind: TaxKind;
+          insert: (ids: number[]) => Promise<unknown>;
+          refs: { name: string; slug: string }[];
+        }[] = [
+          {
+            kind: "category",
+            insert: (ids) =>
+              db.insert(schema.dishCategory).values(
+                ids.map((categoryId) => ({ dishId, categoryId })),
+              ),
+            refs: dish.categories,
+          },
+          {
+            kind: "tag",
+            insert: (ids) =>
+              db.insert(schema.dishTag).values(
+                ids.map((tagId) => ({ dishId, tagId })),
+              ),
+            refs: dish.tags,
+          },
+          {
+            kind: "dietType",
+            insert: (ids) =>
+              db.insert(schema.dishDietType).values(
+                ids.map((dietTypeId) => ({ dishId, dietTypeId })),
+              ),
+            refs: dish.dietTypes,
+          },
+          {
+            kind: "cuisine",
+            insert: (ids) =>
+              db.insert(schema.dishCuisine).values(
+                ids.map((cuisineId) => ({ dishId, cuisineId })),
+              ),
+            refs: dish.cuisines,
+          },
+        ];
+        for (const { kind, insert, refs } of dishTaxJoins) {
+          const ids: number[] = [];
+          const seen = new Set<number>();
+          for (const ref of refs) {
+            const taxId = await getOrCreateTax(kind, ref);
+            if (taxId != null && !seen.has(taxId)) {
+              seen.add(taxId);
+              ids.push(taxId);
+            }
+          }
+          if (ids.length) await insert(ids);
+        }
       }
     }
 
