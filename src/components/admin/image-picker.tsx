@@ -227,6 +227,9 @@ function LibraryModal({
   }
 
   return createPortal(
+    // a11y-Ausnahme (begründet): Klick auf den Backdrop schließt nur zusätzlich.
+    // Tastatur: Escape (globaler keydown-Handler) und der Schließen-Button.
+    // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
     <div
       role="dialog"
       aria-modal="true"

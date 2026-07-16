@@ -83,6 +83,10 @@ export function HeroSlider({
   }
 
   return (
+    // a11y-Ausnahme (begründet): Maus-/Fokus-Handler pausieren nur die
+    // Autoplay-Rotation (progressive Verbesserung). Tastaturbedienung ist
+    // vollwertig über Pfeiltasten (onKeyDown) und Fokus-Pause gegeben.
+    // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
     <section
       aria-roledescription="Karussell"
       aria-label={dict.home.sliderLabel}

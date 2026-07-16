@@ -246,6 +246,9 @@ export function SiteHeader({
           <div className="mx-auto max-w-6xl px-4 py-4">
             {/* Suche auf kleinen Screens im Panel */}
             <div className="mb-4 sm:hidden">
+              {/* a11y-Ausnahme (begründet): Fokus nur, weil der Nutzer das
+                  Suchpanel bewusst geöffnet hat — erwartetes Verhalten. */}
+              {/* eslint-disable-next-line jsx-a11y/no-autofocus */}
               <SearchField autoFocus onSubmitted={() => setOpen(false)} />
             </div>
             <nav aria-label={dict.nav.menu}>

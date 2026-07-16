@@ -56,6 +56,9 @@ export function MediaThumb({
 
       {open &&
         createPortal(
+          // a11y-Ausnahme (begründet): Klick schließt nur zusätzlich; Tastatur
+          // über Escape (globaler keydown) und den Schließen-Button.
+          // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/click-events-have-key-events
           <div
             role="dialog"
             aria-modal="true"
@@ -70,7 +73,9 @@ export function MediaThumb({
             >
               ×
             </button>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
+            {/* a11y-Ausnahme (begründet): onClick verhindert nur das Schließen
+                beim Klick aufs Bild selbst; keine eigenständige Interaktion. */}
+            {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/click-events-have-key-events */}
             <img
               src={fullUrl}
               alt={alt}

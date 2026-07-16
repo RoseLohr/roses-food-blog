@@ -17,6 +17,7 @@
     "db:migrate": "node scripts/migrate.mjs",
     "db:seed": "tsx scripts/seed.ts",
     "fts:rebuild": "node scripts/fts-rebuild.mjs",
+    "lint": "eslint .",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -41,6 +42,9 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
+    "@eslint/js": "^9.39.5",
+    "@next/eslint-plugin-next": "^16.2.10",
     "@playwright/test": "^1.61.1",
     "@tailwindcss/postcss": "4.3.2",
     "@types/better-sqlite3": "^7.6.13",
@@ -50,9 +54,13 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "drizzle-kit": "0.31.10",
+    "eslint": "^9.39.5",
+    "eslint-plugin-jsx-a11y": "^6.10.2",
+    "eslint-plugin-react-hooks": "^7.1.1",
     "tailwindcss": "4.3.2",
     "tsx": "^4.20.0",
     "typescript": "^5.9.0",
+    "typescript-eslint": "^8.64.0",
     "vitest": "^3.2.0"
   }
 }
