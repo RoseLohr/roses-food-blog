@@ -174,6 +174,12 @@ export function RecipeView({
                 </>
               )}
             </MetaChip>
+            {/* Kalorien direkt neben den Portionen (auf Wunsch) */}
+            {recipe.kcal != null && (
+              <MetaChip icon={<IconFlame className="h-5 w-5" />} label={r.calories}>
+                {recipe.kcal} {r.kcalUnit} {r.perServing}
+              </MetaChip>
+            )}
             {recipe.prepMinutes > 0 && (
               <MetaChip icon={<IconClock className="h-5 w-5" />} label={r.metaPrep}>
                 {minutes(recipe.prepMinutes)}
@@ -190,11 +196,6 @@ export function RecipeView({
             <MetaChip icon={<IconFlame className="h-5 w-5" />} label={r.metaDifficulty}>
               {dict.admin.recipes.difficulties[recipe.difficulty] ?? recipe.difficulty}
             </MetaChip>
-            {recipe.kcal != null && (
-              <MetaChip icon={<IconFlame className="h-5 w-5" />} label={r.calories}>
-                {recipe.kcal} {r.kcalUnit} {r.perServing}
-              </MetaChip>
-            )}
           </div>
 
           {extraActions && (
