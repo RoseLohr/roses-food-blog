@@ -158,15 +158,8 @@ export const de = {
     tocShow: "Anzeigen",
     similarTitle: "Ähnliche Rezepte selbst machen",
     backToOverview: "Alle Reiseberichte",
-    filterCountry: "Land",
-    filterRegion: "Region",
-    filterCity: "Stadt",
-    filterReset: "Alle Reiseberichte",
-    filteredBy: (label: string, value: string) => `${label}: ${value}`,
     filterCount: (n: number) =>
       n === 1 ? "1 Reisebericht" : `${n} Reiseberichte`,
-    emptyFiltered: "Keine Reiseberichte für diese Auswahl.",
-    filterAria: "Reiseberichte filtern",
   },
   search: {
     title: "Suche",

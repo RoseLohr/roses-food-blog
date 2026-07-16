@@ -396,7 +396,7 @@ export async function TravelView({
                 icon={<IconCountry className="h-5 w-5" />}
                 href={
                   interactive
-                    ? `/reisen?land=${encodeURIComponent(post.country)}`
+                    ? `/reisen/land/${encodeURIComponent(post.country)}`
                     : undefined
                 }
               >
@@ -409,7 +409,7 @@ export async function TravelView({
                 icon={<IconRegion className="h-5 w-5" />}
                 href={
                   interactive
-                    ? `/reisen?region=${encodeURIComponent(post.region)}`
+                    ? `/reisen/region/${encodeURIComponent(post.region)}`
                     : undefined
                 }
               >
@@ -422,7 +422,7 @@ export async function TravelView({
                 icon={<IconCity className="h-5 w-5" />}
                 href={
                   interactive
-                    ? `/reisen?stadt=${encodeURIComponent(post.city)}`
+                    ? `/reisen/stadt/${encodeURIComponent(post.city)}`
                     : undefined
                 }
               >
