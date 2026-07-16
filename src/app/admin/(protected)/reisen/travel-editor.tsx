@@ -222,6 +222,16 @@ export function TravelEditor({
 
       <section className="bg-white p-5 shadow-sm">
         <div className="grid gap-4 md:grid-cols-2">
+          {/* Titelbild ganz oben, über dem Titel (auf Wunsch) */}
+          <div className="md:col-span-2">
+            <ImagePicker
+              name="titelbild"
+              legend={d.fieldHeroImage}
+              options={images}
+              selectedIds={initial.heroImageId ? [initial.heroImageId] : []}
+              multiple={false}
+            />
+          </div>
           <div className="md:col-span-2">
             <label className={labelCls} htmlFor="t-titel">
               {d.fieldTitle} *
@@ -375,16 +385,7 @@ export function TravelEditor({
               </div>
             </div>
           </div>
-          <div>
-            <ImagePicker
-              name="titelbild"
-              legend={d.fieldHeroImage}
-              options={images}
-              selectedIds={initial.heroImageId ? [initial.heroImageId] : []}
-              multiple={false}
-            />
-          </div>
-          <div>
+          <div className="md:col-span-2">
             <ImagePicker
               name="bilder"
               legend={d.fieldImages}
