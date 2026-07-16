@@ -170,10 +170,8 @@ export function RecipeView({
                   containerId={containerId}
                 />
               ) : (
-                <>
-                  {recipe.servings}{" "}
-                  {recipe.servings === 1 ? r.servingsOne : r.servings}
-                </>
+                // Nur die Zahl — „Portionen" steht bereits als Chip-Label.
+                <>{recipe.servings}</>
               )}
             </MetaChip>
             {/* Kalorien direkt neben den Portionen (auf Wunsch) */}

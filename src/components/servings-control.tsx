@@ -44,9 +44,10 @@ export function ServingsControl({
       >
         −
       </button>
-      <span aria-live="polite" className="min-w-10 text-center">
-        {servings}{" "}
-        {servings === 1 ? dict.recipe.servingsOne : dict.recipe.servings}
+      {/* Nur die Zahl — das Wort „Portionen" steht bereits als Label über
+          dem Chip; so bleibt alles einzeilig und die ± -Knöpfe wirken ruhig. */}
+      <span aria-live="polite" className="min-w-6 text-center tabular-nums">
+        {servings}
       </span>
       <button
         type="button"
