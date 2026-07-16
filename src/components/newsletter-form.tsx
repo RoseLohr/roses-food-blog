@@ -61,7 +61,7 @@ export function NewsletterForm({ source }: { source: string }) {
         <input type="checkbox" name="einwilligung" value="ja" required />
         <span>
           {d.consentPrefix}{" "}
-          <Link href="/datenschutz">{d.consentLinkText}</Link>
+          <Link href="/datenschutz#newsletter">{d.consentLinkText}</Link>
           {d.consentSuffix}
         </span>
       </label>

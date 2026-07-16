@@ -191,7 +191,7 @@ function RestaurantCard({
   return (
     <div id={`restaurant-${r.id}`}>
       <h3 className="font-display text-xl font-bold">
-        {r.name}
+        {dict.travelList.restaurantWord} {r.name}
         {r.city && (
           <span className="ml-2 text-sm font-normal text-ink-soft">
             ·{" "}
@@ -212,20 +212,27 @@ function RestaurantCard({
           </span>
         )}
       </h3>
-      {r.image && (
-        <div className="mt-3 sm:max-w-sm">
-          <ResponsiveImg
-            image={r.image}
-            sizes="(max-width: 640px) 100vw, 384px"
-            className="aspect-[3/2] w-full object-cover"
-          />
+      {/* Bild + Beschreibung: mobil untereinander, ab md nebeneinander */}
+      {(r.image || r.description) && (
+        <div className="mt-3 flex flex-col gap-4 md:flex-row md:items-start">
+          {r.image && (
+            <div className="md:w-96 md:shrink-0">
+              <ResponsiveImg
+                image={r.image}
+                sizes="(max-width: 768px) 100vw, 384px"
+                className="aspect-[3/2] w-full object-cover"
+              />
+            </div>
+          )}
+          {r.description && (
+            <div
+              className="prose-content min-w-0 grow text-ink-soft"
+              dangerouslySetInnerHTML={{
+                __html: renderMarkdown(r.description),
+              }}
+            />
+          )}
         </div>
-      )}
-      {r.description && (
-        <div
-          className="prose-content mt-2 text-ink-soft"
-          dangerouslySetInnerHTML={{ __html: renderMarkdown(r.description) }}
-        />
       )}
       <ul className="mt-4 flex flex-col gap-5">
         {r.dishes.map((dish) => (
@@ -298,7 +305,7 @@ export async function TravelView({
       if (r?.name) {
         tocEntries.push({
           id: `restaurant-${r.id}`,
-          label: r.name,
+          label: `${dict.travelList.restaurantWord} ${r.name}`,
           children: dishLeaves(r),
         });
       }
@@ -312,7 +319,7 @@ export async function TravelView({
         .filter((r) => r.name)
         .map((r) => ({
           id: `restaurant-${r.id}`,
-          label: r.name,
+          label: `${dict.travelList.restaurantWord} ${r.name}`,
           children: dishLeaves(r),
         })),
     });

@@ -144,7 +144,7 @@ export default async function SearchPage(props: {
         <form method="get" className="flex flex-col gap-5 self-start bg-white p-5 shadow-sm">
           <div>
             <label htmlFor="such-q" className="mb-1 block text-sm font-semibold">
-              {dict.search.title}
+              {dict.search.freeTextLabel}
             </label>
             <input
               id="such-q"

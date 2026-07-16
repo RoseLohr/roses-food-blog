@@ -2,13 +2,15 @@ import Link from "next/link";
 import { NewsletterSection } from "@/components/newsletter-section";
 import { SiteHeader } from "@/components/site-header";
 import { HideOnHome } from "@/components/hide-on-home";
+import { getNavMenus } from "@/lib/nav-data";
 import { t } from "@/i18n/de";
 
 const dict = t();
 
-export default function PublicLayout({
+export default async function PublicLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  const { recipeChildren, travelChildren } = await getNavMenus();
   return (
     <>
       <a
@@ -18,7 +20,10 @@ export default function PublicLayout({
         {dict.site.skipToContent}
       </a>
 
-      <SiteHeader />
+      <SiteHeader
+        recipeChildren={recipeChildren}
+        travelChildren={travelChildren}
+      />
 
       <div id="inhalt" className="mx-auto w-full max-w-6xl grow px-4 py-8">
         {children}

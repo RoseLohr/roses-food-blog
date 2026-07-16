@@ -7,6 +7,9 @@
  * - Menü hinter einem Hamburger-Icon (wie in der Referenz), das ein Panel
  *   mit den Navigationslinks öffnet. Tastatur- und Screenreader-tauglich
  *   (aria-expanded/-controls, Escape schließt, Fokusreihenfolge).
+ * - „Rezepte" und „Reisen" tragen Dropdowns (Kategorien bzw. Reiseberichte):
+ *   sie öffnen beim Hovern automatisch und lassen sich zusätzlich über einen
+ *   Aufklapppfeil per Klick/Tastatur umschalten (auch im mobilen Panel).
  */
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -15,13 +18,27 @@ import { t } from "@/i18n/de";
 
 const dict = t();
 
-const NAV: Array<[string, string]> = [
-  ["/rezepte", dict.nav.recipes],
-  ["/reisen", dict.nav.travel],
-  ["/saisonkalender", dict.nav.seasonCalendar],
-  ["/ueber-mich", dict.nav.about],
-  ["/suche", dict.nav.search],
-];
+export type NavChild = { href: string; label: string };
+type NavItem = { href: string; label: string; children: NavChild[] };
+
+function Chevron({ open }: { open: boolean }) {
+  return (
+    <svg
+      aria-hidden
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={`transition-transform ${open ? "rotate-180" : ""}`}
+    >
+      <path d="m6 9 6 6 6-6" />
+    </svg>
+  );
+}
 
 function SearchField({
   onSubmitted,
@@ -69,26 +86,48 @@ function SearchField({
   );
 }
 
-export function SiteHeader() {
+export function SiteHeader({
+  recipeChildren = [],
+  travelChildren = [],
+}: {
+  recipeChildren?: NavChild[];
+  travelChildren?: NavChild[];
+}) {
   const [open, setOpen] = useState(false);
+  // Offenes Desktop-Dropdown bzw. aufgeklappter Mobil-Eintrag (per href).
+  const [openMenu, setOpenMenu] = useState<string | null>(null);
+  const [mobileSub, setMobileSub] = useState<string | null>(null);
   const menuId = useId();
   const pathname = usePathname();
   const panelRef = useRef<HTMLDivElement>(null);
 
-  // Route-Wechsel schließt das Menü.
+  const NAV: NavItem[] = [
+    { href: "/rezepte", label: dict.nav.recipes, children: recipeChildren },
+    { href: "/reisen", label: dict.nav.travel, children: travelChildren },
+    { href: "/saisonkalender", label: dict.nav.seasonCalendar, children: [] },
+    { href: "/ueber-mich", label: dict.nav.about, children: [] },
+    { href: "/suche", label: dict.nav.search, children: [] },
+  ];
+
+  // Route-Wechsel schließt Menü und Dropdowns.
   useEffect(() => {
     setOpen(false);
+    setOpenMenu(null);
+    setMobileSub(null);
   }, [pathname]);
 
   // Escape schließt; Klick außerhalb schließt.
   useEffect(() => {
-    if (!open) return;
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape") {
+        setOpen(false);
+        setOpenMenu(null);
+      }
     }
     function onClick(e: MouseEvent) {
       if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
         setOpen(false);
+        setOpenMenu(null);
       }
     }
     document.addEventListener("keydown", onKey);
@@ -97,7 +136,7 @@ export function SiteHeader() {
       document.removeEventListener("keydown", onKey);
       document.removeEventListener("mousedown", onClick);
     };
-  }, [open]);
+  }, []);
 
   return (
     <header
@@ -118,19 +157,57 @@ export function SiteHeader() {
         {/* Permanentes horizontales Menü ab md */}
         <nav className="hidden md:block" aria-label={dict.nav.menu}>
           <ul className="flex items-center gap-1">
-            {NAV.map(([href, label]) => {
+            {NAV.map((item) => {
               const active =
-                pathname === href || pathname.startsWith(href + "/");
+                pathname === item.href || pathname.startsWith(item.href + "/");
+              const hasChildren = item.children.length > 0;
+              const expanded = openMenu === item.href;
               return (
-                <li key={href}>
-                  <Link
-                    href={href}
-                    className={`block px-3 py-2 text-sm font-semibold transition-colors hover:text-leaf ${
-                      active ? "text-leaf" : "text-ink"
-                    }`}
-                  >
-                    {label}
-                  </Link>
+                <li
+                  key={item.href}
+                  className="relative"
+                  onMouseEnter={() => hasChildren && setOpenMenu(item.href)}
+                  onMouseLeave={() =>
+                    setOpenMenu((m) => (m === item.href ? null : m))
+                  }
+                >
+                  <span className="flex items-center">
+                    <Link
+                      href={item.href}
+                      className={`block py-2 pl-3 text-sm font-semibold transition-colors hover:text-leaf ${
+                        hasChildren ? "pr-1" : "pr-3"
+                      } ${active ? "text-leaf" : "text-ink"}`}
+                    >
+                      {item.label}
+                    </Link>
+                    {hasChildren && (
+                      <button
+                        type="button"
+                        aria-expanded={expanded}
+                        aria-label={dict.nav.toggleSubmenu(item.label)}
+                        onClick={() =>
+                          setOpenMenu((m) => (m === item.href ? null : item.href))
+                        }
+                        className="mr-1 p-1 text-ink-soft transition-colors hover:text-leaf"
+                      >
+                        <Chevron open={expanded} />
+                      </button>
+                    )}
+                  </span>
+                  {hasChildren && expanded && (
+                    <ul className="absolute left-0 top-full z-50 max-h-[70vh] min-w-56 max-w-72 overflow-y-auto border border-ink/10 bg-white py-2 shadow-lg">
+                      {item.children.map((c) => (
+                        <li key={c.href}>
+                          <Link
+                            href={c.href}
+                            className="block px-4 py-1.5 text-sm text-ink transition-colors hover:bg-cream hover:text-leaf"
+                          >
+                            {c.label}
+                          </Link>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </li>
               );
             })}
@@ -173,19 +250,53 @@ export function SiteHeader() {
             </div>
             <nav aria-label={dict.nav.menu}>
               <ul className="flex flex-col gap-1">
-                {NAV.map(([href, label]) => {
+                {NAV.map((item) => {
                   const active =
-                    pathname === href || pathname.startsWith(href + "/");
+                    pathname === item.href ||
+                    pathname.startsWith(item.href + "/");
+                  const hasChildren = item.children.length > 0;
+                  const expanded = mobileSub === item.href;
                   return (
-                    <li key={href}>
-                      <Link
-                        href={href}
-                        className={`block py-2 font-display text-lg font-semibold transition-colors hover:text-leaf ${
-                          active ? "text-leaf" : "text-ink"
-                        }`}
-                      >
-                        {label}
-                      </Link>
+                    <li key={item.href}>
+                      <span className="flex items-center justify-between">
+                        <Link
+                          href={item.href}
+                          className={`block py-2 font-display text-lg font-semibold transition-colors hover:text-leaf ${
+                            active ? "text-leaf" : "text-ink"
+                          }`}
+                        >
+                          {item.label}
+                        </Link>
+                        {hasChildren && (
+                          <button
+                            type="button"
+                            aria-expanded={expanded}
+                            aria-label={dict.nav.toggleSubmenu(item.label)}
+                            onClick={() =>
+                              setMobileSub((m) =>
+                                m === item.href ? null : item.href,
+                              )
+                            }
+                            className="flex h-11 w-11 items-center justify-center text-ink-soft hover:text-leaf"
+                          >
+                            <Chevron open={expanded} />
+                          </button>
+                        )}
+                      </span>
+                      {hasChildren && expanded && (
+                        <ul className="mb-2 ml-1 flex flex-col gap-0.5 border-l border-ink/10 pl-4">
+                          {item.children.map((c) => (
+                            <li key={c.href}>
+                              <Link
+                                href={c.href}
+                                className="block py-1.5 text-sm text-ink-soft transition-colors hover:text-leaf"
+                              >
+                                {c.label}
+                              </Link>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
                     </li>
                   );
                 })}

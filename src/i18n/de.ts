@@ -46,6 +46,7 @@ export const de = {
     menu: "Menü",
     openMenu: "Menü öffnen",
     closeMenu: "Menü schließen",
+    toggleSubmenu: (label: string) => `Untermenü „${label}“ umschalten`,
   },
   footer: {
     imprint: "Impressum",
@@ -53,6 +54,80 @@ export const de = {
     aboutMe: "Über mich",
     newsletterTitle: "Neues aus der Küche ins Postfach",
     rights: "Alle Rechte vorbehalten.",
+  },
+  privacy: {
+    title: "Datenschutzerklärung",
+    metaDescription:
+      "Informationen zur Verarbeitung personenbezogener Daten auf diesem Blog gemäß DSGVO.",
+    intro:
+      "Der Schutz deiner personenbezogenen Daten ist uns wichtig. Nachfolgend informieren wir dich gemäß der Datenschutz-Grundverordnung (DSGVO) darüber, welche Daten beim Besuch dieses Blogs verarbeitet werden, zu welchem Zweck und auf welcher Rechtsgrundlage.",
+    controllerTitle: "1. Verantwortlicher",
+    controllerBody:
+      "Verantwortlich für die Datenverarbeitung auf dieser Website ist die im Impressum genannte Stelle. Dort findest du auch die vollständigen Kontaktdaten für Anfragen zum Datenschutz.",
+    controllerImprintLink: "Zum Impressum",
+    basicsTitle: "2. Grundsätzliches und Rechtsgrundlagen",
+    basicsScope:
+      "Personenbezogene Daten sind alle Informationen, die sich auf eine identifizierte oder identifizierbare natürliche Person beziehen. Wir verarbeiten personenbezogene Daten grundsätzlich nur, soweit dies für die Bereitstellung einer funktionsfähigen Website sowie unserer Inhalte erforderlich ist.",
+    basicsLegal:
+      "Rechtsgrundlage der Verarbeitung ist – je nach Zweck – Art. 6 Abs. 1 lit. a DSGVO (Einwilligung, z. B. beim Newsletter), Art. 6 Abs. 1 lit. b DSGVO (Erfüllung eines Vertrags oder vorvertraglicher Maßnahmen) oder Art. 6 Abs. 1 lit. f DSGVO (berechtigtes Interesse an einem sicheren und funktionsfähigen Betrieb der Website).",
+    hostingTitle: "3. Hosting und Server-Logfiles",
+    hostingBody:
+      "Beim Aufruf dieser Website werden durch den Server automatisch Informationen verarbeitet, die dein Browser übermittelt und die technisch erforderlich sind, um dir die Seite anzuzeigen und die Stabilität und Sicherheit zu gewährleisten. Dies können insbesondere sein:",
+    hostingItems: [
+      "die angeforderte Adresse (URL) und der Zeitpunkt des Zugriffs",
+      "Browsertyp und Browserversion sowie das verwendete Betriebssystem",
+      "die übertragene Datenmenge und die Meldung, ob der Abruf erfolgreich war",
+      "die IP-Adresse der anfragenden Endgeräte (verarbeitet nur im Rahmen der Auslieferung; sie wird von uns nicht dauerhaft gespeichert)",
+    ],
+    hostingPurpose:
+      "Die Verarbeitung erfolgt auf Grundlage von Art. 6 Abs. 1 lit. f DSGVO zum berechtigten Interesse an einem technisch fehlerfreien und sicheren Betrieb der Website. Eine Zusammenführung dieser Daten mit anderen Datenquellen findet nicht statt.",
+    cookiesTitle: "4. Cookies und lokale Speicherung",
+    cookiesBody:
+      "Diese Website setzt für die reine Betrachtung der Inhalte keine Werbe- oder Tracking-Cookies von Drittanbietern ein. Technisch notwendige Cookies bzw. lokale Speicherung im Browser werden nur dort verwendet, wo sie für eine Funktion erforderlich sind (z. B. Sicherheits-/Sitzungsmerkmale). Diese Verarbeitung stützt sich auf Art. 6 Abs. 1 lit. f DSGVO bzw. § 25 Abs. 2 TDDDG (technisch erforderliche Speicherung).",
+    analyticsTitle: "5. Reichweitenmessung",
+    analyticsBody:
+      "Zur Verbesserung unseres Angebots erheben wir in eigener, datensparsamer Reichweitenmessung anonyme Nutzungsstatistiken. Dabei werden ausschließlich verarbeitet:",
+    analyticsItems: [
+      "die aufgerufene Seite und der Zeitpunkt des Aufrufs",
+      "die ungefähre Verweildauer auf der Seite",
+      "eine grobe Einordnung des Herkunftslandes (aus der IP-Adresse abgeleitet, ohne die IP-Adresse selbst zu speichern)",
+      "die verwendete Browser-Familie sowie eine Einordnung, ob es sich vermutlich um eine Person, einen Suchmaschinen-Bot oder einen KI-Dienst handelt",
+    ],
+    analyticsNoIp:
+      "Es werden keine IP-Adressen gespeichert, keine geräteübergreifenden Profile gebildet und keine Daten an Dritte übermittelt. Die Messung erfolgt vollständig auf unserem eigenen Server ohne Einbindung externer Analysedienste. Rechtsgrundlage ist Art. 6 Abs. 1 lit. f DSGVO (berechtigtes Interesse an einer bedarfsgerechten Gestaltung des Angebots).",
+    newsletterTitle: "6. Newsletter",
+    newsletterBody:
+      "Wenn du unseren Newsletter abonnierst, verarbeiten wir die von dir angegebene E-Mail-Adresse sowie – sofern angegeben – deinen Namen und deine Interessen, um dir den Newsletter zuzusenden. Rechtsgrundlage ist deine Einwilligung nach Art. 6 Abs. 1 lit. a DSGVO.",
+    newsletterDoubleOptIn:
+      "Die Anmeldung erfolgt im sogenannten Double-Opt-in-Verfahren: Nach der Eingabe deiner E-Mail-Adresse senden wir dir eine E-Mail mit einem Bestätigungslink. Erst mit dem Klick auf diesen Link wird dein Abonnement aktiviert. Damit stellen wir sicher, dass niemand mit einer fremden E-Mail-Adresse angemeldet wird.",
+    newsletterRevoke:
+      "Du kannst deine Einwilligung jederzeit mit Wirkung für die Zukunft widerrufen und den Newsletter abbestellen, etwa über den Abmeldelink am Ende jeder Newsletter-E-Mail. Die Rechtmäßigkeit der bis zum Widerruf erfolgten Verarbeitung bleibt davon unberührt. Nach der Abmeldung werden deine Daten für den Newsletter-Versand nicht mehr verwendet.",
+    mapTitle: "7. Kartendarstellung (Reisekarte)",
+    mapBody:
+      "Die Weltkarte auf den Reise-Seiten wird vollständig von unserem eigenen Server ausgeliefert (selbst gehostetes Kartenmaterial). Es werden keine Kartenkacheln oder Skripte von Drittanbietern nachgeladen und somit keine Daten – insbesondere keine IP-Adressen – an externe Kartendienste übermittelt. Erst wenn du im Kartenausschnitt bewusst auf einen Link zu einem externen Kartendienst (z. B. Google Maps) klickst, verlässt du unsere Website; es gelten dann die Datenschutzbestimmungen des jeweiligen Anbieters.",
+    contactTitle: "8. Kontaktaufnahme",
+    contactBody:
+      "Wenn du uns per E-Mail kontaktierst, verarbeiten wir deine Angaben ausschließlich zur Bearbeitung deiner Anfrage. Rechtsgrundlage ist Art. 6 Abs. 1 lit. f DSGVO (berechtigtes Interesse an der Beantwortung) bzw. Art. 6 Abs. 1 lit. b DSGVO, sofern die Anfrage auf einen Vertrag abzielt. Diese Daten werden gelöscht, sobald sie für die Erreichung des Zwecks nicht mehr erforderlich sind, es sei denn, gesetzliche Aufbewahrungspflichten stehen dem entgegen.",
+    rightsTitle: "9. Deine Rechte",
+    rightsIntro:
+      "Dir stehen nach der DSGVO gegenüber dem Verantwortlichen die folgenden Rechte hinsichtlich der dich betreffenden personenbezogenen Daten zu:",
+    rightsItems: [
+      "Recht auf Auskunft (Art. 15 DSGVO)",
+      "Recht auf Berichtigung (Art. 16 DSGVO)",
+      "Recht auf Löschung (Art. 17 DSGVO)",
+      "Recht auf Einschränkung der Verarbeitung (Art. 18 DSGVO)",
+      "Recht auf Datenübertragbarkeit (Art. 20 DSGVO)",
+      "Recht auf Widerspruch gegen die Verarbeitung (Art. 21 DSGVO)",
+      "Recht auf Widerruf einer erteilten Einwilligung mit Wirkung für die Zukunft (Art. 7 Abs. 3 DSGVO)",
+    ],
+    rightsComplaint:
+      "Unabhängig davon steht dir ein Beschwerderecht bei einer Datenschutz-Aufsichtsbehörde zu (Art. 77 DSGVO), insbesondere in dem Mitgliedstaat deines Aufenthaltsorts, deines Arbeitsplatzes oder des Orts des mutmaßlichen Verstoßes.",
+    securityTitle: "10. Datensicherheit",
+    securityBody:
+      "Wir verwenden eine TLS-Verschlüsselung (erkennbar am „https“ und dem Schloss-Symbol in der Adresszeile deines Browsers), um die Übertragung zwischen deinem Browser und unserem Server zu schützen. Zusätzlich treffen wir geeignete technische und organisatorische Maßnahmen, um deine Daten gegen Verlust, Manipulation und unberechtigten Zugriff zu sichern.",
+    changesTitle: "11. Aktualität und Änderung dieser Erklärung",
+    changesBody:
+      "Diese Datenschutzerklärung entspricht dem aktuellen Stand. Durch die Weiterentwicklung der Website oder aufgrund geänderter gesetzlicher bzw. behördlicher Vorgaben kann es notwendig werden, sie anzupassen. Es gilt jeweils die auf dieser Seite abrufbare Fassung.",
   },
   recipeList: {
     title: "Alle Rezepte",
@@ -68,6 +143,7 @@ export const de = {
     mapLabel: "Weltkarte der Restaurants",
     mapOpenInMaps: "In Google Maps öffnen",
     restaurantsTitle: "Restaurants & Gerichte",
+    restaurantWord: "Restaurant",
     dishIngredients: "Zutaten",
     tocTitle: "Inhalt",
     tocHide: "Verbergen",
@@ -77,6 +153,7 @@ export const de = {
   },
   search: {
     title: "Suche",
+    freeTextLabel: "Suche per Freitext",
     intro: "Durchsuche Rezepte und Reiseberichte — auch nach Zutaten.",
     placeholder: "z. B. Linsen, Curry, Sizilien …",
     submit: "Suchen",

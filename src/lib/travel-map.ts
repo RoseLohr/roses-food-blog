@@ -17,6 +17,9 @@ export interface TravelMapPin {
   restaurantCity: string;
   thumbUrl: string;
   imageAlt: string;
+  /** Ziel im Reisebericht: /reisen/{travelSlug}#dish-{dishId} */
+  travelSlug: string;
+  dishId: number;
 }
 
 export async function getTravelMapPins(): Promise<TravelMapPin[]> {
@@ -26,6 +29,7 @@ export async function getTravelMapPins(): Promise<TravelMapPin[]> {
       dishName: schema.dish.name,
       restaurantName: schema.restaurant.name,
       restaurantCity: schema.restaurant.city,
+      travelSlug: schema.travelPost.slug,
       lat: schema.mediaImage.lat,
       lng: schema.mediaImage.lng,
       fileKey: schema.mediaImage.fileKey,
@@ -69,6 +73,8 @@ export async function getTravelMapPins(): Promise<TravelMapPin[]> {
       restaurantCity: r.restaurantCity,
       thumbUrl: thumbUrl(r.fileKey, r.variantWidths),
       imageAlt: r.altText,
+      travelSlug: r.travelSlug,
+      dishId: r.dishId,
     });
   }
   return pins;

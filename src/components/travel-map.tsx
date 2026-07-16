@@ -24,6 +24,9 @@ export interface TravelMapPin {
   restaurantCity: string;
   thumbUrl: string;
   imageAlt: string;
+  /** Ziel im Reisebericht: /reisen/{travelSlug}#dish-{dishId} */
+  travelSlug: string;
+  dishId: number;
 }
 
 function esc(s: string): string {
@@ -47,11 +50,12 @@ function mapsUrl(lat: number, lng: number): string {
 
 /**
  * Popup-Inhalt: Bild, darunter Restaurant + „Ort", darunter Gericht.
- * Der Ort (Restaurant-Stadt) ist ein Link auf Google Maps an die EXIF-Position
- * des Fotos — öffnet in einem neuen Tab. Die Koordinaten stammen aus den
- * EXIF-Daten des Gericht-Fotos (bereits im Pin enthalten).
+ * Bild und Gerichtname verlinken zum passenden Gericht im Reisebericht;
+ * der Ort (Restaurant-Stadt) ist ein Link auf Google Maps an die
+ * EXIF-Position des Fotos — öffnet in einem neuen Tab.
  */
 function popupHtml(p: TravelMapPin): string {
+  const dishUrl = `/reisen/${encodeURIComponent(p.travelSlug)}#dish-${p.dishId}`;
   const cityLink = p.restaurantCity
     ? `<a href="${esc(mapsUrl(p.lat, p.lng))}" target="_blank" rel="noopener noreferrer"
          title="${esc(dict.travelList.mapOpenInMaps)}"
@@ -62,15 +66,20 @@ function popupHtml(p: TravelMapPin): string {
     : esc(p.restaurantName);
   return `
     <div style="width:180px">
-      <img src="${esc(p.thumbUrl)}" alt="${esc(p.imageAlt)}"
-        style="display:block;width:100%;height:120px;object-fit:cover;margin-bottom:8px" />
+      <a href="${esc(dishUrl)}" aria-label="${esc(p.dishName)}">
+        <img src="${esc(p.thumbUrl)}" alt="${esc(p.imageAlt)}"
+          style="display:block;width:100%;height:120px;object-fit:cover;margin-bottom:8px" />
+      </a>
       <p style="margin:0;font-weight:700;font-size:13px;color:#111111">${location}</p>
-      <p style="margin:2px 0 0;font-size:13px;color:#4c4b5b">${esc(p.dishName)}</p>
+      <p style="margin:2px 0 0;font-size:13px">
+        <a href="${esc(dishUrl)}"
+          style="color:#2b857b;text-decoration:underline">${esc(p.dishName)}</a>
+      </p>
     </div>`;
 }
 
 // Ab dieser Zoomstufe werden Hauptstädte überhaupt erst eingeblendet
-// (maxZoom der Karte ist 8) — hält Welt-/Regionalansicht frei von Städten.
+// (maxZoom der Karte ist 11) — hält Welt-/Regionalansicht frei von Städten.
 const CAPITAL_MIN_ZOOM = 7;
 
 const PIN_SVG = `
@@ -98,7 +107,10 @@ export function TravelMap({ pins }: { pins: TravelMapPin[] }) {
 
       map = L.map(containerRef.current, {
         minZoom: 1,
-        maxZoom: 8,
+        // Höherer Zoom für Stadt-/Viertel-Nähe. Die Vektor-Weltkarte (50 m)
+        // wird dabei grob — für die Pin-Umgebung reicht es, und der
+        // Google-Maps-Link im Popup übernimmt die Detailansicht.
+        maxZoom: 11,
         worldCopyJump: true,
         scrollWheelZoom: true,
         // Popup schließt bei Klick auf die Karte (Standard) — explizit gesetzt.
