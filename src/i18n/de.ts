@@ -67,6 +67,9 @@ export const de = {
     mapOpenInMaps: "In Google Maps öffnen",
     restaurantsTitle: "Restaurants & Gerichte",
     dishIngredients: "Zutaten",
+    tocTitle: "Inhalt",
+    tocHide: "Verbergen",
+    tocShow: "Anzeigen",
     backToOverview: "Alle Reiseberichte",
   },
   search: {

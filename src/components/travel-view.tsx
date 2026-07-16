@@ -5,11 +5,12 @@
  * mit Tag-Icon) und Bildergalerie.
  */
 import type { FullRestaurant, FullTravelPost } from "@/lib/travel";
-import { renderMarkdown } from "@/lib/markdown";
+import { extractHeadings, renderMarkdown } from "@/lib/markdown";
 import { getBaseUrl } from "@/lib/base-url";
 import { t } from "@/i18n/de";
 import { ResponsiveImg } from "./responsive-img";
 import { HeroActions } from "./hero-actions";
+import { TravelToc, type TocEntry } from "./travel-toc";
 import { IconCity, IconCountry, IconRegion, IconTag } from "./icons";
 
 const dict = t();
@@ -77,6 +78,34 @@ export function TravelView({
   const { post } = full;
   const url = `${getBaseUrl()}/reisen/${post.slug}`;
 
+  // Inhaltsverzeichnis: Zwischenüberschriften aus dem Markdown-Inhalt
+  // (oberste Ebene = Hauptpunkte, tiefere als Unterpunkte) plus die
+  // Restaurants als eigener Punkt mit den Lokalen als Unterpunkten.
+  const contentHeadings = post.content ? extractHeadings(post.content) : [];
+  const minDepth = contentHeadings.length
+    ? Math.min(...contentHeadings.map((h) => h.depth))
+    : 0;
+  const tocEntries: TocEntry[] = [];
+  for (const h of contentHeadings) {
+    if (h.depth <= minDepth || tocEntries.length === 0) {
+      tocEntries.push({ id: h.id, label: h.text, children: [] });
+    } else {
+      tocEntries[tocEntries.length - 1].children.push({
+        id: h.id,
+        label: h.text,
+      });
+    }
+  }
+  if (full.restaurants.length > 0) {
+    tocEntries.push({
+      id: "restaurants",
+      label: dict.travelList.restaurantsTitle,
+      children: full.restaurants
+        .filter((r) => r.name)
+        .map((r) => ({ id: `restaurant-${r.id}`, label: r.name })),
+    });
+  }
+
   return (
     <article className="overflow-hidden bg-white shadow-sm">
       {full.heroImage && (
@@ -130,6 +159,19 @@ export function TravelView({
           </div>
         </header>
 
+        {/* Inhaltsverzeichnis — unter Land/Region/Stadt, mit Trennstrich */}
+        {tocEntries.length > 0 && (
+          <>
+            <hr className="mt-8 border-ink/10" />
+            <TravelToc
+              title={dict.travelList.tocTitle}
+              hideLabel={dict.travelList.tocHide}
+              showLabel={dict.travelList.tocShow}
+              entries={tocEntries}
+            />
+          </>
+        )}
+
         {post.content && (
           <>
             <hr className="my-8 border-ink/10" />
@@ -156,7 +198,7 @@ export function TravelView({
         {full.restaurants.length > 0 && (
           <>
             <hr className="my-8 border-ink/10" />
-            <section>
+            <section id="restaurants">
               <h2 className="font-display text-2xl font-bold tracking-tight md:text-3xl">
                 {dict.travelList.restaurantsTitle}
               </h2>
@@ -164,7 +206,7 @@ export function TravelView({
                 {full.restaurants.map((r) => {
                   const coords = restaurantCoords(r);
                   return (
-                  <div key={r.id}>
+                  <div key={r.id} id={`restaurant-${r.id}`}>
                     <h3 className="font-display text-xl font-bold">
                       {r.name}
                       {r.city && (

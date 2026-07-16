@@ -45,6 +45,16 @@
   --color-leaf-soft: #5cc4b8; /* heller Ton für Text auf dunklem Grund */
 }
 
+/* Sanftes Scrollen zu Ankern (Inhaltsverzeichnis der Reiseberichte).
+   Bei prefers-reduced-motion wird scroll-behavior weiter unten global auf
+   "auto" zurückgesetzt. Etwas Luft über dem Sprungziel. */
+html {
+  scroll-behavior: smooth;
+}
+:target {
+  scroll-margin-top: 1.25rem;
+}
+
 /* Full-Bleed: Element auf volle Viewportbreite ziehen (Startseiten-Hero),
    auch aus einem zentrierten max-w-Container heraus. `overflow-x: clip` am
    Body (siehe Root-Layout) verhindert horizontales Scrollen, ohne
