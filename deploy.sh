@@ -17,6 +17,7 @@ main() {
 
 cd "$(dirname "$0")"
 SCRIPT_DIR="$(pwd)"
+SECONDS=0   # Gesamtdauer fürs Abschluss-Log
 
 # Live-Rückmeldung fürs Admin-Panel (Bereich „Aktualisierung“): deploy.sh
 # schreibt fortlaufend eine Statusdatei (aktuelle Phase, läuft ja/nein, Ergebnis)
@@ -120,6 +121,31 @@ if [[ "${SKIP_PULL:-0}" != "1" ]]; then
 fi
 COMMIT="$(git rev-parse --short HEAD)"
 
+# --- 1b. Schnellpfad: nichts zu tun? ------------------------------------------
+# Läuft der Container bereits gesund mit exakt diesem Commit und derselben
+# .env, ist ein kompletter Rebuild + Neustart Verschwendung (und unnötige
+# Downtime). Der Zustand des letzten erfolgreichen Deployments steht in
+# $DATA_DIR/deploy-state. Übersprungen wird nur, wenn ALLES passt; FORCE_DEPLOY=1
+# erzwingt den vollen Lauf, SKIP_PULL=1 (lokale Änderungen) deaktiviert ihn.
+ENV_HASH="$(sha256sum .env | cut -d' ' -f1)"
+STATE_FILE="$DATA_DIR/deploy-state"
+if [[ "${FORCE_DEPLOY:-0}" != "1" && "${SKIP_PULL:-0}" != "1" \
+      && -z "$(git status --porcelain 2>/dev/null)" \
+      && -f "$STATE_FILE" \
+      && "$(cat "$STATE_FILE" 2>/dev/null)" == "$COMMIT $ENV_HASH" ]] \
+   && podman image exists localhost/roses-blog:latest 2>/dev/null \
+   && [[ "$(podman inspect -f '{{.State.Running}}' roses-blog 2>/dev/null)" == "true" ]] \
+   && curl -fsS "http://127.0.0.1:$PORT/health" >/dev/null 2>&1; then
+  rm -f "$DATA_DIR/deploy-request" 2>/dev/null || true
+  DEPLOY_STATUS_RESULT="erfolgreich"
+  log "Bereits aktuell (Commit $COMMIT) — Container läuft, kein Neustart nötig (${SECONDS}s)"
+  echo "Branch:   $BRANCH"
+  echo "Commit:   $COMMIT"
+  podman ps --filter name=roses-blog --format "Container: {{.Names}} ({{.Status}})"
+  echo "Hinweis:  FORCE_DEPLOY=1 ./deploy.sh erzwingt Rebuild + Neustart."
+  return 0
+fi
+
 # --- 2. Erstlauf: Datenverzeichnisse ----------------------------------------
 if [[ ! -d "$DATA_DIR" ]]; then
   log "Erstlauf: lege Datenverzeichnis $DATA_DIR an"
@@ -148,9 +174,34 @@ if [[ "$LOW_CPU" != "1" ]] && ! grep -qm1 sse4_2 /proc/cpuinfo; then
   echo "         (Bildverarbeitung über Debians libvips-CLI statt sharp)."
 fi
 
+# Persistente Build-Caches auf dem Host (NO_CACHE=1 schaltet beides ab):
+#  - npm-Cache: npm ci lädt Pakete nur noch einmal herunter
+#  - Turbopack-Cache (.next/cache): next build kompiliert nur Geändertes neu
+#    (next.config.ts: experimental.turbopackFileSystemCacheForBuild)
+# `podman build -v` blendet die Host-Verzeichnisse nur während der RUN-Schritte
+# ein — sie landen NICHT im Image.
+BUILD_OPTS=(--build-arg "APP_COMMIT=$COMMIT" --build-arg "LOW_CPU=$LOW_CPU" -f Containerfile)
+if [[ "${NO_CACHE:-0}" != "1" ]]; then
+  mkdir -p "$DATA_DIR/build-cache/npm" "$DATA_DIR/build-cache/next"
+  BUILD_OPTS+=(-v "$DATA_DIR/build-cache/npm:/root/.npm" \
+               -v "$DATA_DIR/build-cache/next:/app/.next/cache")
+else
+  BUILD_OPTS+=(--no-cache)
+fi
+
+# Die Zwischen-Stages (deps, build) zusätzlich taggen: ungetaggt wären sie
+# "dangling" und `podman image prune` (Abschnitt 8) würde sie samt Layer-Cache
+# entfernen — dann liefe npm ci bei JEDEM Deployment komplett neu. Mit Tag
+# bleibt der Cache erhalten; npm ci läuft nur noch, wenn sich
+# package-lock.json ändert. Die Extra-Builds kosten nichts: alle drei
+# Aufrufe teilen sich denselben Layer-Cache.
 log "Baue Container-Image (Commit $COMMIT)"
-podman build --build-arg "APP_COMMIT=$COMMIT" --build-arg "LOW_CPU=$LOW_CPU" \
-  -t localhost/roses-blog:latest -f Containerfile .
+podman build "${BUILD_OPTS[@]}" --target deps -t localhost/roses-blog:cache-deps . \
+  || fail "Image-Build fehlgeschlagen (Stufe: Abhängigkeiten/npm ci)."
+podman build "${BUILD_OPTS[@]}" --target build -t localhost/roses-blog:cache-build . \
+  || fail "Image-Build fehlgeschlagen (Stufe: App-Build/next build)."
+podman build "${BUILD_OPTS[@]}" -t localhost/roses-blog:latest . \
+  || fail "Image-Build fehlgeschlagen (Stufe: Laufzeit-Image)."
 
 # --- 4. DB-Backup vor Migration/Neustart -------------------------------------
 if [[ -f "$DATA_DIR/app.db" ]]; then
@@ -161,8 +212,9 @@ if [[ -f "$DATA_DIR/app.db" ]]; then
   podman run --rm --entrypoint node -v "$DATA_DIR:/data" localhost/roses-blog:latest \
     -e "const db=require('better-sqlite3')('/data/app.db',{readonly:true});db.backup('/data/backups/'+process.argv[1]).then(()=>{db.close();console.log('Backup ok')}).catch(e=>{console.error(e);process.exit(1)})" \
     "$(basename "$BACKUP_FILE")" || fail "DB-Backup fehlgeschlagen — Deployment abgebrochen."
-  # Nur die letzten 10 Pre-Deploy-Backups behalten
-  ls -1t "$DATA_DIR"/backups/pre-deploy-*.db 2>/dev/null | tail -n +11 | xargs -r rm -f
+  # Nur die letzten 10 Pre-Deploy-Backups behalten (Best-Effort — ein leerer
+  # Glob würde sonst wegen pipefail das ganze Deployment abbrechen)
+  ls -1t "$DATA_DIR"/backups/pre-deploy-*.db 2>/dev/null | tail -n +11 | xargs -r rm -f || true
 fi
 
 # --- 5. Container (neu) starten — Migrationen laufen im Entrypoint ----------
@@ -190,21 +242,25 @@ if command -v ss >/dev/null 2>&1 && ss -ltn "( sport = :$PORT )" 2>/dev/null | g
   fi
 fi
 
-# Besitz von DATA_DIR normalisieren: unter rootless podman ist Container-root
-# der Host-User. Dateien, die ein FRÜHERER Container als 'node' (uid 1000, auf
-# eine Subuid gemappt) angelegt hat, gehören dann einer fremden Uid und wären
-# für den jetzigen Container nur lesbar ("attempt to write a readonly
-# database"). 'podman unshare chown 0:0' setzt sie im User-Namespace auf den
-# Host-User zurück. Idempotent, best effort.
-podman unshare chown -R 0:0 "$DATA_DIR" >/dev/null 2>&1 || true
-
-# Preflight: kann der Container das Datenverzeichnis UND eine bestehende Datei
-# darin beschreiben? Fängt Rechteprobleme klar ab, statt später mit kryptischem
-# Fehler im Container-Log zu scheitern.
-if ! podman run --rm --entrypoint sh -v "$DATA_DIR:/data" localhost/roses-blog:latest \
-     -c 'touch /data/.write-test && rm -f /data/.write-test' >/dev/null 2>&1; then
-  fail "Container kann $DATA_DIR nicht beschreiben. Rootless betreiben (podman als \
-Nicht-root-User), oder einmalig: podman unshare chown -R 0:0 \"$DATA_DIR\"."
+# Preflight: kann der Container das Datenverzeichnis UND die Datenbankdatei
+# beschreiben? Erst testen, nur bei Fehlschlag reparieren: die rekursive
+# Besitz-Normalisierung (unshare chown über ALLE Uploads/Backups) kann bei
+# großen Datenbeständen Minuten dauern und ist nur nötig, wenn ein früherer
+# Container Dateien unter fremder Uid hinterlassen hat ("attempt to write a
+# readonly database"). 'podman unshare chown 0:0' setzt sie im User-Namespace
+# auf den Host-User zurück.
+data_write_test() {
+  podman run --rm --entrypoint sh -v "$DATA_DIR:/data" localhost/roses-blog:latest \
+    -c 'touch /data/.write-test && rm -f /data/.write-test \
+        && { [ ! -f /data/app.db ] \
+             || dd if=/dev/null of=/data/app.db oflag=append conv=notrunc status=none; }' \
+    >/dev/null 2>&1
+}
+if ! data_write_test; then
+  log "Datenverzeichnis nicht (voll) beschreibbar — normalisiere Besitz"
+  podman unshare chown -R 0:0 "$DATA_DIR" >/dev/null 2>&1 || true
+  data_write_test || fail "Container kann $DATA_DIR nicht beschreiben. Rootless betreiben \
+(podman als Nicht-root-User), oder einmalig: podman unshare chown -R 0:0 \"$DATA_DIR\"."
 fi
 
 log "Starte Container neu"
@@ -236,12 +292,15 @@ if ! systemctl --user is-enabled podman-restart.service >/dev/null 2>&1; then
 fi
 # (b) Linger — ohne das startet der User-systemd-Manager beim Boot nicht,
 # der Service liefe nie. Bei jedem Lauf explizit prüfen (nicht still schlucken).
-if [[ "$(loginctl show-user "$USER" --property=Linger --value 2>/dev/null)" != "yes" ]]; then
-  if loginctl enable-linger "$USER" >/dev/null 2>&1; then
-    echo "Autostart: Linger für $USER aktiviert."
+# $USER ist nicht in jeder Umgebung gesetzt (cron, minimale systemd-Units) —
+# unter `set -u` bräche das Skript sonst hier ab.
+DEPLOY_USER="${USER:-$(id -un)}"
+if [[ "$(loginctl show-user "$DEPLOY_USER" --property=Linger --value 2>/dev/null)" != "yes" ]]; then
+  if loginctl enable-linger "$DEPLOY_USER" >/dev/null 2>&1; then
+    echo "Autostart: Linger für $DEPLOY_USER aktiviert."
   else
     echo "WARNUNG: Linger konnte nicht aktiviert werden — Autostart nach Reboot INAKTIV."
-    echo "         Einmalig ausführen: sudo loginctl enable-linger $USER"
+    echo "         Einmalig ausführen: sudo loginctl enable-linger $DEPLOY_USER"
   fi
 fi
 
@@ -299,8 +358,11 @@ fi
 podman image prune -f >/dev/null 2>&1 || true
 
 # --- 9. Status ----------------------------------------------------------------
+# Zustand für den Schnellpfad (Abschnitt 1b) festhalten: Commit + .env-Hash
+# des erfolgreich deployten Stands.
+printf '%s %s\n' "$COMMIT" "$ENV_HASH" > "$STATE_FILE" 2>/dev/null || true
 DEPLOY_STATUS_RESULT="erfolgreich"   # EXIT-Trap schreibt deploy-status.json
-log "Deployment erfolgreich"
+log "Deployment erfolgreich (Dauer: ${SECONDS}s)"
 echo "Branch:   $BRANCH"
 echo "Commit:   $COMMIT"
 curl -fsS "http://127.0.0.1:$PORT/health" && echo

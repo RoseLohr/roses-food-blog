@@ -8,3 +8,20 @@ coverage
 docs
 deploy
 README.md
+# Fürs Bauen irrelevante Dateien: Änderungen daran sollen den Layer-Cache
+# des Image-Builds nicht ungültig machen (COPY . . im Build-Stage).
+tests
+test-results
+playwright.config.ts
+vitest.config.ts
+.claude
+.admin-data
+.e2e-data
+tsconfig.tsbuildinfo
+bootstrap.sh
+deploy.sh
+compose.yml
+Containerfile
+.dockerignore
+.gitignore
+*.log
