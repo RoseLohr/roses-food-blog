@@ -1,6 +1,6 @@
 "use server";
 
-import { count, eq } from "drizzle-orm";
+import { count, eq, sql } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { db, schema } from "@/db";
 import { requireAdmin } from "@/lib/auth";
@@ -68,6 +68,44 @@ export async function updateIngredientAction(formData: FormData): Promise<void> 
     back(dict.admin.ingredients.exists);
   }
   back(dict.common.saved);
+}
+
+export async function mergeIngredientsAction(formData: FormData): Promise<void> {
+  await requireAdmin();
+  const sourceId = Number(formData.get("sourceId"));
+  const targetId = Number(formData.get("targetId"));
+  if (!Number.isInteger(sourceId) || !Number.isInteger(targetId)) {
+    back(dict.common.error);
+  }
+  if (sourceId === targetId) back(dict.admin.ingredients.mergeSame);
+
+  // Beide Zutaten müssen existieren.
+  const both = await db
+    .select({ id: schema.ingredient.id })
+    .from(schema.ingredient);
+  const ids = new Set(both.map((r) => r.id));
+  if (!ids.has(sourceId) || !ids.has(targetId)) back(dict.common.error);
+
+  try {
+    db.transaction((tx) => {
+      // recipe_ingredient: eigener Primärschlüssel → einfach umhängen.
+      tx.run(
+        sql`UPDATE recipe_ingredient SET ingredient_id = ${targetId} WHERE ingredient_id = ${sourceId}`,
+      );
+      // dish_ingredient: PK (dish_id, ingredient_id) → Kollision möglich, wenn
+      // ein Gericht beide Zutaten hat. OR IGNORE hängt um, wo es geht; die
+      // verbleibenden Duplikate der Quelle danach entfernen.
+      tx.run(
+        sql`UPDATE OR IGNORE dish_ingredient SET ingredient_id = ${targetId} WHERE ingredient_id = ${sourceId}`,
+      );
+      tx.run(sql`DELETE FROM dish_ingredient WHERE ingredient_id = ${sourceId}`);
+      // Quell-Zutat entfernen (ist nun nirgends mehr referenziert).
+      tx.run(sql`DELETE FROM ingredient WHERE id = ${sourceId}`);
+    });
+  } catch {
+    back(dict.common.error);
+  }
+  back(dict.admin.ingredients.merged);
 }
 
 export async function deleteIngredientAction(formData: FormData): Promise<void> {

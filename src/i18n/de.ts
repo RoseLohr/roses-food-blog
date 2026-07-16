@@ -571,6 +571,14 @@ export const de = {
       exists: "Diese Zutat existiert bereits.",
       inUse: "Zutat wird verwendet und kann nicht gelöscht werden.",
       imageHint: "Wird auf Suchergebnisseiten angezeigt.",
+      merge: "Zusammenführen mit …",
+      mergeHint:
+        "Verbindet zwei gleiche Zutaten: Alle Rezepte und Gerichte werden auf die Ziel-Zutat umgehängt, diese Zutat danach gelöscht.",
+      mergeInto: "In diese Zutat zusammenführen",
+      mergeButton: "Zusammenführen",
+      mergeChoose: "Ziel-Zutat wählen …",
+      mergeSame: "Bitte zwei verschiedene Zutaten wählen.",
+      merged: "Zutaten zusammengeführt.",
     },
     taxonomies: {
       title: "Kategorien & Co.",

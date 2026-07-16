@@ -8,6 +8,7 @@ import { t } from "@/i18n/de";
 import {
   createIngredientAction,
   deleteIngredientAction,
+  mergeIngredientsAction,
   updateIngredientAction,
 } from "./actions";
 
@@ -56,8 +57,11 @@ export default async function IngredientsPage(props: {
   return (
     <>
       <h1 className="mb-2 text-2xl font-bold">{dict.admin.ingredients.title}</h1>
-      <p className="mb-6 text-sm text-ink-soft">
+      <p className="mb-1 text-sm text-ink-soft">
         {dict.admin.ingredients.imageHint}
+      </p>
+      <p className="mb-6 text-sm text-ink-soft">
+        {dict.admin.ingredients.mergeHint}
       </p>
       {message && (
         <p role="status" className="mb-4 bg-amber-50 p-3 text-sm text-amber-900">
@@ -149,6 +153,41 @@ export default async function IngredientsPage(props: {
                   </button>
                 </div>
               </form>
+              {ingredients.length > 1 && (
+                <form
+                  action={mergeIngredientsAction}
+                  className="mt-2 flex items-center gap-2 border-t border-ink-soft/15 pt-2"
+                >
+                  <input type="hidden" name="sourceId" value={ing.id} />
+                  <label className="sr-only" htmlFor={`merge-${ing.id}`}>
+                    {dict.admin.ingredients.mergeInto}
+                  </label>
+                  <select
+                    id={`merge-${ing.id}`}
+                    name="targetId"
+                    required
+                    defaultValue=""
+                    className="min-w-0 grow border border-ink-soft/30 px-2 py-1 text-xs"
+                  >
+                    <option value="" disabled>
+                      {dict.admin.ingredients.merge}
+                    </option>
+                    {ingredients
+                      .filter((other) => other.id !== ing.id)
+                      .map((other) => (
+                        <option key={other.id} value={other.id}>
+                          {other.name}
+                        </option>
+                      ))}
+                  </select>
+                  <button
+                    type="submit"
+                    className="shrink-0 rounded border border-ink/20 px-2 py-0.5 text-xs hover:bg-cream"
+                  >
+                    {dict.admin.ingredients.mergeButton}
+                  </button>
+                </form>
+              )}
               {ing.recipeCount === 0 && ing.dishCount === 0 && (
                 <form action={deleteIngredientAction} className="mt-1 text-right">
                   <input type="hidden" name="id" value={ing.id} />
