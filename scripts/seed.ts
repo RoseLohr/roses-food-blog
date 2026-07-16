@@ -406,6 +406,8 @@ async function main() {
     {
       name: "Trattoria da Nino",
       city: "Palermo",
+      lat: 38.1157,
+      lng: 13.3615,
       description:
         "Familiengeführte Trattoria nahe dem Ballarò-Markt, drei Tische, keine Speisekarte.",
       dishes: [
@@ -427,6 +429,8 @@ async function main() {
     {
       name: "Osteria del Porto",
       city: "Catania",
+      lat: 37.5079,
+      lng: 15.083,
       description:
         "Direkt am Fischmarkt — was morgens ankommt, liegt mittags auf dem Teller.",
       dishes: [
@@ -448,6 +452,9 @@ async function main() {
         name: r.name,
         city: r.city,
         description: r.description,
+        // Koordinaten-Override — die Platzhalterbilder tragen kein EXIF-GPS
+        lat: r.lat,
+        lng: r.lng,
         sortOrder: i,
       })
       .returning();
@@ -484,6 +491,7 @@ async function main() {
   await db.insert(schema.homepageFilterGroup).values([
     { groupKey: "zeit" },
     { groupKey: "ernaehrung" },
+    { groupKey: "kalorien" },
   ]);
   // Slider: Hero-Bilder der ersten drei Rezepte
   const heroRows = await db.select().from(schema.recipe);

@@ -615,7 +615,7 @@ export const homepageFilterGroup = sqliteTable(
   (t) => [
     check(
       "homepage_filter_group_check",
-      sql`${t.groupKey} IN ('zeit','kategorie','ernaehrung','kueche','zubereitung')`,
+      sql`${t.groupKey} IN ('zeit','kategorie','ernaehrung','kueche','zubereitung','kalorien')`,
     ),
   ],
 );

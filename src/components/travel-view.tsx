@@ -252,14 +252,15 @@ function RestaurantCard({
           </span>
         )}
       </h3>
-      {/* Bild + Beschreibung: mobil untereinander, ab md nebeneinander */}
+      {/* Bild + Beschreibung: mobil untereinander, ab Tablet (sm, deckt auch
+          iPad-Hochformat ab) nebeneinander */}
       {(r.image || r.description) && (
-        <div className="mt-3 flex flex-col gap-4 md:flex-row md:items-start">
+        <div className="mt-3 flex flex-col gap-4 sm:flex-row sm:items-start">
           {r.image && (
-            <div className="md:w-96 md:shrink-0">
+            <div className="sm:w-72 sm:shrink-0 md:w-96">
               <ResponsiveImg
                 image={r.image}
-                sizes="(max-width: 768px) 100vw, 384px"
+                sizes="(max-width: 640px) 100vw, 384px"
                 className="aspect-[3/2] w-full object-cover"
               />
             </div>

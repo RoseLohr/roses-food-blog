@@ -3,7 +3,7 @@
  * Gerichte, Facettenfilter (Zeit, Ernährungsform, Kategorie, Schlagwort,
  * Küche, Zutat) und Zutatensuche über Rezepte UND Restaurant-Gerichte.
  */
-import { and, asc, desc, eq, inArray, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNotNull, lte, or, sql } from "drizzle-orm";
 import { db, schema } from "@/db";
 import type { RecipeCardData } from "@/components/recipe-card";
 import { thumbUrl, variantWidthsByImage } from "@/lib/media";
@@ -37,10 +37,27 @@ async function dishThumbById(dishIds: number[]): Promise<Map<number, string>> {
 /** Bereich der Suche: beides, nur Rezepte oder nur Reisen (inkl. Gerichte). */
 export type SearchScope = "alle" | "rezepte" | "reisen";
 
+/** Kalorien-Bänder (kcal je Portion): wenig ≤ 400, mittel 400–650, hoch > 650. */
+export const CALORIE_BANDS = ["wenig", "mittel", "hoch"] as const;
+export type CalorieBand = (typeof CALORIE_BANDS)[number];
+
+function calorieCondition(band: CalorieBand) {
+  switch (band) {
+    case "wenig":
+      return lte(schema.recipe.kcal, 400);
+    case "mittel":
+      return and(gt(schema.recipe.kcal, 400), lte(schema.recipe.kcal, 650))!;
+    case "hoch":
+      return gt(schema.recipe.kcal, 650);
+  }
+}
+
 export interface SearchFilters {
   q: string;
   scope: SearchScope;
   maxTime: number | null;
+  /** Kalorien-Filter (Mehrfachauswahl); betrifft nur Rezepte. */
+  calorieBands: CalorieBand[];
   categorySlugs: string[];
   tagSlugs: string[];
   dietSlugs: string[];
@@ -63,6 +80,9 @@ export function parseSearchParams(
       scopeRaw === "rezepte" || scopeRaw === "reisen" ? scopeRaw : "alle",
     maxTime:
       Number.isFinite(maxTimeRaw) && maxTimeRaw > 0 ? maxTimeRaw : null,
+    calorieBands: list(params.kalorien).filter((v): v is CalorieBand =>
+      (CALORIE_BANDS as readonly string[]).includes(v),
+    ),
     categorySlugs: list(params.kategorie),
     tagSlugs: list(params.schlagwort),
     dietSlugs: list(params.ernaehrung),
@@ -177,6 +197,15 @@ export async function searchRecipes(
   if (ids !== null) conditions.push(inArray(schema.recipe.id, ids));
   if (filters.maxTime !== null)
     conditions.push(lte(schema.recipe.totalMinutes, filters.maxTime));
+  // Kalorien-Bänder (ODER-verknüpft); Rezepte ohne kcal-Angabe fallen raus.
+  if (filters.calorieBands.length > 0) {
+    conditions.push(
+      and(
+        isNotNull(schema.recipe.kcal),
+        or(...filters.calorieBands.map(calorieCondition)),
+      )!,
+    );
+  }
 
   const rows = await db
     .select({ id: schema.recipe.id })

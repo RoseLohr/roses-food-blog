@@ -6,6 +6,7 @@ import { RecipeCard } from "@/components/recipe-card";
 import { ResponsiveImg } from "@/components/responsive-img";
 import { DietBox, type DietBoxItem } from "@/components/diet-box";
 import { publishedRecipeCards } from "@/lib/recipe-list";
+import { CALORIE_BANDS } from "@/lib/search";
 import {
   imageUrl,
   mediaImageWithWidths,
@@ -323,6 +324,14 @@ export default async function HomePage() {
       key: "zubereitung",
       heading: d.filterPrep,
       links: tags.map((tg) => ({ label: tg.name, href: `/suche?schlagwort=${tg.slug}` })),
+    },
+    {
+      key: "kalorien",
+      heading: d.filterCalories,
+      links: CALORIE_BANDS.map((band) => ({
+        label: dict.search.calorieBands[band],
+        href: `/suche?kalorien=${band}`,
+      })),
     },
   ].filter((g) => filterGroups.includes(g.key) && g.links.length > 0);
 

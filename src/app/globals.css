@@ -612,16 +612,19 @@ html {
 }
 .sk-pname {
   display: flex;
+  flex-wrap: wrap; /* „aus N Ländern" rückt in die nächste Zeile statt den
+                      Produktnamen abzuschneiden */
   align-items: center;
-  gap: 0.45rem;
+  gap: 0.1rem 0.45rem;
   font-size: 0.85rem;
   font-weight: 600;
   min-width: 0;
 }
+/* Produktname immer komplett lesbar: umbrechen statt Ellipsis */
 .sk-pname > span:not(.sk-count) {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: break-word;
 }
 .sk-prow:hover .sk-pname > span:not(.sk-count),
 .sk-prow[aria-expanded="true"] .sk-pname > span:not(.sk-count) {
@@ -652,13 +655,14 @@ html {
   color: var(--color-rose-primary-dark);
 }
 
-/* Fußnoten-Ziffern (Quellenverweise) */
+/* Fußnoten-Ziffern (Quellenverweise) — nie innerhalb der Zahl umbrechen */
 .sk-fn {
   margin-left: 0.15rem;
   font-size: 0.58rem;
   font-weight: 600;
   color: var(--color-ink-soft);
   letter-spacing: 0.05em;
+  white-space: nowrap;
 }
 
 /* Berechnungsart-Legende (Buchstaben-Fußnoten) unter dem Kalender */
@@ -779,13 +783,12 @@ html {
 .sk-sub .sk-name {
   padding-left: 1.4rem;
 }
+/* Sorten-/Eintragsname ebenfalls voll lesbar (umbrechen statt Ellipsis) */
 .sk-sub-label {
   display: block;
   font-size: 0.78rem;
   font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: break-word;
 }
 .sk-sub-origin {
   display: block;

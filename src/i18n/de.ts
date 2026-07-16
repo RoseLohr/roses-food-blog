@@ -35,6 +35,7 @@ export const de = {
     filterCategory: "Nach Art des Gerichts",
     filterCuisine: "Nach Art der Küche",
     filterPrep: "Nach Zubereitung",
+    filterCalories: "Nach Kalorien",
     allRecipes: "Alle Rezepte ansehen",
   },
   nav: {
@@ -150,6 +151,9 @@ export const de = {
     empty: "Noch keine Reiseberichte vorhanden.",
     mapLabel: "Weltkarte der Restaurants",
     mapOpenInMaps: "In Google Maps öffnen",
+    mapPrevDish: "Vorheriges Gericht",
+    mapNextDish: "Nächstes Gericht",
+    mapDishCount: (i: number, n: number) => `${i} von ${n}`,
     restaurantsTitle: "Restaurants & Gerichte",
     restaurantWord: "Restaurant",
     dishIngredients: "Zutaten",
@@ -171,6 +175,12 @@ export const de = {
     time: "Zubereitungszeit",
     timeAny: "Beliebig",
     timeUpTo: (m: number) => `bis ${m} Min.`,
+    calories: "Kalorien (pro Portion)",
+    calorieBands: {
+      wenig: "Wenig Kalorien (bis 400 kcal)",
+      mittel: "Mittlere Kalorien (400–650 kcal)",
+      hoch: "Viele Kalorien (über 650 kcal)",
+    } as Record<string, string>,
     categories: "Art des Gerichts / Kategorie",
     diets: "Ernährungsform",
     cuisines: "Art der Küche",
@@ -973,6 +983,7 @@ export const de = {
       fgErnaehrung: "Ernährungsform",
       fgKueche: "Art der Küche",
       fgZubereitung: "Zubereitung",
+      fgKalorien: "Kalorien",
       dietBoxSection: "Ernährungsform-Box",
       dietBoxIntro:
         "Zeigt eine Liste von Rezepten einer Ernährungsform (mit Bild). Leer lassen = Box aus.",

@@ -7,6 +7,7 @@ import { ResponsiveImg } from "@/components/responsive-img";
 import { IngredientFilter } from "@/components/ingredient-filter";
 import { taxonomiesByType } from "@/lib/taxonomies";
 import {
+  CALORIE_BANDS,
   parseSearchParams,
   searchDishes,
   searchIngredients,
@@ -67,6 +68,7 @@ export default async function SearchPage(props: {
   const hasQuery =
     filters.q !== "" ||
     filters.maxTime !== null ||
+    filters.calorieBands.length > 0 ||
     filters.categorySlugs.length > 0 ||
     filters.tagSlugs.length > 0 ||
     filters.dietSlugs.length > 0 ||
@@ -200,6 +202,15 @@ export default async function SearchPage(props: {
               ))}
             </select>
           </div>
+          <FilterGroup
+            legend={dict.search.calories}
+            name="kalorien"
+            options={CALORIE_BANDS.map((band) => ({
+              slug: band,
+              name: dict.search.calorieBands[band],
+            }))}
+            selected={filters.calorieBands}
+          />
           <FilterGroup
             legend={dict.search.categories}
             name="kategorie"

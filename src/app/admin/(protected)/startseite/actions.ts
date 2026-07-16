@@ -50,6 +50,7 @@ export async function saveHomepageAction(formData: FormData): Promise<void> {
     "ernaehrung",
     "kueche",
     "zubereitung",
+    "kalorien",
   ] as const;
   const filterGroups = formData
     .getAll("filterGroups")

@@ -1,33 +1,27 @@
 "use client";
 
 /**
- * Weltkarte auf /reisen: zeigt pro Gericht einen Pin an der Foto-GPS-Position.
- * Klick auf einen Pin öffnet ein Popup mit Bild, Restaurant- und Gerichtname;
- * Klick auf die Karte oder ein Zoom schließt es wieder.
+ * Weltkarte auf /reisen: EIN Pin je Restaurant. Klick öffnet ein Popup mit
+ * dem Restaurantnamen (verlinkt zum Reisebericht), dem Ort (Google-Maps-Link)
+ * und allen Gerichten des Restaurants als Karussell (Pfeile links/rechts;
+ * Foto und Gerichtname verlinken zum Gericht im Bericht).
  *
- * Vollständig selbst gehostet und CSP-konform: Leaflet (BSD, lokal gebündelt)
- * plus eine gemeinfreie Weltkarte (Natural Earth als GeoJSON aus /public).
- * KEINE externen Kartenkacheln — daher keine Fremd-Requests, keine Besucher-
- * IPs an Dritte, die strikte CSP bleibt unangetastet.
+ * Liegen Restaurants zu dicht beieinander, fasst leaflet.markercluster sie
+ * zu einem Zähler-Kreis zusammen; ein Klick zoomt hinein bzw. fächert
+ * überlappende Pins auf (Spiderfy).
+ *
+ * Vollständig selbst gehostet und CSP-konform: Leaflet + markercluster
+ * (beide lokal gebündelt) plus eine gemeinfreie Weltkarte (Natural Earth als
+ * GeoJSON aus /public). KEINE externen Kartenkacheln — daher keine
+ * Fremd-Requests, keine Besucher-IPs an Dritte.
  */
 import { useEffect, useRef } from "react";
 import "leaflet/dist/leaflet.css";
+import "leaflet.markercluster/dist/MarkerCluster.css";
+import type { TravelMapPin } from "@/lib/travel-map";
 import { t } from "@/i18n/de";
 
 const dict = t();
-
-export interface TravelMapPin {
-  lat: number;
-  lng: number;
-  dishName: string;
-  restaurantName: string;
-  restaurantCity: string;
-  thumbUrl: string;
-  imageAlt: string;
-  /** Ziel im Reisebericht: /reisen/{travelSlug}#dish-{dishId} */
-  travelSlug: string;
-  dishId: number;
-}
 
 function esc(s: string): string {
   return s.replace(
@@ -43,39 +37,117 @@ function esc(s: string): string {
   );
 }
 
-/** Google-Maps-Link zur GPS-Position des Fotos (EXIF), plattformübergreifend. */
+/** Google-Maps-Link zur Pin-Position, plattformübergreifend. */
 function mapsUrl(lat: number, lng: number): string {
   return `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
 }
 
 /**
- * Popup-Inhalt: Bild, darunter Restaurant + „Ort", darunter Gericht.
- * Bild und Gerichtname verlinken zum passenden Gericht im Reisebericht;
- * der Ort (Restaurant-Stadt) ist ein Link auf Google Maps an die
- * EXIF-Position des Fotos — öffnet in einem neuen Tab.
+ * Popup-Inhalt als DOM-Element: Kopfzeile (Restaurant → Bericht, Ort →
+ * Google Maps) + Gericht-Karussell. Als Element statt HTML-String, damit
+ * die Pfeil-Buttons echte Click-Handler bekommen.
  */
-function popupHtml(p: TravelMapPin): string {
-  const dishUrl = `/reisen/${encodeURIComponent(p.travelSlug)}#dish-${p.dishId}`;
-  const cityLink = p.restaurantCity
-    ? `<a href="${esc(mapsUrl(p.lat, p.lng))}" target="_blank" rel="noopener noreferrer"
-         title="${esc(dict.travelList.mapOpenInMaps)}"
-         style="color:#2b857b;text-decoration:underline">${esc(p.restaurantCity)}</a>`
-    : "";
-  const location = cityLink
-    ? `${esc(p.restaurantName)} · ${cityLink}`
-    : esc(p.restaurantName);
-  return `
-    <div style="width:180px">
-      <a href="${esc(dishUrl)}" aria-label="${esc(p.dishName)}">
-        <img src="${esc(p.thumbUrl)}" alt="${esc(p.imageAlt)}"
-          style="display:block;width:100%;height:120px;object-fit:cover;margin-bottom:8px" />
-      </a>
-      <p style="margin:0;font-weight:700;font-size:13px;color:#111111">${location}</p>
-      <p style="margin:2px 0 0;font-size:13px">
-        <a href="${esc(dishUrl)}"
-          style="color:#2b857b;text-decoration:underline">${esc(p.dishName)}</a>
-      </p>
-    </div>`;
+function popupElement(p: TravelMapPin): HTMLElement {
+  const root = document.createElement("div");
+  root.style.width = "200px";
+  const restaurantUrl = `/reisen/${encodeURIComponent(p.travelSlug)}#restaurant-${p.restaurantId}`;
+
+  const head = document.createElement("p");
+  head.style.cssText = "margin:0;font-weight:700;font-size:13px;color:#111111";
+  const restLink = document.createElement("a");
+  restLink.href = restaurantUrl;
+  restLink.textContent = p.restaurantName;
+  restLink.style.cssText = "color:#111111;text-decoration:none";
+  head.appendChild(restLink);
+  if (p.restaurantCity) {
+    head.appendChild(document.createTextNode(" · "));
+    const cityLink = document.createElement("a");
+    cityLink.href = mapsUrl(p.lat, p.lng);
+    cityLink.target = "_blank";
+    cityLink.rel = "noopener noreferrer";
+    cityLink.title = dict.travelList.mapOpenInMaps;
+    cityLink.textContent = p.restaurantCity;
+    cityLink.style.cssText =
+      "color:#2b857b;text-decoration:underline;font-weight:400";
+    head.appendChild(cityLink);
+  }
+  root.appendChild(head);
+
+  if (p.dishes.length === 0) return root;
+
+  // --- Karussell -----------------------------------------------------------
+  let index = 0;
+  const count = p.dishes.length;
+
+  const frame = document.createElement("div");
+  frame.style.cssText = "position:relative;margin-top:8px";
+  const mediaLink = document.createElement("a");
+  const img = document.createElement("img");
+  img.style.cssText = "display:block;width:100%;height:120px;object-fit:cover";
+  const placeholder = document.createElement("span");
+  placeholder.style.cssText =
+    "display:flex;align-items:center;justify-content:center;width:100%;height:120px;background:#f4f6f5;color:#4c4b5b;font-size:11px";
+  mediaLink.appendChild(img);
+  mediaLink.appendChild(placeholder);
+  frame.appendChild(mediaLink);
+
+  const nameRow = document.createElement("p");
+  nameRow.style.cssText =
+    "margin:6px 0 0;font-size:13px;display:flex;justify-content:space-between;gap:8px;align-items:baseline";
+  const nameLink = document.createElement("a");
+  nameLink.style.cssText = "color:#2b857b;text-decoration:underline;min-width:0";
+  const counter = document.createElement("span");
+  counter.style.cssText = "color:#4c4b5b;font-size:11px;white-space:nowrap";
+  nameRow.appendChild(nameLink);
+  if (count > 1) nameRow.appendChild(counter);
+
+  const arrow = (dir: -1 | 1, label: string): HTMLButtonElement => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.setAttribute("aria-label", label);
+    btn.textContent = dir < 0 ? "‹" : "›";
+    btn.style.cssText =
+      `position:absolute;top:50%;${dir < 0 ? "left:6px" : "right:6px"};` +
+      "transform:translateY(-50%);width:26px;height:26px;border:0;border-radius:9999px;" +
+      "background:rgba(255,255,255,0.92);color:#111111;font-size:17px;line-height:1;" +
+      "cursor:pointer;box-shadow:0 1px 3px rgba(17,17,17,0.35);display:flex;align-items:center;justify-content:center;padding:0 0 2px";
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      index = (index + dir + count) % count;
+      render();
+    });
+    return btn;
+  };
+  if (count > 1) {
+    frame.appendChild(arrow(-1, dict.travelList.mapPrevDish));
+    frame.appendChild(arrow(1, dict.travelList.mapNextDish));
+  }
+
+  const render = () => {
+    const dish = p.dishes[index];
+    const dishUrl = `/reisen/${encodeURIComponent(p.travelSlug)}#dish-${dish.dishId}`;
+    mediaLink.href = dishUrl;
+    mediaLink.setAttribute("aria-label", dish.name);
+    if (dish.thumbUrl) {
+      img.src = dish.thumbUrl;
+      img.alt = dish.imageAlt || dish.name;
+      img.style.display = "block";
+      placeholder.style.display = "none";
+    } else {
+      img.removeAttribute("src");
+      img.style.display = "none";
+      placeholder.textContent = dish.name;
+      placeholder.style.display = "flex";
+    }
+    nameLink.href = dishUrl;
+    nameLink.textContent = dish.name;
+    counter.textContent = dict.travelList.mapDishCount(index + 1, count);
+  };
+  render();
+
+  root.appendChild(frame);
+  root.appendChild(nameRow);
+  return root;
 }
 
 // Ab dieser Zoomstufe werden Hauptstädte überhaupt erst eingeblendet
@@ -103,6 +175,8 @@ export function TravelMap({ pins }: { pins: TravelMapPin[] }) {
       const leafletModule = await import("leaflet");
       // CJS-Interop: L liegt unter .default (Fallback: Namespace direkt).
       const L = leafletModule.default ?? leafletModule;
+      // Plugin erweitert L um markerClusterGroup (Cluster + Spiderfy).
+      await import("leaflet.markercluster");
       if (cancelled || !containerRef.current) return;
 
       map = L.map(containerRef.current, {
@@ -228,22 +302,43 @@ export function TravelMap({ pins }: { pins: TravelMapPin[] }) {
         popupAnchor: [0, -26],
       });
 
-      const markers: import("leaflet").Marker[] = [];
+      // Cluster + Spiderfy: dicht beieinanderliegende Restaurants werden zu
+      // einem Zähler-Kreis zusammengefasst; Klick zoomt hinein bzw. fächert
+      // Pins an (fast) identischer Position auf.
+      const clusterGroup = L.markerClusterGroup({
+        maxClusterRadius: 40,
+        showCoverageOnHover: false,
+        spiderfyOnMaxZoom: true,
+        zoomToBoundsOnClick: true,
+        spiderfyDistanceMultiplier: 1.4,
+        iconCreateFunction: (cluster) =>
+          L.divIcon({
+            html: `<span style="display:flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:9999px;background:#339e92;color:#fff;font-family:'Nunito Sans',system-ui,sans-serif;font-size:13px;font-weight:700;box-shadow:0 0 0 4px rgba(51,158,146,0.3)">${cluster.getChildCount()}</span>`,
+            className: "travel-map-cluster",
+            iconSize: [34, 34],
+            iconAnchor: [17, 17],
+          }),
+      });
+
       for (const p of pins) {
         const marker = L.marker([p.lat, p.lng], {
           icon,
-          title: `${p.restaurantName} – ${p.dishName}`,
+          title: p.restaurantCity
+            ? `${p.restaurantName} · ${p.restaurantCity}`
+            : p.restaurantName,
         });
-        marker.bindPopup(popupHtml(p), { minWidth: 180, maxWidth: 200 });
-        marker.addTo(map);
-        markers.push(marker);
+        marker.bindPopup(() => popupElement(p), { minWidth: 200, maxWidth: 230 });
+        clusterGroup.addLayer(marker);
       }
+      map.addLayer(clusterGroup);
 
       // Mit Pins: auf sie zoomen (bei einem Pin nicht zu nah). Ohne Pins bleibt
       // die ganze Welt sichtbar (setView oben).
-      if (markers.length > 0) {
-        const group = L.featureGroup(markers);
-        map.fitBounds(group.getBounds().pad(0.3), { maxZoom: 6 });
+      if (pins.length > 0) {
+        const bounds = L.latLngBounds(
+          pins.map((p) => [p.lat, p.lng] as [number, number]),
+        );
+        map.fitBounds(bounds.pad(0.3), { maxZoom: 6 });
       }
       refreshLabels();
 

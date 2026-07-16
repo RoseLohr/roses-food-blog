@@ -49,6 +49,7 @@ export default async function HomepageAdminPage(props: {
     { key: "ernaehrung", label: d.fgErnaehrung },
     { key: "kueche", label: d.fgKueche },
     { key: "zubereitung", label: d.fgZubereitung },
+    { key: "kalorien", label: d.fgKalorien },
   ];
 
   const initialSlides: SlideRow[] = sliderItems.map((s) => ({
