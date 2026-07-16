@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { NewsletterSection } from "@/components/newsletter-section";
 import { SiteHeader } from "@/components/site-header";
-import { HideOnHome } from "@/components/hide-on-home";
 import { getNavMenus } from "@/lib/nav-data";
 import { t } from "@/i18n/de";
 
@@ -31,12 +30,11 @@ export default async function PublicLayout({
 
       <footer className="mt-auto print:hidden">
         <div className="border-t border-ink/10 bg-white">
-          {/* Newsletter im Footer — nicht auf der Startseite (auf Wunsch). */}
-          <HideOnHome>
-            <div className="mx-auto max-w-6xl px-4 pt-8">
-              <NewsletterSection source={dict.newsletter.sourceFooter} />
-            </div>
-          </HideOnHome>
+          {/* Newsletter im Footer — auf allen öffentlichen Seiten inkl.
+              Startseite. */}
+          <div className="mx-auto max-w-6xl px-4 pt-8">
+            <NewsletterSection source={dict.newsletter.sourceFooter} />
+          </div>
           <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-4 py-6 text-sm text-ink-soft">
             <ul className="flex flex-wrap gap-4">
               <li>

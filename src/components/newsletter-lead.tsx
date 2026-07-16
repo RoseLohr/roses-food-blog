@@ -3,8 +3,8 @@
 /**
  * Einladungszeile der Newsletter-Box, pfadabhängig: Auf den Reise-Seiten
  * (/reisen und /reisen/…) heißt es „Keine Reise mehr verpassen", überall
- * sonst „Kein Rezept mehr verpassen". Gleiche Technik wie HideOnHome —
- * die Box sitzt im gemeinsamen Footer-Layout, das die Route nicht kennt.
+ * sonst „Kein Rezept mehr verpassen". Als Client-Komponente kennt sie die
+ * Route, während die Box selbst im gemeinsamen Footer-Layout sitzt.
  */
 import { usePathname } from "next/navigation";
 import { t } from "@/i18n/de";
