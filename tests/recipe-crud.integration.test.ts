@@ -152,6 +152,64 @@ describe("Rezept-CRUD", () => {
     expect(orphanSections).toHaveLength(0);
   });
 
+  it("legt neue Taxonomien (kategorien__neu) erst beim Speichern an und verknüpft sie", async () => {
+    const { saveRecipeFromForm } = await import("@/lib/recipe-save");
+    const { db, schema } = await import("@/db");
+    const { and, eq } = await import("drizzle-orm");
+
+    // Vorher existiert die Kategorie NICHT.
+    const before = await db
+      .select()
+      .from(schema.taxonomy)
+      .where(
+        and(
+          eq(schema.taxonomy.type, "kategorie"),
+          eq(schema.taxonomy.name, "Ofengericht"),
+        ),
+      );
+    expect(before).toHaveLength(0);
+
+    const fd = recipeForm({ titel: "Ofengemüse" });
+    fd.append("kategorien__neu", "Ofengericht");
+    fd.append("ernaehrungsformen__neu", "Vegan");
+    const res = await saveRecipeFromForm(fd, adminId);
+    const rid = (res as { recipeId: number }).recipeId;
+
+    // Jetzt existiert sie und ist dem Rezept als primäre Kategorie zugeordnet.
+    const [kat] = await db
+      .select()
+      .from(schema.taxonomy)
+      .where(
+        and(
+          eq(schema.taxonomy.type, "kategorie"),
+          eq(schema.taxonomy.name, "Ofengericht"),
+        ),
+      );
+    expect(kat).toBeTruthy();
+    const links = await db
+      .select()
+      .from(schema.recipeTaxonomy)
+      .where(eq(schema.recipeTaxonomy.recipeId, rid));
+    const katLink = links.find((l) => l.taxonomyId === kat.id);
+    expect(katLink).toBeTruthy();
+    expect(katLink!.isPrimary).toBe(true);
+
+    // Zweites Rezept mit demselben „neu"-Namen → idempotent, keine Dublette.
+    const fd2 = recipeForm({ titel: "Zweites Ofengemüse" });
+    fd2.append("kategorien__neu", "Ofengericht");
+    await saveRecipeFromForm(fd2, adminId);
+    const all = await db
+      .select()
+      .from(schema.taxonomy)
+      .where(
+        and(
+          eq(schema.taxonomy.type, "kategorie"),
+          eq(schema.taxonomy.name, "Ofengericht"),
+        ),
+      );
+    expect(all).toHaveLength(1);
+  });
+
   it("lehnt ungültige Eingaben ab", async () => {
     const { saveRecipeFromForm } = await import("@/lib/recipe-save");
     const noTitle = await saveRecipeFromForm(recipeForm({ titel: "  " }), adminId);

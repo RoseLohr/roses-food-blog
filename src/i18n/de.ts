@@ -341,6 +341,11 @@ export const de = {
     adding: "Wird angelegt …",
     exists: "Existiert bereits — ausgewählt.",
     error: "Konnte nicht angelegt werden.",
+    // „Aufgeschobener" Modus: neue Einträge werden nicht sofort angelegt,
+    // sondern erst beim Speichern des umgebenden Formulars (z. B. Rezept).
+    newBadge: "neu",
+    remove: "Entfernen",
+    pendingHint: "Neue Einträge werden erst beim Speichern angelegt.",
     uploadNew: "Bild hochladen",
     uploading: "Wird hochgeladen …",
     uploadError: "Upload fehlgeschlagen.",

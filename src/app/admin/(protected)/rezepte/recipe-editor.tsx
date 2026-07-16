@@ -129,6 +129,13 @@ export function RecipeEditor({
   const [form, setForm] = useState(initial);
   const [taxonomyOptions, setTaxonomyOptions] =
     useState<Record<string, TaxonomyOption[]>>(taxonomies);
+  // Vom KI-Vorschlag übernommene, aber noch NICHT angelegte Taxonomie-Namen
+  // je Feld. Sie werden erst beim Speichern des Rezepts wirklich angelegt
+  // (Hidden-Feld `${field}__neu`), damit die Kategorienliste nicht mit
+  // verworfenen KI-Vorschlägen verschmutzt.
+  const [taxonomyPending, setTaxonomyPending] = useState<
+    Record<string, string[]>
+  >({});
   const [formKey, setFormKey] = useState(0);
   const [sections, setSections] = useState<EditorSection[]>(
     form.sections.length ? form.sections : [emptySection()],
@@ -138,44 +145,40 @@ export function RecipeEditor({
   const updateSection = (i: number, patch: Partial<EditorSection>) =>
     setSections((prev) => prev.map((s, idx) => (idx === i ? { ...s, ...patch } : s)));
 
-  // KI-Entwurf ins Formular übernehmen: Taxonomie-Namen zu IDs auflösen
-  // (idempotent anlegen), Felder setzen, Abschnitte übernehmen, Formular neu
-  // mounten, damit die defaultValues greifen.
-  async function applyDraft(draft: RecipeDraft) {
-    const draftByField: Record<string, { type: string; names: string[] }> = {
-      kategorien: { type: "kategorie", names: draft.categories },
-      schlagwoerter: { type: "schlagwort", names: draft.tags },
-      ernaehrungsformen: { type: "ernaehrungsform", names: draft.dietTypes },
-      kuechen: { type: "kueche", names: draft.cuisines },
-      geraete: { type: "geraet", names: draft.equipment },
+  // KI-Entwurf ins Formular übernehmen. WICHTIG: Es wird NICHTS in der
+  // Datenbank angelegt. Vorgeschlagene Taxonomie-Namen werden nur gegen die
+  // bereits vorhandenen Optionen gematcht — Treffer werden angehakt, alles
+  // Übrige als „neu" gemerkt und erst beim Speichern des Rezepts angelegt.
+  function applyDraft(draft: RecipeDraft) {
+    const draftByField: Record<string, string[]> = {
+      kategorien: draft.categories,
+      schlagwoerter: draft.tags,
+      ernaehrungsformen: draft.dietTypes,
+      kuechen: draft.cuisines,
+      geraete: draft.equipment,
     };
-    const nextOptions: Record<string, TaxonomyOption[]> = { ...taxonomyOptions };
     const selections: Record<string, number[]> = {};
-    for (const [field, { type, names }] of Object.entries(draftByField)) {
+    const pending: Record<string, string[]> = {};
+    for (const [field, names] of Object.entries(draftByField)) {
+      const opts = taxonomyOptions[field] ?? [];
       const ids: number[] = [];
-      const opts = [...(nextOptions[field] ?? [])];
-      await Promise.all(
-        names.map(async (name) => {
-          try {
-            const res = await fetch("/api/admin/quick-add", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ kind: "taxonomy", type, name }),
-            });
-            if (!res.ok) return;
-            const entry: TaxonomyOption = await res.json();
-            ids.push(entry.id);
-            if (!opts.some((o) => o.id === entry.id)) opts.push(entry);
-          } catch {
-            /* einzelne Fehlschläge ignorieren */
-          }
-        }),
-      );
-      opts.sort((x, y) => x.name.localeCompare(y.name, "de"));
-      nextOptions[field] = opts;
+      const neu: string[] = [];
+      for (const raw of names) {
+        const nm = raw.trim();
+        if (!nm) continue;
+        const match = opts.find(
+          (o) => o.name.toLowerCase() === nm.toLowerCase(),
+        );
+        if (match) {
+          if (!ids.includes(match.id)) ids.push(match.id);
+        } else if (!neu.some((x) => x.toLowerCase() === nm.toLowerCase())) {
+          neu.push(nm);
+        }
+      }
       selections[field] = ids;
+      pending[field] = neu;
     }
-    setTaxonomyOptions(nextOptions);
+    setTaxonomyPending(pending);
     setForm((prev) => ({
       ...prev,
       title: draft.title,
@@ -401,6 +404,8 @@ export function RecipeEditor({
               selectedIds={form.taxonomySelections[field] ?? []}
               kind="taxonomy"
               type={type}
+              deferred
+              pendingNames={taxonomyPending[field] ?? []}
             />
           ))}
         </div>

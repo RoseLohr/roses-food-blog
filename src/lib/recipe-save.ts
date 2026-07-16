@@ -8,7 +8,7 @@ import { eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db, schema } from "@/db";
 import { slugify, uniqueSlug } from "@/lib/slug";
-import type { TaxonomyType } from "@/lib/taxonomies";
+import { findOrCreateTaxonomy, type TaxonomyType } from "@/lib/taxonomies";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -189,7 +189,25 @@ export async function saveRecipeFromForm(
   const submittedTax = TAXONOMY_FIELDS.map(([field, type]) => ({
     type,
     ids: idList(formData, field),
+    // „Aufgeschobene" neue Einträge aus dem Editor (KI-Vorschlag oder manuell
+    // getippt): existieren noch nicht, werden jetzt beim Speichern angelegt.
+    newNames: [
+      ...new Set(
+        formData
+          .getAll(`${field}__neu`)
+          .map((v) => String(v).trim())
+          .filter(Boolean),
+      ),
+    ],
   }));
+  // Neue Einträge idempotent anlegen und ihre IDs zur Auswahl hinzufügen.
+  // Läuft VOR der (synchronen) better-sqlite3-Transaktion.
+  for (const entry of submittedTax) {
+    for (const name of entry.newNames) {
+      const row = await findOrCreateTaxonomy(entry.type, name);
+      if (!entry.ids.includes(row.id)) entry.ids.push(row.id);
+    }
+  }
   const allTaxIds = [...new Set(submittedTax.flatMap((s) => s.ids))];
   const typeById = new Map<number, TaxonomyType>(
     allTaxIds.length
