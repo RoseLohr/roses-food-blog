@@ -1,8 +1,10 @@
 /**
- * „Ernährungsform-Box" auf der Startseite (konfigurierbar im Startseiten-Admin):
- * Titel-Kasten mit Pfeil, darunter eine Liste von Rezepten einer Ernährungsform
- * mit rundem Vorschaubild, Name und „Kategorie / Ernährungsform". Farben im
- * Blog-Schema (Teal-Akzent).
+ * „Ernährungsform-Box" in der rechten Seitenleiste der Startseite
+ * (konfigurierbar im Startseiten-Admin): weiße Karte im Stil der übrigen
+ * Seitenleisten-Boxen, innen der Teal-Titelkasten mit Dreieck als
+ * Wiedererkennungsmerkmal, darunter kompakte Rezept-Einträge mit rundem
+ * Vorschaubild, Name und Kategorie(n) — ohne Ernährungsform in der
+ * Unterzeile (die steht schon im Titel).
  */
 import Link from "next/link";
 
@@ -22,10 +24,10 @@ export function DietBox({
 }) {
   if (items.length === 0) return null;
   return (
-    <section className="mt-10">
+    <section className="bg-white p-5 shadow-sm">
       {/* Titel-Kasten mit nach unten weisendem Dreieck (Teal) */}
-      <div className="relative border border-leaf px-6 py-4 text-center">
-        <h2 className="text-lg font-bold uppercase tracking-[0.25em] text-ink">
+      <div className="relative border border-leaf px-4 py-2.5 text-center">
+        <h2 className="text-sm font-bold uppercase tracking-[0.22em] text-ink">
           {title}
         </h2>
         <span
@@ -34,35 +36,35 @@ export function DietBox({
         />
       </div>
 
-      <ul className="mt-8 flex flex-col gap-6">
+      <ul className="mt-6 flex flex-col gap-4">
         {items.map((it) => (
           <li key={it.slug}>
             <Link
               href={`/rezepte/${it.slug}`}
-              className="group flex items-center gap-5"
+              className="group flex items-center gap-3"
             >
               {it.thumbUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={it.thumbUrl}
                   alt=""
-                  width={80}
-                  height={80}
+                  width={56}
+                  height={56}
                   loading="lazy"
-                  className="h-20 w-20 shrink-0 rounded-full object-cover"
+                  className="h-14 w-14 shrink-0 rounded-full object-cover"
                 />
               ) : (
                 <span
                   aria-hidden
-                  className="h-20 w-20 shrink-0 rounded-full bg-cream"
+                  className="h-14 w-14 shrink-0 rounded-full bg-cream"
                 />
               )}
               <span className="min-w-0">
-                <span className="block text-xl font-semibold text-ink group-hover:text-leaf">
+                <span className="block text-sm font-semibold leading-snug text-ink group-hover:text-leaf">
                   {it.title}
                 </span>
                 {it.subtitle && (
-                  <span className="mt-1 block text-sm text-ink-soft">
+                  <span className="mt-0.5 block text-xs text-ink-soft">
                     {it.subtitle}
                   </span>
                 )}

@@ -183,11 +183,6 @@ async function loadDietBoxItems(
     .from(schema.recipeCategory)
     .innerJoin(schema.category, eq(schema.recipeCategory.categoryId, schema.category.id))
     .where(inArray(schema.recipeCategory.recipeId, ids));
-  const dtRows = await db
-    .select({ recipeId: schema.recipeDietType.recipeId, name: schema.dietType.name })
-    .from(schema.recipeDietType)
-    .innerJoin(schema.dietType, eq(schema.recipeDietType.dietTypeId, schema.dietType.id))
-    .where(inArray(schema.recipeDietType.recipeId, ids));
   const byRecipe = (rows: { recipeId: number; name: string }[]) => {
     const m = new Map<number, string[]>();
     for (const r of rows) {
@@ -198,13 +193,12 @@ async function loadDietBoxItems(
     return m;
   };
   const catBy = byRecipe(catRows);
-  const dtBy = byRecipe(dtRows);
 
   return recRows.map((r) => {
     const img = r.heroImageId != null ? imgById.get(r.heroImageId) : null;
-    const subtitle = [...(catBy.get(r.id) ?? []), ...(dtBy.get(r.id) ?? [])].join(
-      " / ",
-    );
+    // Unterzeile: nur die Kategorien — die Ernährungsform steht schon im
+    // Titelkasten der Box (auf Wunsch entfernt).
+    const subtitle = (catBy.get(r.id) ?? []).join(" / ");
     return {
       slug: r.slug,
       title: r.title,
@@ -321,9 +315,6 @@ export default async function HomePage() {
             </section>
           )}
 
-          {/* Ernährungsform-Box (Admin-konfigurierbar) */}
-          {dietBox && <DietBox title={dietBox.title} items={dietBox.items} />}
-
           {/* Nach Küche wählen („Nach Ernährungsform wählen" auf Wunsch entfernt) */}
           {cuisines.length > 0 && (
             <section className="mt-10">
@@ -377,6 +368,10 @@ export default async function HomePage() {
               </Link>
             </section>
           )}
+
+          {/* Ernährungsform-Box (Admin-konfigurierbar) — zwischen
+              Über-mich und Filter, im Stil der Seitenleisten-Karten */}
+          {dietBox && <DietBox title={dietBox.title} items={dietBox.items} />}
 
           {/* Filter (Gruppen im Startseiten-Admin konfigurierbar) */}
           {filterBoxGroups.length > 0 && (
