@@ -6,6 +6,7 @@
  * zu halten. Wird im Footer eingebunden.
  */
 import { NewsletterForm } from "./newsletter-form";
+import { NewsletterLead } from "./newsletter-lead";
 import { getNewsletterVisible } from "@/lib/settings";
 import { t } from "@/i18n/de";
 
@@ -32,7 +33,7 @@ export function NewsletterSection({ source }: { source: string }) {
       <div className="nl-box__cols">
         <div>
           <p className="nl-box__eyebrow">{d.formTitle}</p>
-          <p className="nl-box__title">{d.formLead}</p>
+          <NewsletterLead />
           <p className="nl-box__intro">{d.formIntro}</p>
         </div>
         <NewsletterForm source={source} />

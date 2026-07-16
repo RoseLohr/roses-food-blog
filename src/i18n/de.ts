@@ -153,6 +153,7 @@ export const de = {
   newsletter: {
     formTitle: "Neues aus Roses Küche",
     formLead: "Kein Rezept mehr verpassen",
+    formLeadTravel: "Keine Reise mehr verpassen",
     formIntro:
       "Neue Rezepte und Reiseberichte direkt ins Postfach — kostenlos und jederzeit abbestellbar.",
     email: "E-Mail-Adresse",
