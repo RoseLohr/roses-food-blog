@@ -357,10 +357,9 @@ export default async function SearchPage(props: {
                       />
                     )}
                     <span className="min-w-0">
+                    {/* Kein „Aus Reisebericht"-Badge — steht schon in der Überschrift */}
+                    {(x.categories.length > 0 || x.dietTypes.length > 0) && (
                     <p className="mb-1 flex flex-wrap items-center gap-1.5">
-                      <span className="bg-leaf px-2 py-0.5 text-[0.68rem] font-semibold uppercase tracking-wide text-white">
-                        {dict.search.fromTravelBadge}
-                      </span>
                       {x.categories.map((c) => (
                         <span
                           key={`k-${c}`}
@@ -378,6 +377,7 @@ export default async function SearchPage(props: {
                         </span>
                       ))}
                     </p>
+                    )}
                     <p className="text-sm">
                       <strong>{x.dishName}</strong> {dict.search.inRestaurant}{" "}
                       {x.restaurantName}

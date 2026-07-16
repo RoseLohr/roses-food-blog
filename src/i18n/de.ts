@@ -97,7 +97,6 @@ export const de = {
     recipesHeading: "Rezepte",
     travelHeading: "Reiseberichte",
     dishesHeading: "Gerichte aus Reiseberichten",
-    fromTravelBadge: "Aus Reisebericht",
     ingredientHeading: "Zutat",
     ingredientRecipes: "Rezepte mit dieser Zutat",
     ingredientDishes: "Gerichte aus Reiseberichten",
