@@ -4,7 +4,7 @@
  * Markdown-Inhalt, Restaurants mit Gerichten (Bild links, Zutaten
  * mit Tag-Icon) und Bildergalerie.
  */
-import type { FullTravelPost } from "@/lib/travel";
+import type { FullRestaurant, FullTravelPost } from "@/lib/travel";
 import { renderMarkdown } from "@/lib/markdown";
 import { getBaseUrl } from "@/lib/base-url";
 import { t } from "@/i18n/de";
@@ -13,6 +13,32 @@ import { HeroActions } from "./hero-actions";
 import { IconCity, IconCountry, IconRegion, IconTag } from "./icons";
 
 const dict = t();
+
+/** Google-Maps-Ziel aus Koordinaten — gleiche URL wie die Weltkarten-Pins. */
+function mapsUrl(lat: number, lng: number): string {
+  return `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+}
+
+/**
+ * Koordinaten eines Restaurants aus den EXIF-GPS-Daten seiner Fotos —
+ * wie bei den Pins der Weltkarte: zuerst die Gericht-Bilder (in Reihenfolge),
+ * ersatzweise das Restaurant-Foto. null, wenn kein Foto Koordinaten trägt.
+ */
+function restaurantCoords(
+  r: FullRestaurant,
+): { lat: number; lng: number } | null {
+  for (const dish of r.dishes) {
+    for (const img of dish.images) {
+      if (img.lat != null && img.lng != null) {
+        return { lat: img.lat, lng: img.lng };
+      }
+    }
+  }
+  if (r.image && r.image.lat != null && r.image.lng != null) {
+    return { lat: r.image.lat, lng: r.image.lng };
+  }
+  return null;
+}
 
 function MetaChip({
   label,
@@ -135,13 +161,29 @@ export function TravelView({
                 {dict.travelList.restaurantsTitle}
               </h2>
               <div className="mt-6 flex flex-col gap-8">
-                {full.restaurants.map((r) => (
+                {full.restaurants.map((r) => {
+                  const coords = restaurantCoords(r);
+                  return (
                   <div key={r.id}>
                     <h3 className="font-display text-xl font-bold">
                       {r.name}
                       {r.city && (
                         <span className="ml-2 text-sm font-normal text-ink-soft">
-                          · {r.city}
+                          ·{" "}
+                          {coords ? (
+                            // Ort → Google Maps (Koordinaten aus den EXIF-Daten
+                            // der Fotos, wie die Pins auf der Weltkarte)
+                            <a
+                              href={mapsUrl(coords.lat, coords.lng)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-leaf underline underline-offset-2 hover:text-rose-primary-dark"
+                            >
+                              {r.city}
+                            </a>
+                          ) : (
+                            r.city
+                          )}
                         </span>
                       )}
                     </h3>
@@ -222,7 +264,8 @@ export function TravelView({
                       ))}
                     </ul>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </section>
           </>
