@@ -70,6 +70,7 @@ export const de = {
     tocTitle: "Inhalt",
     tocHide: "Verbergen",
     tocShow: "Anzeigen",
+    similarTitle: "Ähnliche Rezepte selbst machen",
     backToOverview: "Alle Reiseberichte",
   },
   search: {
@@ -561,7 +562,16 @@ export const de = {
       fieldTitle: "Titel",
       fieldSlug: "URL-Slug (leer = automatisch aus dem Titel)",
       fieldTeaser: "Kurzbeschreibung",
-      fieldContent: "Inhalt (Markdown)",
+      fieldContent: "Inhalt",
+      blocksHint:
+        "Der Inhalt besteht aus Blöcken (Text, Bild, Restaurant), die sich mit ↑/↓ anordnen lassen — die Reihenfolge bestimmt die Anzeige im Beitrag. Restaurants ohne eigenen Block erscheinen wie bisher gesammelt unter dem Inhalt.",
+      blockText: "Text",
+      blockImage: "Bild",
+      blockRestaurant: "Restaurant",
+      blockUp: "Nach oben",
+      blockDown: "Nach unten",
+      blockNoRestaurants:
+        "Noch kein Restaurant angelegt — bitte unten zuerst ein Restaurant hinzufügen.",
       fieldCountry: "Land",
       fieldRegion: "Region",
       fieldCity: "Stadt",

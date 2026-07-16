@@ -50,6 +50,13 @@
       "when": 1784500000000,
       "tag": "0006_dish_taxonomies",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1784600000000,
+      "tag": "0007_travel_content_blocks",
+      "breakpoints": true
     }
   ]
 }

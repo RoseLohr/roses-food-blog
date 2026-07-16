@@ -7,6 +7,11 @@ import { eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db, schema } from "@/db";
 import { slugify, uniqueSlug } from "@/lib/slug";
+import {
+  blocksToMarkdown,
+  travelBlocksSchema,
+  type TravelBlock,
+} from "@/lib/travel-blocks";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -83,12 +88,47 @@ export async function saveTravelFromForm(
   } catch {
     return { error: dict.admin.travel.invalid };
   }
+  // Beim Filtern unbenannter Restaurants verschieben sich die Indizes —
+  // Restaurant-Blöcke müssen auf die NEUEN Indizes zeigen (alte Mapping-Tabelle).
+  const keptIndexByOld = new Map<number, number>();
+  {
+    let next = 0;
+    restaurants.forEach((r, oldIdx) => {
+      if (r.name !== "") keptIndexByOld.set(oldIdx, next++);
+    });
+  }
   restaurants = restaurants
     .map((r) => ({
       ...r,
       dishes: r.dishes.filter((d) => d.name !== ""),
     }))
     .filter((r) => r.name !== "");
+
+  // Inhalts-Blöcke (Block-Editor). Ohne Feld: Altverhalten (Feld "inhalt").
+  const blocksRaw = formData.get("bloecke");
+  let content = String(formData.get("inhalt") ?? "").trim();
+  let contentBlocksJson = "";
+  if (blocksRaw !== null) {
+    let blocks: TravelBlock[];
+    try {
+      blocks = travelBlocksSchema.parse(JSON.parse(String(blocksRaw)));
+    } catch {
+      return { error: dict.admin.travel.invalid };
+    }
+    const cleaned: TravelBlock[] = [];
+    for (const b of blocks) {
+      if (b.type === "text") {
+        if (b.markdown.trim()) cleaned.push({ type: "text", markdown: b.markdown.trim() });
+      } else if (b.type === "bild") {
+        cleaned.push(b);
+      } else {
+        const mapped = keptIndexByOld.get(b.index);
+        if (mapped !== undefined) cleaned.push({ type: "restaurant", index: mapped });
+      }
+    }
+    content = blocksToMarkdown(cleaned);
+    contentBlocksJson = cleaned.length ? JSON.stringify(cleaned) : "";
+  }
 
   const status =
     String(formData.get("status")) === "veroeffentlicht"
@@ -111,7 +151,8 @@ export async function saveTravelFromForm(
     title,
     slug,
     teaser: String(formData.get("teaser") ?? "").trim(),
-    content: String(formData.get("inhalt") ?? "").trim(),
+    content,
+    contentBlocks: contentBlocksJson,
     country: String(formData.get("land") ?? "").trim(),
     region: String(formData.get("region") ?? "").trim(),
     city: String(formData.get("stadt") ?? "").trim(),

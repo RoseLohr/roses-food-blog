@@ -117,11 +117,19 @@ const restaurantSchema = z.object({
   image: z.string().nullable().default(null),
   dishes: z.array(dishSchema).default([]),
 });
+/** Inhalts-Block eines Reiseberichts (Bild als Datei-Referenz). */
+const contentBlockSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("text"), markdown: z.string().default("") }),
+  z.object({ type: z.literal("bild"), image: z.string().nullable().default(null) }),
+  z.object({ type: z.literal("restaurant"), index: z.number().int().nonnegative() }),
+]);
+
 export const travelSchema = z.object({
   title: z.string().default(""),
   slug: z.string().default(""),
   teaser: z.string().default(""),
   content: z.string().default(""),
+  contentBlocks: z.array(contentBlockSchema).default([]),
   country: z.string().default(""),
   region: z.string().default(""),
   city: z.string().default(""),

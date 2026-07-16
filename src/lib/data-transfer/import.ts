@@ -406,6 +406,24 @@ export async function importBundle(
     const createdAt = fromMs(tv.createdAt) ?? new Date();
     const updatedAt = fromMs(tv.updatedAt) ?? createdAt;
 
+    // Inhalts-Blöcke: Bild-Referenzen zurück in Bild-IDs auflösen;
+    // Restaurant-Blöcke mit ungültigem Index entfallen.
+    const contentBlocks: Array<
+      | { type: "text"; markdown: string }
+      | { type: "bild"; imageId: number }
+      | { type: "restaurant"; index: number }
+    > = [];
+    for (const b of tv.contentBlocks) {
+      if (b.type === "text") {
+        if (b.markdown.trim()) contentBlocks.push({ type: "text", markdown: b.markdown });
+      } else if (b.type === "bild") {
+        const imgId = await importImage(b.image);
+        if (imgId != null) contentBlocks.push({ type: "bild", imageId: imgId });
+      } else if (b.index < tv.restaurants.length) {
+        contentBlocks.push({ type: "restaurant", index: b.index });
+      }
+    }
+
     const [post] = await db
       .insert(schema.travelPost)
       .values({
@@ -413,6 +431,7 @@ export async function importBundle(
         slug,
         teaser: tv.teaser,
         content: tv.content,
+        contentBlocks: contentBlocks.length ? JSON.stringify(contentBlocks) : "",
         country: tv.country,
         region: tv.region,
         city: tv.city,

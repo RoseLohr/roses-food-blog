@@ -5,6 +5,7 @@
 import { asc, eq, inArray } from "drizzle-orm";
 import { db, schema } from "@/db";
 import type { MediaImage } from "@/lib/recipes";
+import { effectiveBlocks, type TravelBlock } from "@/lib/travel-blocks";
 
 export type TravelPost = typeof schema.travelPost.$inferSelect;
 
@@ -44,6 +45,10 @@ export interface FullTravelPost {
   heroImage: MediaImage | null;
   images: MediaImage[];
   restaurants: FullRestaurant[];
+  /** Inhalts-Blockfolge (Altbestand: content als ein Textblock) */
+  blocks: TravelBlock[];
+  /** Bilder der Bild-Blöcke, per imageId */
+  blockImages: Record<number, MediaImage>;
 }
 
 export async function getFullTravelPost(
@@ -204,5 +209,29 @@ export async function getFullTravelPost(
       })),
   }));
 
-  return { post, heroImage, images: imageRows.map((r) => r.img), restaurants };
+  // Inhalts-Blöcke + Bilder der Bild-Blöcke laden
+  const blocks = effectiveBlocks(post);
+  const blockImageIds = [
+    ...new Set(
+      blocks
+        .filter((b): b is Extract<TravelBlock, { type: "bild" }> => b.type === "bild")
+        .map((b) => b.imageId),
+    ),
+  ];
+  const blockImageRows = blockImageIds.length
+    ? await db
+        .select()
+        .from(schema.mediaImage)
+        .where(inArray(schema.mediaImage.id, blockImageIds))
+    : [];
+  const blockImages = Object.fromEntries(blockImageRows.map((i) => [i.id, i]));
+
+  return {
+    post,
+    heroImage,
+    images: imageRows.map((r) => r.img),
+    restaurants,
+    blocks,
+    blockImages,
+  };
 }

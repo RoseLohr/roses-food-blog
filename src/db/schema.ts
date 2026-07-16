@@ -323,8 +323,12 @@ export const travelPost = sqliteTable(
     title: text("title").notNull(),
     slug: text("slug").notNull().unique(),
     teaser: text("teaser").notNull().default(""),
-    /** Markdown */
+    /** Markdown — zusammengefügte Textblöcke (für FTS/Suche); Quelle der
+     *  Darstellung ist contentBlocks, sofern gesetzt. */
     content: text("content").notNull().default(""),
+    /** JSON-Blockfolge (Text/Bild/Restaurant), siehe lib/travel-blocks.ts;
+     *  leer = Altbestand (content als ein Textblock). */
+    contentBlocks: text("content_blocks").notNull().default(""),
     country: text("country").notNull().default(""),
     /** @deprecated ersetzt durch region + city; bleibt als Spalte erhalten,
      *  wird aber nicht mehr im UI verwendet (Daten wandern nach city). */

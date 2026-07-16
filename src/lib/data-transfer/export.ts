@@ -6,6 +6,7 @@
  */
 import { asc, eq, inArray } from "drizzle-orm";
 import { db, schema } from "@/db";
+import { parseTravelBlocks } from "@/lib/travel-blocks";
 import {
   CONTENT_FILENAME,
   EXPORT_FORMAT,
@@ -358,6 +359,23 @@ async function collectTravel(
     slug: p.slug,
     teaser: p.teaser,
     content: p.content,
+    // Inhalts-Blöcke: Bild-Blöcke als Datei-Referenz (registriert das Bild
+    // zugleich fürs ZIP); Blöcke ohne auflösbares Bild entfallen.
+    contentBlocks: parseTravelBlocks(p.contentBlocks).flatMap(
+      (
+        b,
+      ): Array<
+        | { type: "text"; markdown: string }
+        | { type: "bild"; image: string | null }
+        | { type: "restaurant"; index: number }
+      > => {
+        if (b.type === "bild") {
+          const ref = images.ref(b.imageId);
+          return ref ? [{ type: "bild", image: ref }] : [];
+        }
+        return [b];
+      },
+    ),
     country: p.country,
     region: p.region,
     city: p.city,

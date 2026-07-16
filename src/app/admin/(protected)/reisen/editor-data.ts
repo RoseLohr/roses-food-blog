@@ -3,6 +3,7 @@ import { asc } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { imageUrl } from "@/lib/media";
 import { getFullTravelPost } from "@/lib/travel";
+import { effectiveBlocks } from "@/lib/travel-blocks";
 import type { TravelEditorProps } from "./travel-editor";
 
 export async function buildTravelEditorProps(
@@ -49,7 +50,7 @@ export async function buildTravelEditorProps(
       title: "",
       slug: "",
       teaser: "",
-      content: "",
+      blocks: [],
       country: "",
       region: "",
       city: "",
@@ -76,7 +77,7 @@ export async function buildTravelEditorProps(
       title: full.post.title,
       slug: full.post.slug,
       teaser: full.post.teaser,
-      content: full.post.content,
+      blocks: effectiveBlocks(full.post),
       country: full.post.country,
       region: full.post.region,
       city: full.post.city,

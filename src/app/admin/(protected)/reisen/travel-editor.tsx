@@ -38,13 +38,23 @@ interface EditorRestaurant {
   dishes: EditorDish[];
 }
 
+/** Inhalts-Block (siehe lib/travel-blocks.ts); imageId 0 = noch kein Bild. */
+export type EditorBlockData =
+  | { type: "text"; markdown: string }
+  | { type: "bild"; imageId: number }
+  | { type: "restaurant"; index: number };
+type EditorBlock = EditorBlockData & { key: string };
+
+let blockUid = 0;
+const nextBlockKey = () => `block-${++blockUid}`;
+
 export interface TravelEditorProps {
   initial: {
     id: number | null;
     title: string;
     slug: string;
     teaser: string;
-    content: string;
+    blocks: EditorBlockData[];
     country: string;
     region: string;
     city: string;
@@ -100,6 +110,56 @@ export function TravelEditor({
   const [restaurants, setRestaurants] = useState<EditorRestaurant[]>(
     initial.restaurants.length ? initial.restaurants : [],
   );
+  const [blocks, setBlocks] = useState<EditorBlock[]>(() =>
+    (initial.blocks.length
+      ? initial.blocks
+      : [{ type: "text", markdown: "" } as EditorBlockData]
+    ).map((b) => ({ ...b, key: nextBlockKey() })),
+  );
+
+  const updateBlock = (i: number, patch: Partial<EditorBlockData>) =>
+    setBlocks((prev) =>
+      prev.map((b, idx) => (idx === i ? ({ ...b, ...patch } as EditorBlock) : b)),
+    );
+  const moveBlock = (i: number, dir: -1 | 1) =>
+    setBlocks((prev) => {
+      const j = i + dir;
+      if (j < 0 || j >= prev.length) return prev;
+      const next = [...prev];
+      [next[i], next[j]] = [next[j], next[i]];
+      return next;
+    });
+  const removeBlock = (i: number) =>
+    setBlocks((prev) => prev.filter((_, idx) => idx !== i));
+  const addBlock = (b: EditorBlockData) =>
+    setBlocks((prev) => [...prev, { ...b, key: nextBlockKey() }]);
+
+  // Restaurant entfernen: Blöcke auf spätere Restaurants nachziehen,
+  // Blöcke auf das entfernte Restaurant mit entfernen.
+  const removeRestaurant = (ri: number) => {
+    setRestaurants((prev) => prev.filter((_, idx) => idx !== ri));
+    setBlocks((prev) =>
+      prev
+        .filter((b) => b.type !== "restaurant" || b.index !== ri)
+        .map((b) =>
+          b.type === "restaurant" && b.index > ri
+            ? { ...b, index: b.index - 1 }
+            : b,
+        ),
+    );
+  };
+
+  // Unvollständige Blöcke (Bild ohne Auswahl, Restaurant ohne Ziel) beim
+  // Absenden weglassen; leere Textblöcke filtert der Server.
+  const serializedBlocks = JSON.stringify(
+    blocks
+      .filter(
+        (b) =>
+          (b.type !== "bild" || b.imageId > 0) &&
+          (b.type !== "restaurant" || (b.index >= 0 && b.index < restaurants.length)),
+      )
+      .map(({ key: _key, ...b }) => b),
+  );
 
   const serialized = JSON.stringify(
     restaurants.map((r) => ({
@@ -145,6 +205,7 @@ export function TravelEditor({
     <form action={formAction} className="flex max-w-4xl flex-col gap-6">
       {initial.id !== null && <input type="hidden" name="id" value={initial.id} />}
       <input type="hidden" name="restaurants" value={serialized} />
+      <input type="hidden" name="bloecke" value={serializedBlocks} />
 
       {(message || state.error) && (
         <p
@@ -205,12 +266,114 @@ export function TravelEditor({
             />
           </div>
           <div className="md:col-span-2">
-            <RichTextEditor
-              name="inhalt"
-              label={d.fieldContent}
-              initialMarkdown={initial.content}
-              minHeightClass="min-h-52"
-            />
+            <span className={labelCls}>{d.fieldContent}</span>
+            <p className="mb-2 text-xs text-ink-soft">{d.blocksHint}</p>
+            <div className="flex flex-col gap-3">
+              {blocks.map((b, i) => (
+                <div key={b.key} className="border border-ink/10 p-3">
+                  <div className="mb-2 flex items-center gap-1.5">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-ink-soft">
+                      {b.type === "text"
+                        ? d.blockText
+                        : b.type === "bild"
+                          ? d.blockImage
+                          : d.blockRestaurant}
+                    </span>
+                    <div className="ml-auto flex gap-1">
+                      <button
+                        type="button"
+                        onClick={() => moveBlock(i, -1)}
+                        disabled={i === 0}
+                        aria-label={d.blockUp}
+                        title={d.blockUp}
+                        className={`${btnSecondary} px-2 py-0.5 disabled:opacity-40`}
+                      >
+                        ↑
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => moveBlock(i, 1)}
+                        disabled={i === blocks.length - 1}
+                        aria-label={d.blockDown}
+                        title={d.blockDown}
+                        className={`${btnSecondary} px-2 py-0.5 disabled:opacity-40`}
+                      >
+                        ↓
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => removeBlock(i)}
+                        aria-label={dict.admin.recipes.remove}
+                        title={dict.admin.recipes.remove}
+                        className={`${btnSecondary} px-2 py-0.5`}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  </div>
+                  {b.type === "text" && (
+                    <RichTextEditor
+                      initialMarkdown={b.markdown}
+                      minHeightClass="min-h-32"
+                      onChange={(md) => updateBlock(i, { markdown: md })}
+                    />
+                  )}
+                  {b.type === "bild" && (
+                    <ImagePicker
+                      legend={d.blockImage}
+                      options={images}
+                      multiple={false}
+                      value={b.imageId > 0 ? [b.imageId] : []}
+                      onChange={(ids) => updateBlock(i, { imageId: ids[0] ?? 0 })}
+                    />
+                  )}
+                  {b.type === "restaurant" &&
+                    (restaurants.length === 0 ? (
+                      <p className="text-sm text-ink-soft">{d.blockNoRestaurants}</p>
+                    ) : (
+                      <select
+                        aria-label={d.blockRestaurant}
+                        value={b.index}
+                        onChange={(e) =>
+                          updateBlock(i, { index: Number(e.target.value) })
+                        }
+                        className={inputCls}
+                      >
+                        {restaurants.map((r, ri) => (
+                          <option key={ri} value={ri}>
+                            {r.name || `${d.blockRestaurant} ${ri + 1}`}
+                          </option>
+                        ))}
+                      </select>
+                    ))}
+                </div>
+              ))}
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => addBlock({ type: "text", markdown: "" })}
+                  className={btnSecondary}
+                >
+                  + {d.blockText}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => addBlock({ type: "bild", imageId: 0 })}
+                  className={btnSecondary}
+                >
+                  + {d.blockImage}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => addBlock({ type: "restaurant", index: 0 })}
+                  disabled={restaurants.length === 0}
+                  title={restaurants.length === 0 ? d.blockNoRestaurants : undefined}
+                  className={`${btnSecondary} disabled:opacity-40`}
+                >
+                  + {d.blockRestaurant}
+                </button>
+              </div>
+            </div>
           </div>
           <div>
             <ImagePicker
@@ -428,9 +591,7 @@ export function TravelEditor({
 
               <button
                 type="button"
-                onClick={() =>
-                  setRestaurants((prev) => prev.filter((_, idx) => idx !== ri))
-                }
+                onClick={() => removeRestaurant(ri)}
                 className={`${btnSecondary} mt-4`}
               >
                 {d.removeRestaurant}

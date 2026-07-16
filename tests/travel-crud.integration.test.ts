@@ -173,4 +173,149 @@ describe("Reise-CRUD", () => {
     expect(await getFullTravelPost({ id })).toBeNull();
     expect(await db.select().from(schema.restaurant)).toHaveLength(2); // vom ersten + Taxonomie-Test
   });
+
+  it("speichert Inhalts-Blöcke (Text/Bild/Restaurant) und liest sie zurück", async () => {
+    const { saveTravelFromForm } = await import("@/lib/travel-save");
+    const { getFullTravelPost } = await import("@/lib/travel");
+    const { db, schema } = await import("@/db");
+
+    const [img] = await db
+      .insert(schema.mediaImage)
+      .values({
+        fileKey: "blocktest",
+        originalName: "block.jpg",
+        width: 800,
+        height: 600,
+        sizeBytes: 1000,
+        variantWidths: "[320]",
+        createdAt: new Date(),
+      })
+      .returning();
+
+    const fd = new FormData();
+    fd.set("titel", "Blöcke-Test");
+    fd.set("status", "veroeffentlicht");
+    fd.set(
+      "restaurants",
+      JSON.stringify([
+        { name: "", city: "", description: "", dishes: [] }, // wird gefiltert
+        { name: "Izakaya Block", city: "Kyoto", description: "", dishes: [] },
+      ]),
+    );
+    fd.set(
+      "bloecke",
+      JSON.stringify([
+        { type: "text", markdown: "## Ankunft\n\nErster Abend." },
+        { type: "bild", imageId: img.id },
+        { type: "restaurant", index: 1 }, // zeigt aufs 2. (nach Filterung 1.)
+        { type: "text", markdown: "   " }, // leer → entfällt
+      ]),
+    );
+    const result = await saveTravelFromForm(fd, adminId);
+    const id = (result as { travelId: number }).travelId;
+
+    const full = await getFullTravelPost({ id });
+    // content = zusammengefügte Textblöcke (FTS-Kompatibilität)
+    expect(full!.post.content).toBe("## Ankunft\n\nErster Abend.");
+    // Blockfolge: Text, Bild, Restaurant (Index nach Filterung auf 0 gemappt)
+    expect(full!.blocks).toEqual([
+      { type: "text", markdown: "## Ankunft\n\nErster Abend." },
+      { type: "bild", imageId: img.id },
+      { type: "restaurant", index: 0 },
+    ]);
+    expect(full!.blockImages[img.id]?.fileKey).toBe("blocktest");
+    expect(full!.restaurants[0].name).toBe("Izakaya Block");
+  });
+
+  it("schlägt ähnliche Rezepte nur bei Kategorie+Küche+Zutat-Überschneidung vor", async () => {
+    const { saveTravelFromForm } = await import("@/lib/travel-save");
+    const { getFullTravelPost } = await import("@/lib/travel");
+    const { getSimilarRecipesByDish } = await import("@/lib/similar-recipes");
+    const { db, schema } = await import("@/db");
+    const { eq } = await import("drizzle-orm");
+
+    // Gemeinsame Taxonomien: Kategorie „Pfannengericht" existiert aus dem
+    // Taxonomie-Test; Küche + Zutat referenzieren.
+    const [cat] = await db
+      .select()
+      .from(schema.category)
+      .where(eq(schema.category.slug, "pfannengericht"));
+    const [cui] = await db
+      .insert(schema.cuisine)
+      .values({ name: "Japanisch", slug: "japanisch" })
+      .returning();
+    const [kohl] = await db
+      .select()
+      .from(schema.ingredient)
+      .where(eq(schema.ingredient.slug, "kohl"));
+
+    const now = new Date();
+    const mkRecipe = async (slug: string, withIngredient: boolean) => {
+      const [r] = await db
+        .insert(schema.recipe)
+        .values({
+          title: slug,
+          slug,
+          status: "veroeffentlicht",
+          publishedAt: now,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .returning();
+      await db.insert(schema.recipeCategory).values({ recipeId: r.id, categoryId: cat.id });
+      await db.insert(schema.recipeCuisine).values({ recipeId: r.id, cuisineId: cui.id });
+      if (withIngredient) {
+        await db.insert(schema.recipeIngredient).values({
+          recipeId: r.id,
+          ingredientId: kohl.id,
+          amount: 1,
+          unit: "Stück",
+          sortOrder: 0,
+        });
+      }
+      return r;
+    };
+    const passt = await mkRecipe("okonomiyaki-selbstgemacht", true);
+    await mkRecipe("ohne-zutat-treffer", false); // keine Zutat → disqualifiziert
+
+    // Gericht mit Kategorie + Küche + Zutat
+    const fd = new FormData();
+    fd.set("titel", "Ähnliche-Rezepte-Test");
+    fd.set("status", "veroeffentlicht");
+    fd.set(
+      "restaurants",
+      JSON.stringify([
+        {
+          name: "Mizuno 2",
+          city: "Osaka",
+          description: "",
+          dishes: [
+            {
+              name: "Okonomiyaki Deluxe",
+              description: "",
+              imageIds: [],
+              ingredients: ["Kohl"],
+              categoryIds: [cat.id],
+              cuisineIds: [cui.id],
+              tagIds: [],
+              dietTypeIds: [],
+            },
+          ],
+        },
+      ]),
+    );
+    const result = await saveTravelFromForm(fd, adminId);
+    const id = (result as { travelId: number }).travelId;
+    const full = await getFullTravelPost({ id });
+    const dish = full!.restaurants[0].dishes[0];
+
+    const similar = await getSimilarRecipesByDish([dish]);
+    const tiles = similar[dish.id] ?? [];
+    // Nur das Rezept mit Kategorie+Küche+Zutat qualifiziert sich (streng)
+    expect(tiles.map((t) => t.slug)).toEqual([passt.slug]);
+
+    // Gericht ohne Küche → keine Vorschläge (Pflichtkriterium)
+    const dishNoCuisine = { ...dish, cuisines: [] };
+    expect(await getSimilarRecipesByDish([dishNoCuisine])).toEqual({});
+  });
 });

@@ -1,12 +1,16 @@
 /**
  * Reisebericht im Tiny-Salt-Stil: weiße Karte mit Hero-Bild und
- * Teilen-Button, Serifen-Titel, Icon-Meta-Zeile (Land/Reiseziel),
- * Markdown-Inhalt, Restaurants mit Gerichten (Bild links, Zutaten
- * mit Tag-Icon) und Bildergalerie.
+ * Teilen-Button, Serifen-Titel, Icon-Meta-Zeile (Land/Region/Stadt),
+ * Inhaltsverzeichnis, Inhalt als Blockfolge (Text/Bild/Restaurant),
+ * Bildergalerie und die restlichen Restaurants gesammelt am Ende.
+ * Zu jedem Gericht erscheinen bis zu 3 „Ähnliche Rezepte selbst machen".
  */
-import type { FullRestaurant, FullTravelPost } from "@/lib/travel";
+import Link from "next/link";
+import type { FullDish, FullRestaurant, FullTravelPost } from "@/lib/travel";
 import { extractHeadings, renderMarkdown } from "@/lib/markdown";
 import { getBaseUrl } from "@/lib/base-url";
+import { getSimilarRecipesByDish } from "@/lib/similar-recipes";
+import type { RecipeCardData } from "@/components/recipe-card";
 import { t } from "@/i18n/de";
 import { ResponsiveImg } from "./responsive-img";
 import { HeroActions } from "./hero-actions";
@@ -68,7 +72,172 @@ function MetaChip({
   );
 }
 
-export function TravelView({
+/** „Ähnliche Rezepte selbst machen" — bis zu 3 Kacheln unterm Gericht. */
+function SimilarRecipeTiles({ recipes }: { recipes: RecipeCardData[] }) {
+  if (recipes.length === 0) return null;
+  return (
+    <div className="mt-4">
+      <h5 className="mb-2 text-xs font-bold uppercase tracking-wider text-ink">
+        {dict.travelList.similarTitle}
+      </h5>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {recipes.map((rec) => (
+          <div key={rec.slug} className="bg-white shadow-sm">
+            {/* Bild als Link zum Rezept */}
+            <Link href={`/rezepte/${rec.slug}`} aria-label={rec.title}>
+              {rec.image ? (
+                <ResponsiveImg
+                  image={rec.image}
+                  sizes="(max-width: 640px) 100vw, 220px"
+                  className="aspect-[4/3] w-full object-cover"
+                />
+              ) : (
+                <span aria-hidden className="block aspect-[4/3] bg-cream" />
+              )}
+            </Link>
+            <div className="p-3">
+              <Link
+                href={`/rezepte/${rec.slug}`}
+                className="text-sm font-semibold leading-snug hover:text-leaf"
+              >
+                {rec.title}
+              </Link>
+              {rec.teaser && (
+                <p className="mt-1 text-xs text-ink-soft">{rec.teaser}</p>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function DishItem({
+  dish,
+  similar,
+}: {
+  dish: FullDish;
+  similar: RecipeCardData[];
+}) {
+  return (
+    <li className="flex flex-col gap-4 bg-cream/60 p-4 sm:flex-row">
+      {dish.images[0] && (
+        <div className="sm:w-44 sm:shrink-0">
+          <ResponsiveImg
+            image={dish.images[0]}
+            sizes="(max-width: 640px) 100vw, 176px"
+            className="aspect-[4/3] w-full object-cover"
+          />
+        </div>
+      )}
+      <div className="min-w-0 grow">
+        <h4 className="font-semibold">{dish.name}</h4>
+        {(dish.categories.length > 0 || dish.dietTypes.length > 0) && (
+          <p className="mt-1.5 flex flex-wrap gap-1.5">
+            {dish.categories.map((c) => (
+              <span
+                key={`k-${c.id}`}
+                className="border border-leaf px-2 py-0.5 text-[0.68rem] font-semibold uppercase tracking-wide text-leaf"
+              >
+                {c.name}
+              </span>
+            ))}
+            {dish.dietTypes.map((dt) => (
+              <span
+                key={`e-${dt.id}`}
+                className="bg-leaf px-2 py-0.5 text-[0.68rem] font-semibold uppercase tracking-wide text-white"
+              >
+                {dt.name}
+              </span>
+            ))}
+          </p>
+        )}
+        {dish.description && (
+          <div
+            className="prose-content mt-1 text-sm text-ink-soft"
+            dangerouslySetInnerHTML={{
+              __html: renderMarkdown(dish.description),
+            }}
+          />
+        )}
+        {dish.ingredients.length > 0 && (
+          <p className="mt-2 flex items-center gap-1.5 text-xs text-ink-soft">
+            <IconTag className="h-3.5 w-3.5" />
+            <strong className="font-semibold text-ink">
+              {dict.travelList.dishIngredients}:
+            </strong>{" "}
+            {dish.ingredients.map((i) => i.name).join(", ")}
+          </p>
+        )}
+        <SimilarRecipeTiles recipes={similar} />
+      </div>
+    </li>
+  );
+}
+
+/** Restaurant-Karte — im Blockfluss oder in der Sammel-Sektion unten. */
+function RestaurantCard({
+  r,
+  similarByDish,
+}: {
+  r: FullRestaurant;
+  similarByDish: Record<number, RecipeCardData[]>;
+}) {
+  const coords = restaurantCoords(r);
+  return (
+    <div id={`restaurant-${r.id}`}>
+      <h3 className="font-display text-xl font-bold">
+        {r.name}
+        {r.city && (
+          <span className="ml-2 text-sm font-normal text-ink-soft">
+            ·{" "}
+            {coords ? (
+              // Ort → Google Maps (Koordinaten aus den EXIF-Daten der
+              // Fotos, wie die Pins auf der Weltkarte)
+              <a
+                href={mapsUrl(coords.lat, coords.lng)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-leaf underline underline-offset-2 hover:text-rose-primary-dark"
+              >
+                {r.city}
+              </a>
+            ) : (
+              r.city
+            )}
+          </span>
+        )}
+      </h3>
+      {r.image && (
+        <div className="mt-3 sm:max-w-sm">
+          <ResponsiveImg
+            image={r.image}
+            sizes="(max-width: 640px) 100vw, 384px"
+            className="aspect-[3/2] w-full object-cover"
+          />
+        </div>
+      )}
+      {r.description && (
+        <div
+          className="prose-content mt-2 text-ink-soft"
+          dangerouslySetInnerHTML={{ __html: renderMarkdown(r.description) }}
+        />
+      )}
+      <ul className="mt-4 flex flex-col gap-5">
+        {r.dishes.map((dish) => (
+          <DishItem
+            key={dish.id}
+            dish={dish}
+            similar={similarByDish[dish.id] ?? []}
+          />
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+export async function TravelView({
   full,
   interactive = true,
 }: {
@@ -78,29 +247,60 @@ export function TravelView({
   const { post } = full;
   const url = `${getBaseUrl()}/reisen/${post.slug}`;
 
-  // Inhaltsverzeichnis: Zwischenüberschriften aus dem Markdown-Inhalt
-  // (oberste Ebene = Hauptpunkte, tiefere als Unterpunkte) plus die
-  // Restaurants als eigener Punkt mit den Lokalen als Unterpunkten.
-  const contentHeadings = post.content ? extractHeadings(post.content) : [];
-  const minDepth = contentHeadings.length
-    ? Math.min(...contentHeadings.map((h) => h.depth))
+  // „Ähnliche Rezepte selbst machen" für alle Gerichte in einem Rutsch.
+  const similarByDish = await getSimilarRecipesByDish(
+    full.restaurants.flatMap((r) => r.dishes),
+  );
+
+  // Restaurants, die per Block im Inhalt platziert sind, erscheinen dort —
+  // alle übrigen wie bisher gesammelt unter dem Inhalt.
+  const inlineRestaurantIdx = new Set(
+    full.blocks
+      .filter((b) => b.type === "restaurant")
+      .map((b) => (b.type === "restaurant" ? b.index : -1)),
+  );
+  const remainingRestaurants = full.restaurants.filter(
+    (_, idx) => !inlineRestaurantIdx.has(idx),
+  );
+
+  // Inhaltsverzeichnis in Blockreihenfolge: Überschriften der Textblöcke
+  // (oberste Ebene = Hauptpunkte), inline platzierte Restaurants als eigene
+  // Hauptpunkte, die restlichen Restaurants gruppiert am Ende.
+  const allHeadings = full.blocks.flatMap((b) =>
+    b.type === "text" ? extractHeadings(b.markdown) : [],
+  );
+  const minDepth = allHeadings.length
+    ? Math.min(...allHeadings.map((h) => h.depth))
     : 0;
   const tocEntries: TocEntry[] = [];
-  for (const h of contentHeadings) {
-    if (h.depth <= minDepth || tocEntries.length === 0) {
-      tocEntries.push({ id: h.id, label: h.text, children: [] });
-    } else {
-      tocEntries[tocEntries.length - 1].children.push({
-        id: h.id,
-        label: h.text,
-      });
+  for (const b of full.blocks) {
+    if (b.type === "text") {
+      for (const h of extractHeadings(b.markdown)) {
+        if (h.depth <= minDepth || tocEntries.length === 0) {
+          tocEntries.push({ id: h.id, label: h.text, children: [] });
+        } else {
+          tocEntries[tocEntries.length - 1].children.push({
+            id: h.id,
+            label: h.text,
+          });
+        }
+      }
+    } else if (b.type === "restaurant") {
+      const r = full.restaurants[b.index];
+      if (r?.name) {
+        tocEntries.push({
+          id: `restaurant-${r.id}`,
+          label: r.name,
+          children: [],
+        });
+      }
     }
   }
-  if (full.restaurants.length > 0) {
+  if (remainingRestaurants.length > 0) {
     tocEntries.push({
       id: "restaurants",
       label: dict.travelList.restaurantsTitle,
-      children: full.restaurants
+      children: remainingRestaurants
         .filter((r) => r.name)
         .map((r) => ({ id: `restaurant-${r.id}`, label: r.name })),
     });
@@ -172,13 +372,40 @@ export function TravelView({
           </>
         )}
 
-        {post.content && (
+        {/* Inhalt als Blockfolge: Text, Bild, Restaurant */}
+        {full.blocks.length > 0 && (
           <>
             <hr className="my-8 border-ink/10" />
-            <div
-              className="prose-content"
-              dangerouslySetInnerHTML={{ __html: renderMarkdown(post.content) }}
-            />
+            <div className="flex flex-col gap-7">
+              {full.blocks.map((b, i) => {
+                if (b.type === "text") {
+                  return (
+                    <div
+                      key={i}
+                      className="prose-content"
+                      dangerouslySetInnerHTML={{
+                        __html: renderMarkdown(b.markdown),
+                      }}
+                    />
+                  );
+                }
+                if (b.type === "bild") {
+                  const img = full.blockImages[b.imageId];
+                  return img ? (
+                    <ResponsiveImg
+                      key={i}
+                      image={img}
+                      sizes="(max-width: 820px) 100vw, 688px"
+                      className="w-full object-cover"
+                    />
+                  ) : null;
+                }
+                const r = full.restaurants[b.index];
+                return r ? (
+                  <RestaurantCard key={i} r={r} similarByDish={similarByDish} />
+                ) : null;
+              })}
+            </div>
           </>
         )}
 
@@ -195,7 +422,7 @@ export function TravelView({
           </div>
         )}
 
-        {full.restaurants.length > 0 && (
+        {remainingRestaurants.length > 0 && (
           <>
             <hr className="my-8 border-ink/10" />
             <section id="restaurants">
@@ -203,111 +430,13 @@ export function TravelView({
                 {dict.travelList.restaurantsTitle}
               </h2>
               <div className="mt-6 flex flex-col gap-8">
-                {full.restaurants.map((r) => {
-                  const coords = restaurantCoords(r);
-                  return (
-                  <div key={r.id} id={`restaurant-${r.id}`}>
-                    <h3 className="font-display text-xl font-bold">
-                      {r.name}
-                      {r.city && (
-                        <span className="ml-2 text-sm font-normal text-ink-soft">
-                          ·{" "}
-                          {coords ? (
-                            // Ort → Google Maps (Koordinaten aus den EXIF-Daten
-                            // der Fotos, wie die Pins auf der Weltkarte)
-                            <a
-                              href={mapsUrl(coords.lat, coords.lng)}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-leaf underline underline-offset-2 hover:text-rose-primary-dark"
-                            >
-                              {r.city}
-                            </a>
-                          ) : (
-                            r.city
-                          )}
-                        </span>
-                      )}
-                    </h3>
-                    {r.image && (
-                      <div className="mt-3 sm:max-w-sm">
-                        <ResponsiveImg
-                          image={r.image}
-                          sizes="(max-width: 640px) 100vw, 384px"
-                          className="aspect-[3/2] w-full object-cover"
-                        />
-                      </div>
-                    )}
-                    {r.description && (
-                      <div
-                        className="prose-content mt-2 text-ink-soft"
-                        dangerouslySetInnerHTML={{
-                          __html: renderMarkdown(r.description),
-                        }}
-                      />
-                    )}
-                    <ul className="mt-4 flex flex-col gap-5">
-                      {r.dishes.map((dish) => (
-                        <li
-                          key={dish.id}
-                          className="flex flex-col gap-4 bg-cream/60 p-4 sm:flex-row"
-                        >
-                          {dish.images[0] && (
-                            <div className="sm:w-44 sm:shrink-0">
-                              <ResponsiveImg
-                                image={dish.images[0]}
-                                sizes="(max-width: 640px) 100vw, 176px"
-                                className="aspect-[4/3] w-full object-cover"
-                              />
-                            </div>
-                          )}
-                          <div>
-                            <h4 className="font-semibold">{dish.name}</h4>
-                            {(dish.categories.length > 0 ||
-                              dish.dietTypes.length > 0) && (
-                              <p className="mt-1.5 flex flex-wrap gap-1.5">
-                                {dish.categories.map((c) => (
-                                  <span
-                                    key={`k-${c.id}`}
-                                    className="border border-leaf px-2 py-0.5 text-[0.68rem] font-semibold uppercase tracking-wide text-leaf"
-                                  >
-                                    {c.name}
-                                  </span>
-                                ))}
-                                {dish.dietTypes.map((dt) => (
-                                  <span
-                                    key={`e-${dt.id}`}
-                                    className="bg-leaf px-2 py-0.5 text-[0.68rem] font-semibold uppercase tracking-wide text-white"
-                                  >
-                                    {dt.name}
-                                  </span>
-                                ))}
-                              </p>
-                            )}
-                            {dish.description && (
-                              <div
-                                className="prose-content mt-1 text-sm text-ink-soft"
-                                dangerouslySetInnerHTML={{
-                                  __html: renderMarkdown(dish.description),
-                                }}
-                              />
-                            )}
-                            {dish.ingredients.length > 0 && (
-                              <p className="mt-2 flex items-center gap-1.5 text-xs text-ink-soft">
-                                <IconTag className="h-3.5 w-3.5" />
-                                <strong className="font-semibold text-ink">
-                                  {dict.travelList.dishIngredients}:
-                                </strong>{" "}
-                                {dish.ingredients.map((i) => i.name).join(", ")}
-                              </p>
-                            )}
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                  );
-                })}
+                {remainingRestaurants.map((r) => (
+                  <RestaurantCard
+                    key={r.id}
+                    r={r}
+                    similarByDish={similarByDish}
+                  />
+                ))}
               </div>
             </section>
           </>
