@@ -285,17 +285,33 @@ export default async function SearchPage(props: {
                   </h3>
                   <ul className="flex flex-col gap-2">
                     {hit.dishes.map((d, i) => (
-                      <li key={i} className="border border-ink/10 p-3 text-sm">
-                        <strong>{d.dishName}</strong> {dict.search.inRestaurant}{" "}
-                        {d.restaurantName}
-                        {d.restaurantCity ? ` (${d.restaurantCity})` : ""} —{" "}
-                        {dict.search.fromTravel}{" "}
-                        <Link
-                          href={`/reisen/${d.travelSlug}`}
-                          className="text-rose-primary underline-offset-2 hover:underline"
-                        >
-                          {d.travelTitle}
-                        </Link>
+                      <li
+                        key={i}
+                        className="flex items-center gap-3 border border-ink/10 p-3 text-sm"
+                      >
+                        {d.thumbUrl && (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={d.thumbUrl}
+                            alt=""
+                            width={64}
+                            height={64}
+                            loading="lazy"
+                            className="h-16 w-16 shrink-0 object-cover"
+                          />
+                        )}
+                        <span>
+                          <strong>{d.dishName}</strong> {dict.search.inRestaurant}{" "}
+                          {d.restaurantName}
+                          {d.restaurantCity ? ` (${d.restaurantCity})` : ""} —{" "}
+                          {dict.search.fromTravel}{" "}
+                          <Link
+                            href={`/reisen/${d.travelSlug}`}
+                            className="text-rose-primary underline-offset-2 hover:underline"
+                          >
+                            {d.travelTitle}
+                          </Link>
+                        </span>
                       </li>
                     ))}
                   </ul>
@@ -325,7 +341,22 @@ export default async function SearchPage(props: {
               </h2>
               <ul className="flex flex-col gap-3">
                 {uniqueDishes.map((x) => (
-                  <li key={x.dishId} className="bg-white p-4 shadow-sm">
+                  <li
+                    key={x.dishId}
+                    className="flex items-start gap-3 bg-white p-4 shadow-sm"
+                  >
+                    {x.thumbUrl && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={x.thumbUrl}
+                        alt=""
+                        width={64}
+                        height={64}
+                        loading="lazy"
+                        className="h-16 w-16 shrink-0 object-cover"
+                      />
+                    )}
+                    <span className="min-w-0">
                     <p className="mb-1 flex flex-wrap items-center gap-1.5">
                       <span className="bg-leaf px-2 py-0.5 text-[0.68rem] font-semibold uppercase tracking-wide text-white">
                         {dict.search.fromTravelBadge}
@@ -359,6 +390,7 @@ export default async function SearchPage(props: {
                         {x.travelTitle}
                       </Link>
                     </p>
+                    </span>
                   </li>
                 ))}
               </ul>

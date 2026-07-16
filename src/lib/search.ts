@@ -6,8 +6,29 @@
 import { and, asc, desc, eq, inArray, lte, sql } from "drizzle-orm";
 import { db, schema } from "@/db";
 import type { RecipeCardData } from "@/components/recipe-card";
+import { thumbUrl } from "@/lib/media";
 import { publishedRecipeCards } from "@/lib/recipe-list";
 import type { MediaImage } from "@/lib/recipes";
+
+/** Erstes Foto je Gericht als kleines Vorschaubild (für Suchtreffer). */
+async function dishThumbById(dishIds: number[]): Promise<Map<number, string>> {
+  const map = new Map<number, string>();
+  if (dishIds.length === 0) return map;
+  const rows = await db
+    .select({
+      dishId: schema.dishImage.dishId,
+      fileKey: schema.mediaImage.fileKey,
+      variantWidths: schema.mediaImage.variantWidths,
+    })
+    .from(schema.dishImage)
+    .innerJoin(schema.mediaImage, eq(schema.dishImage.imageId, schema.mediaImage.id))
+    .where(inArray(schema.dishImage.dishId, dishIds))
+    .orderBy(asc(schema.dishImage.dishId), asc(schema.dishImage.sortOrder));
+  for (const r of rows) {
+    if (!map.has(r.dishId)) map.set(r.dishId, thumbUrl(r.fileKey, r.variantWidths));
+  }
+  return map;
+}
 
 /** Bereich der Suche: beides, nur Rezepte oder nur Reisen (inkl. Gerichte). */
 export type SearchScope = "alle" | "rezepte" | "reisen";
@@ -209,6 +230,8 @@ export interface DishHit {
   /** Für die Kennzeichnung im Suchergebnis */
   categories: string[];
   dietTypes: string[];
+  /** Erstes Foto des Gerichts (Vorschaubild), falls vorhanden */
+  thumbUrl: string | null;
 }
 
 async function dishIdsForJoin(
@@ -327,6 +350,7 @@ export async function searchDishes(filters: SearchFilters): Promise<DishHit[]> {
     .orderBy(asc(schema.travelPost.title), asc(schema.dish.sortOrder));
 
   const hitIds = rows.map((r) => r.dishId);
+  const thumbs = await dishThumbById(hitIds);
   const [catRows, dietRows] = hitIds.length
     ? await Promise.all([
         db
@@ -352,6 +376,7 @@ export async function searchDishes(filters: SearchFilters): Promise<DishHit[]> {
     travelTitle: r.travelTitle,
     categories: catRows.filter((c) => c.dishId === r.dishId).map((c) => c.name),
     dietTypes: dietRows.filter((c) => c.dishId === r.dishId).map((c) => c.name),
+    thumbUrl: thumbs.get(r.dishId) ?? null,
   }));
 }
 
@@ -366,6 +391,8 @@ export interface IngredientHit {
     restaurantCity: string;
     travelSlug: string;
     travelTitle: string;
+    /** Erstes Foto des Gerichts (Vorschaubild), falls vorhanden */
+    thumbUrl: string | null;
   }>;
 }
 
@@ -411,8 +438,9 @@ export async function searchIngredients(
       ids: [...new Set(recipeRows.map((r) => r.id))],
     });
 
-    const dishes = await db
+    const dishRows = await db
       .select({
+        dishId: schema.dish.id,
         dishName: schema.dish.name,
         dishDescription: schema.dish.description,
         restaurantName: schema.restaurant.name,
@@ -433,6 +461,11 @@ export async function searchIngredients(
           eq(schema.travelPost.status, "veroeffentlicht"),
         ),
       );
+    const dishThumbs = await dishThumbById(dishRows.map((d) => d.dishId));
+    const dishes = dishRows.map(({ dishId, ...d }) => ({
+      ...d,
+      thumbUrl: dishThumbs.get(dishId) ?? null,
+    }));
 
     if (recipes.length || dishes.length) {
       hits.push({
