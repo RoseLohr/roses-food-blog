@@ -612,19 +612,32 @@ html {
 }
 .sk-pname {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 0.45rem;
   font-size: 0.85rem;
   font-weight: 600;
   min-width: 0;
 }
-.sk-pname > span:first-child {
+.sk-pname > span:not(.sk-count) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.sk-prow:hover .sk-pname > span:first-child,
-.sk-prow[aria-expanded="true"] .sk-pname > span:first-child {
+.sk-prow:hover .sk-pname > span:not(.sk-count),
+.sk-prow[aria-expanded="true"] .sk-pname > span:not(.sk-count) {
+  color: var(--color-rose-primary-dark);
+}
+/* Aufklapp-Pfeilkopf am Produkt — dreht sich beim Öffnen */
+.sk-caret {
+  flex: none;
+  color: var(--color-ink-soft);
+  transition: transform 0.15s, color 0.15s;
+}
+.sk-prow:hover .sk-caret {
+  color: var(--color-rose-primary-dark);
+}
+.sk-prow[aria-expanded="true"] .sk-caret {
+  transform: rotate(180deg);
   color: var(--color-rose-primary-dark);
 }
 /* Länder-Hinweis am Produkt: ganz klein, z. B. „aus 9 Ländern" */
@@ -785,6 +798,35 @@ html {
 }
 .sk-sub--nested .sk-name {
   padding-left: 2.3rem;
+}
+
+/* Sorten-Block im Import: Sortenname links, je Herkunftsland ein
+   beschrifteter Balken rechts (untereinander, Balken bleiben ausgerichtet) */
+.sk-variety .sk-name {
+  align-self: start;
+  padding-top: 0.5rem;
+}
+.sk-variety-body {
+  display: flex;
+  flex-direction: column;
+  padding: 0.25rem 0 0.35rem;
+}
+.sk-origin-cap {
+  display: block;
+  padding: 0.2rem 0.5rem 0;
+  font-size: 0.66rem;
+  line-height: 1.25;
+  color: var(--color-ink-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sk-origin-line .sk-track {
+  height: 18px;
+}
+.sk-origin-line .sk-seg {
+  top: 3px;
+  bottom: 3px;
 }
 
 @media (max-width: 640px) {

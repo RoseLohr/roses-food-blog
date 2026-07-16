@@ -214,8 +214,12 @@ export const de = {
     qualityTitle: "Berechnungsart",
     sourcePrefix: "Quelle:",
     aboutTitle: "Über die Daten",
+    // Große Überschrift über der Tabelle: macht die aktuelle Herkunfts-
+    // Auswahl deutlich (Standardansicht vs. „andere Länder" zugeschaltet).
+    viewHeadingGermanOnly: "Standardansicht: nur Herkunft Deutschland",
+    viewHeadingAllOrigins: "Alle Herkunftsländer",
     aboutHint:
-      "Balken = Verfügbarkeit am deutschen Markt je Kalenderwoche; die senkrechte Linie markiert die aktuelle Woche. Standardansicht: nur Herkunft Deutschland.",
+      "Balken = Verfügbarkeit am deutschen Markt je Kalenderwoche; die senkrechte Linie markiert die aktuelle Woche.",
   },
   recipe: {
     servings: "Portionen",

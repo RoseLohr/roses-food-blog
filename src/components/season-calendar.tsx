@@ -104,6 +104,27 @@ function FootnoteMarks({ marks }: { marks: Array<number | string> }) {
   return <sup className="sk-fn">{marks.join(" ")}</sup>;
 }
 
+/** Kleiner nach unten zeigender Pfeilkopf — signalisiert „aufklappbar";
+ *  dreht sich beim Öffnen (per CSS über aria-expanded des Buttons). */
+function ExpandCaret() {
+  return (
+    <svg
+      className="sk-caret"
+      aria-hidden
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="m6 9 6 6 6-6" />
+    </svg>
+  );
+}
+
 /** Feste Buchstaben je Berechnungsart (a–d), stabil über alle Ansichten. */
 const QUALITY_LETTERS: Record<string, string> = Object.fromEntries(
   Object.keys(saisonModel.enums.dataQuality).map((key, i) => [
@@ -147,7 +168,102 @@ function SubRow({
   );
 }
 
-/** Zuklappbare Sammelzeile für alle Nicht-Deutschland-Einträge. */
+/** Import-Einträge nach Sorte gruppieren (Reihenfolge bleibt erhalten).
+ *  Einträge ohne Sorte (variety === null) landen einzeln in eigenen Gruppen. */
+function groupByVariety(
+  entries: SeasonEntry[],
+): Array<{ variety: string | null; entries: SeasonEntry[] }> {
+  const groups: Array<{ variety: string | null; entries: SeasonEntry[] }> = [];
+  const byVariety = new Map<string, SeasonEntry[]>();
+  for (const entry of entries) {
+    if (entry.variety === null) {
+      groups.push({ variety: null, entries: [entry] });
+      continue;
+    }
+    let bucket = byVariety.get(entry.variety);
+    if (!bucket) {
+      bucket = [];
+      byVariety.set(entry.variety, bucket);
+      groups.push({ variety: entry.variety, entries: bucket });
+    }
+    bucket.push(entry);
+  }
+  return groups;
+}
+
+/** Eine Herkunftszeile innerhalb eines Sorten-Blocks: Land-Beschriftung
+ *  über dem (voll ausgerichteten) Balken. */
+function OriginLine({
+  entry,
+  currentWeek,
+  window,
+  footnote,
+}: {
+  entry: SeasonEntry;
+  currentWeek: number;
+  window: WeekWindow;
+  footnote: number | undefined;
+}) {
+  const weeks = availabilityByWeekFor([entry]);
+  const marks: Array<number | string> = [
+    ...(footnote !== undefined ? [footnote] : []),
+    QUALITY_LETTERS[entry.dataQuality] ?? "",
+  ].filter((m) => m !== "");
+  return (
+    <div className="sk-origin-line">
+      <span className="sk-origin-cap">
+        {entry.origin}
+        <FootnoteMarks marks={marks} />
+      </span>
+      <Track weeks={weeks} currentWeek={currentWeek} window={window} />
+    </div>
+  );
+}
+
+/** Sorten-Block im Import: Sortenname links, je Herkunftsland ein
+ *  beschrifteter Balken rechts (Chile, Argentinien … untereinander). */
+function VarietyBlock({
+  variety,
+  entries,
+  currentWeek,
+  window,
+  footnoteFor,
+}: {
+  variety: string;
+  entries: SeasonEntry[];
+  currentWeek: number;
+  window: WeekWindow;
+  footnoteFor: (entry: SeasonEntry) => number | undefined;
+}) {
+  const countries = originCountries(entries);
+  return (
+    <div className="sk-sub sk-sub--nested sk-rowgrid sk-variety">
+      <div className="sk-name">
+        <span className="sk-sub-label">{variety}</span>
+        {countries.length > 1 && (
+          <span className="sk-sub-origin">
+            {d.fromCountries(countries.length)}
+          </span>
+        )}
+      </div>
+      <div className="sk-variety-body">
+        {entries.map((entry, i) => (
+          <OriginLine
+            key={i}
+            entry={entry}
+            currentWeek={currentWeek}
+            window={window}
+            footnote={footnoteFor(entry)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Zuklappbare Sammelzeile für alle Nicht-Deutschland-Einträge. Beim
+ *  Aufklappen werden Einträge mit Sorte nach Sorte gebündelt (je Land ein
+ *  beschrifteter Balken); Einträge ohne Sorte bleiben einzeln als „Import". */
 function ImportGroupRow({
   entries,
   currentWeek,
@@ -165,6 +281,7 @@ function ImportGroupRow({
 }) {
   const weeks = useMemo(() => availabilityByWeekFor(entries), [entries]);
   const countries = originCountries(entries);
+  const groups = useMemo(() => groupByVariety(entries), [entries]);
   return (
     <>
       <button
@@ -184,16 +301,28 @@ function ImportGroupRow({
         </span>
       </button>
       {open &&
-        entries.map((entry, i) => (
-          <SubRow
-            key={i}
-            entry={entry}
-            currentWeek={currentWeek}
-            window={window}
-            footnote={footnoteFor(entry)}
-            nested
-          />
-        ))}
+        groups.map((g, i) =>
+          g.variety === null ? (
+            // Ohne Sorte (z. B. Brombeere): wie bisher „Import" + Länder.
+            <SubRow
+              key={i}
+              entry={g.entries[0]}
+              currentWeek={currentWeek}
+              window={window}
+              footnote={footnoteFor(g.entries[0])}
+              nested
+            />
+          ) : (
+            <VarietyBlock
+              key={i}
+              variety={g.variety}
+              entries={g.entries}
+              currentWeek={currentWeek}
+              window={window}
+              footnoteFor={footnoteFor}
+            />
+          ),
+        )}
     </>
   );
 }
@@ -244,6 +373,7 @@ function ProductRow({
       >
         <span className="sk-rowgrid">
           <span className="sk-name sk-pname">
+            <ExpandCaret />
             <span>
               {item.product.name}
               {item.footnote !== undefined && (
@@ -544,10 +674,16 @@ export function SeasonCalendar({ currentWeek }: { currentWeek: number }) {
         </label>
       </div>
 
-      <p className="text-xs text-ink-soft">
-        {d.resultCount(visibleCount, saisonModel.products.length)} ·{" "}
-        {d.aboutHint}
-      </p>
+      {/* Große Überschrift für die Tabelle: aktuelle Herkunfts-Auswahl */}
+      <div className="mt-1">
+        <h2 className="font-display text-xl font-bold md:text-2xl">
+          {otherOrigins ? d.viewHeadingAllOrigins : d.viewHeadingGermanOnly}
+        </h2>
+        <p className="mt-1 text-xs text-ink-soft">
+          {d.resultCount(visibleCount, saisonModel.products.length)} ·{" "}
+          {d.aboutHint}
+        </p>
+      </div>
 
       {visibleCount === 0 ? (
         <p className="bg-white p-5 text-ink-soft shadow-sm">{d.noResults}</p>
