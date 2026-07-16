@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { asc, eq, sql } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { requireAdmin } from "@/lib/auth";
-import { imageUrl, thumbUrl } from "@/lib/media";
+import { imageUrl, thumbUrl, variantWidthsByImage } from "@/lib/media";
 import { ImagePicker } from "@/components/admin/image-picker";
 import { t } from "@/i18n/de";
 import {
@@ -30,7 +30,6 @@ export default async function IngredientsPage(props: {
       name: schema.ingredient.name,
       imageId: schema.ingredient.imageId,
       fileKey: schema.mediaImage.fileKey,
-      variantWidths: schema.mediaImage.variantWidths,
       recipeCount: sql<number>`(SELECT COUNT(*) FROM recipe_ingredient ri WHERE ri.ingredient_id = ${schema.ingredient.id})`,
       dishCount: sql<number>`(SELECT COUNT(*) FROM dish_ingredient di WHERE di.ingredient_id = ${schema.ingredient.id})`,
     })
@@ -44,14 +43,17 @@ export default async function IngredientsPage(props: {
       name: schema.mediaImage.originalName,
       alt: schema.mediaImage.altText,
       fileKey: schema.mediaImage.fileKey,
-      variantWidths: schema.mediaImage.variantWidths,
     })
     .from(schema.mediaImage)
     .orderBy(asc(schema.mediaImage.originalName));
+  const widthsById = await variantWidthsByImage([
+    ...imageRows.map((i) => i.id),
+    ...ingredients.flatMap((i) => (i.imageId ? [i.imageId] : [])),
+  ]);
   const imageChoices = imageRows.map((i) => ({
     id: i.id,
     label: i.alt || i.name,
-    thumbUrl: thumbUrl(i.fileKey, i.variantWidths),
+    thumbUrl: thumbUrl(i.fileKey, widthsById.get(i.id) ?? []),
   }));
 
   return (
@@ -106,7 +108,10 @@ export default async function IngredientsPage(props: {
           <li key={ing.id} className="flex gap-3 bg-white p-4 shadow-sm">
             {ing.fileKey ? (
               <img
-                src={imageUrl(ing.fileKey, JSON.parse(ing.variantWidths ?? "[320]")[0] ?? 320)}
+                src={imageUrl(
+                  ing.fileKey,
+                  (ing.imageId ? widthsById.get(ing.imageId)?.[0] : null) ?? 320,
+                )}
                 alt=""
                 width={64}
                 height={64}

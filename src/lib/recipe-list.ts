@@ -4,6 +4,7 @@
  */
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { db, schema } from "@/db";
+import { variantWidthsByImage } from "@/lib/media";
 import type { RecipeCardData } from "@/components/recipe-card";
 
 export async function publishedRecipeCards(options?: {
@@ -24,11 +25,11 @@ export async function publishedRecipeCards(options?: {
       teaser: schema.recipe.teaser,
       totalMinutes: schema.recipe.totalMinutes,
       likeCount: schema.recipe.likeCount,
+      imageId: schema.mediaImage.id,
       fileKey: schema.mediaImage.fileKey,
       altText: schema.mediaImage.altText,
       width: schema.mediaImage.width,
       height: schema.mediaImage.height,
-      variantWidths: schema.mediaImage.variantWidths,
     })
     .from(schema.recipe)
     .leftJoin(schema.mediaImage, eq(schema.recipe.heroImageId, schema.mediaImage.id))
@@ -43,27 +44,38 @@ export async function publishedRecipeCards(options?: {
   if (options?.limit) query = query.limit(options.limit);
 
   const rows = await query;
-
-  // Primär-Kategorie je Rezept (nur lesend) für das grüne Kategorie-Label
-  // in der Kachel (Tiny-Salt-Optik) — in EINER Abfrage.
   const ids = rows.map((r) => r.id);
+
+  // Primär-Kategorie je Rezept (is_primary; Fallback: erste Kategorie) für
+  // das grüne Kategorie-Label in der Kachel — in EINER Abfrage.
   const catByRecipe = new Map<number, string>();
   if (ids.length > 0) {
     const cats = await db
       .select({
-        recipeId: schema.recipeCategory.recipeId,
-        name: schema.category.name,
+        recipeId: schema.recipeTaxonomy.recipeId,
+        name: schema.taxonomy.name,
+        isPrimary: schema.recipeTaxonomy.isPrimary,
       })
-      .from(schema.recipeCategory)
+      .from(schema.recipeTaxonomy)
       .innerJoin(
-        schema.category,
-        eq(schema.recipeCategory.categoryId, schema.category.id),
+        schema.taxonomy,
+        eq(schema.recipeTaxonomy.taxonomyId, schema.taxonomy.id),
       )
-      .where(inArray(schema.recipeCategory.recipeId, ids));
+      .where(
+        and(
+          inArray(schema.recipeTaxonomy.recipeId, ids),
+          eq(schema.taxonomy.type, "kategorie"),
+        ),
+      )
+      .orderBy(desc(schema.recipeTaxonomy.isPrimary));
     for (const c of cats) {
       if (!catByRecipe.has(c.recipeId)) catByRecipe.set(c.recipeId, c.name);
     }
   }
+
+  const widthsById = await variantWidthsByImage(
+    rows.flatMap((r) => (r.imageId ? [r.imageId] : [])),
+  );
 
   return rows.map((r) => ({
     id: r.id,
@@ -73,13 +85,13 @@ export async function publishedRecipeCards(options?: {
     totalMinutes: r.totalMinutes,
     likeCount: r.likeCount,
     category: catByRecipe.get(r.id) ?? null,
-    image: r.fileKey
+    image: r.imageId
       ? {
-          fileKey: r.fileKey,
+          fileKey: r.fileKey!,
           altText: r.altText ?? "",
           width: r.width!,
           height: r.height!,
-          variantWidths: r.variantWidths ?? "[]",
+          variantWidths: widthsById.get(r.imageId) ?? [],
         }
       : null,
   }));

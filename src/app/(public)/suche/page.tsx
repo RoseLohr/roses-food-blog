@@ -5,6 +5,7 @@ import { db, schema } from "@/db";
 import { RecipeCard } from "@/components/recipe-card";
 import { ResponsiveImg } from "@/components/responsive-img";
 import { IngredientFilter } from "@/components/ingredient-filter";
+import { taxonomiesByType } from "@/lib/taxonomies";
 import {
   parseSearchParams,
   searchDishes,
@@ -72,13 +73,14 @@ export default async function SearchPage(props: {
     filters.cuisineSlugs.length > 0 ||
     filters.ingredientSlugs.length > 0;
 
-  const [categories, tags, diets, cuisines, ingredients] = await Promise.all([
-    db.select().from(schema.category).orderBy(asc(schema.category.name)),
-    db.select().from(schema.tag).orderBy(asc(schema.tag.name)),
-    db.select().from(schema.dietType).orderBy(asc(schema.dietType.name)),
-    db.select().from(schema.cuisine).orderBy(asc(schema.cuisine.name)),
+  const [taxByType, ingredients] = await Promise.all([
+    taxonomiesByType(),
     db.select().from(schema.ingredient).orderBy(asc(schema.ingredient.name)),
   ]);
+  const categories = taxByType.kategorie;
+  const tags = taxByType.schlagwort;
+  const diets = taxByType.ernaehrungsform;
+  const cuisines = taxByType.kueche;
 
   // Bereich (Rezepte/Reisen/beides) steuert, welche Treffer geladen werden.
   const wantRecipes = filters.scope !== "reisen";

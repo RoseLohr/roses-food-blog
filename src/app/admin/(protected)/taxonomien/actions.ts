@@ -1,11 +1,14 @@
 "use server";
 
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
-import { db } from "@/db";
+import { db, schema } from "@/db";
 import { requireAdmin } from "@/lib/auth";
-import { slugify, uniqueSlug } from "@/lib/slug";
-import { TAXONOMY_TABLES, isTaxonomyType } from "@/lib/taxonomies";
+import {
+  findOrCreateTaxonomy,
+  isTaxonomyType,
+  taxonomiesOfType,
+} from "@/lib/taxonomies";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -22,15 +25,11 @@ export async function createTaxonomyEntryAction(
   const name = String(formData.get("name") ?? "").trim();
   if (!isTaxonomyType(type) || !name) back(dict.common.error);
 
-  const table = TAXONOMY_TABLES[type];
-  const all = await db.select({ name: table.name, slug: table.slug }).from(table);
+  const all = await taxonomiesOfType(type);
   if (all.some((r) => r.name.toLowerCase() === name.toLowerCase())) {
     back(dict.admin.taxonomies.exists);
   }
-  const slugs = new Set(all.map((r) => r.slug));
-  await db
-    .insert(table)
-    .values({ name, slug: uniqueSlug(slugify(name), (s) => slugs.has(s)) });
+  await findOrCreateTaxonomy(type, name);
   back(dict.admin.taxonomies.created);
 }
 
@@ -41,6 +40,9 @@ export async function deleteTaxonomyEntryAction(
   const type = String(formData.get("typ") ?? "");
   const id = Number(formData.get("id"));
   if (!isTaxonomyType(type) || !Number.isInteger(id)) back(dict.common.error);
-  await db.delete(TAXONOMY_TABLES[type]).where(eq(TAXONOMY_TABLES[type].id, id));
+  // Art mitprüfen, damit der Button einer Art nie einen fremden Eintrag löscht.
+  await db
+    .delete(schema.taxonomy)
+    .where(and(eq(schema.taxonomy.id, id), eq(schema.taxonomy.type, type)));
   back(dict.admin.taxonomies.deletedEntry);
 }

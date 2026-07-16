@@ -5,11 +5,10 @@
  * im Reisebericht verlinkt.
  */
 import Link from "next/link";
-import { and, desc, eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
-import { db, schema } from "@/db";
 import { PageTracker } from "./page-tracker";
 import { TravelPostCard, type TravelCardData } from "./travel-post-card";
+import { publishedTravelCards } from "@/lib/travel";
 import { JsonLd, breadcrumbJsonLd } from "@/lib/jsonld";
 import { t } from "@/i18n/de";
 
@@ -19,9 +18,9 @@ const d = dict.travelList;
 export type TravelDimension = "land" | "region" | "stadt";
 
 const COLUMN = {
-  land: schema.travelPost.country,
-  region: schema.travelPost.region,
-  stadt: schema.travelPost.city,
+  land: "country",
+  region: "region",
+  stadt: "city",
 } as const;
 
 const LABEL: Record<TravelDimension, string> = {
@@ -35,32 +34,7 @@ export async function loadTravelFilter(
   dimension: TravelDimension,
   value: string,
 ): Promise<TravelCardData[]> {
-  return db
-    .select({
-      slug: schema.travelPost.slug,
-      title: schema.travelPost.title,
-      teaser: schema.travelPost.teaser,
-      country: schema.travelPost.country,
-      region: schema.travelPost.region,
-      city: schema.travelPost.city,
-      fileKey: schema.mediaImage.fileKey,
-      altText: schema.mediaImage.altText,
-      width: schema.mediaImage.width,
-      height: schema.mediaImage.height,
-      variantWidths: schema.mediaImage.variantWidths,
-    })
-    .from(schema.travelPost)
-    .leftJoin(
-      schema.mediaImage,
-      eq(schema.travelPost.heroImageId, schema.mediaImage.id),
-    )
-    .where(
-      and(
-        eq(schema.travelPost.status, "veroeffentlicht"),
-        eq(COLUMN[dimension], value),
-      ),
-    )
-    .orderBy(desc(schema.travelPost.publishedAt));
+  return publishedTravelCards({ column: COLUMN[dimension], value });
 }
 
 export async function TravelFilterList({

@@ -50,17 +50,10 @@ export function recipeJsonLd(full: FullRecipe) {
       return [amount, i.name].filter(Boolean).join(" ");
     }),
   );
-  // Absolute URL der größten Bildvariante (robust gegen defektes variantWidths).
+  // Absolute URL der größten Bildvariante.
   const imageAbs = (img: FullRecipe["heroImage"]): string | undefined => {
     if (!img) return undefined;
-    let widths: number[] = [];
-    try {
-      const parsed = JSON.parse(img.variantWidths);
-      if (Array.isArray(parsed)) widths = parsed;
-    } catch {
-      /* Fallback auf 1280 unten */
-    }
-    return `${base}${imageUrl(img.fileKey, widths.at(-1) ?? 1280)}`;
+    return `${base}${imageUrl(img.fileKey, img.variantWidths.at(-1) ?? 1280)}`;
   };
 
   // Ein Zubereitungsschritt (mit optionalem Schritt-Bild).

@@ -20,13 +20,15 @@ export default async function AdminDashboard() {
     .select({ n: count() })
     .from(schema.contact)
     .where(eq(schema.contact.status, "aktiv"));
+  // tracking_unified = Tagesaggregate + heutige Roh-Events. Vorher wurde nur
+  // tracking_daily gelesen — „Aufrufe heute" stand damit immer auf 0, weil
+  // heutige Events erst nach Tagesende aggregiert werden.
   const today = new Date().toISOString().slice(0, 10);
-  const [viewsToday] = await db
-    .select({ n: sql<number>`COALESCE(SUM(views), 0)` })
-    .from(schema.trackingDaily)
-    .where(
-      sql`${schema.trackingDaily.day} = ${today} AND ${schema.trackingDaily.visitorType} = 'mensch'`,
-    );
+  const viewsToday = db.all<{ n: number }>(sql`
+    SELECT COALESCE(SUM(views), 0) AS n
+    FROM tracking_unified
+    WHERE day = ${today} AND visitor_type = 'mensch'
+  `)[0] ?? { n: 0 };
 
   const cards: Array<[string, number | string]> = [
     [`${dict.admin.dashboard.recipes} (${dict.admin.dashboard.published})`, published.n],

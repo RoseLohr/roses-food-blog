@@ -3,7 +3,7 @@ import { asc, eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { db, schema } from "@/db";
 import { requireAdmin } from "@/lib/auth";
-import { thumbUrl } from "@/lib/media";
+import { listImageChoices } from "@/lib/media";
 import { ImagePicker } from "@/components/admin/image-picker";
 import { RichTextEditor } from "@/components/admin/rich-text-editor";
 import { t } from "@/i18n/de";
@@ -33,21 +33,7 @@ export default async function EditPagePage(props: {
     : null;
   if (!isNew && !page) notFound();
 
-  const imageRows = await db
-    .select({
-      id: schema.mediaImage.id,
-      originalName: schema.mediaImage.originalName,
-      altText: schema.mediaImage.altText,
-      fileKey: schema.mediaImage.fileKey,
-      variantWidths: schema.mediaImage.variantWidths,
-    })
-    .from(schema.mediaImage)
-    .orderBy(asc(schema.mediaImage.originalName));
-  const imageChoices = imageRows.map((i) => ({
-    id: i.id,
-    label: i.altText || i.originalName,
-    thumbUrl: thumbUrl(i.fileKey, i.variantWidths),
-  }));
+  const imageChoices = await listImageChoices();
 
   const message =
     typeof searchParams.meldung === "string" ? searchParams.meldung : null;

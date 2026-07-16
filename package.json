@@ -16,6 +16,7 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node scripts/migrate.mjs",
     "db:seed": "tsx scripts/seed.ts",
+    "fts:rebuild": "node scripts/fts-rebuild.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

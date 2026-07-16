@@ -6,7 +6,14 @@ import { RecipeCard } from "@/components/recipe-card";
 import { ResponsiveImg } from "@/components/responsive-img";
 import { DietBox, type DietBoxItem } from "@/components/diet-box";
 import { publishedRecipeCards } from "@/lib/recipe-list";
-import { imageUrl, srcset, thumbUrl } from "@/lib/media";
+import {
+  imageUrl,
+  mediaImageWithWidths,
+  srcset,
+  thumbUrl,
+  variantWidthsByImage,
+} from "@/lib/media";
+import { taxonomiesByType } from "@/lib/taxonomies";
 import { JsonLd, websiteJsonLd } from "@/lib/jsonld";
 import { currentIsoWeek, isWeekInSeason } from "@/lib/season";
 import { t } from "@/i18n/de";
@@ -38,8 +45,7 @@ async function loadHomepage() {
     .orderBy(asc(schema.sliderItem.sortOrder));
 
   // Kategorien der verknüpften (veröffentlichten) Rezepte in EINER Abfrage
-  // laden (nur lesend, kein Schema-Eingriff) — für das Kategorie-Label im
-  // Slider (Tiny-Salt-Optik).
+  // laden — für das Kategorie-Label im Slider (Primär-Kategorie zuerst).
   const recipeIds = sliderRows
     .filter((s) => s.recipeId != null && s.recipeStatus === "veroeffentlicht")
     .map((s) => s.recipeId as number);
@@ -47,15 +53,21 @@ async function loadHomepage() {
   if (recipeIds.length > 0) {
     const catRows = await db
       .select({
-        recipeId: schema.recipeCategory.recipeId,
-        name: schema.category.name,
+        recipeId: schema.recipeTaxonomy.recipeId,
+        name: schema.taxonomy.name,
       })
-      .from(schema.recipeCategory)
+      .from(schema.recipeTaxonomy)
       .innerJoin(
-        schema.category,
-        eq(schema.recipeCategory.categoryId, schema.category.id),
+        schema.taxonomy,
+        eq(schema.recipeTaxonomy.taxonomyId, schema.taxonomy.id),
       )
-      .where(inArray(schema.recipeCategory.recipeId, recipeIds));
+      .where(
+        and(
+          inArray(schema.recipeTaxonomy.recipeId, recipeIds),
+          eq(schema.taxonomy.type, "kategorie"),
+        ),
+      )
+      .orderBy(desc(schema.recipeTaxonomy.isPrimary), asc(schema.taxonomy.name));
     for (const c of catRows) {
       const arr = catByRecipe.get(c.recipeId) ?? [];
       arr.push(c.name);
@@ -63,8 +75,11 @@ async function loadHomepage() {
     }
   }
 
+  const sliderWidthsById = await variantWidthsByImage(
+    sliderRows.map((s) => s.img.id),
+  );
   const slides: SlideData[] = sliderRows.map((s) => {
-    const widths: number[] = JSON.parse(s.img.variantWidths);
+    const widths = sliderWidthsById.get(s.img.id) ?? [];
     const linked =
       s.recipeId != null && s.recipeStatus === "veroeffentlicht"
         ? s.recipeId
@@ -84,38 +99,26 @@ async function loadHomepage() {
     };
   });
 
-  const aboutImage = config?.aboutTeaserImageId
-    ? ((await db
-        .select()
-        .from(schema.mediaImage)
-        .where(eq(schema.mediaImage.id, config.aboutTeaserImageId))
-        .limit(1))[0] ?? null)
-    : null;
+  const aboutImage = await mediaImageWithWidths(config?.aboutTeaserImageId);
 
-  const [popular, latest, cuisines, diets, categories, tags] = await Promise.all([
+  const [popular, latest, taxByType, filterGroupRows] = await Promise.all([
     publishedRecipeCards({ limit: config?.popularCount ?? 6, orderByLikes: true }),
     publishedRecipeCards({ limit: config?.latestCount ?? 6 }),
-    db.select().from(schema.cuisine).orderBy(asc(schema.cuisine.name)),
-    db.select().from(schema.dietType).orderBy(asc(schema.dietType.name)),
-    db.select().from(schema.category).orderBy(asc(schema.category.name)),
-    db.select().from(schema.tag).orderBy(asc(schema.tag.name)),
+    taxonomiesByType(),
+    // Aktive Filtergruppen der „Rezepte filtern"-Box (Admin-konfigurierbar).
+    db.select().from(schema.homepageFilterGroup),
   ]);
-
-  // Aktive Filtergruppen der „Rezepte filtern"-Box (Admin-konfigurierbar).
-  const filterGroups: string[] = (() => {
-    try {
-      const v = JSON.parse(config?.filterGroups ?? "[]");
-      return Array.isArray(v) ? v.map(String) : [];
-    } catch {
-      return [];
-    }
-  })();
+  const cuisines = taxByType.kueche;
+  const diets = taxByType.ernaehrungsform;
+  const categories = taxByType.kategorie;
+  const tags = taxByType.schlagwort;
+  const filterGroups = filterGroupRows.map((r) => r.groupKey);
 
   // Ernährungsform-Box (Admin-konfigurierbar). Nur, wenn eine noch existierende
-  // Ernährungsform gewählt ist.
+  // Ernährungsform gewählt ist (FK: taxonomy, type=ernaehrungsform).
   const dietBoxType =
-    config?.dietBoxDietTypeId != null
-      ? diets.find((d) => d.id === config.dietBoxDietTypeId) ?? null
+    config?.dietBoxTaxonomyId != null
+      ? diets.find((d) => d.id === config.dietBoxTaxonomyId) ?? null
       : null;
   const dietBox = dietBoxType
     ? {
@@ -160,12 +163,12 @@ async function loadDietBoxItems(
     })
     .from(schema.recipe)
     .innerJoin(
-      schema.recipeDietType,
-      eq(schema.recipeDietType.recipeId, schema.recipe.id),
+      schema.recipeTaxonomy,
+      eq(schema.recipeTaxonomy.recipeId, schema.recipe.id),
     )
     .where(
       and(
-        eq(schema.recipeDietType.dietTypeId, dietTypeId),
+        eq(schema.recipeTaxonomy.taxonomyId, dietTypeId),
         eq(schema.recipe.status, "veroeffentlicht"),
       ),
     )
@@ -226,12 +229,25 @@ async function boxItemsForRecipes(
         .where(inArray(schema.mediaImage.id, heroIds))
     : [];
   const imgById = new Map(imgs.map((i) => [i.id, i]));
+  const widthsById = await variantWidthsByImage(heroIds);
 
   const catRows = await db
-    .select({ recipeId: schema.recipeCategory.recipeId, name: schema.category.name })
-    .from(schema.recipeCategory)
-    .innerJoin(schema.category, eq(schema.recipeCategory.categoryId, schema.category.id))
-    .where(inArray(schema.recipeCategory.recipeId, ids));
+    .select({
+      recipeId: schema.recipeTaxonomy.recipeId,
+      name: schema.taxonomy.name,
+    })
+    .from(schema.recipeTaxonomy)
+    .innerJoin(
+      schema.taxonomy,
+      eq(schema.recipeTaxonomy.taxonomyId, schema.taxonomy.id),
+    )
+    .where(
+      and(
+        inArray(schema.recipeTaxonomy.recipeId, ids),
+        eq(schema.taxonomy.type, "kategorie"),
+      ),
+    )
+    .orderBy(desc(schema.recipeTaxonomy.isPrimary), asc(schema.taxonomy.name));
   const byRecipe = (rows: { recipeId: number; name: string }[]) => {
     const m = new Map<number, string[]>();
     for (const r of rows) {
@@ -251,7 +267,7 @@ async function boxItemsForRecipes(
     return {
       slug: r.slug,
       title: r.title,
-      thumbUrl: img ? thumbUrl(img.fileKey, img.variantWidths) : null,
+      thumbUrl: img ? thumbUrl(img.fileKey, widthsById.get(img.id) ?? []) : null,
       subtitle,
     };
   });

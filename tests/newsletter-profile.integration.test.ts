@@ -1,8 +1,8 @@
 /**
- * Willkommensschritt nach der Bestätigung: angebotene Interessen sind auf
- * Reisen/Rezepte beschränkt, und updateContactProfile ergänzt Name & Interessen
- * eines aktiven Kontakts über seinen Abmelde-Token (nicht angebotene Interessen
- * wie „Backen" werden verworfen).
+ * Willkommensschritt nach der Bestätigung: angeboten werden nur als
+ * öffentlich (is_public) markierte Interessen, und updateContactProfile
+ * ergänzt Name & Interessen eines aktiven Kontakts über seinen Abmelde-Token
+ * (nicht angebotene Interessen wie „Backen" werden verworfen).
  */
 import fs from "node:fs";
 import os from "node:os";
@@ -19,9 +19,11 @@ beforeAll(async () => {
   execSync("node scripts/migrate.mjs", { env: { ...process.env, DATA_DIR: tmp } });
 
   const { db, schema } = await import("@/db");
-  await db
-    .insert(schema.interest)
-    .values([{ name: "Reisen" }, { name: "Rezepte" }, { name: "Backen" }]);
+  await db.insert(schema.interest).values([
+    { name: "Reisen", isPublic: true },
+    { name: "Rezepte", isPublic: true },
+    { name: "Backen" }, // nicht öffentlich → wird nicht angeboten
+  ]);
 
   tokenAktiv = "a".repeat(48);
   await db.insert(schema.contact).values({
@@ -39,7 +41,7 @@ afterAll(() => {
 });
 
 describe("Willkommensschritt / Profil-Ergänzung", () => {
-  it("bietet nur Reisen und Rezepte als Interessen an", async () => {
+  it("bietet nur öffentliche Interessen (Reisen, Rezepte) an", async () => {
     const { getOfferedInterests } = await import("@/lib/newsletter");
     const offered = await getOfferedInterests();
     expect(offered.map((o) => o.name)).toEqual(["Reisen", "Rezepte"]);

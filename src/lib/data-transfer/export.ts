@@ -1,17 +1,20 @@
 /**
- * Sammelt Blog-Inhalte (Rezepte/Reisen/Seiten) in das portable Export-Format.
- * Direkte DB-Abfragen (kein Umweg über die Editor-Loader), damit Zeitstempel
- * und Struktur verlustfrei erhalten bleiben. Bilder werden per fileKey
- * referenziert; die zugehörigen WebP-Dateien packt der ZIP-Builder dazu.
+ * Sammelt Blog-Inhalte (Rezepte/Reisen/Seiten) in das portable Export-Format
+ * (Version 2). Direkte DB-Abfragen (kein Umweg über die Editor-Loader), damit
+ * Zeitstempel und Struktur verlustfrei erhalten bleiben. Bilder werden per
+ * fileKey referenziert; die zugehörigen WebP-Dateien packt der ZIP-Builder
+ * dazu. Abgeleitete Werte (total_minutes, search_text, like_count) werden
+ * bewusst NICHT exportiert — sie entstehen beim Import neu.
  */
-import { asc, eq, inArray } from "drizzle-orm";
+import { asc, desc, eq, inArray } from "drizzle-orm";
 import { db, schema } from "@/db";
-import { parseTravelBlocks } from "@/lib/travel-blocks";
+import { type TaxonomyType } from "@/lib/taxonomies";
 import {
   CONTENT_FILENAME,
   EXPORT_FORMAT,
   EXPORT_VERSION,
   type ExportBundle,
+  type ExportContentBlock,
   type ExportImage,
   type ExportPage,
   type ExportRecipe,
@@ -29,24 +32,19 @@ export interface ExportSelection {
 
 type MediaRow = typeof schema.mediaImage.$inferSelect;
 type IngredientRow = typeof schema.ingredient.$inferSelect;
+type TaxRef = { name: string; slug: string };
 
 function toMs(d: Date | null | undefined): number | null {
   return d ? d.getTime() : null;
 }
 
-function parseWidths(json: string): number[] {
-  try {
-    const v = JSON.parse(json);
-    return Array.isArray(v) ? v.filter((n) => Number.isInteger(n) && n > 0) : [];
-  } catch {
-    return [];
-  }
-}
-
 /** Sammelt referenzierte Bild-IDs und erzeugt am Ende die Bildliste. */
 class ImageCollector {
   private ids = new Set<number>();
-  constructor(private byId: Map<number, MediaRow>) {}
+  constructor(
+    private byId: Map<number, MediaRow>,
+    private widthsById: Map<number, number[]>,
+  ) {}
   /** Merkt sich die ID und liefert den fileKey (oder null). */
   ref(id: number | null | undefined): string | null {
     if (id == null) return null;
@@ -67,7 +65,7 @@ class ImageCollector {
         width: r.width,
         height: r.height,
         sizeBytes: r.sizeBytes,
-        variantWidths: parseWidths(r.variantWidths),
+        variantWidths: this.widthsById.get(id) ?? [],
         lat: r.lat ?? null,
         lng: r.lng ?? null,
         createdAt: toMs(r.createdAt),
@@ -81,9 +79,97 @@ async function loadMediaMap(): Promise<Map<number, MediaRow>> {
   const rows = await db.select().from(schema.mediaImage);
   return new Map(rows.map((r) => [r.id, r]));
 }
+async function loadVariantWidths(): Promise<Map<number, number[]>> {
+  const rows = await db
+    .select()
+    .from(schema.mediaVariant)
+    .orderBy(asc(schema.mediaVariant.width));
+  const map = new Map<number, number[]>();
+  for (const r of rows) {
+    const list = map.get(r.imageId);
+    if (list) list.push(r.width);
+    else map.set(r.imageId, [r.width]);
+  }
+  return map;
+}
 async function loadIngredientMap(): Promise<Map<number, IngredientRow>> {
   const rows = await db.select().from(schema.ingredient);
   return new Map(rows.map((r) => [r.id, r]));
+}
+
+/** Rezept-Taxonomien, gruppiert nach Rezept und Art; Primär-Kategorie zuerst. */
+async function loadRecipeTaxonomies(
+  recipeIds: number[],
+): Promise<Map<number, Record<TaxonomyType, TaxRef[]>>> {
+  const map = new Map<number, Record<TaxonomyType, TaxRef[]>>();
+  if (!recipeIds.length) return map;
+  const rows = await db
+    .select({
+      recipeId: schema.recipeTaxonomy.recipeId,
+      type: schema.taxonomy.type,
+      name: schema.taxonomy.name,
+      slug: schema.taxonomy.slug,
+      isPrimary: schema.recipeTaxonomy.isPrimary,
+    })
+    .from(schema.recipeTaxonomy)
+    .innerJoin(
+      schema.taxonomy,
+      eq(schema.recipeTaxonomy.taxonomyId, schema.taxonomy.id),
+    )
+    .where(inArray(schema.recipeTaxonomy.recipeId, recipeIds))
+    .orderBy(desc(schema.recipeTaxonomy.isPrimary), asc(schema.taxonomy.name));
+  for (const r of rows) {
+    let grouped = map.get(r.recipeId);
+    if (!grouped) {
+      grouped = {
+        kategorie: [],
+        schlagwort: [],
+        ernaehrungsform: [],
+        kueche: [],
+        geraet: [],
+      };
+      map.set(r.recipeId, grouped);
+    }
+    grouped[r.type].push({ name: r.name, slug: r.slug });
+  }
+  return map;
+}
+
+/** Gericht-Taxonomien, gruppiert nach Gericht und Art. */
+async function loadDishTaxonomies(
+  dishIds: number[],
+): Promise<Map<number, Record<TaxonomyType, TaxRef[]>>> {
+  const map = new Map<number, Record<TaxonomyType, TaxRef[]>>();
+  if (!dishIds.length) return map;
+  const rows = await db
+    .select({
+      dishId: schema.dishTaxonomy.dishId,
+      type: schema.taxonomy.type,
+      name: schema.taxonomy.name,
+      slug: schema.taxonomy.slug,
+    })
+    .from(schema.dishTaxonomy)
+    .innerJoin(
+      schema.taxonomy,
+      eq(schema.dishTaxonomy.taxonomyId, schema.taxonomy.id),
+    )
+    .where(inArray(schema.dishTaxonomy.dishId, dishIds))
+    .orderBy(asc(schema.taxonomy.name));
+  for (const r of rows) {
+    let grouped = map.get(r.dishId);
+    if (!grouped) {
+      grouped = {
+        kategorie: [],
+        schlagwort: [],
+        ernaehrungsform: [],
+        kueche: [],
+        geraet: [],
+      };
+      map.set(r.dishId, grouped);
+    }
+    grouped[r.type].push({ name: r.name, slug: r.slug });
+  }
+  return map;
 }
 
 async function collectRecipes(
@@ -102,33 +188,28 @@ async function collectRecipes(
     .from(schema.recipeSection)
     .where(inArray(schema.recipeSection.recipeId, ids))
     .orderBy(asc(schema.recipeSection.sortOrder));
-  const steps = await db
-    .select()
-    .from(schema.recipeStep)
-    .where(
-      inArray(
-        schema.recipeStep.sectionId,
-        sections.map((s) => s.id),
-      ),
-    )
-    .orderBy(asc(schema.recipeStep.sortOrder));
-  const recIngs = await db
-    .select()
-    .from(schema.recipeIngredient)
-    .where(inArray(schema.recipeIngredient.recipeId, ids))
-    .orderBy(asc(schema.recipeIngredient.sortOrder));
-  const gallery = await db
-    .select()
-    .from(schema.recipeImage)
-    .where(inArray(schema.recipeImage.recipeId, ids))
-    .orderBy(asc(schema.recipeImage.sortOrder));
+  const sectionIds = sections.map((s) => s.id);
+  const steps = sectionIds.length
+    ? await db
+        .select()
+        .from(schema.recipeStep)
+        .where(inArray(schema.recipeStep.sectionId, sectionIds))
+        .orderBy(asc(schema.recipeStep.sortOrder))
+    : [];
+  // Zutaten hängen am Abschnitt (kein recipe_id mehr).
+  const recIngs = sectionIds.length
+    ? await db
+        .select()
+        .from(schema.recipeIngredient)
+        .where(inArray(schema.recipeIngredient.sectionId, sectionIds))
+        .orderBy(asc(schema.recipeIngredient.sortOrder))
+    : [];
   const notes = await db
     .select()
     .from(schema.recipeNote)
     .where(inArray(schema.recipeNote.recipeId, ids))
     .orderBy(asc(schema.recipeNote.createdAt));
 
-  // Taxonomie-Zuordnungen laden
   const tax = await loadRecipeTaxonomies(ids);
 
   const ingRef = (ingredientId: number) => {
@@ -142,43 +223,21 @@ async function collectRecipes(
 
   return recipes.map((r) => {
     const rSections = sections.filter((s) => s.recipeId === r.id);
-    const rIngs = recIngs.filter((ri) => ri.recipeId === r.id);
-    const bySection = new Map<number | null, typeof rIngs>();
-    for (const ri of rIngs) {
-      const k = ri.sectionId ?? null;
-      const arr = bySection.get(k) ?? [];
-      arr.push(ri);
-      bySection.set(k, arr);
-    }
-    const outSections: ExportRecipe["sections"] = [];
-    // Zutaten ohne Abschnitt → führender Abschnitt ohne Namen (wie im Loader).
-    const looseIngs = bySection.get(null);
-    if (looseIngs && looseIngs.length) {
-      outSections.push({
-        name: "",
-        steps: [],
-        ingredients: looseIngs.map((ri) => ({
+    const outSections: ExportRecipe["sections"] = rSections.map((sec) => ({
+      name: sec.name,
+      steps: steps
+        .filter((st) => st.sectionId === sec.id)
+        .map((st) => ({ text: st.text, image: images.ref(st.imageId) })),
+      ingredients: recIngs
+        .filter((ri) => ri.sectionId === sec.id)
+        .map((ri) => ({
           ...ingRef(ri.ingredientId),
           amount: ri.amount ?? null,
           unit: ri.unit,
           note: ri.note,
         })),
-      });
-    }
-    for (const sec of rSections) {
-      outSections.push({
-        name: sec.name,
-        steps: steps
-          .filter((st) => st.sectionId === sec.id)
-          .map((st) => ({ text: st.text, image: images.ref(st.imageId) })),
-        ingredients: (bySection.get(sec.id) ?? []).map((ri) => ({
-          ...ingRef(ri.ingredientId),
-          amount: ri.amount ?? null,
-          unit: ri.unit,
-          note: ri.note,
-        })),
-      });
-    }
+    }));
+    const grouped = tax.get(r.id);
 
     return {
       title: r.title,
@@ -191,6 +250,9 @@ async function collectRecipes(
       difficulty: r.difficulty,
       tips: r.tips,
       kcal: r.kcal ?? null,
+      isSeasonal: r.isSeasonal,
+      seasonStartWeek: r.seasonStartWeek,
+      seasonEndWeek: r.seasonEndWeek,
       seoTitle: r.seoTitle,
       seoDescription: r.seoDescription,
       status: r.status,
@@ -198,68 +260,17 @@ async function collectRecipes(
       createdAt: toMs(r.createdAt),
       updatedAt: toMs(r.updatedAt),
       sections: outSections,
-      gallery: gallery
-        .filter((g) => g.recipeId === r.id)
-        .map((g) => images.ref(g.imageId))
-        .filter((x): x is string => x !== null),
       notes: notes
         .filter((n) => n.recipeId === r.id)
         .map((n) => ({ text: n.text, isPublic: n.isPublic })),
-      categories: tax.category.get(r.id) ?? [],
-      tags: tax.tag.get(r.id) ?? [],
-      dietTypes: tax.dietType.get(r.id) ?? [],
-      cuisines: tax.cuisine.get(r.id) ?? [],
-      equipment: tax.equipment.get(r.id) ?? [],
+      // Primär-Kategorie steht vorn (Sortierung in loadRecipeTaxonomies).
+      categories: grouped?.kategorie ?? [],
+      tags: grouped?.schlagwort ?? [],
+      dietTypes: grouped?.ernaehrungsform ?? [],
+      cuisines: grouped?.kueche ?? [],
+      equipment: grouped?.geraet ?? [],
     };
   });
-}
-
-async function loadRecipeTaxonomies(recipeIds: number[]) {
-  async function one(
-    join:
-      | typeof schema.recipeCategory
-      | typeof schema.recipeTag
-      | typeof schema.recipeDietType
-      | typeof schema.recipeCuisine
-      | typeof schema.recipeEquipment,
-    joinCol: "categoryId" | "tagId" | "dietTypeId" | "cuisineId" | "equipmentId",
-    master:
-      | typeof schema.category
-      | typeof schema.tag
-      | typeof schema.dietType
-      | typeof schema.cuisine
-      | typeof schema.equipment,
-  ) {
-    const rows = await db
-      .select({
-        recipeId: (join as typeof schema.recipeCategory).recipeId,
-        name: master.name,
-        slug: master.slug,
-      })
-      .from(join as typeof schema.recipeCategory)
-      .innerJoin(
-        master,
-        eq(
-          (join as typeof schema.recipeCategory)[joinCol as "categoryId"],
-          master.id,
-        ),
-      )
-      .where(inArray((join as typeof schema.recipeCategory).recipeId, recipeIds));
-    const map = new Map<number, { name: string; slug: string }[]>();
-    for (const r of rows) {
-      const arr = map.get(r.recipeId) ?? [];
-      arr.push({ name: r.name, slug: r.slug });
-      map.set(r.recipeId, arr);
-    }
-    return map;
-  }
-  return {
-    category: await one(schema.recipeCategory, "categoryId", schema.category),
-    tag: await one(schema.recipeTag, "tagId", schema.tag),
-    dietType: await one(schema.recipeDietType, "dietTypeId", schema.dietType),
-    cuisine: await one(schema.recipeCuisine, "cuisineId", schema.cuisine),
-    equipment: await one(schema.recipeEquipment, "equipmentId", schema.equipment),
-  };
 }
 
 async function collectTravel(
@@ -284,6 +295,11 @@ async function collectTravel(
     .where(inArray(schema.restaurant.travelPostId, ids))
     .orderBy(asc(schema.restaurant.sortOrder));
   const restIds = restaurants.map((r) => r.id);
+  const blocks = await db
+    .select()
+    .from(schema.travelBlock)
+    .where(inArray(schema.travelBlock.travelPostId, ids))
+    .orderBy(asc(schema.travelBlock.sortOrder));
   const dishes = restIds.length
     ? await db
         .select()
@@ -305,45 +321,7 @@ async function collectTravel(
         .from(schema.dishIngredient)
         .where(inArray(schema.dishIngredient.dishId, dishIds))
     : [];
-
-  // Gericht-Taxonomien (gemeinsame Tabellen mit Rezepten) als Name/Slug-Refs.
-  const dishTaxOne = async (
-    join:
-      | typeof schema.dishCategory
-      | typeof schema.dishTag
-      | typeof schema.dishDietType
-      | typeof schema.dishCuisine,
-    joinCol:
-      | typeof schema.dishCategory.categoryId
-      | typeof schema.dishTag.tagId
-      | typeof schema.dishDietType.dietTypeId
-      | typeof schema.dishCuisine.cuisineId,
-    master:
-      | typeof schema.category
-      | typeof schema.tag
-      | typeof schema.dietType
-      | typeof schema.cuisine,
-  ): Promise<Map<number, Array<{ name: string; slug: string }>>> => {
-    const map = new Map<number, Array<{ name: string; slug: string }>>();
-    if (!dishIds.length) return map;
-    const rows = await db
-      .select({ dishId: join.dishId, name: master.name, slug: master.slug })
-      .from(join)
-      .innerJoin(master, eq(joinCol, master.id))
-      .where(inArray(join.dishId, dishIds));
-    for (const r of rows) {
-      const list = map.get(r.dishId) ?? [];
-      list.push({ name: r.name, slug: r.slug });
-      map.set(r.dishId, list);
-    }
-    return map;
-  };
-  const [dishCats, dishTags, dishDiets, dishCuisines] = await Promise.all([
-    dishTaxOne(schema.dishCategory, schema.dishCategory.categoryId, schema.category),
-    dishTaxOne(schema.dishTag, schema.dishTag.tagId, schema.tag),
-    dishTaxOne(schema.dishDietType, schema.dishDietType.dietTypeId, schema.dietType),
-    dishTaxOne(schema.dishCuisine, schema.dishCuisine.cuisineId, schema.cuisine),
-  ]);
+  const dishTax = await loadDishTaxonomies(dishIds);
 
   const ingRef = (ingredientId: number) => {
     const ing = ingredients.get(ingredientId);
@@ -354,69 +332,75 @@ async function collectTravel(
     };
   };
 
-  return posts.map((p) => ({
-    title: p.title,
-    slug: p.slug,
-    teaser: p.teaser,
-    content: p.content,
-    // Inhalts-Blöcke: Bild-Blöcke als Datei-Referenz (registriert das Bild
-    // zugleich fürs ZIP); Blöcke ohne auflösbares Bild entfallen.
-    contentBlocks: parseTravelBlocks(p.contentBlocks).flatMap(
-      (
-        b,
-      ): Array<
-        | { type: "text"; markdown: string }
-        | { type: "bild"; image: string | null }
-        | { type: "restaurant"; index: number }
-      > => {
-        if (b.type === "bild") {
-          const ref = images.ref(b.imageId);
-          return ref ? [{ type: "bild", image: ref }] : [];
-        }
-        return [b];
-      },
-    ),
-    country: p.country,
-    region: p.region,
-    city: p.city,
-    destination: p.destination,
-    heroImage: images.ref(p.heroImageId),
-    seoTitle: p.seoTitle,
-    seoDescription: p.seoDescription,
-    status: p.status,
-    publishedAt: toMs(p.publishedAt),
-    createdAt: toMs(p.createdAt),
-    updatedAt: toMs(p.updatedAt),
-    gallery: gallery
-      .filter((g) => g.travelPostId === p.id)
-      .map((g) => images.ref(g.imageId))
-      .filter((x): x is string => x !== null),
-    restaurants: restaurants
-      .filter((r) => r.travelPostId === p.id)
-      .map((r) => ({
+  return posts.map((p) => {
+    const postRestaurants = restaurants.filter((r) => r.travelPostId === p.id);
+    const restaurantIndexById = new Map(
+      postRestaurants.map((r, i) => [r.id, i]),
+    );
+    // Blöcke: Bild als Datei-Referenz, Restaurant als Index in der
+    // Restaurant-Liste; nicht auflösbare Blöcke entfallen still.
+    const contentBlocks: ExportContentBlock[] = [];
+    for (const b of blocks.filter((x) => x.travelPostId === p.id)) {
+      if (b.type === "text") {
+        contentBlocks.push({ type: "text", markdown: b.markdown });
+      } else if (b.type === "bild") {
+        const ref = images.ref(b.imageId);
+        if (ref) contentBlocks.push({ type: "bild", image: ref });
+      } else if (b.restaurantId != null) {
+        const idx = restaurantIndexById.get(b.restaurantId);
+        if (idx !== undefined) contentBlocks.push({ type: "restaurant", index: idx });
+      }
+    }
+
+    return {
+      title: p.title,
+      slug: p.slug,
+      teaser: p.teaser,
+      contentBlocks,
+      country: p.country,
+      region: p.region,
+      city: p.city,
+      heroImage: images.ref(p.heroImageId),
+      seoTitle: p.seoTitle,
+      seoDescription: p.seoDescription,
+      status: p.status,
+      publishedAt: toMs(p.publishedAt),
+      createdAt: toMs(p.createdAt),
+      updatedAt: toMs(p.updatedAt),
+      gallery: gallery
+        .filter((g) => g.travelPostId === p.id)
+        .map((g) => images.ref(g.imageId))
+        .filter((x): x is string => x !== null),
+      restaurants: postRestaurants.map((r) => ({
         name: r.name,
         city: r.city,
         description: r.description,
         image: images.ref(r.imageId),
+        lat: r.lat,
+        lng: r.lng,
         dishes: dishes
           .filter((d) => d.restaurantId === r.id)
-          .map((d) => ({
-            name: d.name,
-            description: d.description,
-            images: dishImgs
-              .filter((di) => di.dishId === d.id)
-              .map((di) => images.ref(di.imageId))
-              .filter((x): x is string => x !== null),
-            ingredients: dishIngs
-              .filter((di) => di.dishId === d.id)
-              .map((di) => ingRef(di.ingredientId)),
-            categories: dishCats.get(d.id) ?? [],
-            tags: dishTags.get(d.id) ?? [],
-            dietTypes: dishDiets.get(d.id) ?? [],
-            cuisines: dishCuisines.get(d.id) ?? [],
-          })),
+          .map((d) => {
+            const grouped = dishTax.get(d.id);
+            return {
+              name: d.name,
+              description: d.description,
+              images: dishImgs
+                .filter((di) => di.dishId === d.id)
+                .map((di) => images.ref(di.imageId))
+                .filter((x): x is string => x !== null),
+              ingredients: dishIngs
+                .filter((di) => di.dishId === d.id)
+                .map((di) => ingRef(di.ingredientId)),
+              categories: grouped?.kategorie ?? [],
+              tags: grouped?.schlagwort ?? [],
+              dietTypes: grouped?.ernaehrungsform ?? [],
+              cuisines: grouped?.kueche ?? [],
+            };
+          }),
       })),
-  }));
+    };
+  });
 }
 
 async function collectPages(images: ImageCollector): Promise<ExportPage[]> {
@@ -432,6 +416,7 @@ async function collectPages(images: ImageCollector): Promise<ExportPage[]> {
     seoTitle: p.seoTitle,
     seoDescription: p.seoDescription,
     status: p.status,
+    isProtected: p.isProtected,
     createdAt: toMs(p.createdAt),
     updatedAt: toMs(p.updatedAt),
   }));
@@ -441,11 +426,12 @@ async function collectPages(images: ImageCollector): Promise<ExportPage[]> {
 export async function collectExport(
   selection: ExportSelection,
 ): Promise<ExportBundle> {
-  const [mediaMap, ingredientMap] = await Promise.all([
+  const [mediaMap, widthsMap, ingredientMap] = await Promise.all([
     loadMediaMap(),
+    loadVariantWidths(),
     loadIngredientMap(),
   ]);
-  const images = new ImageCollector(mediaMap);
+  const images = new ImageCollector(mediaMap, widthsMap);
 
   const recipes = selection.recipes
     ? await collectRecipes(images, ingredientMap)

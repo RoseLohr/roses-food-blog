@@ -44,20 +44,24 @@ export async function POST(req: Request) {
     .update(`${body.clientId}:${body.recipeId}`)
     .digest("hex");
 
-  await db
-    .insert(schema.like)
-    .values({ recipeId: body.recipeId, dedupHash, createdAt: new Date() })
-    .onConflictDoNothing();
+  // Like + Zähler-Cache atomar (Quelle der Wahrheit: Tabelle recipe_like).
+  const likeCount = db.transaction((tx) => {
+    tx.insert(schema.recipeLike)
+      .values({ recipeId: body.recipeId, dedupHash, createdAt: new Date() })
+      .onConflictDoNothing()
+      .run();
+    const likes = tx
+      .select({ n: count() })
+      .from(schema.recipeLike)
+      .where(eq(schema.recipeLike.recipeId, body.recipeId))
+      .get();
+    const n = likes?.n ?? 0;
+    tx.update(schema.recipe)
+      .set({ likeCount: n })
+      .where(eq(schema.recipe.id, body.recipeId))
+      .run();
+    return n;
+  });
 
-  // Zähler-Cache aktualisieren (Quelle der Wahrheit: Tabelle like)
-  const [likes] = await db
-    .select({ n: count() })
-    .from(schema.like)
-    .where(eq(schema.like.recipeId, body.recipeId));
-  await db
-    .update(schema.recipe)
-    .set({ likeCount: likes.n })
-    .where(eq(schema.recipe.id, body.recipeId));
-
-  return NextResponse.json({ likeCount: likes.n, liked: true });
+  return NextResponse.json({ likeCount, liked: true });
 }

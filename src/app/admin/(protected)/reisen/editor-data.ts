@@ -1,9 +1,9 @@
 /** Editor-Daten für Reiseberichte laden. */
 import { asc } from "drizzle-orm";
 import { db, schema } from "@/db";
-import { imageUrl } from "@/lib/media";
+import { thumbUrl, variantWidthsByImage } from "@/lib/media";
+import { taxonomiesByType } from "@/lib/taxonomies";
 import { getFullTravelPost } from "@/lib/travel";
-import { effectiveBlocks } from "@/lib/travel-blocks";
 import type { TravelEditorProps } from "./travel-editor";
 
 export async function buildTravelEditorProps(
@@ -15,34 +15,25 @@ export async function buildTravelEditorProps(
       originalName: schema.mediaImage.originalName,
       altText: schema.mediaImage.altText,
       fileKey: schema.mediaImage.fileKey,
-      variantWidths: schema.mediaImage.variantWidths,
     })
     .from(schema.mediaImage)
     .orderBy(asc(schema.mediaImage.originalName));
-  const images = imageRows.map((i) => {
-    const widths: number[] = JSON.parse(i.variantWidths);
-    return {
-      id: i.id,
-      label: i.altText || i.originalName,
-      thumbUrl: imageUrl(i.fileKey, widths[0] ?? 320),
-    };
-  });
+  const widthsById = await variantWidthsByImage(imageRows.map((i) => i.id));
+  const images = imageRows.map((i) => ({
+    id: i.id,
+    label: i.altText || i.originalName,
+    thumbUrl: thumbUrl(i.fileKey, widthsById.get(i.id) ?? []),
+  }));
 
-  // Taxonomie-Optionen für die Gericht-Zuordnung (gemeinsam mit Rezepten).
-  const [categories, tags, dietTypes, cuisines] = await Promise.all([
-    db.select({ id: schema.category.id, name: schema.category.name })
-      .from(schema.category)
-      .orderBy(asc(schema.category.name)),
-    db.select({ id: schema.tag.id, name: schema.tag.name })
-      .from(schema.tag)
-      .orderBy(asc(schema.tag.name)),
-    db.select({ id: schema.dietType.id, name: schema.dietType.name })
-      .from(schema.dietType)
-      .orderBy(asc(schema.dietType.name)),
-    db.select({ id: schema.cuisine.id, name: schema.cuisine.name })
-      .from(schema.cuisine)
-      .orderBy(asc(schema.cuisine.name)),
-  ]);
+  // Taxonomie-Optionen für die Gericht-Zuordnung (gemeinsamer Stamm mit
+  // Rezepten; „geraet" ist an Gerichten nicht vorgesehen).
+  const grouped = await taxonomiesByType();
+  const taxonomies = {
+    categories: grouped.kategorie,
+    tags: grouped.schlagwort,
+    dietTypes: grouped.ernaehrungsform,
+    cuisines: grouped.kueche,
+  };
 
   const base: TravelEditorProps = {
     initial: {
@@ -61,7 +52,7 @@ export async function buildTravelEditorProps(
       status: "entwurf",
       restaurants: [],
     },
-    taxonomies: { categories, tags, dietTypes, cuisines },
+    taxonomies,
     images,
   };
 
@@ -77,7 +68,7 @@ export async function buildTravelEditorProps(
       title: full.post.title,
       slug: full.post.slug,
       teaser: full.post.teaser,
-      blocks: effectiveBlocks(full.post),
+      blocks: full.blocks,
       country: full.post.country,
       region: full.post.region,
       city: full.post.city,
@@ -91,6 +82,8 @@ export async function buildTravelEditorProps(
         city: r.city,
         description: r.description,
         imageId: r.imageId ?? null,
+        lat: r.lat != null ? String(r.lat).replace(".", ",") : "",
+        lng: r.lng != null ? String(r.lng).replace(".", ",") : "",
         dishes: r.dishes.map((d) => ({
           name: d.name,
           description: d.description,

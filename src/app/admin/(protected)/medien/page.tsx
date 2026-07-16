@@ -3,7 +3,7 @@ import Link from "next/link";
 import { desc } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { requireAdmin } from "@/lib/auth";
-import { imageUrl } from "@/lib/media";
+import { imageUrl, variantWidthsByImage } from "@/lib/media";
 import { MediaThumb } from "@/components/admin/media-thumb";
 import { t } from "@/i18n/de";
 import {
@@ -38,12 +38,13 @@ export default async function MediaPage(props: {
     .select()
     .from(schema.mediaImage)
     .orderBy(desc(schema.mediaImage.createdAt));
+  const widthsById = await variantWidthsByImage(images.map((i) => i.id));
 
   const thumb = (img: (typeof images)[number]) =>
-    imageUrl(img.fileKey, JSON.parse(img.variantWidths)[0] ?? 320);
+    imageUrl(img.fileKey, widthsById.get(img.id)?.[0] ?? 320);
   const full = (img: (typeof images)[number]) => {
-    const widths: number[] = JSON.parse(img.variantWidths);
-    return imageUrl(img.fileKey, widths.at(-1) ?? widths[0] ?? 320);
+    const widths = widthsById.get(img.id) ?? [];
+    return imageUrl(img.fileKey, widths.at(-1) ?? 320);
   };
 
   return (

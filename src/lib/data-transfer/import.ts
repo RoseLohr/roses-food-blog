@@ -1,5 +1,5 @@
 /**
- * Import von Blog-Inhalten aus einem Export-ZIP.
+ * Import von Blog-Inhalten aus einem Export-ZIP (Format-Version 2).
  *
  * Grundsätze:
  * - „Als Kopie anlegen": bestehende Inhalte werden NIE überschrieben. Slugs
@@ -11,11 +11,13 @@
  *   validierten fileKey gebildet → kein Path-Traversal.
  * - Zutaten werden über den (klein geschriebenen) Namen mit vorhandenen
  *   zusammengeführt; nur wirklich neue Zutaten werden angelegt. Ebenso
- *   Taxonomien (Kategorie/Schlagwort/…): Zusammenführung über Slug bzw. Name.
+ *   Taxonomien (eine Tabelle, Art + Slug/Name als Schlüssel).
  * - Alles läuft in EINER Transaktion. Bei Fehler: Rollback + Aufräumen aller
  *   bereits geschriebenen Bilddateien → kein halber Import, keine Waisen.
  * - Zeitstempel bleiben verlustfrei erhalten (Direkt-Insert, keine Form-Logik).
- * - FTS-Indizes (recipe_fts/travel_fts) pflegen SQL-Trigger automatisch mit.
+ * - Abgeleitete Werte entstehen neu: total_minutes (DB-generiert), search_text
+ *   (aus den Textblöcken), FTS-Indizes (SQL-Trigger).
+ * - Version-1-Exporte werden abgelehnt (Green-Field, bewusst entschieden).
  */
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -24,7 +26,10 @@ import { sql } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { deleteImageFiles, uploadsDir } from "@/lib/media";
 import { slugify, uniqueSlug } from "@/lib/slug";
+import { blocksToMarkdown, type TravelBlock } from "@/lib/travel-blocks";
+import type { TaxonomyType } from "@/lib/taxonomies";
 import {
+  EXPORT_VERSION,
   bundleSchema,
   type ExportBundle,
   type ExportImage,
@@ -50,22 +55,8 @@ export interface ImportResult {
   warnings: string[];
 }
 
-/** Kernseiten, die nie als Kopie importiert werden (sie existieren bereits). */
-const PROTECTED_PAGE_SLUGS = new Set(["ueber-mich", "datenschutz", "impressum"]);
-
 function fromMs(ms: number | null | undefined): Date | null {
   return ms != null && Number.isFinite(ms) ? new Date(ms) : null;
-}
-
-/**
- * Bringt ein rohes Bündel auf die aktuelle Version. `bundleSchema` ist bereits
- * tolerant (Defaults, `.catch`, unbekannte Felder werden ignoriert), sodass
- * ältere UND neuere Exporte eingelesen werden können. Künftige, echte
- * Versionssprünge (z. B. umbenannte Felder) werden hier vor dem Parsen
- * abgefangen.
- */
-function migrate(raw: unknown): ExportBundle {
-  return bundleSchema.parse(raw);
 }
 
 /** Liest ein Export-ZIP ein und validiert grob; wirft bei kaputtem ZIP/JSON. */
@@ -86,7 +77,16 @@ export function parseImportZip(bytes: Uint8Array): {
   } catch {
     throw new Error("Ungültige Datei: content.json ist kein gültiges JSON.");
   }
-  const bundle = migrate(raw);
+  const version =
+    typeof raw === "object" && raw !== null && "version" in raw
+      ? Number((raw as { version: unknown }).version)
+      : EXPORT_VERSION;
+  if (Number.isFinite(version) && version < EXPORT_VERSION) {
+    throw new Error(
+      `Export-Version ${version} wird nicht mehr unterstützt (aktuell: ${EXPORT_VERSION}). Bitte die Inhalte mit der aktuellen Version neu exportieren.`,
+    );
+  }
+  const bundle = bundleSchema.parse(raw);
   return { bundle, entries };
 }
 
@@ -159,12 +159,14 @@ export async function importBundle(
         width: meta?.width ?? 0,
         height: meta?.height ?? 0,
         sizeBytes: meta?.sizeBytes ?? 0,
-        variantWidths: JSON.stringify(usedWidths),
         lat: meta?.lat ?? null,
         lng: meta?.lng ?? null,
         createdAt: fromMs(meta?.createdAt) ?? new Date(),
       })
       .returning({ id: schema.mediaImage.id });
+    await db
+      .insert(schema.mediaVariant)
+      .values(usedWidths.map((w) => ({ imageId: row.id, width: w })));
     importedImageId.set(oldFileKey, row.id);
     result.imagesCreated++;
     return row.id;
@@ -205,54 +207,66 @@ export async function importBundle(
     return row.id;
   }
 
-  // --- Taxonomien: Zusammenführung über Slug bzw. Name ---
-  type TaxKind = "category" | "tag" | "dietType" | "cuisine" | "equipment";
-  const taxTable: Record<TaxKind, typeof schema.category> = {
-    category: schema.category,
-    tag: schema.tag as unknown as typeof schema.category,
-    dietType: schema.dietType as unknown as typeof schema.category,
-    cuisine: schema.cuisine as unknown as typeof schema.category,
-    equipment: schema.equipment as unknown as typeof schema.category,
-  };
+  // --- Taxonomien: eine Tabelle, Zusammenführung über Art + Slug bzw. Name ---
   const taxState = new Map<
-    TaxKind,
+    TaxonomyType,
     { byName: Map<string, number>; bySlug: Map<string, number>; slugs: Set<string> }
   >();
-  for (const kind of Object.keys(taxTable) as TaxKind[]) {
-    const rows = await db.select().from(taxTable[kind]);
-    const byName = new Map<string, number>();
-    const bySlug = new Map<string, number>();
-    const slugs = new Set<string>();
-    for (const r of rows) {
-      byName.set(r.name.toLowerCase(), r.id);
-      bySlug.set(r.slug, r.id);
-      slugs.add(r.slug);
+  {
+    const rows = await db.select().from(schema.taxonomy);
+    for (const type of ["kategorie", "schlagwort", "ernaehrungsform", "kueche", "geraet"] as const) {
+      taxState.set(type, {
+        byName: new Map(),
+        bySlug: new Map(),
+        slugs: new Set(),
+      });
     }
-    taxState.set(kind, { byName, bySlug, slugs });
+    for (const r of rows) {
+      const st = taxState.get(r.type)!;
+      st.byName.set(r.name.toLowerCase(), r.id);
+      st.bySlug.set(r.slug, r.id);
+      st.slugs.add(r.slug);
+    }
   }
 
   async function getOrCreateTax(
-    kind: TaxKind,
+    type: TaxonomyType,
     ref: { name: string; slug: string },
   ): Promise<number | null> {
     const name = ref.name.trim();
     if (!name) return null;
-    const st = taxState.get(kind)!;
+    const st = taxState.get(type)!;
     if (ref.slug && st.bySlug.has(ref.slug)) return st.bySlug.get(ref.slug)!;
     const byName = st.byName.get(name.toLowerCase());
     if (byName != null) return byName;
     const slug = uniqueSlug(ref.slug || slugify(name) || name, (s) =>
       st.slugs.has(s),
     );
-    const table = taxTable[kind];
     const [row] = await db
-      .insert(table)
-      .values({ name, slug })
-      .returning({ id: table.id });
+      .insert(schema.taxonomy)
+      .values({ type, name, slug })
+      .returning({ id: schema.taxonomy.id });
     st.byName.set(name.toLowerCase(), row.id);
     st.bySlug.set(slug, row.id);
     st.slugs.add(slug);
     return row.id;
+  }
+
+  /** Refs einer Art auflösen (dedupliziert, Reihenfolge erhalten). */
+  async function resolveTaxIds(
+    type: TaxonomyType,
+    refs: Array<{ name: string; slug: string }>,
+  ): Promise<number[]> {
+    const ids: number[] = [];
+    const seen = new Set<number>();
+    for (const ref of refs) {
+      const id = await getOrCreateTax(type, ref);
+      if (id != null && !seen.has(id)) {
+        seen.add(id);
+        ids.push(id);
+      }
+    }
+    return ids;
   }
 
   // --- Slug-Reservierungen je Inhaltstyp (für „Als Kopie anlegen") ---
@@ -264,8 +278,12 @@ export async function importBundle(
       (r) => r.s,
     ),
   );
-  const pageSlugs = new Set(
-    (await db.select({ s: schema.page.slug }).from(schema.page)).map((r) => r.s),
+  const pageRows = await db
+    .select({ s: schema.page.slug, isProtected: schema.page.isProtected })
+    .from(schema.page);
+  const pageSlugs = new Set(pageRows.map((r) => r.s));
+  const protectedPageSlugs = new Set(
+    pageRows.filter((r) => r.isProtected).map((r) => r.s),
   );
 
   // --- Einzel-Importe -----------------------------------------------------
@@ -277,8 +295,6 @@ export async function importBundle(
     const heroImageId = await importImage(r.heroImage);
     const createdAt = fromMs(r.createdAt) ?? new Date();
     const updatedAt = fromMs(r.updatedAt) ?? createdAt;
-    const prep = Math.max(0, r.prepMinutes | 0);
-    const cook = Math.max(0, r.cookMinutes | 0);
 
     const [rec] = await db
       .insert(schema.recipe)
@@ -287,13 +303,15 @@ export async function importBundle(
         slug,
         teaser: r.teaser,
         heroImageId,
-        prepMinutes: prep,
-        cookMinutes: cook,
-        totalMinutes: prep + cook,
+        prepMinutes: Math.max(0, r.prepMinutes | 0),
+        cookMinutes: Math.max(0, r.cookMinutes | 0),
         servings: Math.max(1, r.servings | 0),
         difficulty: r.difficulty,
         tips: r.tips,
         kcal: r.kcal,
+        isSeasonal: r.isSeasonal,
+        seasonStartWeek: r.seasonStartWeek,
+        seasonEndWeek: r.seasonEndWeek,
         seoTitle: r.seoTitle,
         seoDescription: r.seoDescription,
         status: r.status,
@@ -327,7 +345,6 @@ export async function importBundle(
         const ingredientId = await getOrCreateIngredient(ing);
         if (ingredientId == null) continue;
         await db.insert(schema.recipeIngredient).values({
-          recipeId,
           sectionId,
           ingredientId,
           amount: ing.amount,
@@ -336,22 +353,6 @@ export async function importBundle(
           sortOrder: ii,
         });
       }
-    }
-
-    // Galerie („zusätzliche Bilder") — nach imageId deduplizieren (PK-Schutz).
-    const galleryIds: number[] = [];
-    const seenGallery = new Set<number>();
-    for (const key of r.gallery) {
-      const id = await importImage(key);
-      if (id != null && !seenGallery.has(id)) {
-        seenGallery.add(id);
-        galleryIds.push(id);
-      }
-    }
-    if (galleryIds.length) {
-      await db.insert(schema.recipeImage).values(
-        galleryIds.map((imageId, i) => ({ recipeId, imageId, sortOrder: i })),
-      );
     }
 
     if (r.notes.length) {
@@ -365,33 +366,26 @@ export async function importBundle(
       );
     }
 
-    const taxJoins: {
-      kind: TaxKind;
-      table: typeof schema.recipeCategory;
-      col: string;
-      refs: { name: string; slug: string }[];
-    }[] = [
-      { kind: "category", table: schema.recipeCategory, col: "categoryId", refs: r.categories },
-      { kind: "tag", table: schema.recipeTag as unknown as typeof schema.recipeCategory, col: "tagId", refs: r.tags },
-      { kind: "dietType", table: schema.recipeDietType as unknown as typeof schema.recipeCategory, col: "dietTypeId", refs: r.dietTypes },
-      { kind: "cuisine", table: schema.recipeCuisine as unknown as typeof schema.recipeCategory, col: "cuisineId", refs: r.cuisines },
-      { kind: "equipment", table: schema.recipeEquipment as unknown as typeof schema.recipeCategory, col: "equipmentId", refs: r.equipment },
-    ];
-    for (const { kind, table, col, refs } of taxJoins) {
-      const ids: number[] = [];
-      const seen = new Set<number>();
-      for (const ref of refs) {
-        const id = await getOrCreateTax(kind, ref);
-        if (id != null && !seen.has(id)) {
-          seen.add(id);
-          ids.push(id);
-        }
+    // Taxonomien: erste Kategorie = Primär-Kategorie (Format-Konvention).
+    const taxRows: Array<{ taxonomyId: number; isPrimary: boolean }> = [];
+    const categoryIds = await resolveTaxIds("kategorie", r.categories);
+    categoryIds.forEach((taxonomyId, i) =>
+      taxRows.push({ taxonomyId, isPrimary: i === 0 }),
+    );
+    for (const [type, refs] of [
+      ["schlagwort", r.tags],
+      ["ernaehrungsform", r.dietTypes],
+      ["kueche", r.cuisines],
+      ["geraet", r.equipment],
+    ] as const) {
+      for (const taxonomyId of await resolveTaxIds(type, refs)) {
+        taxRows.push({ taxonomyId, isPrimary: false });
       }
-      if (ids.length) {
-        await db
-          .insert(table)
-          .values(ids.map((tid) => ({ recipeId, [col]: tid }) as never));
-      }
+    }
+    if (taxRows.length) {
+      await db
+        .insert(schema.recipeTaxonomy)
+        .values(taxRows.map((row) => ({ recipeId, ...row })));
     }
 
     result.recipes++;
@@ -406,23 +400,26 @@ export async function importBundle(
     const createdAt = fromMs(tv.createdAt) ?? new Date();
     const updatedAt = fromMs(tv.updatedAt) ?? createdAt;
 
-    // Inhalts-Blöcke: Bild-Referenzen zurück in Bild-IDs auflösen;
-    // Restaurant-Blöcke mit ungültigem Index entfallen.
-    const contentBlocks: Array<
+    // Inhalts-Blöcke: Bild-Referenzen in neue Bild-IDs auflösen; Restaurant-
+    // Blöcke mit ungültigem Index entfallen. search_text entsteht daraus neu.
+    const blocks: Array<
       | { type: "text"; markdown: string }
       | { type: "bild"; imageId: number }
       | { type: "restaurant"; index: number }
     > = [];
     for (const b of tv.contentBlocks) {
       if (b.type === "text") {
-        if (b.markdown.trim()) contentBlocks.push({ type: "text", markdown: b.markdown });
+        if (b.markdown.trim()) blocks.push({ type: "text", markdown: b.markdown });
       } else if (b.type === "bild") {
         const imgId = await importImage(b.image);
-        if (imgId != null) contentBlocks.push({ type: "bild", imageId: imgId });
+        if (imgId != null) blocks.push({ type: "bild", imageId: imgId });
       } else if (b.index < tv.restaurants.length) {
-        contentBlocks.push({ type: "restaurant", index: b.index });
+        blocks.push({ type: "restaurant", index: b.index });
       }
     }
+    const searchText = blocksToMarkdown(
+      blocks.filter((b): b is Extract<TravelBlock, { type: "text" }> => b.type === "text"),
+    );
 
     const [post] = await db
       .insert(schema.travelPost)
@@ -430,12 +427,10 @@ export async function importBundle(
         title: tv.title || "(ohne Titel)",
         slug,
         teaser: tv.teaser,
-        content: tv.content,
-        contentBlocks: contentBlocks.length ? JSON.stringify(contentBlocks) : "",
+        searchText,
         country: tv.country,
         region: tv.region,
         city: tv.city,
-        destination: tv.destination,
         heroImageId,
         seoTitle: tv.seoTitle,
         seoDescription: tv.seoDescription,
@@ -468,6 +463,7 @@ export async function importBundle(
       );
     }
 
+    const restaurantIdByIndex: number[] = [];
     for (const [ri, rest] of tv.restaurants.entries()) {
       const restImageId = await importImage(rest.image);
       const [restRow] = await db
@@ -478,10 +474,13 @@ export async function importBundle(
           city: rest.city,
           description: rest.description,
           imageId: restImageId,
+          lat: rest.lat,
+          lng: rest.lng,
           sortOrder: ri,
         })
         .returning({ id: schema.restaurant.id });
       const restaurantId = restRow.id;
+      restaurantIdByIndex.push(restaurantId);
 
       for (const [di, dish] of rest.dishes.entries()) {
         const [dishRow] = await db
@@ -515,7 +514,7 @@ export async function importBundle(
         const dishIngIds: number[] = [];
         const seenIng = new Set<number>();
         for (const ing of dish.ingredients) {
-          const id = await getOrCreateIngredient({ ...ing, image: ing.image });
+          const id = await getOrCreateIngredient(ing);
           if (id != null && !seenIng.has(id)) {
             seenIng.add(id);
             dishIngIds.push(id);
@@ -527,67 +526,63 @@ export async function importBundle(
           );
         }
 
-        // Gericht-Taxonomien (gemeinsame Tabellen mit Rezepten) — Einträge
-        // werden wie bei Rezepten per Name/Slug angelegt bzw. wiederverwendet.
-        const dishTaxJoins: {
-          kind: TaxKind;
-          insert: (ids: number[]) => Promise<unknown>;
-          refs: { name: string; slug: string }[];
-        }[] = [
-          {
-            kind: "category",
-            insert: (ids) =>
-              db.insert(schema.dishCategory).values(
-                ids.map((categoryId) => ({ dishId, categoryId })),
-              ),
-            refs: dish.categories,
-          },
-          {
-            kind: "tag",
-            insert: (ids) =>
-              db.insert(schema.dishTag).values(
-                ids.map((tagId) => ({ dishId, tagId })),
-              ),
-            refs: dish.tags,
-          },
-          {
-            kind: "dietType",
-            insert: (ids) =>
-              db.insert(schema.dishDietType).values(
-                ids.map((dietTypeId) => ({ dishId, dietTypeId })),
-              ),
-            refs: dish.dietTypes,
-          },
-          {
-            kind: "cuisine",
-            insert: (ids) =>
-              db.insert(schema.dishCuisine).values(
-                ids.map((cuisineId) => ({ dishId, cuisineId })),
-              ),
-            refs: dish.cuisines,
-          },
-        ];
-        for (const { kind, insert, refs } of dishTaxJoins) {
-          const ids: number[] = [];
-          const seen = new Set<number>();
-          for (const ref of refs) {
-            const taxId = await getOrCreateTax(kind, ref);
-            if (taxId != null && !seen.has(taxId)) {
-              seen.add(taxId);
-              ids.push(taxId);
-            }
-          }
-          if (ids.length) await insert(ids);
+        // Gericht-Taxonomien (gemeinsamer Stamm mit Rezepten, kein „geraet").
+        const dishTaxIds = new Set<number>();
+        for (const [type, refs] of [
+          ["kategorie", dish.categories],
+          ["schlagwort", dish.tags],
+          ["ernaehrungsform", dish.dietTypes],
+          ["kueche", dish.cuisines],
+        ] as const) {
+          for (const id of await resolveTaxIds(type, refs)) dishTaxIds.add(id);
+        }
+        if (dishTaxIds.size) {
+          await db.insert(schema.dishTaxonomy).values(
+            [...dishTaxIds].map((taxonomyId) => ({ dishId, taxonomyId })),
+          );
         }
       }
+    }
+
+    // Inhalts-Blöcke relational anlegen (Restaurant-Index → restaurant_id).
+    const blockValues: (typeof schema.travelBlock.$inferInsert)[] = [];
+    blocks.forEach((b, i) => {
+      if (b.type === "text") {
+        blockValues.push({
+          travelPostId: travelId,
+          sortOrder: i,
+          type: "text",
+          markdown: b.markdown,
+        });
+      } else if (b.type === "bild") {
+        blockValues.push({
+          travelPostId: travelId,
+          sortOrder: i,
+          type: "bild",
+          imageId: b.imageId,
+        });
+      } else {
+        const restaurantId = restaurantIdByIndex[b.index];
+        if (restaurantId !== undefined) {
+          blockValues.push({
+            travelPostId: travelId,
+            sortOrder: i,
+            type: "restaurant",
+            restaurantId,
+          });
+        }
+      }
+    });
+    if (blockValues.length) {
+      await db.insert(schema.travelBlock).values(blockValues);
     }
 
     result.travel++;
   }
 
   async function importPage(pg: ExportPage): Promise<void> {
-    // Kernseiten nie als Kopie duplizieren.
-    if (PROTECTED_PAGE_SLUGS.has(pg.slug)) {
+    // Kernseiten (im Ziel als geschützt markiert) nie als Kopie duplizieren.
+    if (protectedPageSlugs.has(pg.slug)) {
       result.warnings.push(
         `Seite „${pg.slug}" ist eine Kernseite und wurde nicht dupliziert.`,
       );
@@ -600,6 +595,7 @@ export async function importBundle(
     const heroImageId = await importImage(pg.heroImage);
     const createdAt = fromMs(pg.createdAt) ?? new Date();
     const updatedAt = fromMs(pg.updatedAt) ?? createdAt;
+    // Kopien sind nie geschützt (der Schutz gehört zur Kernseite im Ziel).
     await db.insert(schema.page).values({
       title: pg.title || "(ohne Titel)",
       slug,
@@ -608,6 +604,7 @@ export async function importBundle(
       seoTitle: pg.seoTitle,
       seoDescription: pg.seoDescription,
       status: pg.status,
+      isProtected: false,
       createdAt,
       updatedAt,
     });

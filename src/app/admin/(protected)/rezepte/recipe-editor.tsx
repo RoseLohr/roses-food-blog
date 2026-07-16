@@ -50,7 +50,6 @@ export interface RecipeEditorProps {
     slug: string;
     teaser: string;
     heroImageId: number | null;
-    imageIds: number[];
     prepMinutes: number;
     cookMinutes: number;
     servings: number;

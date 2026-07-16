@@ -91,11 +91,11 @@ describe("Migrationen", () => {
       .prepare("SELECT id FROM recipe LIMIT 1")
       .get() as { id: number };
     sqlite
-      .prepare("INSERT INTO like (recipe_id, dedup_hash, created_at) VALUES (?, ?, ?)")
+      .prepare("INSERT INTO recipe_like (recipe_id, dedup_hash, created_at) VALUES (?, ?, ?)")
       .run(recipeId.id, "abc", now);
     expect(() =>
       sqlite
-        .prepare("INSERT INTO like (recipe_id, dedup_hash, created_at) VALUES (?, ?, ?)")
+        .prepare("INSERT INTO recipe_like (recipe_id, dedup_hash, created_at) VALUES (?, ?, ?)")
         .run(recipeId.id, "abc", now),
     ).toThrow();
   });

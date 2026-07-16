@@ -2,7 +2,9 @@
  * E-Mail-Warteschlange (Annahme B6): Massenversand (Kampagnen, Sequenzen)
  * läuft über die Tabelle email_queue; der Cron verarbeitet minütlich mit
  * Ratenbegrenzung EMAIL_RATE_PER_MINUTE. Fehlversuche werden bis zu
- * 3-mal mit Verzögerung wiederholt.
+ * 3-mal mit Verzögerung wiederholt. Jede Zeile adressiert ihre Logzeile
+ * direkt per FK (campaign_log_id / sequence_log_id); beide null =
+ * Systemmail (z. B. Double-Opt-in-Bestätigung).
  */
 import { and, asc, eq, lte, sql } from "drizzle-orm";
 import { db, schema } from "@/db";
@@ -17,8 +19,10 @@ export interface EnqueueEmail {
   html: string;
   textBody: string;
   contactId?: number | null;
-  campaignId?: number | null;
-  sequenceStepId?: number | null;
+  campaignLogId?: number | null;
+  sequenceLogId?: number | null;
+  /** Abmelde-Link — wird als List-Unsubscribe-Header mitgesendet. */
+  unsubscribeUrl?: string;
   scheduledAt?: Date;
 }
 
@@ -29,8 +33,9 @@ export async function enqueueEmail(mail: EnqueueEmail): Promise<void> {
     html: mail.html,
     textBody: mail.textBody,
     contactId: mail.contactId ?? null,
-    campaignId: mail.campaignId ?? null,
-    sequenceStepId: mail.sequenceStepId ?? null,
+    campaignLogId: mail.campaignLogId ?? null,
+    sequenceLogId: mail.sequenceLogId ?? null,
+    unsubscribeUrl: mail.unsubscribeUrl ?? "",
     status: "wartend",
     scheduledAt: mail.scheduledAt ?? new Date(),
     createdAt: new Date(),
@@ -67,6 +72,7 @@ export async function processEmailQueue(): Promise<{
         subject: mail.subject,
         html: mail.html,
         text: mail.textBody,
+        unsubscribeUrl: mail.unsubscribeUrl || undefined,
       });
       await db
         .update(schema.emailQueue)
@@ -101,70 +107,60 @@ type QueuedMail = typeof schema.emailQueue.$inferSelect;
 /** Versandprotokolle und „letzter Kontakt" nach erfolgreichem Versand pflegen. */
 async function afterQueuedMailSent(mail: QueuedMail): Promise<void> {
   const now = new Date();
-  if (mail.campaignId && mail.contactId) {
+  if (mail.campaignLogId != null) {
     await db
       .update(schema.campaignLog)
       .set({ status: "versendet", sentAt: now })
-      .where(
-        and(
-          eq(schema.campaignLog.campaignId, mail.campaignId),
-          eq(schema.campaignLog.contactId, mail.contactId),
-        ),
-      );
-    await recordContactActivity(mail.contactId, "kampagne", mail.subject);
+      .where(eq(schema.campaignLog.id, mail.campaignLogId));
+    if (mail.contactId != null) {
+      await recordContactActivity(mail.contactId, "kampagne", mail.subject);
+    }
     // Kampagne abschließen, wenn nichts mehr aussteht
-    const [open] = await db
-      .select({ n: sql<number>`COUNT(*)` })
+    const [log] = await db
+      .select({ campaignId: schema.campaignLog.campaignId })
       .from(schema.campaignLog)
-      .where(
-        and(
-          eq(schema.campaignLog.campaignId, mail.campaignId),
-          eq(schema.campaignLog.status, "eingereiht"),
-        ),
-      );
-    if (open.n === 0) {
-      await db
-        .update(schema.campaign)
-        .set({ status: "versendet" })
-        .where(eq(schema.campaign.id, mail.campaignId));
+      .where(eq(schema.campaignLog.id, mail.campaignLogId));
+    if (log) {
+      const [open] = await db
+        .select({ n: sql<number>`COUNT(*)` })
+        .from(schema.campaignLog)
+        .where(
+          and(
+            eq(schema.campaignLog.campaignId, log.campaignId),
+            eq(schema.campaignLog.status, "eingereiht"),
+          ),
+        );
+      if (open.n === 0) {
+        await db
+          .update(schema.campaign)
+          .set({ status: "versendet" })
+          .where(eq(schema.campaign.id, log.campaignId));
+      }
     }
   }
-  if (mail.sequenceStepId && mail.contactId) {
+  if (mail.sequenceLogId != null) {
     await db
       .update(schema.sequenceLog)
       .set({ status: "versendet", sentAt: now })
-      .where(
-        and(
-          eq(schema.sequenceLog.sequenceStepId, mail.sequenceStepId),
-          eq(schema.sequenceLog.contactId, mail.contactId),
-        ),
-      );
-    await recordContactActivity(mail.contactId, "sequenzmail", mail.subject);
+      .where(eq(schema.sequenceLog.id, mail.sequenceLogId));
+    if (mail.contactId != null) {
+      await recordContactActivity(mail.contactId, "sequenzmail", mail.subject);
+    }
   }
 }
 
 async function afterQueuedMailFailed(mail: QueuedMail): Promise<void> {
-  if (mail.campaignId && mail.contactId) {
+  if (mail.campaignLogId != null) {
     await db
       .update(schema.campaignLog)
       .set({ status: "fehlgeschlagen", error: mail.lastError })
-      .where(
-        and(
-          eq(schema.campaignLog.campaignId, mail.campaignId),
-          eq(schema.campaignLog.contactId, mail.contactId),
-        ),
-      );
+      .where(eq(schema.campaignLog.id, mail.campaignLogId));
   }
-  if (mail.sequenceStepId && mail.contactId) {
+  if (mail.sequenceLogId != null) {
     await db
       .update(schema.sequenceLog)
       .set({ status: "fehlgeschlagen" })
-      .where(
-        and(
-          eq(schema.sequenceLog.sequenceStepId, mail.sequenceStepId),
-          eq(schema.sequenceLog.contactId, mail.contactId),
-        ),
-      );
+      .where(eq(schema.sequenceLog.id, mail.sequenceLogId));
   }
 }
 

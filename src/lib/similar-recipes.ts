@@ -51,23 +51,32 @@ export async function getSimilarRecipesByDish(
   if (recipes.length === 0) return result;
   const recipeIds = recipes.map((r) => r.id);
 
-  const [cats, cuis, diets, ings] = await Promise.all([
+  // Taxonomien aller Rezepte in EINER Abfrage (nach Art getrennt unten);
+  // Zutaten hängen am Abschnitt (recipe_ingredient hat kein recipe_id mehr).
+  const [taxRows, ings] = await Promise.all([
     db
-      .select({ recipeId: schema.recipeCategory.recipeId, id: schema.recipeCategory.categoryId })
-      .from(schema.recipeCategory)
-      .where(inArray(schema.recipeCategory.recipeId, recipeIds)),
+      .select({
+        recipeId: schema.recipeTaxonomy.recipeId,
+        id: schema.taxonomy.id,
+        type: schema.taxonomy.type,
+      })
+      .from(schema.recipeTaxonomy)
+      .innerJoin(
+        schema.taxonomy,
+        eq(schema.recipeTaxonomy.taxonomyId, schema.taxonomy.id),
+      )
+      .where(inArray(schema.recipeTaxonomy.recipeId, recipeIds)),
     db
-      .select({ recipeId: schema.recipeCuisine.recipeId, id: schema.recipeCuisine.cuisineId })
-      .from(schema.recipeCuisine)
-      .where(inArray(schema.recipeCuisine.recipeId, recipeIds)),
-    db
-      .select({ recipeId: schema.recipeDietType.recipeId, id: schema.recipeDietType.dietTypeId })
-      .from(schema.recipeDietType)
-      .where(inArray(schema.recipeDietType.recipeId, recipeIds)),
-    db
-      .select({ recipeId: schema.recipeIngredient.recipeId, id: schema.recipeIngredient.ingredientId })
+      .select({
+        recipeId: schema.recipeSection.recipeId,
+        id: schema.recipeIngredient.ingredientId,
+      })
       .from(schema.recipeIngredient)
-      .where(inArray(schema.recipeIngredient.recipeId, recipeIds)),
+      .innerJoin(
+        schema.recipeSection,
+        eq(schema.recipeIngredient.sectionId, schema.recipeSection.id),
+      )
+      .where(inArray(schema.recipeSection.recipeId, recipeIds)),
   ]);
 
   const facts = new Map<number, RecipeFacts>(
@@ -83,9 +92,13 @@ export async function getSimilarRecipesByDish(
       },
     ]),
   );
-  for (const row of cats) facts.get(row.recipeId)?.categories.add(row.id);
-  for (const row of cuis) facts.get(row.recipeId)?.cuisines.add(row.id);
-  for (const row of diets) facts.get(row.recipeId)?.dietTypes.add(row.id);
+  for (const row of taxRows) {
+    const f = facts.get(row.recipeId);
+    if (!f) continue;
+    if (row.type === "kategorie") f.categories.add(row.id);
+    else if (row.type === "kueche") f.cuisines.add(row.id);
+    else if (row.type === "ernaehrungsform") f.dietTypes.add(row.id);
+  }
   for (const row of ings) facts.get(row.recipeId)?.ingredients.add(row.id);
 
   // Kacheldaten (Bild, Titel, Teaser) nur einmal für alle benötigten Rezepte.

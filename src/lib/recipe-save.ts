@@ -1,12 +1,14 @@
 /**
  * Kernlogik zum Speichern/Löschen von Rezepten aus dem Editor-Formular.
  * Von der Server Action (Auth + Redirect) getrennt, damit sie
- * integrationstestbar ist.
+ * integrationstestbar ist. Der komplette Schreib-Satz läuft in EINER
+ * Transaktion (better-sqlite3, synchron) — ein Rezept ist nie halb gespeichert.
  */
 import { eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db, schema } from "@/db";
 import { slugify, uniqueSlug } from "@/lib/slug";
+import type { TaxonomyType } from "@/lib/taxonomies";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -65,11 +67,24 @@ function intOr(v: FormDataEntryValue | null, fallback: number): number {
 }
 
 function idList(formData: FormData, field: string): number[] {
-  return formData
-    .getAll(field)
-    .map((v) => Number(v))
-    .filter((n) => Number.isInteger(n) && n > 0);
+  return [
+    ...new Set(
+      formData
+        .getAll(field)
+        .map((v) => Number(v))
+        .filter((n) => Number.isInteger(n) && n > 0),
+    ),
+  ];
 }
+
+/** Formularfeld → Taxonomie-Art (Reihenfolge = TAXONOMY_TYPES). */
+const TAXONOMY_FIELDS: ReadonlyArray<[string, TaxonomyType]> = [
+  ["kategorien", "kategorie"],
+  ["schlagwoerter", "schlagwort"],
+  ["ernaehrungsformen", "ernaehrungsform"],
+  ["kuechen", "kueche"],
+  ["geraete", "geraet"],
+];
 
 /** Zutaten anhand des Namens auflösen; unbekannte Zutaten werden angelegt. */
 async function resolveIngredientIds(
@@ -169,6 +184,40 @@ export async function saveRecipeFromForm(
   const taken = new Set(existing.filter((r) => r.id !== id).map((r) => r.slug));
   const slug = uniqueSlug(slugInput || title, (s) => taken.has(s));
 
+  // Taxonomien: IDs je Feld einsammeln und gegen die erwartete Art prüfen —
+  // der FK allein kann die Art nicht erzwingen. Eine Abfrage für alle Felder.
+  const submittedTax = TAXONOMY_FIELDS.map(([field, type]) => ({
+    type,
+    ids: idList(formData, field),
+  }));
+  const allTaxIds = [...new Set(submittedTax.flatMap((s) => s.ids))];
+  const typeById = new Map<number, TaxonomyType>(
+    allTaxIds.length
+      ? (
+          await db
+            .select({ id: schema.taxonomy.id, type: schema.taxonomy.type })
+            .from(schema.taxonomy)
+            .where(inArray(schema.taxonomy.id, allTaxIds))
+        ).map((r) => [r.id, r.type])
+      : [],
+  );
+  const primaryCategoryId =
+    submittedTax
+      .find((s) => s.type === "kategorie")!
+      .ids.find((tid) => typeById.get(tid) === "kategorie") ?? null;
+  const taxonomyRows = submittedTax.flatMap(({ type, ids }) =>
+    ids
+      .filter((tid) => typeById.get(tid) === type)
+      .map((tid) => ({
+        taxonomyId: tid,
+        isPrimary: tid === primaryCategoryId,
+      })),
+  );
+
+  const ingredientIds = await resolveIngredientIds(
+    sections.flatMap((s) => s.ingredients.map((i) => i.name)),
+  );
+
   const now = new Date();
   const base = {
     title,
@@ -177,7 +226,6 @@ export async function saveRecipeFromForm(
     heroImageId: Number.isInteger(heroImageId) ? heroImageId : null,
     prepMinutes: prep,
     cookMinutes: cook,
-    totalMinutes: prep + cook,
     servings,
     difficulty,
     kcal,
@@ -191,131 +239,116 @@ export async function saveRecipeFromForm(
     updatedAt: now,
   };
 
-  let recipeId: number;
-  if (id !== null && Number.isInteger(id)) {
-    const [current] = await db
-      .select()
-      .from(schema.recipe)
-      .where(eq(schema.recipe.id, id));
-    if (!current) return { error: dict.common.error };
-    await db
-      .update(schema.recipe)
-      .set({
-        ...base,
-        publishedAt:
-          status === "veroeffentlicht" && !current.publishedAt
-            ? now
-            : current.publishedAt,
-      })
-      .where(eq(schema.recipe.id, id));
-    recipeId = id;
-  } else {
-    const [created] = await db
-      .insert(schema.recipe)
-      .values({
-        ...base,
-        publishedAt: status === "veroeffentlicht" ? now : null,
-        authorId: adminId,
-        createdAt: now,
-      })
-      .returning();
-    recipeId = created.id;
-  }
-
-  // Abschnitte/Schritte/Zutaten ersetzen (Steps/Ingredients hängen per
-  // ON DELETE CASCADE an den Abschnitten)
-  await db
-    .delete(schema.recipeIngredient)
-    .where(eq(schema.recipeIngredient.recipeId, recipeId));
-  await db
-    .delete(schema.recipeSection)
-    .where(eq(schema.recipeSection.recipeId, recipeId));
-
-  const ingredientIds = await resolveIngredientIds(
-    sections.flatMap((s) => s.ingredients.map((i) => i.name)),
-  );
-
-  for (const [i, s] of sections.entries()) {
-    const [sec] = await db
-      .insert(schema.recipeSection)
-      .values({ recipeId, name: s.name, sortOrder: i })
-      .returning();
-    if (s.steps.length) {
-      await db.insert(schema.recipeStep).values(
-        s.steps.map((step, j) => ({
-          sectionId: sec.id,
-          text: step.text,
-          imageId: step.imageId ?? null,
-          sortOrder: j,
-        })),
-      );
+  // Kompletter Schreib-Satz atomar (sync-Transaktion, better-sqlite3).
+  const recipeId = db.transaction((tx): number | null => {
+    let rid: number;
+    if (id !== null && Number.isInteger(id)) {
+      const current = tx
+        .select()
+        .from(schema.recipe)
+        .where(eq(schema.recipe.id, id))
+        .get();
+      if (!current) return null;
+      tx.update(schema.recipe)
+        .set({
+          ...base,
+          publishedAt:
+            status === "veroeffentlicht" && !current.publishedAt
+              ? now
+              : current.publishedAt,
+        })
+        .where(eq(schema.recipe.id, id))
+        .run();
+      rid = id;
+    } else {
+      const created = tx
+        .insert(schema.recipe)
+        .values({
+          ...base,
+          publishedAt: status === "veroeffentlicht" ? now : null,
+          authorId: adminId,
+          createdAt: now,
+        })
+        .returning()
+        .get();
+      rid = created.id;
     }
-    if (s.ingredients.length) {
-      await db.insert(schema.recipeIngredient).values(
-        s.ingredients.map((ing, j) => ({
-          recipeId,
-          sectionId: sec.id,
-          ingredientId: ingredientIds.get(ing.name.toLowerCase())!,
-          amount: parseAmount(ing.amount),
-          unit: ing.unit,
-          note: ing.note,
-          sortOrder: j,
-        })),
-      );
+
+    // Abschnitte ersetzen — Schritte und Zutatenzeilen hängen per
+    // ON DELETE CASCADE am Abschnitt.
+    tx.delete(schema.recipeSection)
+      .where(eq(schema.recipeSection.recipeId, rid))
+      .run();
+    for (const [i, s] of sections.entries()) {
+      const sec = tx
+        .insert(schema.recipeSection)
+        .values({ recipeId: rid, name: s.name, sortOrder: i })
+        .returning()
+        .get();
+      if (s.steps.length) {
+        tx.insert(schema.recipeStep)
+          .values(
+            s.steps.map((step, j) => ({
+              sectionId: sec.id,
+              text: step.text,
+              imageId: step.imageId ?? null,
+              sortOrder: j,
+            })),
+          )
+          .run();
+      }
+      if (s.ingredients.length) {
+        tx.insert(schema.recipeIngredient)
+          .values(
+            s.ingredients.map((ing, j) => ({
+              sectionId: sec.id,
+              ingredientId: ingredientIds.get(ing.name.toLowerCase())!,
+              amount: parseAmount(ing.amount),
+              unit: ing.unit,
+              note: ing.note,
+              sortOrder: j,
+            })),
+          )
+          .run();
+      }
     }
-  }
 
-  // Notizen ersetzen
-  await db.delete(schema.recipeNote).where(eq(schema.recipeNote.recipeId, recipeId));
-  if (notes.length) {
-    await db.insert(schema.recipeNote).values(
-      notes.map((n) => ({
-        recipeId,
-        text: n.text,
-        isPublic: n.isPublic,
-        createdAt: now,
-      })),
-    );
-  }
-
-  // Taxonomien ersetzen
-  const joins = [
-    [schema.recipeCategory, "categoryId", idList(formData, "kategorien")],
-    [schema.recipeTag, "tagId", idList(formData, "schlagwoerter")],
-    [schema.recipeDietType, "dietTypeId", idList(formData, "ernaehrungsformen")],
-    [schema.recipeCuisine, "cuisineId", idList(formData, "kuechen")],
-    [schema.recipeEquipment, "equipmentId", idList(formData, "geraete")],
-  ] as const;
-  for (const [table, col, ids] of joins) {
-    await db
-      .delete(table as typeof schema.recipeCategory)
-      .where(eq((table as typeof schema.recipeCategory).recipeId, recipeId));
-    if (ids.length) {
-      await db
-        .insert(table as typeof schema.recipeCategory)
-        .values(ids.map((tid) => ({ recipeId, [col]: tid }) as never));
+    // Notizen ersetzen
+    tx.delete(schema.recipeNote)
+      .where(eq(schema.recipeNote.recipeId, rid))
+      .run();
+    if (notes.length) {
+      tx.insert(schema.recipeNote)
+        .values(
+          notes.map((n) => ({
+            recipeId: rid,
+            text: n.text,
+            isPublic: n.isPublic,
+            createdAt: now,
+          })),
+        )
+        .run();
     }
-  }
 
-  // „Zusätzliche Bilder" wurden entfernt — evtl. vorhandene Altdaten aufräumen.
-  await db.delete(schema.recipeImage).where(eq(schema.recipeImage.recipeId, recipeId));
+    // Taxonomie-Zuordnungen ersetzen (erste Kategorie = primär → Karten-Label)
+    tx.delete(schema.recipeTaxonomy)
+      .where(eq(schema.recipeTaxonomy.recipeId, rid))
+      .run();
+    if (taxonomyRows.length) {
+      tx.insert(schema.recipeTaxonomy)
+        .values(taxonomyRows.map((r) => ({ recipeId: rid, ...r })))
+        .run();
+    }
 
+    return rid;
+  });
+
+  if (recipeId === null) return { error: dict.common.error };
   return { recipeId };
 }
 
 export async function deleteRecipeById(id: number): Promise<void> {
-  // Abschnitte, Schritte, Zutaten, Notizen, Joins hängen per FK-Cascade am Rezept
-  const sections = await db
-    .select({ id: schema.recipeSection.id })
-    .from(schema.recipeSection)
-    .where(eq(schema.recipeSection.recipeId, id));
-  if (sections.length) {
-    await db.delete(schema.recipeStep).where(
-      inArray(
-        schema.recipeStep.sectionId,
-        sections.map((s) => s.id),
-      ),
-    );
-  }
+  // Abschnitte, Schritte, Zutaten, Notizen, Taxonomien und Likes hängen per
+  // FK-Cascade am Rezept; der FTS-Trigger räumt den Suchindex auf.
   await db.delete(schema.recipe).where(eq(schema.recipe.id, id));
 }

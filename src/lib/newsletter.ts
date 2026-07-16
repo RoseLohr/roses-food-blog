@@ -215,21 +215,19 @@ export async function confirmContact(confirmToken: string): Promise<ConfirmResul
 }
 
 /**
- * Im Anmeldefluss angebotene Interessen. Bewusst auf die beiden inhaltlichen
- * Säulen des Blogs beschränkt (Reisen, Rezepte) — weitere Interessen bleiben
- * fürs CRM nutzbar, werden Leser:innen aber nicht zur Auswahl gestellt.
+ * Im Anmeldefluss angebotene Interessen: interest.is_public (im Admin unter
+ * Segmente & Interessen schaltbar; ersetzt die frühere Code-Konstante).
+ * Weitere Interessen bleiben fürs CRM nutzbar, werden Leser:innen aber nicht
+ * zur Auswahl gestellt.
  */
-export const OFFERED_INTEREST_NAMES = ["Reisen", "Rezepte"];
-
 export async function getOfferedInterests(): Promise<
   Array<{ id: number; name: string }>
 > {
-  const all = await db
+  return db
     .select({ id: schema.interest.id, name: schema.interest.name })
     .from(schema.interest)
+    .where(eq(schema.interest.isPublic, true))
     .orderBy(asc(schema.interest.name));
-  const allow = new Set(OFFERED_INTEREST_NAMES.map((n) => n.toLowerCase()));
-  return all.filter((i) => allow.has(i.name.toLowerCase()));
 }
 
 export const profileSchema = z.object({

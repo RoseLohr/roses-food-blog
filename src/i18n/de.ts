@@ -739,6 +739,10 @@ export const de = {
       restaurantCity: "Ort",
       restaurantDescription: "Beschreibung (Markdown)",
       restaurantImage: "Foto des Restaurants (optional)",
+      restaurantLat: "Breitengrad (optional)",
+      restaurantLng: "Längengrad (optional)",
+      restaurantCoordsHint:
+        "Ohne Angabe werden die GPS-Daten der Fotos verwendet.",
       addRestaurant: "Restaurant hinzufügen",
       removeRestaurant: "Restaurant entfernen",
       dishes: "Gerichte",
@@ -840,6 +844,9 @@ export const de = {
       deleted: "Segment gelöscht.",
       interestsTitle: "Interessen",
       newInterest: "Neues Interesse",
+      interestPublic: "öffentlich",
+      interestPublicHint:
+        "„Öffentlich“ markierte Interessen werden im Newsletter-Willkommensschritt zur Auswahl angeboten.",
       tagsTitle: "Interne Tags",
       newTag: "Neuer Tag",
       inUse: "Wird noch verwendet.",

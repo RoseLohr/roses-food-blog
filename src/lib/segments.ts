@@ -1,19 +1,19 @@
 /**
  * Segmente: manuelle Zuordnung (contact_segment) PLUS regelbasierte
- * Zuordnung über Interessen (segment.ruleInterestIds, Annahme im Schema).
+ * Zuordnung über Interessen (segment_rule_interest, relational).
  */
 import { and, eq, inArray } from "drizzle-orm";
 import { db, schema } from "@/db";
 
-export function parseRuleInterestIds(raw: string): number[] {
-  try {
-    const arr = JSON.parse(raw);
-    return Array.isArray(arr)
-      ? arr.filter((n) => Number.isInteger(n) && n > 0)
-      : [];
-  } catch {
-    return [];
-  }
+/** Interessen-IDs der Regel eines Segments. */
+export async function ruleInterestIdsForSegment(
+  segmentId: number,
+): Promise<number[]> {
+  const rows = await db
+    .select({ id: schema.segmentRuleInterest.interestId })
+    .from(schema.segmentRuleInterest)
+    .where(eq(schema.segmentRuleInterest.segmentId, segmentId));
+  return rows.map((r) => r.id);
 }
 
 /** Alle Kontakt-IDs eines Segments (manuell ∪ regelbasiert), alle Status. */
@@ -29,13 +29,15 @@ export async function contactIdsForSegment(segmentId: number): Promise<number[]>
     .from(schema.contactSegment)
     .where(eq(schema.contactSegment.segmentId, segmentId));
 
-  const ruleIds = parseRuleInterestIds(segment.ruleInterestIds);
-  const byRule = ruleIds.length
-    ? await db
-        .select({ id: schema.contactInterest.contactId })
-        .from(schema.contactInterest)
-        .where(inArray(schema.contactInterest.interestId, ruleIds))
-    : [];
+  // Regelbasiert: Kontakte mit einem der Regel-Interessen (ein Join).
+  const byRule = await db
+    .select({ id: schema.contactInterest.contactId })
+    .from(schema.segmentRuleInterest)
+    .innerJoin(
+      schema.contactInterest,
+      eq(schema.contactInterest.interestId, schema.segmentRuleInterest.interestId),
+    )
+    .where(eq(schema.segmentRuleInterest.segmentId, segmentId));
 
   return [...new Set([...manual.map((r) => r.id), ...byRule.map((r) => r.id)])];
 }

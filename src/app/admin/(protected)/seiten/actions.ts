@@ -10,9 +10,6 @@ import { t } from "@/i18n/de";
 const dict = t();
 const d = dict.admin.pages;
 
-/** Kernseiten, die nicht gelöscht werden dürfen (verlinkt in Footer/Teaser) */
-const PROTECTED_SLUGS = new Set(["ueber-mich", "datenschutz", "impressum"]);
-
 export async function savePageAction(formData: FormData): Promise<void> {
   await requireAdmin();
   const id = formData.get("id") ? Number(formData.get("id")) : null;
@@ -20,16 +17,20 @@ export async function savePageAction(formData: FormData): Promise<void> {
   if (!title) redirect(`/admin/seiten?meldung=${encodeURIComponent(dict.common.error)}`);
 
   const existing = await db
-    .select({ id: schema.page.id, slug: schema.page.slug })
+    .select({
+      id: schema.page.id,
+      slug: schema.page.slug,
+      isProtected: schema.page.isProtected,
+    })
     .from(schema.page);
   const current = id ? existing.find((p) => p.id === id) : undefined;
   const taken = new Set(existing.filter((p) => p.id !== id).map((p) => p.slug));
   const slugInput = String(formData.get("slug") ?? "").trim();
-  // Kernseiten-Slug nicht verändern (Links in Footer/Datenschutz-Checkbox)
-  const slug =
-    current && PROTECTED_SLUGS.has(current.slug)
-      ? current.slug
-      : uniqueSlug(slugInput || title, (s) => taken.has(s));
+  // Geschützte Kernseiten (page.is_protected): Slug nicht verändern —
+  // Footer/Teaser/Datenschutz-Checkbox verlinken darauf.
+  const slug = current?.isProtected
+    ? current.slug
+    : uniqueSlug(slugInput || title, (s) => taken.has(s));
 
   const heroImageId = formData.get("titelbild")
     ? Number(formData.get("titelbild"))
@@ -68,7 +69,7 @@ export async function deletePageAction(formData: FormData): Promise<void> {
   const id = Number(formData.get("id"));
   if (Number.isInteger(id)) {
     const [page] = await db.select().from(schema.page).where(eq(schema.page.id, id));
-    if (page && PROTECTED_SLUGS.has(page.slug)) {
+    if (page?.isProtected) {
       redirect(`/admin/seiten?meldung=${encodeURIComponent(d.protectedSlug)}`);
     }
     await db.delete(schema.page).where(eq(schema.page.id, id));

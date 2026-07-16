@@ -11,6 +11,7 @@ import { notFound } from "next/navigation";
 import { db, schema } from "@/db";
 import { RecipeCard } from "@/components/recipe-card";
 import { publishedRecipeCards } from "@/lib/recipe-list";
+import { taxonomyBySlug } from "@/lib/taxonomies";
 import { PageTracker } from "@/components/page-tracker";
 import { JsonLd, breadcrumbJsonLd } from "@/lib/jsonld";
 import { t } from "@/i18n/de";
@@ -21,27 +22,22 @@ const d = dict.category;
 export const dynamic = "force-dynamic";
 
 async function loadCategory(slug: string) {
-  const [cat] = await db
-    .select()
-    .from(schema.category)
-    .where(eq(schema.category.slug, slug))
-    .limit(1);
-  return cat ?? null;
+  return taxonomyBySlug("kategorie", slug);
 }
 
 /** Veröffentlichte Rezept-IDs dieser Kategorie. */
 async function recipeIdsInCategory(categoryId: number): Promise<number[]> {
   const rows = await db
-    .select({ id: schema.recipeCategory.recipeId })
-    .from(schema.recipeCategory)
+    .select({ id: schema.recipeTaxonomy.recipeId })
+    .from(schema.recipeTaxonomy)
     .innerJoin(
       schema.recipe,
       and(
-        eq(schema.recipe.id, schema.recipeCategory.recipeId),
+        eq(schema.recipe.id, schema.recipeTaxonomy.recipeId),
         eq(schema.recipe.status, "veroeffentlicht"),
       ),
     )
-    .where(eq(schema.recipeCategory.categoryId, categoryId));
+    .where(eq(schema.recipeTaxonomy.taxonomyId, categoryId));
   return rows.map((r) => r.id);
 }
 

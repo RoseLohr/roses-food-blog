@@ -5,64 +5,15 @@
     {
       "idx": 0,
       "version": "6",
-      "when": 1783763588517,
-      "tag": "0000_medical_vision",
+      "when": 1784206899066,
+      "tag": "0000_init",
       "breakpoints": true
     },
     {
       "idx": 1,
       "version": "6",
-      "when": 1783763598474,
-      "tag": "0001_fts",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "6",
-      "when": 1783867186679,
-      "tag": "0002_settings",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "6",
-      "when": 1784021542088,
-      "tag": "0003_refactor_cms",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "6",
-      "when": 1784300000000,
-      "tag": "0004_latest_count",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "6",
-      "when": 1784400000000,
-      "tag": "0005_homepage_boxes",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "6",
-      "when": 1784500000000,
-      "tag": "0006_dish_taxonomies",
-      "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "6",
-      "when": 1784600000000,
-      "tag": "0007_travel_content_blocks",
-      "breakpoints": true
-    },
-    {
-      "idx": 8,
-      "version": "6",
-      "when": 1784700000000,
-      "tag": "0008_seasonal_recipes",
+      "when": 1784206999066,
+      "tag": "0001_fts_views_constraints",
       "breakpoints": true
     }
   ]

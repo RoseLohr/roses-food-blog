@@ -16,7 +16,7 @@ export type TravelCardData = {
   altText: string | null;
   width: number | null;
   height: number | null;
-  variantWidths: string | null;
+  variantWidths: number[] | null;
 };
 
 export function TravelPostCard({ post }: { post: TravelCardData }) {
@@ -30,7 +30,7 @@ export function TravelPostCard({ post }: { post: TravelCardData }) {
               altText: post.altText ?? "",
               width: post.width!,
               height: post.height!,
-              variantWidths: post.variantWidths ?? "[]",
+              variantWidths: post.variantWidths ?? [],
             }}
             sizes="(max-width: 640px) 100vw, 50vw"
             className="aspect-[2/1] w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"

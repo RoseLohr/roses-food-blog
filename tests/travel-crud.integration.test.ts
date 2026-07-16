@@ -102,12 +102,12 @@ describe("Reise-CRUD", () => {
 
     // Gemeinsame Taxonomie-Einträge (wie sie auch ein Rezept nutzen würde)
     const [cat] = await db
-      .insert(schema.category)
-      .values({ name: "Pfannengericht", slug: "pfannengericht" })
+      .insert(schema.taxonomy)
+      .values({ type: "kategorie", name: "Pfannengericht", slug: "pfannengericht" })
       .returning();
     const [diet] = await db
-      .insert(schema.dietType)
-      .values({ name: "Vegetarisch", slug: "vegetarisch" })
+      .insert(schema.taxonomy)
+      .values({ type: "ernaehrungsform", name: "Vegetarisch", slug: "vegetarisch" })
       .returning();
 
     const fd = new FormData();
@@ -187,10 +187,10 @@ describe("Reise-CRUD", () => {
         width: 800,
         height: 600,
         sizeBytes: 1000,
-        variantWidths: "[320]",
         createdAt: new Date(),
       })
       .returning();
+    await db.insert(schema.mediaVariant).values({ imageId: img.id, width: 320 });
 
     const fd = new FormData();
     fd.set("titel", "Blöcke-Test");
@@ -215,8 +215,8 @@ describe("Reise-CRUD", () => {
     const id = (result as { travelId: number }).travelId;
 
     const full = await getFullTravelPost({ id });
-    // content = zusammengefügte Textblöcke (FTS-Kompatibilität)
-    expect(full!.post.content).toBe("## Ankunft\n\nErster Abend.");
+    // search_text = zusammengefügte Textblöcke (FTS-Quelle)
+    expect(full!.post.searchText).toBe("## Ankunft\n\nErster Abend.");
     // Blockfolge: Text, Bild, Restaurant (Index nach Filterung auf 0 gemappt)
     expect(full!.blocks).toEqual([
       { type: "text", markdown: "## Ankunft\n\nErster Abend." },
@@ -238,11 +238,11 @@ describe("Reise-CRUD", () => {
     // Taxonomie-Test; Küche + Zutat referenzieren.
     const [cat] = await db
       .select()
-      .from(schema.category)
-      .where(eq(schema.category.slug, "pfannengericht"));
+      .from(schema.taxonomy)
+      .where(eq(schema.taxonomy.slug, "pfannengericht"));
     const [cui] = await db
-      .insert(schema.cuisine)
-      .values({ name: "Japanisch", slug: "japanisch" })
+      .insert(schema.taxonomy)
+      .values({ type: "kueche", name: "Japanisch", slug: "japanisch" })
       .returning();
     const [kohl] = await db
       .select()
@@ -262,11 +262,18 @@ describe("Reise-CRUD", () => {
           updatedAt: now,
         })
         .returning();
-      await db.insert(schema.recipeCategory).values({ recipeId: r.id, categoryId: cat.id });
-      await db.insert(schema.recipeCuisine).values({ recipeId: r.id, cuisineId: cui.id });
+      await db.insert(schema.recipeTaxonomy).values([
+        { recipeId: r.id, taxonomyId: cat.id, isPrimary: true },
+        { recipeId: r.id, taxonomyId: cui.id },
+      ]);
       if (withIngredient) {
+        // Zutaten hängen am Abschnitt (kein recipe_id mehr)
+        const [sec] = await db
+          .insert(schema.recipeSection)
+          .values({ recipeId: r.id, name: "", sortOrder: 0 })
+          .returning();
         await db.insert(schema.recipeIngredient).values({
-          recipeId: r.id,
+          sectionId: sec.id,
           ingredientId: kohl.id,
           amount: 1,
           unit: "Stück",

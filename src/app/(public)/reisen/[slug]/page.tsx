@@ -28,7 +28,7 @@ export async function generateMetadata(props: {
   const ogImage = full.heroImage
     ? `${getBaseUrl()}${imageUrl(
         full.heroImage.fileKey,
-        JSON.parse(full.heroImage.variantWidths).at(-1) ?? 1280,
+        full.heroImage.variantWidths.at(-1) ?? 1280,
       )}`
     : undefined;
   return {
@@ -63,7 +63,7 @@ function articleJsonLd(full: NonNullable<Awaited<ReturnType<typeof loadPublished
       ? [
           `${base}${imageUrl(
             full.heroImage.fileKey,
-            JSON.parse(full.heroImage.variantWidths).at(-1) ?? 1280,
+            full.heroImage.variantWidths.at(-1) ?? 1280,
           )}`,
         ]
       : undefined,

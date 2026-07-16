@@ -1,8 +1,6 @@
 import type { Metadata } from "next";
-import { asc } from "drizzle-orm";
-import { db } from "@/db";
 import { requireAdmin } from "@/lib/auth";
-import { TAXONOMY_TABLES, TAXONOMY_TYPES } from "@/lib/taxonomies";
+import { TAXONOMY_TYPES, taxonomiesByType } from "@/lib/taxonomies";
 import { t } from "@/i18n/de";
 import {
   createTaxonomyEntryAction,
@@ -21,12 +19,8 @@ export default async function TaxonomiesPage(props: {
   const message =
     typeof searchParams.meldung === "string" ? searchParams.meldung : null;
 
-  const lists = await Promise.all(
-    TAXONOMY_TYPES.map(async (type) => {
-      const table = TAXONOMY_TABLES[type];
-      return [type, await db.select().from(table).orderBy(asc(table.name))] as const;
-    }),
-  );
+  const grouped = await taxonomiesByType();
+  const lists = TAXONOMY_TYPES.map((type) => [type, grouped[type]] as const);
 
   return (
     <>

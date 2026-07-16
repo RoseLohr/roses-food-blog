@@ -16,22 +16,23 @@ export async function getNavMenus(): Promise<{
   // Kategorien mit veröffentlichten Rezepten (distinct über die Join-Tabelle).
   const catRows = await db
     .selectDistinct({
-      name: schema.category.name,
-      slug: schema.category.slug,
+      name: schema.taxonomy.name,
+      slug: schema.taxonomy.slug,
     })
-    .from(schema.category)
+    .from(schema.taxonomy)
     .innerJoin(
-      schema.recipeCategory,
-      eq(schema.recipeCategory.categoryId, schema.category.id),
+      schema.recipeTaxonomy,
+      eq(schema.recipeTaxonomy.taxonomyId, schema.taxonomy.id),
     )
     .innerJoin(
       schema.recipe,
       and(
-        eq(schema.recipe.id, schema.recipeCategory.recipeId),
+        eq(schema.recipe.id, schema.recipeTaxonomy.recipeId),
         eq(schema.recipe.status, "veroeffentlicht"),
       ),
     )
-    .orderBy(schema.category.name);
+    .where(eq(schema.taxonomy.type, "kategorie"))
+    .orderBy(schema.taxonomy.name);
 
   const recipeChildren: NavChild[] = catRows.map((c) => ({
     href: `/rezepte/kategorie/${encodeURIComponent(c.slug)}`,

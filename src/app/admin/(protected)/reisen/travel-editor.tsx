@@ -35,6 +35,9 @@ interface EditorRestaurant {
   city: string;
   description: string;
   imageId: number | null;
+  /** Koordinaten-Override als Eingabe-Strings ("" = keine Angabe) */
+  lat: string;
+  lng: string;
   dishes: EditorDish[];
 }
 
@@ -94,7 +97,15 @@ function emptyDish(): EditorDish {
   };
 }
 function emptyRestaurant(): EditorRestaurant {
-  return { name: "", city: "", description: "", imageId: null, dishes: [emptyDish()] };
+  return {
+    name: "",
+    city: "",
+    description: "",
+    imageId: null,
+    lat: "",
+    lng: "",
+    dishes: [emptyDish()],
+  };
 }
 
 export function TravelEditor({
@@ -161,12 +172,22 @@ export function TravelEditor({
       .map(({ key: _key, ...b }) => b),
   );
 
+  // "48,2" / "48.2" / "" → number | null (Koordinaten-Override)
+  const parseCoord = (s: string): number | null => {
+    const trimmed = s.trim().replace(",", ".");
+    if (!trimmed) return null;
+    const n = Number(trimmed);
+    return Number.isFinite(n) ? n : null;
+  };
+
   const serialized = JSON.stringify(
     restaurants.map((r) => ({
       name: r.name,
       city: r.city,
       description: r.description,
       imageId: r.imageId,
+      lat: parseCoord(r.lat),
+      lng: parseCoord(r.lng),
       dishes: r.dishes.map((dish) => ({
         name: dish.name,
         description: dish.description,
@@ -425,6 +446,37 @@ export function TravelEditor({
                     onChange={(e) => updateRestaurant(ri, { city: e.target.value })}
                     className={inputCls}
                   />
+                </div>
+                <div className="grid grid-cols-2 gap-3 md:col-span-2">
+                  <div>
+                    <label className={labelCls} htmlFor={`r-lat-${ri}`}>
+                      {d.restaurantLat}
+                    </label>
+                    <input
+                      id={`r-lat-${ri}`}
+                      value={r.lat}
+                      inputMode="decimal"
+                      placeholder="z. B. 38,1157"
+                      onChange={(e) => updateRestaurant(ri, { lat: e.target.value })}
+                      className={inputCls}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelCls} htmlFor={`r-lng-${ri}`}>
+                      {d.restaurantLng}
+                    </label>
+                    <input
+                      id={`r-lng-${ri}`}
+                      value={r.lng}
+                      inputMode="decimal"
+                      placeholder="z. B. 13,3615"
+                      onChange={(e) => updateRestaurant(ri, { lng: e.target.value })}
+                      className={inputCls}
+                    />
+                  </div>
+                  <p className="col-span-2 -mt-1 text-xs text-ink-soft">
+                    {d.restaurantCoordsHint}
+                  </p>
                 </div>
                 <div className="md:col-span-2">
                   <span className={labelCls}>{d.restaurantDescription}</span>

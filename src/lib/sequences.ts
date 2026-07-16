@@ -26,6 +26,16 @@ export async function scheduleSequencesForContact(
     .innerJoin(schema.sequence, eq(schema.sequenceStep.sequenceId, schema.sequence.id))
     .orderBy(asc(schema.sequence.id), asc(schema.sequenceStep.sortOrder));
 
+  // Einschreibung je Sequenz festhalten (sequence_enrollment) — macht
+  // nachvollziehbar, wer wann in welche Sequenz aufgenommen wurde.
+  const sequenceIds = [...new Set(steps.map((s) => s.sequenceId))];
+  for (const sequenceId of sequenceIds) {
+    await db
+      .insert(schema.sequenceEnrollment)
+      .values({ sequenceId, contactId, enrolledAt: now })
+      .onConflictDoNothing();
+  }
+
   // Verzögerungen kumulieren sich je Sequenz (Schritt n nach Schritt n-1)
   let planned = 0;
   const cumulative = new Map<number, number>();
@@ -102,7 +112,8 @@ export async function enqueueDueSequenceSteps(now = new Date()): Promise<number>
       html: rendered.html,
       textBody: rendered.text,
       contactId: row.contactId,
-      sequenceStepId: row.stepId,
+      sequenceLogId: row.logId,
+      unsubscribeUrl,
     });
     // Doppel-Einreihung verhindern; "versendet" wird erst nach echtem Versand
     // durch die Mail-Queue gesetzt.

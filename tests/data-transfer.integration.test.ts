@@ -1,13 +1,16 @@
 /**
- * Integrationstest für Export / Löschen / Import (Bereich „Daten").
+ * Integrationstest für Export / Löschen / Import (Bereich „Daten"),
+ * Format-Version 2 (Datenmodell 2.0).
  *
  * Deckt gegen eine echte, migrierte SQLite-DB ab:
- * - Export sammelt Inhalte + referenzierte Bilder verlustfrei (Zeitstempel).
+ * - Export sammelt Inhalte + referenzierte Bilder verlustfrei (Zeitstempel),
+ *   inkl. Inhalts-Blöcken (travel_block) und Koordinaten-Override.
  * - Löschen entfernt Inhalte, verwaiste Zutaten & Fotos (aber KEINE vorher
- *   schon unbenutzten), schützt Kernseiten.
+ *   schon unbenutzten), schützt Kernseiten (page.is_protected).
  * - Import spielt einen Export als Kopien wieder ein (neue fileKeys, Bytes
- *   identisch, Zeitstempel erhalten, Zutaten/Taxonomien zusammengeführt).
- * - Kopie-Verhalten (Slug-Konflikt → -2), Abwärtskompatibilität (Minimal-JSON),
+ *   identisch, Zeitstempel erhalten, Zutaten/Taxonomien zusammengeführt,
+ *   Primär-Kategorie-Konvention, search_text neu abgeleitet).
+ * - Kopie-Verhalten (Slug-Konflikt → -2), Ablehnung von Version-1-Exporten,
  *   fehlende Bilder im Archiv, Path-Traversal-Schutz.
  */
 import fs from "node:fs";
@@ -15,7 +18,7 @@ import os from "node:os";
 import path from "node:path";
 import { execSync } from "node:child_process";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 
 let tmp: string;
 let adminId: number;
@@ -72,11 +75,13 @@ async function media(
       width: widths[widths.length - 1],
       height: 100,
       sizeBytes: 1234,
-      variantWidths: JSON.stringify(widths),
       createdAt,
       ...extra,
     })
     .returning({ id: schema.mediaImage.id });
+  await db
+    .insert(schema.mediaVariant)
+    .values(widths.map((w) => ({ imageId: row.id, width: w })));
   return row.id;
 }
 
@@ -122,12 +127,20 @@ beforeAll(async () => {
   const iOel = await ingredient("Olivenöl", "olivenoel");
   const iBasilikum = await ingredient("Basilikum", "basilikum");
 
-  // --- Taxonomien ---
-  const [cat] = await db.insert(schema.category).values({ name: "Hauptgericht", slug: "hauptgericht" }).returning({ id: schema.category.id });
-  const [tg] = await db.insert(schema.tag).values({ name: "Schnell", slug: "schnell" }).returning({ id: schema.tag.id });
-  const [dt] = await db.insert(schema.dietType).values({ name: "Vegetarisch", slug: "vegetarisch" }).returning({ id: schema.dietType.id });
-  const [cu] = await db.insert(schema.cuisine).values({ name: "Italienisch", slug: "italienisch" }).returning({ id: schema.cuisine.id });
-  const [eq2] = await db.insert(schema.equipment).values({ name: "Backofen", slug: "backofen" }).returning({ id: schema.equipment.id });
+  // --- Taxonomien (eine Tabelle, alle Arten) ---
+  const tax = async (type: "kategorie" | "schlagwort" | "ernaehrungsform" | "kueche" | "geraet", name: string, slug: string) => {
+    const [row] = await db
+      .insert(schema.taxonomy)
+      .values({ type, name, slug })
+      .returning({ id: schema.taxonomy.id });
+    return row.id;
+  };
+  const catHaupt = await tax("kategorie", "Hauptgericht", "hauptgericht");
+  const catBeilage = await tax("kategorie", "Beilage", "beilage");
+  const tgSchnell = await tax("schlagwort", "Schnell", "schnell");
+  const dtVege = await tax("ernaehrungsform", "Vegetarisch", "vegetarisch");
+  const cuItal = await tax("kueche", "Italienisch", "italienisch");
+  const eqOfen = await tax("geraet", "Backofen", "backofen");
 
   // --- Rezept ---
   const [rec] = await db
@@ -139,11 +152,13 @@ beforeAll(async () => {
       heroImageId: imgA,
       prepMinutes: 20,
       cookMinutes: 25,
-      totalMinutes: 45,
       servings: 6,
       difficulty: "mittel",
       tips: "Gut gehen lassen.",
       kcal: 320,
+      isSeasonal: true,
+      seasonStartWeek: 10,
+      seasonEndWeek: 40,
       seoTitle: "Focaccia SEO",
       seoDescription: "Beste Focaccia",
       status: "veroeffentlicht",
@@ -156,15 +171,15 @@ beforeAll(async () => {
     .returning({ id: schema.recipe.id });
   const recipeId = rec.id;
 
-  // Abschnitt 0 (lose, ohne Namen) mit Zutaten Mehl+Salz
+  // Abschnitt 0 (ohne Namen) mit Zutaten Mehl+Salz; Abschnitt 1 „Teig" mit
+  // Schritten (einer mit Bild A) und Zutat Olivenöl.
   const [sec0] = await db.insert(schema.recipeSection).values({ recipeId, name: "", sortOrder: 0 }).returning({ id: schema.recipeSection.id });
-  // Abschnitt 1 „Teig" mit Schritten (einer mit Bild A) und Zutat Olivenöl
   const [sec1] = await db.insert(schema.recipeSection).values({ recipeId, name: "Teig", sortOrder: 1 }).returning({ id: schema.recipeSection.id });
 
   await db.insert(schema.recipeIngredient).values([
-    { recipeId, sectionId: sec0.id, ingredientId: iMehl, amount: 500, unit: "g", note: "Typ 550", sortOrder: 0 },
-    { recipeId, sectionId: sec0.id, ingredientId: iSalz, amount: null, unit: "", note: "nach Geschmack", sortOrder: 1 },
-    { recipeId, sectionId: sec1.id, ingredientId: iOel, amount: 4, unit: "EL", note: "", sortOrder: 0 },
+    { sectionId: sec0.id, ingredientId: iMehl, amount: 500, unit: "g", note: "Typ 550", sortOrder: 0 },
+    { sectionId: sec0.id, ingredientId: iSalz, amount: null, unit: "", note: "nach Geschmack", sortOrder: 1 },
+    { sectionId: sec1.id, ingredientId: iOel, amount: 4, unit: "EL", note: "", sortOrder: 0 },
   ]);
   await db.insert(schema.recipeStep).values([
     { sectionId: sec1.id, text: "Mehl mischen.", imageId: null, sortOrder: 0 },
@@ -174,12 +189,15 @@ beforeAll(async () => {
     { recipeId, text: "Öffentlicher Tipp", isPublic: true, createdAt: T.recipeCreated },
     { recipeId, text: "Interne Notiz", isPublic: false, createdAt: T.recipeCreated },
   ]);
-  await db.insert(schema.recipeImage).values({ recipeId, imageId: imgB, sortOrder: 0 });
-  await db.insert(schema.recipeCategory).values({ recipeId, categoryId: cat.id });
-  await db.insert(schema.recipeTag).values({ recipeId, tagId: tg.id });
-  await db.insert(schema.recipeDietType).values({ recipeId, dietTypeId: dt.id });
-  await db.insert(schema.recipeCuisine).values({ recipeId, cuisineId: cu.id });
-  await db.insert(schema.recipeEquipment).values({ recipeId, equipmentId: eq2.id });
+  // Zwei Kategorien: „Hauptgericht" ist die Primär-Kategorie.
+  await db.insert(schema.recipeTaxonomy).values([
+    { recipeId, taxonomyId: catBeilage, isPrimary: false },
+    { recipeId, taxonomyId: catHaupt, isPrimary: true },
+    { recipeId, taxonomyId: tgSchnell },
+    { recipeId, taxonomyId: dtVege },
+    { recipeId, taxonomyId: cuItal },
+    { recipeId, taxonomyId: eqOfen },
+  ]);
 
   // --- Reise ---
   const [post] = await db
@@ -188,11 +206,10 @@ beforeAll(async () => {
       title: "Sizilien",
       slug: "sizilien",
       teaser: "Sonne & Zitronen.",
-      content: "Langer Reisetext.",
+      searchText: "Langer Reisetext.",
       country: "Italien",
       region: "Sizilien",
       city: "Palermo",
-      destination: "ALT-Palermo", // veraltete Spalte: muss erhalten bleiben
       heroImageId: imgB,
       seoTitle: "Sizilien SEO",
       seoDescription: "Reise",
@@ -207,7 +224,16 @@ beforeAll(async () => {
   await db.insert(schema.travelPostImage).values({ travelPostId: travelId, imageId: imgA, sortOrder: 0 });
   const [rest] = await db
     .insert(schema.restaurant)
-    .values({ travelPostId: travelId, name: "Trattoria", city: "Palermo", description: "Klein & fein.", imageId: imgB, sortOrder: 0 })
+    .values({
+      travelPostId: travelId,
+      name: "Trattoria",
+      city: "Palermo",
+      description: "Klein & fein.",
+      imageId: imgB,
+      lat: 38.1157,
+      lng: 13.3615,
+      sortOrder: 0,
+    })
     .returning({ id: schema.restaurant.id });
   const [dsh] = await db
     .insert(schema.dish)
@@ -220,6 +246,16 @@ beforeAll(async () => {
   await db.insert(schema.dishIngredient).values([
     { dishId: dsh.id, ingredientId: iOel },
     { dishId: dsh.id, ingredientId: iBasilikum },
+  ]);
+  await db.insert(schema.dishTaxonomy).values([
+    { dishId: dsh.id, taxonomyId: catHaupt },
+    { dishId: dsh.id, taxonomyId: cuItal },
+  ]);
+  // Inhalts-Blöcke: Text, Bild, Restaurant (relational)
+  await db.insert(schema.travelBlock).values([
+    { travelPostId: travelId, sortOrder: 0, type: "text", markdown: "Langer Reisetext." },
+    { travelPostId: travelId, sortOrder: 1, type: "bild", imageId: imgA },
+    { travelPostId: travelId, sortOrder: 2, type: "restaurant", restaurantId: rest.id },
   ]);
 
   // --- Seiten ---
@@ -239,6 +275,7 @@ beforeAll(async () => {
     slug: "ueber-mich",
     content: "Hallo, ich bin Rose.",
     status: "veroeffentlicht",
+    isProtected: true,
     createdAt: T.recipeCreated,
     updatedAt: T.recipeUpdated,
   });
@@ -258,6 +295,7 @@ let exportedZip: Uint8Array;
 describe("Export", () => {
   it("sammelt Inhalte + nur referenzierte Bilder, Zeitstempel als ms", async () => {
     const bundle = await collectExport({ recipes: true, travel: true, pages: true });
+    expect(bundle.version).toBe(2);
     expect(bundle.recipes).toHaveLength(1);
     expect(bundle.travel).toHaveLength(1);
     expect(bundle.pages).toHaveLength(2);
@@ -265,25 +303,41 @@ describe("Export", () => {
     // Nur A & B referenziert; C (verwaist) NICHT im Export.
     const keys = bundle.images.map((i) => i.fileKey).sort();
     expect(keys).toEqual(["aaaa1111", "bbbb2222"]);
+    // Varianten-Breiten aus media_variant
+    expect(bundle.images.find((i) => i.fileKey === "bbbb2222")?.variantWidths).toEqual([320, 640, 960]);
 
     const r = bundle.recipes[0];
     expect(r.slug).toBe("focaccia");
     expect(r.createdAt).toBe(T.recipeCreated.getTime());
     expect(r.updatedAt).toBe(T.recipeUpdated.getTime());
     expect(r.publishedAt).toBe(T.recipePublished.getTime());
+    expect(r.isSeasonal).toBe(true);
+    expect(r.seasonStartWeek).toBe(10);
     // Abschnitte: loser Abschnitt (name "") + „Teig"
     expect(r.sections.map((s) => s.name)).toEqual(["", "Teig"]);
     expect(r.sections[0].ingredients.map((i) => i.name)).toEqual(["Mehl", "Salz"]);
     expect(r.sections[1].steps.map((s) => s.image)).toEqual([null, "aaaa1111"]);
     expect(r.notes).toHaveLength(2);
-    expect(r.categories[0].slug).toBe("hauptgericht");
-    expect(r.gallery).toEqual(["bbbb2222"]);
+    // Primär-Kategorie steht vorn (Format-Konvention)
+    expect(r.categories.map((c) => c.slug)).toEqual(["hauptgericht", "beilage"]);
+    expect(r.equipment.map((e) => e.slug)).toEqual(["backofen"]);
     expect(r.heroImage).toBe("aaaa1111");
 
     const tv = bundle.travel[0];
-    expect(tv.destination).toBe("ALT-Palermo");
+    expect(tv.restaurants[0].lat).toBeCloseTo(38.1157);
+    expect(tv.restaurants[0].lng).toBeCloseTo(13.3615);
     expect(tv.restaurants[0].dishes[0].images).toEqual(["aaaa1111", "bbbb2222"]);
     expect(tv.restaurants[0].dishes[0].ingredients.map((i) => i.name).sort()).toEqual(["Basilikum", "Olivenöl"]);
+    expect(tv.restaurants[0].dishes[0].categories.map((c) => c.slug)).toEqual(["hauptgericht"]);
+    // Blöcke: Text + Bild (als Datei-Referenz) + Restaurant (als Index)
+    expect(tv.contentBlocks).toEqual([
+      { type: "text", markdown: "Langer Reisetext." },
+      { type: "bild", image: "aaaa1111" },
+      { type: "restaurant", index: 0 },
+    ]);
+
+    // Kernseite trägt das Schutz-Flag im Export
+    expect(bundle.pages.find((p) => p.slug === "ueber-mich")?.isProtected).toBe(true);
   });
 
   it("respektiert die Typ-Auswahl (nur Rezepte)", async () => {
@@ -291,9 +345,9 @@ describe("Export", () => {
     expect(bundle.recipes).toHaveLength(1);
     expect(bundle.travel).toHaveLength(0);
     expect(bundle.pages).toHaveLength(0);
-    // Nur von Rezepten referenzierte Bilder (A = Hero/Schritt/Zutat, B = Galerie);
-    // reise-exklusive Bilder tauchen nicht zusätzlich auf.
-    expect(bundle.images.map((i) => i.fileKey).sort()).toEqual(["aaaa1111", "bbbb2222"]);
+    // Nur von Rezepten referenzierte Bilder (A = Hero/Schritt/Zutat);
+    // reise-exklusive Bilder (B) tauchen nicht auf.
+    expect(bundle.images.map((i) => i.fileKey).sort()).toEqual(["aaaa1111"]);
     expect(bundle.scope).toBe("recipes");
   });
 
@@ -326,7 +380,7 @@ describe("Löschen", () => {
     expect(res.recipes).toBe(1);
     expect(res.travel).toBe(1);
     expect(res.pages).toBe(1); // „kontakt" gelöscht
-    expect(res.pagesProtectedKept).toBe(1); // „ueber-mich" bleibt
+    expect(res.pagesProtectedKept).toBe(1); // „ueber-mich" bleibt (is_protected)
 
     // Alle genutzten Zutaten waren nur hier referenziert → alle 4 entfernt.
     expect(res.ingredientsRemoved).toBe(4);
@@ -349,8 +403,9 @@ describe("Löschen", () => {
     const imgs = await db.select().from(schema.mediaImage);
     expect(imgs.map((i) => i.fileKey)).toEqual(["cccc3333"]);
 
-    // Zutaten alle weg.
+    // Zutaten alle weg; Taxonomien bleiben (Stammdaten).
     expect(await db.select().from(schema.ingredient)).toHaveLength(0);
+    expect((await db.select().from(schema.taxonomy)).length).toBeGreaterThan(0);
   });
 });
 
@@ -373,52 +428,94 @@ describe("Import (Round-Trip)", () => {
     expect(r.createdAt.getTime()).toBe(T.recipeCreated.getTime());
     expect(r.updatedAt.getTime()).toBe(T.recipeUpdated.getTime());
     expect(r.publishedAt?.getTime()).toBe(T.recipePublished.getTime());
-    expect(r.totalMinutes).toBe(45);
+    expect(r.totalMinutes).toBe(45); // DB-generiert aus 20 + 25
+    expect(r.isSeasonal).toBe(true);
+    expect(r.seasonEndWeek).toBe(40);
     expect(r.likeCount).toBe(0); // Likes werden NICHT übernommen
     expect(r.authorId).toBe(adminId);
 
-    // Hero-Bild: neuer fileKey, aber identische Bytes wie Original A.
+    // Hero-Bild: neuer fileKey, aber identische Bytes wie Original A;
+    // Varianten-Breiten als media_variant-Zeilen.
     const [hero] = await db.select().from(schema.mediaImage).where(eq(schema.mediaImage.id, r.heroImageId!));
     expect(hero.fileKey).not.toBe("aaaa1111");
     expect(hero.altText).toBe("Alt aaaa1111");
     expect(hero.createdAt.getTime()).toBe(T.imgA.getTime());
+    const heroVariants = await db
+      .select()
+      .from(schema.mediaVariant)
+      .where(eq(schema.mediaVariant.imageId, hero.id))
+      .orderBy(asc(schema.mediaVariant.width));
+    expect(heroVariants.map((v) => v.width)).toEqual([320, 640]);
     const w320 = fs.readFileSync(path.join(uploadsDir(), hero.fileKey, "w320.webp"));
     expect(w320.equals(BYTES["aaaa1111"][320])).toBe(true);
 
-    // Abschnitte/Schritte/Zutaten
+    // Abschnitte/Schritte/Zutaten (Zutaten hängen am Abschnitt)
     const sections = await db.select().from(schema.recipeSection).where(eq(schema.recipeSection.recipeId, r.id));
     expect(sections.map((s) => s.name).sort()).toEqual(["", "Teig"]);
-    const ings = await db.select().from(schema.recipeIngredient).where(eq(schema.recipeIngredient.recipeId, r.id));
+    const ings = await db
+      .select({ id: schema.recipeIngredient.id })
+      .from(schema.recipeIngredient)
+      .innerJoin(
+        schema.recipeSection,
+        eq(schema.recipeIngredient.sectionId, schema.recipeSection.id),
+      )
+      .where(eq(schema.recipeSection.recipeId, r.id));
     expect(ings).toHaveLength(3);
     const notes = await db.select().from(schema.recipeNote).where(eq(schema.recipeNote.recipeId, r.id));
     expect(notes.map((n) => n.isPublic).sort()).toEqual([false, true]);
-    const gallery = await db.select().from(schema.recipeImage).where(eq(schema.recipeImage.recipeId, r.id));
-    expect(gallery).toHaveLength(1);
 
-    // Taxonomien zusammengeführt (per Slug) — keine Duplikate
-    expect(await db.select().from(schema.category)).toHaveLength(1);
-    expect(await db.select().from(schema.cuisine)).toHaveLength(1);
+    // Taxonomien zusammengeführt (per Slug) — keine Duplikate, Arten intakt,
+    // Primär-Kategorie wieder gesetzt (erste Kategorie im Export).
+    const taxRows = await db.select().from(schema.taxonomy);
+    expect(taxRows.filter((t) => t.slug === "hauptgericht")).toHaveLength(1);
+    const recTax = await db
+      .select({
+        slug: schema.taxonomy.slug,
+        isPrimary: schema.recipeTaxonomy.isPrimary,
+      })
+      .from(schema.recipeTaxonomy)
+      .innerJoin(schema.taxonomy, eq(schema.recipeTaxonomy.taxonomyId, schema.taxonomy.id))
+      .where(eq(schema.recipeTaxonomy.recipeId, r.id));
+    expect(recTax.find((t) => t.slug === "hauptgericht")?.isPrimary).toBe(true);
+    expect(recTax.find((t) => t.slug === "beilage")?.isPrimary).toBe(false);
+    expect(recTax).toHaveLength(6);
 
-    // Reise wiederhergestellt inkl. veralteter destination-Spalte
+    // Reise wiederhergestellt: Blöcke relational, search_text abgeleitet,
+    // Restaurant-Koordinaten erhalten.
     const [tv] = await db.select().from(schema.travelPost).where(eq(schema.travelPost.slug, "sizilien"));
-    expect(tv.destination).toBe("ALT-Palermo");
     expect(tv.createdAt.getTime()).toBe(T.travelCreated.getTime());
+    expect(tv.searchText).toBe("Langer Reisetext.");
     const rests = await db.select().from(schema.restaurant).where(eq(schema.restaurant.travelPostId, tv.id));
     expect(rests).toHaveLength(1);
+    expect(rests[0].lat).toBeCloseTo(38.1157);
+    const blocks = await db
+      .select()
+      .from(schema.travelBlock)
+      .where(eq(schema.travelBlock.travelPostId, tv.id))
+      .orderBy(asc(schema.travelBlock.sortOrder));
+    expect(blocks.map((b) => b.type)).toEqual(["text", "bild", "restaurant"]);
+    expect(blocks[2].restaurantId).toBe(rests[0].id);
     const dishes = await db.select().from(schema.dish).where(eq(schema.dish.restaurantId, rests[0].id));
     expect(dishes).toHaveLength(1);
     const dImgs = await db.select().from(schema.dishImage).where(eq(schema.dishImage.dishId, dishes[0].id));
     expect(dImgs).toHaveLength(2);
     const dIngs = await db.select().from(schema.dishIngredient).where(eq(schema.dishIngredient.dishId, dishes[0].id));
     expect(dIngs).toHaveLength(2);
+    const dTax = await db
+      .select({ slug: schema.taxonomy.slug })
+      .from(schema.dishTaxonomy)
+      .innerJoin(schema.taxonomy, eq(schema.dishTaxonomy.taxonomyId, schema.taxonomy.id))
+      .where(eq(schema.dishTaxonomy.dishId, dishes[0].id));
+    expect(dTax.map((t) => t.slug).sort()).toEqual(["hauptgericht", "italienisch"]);
 
     // Zutat „Olivenöl" nur EINMAL angelegt, obwohl in Rezept & Reise genutzt.
     const oel = await db.select().from(schema.ingredient).where(eq(schema.ingredient.slug, "olivenoel"));
     expect(oel).toHaveLength(1);
 
-    // Seite „kontakt" als Kopie; „ueber-mich" bleibt einzigartig.
+    // Seite „kontakt" als Kopie (nie geschützt); „ueber-mich" bleibt einzigartig.
     const pages = await db.select().from(schema.page);
     expect(pages.map((p) => p.slug).sort()).toEqual(["kontakt", "ueber-mich"]);
+    expect(pages.find((p) => p.slug === "kontakt")?.isProtected).toBe(false);
   });
 
   it("legt bei erneutem Import KOPIEN an (Slug -2), überschreibt nie", async () => {
@@ -437,11 +534,24 @@ describe("Import (Round-Trip)", () => {
 });
 
 describe("Robustheit", () => {
-  it("liest minimalen/älteren Export tolerant ein (Abwärtskompatibilität)", async () => {
+  it("lehnt Version-1-Exporte mit klarer Meldung ab", async () => {
+    const v1 = {
+      format: "roses-food-blog",
+      version: 1,
+      recipes: [{ title: "Alt" }],
+    };
+    const { zipSync, strToU8 } = await import("fflate");
+    const zip = zipSync({ "content.json": strToU8(JSON.stringify(v1)) });
+    await expect(
+      importBundle(zip, { recipes: true, travel: false, pages: false }, adminId),
+    ).rejects.toThrow(/Version 1/);
+  });
+
+  it("liest minimalen Export tolerant ein (Defaults)", async () => {
     // Nur Pflichtfeld-arm: ein Rezept mit Titel, sonst nichts.
     const minimal = {
       format: "roses-food-blog",
-      version: 1,
+      version: 2,
       recipes: [{ title: "Nur Titel" }],
     };
     const { zipSync, strToU8 } = await import("fflate");
@@ -457,7 +567,7 @@ describe("Robustheit", () => {
   it("überspringt fehlende Bilder im Archiv (Warnung), importiert Inhalt trotzdem", async () => {
     const bundle = {
       format: "roses-food-blog",
-      version: 1,
+      version: 2,
       images: [{ fileKey: "deadbeef01", variantWidths: [320] }],
       recipes: [{ title: "Ohne Bilddatei", heroImage: "deadbeef01" }],
     };
@@ -477,7 +587,7 @@ describe("Robustheit", () => {
     // Bösartiger fileKey — darf niemals außerhalb uploads/ schreiben.
     const evil = {
       format: "roses-food-blog",
-      version: 1,
+      version: 2,
       images: [{ fileKey: "../../evil", variantWidths: [320] }],
       recipes: [{ title: "Evil", heroImage: "../../evil" }],
     };

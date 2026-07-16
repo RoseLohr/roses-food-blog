@@ -1,13 +1,12 @@
 /**
- * Datengrundlage für die Weltkarte auf /reisen: pro Gericht ein Pin, dessen
- * Position aus den EXIF-GPS-Daten des Gericht-Bildes stammt (media_image.
- * lat/lng, beim Upload aus den Fotos gelesen). Nur veröffentlichte Reisen,
- * nur Bilder mit gültigen Koordinaten. Ein Pin je Gericht = erstes Bild mit
- * Koordinaten.
+ * Datengrundlage für die Weltkarte auf /reisen: pro Gericht ein Pin.
+ * Position: manueller Koordinaten-Override am Restaurant zuerst, sonst
+ * EXIF-GPS des ersten Gericht-Bildes mit Koordinaten (media_image.lat/lng,
+ * beim Upload gelesen). Nur veröffentlichte Reisen.
  */
-import { and, asc, eq, isNotNull } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { db, schema } from "@/db";
-import { thumbUrl } from "@/lib/media";
+import { thumbUrl, variantWidthsByImage } from "@/lib/media";
 
 export interface TravelMapPin {
   lat: number;
@@ -29,11 +28,13 @@ export async function getTravelMapPins(): Promise<TravelMapPin[]> {
       dishName: schema.dish.name,
       restaurantName: schema.restaurant.name,
       restaurantCity: schema.restaurant.city,
+      restaurantLat: schema.restaurant.lat,
+      restaurantLng: schema.restaurant.lng,
       travelSlug: schema.travelPost.slug,
+      imageId: schema.mediaImage.id,
       lat: schema.mediaImage.lat,
       lng: schema.mediaImage.lng,
       fileKey: schema.mediaImage.fileKey,
-      variantWidths: schema.mediaImage.variantWidths,
       altText: schema.mediaImage.altText,
     })
     .from(schema.dishImage)
@@ -50,28 +51,27 @@ export async function getTravelMapPins(): Promise<TravelMapPin[]> {
       schema.travelPost,
       eq(schema.restaurant.travelPostId, schema.travelPost.id),
     )
-    .where(
-      and(
-        eq(schema.travelPost.status, "veroeffentlicht"),
-        isNotNull(schema.mediaImage.lat),
-        isNotNull(schema.mediaImage.lng),
-      ),
-    )
+    .where(and(eq(schema.travelPost.status, "veroeffentlicht")))
     .orderBy(asc(schema.dish.id), asc(schema.dishImage.sortOrder));
 
-  // Ein Pin pro Gericht (erstes Bild mit Koordinaten).
+  const widthsById = await variantWidthsByImage(rows.map((r) => r.imageId));
+
+  // Ein Pin pro Gericht: Override-Koordinaten mit erstem Bild als Thumbnail,
+  // sonst erstes Bild mit eigenen EXIF-Koordinaten.
   const seen = new Set<number>();
   const pins: TravelMapPin[] = [];
   for (const r of rows) {
-    if (r.lat === null || r.lng === null || seen.has(r.dishId)) continue;
+    if (seen.has(r.dishId)) continue;
+    const hasOverride = r.restaurantLat != null && r.restaurantLng != null;
+    if (!hasOverride && (r.lat === null || r.lng === null)) continue;
     seen.add(r.dishId);
     pins.push({
-      lat: r.lat,
-      lng: r.lng,
+      lat: hasOverride ? r.restaurantLat! : r.lat!,
+      lng: hasOverride ? r.restaurantLng! : r.lng!,
       dishName: r.dishName,
       restaurantName: r.restaurantName,
       restaurantCity: r.restaurantCity,
-      thumbUrl: thumbUrl(r.fileKey, r.variantWidths),
+      thumbUrl: thumbUrl(r.fileKey, widthsById.get(r.imageId) ?? []),
       imageAlt: r.altText,
       travelSlug: r.travelSlug,
       dishId: r.dishId,

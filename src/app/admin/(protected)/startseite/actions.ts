@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db, schema } from "@/db";
 import { requireAdmin } from "@/lib/auth";
+import { filterIdsByType } from "@/lib/taxonomies";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -43,17 +44,27 @@ export async function saveHomepageAction(formData: FormData): Promise<void> {
     : null;
 
   // „Rezepte filtern“-Box: nur gültige Filtergruppen speichern.
-  const ALLOWED_GROUPS = ["zeit", "kategorie", "ernaehrung", "kueche", "zubereitung"];
+  const ALLOWED_GROUPS = [
+    "zeit",
+    "kategorie",
+    "ernaehrung",
+    "kueche",
+    "zubereitung",
+  ] as const;
   const filterGroups = formData
     .getAll("filterGroups")
     .map(String)
-    .filter((g) => ALLOWED_GROUPS.includes(g));
+    .filter((g): g is (typeof ALLOWED_GROUPS)[number] =>
+      (ALLOWED_GROUPS as readonly string[]).includes(g),
+    );
 
-  // Ernährungsform-Box.
+  // Ernährungsform-Box: nur eine existierende Taxonomie der richtigen Art.
   const dietBoxRaw = String(formData.get("dietBox") ?? "");
-  const dietBoxDietTypeId = dietBoxRaw && Number.isInteger(Number(dietBoxRaw))
-    ? Number(dietBoxRaw)
-    : null;
+  const dietBoxTaxonomyId =
+    dietBoxRaw && Number.isInteger(Number(dietBoxRaw))
+      ? ((await filterIdsByType([Number(dietBoxRaw)], ["ernaehrungsform"]))[0] ??
+        null)
+      : null;
   const dietBoxCount = Math.min(
     12,
     Math.max(1, Number(formData.get("dietBoxCount")) || 4),
@@ -74,27 +85,38 @@ export async function saveHomepageAction(formData: FormData): Promise<void> {
     aboutTeaserText: String(formData.get("aboutText") ?? "").trim(),
     aboutTeaserLink:
       String(formData.get("aboutLink") ?? "").trim() || "/ueber-mich",
-    filterGroups: JSON.stringify(filterGroups),
-    dietBoxDietTypeId,
+    dietBoxTaxonomyId,
     dietBoxTitle,
     dietBoxCount,
     seasonalBoxCount,
   };
 
-  await db
-    .insert(schema.homepageConfig)
-    .values({ id: 1, ...values })
-    .onConflictDoUpdate({ target: schema.homepageConfig.id, set: values });
+  // Konfiguration, Filtergruppen und Slider atomar ersetzen.
+  db.transaction((tx) => {
+    tx.insert(schema.homepageConfig)
+      .values({ id: 1, ...values })
+      .onConflictDoUpdate({ target: schema.homepageConfig.id, set: values })
+      .run();
 
-  await db.delete(schema.sliderItem);
-  for (const [i, s] of slides.entries()) {
-    await db.insert(schema.sliderItem).values({
-      imageId: s.imageId,
-      recipeId: s.recipeId,
-      caption: s.caption,
-      sortOrder: i,
-    });
-  }
+    tx.delete(schema.homepageFilterGroup).run();
+    if (filterGroups.length) {
+      tx.insert(schema.homepageFilterGroup)
+        .values(filterGroups.map((groupKey) => ({ groupKey })))
+        .run();
+    }
+
+    tx.delete(schema.sliderItem).run();
+    for (const [i, s] of slides.entries()) {
+      tx.insert(schema.sliderItem)
+        .values({
+          imageId: s.imageId,
+          recipeId: s.recipeId,
+          caption: s.caption,
+          sortOrder: i,
+        })
+        .run();
+    }
+  });
 
   redirect(
     `/admin/startseite?meldung=${encodeURIComponent(dict.admin.homepage.saved)}`,

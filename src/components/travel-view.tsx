@@ -25,13 +25,14 @@ function mapsUrl(lat: number, lng: number): string {
 }
 
 /**
- * Koordinaten eines Restaurants aus den EXIF-GPS-Daten seiner Fotos —
- * wie bei den Pins der Weltkarte: zuerst die Gericht-Bilder (in Reihenfolge),
- * ersatzweise das Restaurant-Foto. null, wenn kein Foto Koordinaten trägt.
+ * Koordinaten eines Restaurants — wie bei den Pins der Weltkarte:
+ * manueller Override am Restaurant zuerst, dann EXIF-GPS der Gericht-Bilder
+ * (in Reihenfolge), ersatzweise das Restaurant-Foto. null ohne Treffer.
  */
 function restaurantCoords(
   r: FullRestaurant,
 ): { lat: number; lng: number } | null {
+  if (r.lat != null && r.lng != null) return { lat: r.lat, lng: r.lng };
   for (const dish of r.dishes) {
     for (const img of dish.images) {
       if (img.lat != null && img.lng != null) {

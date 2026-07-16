@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import { asc, eq } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { requireAdmin } from "@/lib/auth";
-import { thumbUrl } from "@/lib/media";
+import { listImageChoices } from "@/lib/media";
+import { taxonomiesOfType } from "@/lib/taxonomies";
 import { ImagePicker } from "@/components/admin/image-picker";
 import { t } from "@/i18n/de";
 import { saveHomepageAction } from "./actions";
@@ -32,38 +33,16 @@ export default async function HomepageAdminPage(props: {
     .select()
     .from(schema.sliderItem)
     .orderBy(asc(schema.sliderItem.sortOrder));
-  const imageRows = await db
-    .select({
-      id: schema.mediaImage.id,
-      originalName: schema.mediaImage.originalName,
-      altText: schema.mediaImage.altText,
-      fileKey: schema.mediaImage.fileKey,
-      variantWidths: schema.mediaImage.variantWidths,
-    })
-    .from(schema.mediaImage)
-    .orderBy(asc(schema.mediaImage.originalName));
-  const imageChoices = imageRows.map((i) => ({
-    id: i.id,
-    label: i.altText || i.originalName,
-    thumbUrl: thumbUrl(i.fileKey, i.variantWidths),
-  }));
+  const imageChoices = await listImageChoices();
   const recipes = await db
     .select({ id: schema.recipe.id, title: schema.recipe.title })
     .from(schema.recipe)
     .orderBy(asc(schema.recipe.title));
-  const dietTypes = await db
-    .select()
-    .from(schema.dietType)
-    .orderBy(asc(schema.dietType.name));
+  const dietTypes = await taxonomiesOfType("ernaehrungsform");
 
-  const activeFilterGroups: string[] = (() => {
-    try {
-      const v = JSON.parse(config?.filterGroups ?? "[]");
-      return Array.isArray(v) ? v.map(String) : [];
-    } catch {
-      return [];
-    }
-  })();
+  const activeFilterGroups = (
+    await db.select().from(schema.homepageFilterGroup)
+  ).map((r) => r.groupKey);
   const FILTER_GROUPS: Array<{ key: string; label: string }> = [
     { key: "zeit", label: d.fgZeit },
     { key: "kategorie", label: d.fgKategorie },
@@ -233,7 +212,7 @@ export default async function HomepageAdminPage(props: {
               <select
                 id="hp-dietbox"
                 name="dietBox"
-                defaultValue={config?.dietBoxDietTypeId ?? ""}
+                defaultValue={config?.dietBoxTaxonomyId ?? ""}
                 className={inputCls}
               >
                 <option value="">{d.dietBoxNone}</option>

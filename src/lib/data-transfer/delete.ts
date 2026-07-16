@@ -7,15 +7,9 @@
  * - Dateien werden erst NACH erfolgreichem Commit von der Platte entfernt,
  * - geschützte Kernseiten (Über mich/Datenschutz/Impressum) werden nie gelöscht.
  */
-import { inArray, notInArray, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { deleteImageFiles } from "@/lib/media";
-
-export const PROTECTED_PAGE_SLUGS = [
-  "ueber-mich",
-  "datenschutz",
-  "impressum",
-] as const;
 
 export type DeleteScope = "recipes" | "travel" | "pages" | "all";
 
@@ -34,7 +28,6 @@ async function referencedMediaIds(): Promise<Set<number>> {
     for (const r of rows) if (r.id != null) s.add(r.id);
   };
   add(await db.select({ id: schema.recipe.heroImageId }).from(schema.recipe));
-  add(await db.select({ id: schema.recipeImage.imageId }).from(schema.recipeImage));
   add(await db.select({ id: schema.recipeStep.imageId }).from(schema.recipeStep));
   add(await db.select({ id: schema.ingredient.imageId }).from(schema.ingredient));
   add(await db.select({ id: schema.page.heroImageId }).from(schema.page));
@@ -45,6 +38,7 @@ async function referencedMediaIds(): Promise<Set<number>> {
       .from(schema.travelPostImage),
   );
   add(await db.select({ id: schema.restaurant.imageId }).from(schema.restaurant));
+  add(await db.select({ id: schema.travelBlock.imageId }).from(schema.travelBlock));
   add(await db.select({ id: schema.dishImage.imageId }).from(schema.dishImage));
   add(
     await db
@@ -102,14 +96,15 @@ export async function deleteContent(scope: DeleteScope): Promise<DeleteResult> {
       result.travel = del.length;
     }
     if (doPages) {
+      // Geschützte Kernseiten (page.is_protected) bleiben stehen.
       const protectedRows = await db
         .select({ id: schema.page.id })
         .from(schema.page)
-        .where(inArray(schema.page.slug, [...PROTECTED_PAGE_SLUGS]));
+        .where(eq(schema.page.isProtected, true));
       result.pagesProtectedKept = protectedRows.length;
       const del = await db
         .delete(schema.page)
-        .where(notInArray(schema.page.slug, [...PROTECTED_PAGE_SLUGS]))
+        .where(eq(schema.page.isProtected, false))
         .returning({ id: schema.page.id });
       result.pages = del.length;
     }
@@ -180,7 +175,7 @@ export async function countDeletable(scope: DeleteScope): Promise<{
     ? await db
         .select({ n: sql<number>`count(*)` })
         .from(schema.page)
-        .where(notInArray(schema.page.slug, [...PROTECTED_PAGE_SLUGS]))
+        .where(eq(schema.page.isProtected, false))
     : [{ n: 0 }];
   return { recipes: recipes.n, travel: travel.n, pages: pages.n };
 }
