@@ -45,13 +45,20 @@ function restaurantCoords(
   return null;
 }
 
+/**
+ * Meta-Angabe (Land/Region/Stadt). Mit `href` wird der Wert zum Filter-Link
+ * auf die Reisen-Übersicht (z. B. /reisen?land=Italien) — so lässt sich vom
+ * Bericht aus direkt nach Land oder Stadt filtern.
+ */
 function MetaChip({
   label,
   icon,
+  href,
   children,
 }: {
   label: string;
   icon: React.ReactNode;
+  href?: string;
   children: React.ReactNode;
 }) {
   return (
@@ -66,7 +73,16 @@ function MetaChip({
         <p className="text-xs font-bold uppercase tracking-wider text-ink">
           {label}
         </p>
-        <p className="text-sm text-ink-soft">{children}</p>
+        {href ? (
+          <Link
+            href={href}
+            className="text-sm text-leaf underline underline-offset-2 hover:text-rose-primary-dark"
+          >
+            {children}
+          </Link>
+        ) : (
+          <p className="text-sm text-ink-soft">{children}</p>
+        )}
       </div>
     </div>
   );
@@ -378,6 +394,11 @@ export async function TravelView({
               <MetaChip
                 label={dict.admin.travel.fieldCountry}
                 icon={<IconCountry className="h-5 w-5" />}
+                href={
+                  interactive
+                    ? `/reisen?land=${encodeURIComponent(post.country)}`
+                    : undefined
+                }
               >
                 {post.country}
               </MetaChip>
@@ -386,6 +407,11 @@ export async function TravelView({
               <MetaChip
                 label={dict.admin.travel.fieldRegion}
                 icon={<IconRegion className="h-5 w-5" />}
+                href={
+                  interactive
+                    ? `/reisen?region=${encodeURIComponent(post.region)}`
+                    : undefined
+                }
               >
                 {post.region}
               </MetaChip>
@@ -394,6 +420,11 @@ export async function TravelView({
               <MetaChip
                 label={dict.admin.travel.fieldCity}
                 icon={<IconCity className="h-5 w-5" />}
+                href={
+                  interactive
+                    ? `/reisen?stadt=${encodeURIComponent(post.city)}`
+                    : undefined
+                }
               >
                 {post.city}
               </MetaChip>
