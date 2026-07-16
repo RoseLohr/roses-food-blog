@@ -509,7 +509,9 @@ export function SeasonCalendar({ currentWeek }: { currentWeek: number }) {
       {visibleCount === 0 ? (
         <p className="bg-white p-5 text-ink-soft shadow-sm">{d.noResults}</p>
       ) : (
-        <div className="sk-scroll shadow-sm">
+        <div
+          className={`sk-scroll shadow-sm${onlySeason ? " sk-scroll--month" : ""}`}
+        >
           <div
             className={`sk-grid${onlySeason ? " sk-grid--month" : ""}`}
             style={

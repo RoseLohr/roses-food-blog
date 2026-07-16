@@ -517,14 +517,26 @@ html {
 .sk-grid {
   min-width: 900px;
 }
-/* Monatsmodus („Jetzt in Saison"): der Monat behält die Spaltenbreite der
-   Jahresansicht und sitzt linksbündig — rechts bleibt die Fläche leer. */
-.sk-grid--month .sk-months,
-.sk-grid--month .sk-track {
-  width: calc(var(--sk-weeks, 52) * 100% / 52);
+/* Monatsmodus („Jetzt in Saison"): die Wochen behalten etwa die Spalten-
+   breite der Jahresansicht (feste 18px), und die Tabelle schrumpft auf
+   Namensspalte + Monat — keine leere weiße Fläche daneben. */
+.sk-scroll--month {
+  width: max-content;
+  max-width: 100%;
+}
+.sk-grid--month {
+  min-width: 0;
+}
+.sk-grid--month .sk-rowgrid {
+  grid-template-columns: var(--sk-name-w) calc(var(--sk-weeks, 52) * 18px);
 }
 .sk-grid--month .sk-month:last-child {
   border-right: 1px solid rgba(17, 17, 17, 0.08);
+}
+/* In der schmalen Monatsspalte würde der Berechnungsart-Text mehrzeilig
+   umbrechen — Fußnote bleibt, Details stehen in der Jahresansicht. */
+.sk-grid--month .sk-sub-meta {
+  display: none;
 }
 .sk-rowgrid {
   display: grid;
