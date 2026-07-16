@@ -159,8 +159,10 @@ export function RecipeView({
             />
           )}
 
-          {/* Meta-Zeile */}
-          <div className="mt-6 flex flex-wrap gap-x-8 gap-y-4">
+          {/* Meta-Zeile: festes 2-Spalten-Raster, damit die Spalten sauber
+              untereinander fluchten (Paare: Portionen+Kalorien,
+              Vorbereitung+Kochzeit, Gesamtzeit+Schwierigkeit) */}
+          <div className="mt-6 grid grid-cols-2 gap-x-6 gap-y-4">
             <MetaChip icon={<IconServings className="h-5 w-5" />} label={r.metaServings}>
               {interactive ? (
                 <ServingsControl
