@@ -97,11 +97,20 @@ function Track({
   );
 }
 
-/** Fußnoten-Ziffern (klein, hochgestellt) für eine Nummernliste. */
-function FootnoteMarks({ numbers }: { numbers: number[] }) {
-  if (numbers.length === 0) return null;
-  return <sup className="sk-fn">{numbers.join(" ")}</sup>;
+/** Fußnoten-Marken (klein, hochgestellt): Ziffern = Quelle, Buchstaben =
+ *  Berechnungsart. */
+function FootnoteMarks({ marks }: { marks: Array<number | string> }) {
+  if (marks.length === 0) return null;
+  return <sup className="sk-fn">{marks.join(" ")}</sup>;
 }
+
+/** Feste Buchstaben je Berechnungsart (a–d), stabil über alle Ansichten. */
+const QUALITY_LETTERS: Record<string, string> = Object.fromEntries(
+  Object.keys(saisonModel.enums.dataQuality).map((key, i) => [
+    key,
+    String.fromCharCode(97 + i),
+  ]),
+);
 
 function SubRow({
   entry,
@@ -117,23 +126,23 @@ function SubRow({
   nested?: boolean;
 }) {
   const weeks = useMemo(() => availabilityByWeekFor([entry]), [entry]);
-  const quality = saisonModel.enums.dataQuality[entry.dataQuality]?.de;
+  const marks: Array<number | string> = [
+    ...(footnote !== undefined ? [footnote] : []),
+    QUALITY_LETTERS[entry.dataQuality] ?? "",
+  ].filter((m) => m !== "");
   return (
     <div className={`sk-sub sk-rowgrid${nested ? " sk-sub--nested" : ""}`}>
       <div className="sk-name">
         <span className="sk-sub-label">
           {entry.variety ?? entry.availabilityLabel}
-          {footnote !== undefined && <FootnoteMarks numbers={[footnote]} />}
+          <FootnoteMarks marks={marks} />
         </span>
         <span className="sk-sub-origin">
           {entry.origin}
           {entry.variety ? ` · ${entry.availabilityLabel}` : ""}
         </span>
       </div>
-      <div>
-        <Track weeks={weeks} currentWeek={currentWeek} window={window} />
-        <p className="sk-sub-meta">{quality}</p>
-      </div>
+      <Track weeks={weeks} currentWeek={currentWeek} window={window} />
     </div>
   );
 }
@@ -238,7 +247,7 @@ function ProductRow({
             <span>
               {item.product.name}
               {item.footnote !== undefined && (
-                <FootnoteMarks numbers={[item.footnote]} />
+                <FootnoteMarks marks={[item.footnote]} />
               )}
             </span>
             {item.countries > 1 && (
@@ -333,7 +342,7 @@ export function SeasonCalendar({ currentWeek }: { currentWeek: number }) {
 
   // Produkte + je Produkt die nach Filtern sichtbaren Einträge, gruppiert
   // nach Kategorie; dazu die Fußnoten-Nummerierung in Anzeige-Reihenfolge.
-  const { groups, sources, numberOf, visibleCount } = useMemo(() => {
+  const { groups, sources, numberOf, qualities, visibleCount } = useMemo(() => {
     const q = query.trim().toLowerCase();
     const visible: VisibleProduct[] = [];
     for (const product of saisonModel.products) {
@@ -392,12 +401,15 @@ export function SeasonCalendar({ currentWeek }: { currentWeek: number }) {
 
     // Fußnoten: Quelltexte in Anzeige-Reihenfolge durchnummerieren. Am
     // Produkt selbst nur die Nummer des ersten Eintrags — die übrigen
-    // stehen an den Unterzeilen.
+    // stehen an den Unterzeilen. Berechnungsarten (a–d) fürs Verzeichnis
+    // unten einsammeln.
     const numberOf = new Map<string, number>();
     const sources: string[] = [];
+    const qualities = new Set<string>();
     for (const group of groups) {
       for (const item of group.items) {
         for (const entry of [...item.german, ...item.foreign]) {
+          qualities.add(entry.dataQuality);
           let n = numberOf.get(entry.source);
           if (n === undefined) {
             n = sources.length + 1;
@@ -413,6 +425,7 @@ export function SeasonCalendar({ currentWeek }: { currentWeek: number }) {
       groups,
       sources,
       numberOf,
+      qualities,
       visibleCount: visible.length,
     };
   }, [query, category, availability, otherOrigins, onlySeason, currentWeek]);
@@ -568,17 +581,40 @@ export function SeasonCalendar({ currentWeek }: { currentWeek: number }) {
         </div>
       )}
 
-      {/* Quellenverzeichnis zu den Fußnoten-Ziffern */}
-      {sources.length > 0 && (
+      {/* Verzeichnis zu den Fußnoten: Ziffern = Quellen, Buchstaben =
+          Berechnungsart */}
+      {(sources.length > 0 || qualities.size > 0) && (
         <section className="bg-white p-5 shadow-sm">
-          <h2 className="font-display text-base font-bold">{d.sourcesTitle}</h2>
-          <ol className="sk-sources">
-            {sources.map((source, i) => (
-              <li key={i} value={i + 1}>
-                {source}
-              </li>
-            ))}
-          </ol>
+          {qualities.size > 0 && (
+            <>
+              <h2 className="font-display text-base font-bold">
+                {d.qualityTitle}
+              </h2>
+              <ul className="sk-qualities">
+                {Object.entries(saisonModel.enums.dataQuality)
+                  .filter(([key]) => qualities.has(key))
+                  .map(([key, value]) => (
+                    <li key={key}>
+                      <strong>{QUALITY_LETTERS[key]})</strong> {value.de}
+                    </li>
+                  ))}
+              </ul>
+            </>
+          )}
+          {sources.length > 0 && (
+            <>
+              <h2 className="mt-4 font-display text-base font-bold">
+                {d.sourcesTitle}
+              </h2>
+              <ol className="sk-sources">
+                {sources.map((source, i) => (
+                  <li key={i} value={i + 1}>
+                    {source}
+                  </li>
+                ))}
+              </ol>
+            </>
+          )}
         </section>
       )}
     </div>

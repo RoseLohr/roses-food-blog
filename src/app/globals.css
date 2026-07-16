@@ -533,11 +533,6 @@ html {
 .sk-grid--month .sk-month:last-child {
   border-right: 1px solid rgba(17, 17, 17, 0.08);
 }
-/* In der schmalen Monatsspalte würde der Berechnungsart-Text mehrzeilig
-   umbrechen — Fußnote bleibt, Details stehen in der Jahresansicht. */
-.sk-grid--month .sk-sub-meta {
-  display: none;
-}
 .sk-rowgrid {
   display: grid;
   grid-template-columns: var(--sk-name-w) minmax(0, 1fr);
@@ -653,6 +648,17 @@ html {
   letter-spacing: 0.05em;
 }
 
+/* Berechnungsart-Legende (Buchstaben-Fußnoten) unter dem Kalender */
+.sk-qualities {
+  margin-top: 0.6rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 2rem;
+  font-size: 0.72rem;
+  line-height: 1.5;
+  color: var(--color-ink-soft);
+}
+
 /* Quellenverzeichnis unter dem Kalender */
 .sk-sources {
   margin-top: 0.6rem;
@@ -739,12 +745,6 @@ html {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.sk-sub-meta {
-  padding: 0 0.5rem 0.4rem;
-  font-size: 0.66rem;
-  line-height: 1.35;
-  color: var(--color-ink-soft);
 }
 .sk-sub .sk-track {
   height: 22px;

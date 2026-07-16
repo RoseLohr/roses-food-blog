@@ -133,6 +133,7 @@ export const de = {
     onlySeason: "Jetzt in Saison",
     noResults: "Keine Produkte passen zu Suche und Filtern.",
     sourcesTitle: "Quellen",
+    qualityTitle: "Berechnungsart",
     sourcePrefix: "Quelle:",
     aboutTitle: "Über die Daten",
     aboutHint:
