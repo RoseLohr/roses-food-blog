@@ -26,7 +26,6 @@ export const de = {
     popularTitle: "Beliebteste Rezepte",
     latestTitle: "Neueste Rezepte",
     byCuisineTitle: "Nach Art der Küche wählen",
-    byDietTitle: "Nach Ernährungsform wählen",
     aboutTitle: "Über mich",
     aboutMore: "Lies mehr",
     filterTitle: "Rezepte filtern",
