@@ -4,8 +4,8 @@
   "count": 79,
   "tally": {
     "PASS": 11,
-    "PARTIAL": 34,
-    "FAIL": 19,
+    "PARTIAL": 35,
+    "FAIL": 18,
     "N/A": 12,
     "NO-EVIDENCE": 3
   },
@@ -30,8 +30,8 @@
       "id": "A-39",
       "priority": 5,
       "band": "STOP-SHIP",
-      "verdict": "FAIL",
-      "evidence": "kein unabhängiger Verifier/Arbiter (eskaliert mit A-01)",
+      "verdict": "PARTIAL",
+      "evidence": "Deterministischer CI-Gate ist alleinige Merge-Autorität; unabh. Fremd-Vendor-Verifier residual (F2, Kompensation: manueller Zweitmodell-Review + Tripwire bis zweiter Vendor-Key).",
       "standing_control": null
     },
     {

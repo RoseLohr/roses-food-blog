@@ -6,11 +6,11 @@
   "evidenced_check_count": 76,
   "part1_status": "IN_PROGRESS",
   "part2_status": "NOT_STARTED",
-  "phase": "4-plan/5-repair",
-  "highest_open_band": "STOP-SHIP",
-  "open_stop_ship_count": 3,
-  "open_blocker_1_count": 9,
-  "open_blocker_2_count": 16,
+  "phase": "6-reaudit/7-ratify(provisorisch)",
+  "highest_open_band": "BLOCKER-1",
+  "open_stop_ship_count": 0,
+  "open_blocker_1_count": 2,
+  "open_blocker_2_count": 4,
   "security_scope_audited": false,
   "constitution_state": "IN_FORCE_PROVISIONAL",
   "production_eligible": false,
@@ -58,5 +58,13 @@
     "C-40"
   ],
   "mandate_manifest_hash": "e9c6f86bdc5df97a9001cd13f077ed8b9e1f672ba7d0c2c43db6f01fe863ca6e",
-  "constitution_hash": "1d87aa526ed7c0ef33beca41bd863864f146974f35028eaf15c5d1fff97e52f3"
+  "constitution_hash": "1d87aa526ed7c0ef33beca41bd863864f146974f35028eaf15c5d1fff97e52f3",
+  "phase6_tally": {
+    "PASS": 11,
+    "PARTIAL": 35,
+    "FAIL": 18,
+    "N/A": 12,
+    "NO-EVIDENCE": 3
+  },
+  "part1_note": "Remediation Wave 1–3 + Phase-6-Re-Audit abgeschlossen: 11 PASS, 34 PARTIAL, 19 FAIL, 12 N/A, 3 NO-EVIDENCE. Verfassung IN_FORCE_PROVISIONAL (bindend). Volle Ratifizierung (RATIFIED@v1.0) offen, bis die verbliebenen infra-lastigen Blocker (A-24 Observability/Recovery, B-03) geschlossen ODER als Residual in-command akzeptiert sind."
 }

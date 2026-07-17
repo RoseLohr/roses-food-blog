@@ -1,3 +1,40 @@
+SCOPE: TRACKS A/B (KATALOG v1.0) — STAND NACH REMEDIATION WAVE 1–3 + PHASE-6-RE-AUDIT — NICHT PRODUKTIONSFREIGEGEBEN (Track C/Part 2 ungeprüft; production_eligible=false)
+
+# Executive Summary — Stand nach Remediation
+
+## Kurzfassung
+Aus dem Discovery-Ausgang **0 PASS / 32 FAIL** wurde durch Wave 1–3:
+**11 PASS · 35 PARTIAL · 18 FAIL · 12 N/A · 3 NO-EVIDENCE.**
+Kein offenes STOP-SHIP mehr; höchstes offenes Band ist BLOCKER-1 (A-24/B-03,
+Observability/Recovery). `production_eligible` bleibt **false** (Track C/Part 2
+ungeprüft **und** offene Blocker).
+
+## Was jetzt steht (mit demonstrierter stehender Kontrolle)
+- **Deterministischer CI-Gate** (A-01/B-01): typecheck+lint+tests+build+
+  source-gates+secret-scan+separation+gate-selftest+calibration; Security-Job
+  (npm audit, deps-existence, SBOM); Mutation-Job; Deploy-Admission fail-closed.
+- **Mutation-Testing** (A-02) 82,91 % Kernlogik, Ratchet break=78.
+- **Secret-Scan** (B-06), **Gewaltenteilung** (B-35, CODEOWNERS+Check),
+  **Gate-Selbsttest** (beweist Blockieren), **Kalibrier-Korpus** (A-36).
+- **ESLint-Standards+A11y-Gate** (A-13); **axe-Runtime** strikt grün nach
+  **Kontrast-Fix** (Akzent #339e92→#277a70, WCAG-AA) — A-22.
+- **Prompt-Registry** (A-20/B-05), **ADRs** (A-09), **NFR+KI-Budgets** (A-17/A-27),
+  **Restore-Drill** (B-31), **Modell-Alias-/Stub-/Bare-Handler-Lints** (B-13/A-16/A-26).
+- **Verfassung** `IN_FORCE_PROVISIONAL` (bindend) + Mandat/Manifest, hash-attestiert;
+  **Ausnahmen-Ledger** (F1–F4) + **Residual-Register** mit Tripwires.
+
+## Was offen bleibt (ehrlich)
+- **Volle Ratifizierung (RATIFIED@v1.0)** wartet auf die verbliebenen BLOCKER-1:
+  **A-24** (SLOs/Golden-Signals/Auto-Recovery) und **B-03** (OpenTelemetry/
+  korrelierte Traces). Für einen Solo-Blog sind das große Infra-Bausteine —
+  entweder gebaut oder als Residual in-command akzeptiert.
+- Weitere infra-/prozesslastige FAIL (B-07 Replay, B-10 Eval-Gate, B-28
+  Detection→Action, B-17/B-19/B-29 …) als Residual/N-A mit Tripwire geführt.
+- **Track C (Part 2)** — Security/Privacy — komplett ungeprüft; hält
+  `production_eligible=false`.
+
+---
+
 SCOPE: TRACKS A/B (KATALOG v1.0) — DISCOVERY-DURCHGANG (Phasen 0–3) — NICHT FÜR PRODUKTIONSVERKEHR FREIGEGEBEN, SOLANGE TRACK C (PART 2) NICHT AUDITIERT IST
 
 # Executive Summary — was kaputt ist und was als Nächstes bricht
