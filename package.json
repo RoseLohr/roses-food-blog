@@ -59,7 +59,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "drizzle-kit": "0.31.10",
-    "eslint": "^9.39.5",
+    "eslint": "^10.7.0",
     "eslint-plugin-jsx-a11y": "^6.10.2",
     "eslint-plugin-react-hooks": "^7.1.1",
     "jscpd": "^5.0.12",
