@@ -144,23 +144,49 @@ const system =
 
 const user = "DIFF (Überblick + Code-Auszug):\n\n" + d;
 
+// Diversität über UNTERSCHIEDLICHE Prüf-Lenses (nicht über Temperatur) — so bleibt
+// die Anfrage minimal & modell-kompatibel und die drei Stimmen sind trotzdem
+// perspektivisch verschieden.
+const LENSES = [
+  " Fokus dieser Prüfung: Sicherheitslücken und Datenschutz.",
+  " Fokus dieser Prüfung: Korrektheit, kaputte Invarianten, fail-closed→fail-open.",
+  " Fokus dieser Prüfung: hört ein Gate/eine Kontrolle auf zu feuern; verbreiterter Blast-Radius.",
+];
+
+/** Robustes JSON-Parsing der Modellantwort — auch ohne erzwungenes response_format
+ *  (z. B. wenn das Modell die JSON in Prosa/Codefence einbettet). */
+function parseVerdict(content) {
+  if (!content) return null;
+  try { return JSON.parse(content); } catch { /* kein reines JSON — weiter */ }
+  const m = content.match(/\{[\s\S]*\}/);
+  if (m) { try { return JSON.parse(m[0]); } catch { /* auch kein JSON-Block */ } }
+  return null;
+}
+
 async function verifyOnce(i) {
   try {
+    // MINIMALE, breit kompatible Anfrage: kein temperature/seed/response_format —
+    // neuere Modelle (GPT-5.x/Sol) lehnen diese Parameter teils mit HTTP 400 ab.
     const res = await fetch(`${BASE}/chat/completions`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${KEY}` },
       body: JSON.stringify({
         model: MODEL,
-        messages: [{ role: "system", content: system }, { role: "user", content: user }],
-        response_format: { type: "json_object" },
-        temperature: 0.6,
-        seed: 1000 + i,
+        messages: [
+          { role: "system", content: system + (LENSES[i % LENSES.length] || "") },
+          { role: "user", content: user },
+        ],
       }),
     });
-    if (!res.ok) return { ok: false, reason: `API ${res.status}` };
+    if (!res.ok) {
+      // Fehler-BODY mitschreiben (nicht nur den Status) — sonst bleibt die Ursache
+      // eines 400 unsichtbar. Whitespace normalisiert, begrenzt.
+      let detail = "";
+      try { detail = (await res.text()).replace(/\s+/g, " ").slice(0, 300); } catch { detail = "(kein Body)"; }
+      return { ok: false, reason: `API ${res.status}: ${detail}` };
+    }
     const data = await res.json();
-    let v = null;
-    try { v = JSON.parse(data.choices?.[0]?.message?.content ?? ""); } catch { v = null; }
+    const v = parseVerdict(data.choices?.[0]?.message?.content ?? "");
     return { ok: true, v, decision: decide(v) };
   } catch (err) {
     return { ok: false, reason: err instanceof Error ? err.message : String(err) };
