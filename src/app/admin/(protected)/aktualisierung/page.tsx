@@ -8,6 +8,7 @@ import {
   readDeployLog,
   readDeployRequestedAt,
   readDeployStatus,
+  readWebhookLast,
 } from "@/lib/deploy";
 import { DeployMonitor } from "@/components/admin/deploy-monitor";
 import { t } from "@/i18n/de";
@@ -28,6 +29,25 @@ export default async function DeployPage() {
   const configured = Boolean(repo && branch);
   const updateAvailable =
     remote.ok && remote.latest !== undefined && remote.latest !== current;
+
+  // Präzise Fehlermeldung statt pauschalem „konnte nicht prüfen".
+  const remoteErrorMessage =
+    remote.error === "rate_limited"
+      ? d.errorRateLimited
+      : remote.error === "not_found"
+        ? d.errorNotFound
+        : remote.error === "unreachable"
+          ? d.errorUnreachable
+          : d.checkFailed;
+
+  const webhook = readWebhookLast();
+  const webhookOutcome = webhook
+    ? (d.webhookOutcomes[webhook.outcome] ?? webhook.outcome)
+    : "";
+  const fmt = new Intl.DateTimeFormat("de-DE", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
 
   const snapshot = {
     pending: isDeployPending(),
@@ -81,7 +101,7 @@ export default async function DeployPage() {
             {!configured
               ? badge(d.notConfigured, "info")
               : !remote.ok
-                ? badge(d.checkFailed, "info")
+                ? badge(remoteErrorMessage, "warn")
                 : updateAvailable
                   ? badge(d.updateAvailable, "warn")
                   : badge(d.upToDate, "ok")}
@@ -121,6 +141,34 @@ export default async function DeployPage() {
 
           <div className="mt-5">
             <DeployMonitor initial={snapshot} />
+          </div>
+
+          <div className="mt-5 border-t border-ink/5 pt-4">
+            <p className="text-sm font-semibold">{d.webhookTitle}</p>
+            {webhook ? (
+              <>
+                <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
+                  <dt className="font-medium text-ink-soft">
+                    {d.webhookReceived}
+                  </dt>
+                  <dd>{fmt.format(new Date(webhook.at))}</dd>
+                  <dt className="font-medium text-ink-soft">
+                    {d.lastResult}
+                  </dt>
+                  <dd>
+                    {webhookOutcome}
+                    {webhook.detail && (
+                      <span className="ml-1.5 text-xs text-ink-soft">
+                        ({webhook.detail})
+                      </span>
+                    )}
+                  </dd>
+                </dl>
+                <p className="mt-2 text-xs text-ink-soft">{d.webhookHint}</p>
+              </>
+            ) : (
+              <p className="mt-2 text-sm text-ink-soft">{d.webhookNever}</p>
+            )}
           </div>
         </section>
 

@@ -516,6 +516,9 @@ export const de = {
         "Repository und Branch für die Update-Prüfung im Bereich „Aktualisierung“.",
       deployRepo: "Repository (owner/name)",
       deployBranch: "Branch",
+      deployToken: "GitHub-Zugriffstoken (optional)",
+      deployTokenHint:
+        "Leer lassen, um den gespeicherten Token beizubehalten. Ohne Token gilt das GitHub-Limit von 60 Prüfungen/Stunde; mit Token (fein granular, nur Lesezugriff „Contents“) sind es 5000/Stunde, und private Repositories werden lesbar.",
       aiTitle: "KI-Assistent (Claude)",
       aiIntro:
         "API-Schlüssel für den KI-Rezeptassistenten. Wird nur serverseitig verwendet.",
@@ -544,8 +547,27 @@ export const de = {
       releaseNotesMore: "… und {n} weitere Änderungen",
       checkFailed:
         "Der neueste Stand konnte nicht von GitHub geprüft werden (Repository/Branch in den Einstellungen prüfen, Internetzugang nötig).",
+      errorRateLimited:
+        "GitHub-Anfragelimit erreicht. Ohne hinterlegten Zugriffstoken sind nur 60 Prüfungen/Stunde möglich — bitte in den Einstellungen einen GitHub-Token hinterlegen oder später erneut prüfen.",
+      errorNotFound:
+        "Repository oder Branch wurde bei GitHub nicht gefunden. Bitte Repository (owner/name) und Branch in den Einstellungen prüfen. Ein privates Repository benötigt zusätzlich einen Zugriffstoken.",
+      errorUnreachable:
+        "GitHub ist vom Server aus nicht erreichbar (Netzwerk/DNS/Timeout). Der Container kommt nicht nach außen — bitte Netzwerk bzw. DNS des Servers prüfen.",
       notConfigured:
         "Kein Repository/Branch konfiguriert — bitte in den Einstellungen hinterlegen.",
+      webhookTitle: "Automatischer Auslöser (GitHub-Webhook)",
+      webhookNever:
+        "Bisher wurde kein signierter Webhook empfangen. Entweder wurde seit dem letzten Neustart keiner ausgelöst, oder der Webhook ist bei GitHub noch nicht eingerichtet (bzw. das Secret stimmt nicht).",
+      webhookReceived: "Zuletzt empfangen",
+      webhookHint:
+        "Angezeigt wird nur der zuletzt gültig signierte Aufruf von GitHub (fehlerhafte Signaturen werden bewusst nicht protokolliert).",
+      webhookOutcomes: {
+        ping: "Verbindungstest (ping) — erfolgreich empfangen",
+        ignored_event: "Ereignis ohne Deploy (kein Push)",
+        ignored_branch: "Push auf einem anderen Branch — kein Deploy",
+        deploy_requested: "Deploy angestoßen",
+        error: "Fehler bei der Verarbeitung",
+      } as Record<string, string>,
       updateButton: "Jetzt aktualisieren & deployen",
       requested:
         "Aktualisierung angestoßen. Der Server baut und startet neu — das dauert einige Minuten. Diese Seite ist kurzzeitig nicht erreichbar.",

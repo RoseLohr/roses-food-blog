@@ -23,7 +23,7 @@
  */
 import crypto from "node:crypto";
 import { NextResponse } from "next/server";
-import { requestDeploy } from "@/lib/deploy";
+import { recordWebhook, requestDeploy } from "@/lib/deploy";
 import { rateLimit } from "@/lib/ratelimit";
 
 /** Timing-safe HMAC-Vergleich. false, wenn Header fehlt oder Länge abweicht. */
@@ -55,10 +55,22 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "bad_signature" }, { status: 401 });
   }
 
-  const event = req.headers.get("x-github-event");
-  if (event === "ping") return NextResponse.json({ ok: true, pong: true });
+  // Ab hier ist der Aufruf signatur-verifiziert (= echte GitHub-Lieferung).
+  // Nur solche Aufrufe werden protokolliert, damit unauthentifizierte
+  // Fremdaufrufe die Admin-Anzeige nicht fälschen können.
+  const event = req.headers.get("x-github-event") ?? "?";
+  if (event === "ping") {
+    recordWebhook({ at: Date.now(), event, outcome: "ping" });
+    return NextResponse.json({ ok: true, pong: true });
+  }
   if (event !== "push") {
-    return NextResponse.json({ ok: true, ignored: `event:${event ?? "?"}` });
+    recordWebhook({
+      at: Date.now(),
+      event,
+      outcome: "ignored_event",
+      detail: event,
+    });
+    return NextResponse.json({ ok: true, ignored: `event:${event}` });
   }
 
   let payload: {
@@ -69,6 +81,12 @@ export async function POST(req: Request) {
   try {
     payload = JSON.parse(raw);
   } catch {
+    recordWebhook({
+      at: Date.now(),
+      event,
+      outcome: "error",
+      detail: "invalid_json",
+    });
     return NextResponse.json({ error: "invalid_json" }, { status: 400 });
   }
   // Deploy-Branch bestimmen (Override → Default-Branch aus Payload → main).
@@ -77,18 +95,41 @@ export async function POST(req: Request) {
       ? payload.repository.default_branch
       : "";
   const deployBranch = process.env.DEPLOY_HOOK_BRANCH || defaultBranch || "main";
+  const receivedRef = typeof payload.ref === "string" ? payload.ref : "?";
   // Nur ein echter, nicht-löschender Push auf den Deploy-Branch löst aus.
   if (payload.ref !== `refs/heads/${deployBranch}` || payload.deleted === true) {
+    const deleted = payload.deleted === true;
+    recordWebhook({
+      at: Date.now(),
+      event,
+      outcome: "ignored_branch",
+      // Erwarteter vs. erhaltener Branch — macht Fehlkonfigurationen sichtbar.
+      detail: deleted
+        ? `gelöscht: ${receivedRef}`
+        : `erwartet refs/heads/${deployBranch} · erhalten ${receivedRef}`,
+    });
     return NextResponse.json({ ok: true, ignored: "not-deploy-branch" });
   }
 
   try {
     requestDeploy("github-webhook");
+    recordWebhook({
+      at: Date.now(),
+      event,
+      outcome: "deploy_requested",
+      detail: deployBranch,
+    });
     return NextResponse.json(
       { ok: true, deploy: "requested", at: Date.now() },
       { status: 202 },
     );
   } catch {
+    recordWebhook({
+      at: Date.now(),
+      event,
+      outcome: "error",
+      detail: "trigger_failed",
+    });
     return NextResponse.json({ error: "trigger_failed" }, { status: 500 });
   }
 }
