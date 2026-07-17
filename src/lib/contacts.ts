@@ -2,7 +2,7 @@
  * Kontakt-Werkzeuge: CSV-Export und DSGVO-Anonymisierung.
  */
 import crypto from "node:crypto";
-import { and, eq, inArray, or } from "drizzle-orm";
+import { and, eq, inArray, like, or, sql } from "drizzle-orm";
 import { db, schema } from "@/db";
 
 export function contactsToCsv(
@@ -98,6 +98,25 @@ export async function anonymizeContact(contactId: number): Promise<boolean> {
       or(
         eq(schema.emailQueue.contactId, contactId),
         eq(schema.emailQueue.toEmail, priorEmail),
+      ),
+    );
+  // Body-eingebettete PII: eine Mail an einen ANDEREN Empfänger (z. B. Admin-
+  // Benachrichtigung „Neue Anmeldung: <adresse>") trägt die Adresse im
+  // subject/html/textBody, nicht im to_email — die Löschung oben trifft sie nicht.
+  // Solche Restvorkommen in-place redigieren.
+  const placeholder = `anonymisiert-${contactId}@geloescht.invalid`;
+  await db
+    .update(schema.emailQueue)
+    .set({
+      subject: sql`replace(${schema.emailQueue.subject}, ${priorEmail}, ${placeholder})`,
+      html: sql`replace(${schema.emailQueue.html}, ${priorEmail}, ${placeholder})`,
+      textBody: sql`replace(${schema.emailQueue.textBody}, ${priorEmail}, ${placeholder})`,
+    })
+    .where(
+      or(
+        like(schema.emailQueue.subject, `%${priorEmail}%`),
+        like(schema.emailQueue.html, `%${priorEmail}%`),
+        like(schema.emailQueue.textBody, `%${priorEmail}%`),
       ),
     );
   await db

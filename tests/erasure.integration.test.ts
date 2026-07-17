@@ -72,6 +72,14 @@ describe("Erasure (anonymizeContact) — kein PII-Rest über alle Stores", () =>
       toEmail: CANARY, subject: "Testversand", html: `<p>${CANARY}</p>`, textBody: CANARY,
       contactId: null, status: "wartend", scheduledAt: new Date(), createdAt: new Date(),
     });
+    // … UND Body-eingebettete PII bei ABWEICHENDEM Empfänger (Admin-Benachrichtigung
+    // „Neue Anmeldung: <adresse>") — die Adresse steckt im Rumpf, nicht im to_email
+    // (der Bypass, den der adversariale Verifier fand).
+    await db.insert(schema.emailQueue).values({
+      toEmail: "admin@rosesfood.example", subject: `Neue Anmeldung: ${CANARY}`,
+      html: `<p>Neuer Kontakt: ${CANARY}</p>`, textBody: `Neuer Kontakt: ${CANARY}`,
+      contactId: null, status: "wartend", scheduledAt: new Date(), createdAt: new Date(),
+    });
 
     const [campaign] = await db
       .insert(schema.campaign)
