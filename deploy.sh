@@ -84,20 +84,31 @@ PORT="${PORT:-3000}"
 mkdir -p "$DATA_DIR" 2>/dev/null || true
 
 # Nebenläufigkeit verhindern: der manuelle `./deploy.sh` und der Panel-Watcher-
-# Dienst (roses-blog-deploy.service) dürfen sich NICHT überschneiden — sonst reißt
-# das `compose down` des einen dem anderen den gerade gestarteten Container unter
-# dem Healthcheck weg (Symptom: „Deployment erfolgreich" gefolgt von curl (7)
-# Connection refused). Exklusiver, nicht-blockierender Lock über eine Datei in
-# DATA_DIR (von beiden Läufen geteilt). Kann der Lock nicht sofort genommen werden,
-# läuft bereits ein Deploy → sauber überspringen (der aktive Lauf bringt den Stand
-# aktuell), KEIN Fehler. Fehlt flock oder ist DATA_DIR (noch) nicht beschreibbar,
-# degradiert es auf das bisherige Verhalten.
-LOCK_FILE="$DATA_DIR/.deploy.lock"
-if command -v flock >/dev/null 2>&1 && { exec 9>"$LOCK_FILE"; } 2>/dev/null; then
-  if ! flock -n 9; then
-    log "Anderer Deploy läuft bereits — dieser Lauf wird übersprungen (der laufende bringt den Stand aktuell)."
-    DEPLOY_STATUS_RESULT="erfolgreich"; DEPLOY_PHASE="übersprungen (anderer Lauf aktiv)"
-    return 0
+# Dienst (roses-blog-deploy.service) dürfen NICHT gleichzeitig `compose down/up`
+# fahren — sonst reißt der eine dem anderen den gerade gestarteten Container unter
+# dem Healthcheck weg (Symptom: „erfolgreich" gefolgt von curl (7) refused).
+# WICHTIG (beide Punkte vom Fremd-Vendor-Panel als Schwäche nachgewiesen):
+#  - Lock liegt in $HOME, NICHT in $DATA_DIR: DATA_DIR ist ins Container gemountet
+#    und app-/container-schreibbar — ein dort platzierter Symlink würde beim Öffnen
+#    gefolgt und sein Ziel getrunkt. $HOME ist für den Container unerreichbar.
+#  - Öffnen NUR-LESEND (`exec 9<`): flock braucht nur einen Deskriptor, kein `>`
+#    → selbst bei einem Symlink wird nichts getrunkt/geschrieben.
+#  - WARTEN statt Überspringen: ein zweiter Lauf (z. B. neuer Commit-Trigger
+#    während eines laufenden Deploys) wartet auf den Lock und fährt DANN einen
+#    vollen Lauf — inkl. eigenem `git pull` (Abschnitt 1), holt also den NEUESTEN
+#    Stand. So geht kein Trigger/Commit verloren, und kein übersprungener Lauf
+#    meldet fälschlich Erfolg. Timeout → ehrlicher fail (kein Silent-Erfolg).
+# Fehlt flock oder $HOME, degradiert es auf das bisherige Verhalten (ohne Lock).
+if [[ -n "${HOME:-}" ]] && command -v flock >/dev/null 2>&1; then
+  LOCK_FILE="$HOME/.roses-blog-deploy.lock"
+  ( umask 077; : >> "$LOCK_FILE" ) 2>/dev/null || true   # anlegen (0600), ohne Truncate
+  if { exec 9<"$LOCK_FILE"; } 2>/dev/null; then           # NUR-LESEND → kein Truncate
+    LOCK_WAIT="${DEPLOY_LOCK_WAIT:-2400}"
+    if ! flock -n 9; then
+      log "Anderer Deploy läuft — warte auf exklusiven Lock (max ${LOCK_WAIT}s)"
+      flock -w "$LOCK_WAIT" 9 \
+        || fail "Anderer Deploy hält den Lock länger als ${LOCK_WAIT}s — abgebrochen (kein Silent-Erfolg; ein neuer Commit-Trigger wird NICHT als Erfolg quittiert)."
+    fi
   fi
 fi
 
@@ -343,6 +354,10 @@ After=network-online.target
 
 [Service]
 Type=oneshot
+# Ein voller Build (~20 min) plus evtl. Warten auf den Deploy-Lock darf NICHT vom
+# systemd-Default (TimeoutStartSec=90s) gekillt werden — sonst bliebe ein halb
+# aktualisierter Stand zurück. Grosszuegig, aber endlich (kein echtes Haengen).
+TimeoutStartSec=7200
 WorkingDirectory=$SCRIPT_DIR
 # WICHTIG: Ein systemd-User-Dienst startet mit MINIMALEM PATH — ohne
 # ~/.local/bin (dort liegt z. B. ein per pip installiertes podman-compose)
