@@ -181,29 +181,27 @@ if (!d.trim()) { console.log("[independent-verify] Kein Diff zu prüfen. Grün."
 const MODEL = await resolveModel();
 console.log(`[independent-verify] Modell: ${MODEL}${process.env.VERIFIER_MODEL ? " (VERIFIER_MODEL gesetzt)" : " (auto: neustes freigeschaltetes)"}`);
 
+// Kompakter System-Prompt: minimaler Request bei voller semantischer Schärfe.
+// Jede Grenze/Regel des Panels bleibt erhalten — nur Füllwerk/Doppelungen sind
+// entfernt. Spart Input-Tokens bei JEDER der PANEL-Anfragen (× Stimmenzahl), ohne
+// das Urteil zu verändern (der --selftest deckt die Entscheidungslogik ab).
 const system =
-  "Du bist ein unabhängiger, feindseliger Code-Reviewer eines ANDEREN KI-Anbieters. " +
-  "Deine Aufgabe ist zu WIDERLEGEN, dass dieser Diff korrekt und sicher ist. Suche echte " +
-  "Fehler: Sicherheitslücken, kaputte Invarianten, ein Gate das aufhört zu feuern, " +
-  "fail-closed→fail-open, verbreiterter Blast-Radius. Der Diff kann gekürzt sein; der " +
-  "Überblick listet ALLE Dateien. Werte NUR echte, im Code sichtbare Defekte; das bloße " +
-  "Ausschließen von Daten/Assets/Deploy-Skripten aus git/Docker ist KEIN Defekt. " +
-  "DEINE GRENZE — überschreite sie NICHT: Widerlege NUR bei einem KONKRETEN, " +
-  "reproduzierbaren Defekt mit benennbarem Fehlverhalten (falsche Ausgabe, Absturz, " +
-  "eine Kontrolle die nachweislich aufhört zu feuern, ein REAL ausnutzbares " +
-  "Sicherheitsloch MIT konkretem Angriffspfad). Widerlege NICHT wegen: Stil/Lesbarkeit; " +
-  "'könnte defensiver/sicherer sein'; spekulativer Angriffe ohne konkreten Pfad " +
-  "(z. B. 'könnte umgangen werden', 'Format-String', 'Unicode-Homoglyphen'), wenn der " +
-  "reale Vektor bereits abgedeckt ist; fehlender hypothetischer Härtung; oder Punkten, " +
-  "die KEIN benennbares Fehlverhalten auslösen. Kannst du keinen konkreten Ausnutzungs- " +
-  "oder Fehlerpfad benennen: refuted=false. " +
-  "Antworte NUR als JSON, ohne Prosa/Markdown/Vor- oder Nachtext: " +
+  "Du bist ein feindseliger Code-Reviewer eines ANDEREN KI-Anbieters. Ziel: WIDERLEGEN, " +
+  "dass dieser Diff korrekt und sicher ist. Suche ECHTE, im Code sichtbare Defekte: " +
+  "Sicherheitsloch, kaputte Invariante, ein Gate/eine Kontrolle die aufhört zu feuern, " +
+  "fail-closed→fail-open, verbreiterter Blast-Radius. Diff evtl. gekürzt; der --stat-" +
+  "Überblick listet ALLE Dateien. KEIN Defekt: Daten/Assets/Deploy-Skripte aus git/Docker " +
+  "ausschließen; Stil/Lesbarkeit; 'könnte sicherer sein'; spekulative Angriffe ohne " +
+  "konkreten Pfad ('umgehbar', Format-String, Unicode-Homoglyphen), wenn der reale Vektor " +
+  "abgedeckt ist; hypothetische Härtung; alles ohne benennbares Fehlverhalten. GRENZE: " +
+  "Widerlege NUR bei KONKRETEM, reproduzierbarem Defekt mit benennbarem Fehlverhalten " +
+  "(falsche Ausgabe, Absturz, Kontrolle feuert nachweislich nicht mehr, real ausnutzbares " +
+  "Loch MIT Angriffspfad). Kein konkreter Ausnutzungs-/Fehlerpfad → refuted=false. " +
+  "Antworte NUR als JSON, ohne Prosa/Markdown: " +
   '{"refuted": boolean, "confidence": "high"|"medium"|"low", "reason": string}. ' +
-  "HALTE reason SO KURZ WIE MÖGLICH: maschinell/telegrammartig, Abkürzungen erlaubt, " +
-  "KEINE ganzen Sätze, keine Wiederholung der Aufgabe — aber technisch AUSREICHEND. " +
-  "Schema: 'pfad/datei:Zeile — Defekt — konkretes Fehlverhalten'. Ziel ≤ 200 Zeichen. " +
-  'Bei refuted=false: reason leer "" oder ein Wort. ' +
-  "refuted=true NUR bei einem konkreten, benennbaren Defekt.";
+  "reason maximal knapp/maschinell, Abkürzungen ok, keine ganzen Sätze, aber technisch " +
+  "ausreichend; Schema 'pfad/datei:Zeile — Defekt — Fehlverhalten', ≤200 Zeichen; bei " +
+  'refuted=false reason "" oder ein Wort. refuted=true NUR bei konkretem, benennbarem Defekt.';
 
 const user = "DIFF (Überblick + Code-Auszug):\n\n" + d;
 
