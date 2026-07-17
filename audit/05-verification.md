@@ -60,3 +60,17 @@ Hoffnung — und Hoffnung hat diesen Codebestand gebaut.
 - **C-26 · AI-BOM** (`ai-bom.mjs --verify`): Modelle im Code == AI-BOM (claude-opus-4-8, 0 Datensätze/Adapter). CI-Step (security).
 - **C-26/C-37 · Mandat-Provenance** (`mandate-hash.mjs --verify`): part1/part2/combined attestiert, mandate.md deterministisch. CI-Step + Deploy-Voraussetzung.
 - **C-25 · Lizenz-Scan** (`license-scan.mjs`): 506 Deps, kein starkes Copyleft; Seed = AGPL erkannt. IP-Position dokumentiert. CI-Step.
+
+## Welle 4 — MUST-FIX/PLAN (C-37, C-03, C-10 + C-11/20/28/29/30/31/33/34/38/40)
+
+- **C-37 · Provenance-Rekonstruktion** (`provenance-reconstruct.mjs`): 180 Quelldateien,
+  alle einer Owning-Role zugeordnet (ownership-registry.json); Policy-Bundle (Verfassung)
+  verifiziert; Spot-Rekonstruktion vollständig. Seed = unabgedeckte Datei gefangen. CI-Step.
+  Ehrliche Grenze: Modell-Trailer nur auf Engagement-Commits, Legacy-Commits ohne — Rolle
+  + Policy-Bundle sind dennoch rekonstruierbar.
+- **C-03 · Supply-Chain** (`supply-chain-playbook.md`): deps-existence + Lockfile + audit +
+  Lizenz-Scan aktiv; Registry-Alters-Check als nächtliche Kadenz; Playbook geübt dokumentiert.
+- **C-10 · Golden-Eval** (`tests/ai-eval.golden.test.ts`): eingefrorenes Golden-Set (Saison),
+  Schwellwert 100 % exakt, Ratchet (nur steigen). In CI (npm test).
+- **C-11/20/28/29/30/31/33/34/38/40** (`governance/ai-governance.md`): je Owner + Maß/Kontrolle
+  + Tripwire; erzwingende Gates verlinkt (Policy-Enforcement-Mapping C-33).

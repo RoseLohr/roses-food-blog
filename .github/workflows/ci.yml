@@ -55,6 +55,8 @@ jobs:
         run: node scripts/regime/ai-budget-check.mjs --selftest
       - name: Trust-Boundary-Detektor (C-02, neue Integration deklariert)
         run: node scripts/regime/boundary-check.mjs --selftest
+      - name: Provenance-Rekonstruktion (C-37, jede Datei einer Owning-Role)
+        run: node scripts/regime/provenance-reconstruct.mjs --selftest
       - name: Kalibrierung (A-36, Kontrollen fangen ihre Seeds — inkl. Track C)
         run: node scripts/regime/calibration/inject.mjs --strict
       - name: Tests (vitest)
