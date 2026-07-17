@@ -83,11 +83,22 @@ DATA_DIR="${DATA_DIR:-/srv/roses-blog/data}"
 PORT="${PORT:-3000}"
 mkdir -p "$DATA_DIR" 2>/dev/null || true
 
+# Sofortiger Herzschlag ans Panel: „angenommen, läuft an“. Ohne diesen Status
+# würde ein Abbruch VOR Abschnitt 0 (z. B. podman nicht im PATH des systemd-
+# Dienstes) gar keinen Status schreiben — das Panel meldete dann fälschlich
+# „Watcher läuft nicht“, obwohl er sehr wohl lief. MUSS vor dem Lock-Gate stehen:
+# schlägt die Lock-Etablierung fehl (fail-closed) oder läuft der Lock in den
+# Timeout, ist so bereits ein frischer „running"-Status geschrieben, den der
+# EXIT-Trap dann auf „fehlgeschlagen" dreht — das Panel behält keinen stale Erfolg.
+: > "$DATA_DIR/deploy.log" 2>/dev/null || true
+DEPLOY_RUNNING=1; DEPLOY_STATUS_RESULT=""
+log "Deployment angenommen — Umgebung wird geprüft"
+
 # Nebenläufigkeit verhindern: der manuelle `./deploy.sh` und der Panel-Watcher-
 # Dienst (roses-blog-deploy.service) dürfen NICHT gleichzeitig `compose down/up`
 # fahren — sonst reißt der eine dem anderen den gerade gestarteten Container unter
 # dem Healthcheck weg (Symptom: „erfolgreich" gefolgt von curl (7) refused).
-# WICHTIG (beide Punkte vom Fremd-Vendor-Panel als Schwäche nachgewiesen):
+# WICHTIG (mehrere Punkte vom Fremd-Vendor-Panel als Schwäche nachgewiesen):
 #  - Lock liegt in $HOME, NICHT in $DATA_DIR: DATA_DIR ist ins Container gemountet
 #    und app-/container-schreibbar — ein dort platzierter Symlink würde beim Öffnen
 #    gefolgt und sein Ziel getrunkt. $HOME ist für den Container unerreichbar.
@@ -119,14 +130,6 @@ else
       || fail "Anderer Deploy hält den Lock länger als ${LOCK_WAIT}s — abgebrochen (kein Silent-Erfolg; ein neuer Commit-Trigger wird NICHT als Erfolg quittiert)."
   fi
 fi
-
-# Sofortiger Herzschlag ans Panel: „angenommen, läuft an“. Ohne diesen Status
-# würde ein Abbruch VOR Abschnitt 0 (z. B. podman nicht im PATH des systemd-
-# Dienstes) gar keinen Status schreiben — das Panel meldete dann fälschlich
-# „Watcher läuft nicht“, obwohl er sehr wohl lief.
-: > "$DATA_DIR/deploy.log" 2>/dev/null || true
-DEPLOY_RUNNING=1; DEPLOY_STATUS_RESULT=""
-log "Deployment angenommen — Umgebung wird geprüft"
 
 # Deployt standardmäßig den aktuell ausgecheckten Branch (Override: DEPLOY_BRANCH)
 CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)"

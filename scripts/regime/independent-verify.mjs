@@ -142,19 +142,21 @@ const MIN_REASON_LEN = 8;
  */
 export function attestReasons(votes, panelSize) {
   const need = Math.floor(panelSize / 2) + 1; // Mehrheit
-  // Kanonischer Vergleichs-Schlüssel auf dem ROHSTRING: whitespace-/case-nur-
-  // verschiedene Begründungen zählen NICHT als eindeutig.
-  const norm = (r) => r.replace(/\s+/g, " ").trim().toLowerCase();
-  const echt = (r) => typeof r === "string" && r.trim().length >= MIN_REASON_LEN;
-  // Nur GRÜN tragende Stimmen: gültig, geparst, decide()-durchgelassen, echt begründet.
-  const passing = votes.filter(
-    (x) => x.ok && x.v && typeof x.v.refuted === "boolean" && !decide(x.v).block && echt(x.v.reason),
-  );
-  if (passing.length < need)
-    return { block: true, reason: `nur ${passing.length}/${panelSize} Grün-Stimmen mit echter Begründung (< Mehrheit ${need}) → Schein-Grün-Verdacht, fail-closed` };
-  const distinct = new Set(passing.map((x) => norm(x.v.reason)));
+  // Normalisiert (Whitespace kollabiert, getrimmt, lowercased). NICHT-Strings → "".
+  // Die Substanz-Prüfung (MIN_REASON_LEN) läuft auf der NORMALISIERTEN Länge —
+  // sonst täuscht Whitespace-Padding ("a      b") eine Mindestlänge vor, obwohl nur
+  // wenige echte Zeichen vorliegen. Derselbe normalisierte Wert dient der
+  // Eindeutigkeit, damit whitespace-/case-nur-Varianten nicht als „verschieden" zählen.
+  const norm = (r) => (typeof r === "string" ? r.replace(/\s+/g, " ").trim().toLowerCase() : "");
+  // Nur GRÜN tragende Stimmen (gültig, geparst, decide()-durchgelassen), Begründung
+  // mit echter Substanz nach Normalisierung.
+  const green = votes.filter((x) => x.ok && x.v && typeof x.v.refuted === "boolean" && !decide(x.v).block);
+  const normed = green.map((x) => norm(x.v.reason)).filter((s) => s.length >= MIN_REASON_LEN);
+  if (normed.length < need)
+    return { block: true, reason: `nur ${normed.length}/${panelSize} Grün-Stimmen mit echter Begründung (< Mehrheit ${need}) → Schein-Grün-Verdacht, fail-closed` };
+  const distinct = new Set(normed);
   if (distinct.size < need)
-    return { block: true, reason: `nur ${distinct.size} verschiedene Grün-Begründung(en) unter ${passing.length} (< Mehrheit ${need}) → Schein-Grün-Verdacht, fail-closed` };
+    return { block: true, reason: `nur ${distinct.size} verschiedene Grün-Begründung(en) unter ${normed.length} (< Mehrheit ${need}) → Schein-Grün-Verdacht, fail-closed` };
   return { block: false, reason: `${distinct.size} eigenständige Grün-Begründungen attestiert` };
 }
 
@@ -174,7 +176,9 @@ export function attestProof(votes, challenge, panelSize) {
   const validProof = (v) => {
     if (typeof v?.proof !== "string" || !challenge) return false;
     const pre = challenge + "-";
-    return v.proof.startsWith(pre) && /^\d{1,6}$/.test(v.proof.slice(pre.length));
+    // Tier STRENG 1–9999 (kein 0, kein Leading-Zero, kein ≥10000) — genau wie im
+    // Prompt vorgegeben; eine zu weite Regex ließe malformte Proofs als gültig durch.
+    return v.proof.startsWith(pre) && /^[1-9]\d{0,3}$/.test(v.proof.slice(pre.length));
   };
   const green = votes.filter((x) => x.ok && x.v && typeof x.v.refuted === "boolean" && !decide(x.v).block);
   const proven = green.filter((x) => validProof(x.v));
@@ -235,6 +239,9 @@ if (process.argv.includes("--selftest")) {
   expect(attestReasons([R(g1), R(g1), R(g2)], 3).block === false, "2/3-Mehrheit eindeutiger Grün-Begründungen genügt (ein Duplikat erlaubt).");
   expect(attestReasons([R(g1), R(g1), R(g1)], 3).block === true, "durchweg identische Grün-Begründungen (kanned) müssen blocken.");
   expect(attestReasons([R("Grund AAA XX"), R(" grund   aaa xx "), R("grund aaa xx")], 3).block === true, "nach Whitespace/Case-Normalisierung alle gleich → distinct=1 → blocken.");
+  // Panel-Befund: Whitespace-Padding darf die Mindestlänge NICHT vortäuschen —
+  // "a      b" hat roh 8 Zeichen, normalisiert aber nur "a b" (3) → keine Substanz.
+  expect(attestReasons([R("a      b"), R("c      d"), R("e      f")], 3).block === true, "Whitespace-Padding (normalisiert < MIN) zählt NICHT als echte Begründung → blocken.");
   expect(attestReasons([R(""), R(""), R("")], 3).block === true, "leere Begründungen müssen fail-closed blocken.");
   // Panel-Befund: kanned Grün-Mehrheit + 1 abweichendes Refutat darf NICHT durch —
   // die Refutat-Begründung zählt nicht zur Freigabe.
@@ -255,6 +262,10 @@ if (process.argv.includes("--selftest")) {
   expect(attestProof([PR("kein-echo-1"), PR("kein-echo-2"), PR("kein-echo-3")], CH, 3).block === true, "falsche Challenge (hartcodiertes Grün) muss blocken.");
   expect(attestProof([PR(`${CH}-7`), PR(""), PR("")], CH, 3).block === true, "nur 1/3 mit gültigem Proof (< Mehrheit) → blocken.");
   expect(attestProof([PR(`${CH}-x`), PR(`${CH}-y`), PR(`${CH}-z`)], CH, 3).block === true, "Tier nicht numerisch → ungültiger Proof → blocken.");
+  // Panel-Befund: Tier muss STRENG 1–9999 sein — 0 und ≥10000 sind ungültig.
+  expect(attestProof([PR(`${CH}-0`), PR(`${CH}-0`), PR(`${CH}-0`)], CH, 3).block === true, "Tier 0 ist ungültig → blocken.");
+  expect(attestProof([PR(`${CH}-10000`), PR(`${CH}-10000`), PR(`${CH}-10000`)], CH, 3).block === true, "Tier ≥10000 ist ungültig → blocken.");
+  expect(attestProof([PR(`${CH}-9999`), PR(`${CH}-1`), PR(`${CH}-500`)], CH, 3).block === false, "Tier an den Grenzen 1 und 9999 ist gültig → passieren.");
   expect(attestProof([PR(`${CH}-7`), PR(`${CH}-8`), PR("nope-1", true)], CH, 3).block === false, "Refutat-Stimme ohne Proof egal, solange Grün-Mehrheit gültige Proofs hat.");
   expect(attestProof([PR(`${CH}-7`)], CH, 1).block === false, "Panel=1 mit gültigem Proof passiert.");
   expect(attestProof([PR(`${CH}-7`), PR(`${CH}-8`), PR(`${CH}-9`)], "", 3).block === true, "leere Challenge → kein Proof gültig → fail-closed.");
