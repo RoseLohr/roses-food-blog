@@ -117,36 +117,44 @@ export function aggregate(votes, panelSize) {
   return { block: false, reason: `${refutes.length}/${valid.length} Refutate (< Mehrheit ${need})` };
 }
 
+// Mindestlänge einer „echten" Begründung. Kürzest-Tokens wie „ok"/„1"/„n/a" sind
+// keine nachvollziehbare Analyse und dürfen Grün nicht attestieren.
+const MIN_REASON_LEN = 8;
+
 /**
  * Integritäts-Gate gegen SCHEIN-GRÜN (A-01/A-39). Grün darf nur passieren, wenn
- * das Panel nachweislich ECHT gearbeitet hat — nicht, wenn es bloß auf „ok"
- * geschaltet wurde. Fail-CLOSED. Verlangt, dass eine MEHRHEIT der Stimmen eine
- * geparste Antwort MIT nicht-leerer Begründung trägt UND darunter mindestens
- * eine MEHRHEIT VERSCHIEDENER (eindeutiger) Begründungen liegt — durchweg
- * identische/leere Begründungen (distinct ≤ 1) sind das Signatur-Muster einer
- * kanned/gefälschten Grün-Antwort und blocken.
- * NICHT „alle paarweise verschieden": zwei Stimmen dürfen zufällig dieselbe
- * knappe Phrase liefern (z. B. 'kein konkreter Fehlerpfad'), solange insgesamt
- * eine Mehrheit eigenständiger Begründungen vorliegt — sonst blockierte das Gate
- * legitime Grün-Fälle (genau dieser Fehler wurde vom Fremd-Vendor-Panel
- * nachgewiesen: [„a",„a",„b"] hat eine 2/3-Mehrheit eindeutiger Gründe).
+ * die GRÜN TRAGENDEN Stimmen nachweislich echt gearbeitet haben — nicht, wenn
+ * bloß auf „ok" geschaltet wurde. Fail-CLOSED. Zwei Härtungen, beide vom
+ * Fremd-Vendor-Panel als Lücke nachgewiesen:
+ *  1) NUR nicht-blockende (Grün tragende) Stimmen zählen. Eine widerlegende
+ *     Stimme darf die Eindeutigkeit der FREIGABE nicht aufblähen — sonst genügte
+ *     eine kanned Grün-Mehrheit (['ok','ok']) + 1 abweichendes Refutat ('bug'),
+ *     um distinct≥Mehrheit vorzutäuschen.
+ *  2) Eine „echte" Begründung ist ein STRING mit Substanz (≥ MIN_REASON_LEN),
+ *     nicht bloß ein per String()-Coercion gerettetes number/Objekt oder ein
+ *     Kürzest-Token.
+ * Verlangt: eine MEHRHEIT solcher echten Grün-Begründungen UND darunter eine
+ * MEHRHEIT VERSCHIEDENER (nach Whitespace/Case normalisiert). NICHT „alle
+ * paarweise verschieden": ein einzelnes Duplikat ist erlaubt, damit legitime
+ * knappe Phrasen Grün nicht fälschlich blocken.
  * `votes`: Array aus { ok, v?:{refuted,reason} }. Rein & testbar.
  */
 export function attestReasons(votes, panelSize) {
   const need = Math.floor(panelSize / 2) + 1; // Mehrheit
-  // Kanonischer Vergleichs-Schlüssel auf dem ROHSTRING (nicht JSON-quotiert): sonst
-  // schützen die Anführungszeichen innenliegende Leerzeichen vor trim() und rein
-  // whitespace-/case-verschiedene Begründungen zählten fälschlich als eindeutig.
-  const norm = (r) => String(r).replace(/\s+/g, " ").trim().toLowerCase();
-  const reasoned = votes.filter(
-    (x) => x.ok && x.v && typeof x.v.refuted === "boolean" && String(x.v.reason ?? "").trim() !== "",
+  // Kanonischer Vergleichs-Schlüssel auf dem ROHSTRING: whitespace-/case-nur-
+  // verschiedene Begründungen zählen NICHT als eindeutig.
+  const norm = (r) => r.replace(/\s+/g, " ").trim().toLowerCase();
+  const echt = (r) => typeof r === "string" && r.trim().length >= MIN_REASON_LEN;
+  // Nur GRÜN tragende Stimmen: gültig, geparst, decide()-durchgelassen, echt begründet.
+  const passing = votes.filter(
+    (x) => x.ok && x.v && typeof x.v.refuted === "boolean" && !decide(x.v).block && echt(x.v.reason),
   );
-  if (reasoned.length < need)
-    return { block: true, reason: `nur ${reasoned.length}/${panelSize} Stimmen mit echter Begründung (< Mehrheit ${need}) → Schein-Grün-Verdacht, fail-closed` };
-  const distinct = new Set(reasoned.map((x) => norm(x.v.reason)));
+  if (passing.length < need)
+    return { block: true, reason: `nur ${passing.length}/${panelSize} Grün-Stimmen mit echter Begründung (< Mehrheit ${need}) → Schein-Grün-Verdacht, fail-closed` };
+  const distinct = new Set(passing.map((x) => norm(x.v.reason)));
   if (distinct.size < need)
-    return { block: true, reason: `nur ${distinct.size} verschiedene Begründung(en) unter ${reasoned.length} Stimmen (< Mehrheit ${need}) → Schein-Grün-Verdacht, fail-closed` };
-  return { block: false, reason: `${distinct.size} eigenständige Begründungen attestiert` };
+    return { block: true, reason: `nur ${distinct.size} verschiedene Grün-Begründung(en) unter ${passing.length} (< Mehrheit ${need}) → Schein-Grün-Verdacht, fail-closed` };
+  return { block: false, reason: `${distinct.size} eigenständige Grün-Begründungen attestiert` };
 }
 
 const DIFF_OPTS = { encoding: "utf8", maxBuffer: 256 * 1024 * 1024 };
@@ -196,16 +204,23 @@ if (process.argv.includes("--selftest")) {
   expect(aggregate([P, E, E], 3).block === true, "zu wenige gültige Stimmen → fail-closed block.");
   // attestReasons() (Schein-Grün-Gate: echte, eindeutige Begründungen erzwingen)
   const R = (reason, refuted = false) => ({ ok: true, v: { refuted, reason } });
-  expect(attestReasons([R("a"), R("b"), R("c")], 3).block === false, "3 eindeutige Begründungen müssen passieren.");
-  expect(attestReasons([R("a"), R("a"), R("b")], 3).block === false, "2/3-Mehrheit eindeutiger Begründungen genügt (ein Duplikat erlaubt).");
-  expect(attestReasons([R("gleich"), R("gleich"), R("gleich")], 3).block === true, "durchweg identische Begründungen (kanned) müssen blocken.");
-  expect(attestReasons([R("A B"), R(" a   b "), R("a b")], 3).block === true, "nach Whitespace/Case-Normalisierung alle gleich → distinct=1 → blocken.");
+  const g1 = "grund eins aaaa", g2 = "grund zwei bbbb", g3 = "grund drei cccc";
+  expect(attestReasons([R(g1), R(g2), R(g3)], 3).block === false, "3 eindeutige Grün-Begründungen müssen passieren.");
+  expect(attestReasons([R(g1), R(g1), R(g2)], 3).block === false, "2/3-Mehrheit eindeutiger Grün-Begründungen genügt (ein Duplikat erlaubt).");
+  expect(attestReasons([R(g1), R(g1), R(g1)], 3).block === true, "durchweg identische Grün-Begründungen (kanned) müssen blocken.");
+  expect(attestReasons([R("Grund AAA XX"), R(" grund   aaa xx "), R("grund aaa xx")], 3).block === true, "nach Whitespace/Case-Normalisierung alle gleich → distinct=1 → blocken.");
   expect(attestReasons([R(""), R(""), R("")], 3).block === true, "leere Begründungen müssen fail-closed blocken.");
-  expect(attestReasons([R("a"), R("b"), E], 3).block === false, "Mehrheit (2/3) mit eindeutigen Begründungen genügt.");
-  expect(attestReasons([R("a"), R("a"), E], 3).block === true, "2 begründete Stimmen, aber nur 1 eindeutig (< Mehrheit) → blocken.");
-  expect(attestReasons([R("a"), E, E], 3).block === true, "nur 1/3 begründet (< Mehrheit) → fail-closed blocken.");
-  expect(attestReasons([{ ok: true, v: null }, R("b"), R("c")], 3).block === false, "unparsbare Stimme ignoriert, Rest eindeutig → passiert.");
-  expect(attestReasons([R("solo")], 1).block === false, "Panel=1 mit echter Begründung passiert.");
+  // Panel-Befund: kanned Grün-Mehrheit + 1 abweichendes Refutat darf NICHT durch —
+  // die Refutat-Begründung zählt nicht zur Freigabe.
+  expect(attestReasons([R(g1), R(g1), R("echter bug hier", true)], 3).block === true, "identische Grün-Mehrheit; abweichende Refutat-Begründung zählt NICHT → blocken.");
+  // Kürzest-Token bzw. falscher Typ ist keine echte Begründung.
+  expect(attestReasons([R("ok"), R("ok"), E], 3).block === true, "Kürzest-Token 'ok' ist keine echte Begründung → blocken.");
+  expect(attestReasons([R(1), R(2), E], 3).block === true, "numerischer reason (String-Coercion) zählt NICHT → blocken.");
+  expect(attestReasons([R(g1), R(g2), E], 3).block === false, "Mehrheit (2/3) Grün mit eindeutigen Begründungen genügt.");
+  expect(attestReasons([R(g1), R(g1), E], 3).block === true, "2 Grün-Stimmen, aber nur 1 eindeutig (< Mehrheit) → blocken.");
+  expect(attestReasons([R(g1), E, E], 3).block === true, "nur 1/3 Grün begründet (< Mehrheit) → fail-closed blocken.");
+  expect(attestReasons([{ ok: true, v: null }, R(g1), R(g2)], 3).block === false, "unparsbare Stimme ignoriert, Rest eindeutig → passiert.");
+  expect(attestReasons([R("grund solo aaaa")], 1).block === false, "Panel=1 mit echter Begründung passiert.");
   console.log("   ✓ Selbsttest: decide() + aggregate() + attestReasons() (Schein-Grün-Gate) korrekt.");
   process.exit(0);
 }
