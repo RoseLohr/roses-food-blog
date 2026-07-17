@@ -172,13 +172,14 @@ votes.forEach((x, i) => {
   }
   // Auch die BEGRÜNDUNG mitschreiben (nicht nur refuted/confidence) — die liefert
   // das Modell ohnehin; im CI-Log ist sie der eigentlich informative Teil.
-  // Sanitisiert gegen Log-Injection: ALLE Steuerzeichen (C0/C1, inkl. Zeilen-
-  // umbrüchen und ANSI-ESC ) werden entfernt — der Text stammt aus Modell-
-  // Output, der vom (attacker-beeinflussbaren) Diff mitgeprägt ist. Danach
-  // Whitespace normalisieren, trimmen, begrenzen. Kein Geheimnis-Leak: der reason
-  // ist Modell-Analyse eines ohnehin öffentlichen Diffs (secret-scan hält Secrets fern).
-  const clean = (s) => String(s).replace(/[\u0000-\u001f\u007f-\u009f]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 600);
-  const reason = x.v?.reason ? ` — Begründung: ${clean(x.v.reason)}` : "";
+  // SICHERES Logging von modell-beeinflusstem Text: JSON.stringify escaped ALLE
+  // Steuerzeichen, Zeilenumbrueche, Anfuehrungszeichen und Backslashes (zu \uXXXX
+  // bzw. \n) und liefert einen einzeiligen, in Anfuehrungszeichen gefassten String.
+  // Keine Log-Zeilen-/Terminal-Manipulation moeglich, und (anders als eine Zeichen-
+  // Denylist) nicht umgehbar. console.log(einString) macht zudem KEINE printf-
+  // Substitution (kein %-Format-String-Vektor). Kein Geheimnis-Leak: der reason ist
+  // Modell-Analyse eines ohnehin oeffentlichen Diffs.
+  const reason = x.v?.reason ? ` — Begründung: ${JSON.stringify(x.v.reason).slice(0, 600)}` : "";
   console.log(`  Verifier ${i + 1}/${PANEL} (${MODEL}): refuted=${x.v?.refuted} confidence=${x.v?.confidence}${reason}`);
 });
 const verdict = aggregate(votes, PANEL);
