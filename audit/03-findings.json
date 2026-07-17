@@ -4,10 +4,10 @@
   "count": 119,
   "tally": {
     "PASS": 19,
-    "PARTIAL": 44,
-    "N/A": 12,
-    "FAIL": 3,
-    "NO-EVIDENCE": 41
+    "PARTIAL": 67,
+    "N/A": 27,
+    "FAIL": 5,
+    "NO-EVIDENCE": 1
   },
   "findings": [
     {
@@ -646,323 +646,324 @@
       "id": "C-01",
       "priority": 10,
       "band": "STOP-SHIP",
-      "verdict": "NO-EVIDENCE",
-      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "verdict": "PARTIAL",
+      "evidence": "Guards vorhanden per Konvention: 14/16 Action-Dateien + alle api/admin-Routen rufen requireAdmin; Ausnahmen benigne (logout/login); strikte Upload-Regex (kein Traversal); parametrisierte Queries + FTS-Allowlist; argon2id; HttpOnly/secure/sameSite-Cookie; CSRF Same-Origin. LÜCKE: kein Authz-Coverage-Gate/Test, kein DAST, keine ASVS-Level-Attestierung — Deckung nur durch Konvention gesichert.",
       "standing_control": null
     },
     {
       "id": "C-04",
       "priority": 10,
       "band": "STOP-SHIP",
-      "verdict": "NO-EVIDENCE",
-      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "verdict": "PARTIAL",
+      "evidence": "Stark: anonymizeContact kaskadiert über contact/interest/tag/segment/activity/emailQueue/sequenceLog (irreversibel); Tracking aggregiert+löscht Rohdaten in einer Transaktion, Aggregat-Retention 730 T; Double-Opt-in-Einwilligung (consentAt, Art. 6(1)(a)); CSV-Export. LÜCKE: keine signierte DPIA/RoPA, keine generierte Datenkarte + CI-Diff, kein e2e-Erasure-Kanarien-Test, ops_event ohne Retention, emailQueue-Restrisiko bei contactId=null.",
       "standing_control": null
     },
     {
       "id": "C-03",
       "priority": 9,
       "band": "BLOCKER-1",
-      "verdict": "NO-EVIDENCE",
-      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "verdict": "PARTIAL",
+      "evidence": "deps-existence (B-04 PASS) + Lockfile + npm audit ≥high in CI. LÜCKE: kein nächtlicher Registry-Alters-/Reputations-Check, kein geübtes Poisoned-Dependency-Playbook, kein monatlicher Kalibrier-Seed.",
       "standing_control": null
     },
     {
       "id": "C-05",
       "priority": 9,
       "band": "BLOCKER-1",
-      "verdict": "NO-EVIDENCE",
-      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "verdict": "FAIL",
+      "evidence": "Keine LLM-Risiko-Taxonomie-Matrix (10 Kategorien → Kontrolle + Test) vorhanden. Consumption-Caps (max_tokens 8000, Timeout, maxRetries) und Schema-Bindung existieren, aber die Matrix als Deliverable fehlt komplett.",
       "standing_control": null
     },
     {
       "id": "C-07",
       "priority": 9,
       "band": "BLOCKER-1",
-      "verdict": "NO-EVIDENCE",
-      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "verdict": "PARTIAL",
+      "evidence": "Architektonisches Containment stark: Modellausgabe strikt schema-gebunden (zodOutputFormat), nicht-konsequent (Entwurf, den der in-command-Admin prüft; Taxonomien deferred bis Speichern), kein Tool-Use/Egress, Ausgangstext nicht persistiert. LÜCKE: keine Injektions-Eval-Suite in CI, keine schriftliche Restrisiko-Annahme (UNSETTLED).",
       "standing_control": null
     },
     {
       "id": "C-09",
       "priority": 9,
       "band": "BLOCKER-1",
-      "verdict": "NO-EVIDENCE",
-      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "verdict": "PARTIAL",
+      "evidence": "Ein generatives Feature, admin-only, keine automatisierten Entscheidungen über Personen, keine nutzerseitige KI-Interaktion. LÜCKE: keine generierte KI-System-Inventur mit Risikoklassifizierung, keine dokumentierte Article-50-Bewertung/Kennzeichnungsentscheidung.",
       "standing_control": null
     },
     {
       "id": "C-27",
       "priority": 9,
       "band": "BLOCKER-1",
-      "verdict": "NO-EVIDENCE",
-      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "verdict": "N/A",
+      "evidence": "Applikabilität bestimmt: GDPR bindet (via C-04 abgedeckt); KEINE Zahlungsdaten (kein PCI DSS), KEINE Gesundheitsdaten (kein HIPAA), KEIN SOC2/ISO-Zertifizierungsanspruch. Persönlicher Blog. Tripwire: sobald Zahlungs-/Gesundheitsdaten verarbeitet oder eine Zertifizierung beansprucht wird, reaktiviert C-27 (ai-capability-guard/scope-guard).",
       "standing_control": null
     },
     {
       "id": "C-02",
       "priority": 8,
       "band": "BLOCKER-2",
-      "verdict": "NO-EVIDENCE",
-      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "verdict": "FAIL",
+      "evidence": "Kein versioniertes Threat-Model (Datenflussdiagramm, Trust-Boundaries, STRIDE) vorhanden. Sicherheitseigenschaften existieren im Code, sind aber nicht als Threat-Model erfasst; kein New-Trust-Boundary-Detector.",
       "standing_control": null
     },
     {
       "id": "C-06",
       "priority": 8,
       "band": "BLOCKER-2",
-      "verdict": "NO-EVIDENCE",
-      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "verdict": "N/A",
+      "evidence": "Keine agentische Fähigkeit: kein Tool-Use, kein Planen/Handeln, kein Agenten-Runtime (B-20/B-22 N/A). Alle 10 agentischen Kategorien treffen nicht zu. Tripwire: erster tools:-Aufruf/Agenten-Framework im KI-Pfad reaktiviert (ai-capability-guard, Phase 5′).",
       "standing_control": null
     },
     {
       "id": "C-08",
       "priority": 8,
       "band": "BLOCKER-2",
-      "verdict": "NO-EVIDENCE",
-      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "verdict": "PARTIAL",
+      "evidence": "Die „gefährliche Drei\" kann nicht zusammentreten: untrusted input (Ausgangstext) ja, aber KEIN Private-Data-Bein erreicht das Modell (nur Ausgangstext + eigene öffentliche Rezepttexte) und KEIN Egress-Bein (Ausgabe nur JSON an den Admin). Per Inspektion entscheidbar. LÜCKE: keine asserting Test/Guard, der das je Build + Tool-Hinzufügung prüft.",
       "standing_control": null
     },
     {
       "id": "C-10",
       "priority": 8,
       "band": "BLOCKER-2",
-      "verdict": "NO-EVIDENCE",
-      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "verdict": "PARTIAL",
+      "evidence": "In-command-Review kompensiert (jede KI-Ausgabe wird vom Admin geprüft; B-10). LÜCKE: kein versioniertes Golden-Eval-Set mit eingefrorenem Schwellwert, kein CI-Gate, das bei Regression blockiert.",
       "standing_control": null
     },
     {
       "id": "C-23",
       "priority": 8,
       "band": "BLOCKER-2",
-      "verdict": "NO-EVIDENCE",
-      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "verdict": "PARTIAL",
+      "evidence": "PII-frei per Design: logJson „nie personenbezogen\", Ausgangstext des KI-Laufs nie geloggt, Tracking-IP normalisiert + Rohdaten gelöscht. LÜCKE: kein erzwungener PII-Scan am Emitter, ops_event ohne Retention (unbegrenztes Wachstum = Haftung).",
       "standing_control": null
     },
     {
       "id": "C-26",
       "priority": 8,
       "band": "BLOCKER-2",
-      "verdict": "NO-EVIDENCE",
-      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "verdict": "PARTIAL",
+      "evidence": "SBOM (CycloneDX) in CI (A-38/B-09). LÜCKE: kein AI-BOM (Modelle), keine am Deploy verifizierte Provenance (Verify-on-Deploy fehlt).",
       "standing_control": null
     },
     {
       "id": "C-11",
       "priority": 7,
       "band": "MUST-FIX",
-      "verdict": "NO-EVIDENCE",
-      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "verdict": "PARTIAL",
+      "evidence": "Governance-Charter (ai-policy.md, A-14 PASS) + Pipeline-emittierte Evidenz (dieses Engagement). LÜCKE: keine explizite NIST-AI-RMF-Zuordnung (govern/map/measure/manage) als pipeline-emittierte Artefakte je KI-System.",
       "standing_control": null
     },
     {
       "id": "C-12",
       "priority": 7,
       "band": "MUST-FIX",
-      "verdict": "NO-EVIDENCE",
-      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "verdict": "PARTIAL",
+      "evidence": "Least agency ist hier architektonisch: die KI hat NULL Fähigkeit über die JSON-Rückgabe hinaus — keine Scopes zu vergeben, kein Tool, keine irreversible Aktion. LÜCKE: kein asserting Test/Kill-Switch-Nachweis + keine capability-Inventur-Assertion.",
       "standing_control": null
     },
     {
       "id": "C-15",
       "priority": 7,
       "band": "MUST-FIX",
-      "verdict": "NO-EVIDENCE",
-      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "verdict": "N/A",
+      "evidence": "Keine dedizierte Guardrail-Schicht (B-15 N/A). Der einzige „Guardrail\" ist die Schema-Bindung + Refusal-Behandlung (stop_reason refusal). Tripwire: sobald eine Guardrail-/Klassifikator-Schicht eingeführt wird, reaktiviert C-15 mit Pflicht zu FP/FN-Messung. Die Injektions-Suite (C-07) deckt die adversariale-Test-Absicht ab.",
       "standing_control": null
     },
     {
       "id": "C-16",
       "priority": 7,
       "band": "MUST-FIX",
-      "verdict": "NO-EVIDENCE",
-      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "verdict": "N/A",
+      "evidence": "Keine Nicht-Menschen-/Agenten-Identitäten: die App läuft als ein Dienst; kein Agent borgt eine Menschen-Session. Tripwire: erste Agenten-/Maschinen-Identität reaktiviert C-16 (ai-capability-guard).",
       "standing_control": null
     },
     {
       "id": "C-17",
       "priority": 7,
       "band": "MUST-FIX",
-      "verdict": "NO-EVIDENCE",
-      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "verdict": "N/A",
+      "evidence": "Keine Tools/MCP-Server/Tool-Beschreibungen im System. Tripwire: erste MCP-/Tool-Anbindung reaktiviert C-17 (ai-capability-guard).",
       "standing_control": null
     },
     {
       "id": "C-18",
       "priority": 7,
       "band": "MUST-FIX",
-      "verdict": "NO-EVIDENCE",
-      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "verdict": "N/A",
+      "evidence": "Keine externen Tool-Server/Connectoren. Tripwire: erste Connector-Anbindung reaktiviert C-18 (ai-capability-guard).",
       "standing_control": null
     },
     {
       "id": "C-21",
       "priority": 7,
       "band": "MUST-FIX",
-      "verdict": "NO-EVIDENCE",
-      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "verdict": "N/A",
+      "evidence": "Kein Custom-/Fine-Tuned-Modell — Anthropic-gehostetes Modell, gepinnt. Kein Trainings-/Tuning-Datensatz. Tripwire: erstes Fine-Tuning/Adapter/Custom-Modell reaktiviert C-21 (ai-capability-guard).",
       "standing_control": null
     },
     {
       "id": "C-22",
       "priority": 7,
       "band": "MUST-FIX",
-      "verdict": "NO-EVIDENCE",
-      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "verdict": "N/A",
+      "evidence": "Kein RAG/Retrieval: styleReferences zieht 2 eigene Blog-Rezepttexte als Stilprobe, das ist kein Retrieval-Korpus mit Recall-Metriken. Tripwire: erstes Retrieval/RAG/Embedding-Lookup reaktiviert C-22 (ai-capability-guard).",
       "standing_control": null
     },
     {
       "id": "C-24",
       "priority": 7,
       "band": "MUST-FIX",
-      "verdict": "NO-EVIDENCE",
-      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "verdict": "PARTIAL",
+      "evidence": "System-Prompt sauber: keine Credentials/PII/internen URLs/sicherheitstragenden Regeln (recipe-draft.ts). Prompt-Registry (A-20) ist die strukturelle Tür (Inline-Prompt verboten). LÜCKE: kein automatisierter Prompt-Secret/PII-Scan in CI.",
       "standing_control": null
     },
     {
       "id": "C-28",
       "priority": 7,
       "band": "MUST-FIX",
-      "verdict": "NO-EVIDENCE",
-      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "verdict": "PARTIAL",
+      "evidence": "Single-Node-Self-Host (Betreiber-Server, EU); alle Stores ko-lokalisiert (SQLite-Datei, Medien-FS). LÜCKE: kein Residency-Dokument/Assertion; Inferenz-Region (Anthropic) nicht dokumentiert.",
       "standing_control": null
     },
     {
       "id": "C-34",
       "priority": 7,
       "band": "MUST-FIX",
-      "verdict": "NO-EVIDENCE",
-      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "verdict": "PARTIAL",
+      "evidence": "Anthropic-API (kommerzielle Bedingungen: kein Training auf API-Ein-/Ausgaben per Default). LÜCKE: kein dokumentierter DPA-Verweis, keine automatisierte Assertion des No-Training-/Konfig-Zustands.",
       "standing_control": null
     },
     {
       "id": "C-13",
       "priority": 6,
       "band": "SHOULD-FIX",
-      "verdict": "NO-EVIDENCE",
-      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "verdict": "N/A",
+      "evidence": "Kein AI-Managementsystem (ISO 42001) beansprucht — korrekt NICHT beansprucht. Tripwire: sobald eine Zertifizierung beansprucht wird, reaktiviert C-13/C-39 (Statement of Applicability nötig).",
       "standing_control": null
     },
     {
       "id": "C-14",
       "priority": 6,
       "band": "SHOULD-FIX",
-      "verdict": "NO-EVIDENCE",
-      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "verdict": "N/A",
+      "evidence": "Kein LLM-as-Judge, der eine Entscheidung gated. suggestSeason ist deterministisch (Kalender-Match, kein Modell-Urteil). Tripwire: erstes Modell-bewertet-Modell-Gate reaktiviert C-14.",
       "standing_control": null
     },
     {
       "id": "C-19",
       "priority": 6,
       "band": "SHOULD-FIX",
-      "verdict": "NO-EVIDENCE",
-      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "verdict": "N/A",
+      "evidence": "Kein persistentes Agenten-Memory / kein abgerufener Kontext, der zwischen Sessions handlungsleitend wird. Tripwire: erster Memory-/Kontext-Store reaktiviert C-19.",
       "standing_control": null
     },
     {
       "id": "C-20",
       "priority": 6,
       "band": "SHOULD-FIX",
-      "verdict": "NO-EVIDENCE",
-      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "verdict": "PARTIAL",
+      "evidence": "Dimensionen teilweise adressiert: Transparenz (C-36), Kontestierbarkeit (Admin editiert/verwirft jeden Entwurf = Korrekturmechanismus), Robustheit (Schema-Bindung). LÜCKE: keine dokumentierten Owner + automatisierten Maße je Dimension.",
       "standing_control": null
     },
     {
       "id": "C-25",
       "priority": 6,
       "band": "SHOULD-FIX",
-      "verdict": "NO-EVIDENCE",
-      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "verdict": "PARTIAL",
+      "evidence": "Gesamte App KI-generiert. LÜCKE: kein Lizenz-/Copyleft-Scan der Abhängigkeiten als blockierendes Gate, keine schriftliche IP-Position zu Modell-Output.",
       "standing_control": null
     },
     {
       "id": "C-29",
       "priority": 6,
       "band": "SHOULD-FIX",
-      "verdict": "NO-EVIDENCE",
-      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "verdict": "PARTIAL",
+      "evidence": "Generatives Feature admin-only (nicht öffentlich), geringe Missbrauchsfläche; Refusal-Pfad behandelt (stop_reason refusal). LÜCKE: keine dokumentierte Content-Safety-Policy/Taxonomie + gemessene Klassifikator-Raten.",
       "standing_control": null
     },
     {
       "id": "C-30",
       "priority": 6,
       "band": "SHOULD-FIX",
-      "verdict": "NO-EVIDENCE",
-      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "verdict": "PARTIAL",
+      "evidence": "Admin-only, schema-gebunden, nicht-konsequent. LÜCKE: ASR nicht gegen Benchmark gemessen; kompensierend: selbst eine jailbreakte Ausgabe ist ein nicht-konsequenter Entwurf, den der Admin prüft. Restrisiko + Tripwire zu dokumentieren.",
       "standing_control": null
     },
     {
       "id": "C-32",
       "priority": 6,
       "band": "SHOULD-FIX",
-      "verdict": "NO-EVIDENCE",
-      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "verdict": "N/A",
+      "evidence": "Kein Vektor-Store/keine Embeddings. Tripwire: erster Embedding-/Vektor-Store reaktiviert C-32 (als Personendaten-Store zu registrieren).",
       "standing_control": null
     },
     {
       "id": "C-33",
       "priority": 6,
       "band": "SHOULD-FIX",
-      "verdict": "NO-EVIDENCE",
-      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "verdict": "PARTIAL",
+      "evidence": "ai-policy.md existiert (A-14 PASS); maschinen-relevante Klauseln teils erzwungen (Modell gepinnt via source-gates, Prompt-Registry). LÜCKE: kein vollständiges Mapping erzwungen-vs-nur-geschrieben je Klausel.",
       "standing_control": null
     },
     {
       "id": "C-36",
       "priority": 6,
       "band": "SHOULD-FIX",
-      "verdict": "NO-EVIDENCE",
-      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "verdict": "PARTIAL",
+      "evidence": "Generatives Feature admin-only; veröffentlichte Inhalte human-reviewed. LÜCKE: keine schriftliche Kennzeichnungs-/Transparenz-Erklärung (was Kennzeichnung kann/nicht kann), kein UI-Test zur Offenlegung der KI-Assistenz.",
       "standing_control": null
     },
     {
       "id": "C-38",
       "priority": 6,
       "band": "SHOULD-FIX",
-      "verdict": "NO-EVIDENCE",
-      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "verdict": "PARTIAL",
+      "evidence": "Keine Zitat-/Link-/Identifier-Fläche (Rezeptentwurf); Saison deterministisch gematcht (kein KI-Raten). Fabrikation (Mengen/Zeiten) durch in-command-Autorschaft eingefangen — Nutzer sieht nie ungeprüfte Ausgabe. LÜCKE: keine dokumentierte Position/kein Test zur Nicht-Präsentation von Unverifizierbarem.",
       "standing_control": null
     },
     {
       "id": "C-31",
       "priority": 5,
       "band": "PLAN",
-      "verdict": "NO-EVIDENCE",
-      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "verdict": "PARTIAL",
+      "evidence": "Bedrohungsmodell verweist auf benannte Techniken (via C-02, in Arbeit). LÜCKE: keine explizite Sieben-Schichten-Zerlegung + Technik→Kontrolle-Mapping. Abhängig von C-02.",
       "standing_control": null
     },
     {
       "id": "C-37",
       "priority": 5,
-      "band": "PLAN",
-      "verdict": "NO-EVIDENCE",
-      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "band": "BLOCKER-1",
+      "verdict": "PARTIAL",
+      "evidence": "Provenance-Bausteine vorhanden: git-Historie + Commit-Trailer (Modellfamilie/Session), Prompt-Registry (PROMPT_VERSION), Verfassungs-+Mandat-Hash-Kette (Policy-Bundle), CI-Gate-Evidenz. LÜCKE: keine attestierte Provenance-Kette je Prod-Bestandteil (Modell/Prompt-Hash/Spec-ID), keine Owning-Role-Registry, keine geplante Spot-Rekonstruktion. → eskaliert zu BLOCKER-1 (Bedingung erfüllt: Prod-Bestandteile ohne attestierte Kette).",
       "standing_control": null
     },
     {
       "id": "C-35",
       "priority": 4,
       "band": "ASSESS",
-      "verdict": "NO-EVIDENCE",
-      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "verdict": "N/A",
+      "evidence": "Keine Benchmark-Zahlen in Produkt-/Marketing-Aussagen. Kein Eval-Set an einen Provider gesendet. Tripwire: erste Benchmark-Behauptung reaktiviert C-35 (Kontaminationscheck).",
       "standing_control": null
     },
     {
       "id": "C-39",
       "priority": 4,
       "band": "ASSESS",
-      "verdict": "NO-EVIDENCE",
-      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "verdict": "N/A",
+      "evidence": "Kein AI-Managementsystem beansprucht (siehe C-13) — daher keine Lifecycle-/Vokabular-Standard-Ausrichtung nötig. Tripwire: an C-13 gekoppelt.",
       "standing_control": null
     },
     {
       "id": "C-40",
       "priority": 4,
       "band": "ASSESS",
-      "verdict": "NO-EVIDENCE",
-      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "verdict": "N/A",
+      "evidence": "Gesellschaftliche/ökologische Auswirkungen immateriell: ein admin-only-Generativaufruf je Rezept; keine Hochrisiko-Nutzung; A-40/B-38 bereits N/A immateriell. Ehrlich als immateriell dokumentiert (keine erfundene Zahl). Tripwire: bei Berichtspflicht/Workload-Formänderung re-banden.",
       "standing_control": null
     }
   ],
   "phase6_updated": true,
-  "phase0prime_activated": true
+  "phase0prime_activated": true,
+  "phase": "3'-discovery (Track C Baseline-Verdikte)"
 }

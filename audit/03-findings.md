@@ -177,3 +177,57 @@ Phase-0′-Baseline (`160228f`) prüft. Bandverteilung:
 
 Verdikte, N/A-Begründungen (schriftlich, mit Reaktivierungs-Tripwire) und
 stehende Kontrollen folgen in Phase 3′/5′.
+
+---
+
+## Track C — Phase-3′-Verdikte (Baseline `160228f`, vor Phase-5′-Kontrollen)
+
+Initialverdikt je Prüfung gegen die frozen Phase-0′-Baseline. PARTIAL/FAIL-Blocker
+werden in Phase 5′ mit stehenden Kontrollen geschlossen; N/A trägt schriftliche
+Begründung + Reaktivierungs-Tripwire (ai-capability-guard, Phase 5′). Die
+Initialverdikte bleiben im Audit-Trail erhalten (Phase 6′ aktualisiert den Zustand).
+
+| ID | Prüfung | Band | Verdikt | Kern-Lücke → Remediation Phase 5′ |
+|---|---|---|---|---|
+| C-01 | Kern-App-Sicherheit | STOP-SHIP | **PARTIAL** | Authz-Coverage-Gate + Seed S9 |
+| C-02 | Threat-Model | BLOCKER-2 | **FAIL** | STRIDE-Threat-Model + Boundary-Detector |
+| C-03 | Lieferkette/halluzinierte Pakete | BLOCKER-1 | **PARTIAL** | Registry-Alters-Check + Playbook |
+| C-04 | Datenschutz/GDPR | STOP-SHIP | **PARTIAL** | DPIA/RoPA + Datenkarte + Erasure-Kanarien-Test + ops-Retention |
+| C-05 | LLM-Risiko-Taxonomie | BLOCKER-1 | **FAIL** | 10-Kategorien-Matrix + Empty-Cell-Gate |
+| C-06 | Agentische Risiko-Taxonomie | BLOCKER-2 | **N/A** | N/A — ai-capability-guard-Tripwire |
+| C-07 | Prompt-Injection | BLOCKER-1 | **PARTIAL** | Injektions-Suite + Restrisiko-Doku + Seed S7 |
+| C-08 | Die „gefährliche Drei" | BLOCKER-2 | **PARTIAL** | Trifecta-Assertion (guard) + Seed S8 |
+| C-09 | EU-AI-Act | BLOCKER-1 | **PARTIAL** | KI-System-Inventur + Article-50-Bewertung |
+| C-10 | Evaluierungsmethodik | BLOCKER-2 | **PARTIAL** | Golden-Eval-Set + Schwellwert-Gate |
+| C-11 | KI-Risikoprogramm | MUST-FIX | **PARTIAL** | NIST-AI-RMF-Mapping (pipeline-emittiert) |
+| C-12 | Excessive Agency | MUST-FIX | **PARTIAL** | Least-Agency-Assertion (guard) |
+| C-13 | AI-Managementsystem | SHOULD-FIX | **N/A** | N/A — kein AI-MS beansprucht |
+| C-14 | Judge-Validierung | SHOULD-FIX | **N/A** | N/A — kein Judge-Gate |
+| C-15 | Guardrail-Tests | MUST-FIX | **N/A** | N/A — keine Guardrail-Schicht |
+| C-16 | Maschinenidentität | MUST-FIX | **N/A** | N/A — keine Agenten-Identität |
+| C-17 | Tool-Poisoning | MUST-FIX | **N/A** | N/A — kein Tool/MCP |
+| C-18 | Connector-Sicherheit | MUST-FIX | **N/A** | N/A — kein Connector |
+| C-19 | Memory-Poisoning | SHOULD-FIX | **N/A** | N/A — kein Agenten-Memory |
+| C-20 | Responsible-AI-Dimensionen | SHOULD-FIX | **PARTIAL** | Dimensionen mit Owner + Maß |
+| C-21 | Trainingsdaten-Governance | MUST-FIX | **N/A** | N/A — kein Custom-Modell |
+| C-22 | Retrieval-vs-Generation | MUST-FIX | **N/A** | N/A — kein RAG |
+| C-23 | PII in Logs/Traces | BLOCKER-2 | **PARTIAL** | PII-Emitter-Scan + ops-Retention |
+| C-24 | System-Prompt-Leakage | MUST-FIX | **PARTIAL** | Prompt-Secret-Scan in CI |
+| C-25 | Copyright generierter Code | SHOULD-FIX | **PARTIAL** | Lizenz-Scan + IP-Position |
+| C-26 | SBOM/AI-BOM/Provenance | BLOCKER-2 | **PARTIAL** | AI-BOM + Verify-on-Deploy |
+| C-27 | Sektor-Compliance | BLOCKER-1 | **N/A** | N/A — kein bindendes Framework |
+| C-28 | Residency | MUST-FIX | **PARTIAL** | Residency-Doku + Assertion |
+| C-29 | Content-Safety | SHOULD-FIX | **PARTIAL** | Content-Safety-Policy |
+| C-30 | Jailbreak-Resistenz | SHOULD-FIX | **PARTIAL** | ASR-Restrisiko + Tripwire |
+| C-31 | Adversarial-Taxonomie | PLAN | **PARTIAL** | Sieben-Schichten-Mapping (via C-02) |
+| C-32 | Vektor/Embedding | SHOULD-FIX | **N/A** | N/A — kein Vektor-Store |
+| C-33 | KI-Nutzungspolitik | SHOULD-FIX | **PARTIAL** | Klausel-Enforcement-Mapping |
+| C-34 | Provider-Training | MUST-FIX | **PARTIAL** | DPA-Doku + No-Training-Assertion |
+| C-35 | Benchmark-Kontamination | ASSESS | **N/A** | N/A — keine Benchmark-Aussage |
+| C-36 | Transparenz/Kennzeichnung | SHOULD-FIX | **PARTIAL** | Kennzeichnungs-Erklärung + UI-Test |
+| C-37 | Rechenschaft ohne Unterschrift | BLOCKER-1 | **PARTIAL** | Provenance-Kette + Owning-Role-Registry + Spot-Rekonstruktion |
+| C-38 | Fabrikation/Zitate | SHOULD-FIX | **PARTIAL** | Nicht-Präsentation-Position + Test |
+| C-39 | Lifecycle-Standards | ASSESS | **N/A** | N/A — an C-13 gekoppelt |
+| C-40 | Gesellschaft/Umwelt | ASSESS | **N/A** | N/A — immateriell |
+
+**Track-C-Bilanz Phase 3′:** {"PARTIAL":23,"FAIL":2,"N/A":15} · offene Blocker: C-01, C-04 (STOP-SHIP); C-03, C-05, C-07, C-09, C-37 (BLOCKER-1); C-02, C-08, C-10, C-23, C-26 (BLOCKER-2). C-37 zu BLOCKER-1 eskaliert (Prod-Bestandteile ohne attestierte Provenance-Kette).
