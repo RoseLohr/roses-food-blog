@@ -21,6 +21,7 @@ export const SETTING_KEYS = [
   "deploy_branch",
   "anthropic_api_key",
   "newsletter_visible",
+  "ai_enabled",
 ] as const;
 export type SettingKey = (typeof SETTING_KEYS)[number];
 

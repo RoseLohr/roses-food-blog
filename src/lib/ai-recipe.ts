@@ -18,6 +18,11 @@ import { db, schema } from "@/db";
 import { suggestSeason, type SeasonSuggestion } from "./saisonkalender";
 import { getAnthropicApiKey } from "./settings";
 import { SYSTEM, INTERNAL_TEMPLATE } from "./prompts/recipe-draft";
+import {
+  aiFeatureEnabled,
+  recordAiErrorAndMaybeHalt,
+  recordAiUsage,
+} from "./ai-guard";
 
 export const recipeDraftSchema = z.object({
   title: z.string(),
@@ -134,6 +139,14 @@ async function styleReferences(): Promise<string[]> {
 export async function generateRecipeDraft(
   sourceText: string,
 ): Promise<RecipeDraft> {
+  // A-34 Kill-Switch: ist das Feature (manuell oder per Auto-Halt) abgeschaltet,
+  // endet der Aufruf sofort — vor jedem Netz-/Schlüsselzugriff.
+  if (!aiFeatureEnabled())
+    throw new AiRecipeError(
+      "disabled",
+      "Der KI-Assistent ist derzeit deaktiviert. Bitte unter Einstellungen → KI-Assistent wieder aktivieren.",
+    );
+
   const apiKey = getAnthropicApiKey();
   if (!apiKey)
     throw new AiRecipeError(
@@ -172,8 +185,14 @@ export async function generateRecipeDraft(
       messages: [{ role: "user", content: userText }],
     });
   } catch (err) {
-    throw toAiError(err);
+    const aiErr = toAiError(err);
+    // B-28/A-34: Fehler verbuchen; bei Häufung hält sich das Feature selbst an.
+    recordAiErrorAndMaybeHalt(`${aiErr.code}: ${aiErr.message}`);
+    throw aiErr;
   }
+
+  // B-07: Token-Nutzung protokollieren (nur Zähler, kein Ausgangstext).
+  recordAiUsage(res.usage);
 
   if (res.stop_reason === "refusal")
     throw new AiRecipeError(
