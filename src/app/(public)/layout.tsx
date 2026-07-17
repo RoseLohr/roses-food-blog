@@ -59,6 +59,14 @@ export default async function PublicLayout({
         {/* Dunkle Fußleiste im Tiny-Salt-Stil */}
         <div className="bg-ink text-white">
           <div className="mx-auto flex max-w-6xl flex-col items-center gap-1 px-4 py-6 text-center text-sm">
+            {/* Negativ-Logo (weiß) auf dem dunklen Band, statisches Vektor-SVG aus /public. */}
+            <img
+              src="/brand/logo-horizontal-white.svg"
+              alt="Rose’s Gourmet Compass"
+              width={150}
+              height={40}
+              className="mb-3 h-8 w-auto"
+            />
             <p className="flex items-center gap-1.5 text-white/90">
               Cook &amp; Write with
               <span className="text-red-500" aria-hidden>

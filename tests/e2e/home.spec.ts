@@ -4,13 +4,14 @@ import { t } from "../../src/i18n/de";
 const dict = t();
 
 test.describe("Öffentliche Startseite — Tiny-Salt-Optik", () => {
-  test("Header zeigt Logo-Lockup (Name + Slogan) und Suchpille", async ({
+  test("Header zeigt Marken-Logo + Slogan und Suchpille", async ({
     page,
   }) => {
     await page.goto("/");
     const header = page.locator("header");
+    // Text-Name wurde durch das horizontale Marken-Logo (SVG) ersetzt.
     await expect(
-      header.getByText(dict.site.name, { exact: true }),
+      header.getByRole("img", { name: "Rose’s Gourmet Compass" }),
     ).toBeVisible();
     await expect(
       header.getByText(dict.site.tagline, { exact: true }),

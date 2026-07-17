@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-190 -190 380 380" width="380" height="380" role="img" aria-label="Rose’s Gourmet Compass">
+<title>Rose’s Gourmet Compass</title>
+<rect x="-190" y="-190" width="380" height="380" rx="80" fill="#277a70"/>
+<circle cx="0" cy="0" r="150.000" fill="none" stroke="#ffffff" stroke-width="3.300"/>
+<circle cx="0" cy="0" r="90.000" fill="none" stroke="#ffffff" stroke-width="1.650" stroke-opacity="0.3"/>
+<line x1="93.338" y1="-93.338" x2="104.475" y2="-104.475" stroke="#ffffff" stroke-opacity="0.45" stroke-width="2.400" stroke-linecap="round"/>
+<line x1="93.338" y1="93.338" x2="104.475" y2="104.475" stroke="#ffffff" stroke-opacity="0.45" stroke-width="2.400" stroke-linecap="round"/>
+<line x1="-93.338" y1="93.338" x2="-104.475" y2="104.475" stroke="#ffffff" stroke-opacity="0.45" stroke-width="2.400" stroke-linecap="round"/>
+<line x1="-93.338" y1="-93.338" x2="-104.475" y2="-104.475" stroke="#ffffff" stroke-opacity="0.45" stroke-width="2.400" stroke-linecap="round"/>
+<circle cx="0.000" cy="-150.000" r="3.300" fill="#ffffff"/>
+<circle cx="150.000" cy="-0.000" r="3.300" fill="#ffffff"/>
+<circle cx="0.000" cy="150.000" r="3.300" fill="#ffffff"/>
+<circle cx="-150.000" cy="0.000" r="3.300" fill="#ffffff"/>
+<path d="M -108.000,0.000 L 0.000,-7.500 L 0.000,0.000 Z" fill="#ffffff" fill-opacity="0.45"/>
+<path d="M -108.000,0.000 L 0.000,7.500 L 0.000,0.000 Z" fill="#ffffff" fill-opacity="0.45"/>
+<path d="M 108.000,-0.000 L 0.000,-7.500 L 0.000,0.000 Z" fill="#ffffff" fill-opacity="0.45"/>
+<path d="M 108.000,-0.000 L 0.000,7.500 L 0.000,0.000 Z" fill="#ffffff" fill-opacity="0.45"/>
+<path d="M 0.000,-129.000 L 11.700,0.000 L -11.700,0.000 Z" fill="#5cc4b8"/>
+<path d="M 0.000,129.000 L 11.700,0.000 L -11.700,0.000 Z" fill="#ffffff"/>
+<circle cx="0" cy="0" r="9.000" fill="none" stroke="#ffffff" stroke-width="2.400"/>
+<circle cx="0" cy="0" r="3.000" fill="#5cc4b8"/>
+</svg>
