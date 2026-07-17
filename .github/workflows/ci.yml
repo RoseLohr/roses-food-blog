@@ -57,6 +57,12 @@ jobs:
         run: node scripts/regime/boundary-check.mjs --selftest
       - name: Provenance-Rekonstruktion (C-37, jede Datei einer Owning-Role)
         run: node scripts/regime/provenance-reconstruct.mjs --selftest
+      - name: Architektur-Fitness (A-05/A-09, keine server-only-Importe im Client)
+        run: node scripts/regime/architecture-fitness.mjs --selftest
+      - name: Spec-Coverage (A-04, jedes Kernmodul getestet)
+        run: node scripts/regime/spec-coverage.mjs --selftest
+      - name: Prompt-Lifecycle (B-05, Prompt-Änderung = Version-Bump + Lock)
+        run: node scripts/regime/prompt-lifecycle.mjs --selftest
       - name: Kalibrierung (A-36, Kontrollen fangen ihre Seeds — inkl. Track C)
         run: node scripts/regime/calibration/inject.mjs --strict
       - name: Tests (vitest)
