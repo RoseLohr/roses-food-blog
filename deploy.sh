@@ -83,6 +83,24 @@ DATA_DIR="${DATA_DIR:-/srv/roses-blog/data}"
 PORT="${PORT:-3000}"
 mkdir -p "$DATA_DIR" 2>/dev/null || true
 
+# Nebenläufigkeit verhindern: der manuelle `./deploy.sh` und der Panel-Watcher-
+# Dienst (roses-blog-deploy.service) dürfen sich NICHT überschneiden — sonst reißt
+# das `compose down` des einen dem anderen den gerade gestarteten Container unter
+# dem Healthcheck weg (Symptom: „Deployment erfolgreich" gefolgt von curl (7)
+# Connection refused). Exklusiver, nicht-blockierender Lock über eine Datei in
+# DATA_DIR (von beiden Läufen geteilt). Kann der Lock nicht sofort genommen werden,
+# läuft bereits ein Deploy → sauber überspringen (der aktive Lauf bringt den Stand
+# aktuell), KEIN Fehler. Fehlt flock oder ist DATA_DIR (noch) nicht beschreibbar,
+# degradiert es auf das bisherige Verhalten.
+LOCK_FILE="$DATA_DIR/.deploy.lock"
+if command -v flock >/dev/null 2>&1 && { exec 9>"$LOCK_FILE"; } 2>/dev/null; then
+  if ! flock -n 9; then
+    log "Anderer Deploy läuft bereits — dieser Lauf wird übersprungen (der laufende bringt den Stand aktuell)."
+    DEPLOY_STATUS_RESULT="erfolgreich"; DEPLOY_PHASE="übersprungen (anderer Lauf aktiv)"
+    return 0
+  fi
+fi
+
 # Sofortiger Herzschlag ans Panel: „angenommen, läuft an“. Ohne diesen Status
 # würde ein Abbruch VOR Abschnitt 0 (z. B. podman nicht im PATH des systemd-
 # Dienstes) gar keinen Status schreiben — das Panel meldete dann fälschlich
@@ -371,7 +389,23 @@ DEPLOY_STATUS_RESULT="erfolgreich"   # EXIT-Trap schreibt deploy-status.json
 log "Deployment erfolgreich (Dauer: ${SECONDS}s)"
 echo "Branch:   $BRANCH"
 echo "Commit:   $COMMIT"
-curl -fsS "http://127.0.0.1:$PORT/health" && echo
+# Kosmetischer Schluss-Check: der AUTORITATIVE Healthcheck (Abschnitt 6) ist bereits
+# bestanden — der Deploy gilt als erfolgreich. Hier nur noch kurz für die Ausgabe
+# nachfassen (mehrfach, nicht einmalig), damit ein transienter Port-Reinit
+# (compose-Recreate/Port-Forwarder) keine widersprüchliche „erfolgreich + refused"-
+# Zeile erzeugt. Ein Fehler hier darf das Skript NICHT beenden (set -e): daher kein
+# nacktes `curl && …` als letzte Anweisung.
+FINAL_HEALTH_OK=0
+for _ in $(seq 1 10); do
+  if curl -fsS "http://127.0.0.1:$PORT/health" >/dev/null 2>&1; then FINAL_HEALTH_OK=1; break; fi
+  sleep 1
+done
+if [[ "$FINAL_HEALTH_OK" == "1" ]]; then
+  echo "Health:   OK (http://127.0.0.1:$PORT/health)"
+else
+  echo "WARNUNG: finaler Health-Check auf Port $PORT (noch) nicht erreichbar — letzte Container-Logs:"
+  podman logs --tail 20 roses-blog 2>&1 | sed 's/^/  /' || true
+fi
 podman ps --filter name=roses-blog --format "Container: {{.Names}} ({{.Status}})"
 
 }
