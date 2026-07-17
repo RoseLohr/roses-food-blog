@@ -36,7 +36,13 @@ function parseSchema(src) {
   const tables = [];
   for (let i = 0; i < marks.length; i++) {
     const block = src.slice(marks[i].idx, i + 1 < marks.length ? marks[i + 1].idx : src.length);
-    const cols = [...block.matchAll(/(?:text|integer)\("([^"]+)"/g)].map((x) => x[1]);
+    // GEHÄRTET (wf_ac30593b): sowohl explizit benannte Spalten `text("name")` als
+    // auch die Drizzle-Kurzform `text()` (Name aus JS-Property-Key). Property-Key
+    // als Fallback → snake_case (die PII-Heuristik ist snake_case-orientiert).
+    const cols = [];
+    for (const c of block.matchAll(/(\w+)\s*:\s*(?:text|integer|real|blob|numeric)\(\s*(?:"([^"]+)")?/g)) {
+      cols.push(c[2] ?? c[1].replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase());
+    }
     tables.push({ name: marks[i].name, cols });
   }
   return tables;

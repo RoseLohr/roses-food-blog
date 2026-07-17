@@ -23,6 +23,13 @@
       "trust": "lokale Ausführung fester Argumente; keine nutzerkontrollierte Kommandozeile",
       "threats": "Command-Injection (Argumente fest, keine Shell), Ressourcen (Bildgröße begrenzt)",
       "stride": "Elevation-of-Privilege — gemindert durch execFile ohne Shell + feste Argumente"
+    },
+    "src/lib/deploy.ts": {
+      "kind": "network-egress",
+      "target": "api.github.com (Deploy-/Repo-Status, admin-only ausgelöst)",
+      "trust": "fester GitHub-API-Host; Token aus Settings/Env; keine nutzerkontrollierte URL",
+      "threats": "Info-Disclosure (Token), SSRF (Host fest)",
+      "stride": "Info-Disclosure — gemindert durch festen Host + admin-only + Token im Vault"
     }
   }
 }

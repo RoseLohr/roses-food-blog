@@ -29,8 +29,13 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
 
 // Fähigkeits-Muster im KI-Quellcode. Bewusst eng, um Fehlalarme zu vermeiden.
 const PATTERNS = [
-  { re: /\btools\s*:\s*\[/, cap: "Tool-Use (tools:[…])", checks: "C-06/C-08/C-12/C-17" },
-  { re: /tool_choice\s*:/, cap: "Tool-Use (tool_choice)", checks: "C-06/C-08/C-12" },
+  // GEHÄRTET (wf_ac30593b): `tools:` unabhängig von der Folgeform (Literal ODER
+  // Referenz `tools: recipeTools`), plus `tool_choice`, `betas`/`mcp_servers`.
+  { re: /\btools\s*:(?!\s*\/\/)/, cap: "Tool-Use (tools:)", checks: "C-06/C-08/C-12/C-17" },
+  { re: /\btool_choice\s*:/, cap: "Tool-Use (tool_choice)", checks: "C-06/C-08/C-12" },
+  { re: /\bmcp_servers\s*:/, cap: "MCP-Server (mcp_servers)", checks: "C-17/C-18" },
+  // Built-in-Server-Tools des SDK (modellgesteuerter Egress, kein extra Paket).
+  { re: /\b(?:web_search|code_execution|computer|bash|text_editor)_202\d/, cap: "Built-in-Server-Tool (Egress)", checks: "C-06/C-08/C-17" },
   { re: /\.embeddings\b|\bembed(?:Query|Documents|Text)?\s*\(/, cap: "Embeddings", checks: "C-22/C-32" },
   { re: /modelcontextprotocol|\bMcpClient\b|\bStdioClientTransport\b/, cap: "MCP/Connector", checks: "C-17/C-18" },
   { re: /fine[_-]?tun(?:e|ing)|createFineTun/i, cap: "Fine-Tuning", checks: "C-21" },
@@ -107,19 +112,26 @@ try {
 } catch { /* package.json fehlt/kaputt → separates Gate */ }
 
 if (process.argv.includes("--selftest")) {
-  const synth = 'const res = await client.messages.create({ model, tools: [ { name: "delete_all" } ] });';
-  const hits = analyze("src/lib/ai-recipe.ts", synth);
-  if (!hits.some((h) => h.cap.startsWith("Tool-Use"))) {
-    console.error("⛔ Selbsttest FEHLGESCHLAGEN: injizierter tools:-Aufruf nicht gefangen.");
-    process.exit(1);
+  // GEHÄRTET: auch die Referenz-/Built-in-Formen, die den alten Regex umgingen.
+  const attacks = [
+    ['tools:[…]', 'const res = await client.messages.create({ model, tools: [ { name: "x" } ] });'],
+    ['tools: Referenz', 'const t = [{}]; await client.messages.parse({ model, tools: t, messages });'],
+    ['tools:\\n Referenz', 'await client.messages.parse({ model,\n  tools:\n    recipeTools,\n messages });'],
+    ['built-in web_search', 'const recipeTools = [{ type: "web_search_20250305", name: "web_search" }];'],
+    ['mcp_servers', 'await client.beta.messages.create({ mcp_servers: [srv] });'],
+  ];
+  for (const [label, src] of attacks) {
+    if (analyze("src/lib/ai-recipe.ts", src).length === 0) {
+      console.error(`⛔ Selbsttest FEHLGESCHLAGEN: „${label}" nicht gefangen.`);
+      process.exit(1);
+    }
   }
-  // Gegenprobe: der reale schema-gebundene Aufruf (ohne tools) darf NICHT anschlagen.
   const clean = 'await client.messages.parse({ model, output_config: { format: zodOutputFormat(schema) }, messages });';
   if (analyze("src/lib/ai-recipe.ts", clean).length !== 0) {
     console.error("⛔ Selbsttest FEHLGESCHLAGEN: sauberer Aufruf falsch geflaggt.");
     process.exit(1);
   }
-  console.log("   ✓ Selbsttest: injizierter tools:-Aufruf gefangen, sauberer Aufruf durchgelassen.");
+  console.log("   ✓ Selbsttest: tools:-Literal/Referenz/Newline/built-in/mcp_servers gefangen, sauberer Aufruf durchgelassen.");
 }
 
 if (failed) {
