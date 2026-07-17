@@ -199,9 +199,11 @@ const system =
   "Loch MIT Angriffspfad). Kein konkreter Ausnutzungs-/Fehlerpfad → refuted=false. " +
   "Antworte NUR als JSON, ohne Prosa/Markdown: " +
   '{"refuted": boolean, "confidence": "high"|"medium"|"low", "reason": string}. ' +
-  "reason maximal knapp/maschinell, Abkürzungen ok, keine ganzen Sätze, aber technisch " +
-  "ausreichend; Schema 'pfad/datei:Zeile — Defekt — Fehlverhalten', ≤200 Zeichen; bei " +
-  'refuted=false reason "" oder ein Wort. refuted=true NUR bei konkretem, benennbarem Defekt.';
+  "reason IMMER ausfüllen (auch bei refuted=false), maximal knapp/maschinell, Abkürzungen " +
+  "ok, keine ganzen Sätze, aber technisch aussagekräftig, ≤200 Zeichen. Bei refuted=true " +
+  "Schema 'pfad/datei:Zeile — Defekt — Fehlverhalten'. Bei refuted=false in 3–8 Wörtern, WAS " +
+  "geprüft wurde + warum kein Defekt (z. B. 'geprüft: HMAC/Auth + fail-closed; kein konkreter " +
+  "Fehlerpfad'). refuted=true NUR bei konkretem, benennbarem Defekt.";
 
 const user = "DIFF (Überblick + Code-Auszug):\n\n" + d;
 
@@ -269,8 +271,11 @@ votes.forEach((x, i) => {
   // Denylist) nicht umgehbar. console.log(einString) macht zudem KEINE printf-
   // Substitution (kein %-Format-String-Vektor). Kein Geheimnis-Leak: der reason ist
   // Modell-Analyse eines ohnehin oeffentlichen Diffs.
-  const reason = x.v?.reason ? ` — Begründung: ${JSON.stringify(x.v.reason).slice(0, 600)}` : "";
-  console.log(`  Verifier ${i + 1}/${PANEL} (${MODEL}): refuted=${x.v?.refuted} confidence=${x.v?.confidence}${reason}`);
+  // Begründungs-Spalte IMMER schreiben — sonst bleibt bei leerem reason (z. B. wenn
+  // ein Modell die Anweisung ignoriert) nur "false/high" übrig und das Log ist blind.
+  const raw = x.v?.reason;
+  const reason = raw ? JSON.stringify(raw).slice(0, 600) : '"(keine Begründung geliefert)"';
+  console.log(`  Verifier ${i + 1}/${PANEL} (${MODEL}): refuted=${x.v?.refuted} confidence=${x.v?.confidence} — Begründung: ${reason}`);
 });
 const verdict = aggregate(votes, PANEL);
 if (verdict.block) {
