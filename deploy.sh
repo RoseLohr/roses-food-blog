@@ -25,7 +25,12 @@ SECONDS=0   # Gesamtdauer fürs Abschluss-Log
 DEPLOY_STATUS_RESULT=""        # während des Laufs unbekannt
 DEPLOY_PHASE="gestartet"
 DEPLOY_RUNNING=1
-_status_ready() { [[ -n "${DATA_DIR:-}" && -d "${DATA_DIR:-/nonexistent}" ]]; }
+# Die geteilten Status-/Log-Dateien ($DATA_DIR/deploy-status.json, deploy.log)
+# gehören dem Lock-HALTER. Ein wartender oder am Lock scheiternder Lauf darf sie
+# NICHT anfassen — sonst trunkiert er das Log des laufenden Deploys bzw. clobbert
+# dessen Status. Daher: KEIN Schreiben, solange der Lock nicht gehalten wird.
+LOCK_HELD=0
+_status_ready() { [[ -n "${DATA_DIR:-}" && -d "${DATA_DIR:-/nonexistent}" && "$LOCK_HELD" == "1" ]]; }
 # Zeitstempel in MILLISEKUNDEN (wie Date.now() im Panel). Früher wurde auf
 # Sekunden gerundet (…000) — dann konnte status.at knapp KLEINER als der
 # Auslöse-Zeitpunkt (ms) sein und das Panel den frischen Status als „alt“
@@ -83,21 +88,11 @@ DATA_DIR="${DATA_DIR:-/srv/roses-blog/data}"
 PORT="${PORT:-3000}"
 mkdir -p "$DATA_DIR" 2>/dev/null || true
 
-# Sofortiger Herzschlag ans Panel: „angenommen, läuft an“. Ohne diesen Status
-# würde ein Abbruch VOR Abschnitt 0 (z. B. podman nicht im PATH des systemd-
-# Dienstes) gar keinen Status schreiben — das Panel meldete dann fälschlich
-# „Watcher läuft nicht“, obwohl er sehr wohl lief. MUSS vor dem Lock-Gate stehen:
-# schlägt die Lock-Etablierung fehl (fail-closed) oder läuft der Lock in den
-# Timeout, ist so bereits ein frischer „running"-Status geschrieben, den der
-# EXIT-Trap dann auf „fehlgeschlagen" dreht — das Panel behält keinen stale Erfolg.
-: > "$DATA_DIR/deploy.log" 2>/dev/null || true
-DEPLOY_RUNNING=1; DEPLOY_STATUS_RESULT=""
-log "Deployment angenommen — Umgebung wird geprüft"
-
-# Nebenläufigkeit verhindern: der manuelle `./deploy.sh` und der Panel-Watcher-
-# Dienst (roses-blog-deploy.service) dürfen NICHT gleichzeitig `compose down/up`
-# fahren — sonst reißt der eine dem anderen den gerade gestarteten Container unter
-# dem Healthcheck weg (Symptom: „erfolgreich" gefolgt von curl (7) refused).
+# Nebenläufigkeit verhindern — ZUERST, vor jedem Schreiben in die geteilten Status-/
+# Log-Dateien. Der manuelle `./deploy.sh` und der Panel-Watcher-Dienst
+# (roses-blog-deploy.service) dürfen NICHT gleichzeitig `compose down/up` fahren —
+# sonst reißt der eine dem anderen den gerade gestarteten Container unter dem
+# Healthcheck weg (Symptom: „erfolgreich" gefolgt von curl (7) refused).
 # WICHTIG (mehrere Punkte vom Fremd-Vendor-Panel als Schwäche nachgewiesen):
 #  - Lock liegt in $HOME, NICHT in $DATA_DIR: DATA_DIR ist ins Container gemountet
 #    und app-/container-schreibbar — ein dort platzierter Symlink würde beim Öffnen
@@ -109,13 +104,16 @@ log "Deployment angenommen — Umgebung wird geprüft"
 #    vollen Lauf — inkl. eigenem `git pull` (Abschnitt 1), holt also den NEUESTEN
 #    Stand. So geht kein Trigger/Commit verloren, und kein übersprungener Lauf
 #    meldet fälschlich Erfolg. Timeout → ehrlicher fail (kein Silent-Erfolg).
+#  - Nur der Lock-HALTER schreibt Status/Log (LOCK_HELD). Ein wartender/scheiternder
+#    Lauf lässt die Dateien des laufenden Deploys unangetastet (kein Log-Trunkieren,
+#    kein Clobbern) — er meldet nur auf die Konsole/ins journalctl.
 # FAIL-CLOSED (Verfassung: Kontrollen fallen geschlossen aus): kann der Lock NICHT
 # etabliert werden (flock/HOME fehlt, Pfad unbeschreibbar/Verzeichnis), wird der
-# Deploy ABGEBROCHEN — NICHT ungeschützt fortgesetzt. Sonst liefe er fail-open in
-# genau das compose down/up-Race, das der Lock verhindern soll. Ein bewusster
-# Operator-Override ist ausschließlich explizit möglich: DEPLOY_NO_LOCK=1.
+# Deploy ABGEBROCHEN — NICHT ungeschützt fortgesetzt. Ein bewusster Operator-
+# Override ist ausschließlich explizit möglich: DEPLOY_NO_LOCK=1.
 if [[ "${DEPLOY_NO_LOCK:-0}" == "1" ]]; then
   echo "HINWEIS: DEPLOY_NO_LOCK=1 — Nebenläufigkeits-Sperre bewusst deaktiviert (Operator-Override)."
+  LOCK_HELD=1   # Operator übernimmt die Einzel-Lauf-Verantwortung → Status/Log erlaubt
 elif [[ -z "${HOME:-}" ]] || ! command -v flock >/dev/null 2>&1; then
   fail "Deploy-Lock nicht etablierbar (flock oder \$HOME fehlt) — fail-closed abgebrochen, um ein ungeschütztes compose down/up-Race zu verhindern. Abhilfe: flock installieren (util-linux) bzw. HOME setzen, oder bewusst DEPLOY_NO_LOCK=1 setzen."
 else
@@ -125,11 +123,20 @@ else
     || fail "Deploy-Lock ($LOCK_FILE) nicht öffenbar (Pfad unbeschreibbar/Verzeichnis?) — fail-closed abgebrochen. Ursache prüfen oder bewusst DEPLOY_NO_LOCK=1 setzen."
   LOCK_WAIT="${DEPLOY_LOCK_WAIT:-2400}"
   if ! flock -n 9; then                                   # sofort frei? sonst warten
+    # Nur Konsole: die Status-/Log-Dateien gehören noch dem laufenden Deploy.
     log "Anderer Deploy läuft — warte auf exklusiven Lock (max ${LOCK_WAIT}s)"
     flock -w "$LOCK_WAIT" 9 \
       || fail "Anderer Deploy hält den Lock länger als ${LOCK_WAIT}s — abgebrochen (kein Silent-Erfolg; ein neuer Commit-Trigger wird NICHT als Erfolg quittiert)."
   fi
+  LOCK_HELD=1   # ab hier gehören die geteilten Status-/Log-Dateien exklusiv uns
 fi
+
+# Herzschlag ans Panel — ERST NACHDEM der Lock gehalten wird: jetzt dürfen wir die
+# geteilten Dateien zurücksetzen/schreiben. Frühere Abbrüche (Lock-Fehler/Timeout)
+# haben nichts geschrieben und daher den laufenden Vorgänger-Deploy nicht gestört.
+: > "$DATA_DIR/deploy.log" 2>/dev/null || true
+DEPLOY_RUNNING=1; DEPLOY_STATUS_RESULT=""
+log "Deployment angenommen — Umgebung wird geprüft"
 
 # Deployt standardmäßig den aktuell ausgecheckten Branch (Override: DEPLOY_BRANCH)
 CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)"
