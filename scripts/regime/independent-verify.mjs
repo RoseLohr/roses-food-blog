@@ -78,8 +78,12 @@ async function resolveModel() {
         if (hit) return hit;
       }
     }
-  } catch { /* Netz-/Parsefehler → Default unten */ }
-  return MODEL_PREFERENCE[0];
+  } catch { /* Netz-/Parsefehler → sicherer Fallback unten */ }
+  // Ist /models nicht verfügbar (404/nicht unterstützt) ODER matcht keine Präferenz,
+  // NICHT auf das neueste/knappste Modell zurückfallen (das lehnt ein Anbieter evtl.
+  // ab → alle Panel-Stimmen als API-Fehler → Kontrolle blockiert dauerhaft), sondern
+  // auf ein BREIT verfügbares, gepinntes Modell.
+  return "gpt-4o-2024-08-06";
 }
 const PANEL = Math.max(1, Number(process.env.VERIFIER_PANEL || 3));
 
@@ -114,21 +118,25 @@ export function aggregate(votes, panelSize) {
 }
 
 const DIFF_OPTS = { encoding: "utf8", maxBuffer: 256 * 1024 * 1024 };
-// Binär-/Asset-/Lock-/GeoJSON-Rauschen aus dem Review ausschließen.
-const EXCLUDE =
+// Binär-/Asset-/GeoJSON-Rauschen ausschließen. WICHTIG: package-lock.json bleibt im
+// --stat-ÜBERBLICK sichtbar (nur sein riesiger Body wird aus dem Code-Auszug
+// gelassen) — sonst schließt ein Reviewer fälschlich, das Lockfile sei zur
+// package.json-Änderung nicht aktualisiert worden (npm-ci-Bruch).
+const EXCLUDE_STAT =
   " -- . ':(exclude,glob).admin-data/**' ':(exclude,glob)**/*.webp'" +
   " ':(exclude,glob)**/*.{png,jpg,jpeg,gif,ico,woff,woff2,ttf,pdf}'" +
-  " ':(exclude,glob)**/*.geojson' ':(exclude,glob)**/package-lock.json'";
+  " ':(exclude,glob)**/*.geojson'";
+const EXCLUDE_BODY = EXCLUDE_STAT + " ':(exclude,glob)**/package-lock.json'";
 
 function sh(cmd) {
   try { return execSync(cmd, DIFF_OPTS); } catch { return ""; }
 }
 
-/** Datei-Überblick (voll) + Code-Auszug — kein blindes Byte-Truncation ohne Kontext. */
+/** Datei-Überblick (voll, inkl. Lockfile-Änderung) + Code-Auszug (ohne Lock-Body). */
 function diff() {
   const base = sh("git merge-base origin/main HEAD 2>/dev/null || echo HEAD~1").trim() || "HEAD~1";
-  const stat = sh(`git diff --stat ${base}...HEAD${EXCLUDE}`).slice(0, 8000);
-  const body = sh(`git diff ${base}...HEAD${EXCLUDE}`).slice(0, 50_000);
+  const stat = sh(`git diff --stat ${base}...HEAD${EXCLUDE_STAT}`).slice(0, 8000);
+  const body = sh(`git diff ${base}...HEAD${EXCLUDE_BODY}`).slice(0, 50_000);
   if (!stat.trim() && !body.trim()) return "";
   return (
     `# Geänderte Dateien (vollständiger Überblick):\n${stat}\n\n` +
