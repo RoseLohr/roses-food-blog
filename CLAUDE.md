@@ -14,6 +14,17 @@ diesem Repository arbeitet. Sie ist Teil des Governance-Regimes (A-32/A-33/A-37)
    ihre Tripwires. **Wer eine Voraussetzung schafft (z. B. ersten Tool-Use im
    KI-Pfad, zweiten Mandanten, IaC), reaktiviert die zugehörigen Prüfungen.**
 
+## Keine Workarounds — nur Ursachen (verbindlich, angeordnet 2026-07-17)
+- **Rote CI-Checks, fehlschlagende Gates oder Fehler werden an der WURZEL
+  behoben, nie umgangen.** Kein Unterdrücken, kein Tolerieren, kein „skip/allow",
+  kein Weichspülen einer Kontrolle, kein Vorbei-Mergen an einer roten Ampel.
+- **Es werden auch keine Workarounds mehr VORGESCHLAGEN.** Wenn nur ein
+  Workaround möglich wäre, ist das der Befund — dann Root-Cause benennen und
+  korrekt lösen (oder ehrlich sagen, dass es (noch) nicht sauber lösbar ist),
+  statt eine Umgehung anzubieten.
+- Ausnahmen sind ausschließlich die schriftlich ratifizierten Einträge im
+  `audit/10-exceptions-ledger.md` (F1–F4) mit Tripwire — nichts Ad-hoc.
+
 ## Harte Regeln (vom Gate erzwungen — nicht diskutabel)
 - Jede Änderung muss das CI-Gate bestehen: `npm run typecheck && npm run lint
   && npm test && npm run build` plus die Regime-Skripte (`scripts/regime/`).
@@ -32,6 +43,9 @@ diesem Repository arbeitet. Sie ist Teil des Governance-Regimes (A-32/A-33/A-37)
 - Committer: `Claude <noreply@anthropic.com>`; Push auf den Arbeits-Branch.
 - Tests zuerst rot, dann grün; Verhalten mit Playwright/vitest real verifizieren.
 - Temporäre Dateien ins Scratchpad, nie ins Repo.
+- **Vor jedem Push den VOLLEN Gate-Lauf lokal fahren** (nicht nur die geänderten
+  Skripte) — Root-Cause-Disziplin heißt auch, rote Checks nicht erst in CI zu
+  entdecken.
 
 ## Betrieb (Kurzüberblick)
 - Next.js 16 standalone in podman; Deploy: `./deploy.sh` auf dem Server

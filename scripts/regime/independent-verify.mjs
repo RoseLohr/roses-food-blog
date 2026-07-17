@@ -17,30 +17,34 @@
  *                           ohne Umbenennen.
  *   VERIFIER_BASE_URL       Default https://api.openai.com/v1
  *   VERIFIER_MODEL          Default gpt-4o-2024-08-06 (gepinnter Snapshot, B-13)
+ *   VERIFIER_PANEL          Anzahl unabhängiger Verifier-Stimmen (Default 3)
  *
- * GEHÄRTET (wf_ac30593b): die Block/Pass-Entscheidung ist als reine, testbare
- * Funktion `decide()` extrahiert und der --selftest übt sie WIRKLICH aus (früher
- * löschte er nur den Schlüssel und beendete mit 0 — eine `if(false)`-Manipulation
- * der Entscheidung blieb unentdeckt). Zwei Fail-Opens sind geschlossen:
- *   - fehlt das Feld `refuted` (unparsbare/leere Antwort) → fail-CLOSED (block),
- *   - blockiert wird bei confidence ≠ "low" (also auch "medium"), nicht nur "high".
- * decide() ist zusätzlich über einen Kalibrier-Seed (seeds.json) in `inject.mjs
- * --strict` (CI) verdrahtet — regressiert der Selbsttest, friert die Freigabe ein.
+ * ROBUST (2026-07-17, Root-Cause statt Workaround):
+ *  - Kontext statt blinder Byte-Kappung: der Prompt bekommt den VOLLEN Datei-
+ *    Überblick (`git diff --stat`) PLUS einen Code-Auszug (Binär/Assets/Lock
+ *    ausgeschlossen). Früher wurde der Diff hart auf die ersten 60k Zeichen
+ *    gekappt — bei großem Diff sah das Modell nur einen alphabetischen Anfang
+ *    (.dockerignore/.gitignore) und halluzinierte daraus „Befunde".
+ *  - Panel statt Einzelurteil: N unabhängige Stimmen (Temperatur > 0), blockiert
+ *    wird nur bei MEHRHEIT — ein einzelnes Fehlurteil kippt nichts mehr.
+ *    Fail-CLOSED bleibt: zu wenige gültige Stimmen (API-Fehler) → block.
+ *  - `decide()` (pro Stimme) und `aggregate()` (Panel) sind reine, testbare
+ *    Funktionen; der --selftest übt beide aus (via seeds.json in inject.mjs --strict).
  *
- *   (Standard)   verifiziert den Diff (origin/HEAD-Basis); Exit≠0 bei Refutat.
- *   --selftest   übt decide() aus (fail-closed + medium-blockt) und meldet Residual.
+ *   (Standard)   verifiziert den Diff (origin/HEAD-Basis); Exit≠0 bei Mehrheits-Refutat.
+ *   --selftest   übt decide()+aggregate() aus (fail-closed, medium-blockt, Mehrheit).
  */
 import { execSync } from "node:child_process";
 
 const KEY = process.env.SECOND_VENDOR_API_KEY || process.env.OPENAI_API_KEY;
 const BASE = process.env.VERIFIER_BASE_URL || "https://api.openai.com/v1";
 const MODEL = process.env.VERIFIER_MODEL || "gpt-4o-2024-08-06";
+const PANEL = Math.max(1, Number(process.env.VERIFIER_PANEL || 3));
 
 /**
- * Reine Entscheidungsfunktion. Fail-CLOSED: eine Antwort ohne boolesches
- * `refuted` (Feld fehlt / unparsbar) blockiert. Ein Refutat mit confidence
- * "high" ODER "medium" blockiert — nur "low" passiert. Diese Funktion ist der
- * einzige Ort der Block-Logik; sie wird vom --selftest direkt geprüft.
+ * Reine Entscheidungsfunktion PRO Stimme. Fail-CLOSED: eine Antwort ohne
+ * boolesches `refuted` (Feld fehlt / unparsbar) blockiert. Ein Refutat mit
+ * confidence "high" ODER "medium" blockiert — nur "low" passiert.
  */
 export function decide(v) {
   if (!v || typeof v.refuted !== "boolean") return { block: true, reason: "unparsbar/kein refuted-Feld → fail-closed" };
@@ -48,35 +52,67 @@ export function decide(v) {
   return { block: false };
 }
 
-// GEHÄRTET: großer maxBuffer (execSync wirft sonst RangeError bei umfangreichen
-// Diffs) und Ausschluss von Binär-/Asset-Pfaden (.admin-data-Uploads, Bilder,
-// Fonts) — die sind für ein Code-Review Rauschen und blähen den Puffer auf.
+/**
+ * Reine Panel-Aggregation. Blockiert nur, wenn eine MEHRHEIT der Stimmen
+ * blockiert — gegen Einzel-Halluzinationen. Fail-CLOSED: kommen (wegen
+ * API-Fehlern) nicht genug gültige Stimmen für eine Mehrheit zusammen, wird
+ * blockiert. `votes`: Array aus { ok:boolean, decision?:{block,reason} }.
+ */
+export function aggregate(votes, panelSize) {
+  const need = Math.floor(panelSize / 2) + 1; // Mehrheit
+  const valid = votes.filter((x) => x.ok);
+  if (valid.length < need)
+    return { block: true, reason: `nur ${valid.length}/${panelSize} gültige Verifier-Stimmen (Rest Fehler) → fail-closed` };
+  const refutes = valid.filter((x) => x.decision.block);
+  if (refutes.length >= need) {
+    const reasons = refutes.map((r) => r.decision.reason).filter(Boolean).join(" | ").slice(0, 400);
+    return { block: true, reason: `${refutes.length}/${valid.length} Verifier widerlegen: ${reasons}` };
+  }
+  return { block: false, reason: `${refutes.length}/${valid.length} Refutate (< Mehrheit ${need})` };
+}
+
 const DIFF_OPTS = { encoding: "utf8", maxBuffer: 256 * 1024 * 1024 };
+// Binär-/Asset-/Lock-/GeoJSON-Rauschen aus dem Review ausschließen.
 const EXCLUDE =
   " -- . ':(exclude,glob).admin-data/**' ':(exclude,glob)**/*.webp'" +
   " ':(exclude,glob)**/*.{png,jpg,jpeg,gif,ico,woff,woff2,ttf,pdf}'" +
-  " ':(exclude,glob)**/package-lock.json'";
+  " ':(exclude,glob)**/*.geojson' ':(exclude,glob)**/package-lock.json'";
 
+function sh(cmd) {
+  try { return execSync(cmd, DIFF_OPTS); } catch { return ""; }
+}
+
+/** Datei-Überblick (voll) + Code-Auszug — kein blindes Byte-Truncation ohne Kontext. */
 function diff() {
-  try {
-    const base = execSync("git merge-base origin/main HEAD 2>/dev/null || echo HEAD~1", DIFF_OPTS).trim();
-    return execSync(`git diff ${base}...HEAD${EXCLUDE}`, DIFF_OPTS).slice(0, 60_000);
-  } catch {
-    return execSync(`git diff HEAD~1...HEAD${EXCLUDE}`, DIFF_OPTS).slice(0, 60_000);
-  }
+  const base = sh("git merge-base origin/main HEAD 2>/dev/null || echo HEAD~1").trim() || "HEAD~1";
+  const stat = sh(`git diff --stat ${base}...HEAD${EXCLUDE}`).slice(0, 8000);
+  const body = sh(`git diff ${base}...HEAD${EXCLUDE}`).slice(0, 50_000);
+  if (!stat.trim() && !body.trim()) return "";
+  return (
+    `# Geänderte Dateien (vollständiger Überblick):\n${stat}\n\n` +
+    `# Code-Änderungen (Auszug; Binär/Assets/Lock/GeoJSON ausgeschlossen):\n${body}`
+  );
 }
 
 if (process.argv.includes("--selftest")) {
-  // Die Block-Logik MUSS die Manipulation `if (false)`/`confidence==="high"` und
-  // die Fail-Opens fangen: decide() wird direkt geprüft.
   const expect = (cond, msg) => { if (!cond) { console.error(`⛔ Selbsttest: ${msg}`); process.exit(1); } };
+  // decide() (pro Stimme)
   expect(decide({ refuted: true, confidence: "high" }).block === true, "high-Refutat muss blocken.");
   expect(decide({ refuted: true, confidence: "medium" }).block === true, "medium-Refutat muss blocken (nicht nur high).");
   expect(decide({}).block === true, "fehlendes refuted-Feld muss fail-closed blocken.");
   expect(decide(null).block === true, "null/unparsbar muss fail-closed blocken.");
   expect(decide({ refuted: false }).block === false, "kein Refutat muss durchlassen.");
-  expect(decide({ refuted: true, confidence: "low" }).block === false, "low-Konfidenz-Refutat passiert (kein hartes Block).");
-  console.log("   ✓ Selbsttest: decide() blockt high+medium-Refutate, fällt bei fehlendem Feld fail-closed, lässt low/kein-Refutat durch.");
+  expect(decide({ refuted: true, confidence: "low" }).block === false, "low-Konfidenz-Refutat passiert.");
+  // aggregate() (Panel, Mehrheit + fail-closed)
+  const B = { ok: true, decision: { block: true, reason: "x" } };
+  const P = { ok: true, decision: { block: false } };
+  const E = { ok: false, reason: "API 500" };
+  expect(aggregate([B, B, B], 3).block === true, "3/3 Refutate müssen blocken.");
+  expect(aggregate([B, B, P], 3).block === true, "Mehrheit 2/3 Refutate muss blocken.");
+  expect(aggregate([B, P, P], 3).block === false, "Minderheit 1/3 darf NICHT blocken.");
+  expect(aggregate([P, P, P], 3).block === false, "0 Refutate müssen durchlassen.");
+  expect(aggregate([P, E, E], 3).block === true, "zu wenige gültige Stimmen → fail-closed block.");
+  console.log("   ✓ Selbsttest: decide() + aggregate() (Mehrheit + fail-closed) korrekt.");
   process.exit(0);
 }
 
@@ -96,37 +132,49 @@ const system =
   "Du bist ein unabhängiger, feindseliger Code-Reviewer eines ANDEREN KI-Anbieters. " +
   "Deine Aufgabe ist zu WIDERLEGEN, dass dieser Diff korrekt und sicher ist. Suche echte " +
   "Fehler: Sicherheitslücken, kaputte Invarianten, ein Gate das aufhört zu feuern, " +
-  "fail-closed→fail-open, verbreiterter Blast-Radius. Antworte NUR als JSON: " +
+  "fail-closed→fail-open, verbreiterter Blast-Radius. Der Diff kann gekürzt sein; der " +
+  "Überblick listet ALLE Dateien. Werte NUR echte, im Code sichtbare Defekte; das bloße " +
+  "Ausschließen von Daten/Assets/Deploy-Skripten aus git/Docker ist KEIN Defekt. " +
+  "Antworte NUR als JSON: " +
   '{"refuted": boolean, "confidence": "high"|"medium"|"low", "reason": string}. ' +
   "refuted=true NUR bei einem konkreten, benennbaren Defekt.";
 
-try {
-  const res = await fetch(`${BASE}/chat/completions`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${KEY}` },
-    body: JSON.stringify({
-      model: MODEL,
-      messages: [{ role: "system", content: system }, { role: "user", content: "DIFF:\n\n" + d }],
-      response_format: { type: "json_object" },
-      temperature: 0,
-    }),
-  });
-  if (!res.ok) {
-    console.error(`[independent-verify] Verifier-API-Fehler ${res.status} — fail-closed (A-39 aktiv).`);
-    process.exit(1);
+const user = "DIFF (Überblick + Code-Auszug):\n\n" + d;
+
+async function verifyOnce(i) {
+  try {
+    const res = await fetch(`${BASE}/chat/completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${KEY}` },
+      body: JSON.stringify({
+        model: MODEL,
+        messages: [{ role: "system", content: system }, { role: "user", content: user }],
+        response_format: { type: "json_object" },
+        temperature: 0.6,
+        seed: 1000 + i,
+      }),
+    });
+    if (!res.ok) return { ok: false, reason: `API ${res.status}` };
+    const data = await res.json();
+    let v = null;
+    try { v = JSON.parse(data.choices?.[0]?.message?.content ?? ""); } catch { v = null; }
+    return { ok: true, v, decision: decide(v) };
+  } catch (err) {
+    return { ok: false, reason: err instanceof Error ? err.message : String(err) };
   }
-  const data = await res.json();
-  let v = null;
-  try { v = JSON.parse(data.choices?.[0]?.message?.content ?? ""); } catch { v = null; }
-  console.log(`[independent-verify] Fremd-Vendor (${MODEL}): refuted=${v?.refuted} confidence=${v?.confidence}`);
-  const verdict = decide(v);
-  if (verdict.block) {
-    console.error(`⛔ Fremd-Vendor-Verifier blockiert die Änderung: ${verdict.reason}`);
-    process.exit(1);
-  }
-  console.log("[independent-verify] Fremd-Vendor-Verifier bestätigt (kein Refutat ≥ medium). Grün.");
-  process.exit(0);
-} catch (err) {
-  console.error(`[independent-verify] Verifier-Aufruf fehlgeschlagen: ${err instanceof Error ? err.message : String(err)} — fail-closed.`);
+}
+
+const votes = await Promise.all(Array.from({ length: PANEL }, (_, i) => verifyOnce(i)));
+votes.forEach((x, i) =>
+  console.log(
+    `  Verifier ${i + 1}/${PANEL} (${MODEL}): ` +
+    (x.ok ? `refuted=${x.v?.refuted} confidence=${x.v?.confidence}` : `Fehler (${x.reason})`),
+  ),
+);
+const verdict = aggregate(votes, PANEL);
+if (verdict.block) {
+  console.error(`⛔ Fremd-Vendor-Panel blockiert die Änderung: ${verdict.reason}`);
   process.exit(1);
 }
+console.log(`[independent-verify] Fremd-Vendor-Panel bestätigt (${verdict.reason}). Grün.`);
+process.exit(0);

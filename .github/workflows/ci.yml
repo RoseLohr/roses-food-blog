@@ -93,7 +93,8 @@ jobs:
       - name: Dependency-Existenzprüfung (Anti-Slopsquatting, B-04)
         run: node scripts/regime/deps-existence.mjs
       - name: SBOM erzeugen (CycloneDX, A-38/B-09)
-        run: npx --yes @cyclonedx/cyclonedx-npm@latest --output-file sbom.json
+        # Gepinnt (B-13: kein floating @latest) — reproduzierbare CI.
+        run: npx --yes @cyclonedx/cyclonedx-npm@6.0.0 --output-file sbom.json
       - name: AI-BOM konsistent mit Code (C-26)
         run: node scripts/regime/ai-bom.mjs --verify
       - name: Mandat-Provenance verifiziert (C-26/C-37, fail-closed)
