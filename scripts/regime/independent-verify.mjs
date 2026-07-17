@@ -19,7 +19,7 @@
  *   VERIFIER_MODEL          Optional Einzel-Pin: dieses eine Modell für ALLE Stimmen
  *                           (Vorrang vor VERIFIER_PANEL_MODELS).
  *   VERIFIER_PANEL_MODELS   Komma-getrennte Liste — je Stimme EIN anderes Modell
- *                           (Modell-Diversität). Default: gpt-5.3-codex, gpt-5.6-tera,
+ *                           (Modell-Diversität). Default: gpt-5.3-codex, gpt-5.6-terra,
  *                           gpt-4.1-mini. Nicht freigeschaltete IDs → Warnung + Fallback
  *                           auf das neueste verfügbare Modell (kein harter 404-Block).
  *   VERIFIER_PANEL          Stimmenzahl NUR im Einzel-Pin-Modus (VERIFIER_MODEL); im
@@ -94,7 +94,7 @@ const FALLBACK_MODEL = "gpt-4o-2024-08-06";
 // VERIFIER_PANEL_MODELS (Komma-getrennt). Ein Einzel-Pin (VERIFIER_MODEL) hat
 // Vorrang und gilt dann für alle Stimmen.
 const PANEL_MODELS_RAW = (process.env.VERIFIER_PANEL_MODELS
-  || "gpt-5.3-codex,gpt-5.6-tera,gpt-4.1-mini")
+  || "gpt-5.3-codex,gpt-5.6-terra,gpt-4.1-mini")
   .split(",").map((s) => s.trim()).filter(Boolean);
 
 /**
