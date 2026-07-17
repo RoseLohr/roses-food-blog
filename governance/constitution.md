@@ -1,8 +1,8 @@
-<!-- constitution_state: IN_FORCE_PROVISIONAL -->
+<!-- constitution_state: RATIFIED -->
 # The Standing Constitution — Roses Food Blog
 
 > **Derived from** the 119-check Due-Diligence Mandate (`governance/mandate.md`).
-> **State:** `IN_FORCE_PROVISIONAL` — bindet ab diesem Commit jede Änderung in
+> **State:** `RATIFIED` (Katalog v1.0, Phase 7) — bindet jede Änderung in
 > jeder Spur, während finale Baselines noch gemessen werden. **Niemals**
 > ausreichend für Produktionsfreigabe: das erfordert `RATIFIED` (Phase 7) **und**
 > die von Part 2 auditierte Track-C-Scope. Wo Artikel und stehende Kontrolle sich
@@ -19,7 +19,7 @@ sind als **akzeptierte Residualrisiken mit Tripwire und benannter Rolle** in
 gelassen.
 
 ## Zustandsfelder
-- `constitution_state`: `IN_FORCE_PROVISIONAL`
+- `constitution_state`: `RATIFIED` (v1.0; Track-C-Register-Slots `pending-baseline: part2`)
 - in Kraft seit: 2026-07-16, Commit: `<siehe governance/mandate/manifest.json → generated_from_commit>`
 - `catalogue_version`: `1.0`
 - `constitution_hash`: siehe `audit/engagement-status.json → constitution_hash` (nach Commit attestiert)
@@ -150,3 +150,29 @@ Gates; Drills in observe-only) · **Production** (alles). Dieses Repo ist
 > *Wenn alle Menschen einen Monat in Urlaub gingen — hielte das noch?*
 > *Wenn niemand ein Jahr lang etwas anfasst — wäre es noch wahr, und wie würde
 > jemand merken, wenn nicht?*
+
+
+---
+
+## Ratifizierung (Phase 7, Katalog v1.0)
+
+**Ratifiziert** auf Basis der in Phasen 2–6 gemessenen Baselines. Track-C-Slots
+bleiben `pending-baseline: part2`; `production_eligible` bleibt `false`, bis
+Part 2 (Track C) mit Evidenz schließt.
+
+**Gemessene Gründungs-Baselines (S11-Böden — dürfen nur besser werden):**
+- Mutation-Score Kernlogik: **82,91 %** (break=78, `stryker.config.json`)
+- A11y (axe, serious/critical auf 5 Kernseiten): **0** (strikt, keine Altlast)
+- ESLint-Fehler: **0** (24 Warnungen = Startlinie, darf nur sinken)
+- Statische Secrets im Quelltext: **0**; A11y-Suppressions: **5** (nur sinken)
+- Gate-Selbsttest: 3/3 Seed-Verstöße gefangen; Kalibrier-Korpus: alle aktiven Klassen grün
+- SLO: Fehlerbudget 10 Fehler/15 min, Alert-Cooldown 60 min (nur verschärfen)
+
+**Amendment-Gate bewiesen:** ungegatete Änderung wurde erkannt und verweigert —
+Protokoll: `audit/evidence/phase7-amendment-gate.txt`. Jede Schwächung dieser
+Verfassung ist ein Amendment (Artikel XIII) und automatisch ein Finding.
+
+**Getragene Residuals bei Ratifizierung** (Register: `audit/06`): R-EVAL
+(Eval-Gate für Prompt-Änderungen), R-A33 (Cold-Start-SLI), R-A07 (Klon-Messung),
+B-17/B-27/B-29 (IaC/Signatur/Chaos), R-CADENCE (Cron-Host), F2-Posten
+(Fremd-Vendor-Verifier, separates Policy-Repo). Jeder mit Tripwire + Rolle.

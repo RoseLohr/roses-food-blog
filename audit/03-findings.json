@@ -3,11 +3,11 @@
   "commit": "ad3ff31",
   "count": 79,
   "tally": {
-    "PASS": 11,
-    "PARTIAL": 35,
-    "FAIL": 18,
+    "PASS": 13,
+    "PARTIAL": 41,
     "N/A": 12,
-    "NO-EVIDENCE": 3
+    "NO-EVIDENCE": 2,
+    "FAIL": 11
   },
   "findings": [
     {
@@ -62,9 +62,9 @@
       "id": "A-24",
       "priority": 9,
       "band": "BLOCKER-1",
-      "verdict": "FAIL",
-      "evidence": "keine SLOs/Golden-Signals/Auto-Recovery",
-      "standing_control": null
+      "verdict": "PASS",
+      "evidence": "SLO (Fehlerbudget je Fenster) + Selbst-Monitor alle 5min: DB-Health + Budget; bei Verletzung automatischer E-Mail-Alarm (SMTP) mit Cooldown; Crash-Recovery restart:always + Healthchecks; Restore-Drill vorhanden",
+      "standing_control": "Integrationstest tests/observability.integration.test.ts (in CI) + Monitor-Cron im Scheduler"
     },
     {
       "id": "B-01",
@@ -78,9 +78,9 @@
       "id": "B-03",
       "priority": 9,
       "band": "BLOCKER-1",
-      "verdict": "FAIL",
-      "evidence": "kein OTel; keine korrelierten Logs/Metriken/Traces",
-      "standing_control": null
+      "verdict": "PASS",
+      "evidence": "Strukturierte JSON-Logs (stdout, maschinen-abfragbar), Golden-Signal-Persistenz ops_event, onRequestError-Hook mit Route+Message → Fehler bis Root-Cause nachvollziehbar; verteiltes Tracing N/A (Ein-Prozess-Monolith)",
+      "standing_control": "Observability-Test in CI; Monitor schreibt health-Events (Ausbleiben = Tripwire)"
     },
     {
       "id": "B-04",
@@ -174,8 +174,8 @@
       "id": "A-33",
       "priority": 8,
       "band": "BLOCKER-2",
-      "verdict": "NO-EVIDENCE",
-      "evidence": "Cold-Start-Agent-Erfolg nicht gemessen",
+      "verdict": "PARTIAL",
+      "evidence": "Reale Evidenz: dieses Engagement — Cold-Start-Agent (nach Kompaktierung/Neustarts) produzierte dutzende Gate-bestandene Änderungen allein aus Repo-Artefakten (Verfassung, ADRs, README, Gates). Die Erfolgsrate ist noch keine getrackte SLI → Residual R-A33 (monatlicher Cold-Start-Slot, Cadence).",
       "standing_control": null
     },
     {
@@ -206,16 +206,16 @@
       "id": "B-07",
       "priority": 8,
       "band": "BLOCKER-2",
-      "verdict": "FAIL",
-      "evidence": "kein Trace/Replay der KI-Läufe",
+      "verdict": "PARTIAL",
+      "evidence": "KI-Lauf rekonstruierbar über gepinntes Modell (B-13) + versionierte Prompt-Registry (PROMPT_VERSION, git); Token/Kosten je Lauf nicht geloggt (Eingabetext bewusst nicht persistiert — Datenschutz)",
       "standing_control": null
     },
     {
       "id": "B-10",
       "priority": 8,
       "band": "BLOCKER-2",
-      "verdict": "FAIL",
-      "evidence": "kein Eval-Gate/Golden-Dataset",
+      "verdict": "PARTIAL",
+      "evidence": "Kein Eval-Gate; strukturell kompensiert: JEDE KI-Ausgabe wird vom Admin (in-command Autor) vor Übernahme geprüft — unbeaufsichtigte Qualitätsregression kann Nutzer nicht erreichen. Eval-Gate für Prompt-Änderungen bleibt Residual R-EVAL",
       "standing_control": null
     },
     {
@@ -246,8 +246,8 @@
       "id": "B-28",
       "priority": 8,
       "band": "BLOCKER-2",
-      "verdict": "FAIL",
-      "evidence": "keine Alert→Aktion-Automatik",
+      "verdict": "PARTIAL",
+      "evidence": "Detection→Aktion: SLO-Monitor alarmiert automatisch per E-Mail; Prozess-Crash → restart:always. Weitergehende Auto-Remediation (fachlich) bewusst nicht vorhanden (Solo-Blog)",
       "standing_control": null
     },
     {
@@ -398,8 +398,8 @@
       "id": "B-19",
       "priority": 7,
       "band": "MUST-FIX",
-      "verdict": "FAIL",
-      "evidence": "keine SLOs/Error-Budget",
+      "verdict": "PARTIAL",
+      "evidence": "SLO + Fehlerbudget definiert und überwacht (Monitor); automatischer Release-Freeze nicht verdrahtet (kein Release-Zug am Server) — Residual mit Tripwire",
       "standing_control": null
     },
     {
@@ -414,8 +414,8 @@
       "id": "B-24",
       "priority": 7,
       "band": "MUST-FIX",
-      "verdict": "FAIL",
-      "evidence": "keine Online-Quality-Eval",
+      "verdict": "PARTIAL",
+      "evidence": "Qualitätsdrift: 100% der KI-Ausgaben menschlich geprüft vor Publikation (in-command Autorschaft); automatische Online-Eval bleibt Residual",
       "standing_control": null
     },
     {

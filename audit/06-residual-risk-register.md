@@ -36,3 +36,18 @@ aktualisiertem Tripwire bestehen.
 - **Owner:** in-command (Design). **Restoring milestone:** Palette-Entscheidung.
 - **Vorschlag:** `--color-rose-primary`/`--color-accent` von `#339e92` auf ~`#277a70`
   (≈4,6:1 auf Weiß) abdunkeln; heller Ton bleibt für große Dekor-Flächen möglich.
+
+---
+## Bei Ratifizierung (v1.0) getragene Residuals — je mit Kompensation + Tripwire
+
+| ID | Risiko | Kompensation | Tripwire | Rolle |
+|---|---|---|---|---|
+| R-EVAL (B-10/B-24) | Kein Eval-Gate/Online-Eval für Prompt-Änderungen | 100 % der KI-Ausgaben werden vom Admin (in-command Autor) vor Übernahme geprüft; Prompt-Änderung = Code-Änderung durch das volle Gate | `PROMPT_VERSION`-Änderung ohne begleitenden Test fällt im Review auf; KI-Feature-Ausbau reaktiviert B-10 (§9.5) | in-command |
+| R-A33 | Cold-Start-Erfolgsrate keine getrackte SLI | Evidenz vorhanden (dieses Engagement: Gate-bestandene Änderungen rein aus Repo-Artefakten) | monatlicher Cold-Start-Slot (Cadence) unbelegt → Finding | engineering |
+| R-A07 | Klon-/Duplikationsquote nicht gemessen | DRY-Praxis, geteilte Komponenten; ESLint | Einführung eines Klon-Detektors geplant; neue Copy-Paste-Häufung fällt im Mutation-/Lint-Gate auf | platform-quality |
+| R-B17/B-27/B-29 | Kein IaC, keine Artefakt-Signatur, kein Chaos-Drill | Ein-Server-Setup via bootstrap.sh reproduzierbar; SBOM in CI; restart:always + Healthchecks + Restore-Drill | Zweiter Server/Registry-Push/Autoscaling reaktiviert die Checks (§9.5) | platform |
+| R-COST | Kein Infra-Kosten-Cap fürs KI-Feature | admin-only, max_tokens 8000, timeout 90 s, maxRetries 1, ein Aufruf/Job | Kosten-Monitoring beim Provider; Tool-Use-Einführung reaktiviert B-08 hart | in-command |
+| R-CWV | Core Web Vitals nicht gemessen (RUM) | statisches, schlankes Frontend; axe-Gate | Nutzerbeschwerden/Suchkonsole; RUM-Einführung geplant | product |
+| R-CADENCE | Kein Cron-Host für Kalender-Drills | Drills als committete Skripte, on-demand; CI führt Selbsttests je Push aus | überfälliges Fälligkeitsfenster = Finding (Cadence-Doku) | in-command |
+| F2-Verifier | Kein Fremd-Vendor-Zweitverifier (A-39) | Deterministischer Gate ist alleinige Merge-Autorität; menschliches in-command-Review | zweiter Vendor-Key vorhanden → sofort verdrahten | in-command |
+| F2-PolicyRepo | Policy-Bundle nicht in separatem Repo | CODEOWNERS-Trennung + separation-check (CI, blockierend) | zweites Repo verfügbar → migrieren | in-command |
