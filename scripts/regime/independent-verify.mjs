@@ -288,34 +288,60 @@ function parseVerdict(content) {
   return null;
 }
 
-async function verifyOnce(i) {
-  try {
-    // MINIMALE, breit kompatible Anfrage: kein temperature/seed/response_format —
-    // neuere Modelle (GPT-5.x/Sol) lehnen diese Parameter teils mit HTTP 400 ab.
-    const res = await fetch(`${BASE}/chat/completions`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${KEY}` },
-      body: JSON.stringify({
-        model: MODEL,
-        messages: [
-          { role: "system", content: system + (LENSES[i % LENSES.length] || "") },
-          { role: "user", content: user },
-        ],
-      }),
-    });
-    if (!res.ok) {
-      // Fehler-BODY mitschreiben (nicht nur den Status) — sonst bleibt die Ursache
-      // eines 400 unsichtbar. Whitespace normalisiert, begrenzt.
-      let detail = "";
-      try { detail = (await res.text()).replace(/\s+/g, " ").slice(0, 300); } catch { detail = "(kein Body)"; }
-      return { ok: false, reason: `API ${res.status}: ${detail}` };
-    }
-    const data = await res.json();
-    const v = parseVerdict(data.choices?.[0]?.message?.content ?? "");
-    return { ok: true, v, decision: decide(v) };
-  } catch (err) {
-    return { ok: false, reason: err instanceof Error ? err.message : String(err) };
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// Transient = vorübergehend, ein Retry kann helfen: Netzfehler (kein Status),
+// Rate-Limit/Timeout/Conflict und 5xx. Auch 401 wird als transient behandelt:
+// beobachtet wurde ein flakiges „insufficient permissions" auf EINER von drei
+// identischen, gleichzeitigen Anfragen (Load-Balancer-Knoten) — derselbe Key/Modell
+// lieferte die anderen Stimmen korrekt. Deterministische Client-Fehler
+// (400/403/404) NICHT retryen — das Ergebnis ändert sich nicht.
+const isTransient = (s) => s === 401 || s === 408 || s === 409 || s === 429 || s >= 500;
+
+async function attemptOnce(i) {
+  // MINIMALE, breit kompatible Anfrage: kein temperature/seed/response_format —
+  // neuere Modelle (GPT-5.x/Sol) lehnen diese Parameter teils mit HTTP 400 ab.
+  const res = await fetch(`${BASE}/chat/completions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${KEY}` },
+    body: JSON.stringify({
+      model: MODEL,
+      messages: [
+        { role: "system", content: system + (LENSES[i % LENSES.length] || "") },
+        { role: "user", content: user },
+      ],
+    }),
+  });
+  if (!res.ok) {
+    // Fehler-BODY mitschreiben (nicht nur den Status) — sonst bleibt die Ursache
+    // eines 400 unsichtbar. Whitespace normalisiert, begrenzt.
+    let detail = "";
+    try { detail = (await res.text()).replace(/\s+/g, " ").slice(0, 300); } catch { detail = "(kein Body)"; }
+    return { ok: false, status: res.status, reason: `API ${res.status}: ${detail}` };
   }
+  const data = await res.json();
+  const v = parseVerdict(data.choices?.[0]?.message?.content ?? "");
+  return { ok: true, v, decision: decide(v) };
+}
+
+async function verifyOnce(i) {
+  // Pro Stimme mehrere Versuche bei TRANSIENTEN Fehlern (mit kurzem Backoff), damit
+  // ein flakiger API-Fehler nicht die Zahl gültiger Panel-Stimmen senkt und so das
+  // Schein-Grün-Gate fälschlich fail-closed auslöst. KEIN Aufweichen der Sicherheit:
+  // das Modell führt bei jedem Versuch die volle adversariale Analyse aus; nur die
+  // Zustellung wird robuster. Deterministische Fehler brechen sofort ab.
+  const ATTEMPTS = 3;
+  let last = { ok: false, reason: "kein Versuch ausgeführt" };
+  for (let a = 1; a <= ATTEMPTS; a++) {
+    try {
+      last = await attemptOnce(i);
+      if (last.ok) return last;
+      if (last.status && !isTransient(last.status)) return last; // deterministisch → kein Retry
+    } catch (err) {
+      last = { ok: false, reason: err instanceof Error ? err.message : String(err) }; // Netzfehler → transient
+    }
+    if (a < ATTEMPTS) await sleep(500 * a); // 0,5 s, dann 1,0 s
+  }
+  return last;
 }
 
 const votes = await Promise.all(Array.from({ length: PANEL }, (_, i) => verifyOnce(i)));

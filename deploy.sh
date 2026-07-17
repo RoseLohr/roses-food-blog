@@ -99,6 +99,9 @@ mkdir -p "$DATA_DIR" 2>/dev/null || true
 #    Stand. So geht kein Trigger/Commit verloren, und kein übersprungener Lauf
 #    meldet fälschlich Erfolg. Timeout → ehrlicher fail (kein Silent-Erfolg).
 # Fehlt flock oder $HOME, degradiert es auf das bisherige Verhalten (ohne Lock).
+# Kann der Lock NICHT etabliert werden (flock/HOME fehlt, Pfad unbeschreibbar oder
+# ein Verzeichnis), NICHT still ungeschützt weiterlaufen — sondern sichtbar warnen,
+# damit die deaktivierte Nebenläufigkeits-Sperre nicht unbemerkt bleibt.
 if [[ -n "${HOME:-}" ]] && command -v flock >/dev/null 2>&1; then
   LOCK_FILE="$HOME/.roses-blog-deploy.lock"
   ( umask 077; : >> "$LOCK_FILE" ) 2>/dev/null || true   # anlegen (0600), ohne Truncate
@@ -109,7 +112,11 @@ if [[ -n "${HOME:-}" ]] && command -v flock >/dev/null 2>&1; then
       flock -w "$LOCK_WAIT" 9 \
         || fail "Anderer Deploy hält den Lock länger als ${LOCK_WAIT}s — abgebrochen (kein Silent-Erfolg; ein neuer Commit-Trigger wird NICHT als Erfolg quittiert)."
     fi
+  else
+    echo "WARNUNG: Deploy-Lock ($LOCK_FILE) nicht öffenbar — Nebenläufigkeitsschutz INAKTIV. Parallele Deploys sind NICHT verhindert."
   fi
+else
+  echo "WARNUNG: flock oder \$HOME nicht verfügbar — Deploy-Lock INAKTIV. Parallele Deploys (manuell + Panel-Watcher) sind NICHT verhindert."
 fi
 
 # Sofortiger Herzschlag ans Panel: „angenommen, läuft an“. Ohne diesen Status
@@ -399,28 +406,30 @@ podman image prune -f >/dev/null 2>&1 || true
 # --- 9. Status ----------------------------------------------------------------
 # Zustand für den Schnellpfad (Abschnitt 1b) festhalten: Commit + .env-Hash
 # des erfolgreich deployten Stands.
-printf '%s %s\n' "$COMMIT" "$ENV_HASH" > "$STATE_FILE" 2>/dev/null || true
-DEPLOY_STATUS_RESULT="erfolgreich"   # EXIT-Trap schreibt deploy-status.json
-log "Deployment erfolgreich (Dauer: ${SECONDS}s)"
+# Finaler Health-Gate (echtes Gate, NICHT nur kosmetisch): der autoritative Poll
+# (Abschnitt 6) war grün; hier erneut bestätigen, dass die App nach Neustart+Prune
+# WIRKLICH noch antwortet. Mehrere Versuche absorbieren einen transienten Port-
+# Reinit (compose-Recreate/Port-Forwarder). Bleibt sie danach unerreichbar, ist die
+# App nicht bloß transient weg → EHRLICH als Fehlschlag melden (kein Silent-Erfolg,
+# der einen Post-Restart-Crash als „erfolgreich" quittiert). „erfolgreich" wird
+# daher erst NACH bestandenem Gate gesetzt.
 echo "Branch:   $BRANCH"
 echo "Commit:   $COMMIT"
-# Kosmetischer Schluss-Check: der AUTORITATIVE Healthcheck (Abschnitt 6) ist bereits
-# bestanden — der Deploy gilt als erfolgreich. Hier nur noch kurz für die Ausgabe
-# nachfassen (mehrfach, nicht einmalig), damit ein transienter Port-Reinit
-# (compose-Recreate/Port-Forwarder) keine widersprüchliche „erfolgreich + refused"-
-# Zeile erzeugt. Ein Fehler hier darf das Skript NICHT beenden (set -e): daher kein
-# nacktes `curl && …` als letzte Anweisung.
 FINAL_HEALTH_OK=0
 for _ in $(seq 1 10); do
   if curl -fsS "http://127.0.0.1:$PORT/health" >/dev/null 2>&1; then FINAL_HEALTH_OK=1; break; fi
   sleep 1
 done
-if [[ "$FINAL_HEALTH_OK" == "1" ]]; then
-  echo "Health:   OK (http://127.0.0.1:$PORT/health)"
-else
-  echo "WARNUNG: finaler Health-Check auf Port $PORT (noch) nicht erreichbar — letzte Container-Logs:"
-  podman logs --tail 20 roses-blog 2>&1 | sed 's/^/  /' || true
+if [[ "$FINAL_HEALTH_OK" != "1" ]]; then
+  echo "Letzte Container-Logs:"
+  podman logs --tail 30 roses-blog 2>&1 | sed 's/^/  /' || true
+  fail "App nach Neustart auf Port $PORT nicht erreichbar (finaler Health-Gate gescheitert) — Deployment NICHT als erfolgreich quittiert."
 fi
+# Zustand für den Schnellpfad (Abschnitt 1b) erst nach bestandenem Health-Gate.
+printf '%s %s\n' "$COMMIT" "$ENV_HASH" > "$STATE_FILE" 2>/dev/null || true
+DEPLOY_STATUS_RESULT="erfolgreich"   # EXIT-Trap schreibt deploy-status.json
+log "Deployment erfolgreich (Dauer: ${SECONDS}s)"
+echo "Health:   OK (http://127.0.0.1:$PORT/health)"
 podman ps --filter name=roses-blog --format "Container: {{.Names}} ({{.Status}})"
 
 }
