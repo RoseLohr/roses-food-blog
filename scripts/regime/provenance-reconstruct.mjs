@@ -25,14 +25,19 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const reg = JSON.parse(fs.readFileSync(path.join(ROOT, "governance/ownership-registry.json"), "utf8"));
 
-function roleFor(rel) {
+/** Explizite Rolle per Prefix — OHNE default_role-Fallthrough (Fangregel). */
+function explicitRoleFor(rel) {
   let best = null, bestLen = -1;
   for (const [role, prefixes] of Object.entries(reg.roles)) {
     for (const p of prefixes) {
       if (rel.startsWith(p) && p.length > bestLen) { best = role; bestLen = p.length; }
     }
   }
-  return best ?? reg.default_role ?? null;
+  return best;
+}
+/** Rolle inkl. default_role — nur für Anzeige/Attribution, NIE für die Fangregel. */
+function roleFor(rel) {
+  return explicitRoleFor(rel) ?? reg.default_role ?? null;
 }
 
 function walk(dir, out = []) {
@@ -45,23 +50,23 @@ function walk(dir, out = []) {
   return out;
 }
 
-// 1. Ownership-Abdeckung.
+// 1. Ownership-Abdeckung — GEHÄRTET (wf_ac30593b): explizite Rolle, KEIN
+// default_role-Fallthrough, der die Fangregel neutralisiert.
 const files = walk(path.join(ROOT, "src"));
-const uncovered = files.filter((f) => roleFor(f) === null);
+const uncovered = files.filter((f) => explicitRoleFor(f) === null);
 
 if (process.argv.includes("--selftest")) {
-  if (roleFor("src/zzz-unowned/mystery.ts") === null && reg.default_role) {
-    // default_role deckt ab → simuliere fehlendes default:
-  }
-  const savedDefault = reg.default_role;
-  reg.default_role = null;
-  const missed = roleFor("src/zzz-unowned/mystery.ts");
-  reg.default_role = savedDefault;
-  if (missed !== null) {
+  // Prüft den ECHTEN Code-Pfad (keine Registry-Mutation): eine nicht per Prefix
+  // abgedeckte Datei MUSS rollenlos sein, eine abgedeckte MUSS eine Rolle haben.
+  if (explicitRoleFor("src/experiments/rogue/exfil.ts") !== null) {
     console.error("⛔ Selbsttest FEHLGESCHLAGEN: unabgedeckte Datei nicht als rollenlos erkannt.");
     process.exit(1);
   }
-  console.log("   ✓ Selbsttest: unabgedeckte Datei (ohne default_role) als rollenlos erkannt.");
+  if (explicitRoleFor("src/lib/contacts.ts") === null) {
+    console.error("⛔ Selbsttest FEHLGESCHLAGEN: abgedeckte Datei fälschlich rollenlos.");
+    process.exit(1);
+  }
+  console.log("   ✓ Selbsttest: unabgedeckte Datei rollenlos, abgedeckte mit Rolle (ohne default_role-Fallthrough).");
 }
 
 // 2. Policy-Bundle: Verfassungs-Hash.
@@ -77,7 +82,7 @@ let head = "0";
 try { head = execSync("git rev-parse HEAD", { cwd: ROOT, stdio: "pipe" }).toString().trim(); } catch { /* außerhalb git */ }
 const idx = files.length ? parseInt(crypto.createHash("sha256").update(head).digest("hex").slice(0, 8), 16) % files.length : 0;
 const spot = files[idx];
-const spotRole = spot ? roleFor(spot) : null;
+const spotRole = spot ? explicitRoleFor(spot) : null;
 let provenance = "keine (Legacy-Commit ohne Trailer)";
 try {
   const last = execSync(`git log -1 --format=%H%n%an %ae%n%b -- "${spot}"`, { cwd: ROOT, stdio: "pipe" }).toString();

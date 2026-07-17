@@ -1,15 +1,89 @@
 {
-  "_comment": "C-37 — Owning-Role je Komponente. Rechenschaft ohne Unterschrift: niemand signiert den Diff, also muss jede Zeile in Produktion einer VERANTWORTLICHEN ROLLE (nicht einem Reviewer) zuordenbar sein. scripts/regime/provenance-reconstruct.mjs erzwingt: jeder Quellpfad fällt unter genau eine Rolle; eine unabgedeckte Datei fällt den Build.",
+  "_comment": "C-37 — Owning-Role je Komponente. Rechenschaft ohne Unterschrift: niemand signiert den Diff, also muss jede Zeile in Produktion einer VERANTWORTLICHEN ROLLE (nicht einem Reviewer) zuordenbar sein. scripts/regime/provenance-reconstruct.mjs erzwingt: jeder Quellpfad fällt unter genau eine Rolle; eine unabgedeckte Datei fällt den Build. | GEHÄRTET (wf_ac30593b): default_role neutralisiert die Fangregel nicht mehr — jede Quelldatei braucht ein explizites Prefix (explicitRoleFor).",
   "version": "1.0",
   "roles": {
-    "platform-security": ["src/lib/auth", "src/lib/csrf", "src/lib/ratelimit", "src/app/api/admin", "src/app/admin"],
-    "ai-security": ["src/lib/ai-recipe", "src/lib/prompts", "src/lib/ai-recipe-jobs"],
-    "privacy": ["src/lib/contacts", "src/lib/newsletter", "src/lib/tracking", "src/lib/observability", "src/lib/sequences", "src/lib/email-queue", "src/lib/segments"],
-    "platform-data": ["src/db", "src/lib/data-transfer", "src/lib/media", "src/lib/settings"],
-    "content-platform": ["src/lib/recipe", "src/lib/travel", "src/lib/saisonkalender", "src/lib/season", "src/lib/slug", "src/lib/markdown", "src/lib/rich-text", "src/lib/homepage", "src/lib/search", "src/lib/likes", "src/data"],
-    "frontend": ["src/components", "src/app/(public)", "src/app/(marketing)", "src/i18n", "src/app/layout", "src/app/globals", "src/app/page"],
-    "platform-ops": ["src/server", "src/instrumentation", "src/lib/deploy", "src/lib/mailer", "scripts", "deploy.sh"],
-    "governance": ["governance", "audit", ".github"]
+    "platform-security": [
+      "src/lib/auth",
+      "src/lib/csrf",
+      "src/lib/ratelimit",
+      "src/app/api/admin",
+      "src/app/admin",
+      "src/app/api/beacon",
+      "src/app/api/ingredients",
+      "src/app/api/likes"
+    ],
+    "ai-security": [
+      "src/lib/ai-recipe",
+      "src/lib/prompts",
+      "src/lib/ai-recipe-jobs",
+      "src/lib/ai-guard"
+    ],
+    "privacy": [
+      "src/lib/contacts",
+      "src/lib/newsletter",
+      "src/lib/tracking",
+      "src/lib/observability",
+      "src/lib/sequences",
+      "src/lib/email-queue",
+      "src/lib/segments",
+      "src/lib/campaigns",
+      "src/lib/visitor-class",
+      "src/lib/geo"
+    ],
+    "platform-data": [
+      "src/db",
+      "src/lib/data-transfer",
+      "src/lib/media",
+      "src/lib/settings",
+      "src/app/uploads",
+      "src/lib/taxonomies"
+    ],
+    "content-platform": [
+      "src/lib/recipe",
+      "src/lib/travel",
+      "src/lib/saisonkalender",
+      "src/lib/season",
+      "src/lib/slug",
+      "src/lib/markdown",
+      "src/lib/rich-text",
+      "src/lib/homepage",
+      "src/lib/search",
+      "src/lib/likes",
+      "src/data",
+      "src/lib/servings",
+      "src/lib/similar-recipes"
+    ],
+    "frontend": [
+      "src/components",
+      "src/app/(public)",
+      "src/app/(marketing)",
+      "src/i18n",
+      "src/app/layout",
+      "src/app/globals",
+      "src/app/page",
+      "src/app/drucken",
+      "src/app/llms.txt",
+      "src/app/robots",
+      "src/app/sitemap",
+      "src/lib/jsonld",
+      "src/lib/nav-data"
+    ],
+    "platform-ops": [
+      "src/server",
+      "src/instrumentation",
+      "src/lib/deploy",
+      "src/lib/mailer",
+      "scripts",
+      "deploy.sh",
+      "src/app/health",
+      "src/lib/base-url",
+      "src/lib/request"
+    ],
+    "governance": [
+      "governance",
+      "audit",
+      ".github"
+    ]
   },
   "default_role": "platform-ops",
   "policy_bundle": {
