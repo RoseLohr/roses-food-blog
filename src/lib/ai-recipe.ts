@@ -41,20 +41,28 @@ export const recipeDraftSchema = z.object({
   cuisines: z.array(z.string()),
   equipment: z.array(z.string()),
   sections: z.array(
-    z.object({
-      name: z.string(),
-      ingredients: z.array(
-        z.object({
-          name: z.string(),
-          amount: z.string(),
-          unit: z.string(),
-          note: z.string(),
-        }),
-      ),
-      steps: z.array(z.string()),
-    }),
+    z
+      .object({
+        name: z.string(),
+        ingredients: z.array(
+          z
+            .object({
+              name: z.string(),
+              amount: z.string(),
+              unit: z.string(),
+              note: z.string(),
+            })
+            .strict(),
+        ),
+        steps: z.array(z.string()),
+      })
+      .strict(),
   ),
-});
+})
+  // C-07-Containment: `.strict()` auf JEDER Objektebene — eine (ggf. injizierte)
+  // Modellausgabe mit unbekanntem Feld (tool, egressUrl, webhookUrl, …) wird
+  // ABGELEHNT statt still gestrippt. Kein Egress-/Aktionsfeld existiert im Schema.
+  .strict();
 
 /**
  * Der fertige Entwurf trägt zusätzlich einen deterministisch berechneten

@@ -15,14 +15,35 @@
  *   VERIFIER_BASE_URL       Default https://api.openai.com/v1
  *   VERIFIER_MODEL          Default gpt-4o
  *
+ * GEHÄRTET (wf_ac30593b): die Block/Pass-Entscheidung ist als reine, testbare
+ * Funktion `decide()` extrahiert und der --selftest übt sie WIRKLICH aus (früher
+ * löschte er nur den Schlüssel und beendete mit 0 — eine `if(false)`-Manipulation
+ * der Entscheidung blieb unentdeckt). Zwei Fail-Opens sind geschlossen:
+ *   - fehlt das Feld `refuted` (unparsbare/leere Antwort) → fail-CLOSED (block),
+ *   - blockiert wird bei confidence ≠ "low" (also auch "medium"), nicht nur "high".
+ * decide() ist zusätzlich über einen Kalibrier-Seed (seeds.json) in `inject.mjs
+ * --strict` (CI) verdrahtet — regressiert der Selbsttest, friert die Freigabe ein.
+ *
  *   (Standard)   verifiziert den Diff (origin/HEAD-Basis); Exit≠0 bei Refutat.
- *   --selftest   ohne Schlüssel: sauberes Skip (Exit 0), Residual gemeldet.
+ *   --selftest   übt decide() aus (fail-closed + medium-blockt) und meldet Residual.
  */
 import { execSync } from "node:child_process";
 
 const KEY = process.env.SECOND_VENDOR_API_KEY;
 const BASE = process.env.VERIFIER_BASE_URL || "https://api.openai.com/v1";
 const MODEL = process.env.VERIFIER_MODEL || "gpt-4o";
+
+/**
+ * Reine Entscheidungsfunktion. Fail-CLOSED: eine Antwort ohne boolesches
+ * `refuted` (Feld fehlt / unparsbar) blockiert. Ein Refutat mit confidence
+ * "high" ODER "medium" blockiert — nur "low" passiert. Diese Funktion ist der
+ * einzige Ort der Block-Logik; sie wird vom --selftest direkt geprüft.
+ */
+export function decide(v) {
+  if (!v || typeof v.refuted !== "boolean") return { block: true, reason: "unparsbar/kein refuted-Feld → fail-closed" };
+  if (v.refuted && v.confidence !== "low") return { block: true, reason: v.reason ?? "Refutat (confidence ≥ medium)" };
+  return { block: false };
+}
 
 function diff() {
   try {
@@ -34,12 +55,16 @@ function diff() {
 }
 
 if (process.argv.includes("--selftest")) {
-  // Ohne Schlüssel MUSS sauber übersprungen werden (kein Fake-Grün, kein Crash).
-  const savedKey = process.env.SECOND_VENDOR_API_KEY;
-  delete process.env.SECOND_VENDOR_API_KEY;
-  if (process.env.SECOND_VENDOR_API_KEY) { console.error("⛔ Selbsttest: Schlüssel nicht entfernbar."); process.exit(1); }
-  if (savedKey) process.env.SECOND_VENDOR_API_KEY = savedKey;
-  console.log("   ✓ Selbsttest: ohne Zweit-Vendor-Schlüssel wird sauber übersprungen (Residual A-39 bleibt sichtbar).");
+  // Die Block-Logik MUSS die Manipulation `if (false)`/`confidence==="high"` und
+  // die Fail-Opens fangen: decide() wird direkt geprüft.
+  const expect = (cond, msg) => { if (!cond) { console.error(`⛔ Selbsttest: ${msg}`); process.exit(1); } };
+  expect(decide({ refuted: true, confidence: "high" }).block === true, "high-Refutat muss blocken.");
+  expect(decide({ refuted: true, confidence: "medium" }).block === true, "medium-Refutat muss blocken (nicht nur high).");
+  expect(decide({}).block === true, "fehlendes refuted-Feld muss fail-closed blocken.");
+  expect(decide(null).block === true, "null/unparsbar muss fail-closed blocken.");
+  expect(decide({ refuted: false }).block === false, "kein Refutat muss durchlassen.");
+  expect(decide({ refuted: true, confidence: "low" }).block === false, "low-Konfidenz-Refutat passiert (kein hartes Block).");
+  console.log("   ✓ Selbsttest: decide() blockt high+medium-Refutate, fällt bei fehlendem Feld fail-closed, lässt low/kein-Refutat durch.");
   process.exit(0);
 }
 
@@ -79,13 +104,15 @@ try {
     process.exit(1);
   }
   const data = await res.json();
-  const v = JSON.parse(data.choices?.[0]?.message?.content ?? "{}");
-  console.log(`[independent-verify] Fremd-Vendor (${MODEL}): refuted=${v.refuted} confidence=${v.confidence}`);
-  if (v.refuted && v.confidence === "high") {
-    console.error(`⛔ Fremd-Vendor-Verifier widerlegt die Änderung: ${v.reason}`);
+  let v = null;
+  try { v = JSON.parse(data.choices?.[0]?.message?.content ?? ""); } catch { v = null; }
+  console.log(`[independent-verify] Fremd-Vendor (${MODEL}): refuted=${v?.refuted} confidence=${v?.confidence}`);
+  const verdict = decide(v);
+  if (verdict.block) {
+    console.error(`⛔ Fremd-Vendor-Verifier blockiert die Änderung: ${verdict.reason}`);
     process.exit(1);
   }
-  console.log("[independent-verify] Fremd-Vendor-Verifier bestätigt (kein hochkonfidentes Refutat). Grün.");
+  console.log("[independent-verify] Fremd-Vendor-Verifier bestätigt (kein Refutat ≥ medium). Grün.");
   process.exit(0);
 } catch (err) {
   console.error(`[independent-verify] Verifier-Aufruf fehlgeschlagen: ${err instanceof Error ? err.message : String(err)} — fail-closed.`);

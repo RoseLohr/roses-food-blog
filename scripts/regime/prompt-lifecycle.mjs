@@ -27,7 +27,42 @@ function extract(content) {
   return { ver, hash };
 }
 
-const { ver, hash } = extract(fs.readFileSync(SRC, "utf8"));
+/**
+ * GEHÄRTET (wf_ac30593b): der Hash erfasst nur das ERSTE Template-Literal. Wird
+ * verhaltensändernder Text per Konkatenation/Variable ANGEHÄNGT, bleibt er
+ * unsichtbar. Daher: SYSTEM/INTERNAL_TEMPLATE MÜSSEN ein reines bare-Template-
+ * Literal sein — kein `+`, kein `.concat`, keine Variable als RHS.
+ */
+function nonBareViolations(content) {
+  const bad = [];
+  for (const name of ["SYSTEM", "INTERNAL_TEMPLATE"]) {
+    if (new RegExp(`export const ${name}\\s*=\\s*\`[\\s\\S]*?\`\\s*\\+`).test(content)) bad.push(`${name}: Konkatenation (\` + …) — Text entkommt dem Hash`);
+    if (new RegExp(`export const ${name}\\s*=\\s*\`[\\s\\S]*?\`\\s*\\.\\s*concat`).test(content)) bad.push(`${name}: .concat(…) — Text entkommt dem Hash`);
+    if (new RegExp(`export const ${name}\\s*=\\s*[A-Za-z_$]`).test(content)) bad.push(`${name}: Variable/Ausdruck als RHS statt bare-Literal`);
+  }
+  return bad;
+}
+
+const srcText = fs.readFileSync(SRC, "utf8");
+const { ver, hash } = extract(srcText);
+
+if (process.argv.includes("--selftest")) {
+  const changed = 'export const SYSTEM = `NEU`;\nexport const INTERNAL_TEMPLATE = `x`;';
+  if (extract(changed).hash === (fs.existsSync(LOCK) ? JSON.parse(fs.readFileSync(LOCK, "utf8")).hash : "")) {
+    console.error("⛔ Selbsttest: geänderter Prompt nicht erkannt."); process.exit(1);
+  }
+  // Konkatenations-/Variablen-Umgehungen MÜSSEN gefangen werden.
+  const attacks = [
+    'export const SYSTEM = `Original` +\n  `\\n- versteckte Anweisung`;\nexport const INTERNAL_TEMPLATE = `x`;',
+    'export const SYSTEM = BASE.concat("x");\nexport const INTERNAL_TEMPLATE = `x`;',
+    'export const SYSTEM = SYSTEM_BASE;\nexport const INTERNAL_TEMPLATE = `x`;',
+  ];
+  for (const a of attacks) {
+    if (!nonBareViolations(a).length) { console.error("⛔ Selbsttest: Nicht-bare-Literal (Konkatenation/Variable) nicht gefangen."); process.exit(1); }
+  }
+  if (nonBareViolations(srcText).length) { console.error("⛔ Selbsttest: reales bare-Literal fälschlich geflaggt."); process.exit(1); }
+  console.log("   ✓ Selbsttest: Text-Änderung + Konkatenation/Variable/.concat gefangen; bare-Literal durchgelassen.");
+}
 
 if (process.argv.includes("--attest")) {
   fs.writeFileSync(LOCK, JSON.stringify({ prompt: "recipe-draft", version: ver, hash }, null, 2) + "\n");
@@ -35,12 +70,11 @@ if (process.argv.includes("--attest")) {
   process.exit(0);
 }
 
-if (process.argv.includes("--selftest")) {
-  const changed = 'export const PROMPT_VERSION = "recipe-draft@1";\nexport const SYSTEM = `NEUER anderer Prompt-Text`;\nexport const INTERNAL_TEMPLATE = `x`;';
-  const e = extract(changed);
-  const lock = fs.existsSync(LOCK) ? JSON.parse(fs.readFileSync(LOCK, "utf8")) : { version: ver, hash };
-  if (e.hash === lock.hash) { console.error("⛔ Selbsttest: geänderter Prompt nicht erkannt."); process.exit(1); }
-  console.log("   ✓ Selbsttest: geänderter Prompt-Text ohne Lock-Update gefangen.");
+const nonBare = nonBareViolations(srcText);
+if (nonBare.length) {
+  for (const b of nonBare) console.error(`   ✗ ${b}`);
+  console.error("\n⛔ Prompt-Lifecycle: Prompt nicht als reines bare-Literal definiert. Merge blockiert (B-05).");
+  process.exit(1);
 }
 
 if (!fs.existsSync(LOCK)) {

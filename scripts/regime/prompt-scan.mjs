@@ -59,7 +59,7 @@ if (process.argv.includes("--selftest")) {
     ['interne FQDN', 'const x = `siehe https://nutrition.roses.internal:8443/api`;'],
     ['IPv6-Loopback', 'const y = "http://[::1]:6379";'],
     ['Backtick-Credential', 'const dbPassword = `Sommer2026-Roses!extralang`;'],
-    ['URI-Credential', 'export const DSN = `postgres://admin:GeheimPass@db.roses.internal:5432/blog`;'],
+    ['URI-Credential', 'export const DSN = `postgres://admin:GeheimPass@db.roses.internal:5432/blog`;'], // secret-scan-allow: Selbsttest-Fixtur, kein echtes Geheimnis (B-06)
   ];
   for (const [label, src] of cases) {
     if (!scan(src).length) { console.error(`⛔ Selbsttest FEHLGESCHLAGEN: „${label}" nicht gefangen.`); process.exit(1); }

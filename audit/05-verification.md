@@ -123,3 +123,64 @@ Nach dem „Angehen" der Part-1-Reste, jede Kontrolle CI-blockierend + selbst-ge
 Nutzer-Aktionsliste) und A-33 (Erfolgsraten-SLI, echtes Residual — braucht Agent-/
 CI-Telemetrie über Zeit). production_eligible bleibt false, aber nur noch an diesen
 dreien, nicht mehr an 19.
+
+## Phase 9 — Adversariales Kontroll-Audit (Workflow `wf_ac30593b`) + Härtung
+
+Die A-39-Rolle (unabhängiger, feindseliger Verifier) wurde durch einen Multi-Agenten-
+**Workflow** gespielt: jede der 20 stehenden Kontrollen wurde von einem eigenständigen
+Agenten mit falsifizierendem Ziel angegriffen — realer Lauf, echter Bypass, Repo danach
+per `git checkout` wiederhergestellt. Ergebnis: **18 von 20 Kontrollen waren regex-/
+substring-brüchig oder Fake-Grün** (der `--selftest` fing nur den künstlichen Seed, nie
+den realen Defekt). Das ist der ehrliche Kern des A-39-Residuals — und genau der Befund,
+den ein Ein-Vendor-Gate allein nicht liefern kann.
+
+Jeder bestätigte Bypass wurde mit dem vom Angreifer gelieferten Rezept gehärtet und mit
+**seiner exakten Reproduktion** gegengeprüft (rot-vorher → grün-nachher, Repo sauber):
+
+**HF1 — realer Code-Defekt (C-04 Erasure):** `anonymizeContact` löschte PII nicht aus
+eingebetteten E-Mail-Queue-Bodies. Body-Scrub (`replace(...)` auf subject/html/textBody)
++ Integrationstest mit Canary im `subject` (rot-vorher bewiesen). Commit `60e9f41`.
+
+**HF2 — 5 Security-Gates entsprödet** (`202b2cd`): authz-coverage (const-arrow/Re-Export-
+Handler + Kommentar-Strip), ai-capability-guard (Referenz-`tools:`, Built-in-Server-Tools,
+`mcp_servers:`), secret-scan (Split-Literale, präfix-verankerte SendGrid/Stripe/GitHub/
+Slack/Google-Keys, URI-Credential), boundary-check (alle Endungen inkl. `.tsx`, `fetch`/
+`node:https`/axios-Egress), data-map (Drizzle-Shorthand `text()`).
+
+**HF3a — 5 Gates** (`0084c12`): provenance-reconstruct (kein `default_role`-Fallthrough →
+21 maskierte Dateien sichtbar), license-scan (bare-`GPL`, AGPL nur in LICENSE-Datei),
+llm-matrix-check (Phantom-Test-Pfad + Platzhalter abgelehnt), prompt-scan (interne FQDN/
+IPv6/Backtick-Credential), ai-budget-check (per-Aufrufstelle über ganz `src/`).
+
+**HF3b — 4 Gates + Schema** (dieser Commit):
+- `rollback-check.mjs`: von Token-Presence auf **semantische Verdrahtung** — Kommentare
+  gestrippt, Health-Ergebnis muss in `if`/`fail` fließen (`curl … || true` abgelehnt),
+  `--dry-run) DRY=1` real geparst, echtes `cp "$BACKUP" "$DATA_DIR/app.db"`. Positiv-
+  Attacke (alle Tokens nur in Kommentaren/`|| true`) → 7 Verstöße, Exit 1. **Gesehen.**
+- `independent-verify.mjs`: Block-Logik als reine `decide()` extrahiert — fail-**closed**
+  bei fehlendem `refuted`-Feld, blockt bei confidence ≥ medium (nicht nur high). `--selftest`
+  übt `decide()` aus; `if(false)`-Neutralisierung → Selbsttest Exit 1. Neuer Kalibrier-Seed
+  **S10** in `seeds.json` (via `inject.mjs --strict` in CI). **Gesehen gefangen.**
+- `tests/ai-killswitch.test.ts` (B-07): 4. Test übt den **echten Erfolgspfad** von
+  `generateRecipeDraft` (gemocktes SDK) und assertiert, dass weder Ausgangstext-Sentinel
+  noch generierter Titel ins `ops_event` lecken; Positivkontrolle `tokens in=10 out=20`.
+  Injizierter `recordOpsEvent(src=…out=…)`-Leck → Test rot. **Gesehen.**
+- `tests/injection.containment.test.ts` (C-07): Denylist-Regex ersetzt durch **rekursive
+  Allowlist** (walkt ZodObject/Array/Optional/Nullable über jede Tiefe); `recipeDraftSchema`
+  ist jetzt auf jeder Objektebene `.strict()` (unbekannte Felder abgelehnt statt gestrippt).
+  Deklarierte Egress-Felder `quelleLink`/`bildLink` (top-level) + `webhookUrl` (verschachtelt)
+  → 2 Tests rot. **Gesehen gefangen.**
+- Nebenbefund behoben: die gehärtete `secret-scan` fing die credential-förmige Selbsttest-
+  **Fixtur** in `prompt-scan.mjs` (URI-Credential) — per sanktioniertem `secret-scan-allow`-
+  Kommentar (auditierbar, Ratchet-gezählt) ausgenommen. Kein echtes Geheimnis.
+
+**Voll-Gate nach HF3b (real ausgeführt, grün):** `typecheck` ✓ · `lint` 0 errors ✓ ·
+`vitest run` **142/142** ✓ · `build` ✓ · alle **15** Regime-Gates `--selftest` **und**
+Standardlauf ✓ · `calibration/inject.mjs --strict` (10 aktive Seed-Klassen) ✓ ·
+`clones` 4,81 % (≤ 5,5 %) ✓.
+
+**Ehrliche Lage:** die Discovery-Verdikte sind unverändert (production_eligible bleibt
+computed **false**, gehalten an A-01/A-39 + A-33). Was sich geändert hat, ist die
+**Vertrauenswürdigkeit der grünen Gates**: 18 Kontrollen, die vorher Fake-Grün waren,
+fangen ihre Defektklasse jetzt nachweislich — verifiziert durch die Reproduktion des
+Angreifers, nicht durch Behauptung.

@@ -76,6 +76,15 @@
       "control_cmd": "node scripts/regime/authz-coverage.mjs --selftest",
       "beispiel": "Neue export async function in (protected)/**/actions.ts ohne requireAdmin()",
       "hinweis": "Ein-Admin-Modell ohne Fremd-Tenants; die Cross-Tenant-Variante bleibt S2 (N/A). S9 prüft die real vorhandene Klasse: ein ungeguardeter Admin-Schreibpfad."
+    },
+    {
+      "id": "S10-verifier-fake-green",
+      "klasse": "Fake-Green des Fremd-Vendor-Verifiers (A-39): Block-Entscheidung neutralisiert",
+      "aktiv": true,
+      "kontrolle": "independent-verify decide() Selbst-Integritätstest (A-01/A-39)",
+      "control_cmd": "node scripts/regime/independent-verify.mjs --selftest",
+      "beispiel": "if (v.refuted && v.confidence === \"high\") → if (false)  /  fehlendes refuted-Feld → fail-open",
+      "hinweis": "decide() ist die einzige Block-Logik; der Selbsttest übt sie aus (high+medium blocken, fehlendes Feld fail-closed). Regression friert via inject.mjs --strict die Freigabe ein."
     }
   ]
 }
