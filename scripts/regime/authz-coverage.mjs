@@ -21,6 +21,7 @@ const HTTP = "GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS";
 const ALLOW = [
   { file: "app/admin/(protected)/actions.ts", export: "logoutAction", reason: "Logout" },
   { file: "app/admin/login/actions.ts", export: "*", reason: "Login (pre-Auth)" },
+  { file: "app/api/deploy-hook/route.ts", export: "POST", reason: "GitHub-Webhook — HMAC-Signatur (X-Hub-Signature-256) statt Admin-Session; fail-closed ohne Secret" },
 ];
 
 /** Kommentare entfernen, damit auskommentierte Guards nicht zählen. */

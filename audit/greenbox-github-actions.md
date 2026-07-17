@@ -72,3 +72,41 @@ Datenkarte, Provenance, Mandat-/Verfassungs-Hash. Kein Handanlegen nötig.
 
 **Wenn (1) + (2) erledigt sind, bleibt production_eligible nur noch an A-33 hängen —
 und A-33 ist ein SLI-Aufbau über Zeit, kein Sicherheits-/Datenschutz-Loch.**
+
+## 4. Auto-Deploy nach Merge auf `main` (GitHub-Webhook)
+
+Nach jedem erfolgreichen Merge auf `main` ruft GitHub einen Webhook auf dem
+Foodblog-Container auf; der Empfänger `POST /api/deploy-hook` verifiziert die
+HMAC-Signatur und schreibt — bei `push` auf `main` — dieselbe Auslöse-Datei wie
+das Panel. Der bereits laufende Host-Watcher startet daraufhin `./deploy.sh`.
+**Kein neuer Host-Setup nötig** (der Watcher aus Punkt „Deploy-from-panel" reicht);
+der Container führt weiterhin kein Host-Kommando aus.
+
+**a) Secret erzeugen** (auf der greenbox oder lokal):
+```
+openssl rand -hex 32
+```
+
+**b) Secret dem Container geben** — dieselbe Env wie `ANTHROPIC_API_KEY`, Variable
+`GITHUB_WEBHOOK_SECRET=<der-hex-Wert>`, dann Container neu starten (`./deploy.sh`).
+Ohne diese Env ist der Endpunkt **aus** (503, fail-closed).
+
+**c) Webhook bei GitHub anlegen** — Repo → Settings → Webhooks → Add webhook:
+- Payload URL: `https://<deine-blog-domain>/api/deploy-hook`
+- Content type: `application/json`
+- Secret: **derselbe** hex-Wert aus (a)
+- Events: nur „Just the push event."
+
+Per CLI (einen Wert einsetzen — nutze **exakt** dasselbe Secret wie in (b)):
+```
+gh api -X POST repos/RoseLohr/roses-food-blog/hooks -f name=web -F active=true -f 'events[]=push' -f config[url]=https://<deine-blog-domain>/api/deploy-hook -f config[content_type]=json -f config[secret]="$GITHUB_WEBHOOK_SECRET"
+```
+
+**d) Testen** — GitHub sendet beim Anlegen automatisch ein `ping` (erwartet 200).
+Danach einmal echt:
+```
+git commit --allow-empty -m "chore: Auto-Deploy-Webhook testen" && git push origin main
+```
+Ergebnis prüfbar unter GitHub → Webhooks → „Recent Deliveries" (204/202 = ok) und im
+Panel unter „Aktualisierung" (Status/Log). Ungültige Signatur → 401, fremder Branch →
+ignoriert, kein Deploy.
