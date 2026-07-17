@@ -16,7 +16,8 @@
  *                           ist; so greift ein bereits hinterlegter OpenAI-Schlüssel
  *                           ohne Umbenennen.
  *   VERIFIER_BASE_URL       Default https://api.openai.com/v1
- *   VERIFIER_MODEL          Default gpt-4o-2024-08-06 (gepinnter Snapshot, B-13)
+ *   VERIFIER_MODEL          Optional. Ohne Angabe: automatisch das NEUSTE vom Account
+ *                           freigeschaltete Modell (GET /v1/models, Präferenz neu→alt).
  *   VERIFIER_PANEL          Anzahl unabhängiger Verifier-Stimmen (Default 3)
  *
  * ROBUST (2026-07-17, Root-Cause statt Workaround):
@@ -38,7 +39,52 @@ import { execSync } from "node:child_process";
 
 const KEY = process.env.SECOND_VENDOR_API_KEY || process.env.OPENAI_API_KEY;
 const BASE = process.env.VERIFIER_BASE_URL || "https://api.openai.com/v1";
-const MODEL = process.env.VERIFIER_MODEL || "gpt-4o-2024-08-06";
+
+// Präferenz-Reihenfolge (NEU → alt). Ohne explizites VERIFIER_MODEL nimmt der
+// Verifier das erste hiervon, das der Account tatsächlich FREIGESCHALTET hat.
+const MODEL_PREFERENCE = [
+  "gpt-5.6-sol", "gpt-5.6", "gpt-5.5", "gpt-5.1", "gpt-5",
+  "gpt-4.1", "gpt-4o-2024-08-06", "gpt-4o",
+];
+
+/**
+ * Modellwahl: explizit via VERIFIER_MODEL (z. B. ein gepinnter Snapshot), sonst
+ * automatisch das NEUSTE vom Account freigeschaltete Modell — ermittelt über
+ * GET /v1/models. So läuft der Verifier immer auf dem besten verfügbaren Modell,
+ * ohne dass eine nicht freigeschaltete ID einen HTTP 400 auslöst.
+ */
+/**
+ * Für eine Präferenz `p` das passende Modell aus `ids` wählen: EXAKTE ID zuerst,
+ * sonst NUR einen datierten Snapshot `p-YYYY-MM-DD` — niemals eine Variante wie
+ * `p-mini`/`p-nano` (die wäre schwächer, nicht „dasselbe Modell"). Bei mehreren
+ * Snapshots den NEUESTEN (spätestes Datum), unabhängig von der /models-Reihenfolge.
+ */
+function pickForPref(ids, p) {
+  if (ids.includes(p)) return p;
+  const esc = p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const dated = ids.filter((id) => new RegExp(`^${esc}-\\d{4}-\\d{2}-\\d{2}$`).test(id)).sort();
+  return dated.length ? dated[dated.length - 1] : null;
+}
+
+async function resolveModel() {
+  if (process.env.VERIFIER_MODEL) return process.env.VERIFIER_MODEL;
+  try {
+    const res = await fetch(`${BASE}/models`, { headers: { Authorization: `Bearer ${KEY}` } });
+    if (res.ok) {
+      const data = await res.json();
+      const ids = (data?.data || []).map((m) => m?.id).filter(Boolean);
+      for (const p of MODEL_PREFERENCE) {
+        const hit = pickForPref(ids, p);
+        if (hit) return hit;
+      }
+    }
+  } catch { /* Netz-/Parsefehler → sicherer Fallback unten */ }
+  // Ist /models nicht verfügbar (404/nicht unterstützt) ODER matcht keine Präferenz,
+  // NICHT auf das neueste/knappste Modell zurückfallen (das lehnt ein Anbieter evtl.
+  // ab → alle Panel-Stimmen als API-Fehler → Kontrolle blockiert dauerhaft), sondern
+  // auf ein BREIT verfügbares, gepinntes Modell.
+  return "gpt-4o-2024-08-06";
+}
 const PANEL = Math.max(1, Number(process.env.VERIFIER_PANEL || 3));
 
 /**
@@ -72,21 +118,25 @@ export function aggregate(votes, panelSize) {
 }
 
 const DIFF_OPTS = { encoding: "utf8", maxBuffer: 256 * 1024 * 1024 };
-// Binär-/Asset-/Lock-/GeoJSON-Rauschen aus dem Review ausschließen.
-const EXCLUDE =
+// Binär-/Asset-/GeoJSON-Rauschen ausschließen. WICHTIG: package-lock.json bleibt im
+// --stat-ÜBERBLICK sichtbar (nur sein riesiger Body wird aus dem Code-Auszug
+// gelassen) — sonst schließt ein Reviewer fälschlich, das Lockfile sei zur
+// package.json-Änderung nicht aktualisiert worden (npm-ci-Bruch).
+const EXCLUDE_STAT =
   " -- . ':(exclude,glob).admin-data/**' ':(exclude,glob)**/*.webp'" +
   " ':(exclude,glob)**/*.{png,jpg,jpeg,gif,ico,woff,woff2,ttf,pdf}'" +
-  " ':(exclude,glob)**/*.geojson' ':(exclude,glob)**/package-lock.json'";
+  " ':(exclude,glob)**/*.geojson'";
+const EXCLUDE_BODY = EXCLUDE_STAT + " ':(exclude,glob)**/package-lock.json'";
 
 function sh(cmd) {
   try { return execSync(cmd, DIFF_OPTS); } catch { return ""; }
 }
 
-/** Datei-Überblick (voll) + Code-Auszug — kein blindes Byte-Truncation ohne Kontext. */
+/** Datei-Überblick (voll, inkl. Lockfile-Änderung) + Code-Auszug (ohne Lock-Body). */
 function diff() {
   const base = sh("git merge-base origin/main HEAD 2>/dev/null || echo HEAD~1").trim() || "HEAD~1";
-  const stat = sh(`git diff --stat ${base}...HEAD${EXCLUDE}`).slice(0, 8000);
-  const body = sh(`git diff ${base}...HEAD${EXCLUDE}`).slice(0, 50_000);
+  const stat = sh(`git diff --stat ${base}...HEAD${EXCLUDE_STAT}`).slice(0, 8000);
+  const body = sh(`git diff ${base}...HEAD${EXCLUDE_BODY}`).slice(0, 50_000);
   if (!stat.trim() && !body.trim()) return "";
   return (
     `# Geänderte Dateien (vollständiger Überblick):\n${stat}\n\n` +
@@ -128,6 +178,9 @@ if (!KEY) {
 const d = diff();
 if (!d.trim()) { console.log("[independent-verify] Kein Diff zu prüfen. Grün."); process.exit(0); }
 
+const MODEL = await resolveModel();
+console.log(`[independent-verify] Modell: ${MODEL}${process.env.VERIFIER_MODEL ? " (VERIFIER_MODEL gesetzt)" : " (auto: neustes freigeschaltetes)"}`);
+
 const system =
   "Du bist ein unabhängiger, feindseliger Code-Reviewer eines ANDEREN KI-Anbieters. " +
   "Deine Aufgabe ist zu WIDERLEGEN, dass dieser Diff korrekt und sicher ist. Suche echte " +
@@ -135,29 +188,64 @@ const system =
   "fail-closed→fail-open, verbreiterter Blast-Radius. Der Diff kann gekürzt sein; der " +
   "Überblick listet ALLE Dateien. Werte NUR echte, im Code sichtbare Defekte; das bloße " +
   "Ausschließen von Daten/Assets/Deploy-Skripten aus git/Docker ist KEIN Defekt. " +
+  "DEINE GRENZE — überschreite sie NICHT: Widerlege NUR bei einem KONKRETEN, " +
+  "reproduzierbaren Defekt mit benennbarem Fehlverhalten (falsche Ausgabe, Absturz, " +
+  "eine Kontrolle die nachweislich aufhört zu feuern, ein REAL ausnutzbares " +
+  "Sicherheitsloch MIT konkretem Angriffspfad). Widerlege NICHT wegen: Stil/Lesbarkeit; " +
+  "'könnte defensiver/sicherer sein'; spekulativer Angriffe ohne konkreten Pfad " +
+  "(z. B. 'könnte umgangen werden', 'Format-String', 'Unicode-Homoglyphen'), wenn der " +
+  "reale Vektor bereits abgedeckt ist; fehlender hypothetischer Härtung; oder Punkten, " +
+  "die KEIN benennbares Fehlverhalten auslösen. Kannst du keinen konkreten Ausnutzungs- " +
+  "oder Fehlerpfad benennen: refuted=false. " +
   "Antworte NUR als JSON: " +
   '{"refuted": boolean, "confidence": "high"|"medium"|"low", "reason": string}. ' +
   "refuted=true NUR bei einem konkreten, benennbaren Defekt.";
 
 const user = "DIFF (Überblick + Code-Auszug):\n\n" + d;
 
+// Diversität über UNTERSCHIEDLICHE Prüf-Lenses (nicht über Temperatur) — so bleibt
+// die Anfrage minimal & modell-kompatibel und die drei Stimmen sind trotzdem
+// perspektivisch verschieden.
+const LENSES = [
+  " Fokus dieser Prüfung: Sicherheitslücken und Datenschutz.",
+  " Fokus dieser Prüfung: Korrektheit, kaputte Invarianten, fail-closed→fail-open.",
+  " Fokus dieser Prüfung: hört ein Gate/eine Kontrolle auf zu feuern; verbreiterter Blast-Radius.",
+];
+
+/** Robustes JSON-Parsing der Modellantwort — auch ohne erzwungenes response_format
+ *  (z. B. wenn das Modell die JSON in Prosa/Codefence einbettet). */
+function parseVerdict(content) {
+  if (!content) return null;
+  try { return JSON.parse(content); } catch { /* kein reines JSON — weiter */ }
+  const m = content.match(/\{[\s\S]*\}/);
+  if (m) { try { return JSON.parse(m[0]); } catch { /* auch kein JSON-Block */ } }
+  return null;
+}
+
 async function verifyOnce(i) {
   try {
+    // MINIMALE, breit kompatible Anfrage: kein temperature/seed/response_format —
+    // neuere Modelle (GPT-5.x/Sol) lehnen diese Parameter teils mit HTTP 400 ab.
     const res = await fetch(`${BASE}/chat/completions`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${KEY}` },
       body: JSON.stringify({
         model: MODEL,
-        messages: [{ role: "system", content: system }, { role: "user", content: user }],
-        response_format: { type: "json_object" },
-        temperature: 0.6,
-        seed: 1000 + i,
+        messages: [
+          { role: "system", content: system + (LENSES[i % LENSES.length] || "") },
+          { role: "user", content: user },
+        ],
       }),
     });
-    if (!res.ok) return { ok: false, reason: `API ${res.status}` };
+    if (!res.ok) {
+      // Fehler-BODY mitschreiben (nicht nur den Status) — sonst bleibt die Ursache
+      // eines 400 unsichtbar. Whitespace normalisiert, begrenzt.
+      let detail = "";
+      try { detail = (await res.text()).replace(/\s+/g, " ").slice(0, 300); } catch { detail = "(kein Body)"; }
+      return { ok: false, reason: `API ${res.status}: ${detail}` };
+    }
     const data = await res.json();
-    let v = null;
-    try { v = JSON.parse(data.choices?.[0]?.message?.content ?? ""); } catch { v = null; }
+    const v = parseVerdict(data.choices?.[0]?.message?.content ?? "");
     return { ok: true, v, decision: decide(v) };
   } catch (err) {
     return { ok: false, reason: err instanceof Error ? err.message : String(err) };
@@ -165,12 +253,23 @@ async function verifyOnce(i) {
 }
 
 const votes = await Promise.all(Array.from({ length: PANEL }, (_, i) => verifyOnce(i)));
-votes.forEach((x, i) =>
-  console.log(
-    `  Verifier ${i + 1}/${PANEL} (${MODEL}): ` +
-    (x.ok ? `refuted=${x.v?.refuted} confidence=${x.v?.confidence}` : `Fehler (${x.reason})`),
-  ),
-);
+votes.forEach((x, i) => {
+  if (!x.ok) {
+    console.log(`  Verifier ${i + 1}/${PANEL} (${MODEL}): Fehler (${x.reason})`);
+    return;
+  }
+  // Auch die BEGRÜNDUNG mitschreiben (nicht nur refuted/confidence) — die liefert
+  // das Modell ohnehin; im CI-Log ist sie der eigentlich informative Teil.
+  // SICHERES Logging von modell-beeinflusstem Text: JSON.stringify escaped ALLE
+  // Steuerzeichen, Zeilenumbrueche, Anfuehrungszeichen und Backslashes (zu \uXXXX
+  // bzw. \n) und liefert einen einzeiligen, in Anfuehrungszeichen gefassten String.
+  // Keine Log-Zeilen-/Terminal-Manipulation moeglich, und (anders als eine Zeichen-
+  // Denylist) nicht umgehbar. console.log(einString) macht zudem KEINE printf-
+  // Substitution (kein %-Format-String-Vektor). Kein Geheimnis-Leak: der reason ist
+  // Modell-Analyse eines ohnehin oeffentlichen Diffs.
+  const reason = x.v?.reason ? ` — Begründung: ${JSON.stringify(x.v.reason).slice(0, 600)}` : "";
+  console.log(`  Verifier ${i + 1}/${PANEL} (${MODEL}): refuted=${x.v?.refuted} confidence=${x.v?.confidence}${reason}`);
+});
 const verdict = aggregate(votes, PANEL);
 if (verdict.block) {
   console.error(`⛔ Fremd-Vendor-Panel blockiert die Änderung: ${verdict.reason}`);
