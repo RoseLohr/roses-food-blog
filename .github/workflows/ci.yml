@@ -45,6 +45,8 @@ jobs:
         run: node scripts/regime/authz-coverage.mjs --selftest
       - name: KI-Fähigkeits-Guard (Track C, N/A-Reaktivierung bei Tool/RAG/Agent)
         run: node scripts/regime/ai-capability-guard.mjs --selftest
+      - name: Datenkarte (C-04/C-23, kein unregistrierter PII-Store)
+        run: node scripts/regime/data-map.mjs --selftest
       - name: Kalibrierung (A-36, Kontrollen fangen ihre Seeds — inkl. Track C)
         run: node scripts/regime/calibration/inject.mjs --strict
       - name: Tests (vitest)

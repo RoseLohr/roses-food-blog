@@ -15,7 +15,7 @@
  * SLO (Standard, per Env übersteuerbar): höchstens OPS_ERROR_BUDGET Server-Fehler
  * je OPS_WINDOW_MIN Minuten; sonst brennt das Budget → Alert.
  */
-import { and, eq, gte, sql } from "drizzle-orm";
+import { and, eq, gte, lt, sql } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { getSetting } from "@/lib/settings";
 
@@ -24,7 +24,25 @@ export const SLO = {
   errorBudget: Number(process.env.OPS_ERROR_BUDGET || 10),
   alertCooldownMin: Number(process.env.OPS_ALERT_COOLDOWN_MIN || 60),
   availabilityTarget: 0.995,
+  // Retention des Observability-Stores (C-23): ein Store mit unbegrenzter
+  // Aufbewahrung ist eine unbegrenzte Haftung. 90 Tage genügen für Trend +
+  // Fehlerbudget; ältere Zeilen werden vom Monitor gelöscht.
+  opsRetentionDays: Number(process.env.OPS_RETENTION_DAYS || 90),
 };
+
+/** Alte ops_event-Zeilen löschen (Retention, best effort — wirft nie). */
+export function purgeOldOpsEvents(now = Date.now()): number {
+  try {
+    const cutoff = new Date(now - SLO.opsRetentionDays * 24 * 60 * 60_000);
+    const res = db
+      .delete(schema.opsEvent)
+      .where(lt(schema.opsEvent.createdAt, cutoff))
+      .run();
+    return res.changes ?? 0;
+  } catch {
+    return 0;
+  }
+}
 
 /** Strukturierte JSON-Logzeile (Logs-Säule). Nie personenbezogen. */
 export function logJson(
@@ -128,6 +146,10 @@ export async function checkSloAndAlert(deps?: {
   const errorCount = countSince("error", SLO.windowMin);
   const budgetBurned = errorCount >= SLO.errorBudget;
   const breach = !healthy || budgetBurned;
+
+  // Retention bei jedem Monitor-Tick durchsetzen (C-23): unbegrenztes Wachstum
+  // des Observability-Stores wäre eine unbegrenzte Haftung.
+  purgeOldOpsEvents(deps?.now);
 
   recordOpsEvent({ kind: "health", status: healthy ? 1 : 0, detail: `errors/${SLO.windowMin}min=${errorCount}` });
 

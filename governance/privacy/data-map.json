@@ -1,0 +1,87 @@
+{
+  "_comment": "RoPA-verknüpfte Datenkarte (C-04/C-23). Der Generator scripts/regime/data-map.mjs scannt src/db/schema.ts, wendet die PII-Heuristik an und verlangt für JEDE geflaggte Tabelle einen Eintrag hier. Ein neuer personenbezogener Store ohne Eintrag fällt den Build. personal_data:false braucht einen Grund.",
+  "version": "1.0",
+  "controller": "Betreiberin des Blogs (in-command; Rechtsgrundlage = menschliches Urteil)",
+  "tables": {
+    "contact": {
+      "personal_data": true,
+      "category": "Newsletter-Abonnent (E-Mail, Vor-/Nachname, Quelle, Notizen)",
+      "purpose": "Newsletter-Versand nach Double-Opt-in",
+      "lawful_basis": "Einwilligung (Art. 6(1)(a) DSGVO), consentAt",
+      "retention": "bis Widerruf/Abmeldung; danach Anonymisierung (Statistikzeile bleibt)",
+      "erasure": "anonymizeContact() — irreversibel"
+    },
+    "contact_activity": {
+      "personal_data": true,
+      "category": "Aktivitätsdetails eines Kontakts (detail)",
+      "purpose": "CRM-Verlauf",
+      "lawful_basis": "Einwilligung / berechtigtes Interesse (Art. 6(1)(f))",
+      "retention": "wie contact",
+      "erasure": "anonymizeContact() leert detail (Typ/Zeitpunkt bleiben)"
+    },
+    "email_queue": {
+      "personal_data": true,
+      "category": "Gerenderte E-Mail an einen Empfänger (to_email, subject, html, text_body)",
+      "purpose": "Versand-Warteschlange",
+      "lawful_basis": "Einwilligung (Art. 6(1)(a))",
+      "retention": "bis Versand; danach kurzlebig",
+      "erasure": "anonymizeContact() löscht Queue-Zeilen des Kontakts (per contactId UND per to_email, gehärtet)"
+    },
+    "campaign_log": {
+      "personal_data": true,
+      "category": "Versandprotokoll je Kontakt (contactId-FK; error-Text)",
+      "purpose": "Zustell-Statistik",
+      "lawful_basis": "berechtigtes Interesse (Art. 6(1)(f))",
+      "retention": "wie contact",
+      "erasure": "anonymizeContact() leert error für den Kontakt (gehärtet)"
+    },
+    "admin_user": {
+      "personal_data": true,
+      "category": "Betreiber-Konto (email, name, passwordHash argon2id)",
+      "purpose": "Authentifizierung des einzigen Admins",
+      "lawful_basis": "Vertrag/berechtigtes Interesse — Daten des Verantwortlichen selbst",
+      "retention": "Lebensdauer des Kontos",
+      "erasure": "manuell (ein Betreiber-Konto)"
+    },
+    "tracking_event": {
+      "personal_data": false,
+      "reason": "Kein Roh-IP gespeichert (nur GeoIP-Land), kein Identifier zu einer Person; beacon_token je Besuch, Rohdaten nach Aggregation gelöscht.",
+      "purpose": "Reichweiten-Statistik (datenminimiert)",
+      "lawful_basis": "berechtigtes Interesse (Art. 6(1)(f)), IP normalisiert",
+      "retention": "Rohdaten nach Tagesaggregation gelöscht; Aggregat 730 Tage",
+      "erasure": "automatisch (Aggregation + Retention)"
+    },
+    "tracking_daily": {
+      "personal_data": false,
+      "reason": "Aggregat ohne Personenbezug (Land/Browser/Typ, Zählwerte).",
+      "purpose": "Reichweiten-Statistik",
+      "lawful_basis": "berechtigtes Interesse (Art. 6(1)(f))",
+      "retention": "730 Tage",
+      "erasure": "automatisch (Retention)"
+    },
+    "ops_event": {
+      "personal_data": false,
+      "reason": "Betriebs-Golden-Signals; logJson/detail per Design personenbezug-frei (kein Roh-Request-Body, kein E-Mail-Muster).",
+      "purpose": "Observability/SLO",
+      "lawful_basis": "berechtigtes Interesse (Art. 6(1)(f))",
+      "retention": "90 Tage (automatischer Purge im Monitor)",
+      "erasure": "automatisch (Retention)"
+    },
+    "media_image": {
+      "personal_data": false,
+      "reason": "original_name = Dateiname eines Blog-Bildes, kein Personenbezug."
+    },
+    "taxonomy": { "personal_data": false, "reason": "Kategorien-/Tag-Name (Inhalt, keine Person)." },
+    "ingredient": { "personal_data": false, "reason": "Zutatenname (Inhalt)." },
+    "recipe_section": { "personal_data": false, "reason": "Rezept-Abschnittsname (Inhalt)." },
+    "page": { "personal_data": false, "reason": "Statische Seiten-Inhalte (Redaktion)." },
+    "restaurant": { "personal_data": false, "reason": "Restaurant-Name im Reisebericht (öffentlicher Ort, kein Betroffener)." },
+    "dish": { "personal_data": false, "reason": "Gericht-Name (Inhalt)." },
+    "interest": { "personal_data": false, "reason": "Interessen-Bezeichnung (Taxonomie, keine Person)." },
+    "segment": { "personal_data": false, "reason": "Segment-Name (Regel-Label)." },
+    "contact_tag": { "personal_data": false, "reason": "Tag-Bezeichnung (Label, nicht der Kontakt selbst; Zuordnung in contact_tag_assign per FK, bei Erasure gelöscht)." },
+    "campaign": { "personal_data": false, "reason": "Kampagnen-Vorlage (subject/content = Marketing-Text, kein Personenbezug)." },
+    "sequence": { "personal_data": false, "reason": "Sequenz-Name (Label)." },
+    "sequence_step": { "personal_data": false, "reason": "Sequenz-Schritt-Vorlage (subject/content = Vorlagentext)." }
+  }
+}

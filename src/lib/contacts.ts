@@ -2,7 +2,7 @@
  * Kontakt-Werkzeuge: CSV-Export und DSGVO-Anonymisierung.
  */
 import crypto from "node:crypto";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, or } from "drizzle-orm";
 import { db, schema } from "@/db";
 
 export function contactsToCsv(
@@ -59,6 +59,7 @@ export async function anonymizeContact(contactId: number): Promise<boolean> {
   if (!contact) return false;
 
   const now = new Date();
+  const priorEmail = contact.email;
   await db
     .update(schema.contact)
     .set({
@@ -88,10 +89,17 @@ export async function anonymizeContact(contactId: number): Promise<boolean> {
     .update(schema.contactActivity)
     .set({ detail: "" })
     .where(eq(schema.contactActivity.contactId, contactId));
-  // Wartende Mails an den Kontakt verwerfen
+  // Mails an den Kontakt verwerfen — per contactId UND per gerenderter
+  // Empfängeradresse (to_email), damit auch nicht-verknüpfte Queue-Zeilen
+  // (z. B. Testversand ohne contactId) keinen PII-Rest hinterlassen.
   await db
     .delete(schema.emailQueue)
-    .where(eq(schema.emailQueue.contactId, contactId));
+    .where(
+      or(
+        eq(schema.emailQueue.contactId, contactId),
+        eq(schema.emailQueue.toEmail, priorEmail),
+      ),
+    );
   await db
     .update(schema.sequenceLog)
     .set({ status: "abgebrochen" })
@@ -101,6 +109,12 @@ export async function anonymizeContact(contactId: number): Promise<boolean> {
         inArray(schema.sequenceLog.status, ["geplant", "eingereiht"]),
       ),
     );
+  // Versandprotokoll-Fehlertexte könnten die Adresse enthalten (SMTP-Fehler) —
+  // für den Kontakt leeren; Zähl-/Zeitstatistik (contactId-FK, sentAt) bleibt.
+  await db
+    .update(schema.campaignLog)
+    .set({ error: "" })
+    .where(eq(schema.campaignLog.contactId, contactId));
 
   return true;
 }

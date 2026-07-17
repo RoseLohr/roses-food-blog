@@ -26,3 +26,25 @@ Hoffnung — und Hoffnung hat diesen Codebestand gebaut.
 - **Stehende Kontrolle:** CI-Step „KI-Fähigkeits-Guard" (blockierend) + Seeds
   S7/S8. Ratchet: reaktivierende Fähigkeiten bleiben bei 0. Dies ist die stehende
   Kontrolle hinter den 12 struktur-bedingten N/A-Verdikten.
+
+## Welle 2 — Datenschutz (STOP-SHIP C-04, C-23)
+
+### C-04 · Datenkarte-Gate — `scripts/regime/data-map.mjs`
+- **Seed (rot):** synthetische Tabelle `leaked_users(email, phone)` ohne
+  Registry-Eintrag → `--selftest` fängt sie, Exit≠0. **Gesehen gefangen.**
+- **Realer Bestand:** 20 geflaggte Tabellen, alle klassifiziert; 5 personenbezogene
+  Stores mit Rechtsgrundlage + Erasure-Pfad.
+- **Stehende Kontrolle:** CI-Step „Datenkarte" (blockierend) + RoPA-Kopplung.
+
+### C-04 · Erasure end-to-end — `tests/erasure.integration.test.ts`
+- **Rot vorher:** ohne die `to_email`-Härtung überlebt die Queue-Zeile ohne
+  contactId (Testversand) → Test rot (`length 1 statt 0`). **Real reproduziert**
+  (contacts.ts kurz zurückgesetzt → rot; wiederhergestellt → grün).
+- **Grün nachher:** Kanarien-Adresse in keinem PII-Store mehr (contact, email_queue
+  ×2, campaign_log, contact_activity, interest/tag/segment-Zuordnungen).
+- **Stehende Kontrolle:** Integrationstest in CI; `anonymizeContact` gehärtet
+  (to_email + campaignLog.error).
+
+### C-23 · ops_event-Retention — `purgeOldOpsEvents`
+- 90-Tage-Purge, bei jedem Monitor-Tick durchgesetzt; Observability-Store kann
+  nicht unbegrenzt wachsen. Datenkarte klassifiziert ihn personenbezug-frei.
