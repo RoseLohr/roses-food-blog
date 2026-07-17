@@ -1,130 +1,79 @@
-SCOPE: TRACKS A/B (KATALOG v1.0) ABGESCHLOSSEN & RATIFIZIERT — TRACK C (SECURITY, PRIVACY, ASSURANCE) NICHT AUDITIERT — NICHT FÜR PRODUKTIONSVERKEHR FREIGEGEBEN, BIS PART 2 SCHLIESST (production_eligible=false, computed)
+# Executive Summary — Due-Diligence-Mandat (beide Volumes, 119 Prüfungen)
 
-# Executive Summary — Part 1 abgeschlossen (Phase 7)
+**Stand:** 2026-07-17 · **Katalog:** v2.0 (ratifiziert) · **Commit:** `160228f`-Baseline
+**Verfassung:** `RATIFIED@v2.0`, Hash `65a0f3fb…` · **`production_eligible`: `false` (computed)**
 
-**Endbilanz Katalog v1.0 (79 Prüfungen):** 19 PASS · 44 PARTIAL · 3 FAIL
-(B-17 IaC, B-27 Artefakt-Signatur, B-18 Canary — Residual mit Tripwire) ·
-12 N/A (Ausnahmen-Ledger F1) · 1 NO-EVIDENCE (B-34, PLAN-Band).
-**Keine offenen STOP-SHIP/BLOCKER.** Verfassung **RATIFIED@v1.0**
-(Amendment-Gate bewiesen: audit/evidence/phase7-amendment-gate.txt).
-A-24/B-03 geschlossen durch Observability + SLO + automatischen
-E-Mail-Alert (SMTP) — in-command Option 1.
+Dies ist der Bericht über das, was noch falsch ist — und was jetzt darauf wartet.
+Nicht über das, was gut aussieht.
 
-**Was als Nächstes bricht und was es bemerkt:** ein fachlicher Fehlerausbruch
-→ der Selbst-Monitor (5-min-Takt) alarmiert per E-Mail; eine Gate-Erosion →
-der wöchentliche Gate-Selbsttest + Kalibrier-Korpus friert Merges; eine
-Verfassungs-Schwächung → Hash-Attestierung verweigert. **Die eine offene
-Front ist Track C (Part 2)** — bis dahin hält die Deploy-Admission
-production_eligible=false fail-closed.
+## Ergebnis in einem Satz
+Track C (Security, Privacy, Assurance — 40 Prüfungen) ist **vollständig auditiert
+und geschlossen**, mit 12 neuen, CI-blockierenden Kontrollen, die jede einen
+injizierten Defekt fangen; die Produktionsfreigabe bleibt dennoch **verweigert**,
+weil die Gesamt-Berechnung 19 offene Blocker aus Part 1 trägt — allen voran den
+unabhängigen Fremd-Vendor-Verifier, der hier strukturell nicht existiert.
 
----
+## Zahlen (nicht aufgerundet)
+- **119 Prüfungen:** 43 PASS · 45 PARTIAL · 27 N/A · 3 FAIL · 1 NO-EVIDENCE.
+- **Track C (40):** 24 PASS · 15 N/A (jede mit schriftlicher Begründung +
+  Reaktivierungs-Tripwire) · 1 PARTIAL (C-30, Residual).
+- **Offene Blocker (computed über 119):** 2 STOP-SHIP, 4 BLOCKER-1, 13 BLOCKER-2 —
+  **alle aus Part 1/Track A/B**. Offene Track-C-Blocker: **0**.
+- **Pipeline-Fangrate (Kalibrier-Korpus, nicht meine):** alle **7 aktiven**
+  Seed-Klassen (S1/S3/S4/S5/S7/S8/S9) werden gefangen; 2 Klassen N/A (kein
+  Mandant, kein Tool-Use). `inject.mjs --strict` grün. Das ist die Fangrate des
+  Korpus, den wir gebaut haben — kein Beweis, dass jeder reale Defekt gefangen wird.
 
+## Was Track C konkret geschlossen hat (jede Kontrolle fangen gesehen)
+- **C-01 Kern-Sicherheit:** Authz-Coverage-Gate — 49 Admin-Handler alle
+  server-seitig geguardet; ein ungeguardeter Handler kann nicht mergen.
+- **C-04/C-23 Datenschutz:** Datenkarte generiert+gedifft (neuer PII-Store fällt
+  den Build), Erasure end-to-end gegen ein Kanarien-Subjekt getestet (rot-vorher
+  bewiesen), ops-Retention 90 T, DPIA + RoPA.
+- **C-05/C-07/C-08/C-12 KI-Risiko:** 10-Kategorien-Matrix (leere Zelle → Build
+  fällt), Injection-Containment (Schema strippt Aktionsfelder), KI-Fähigkeits-Guard
+  (Tool/Egress/RAG/Fine-Tune → Build fällt) — die stehende Kontrolle hinter 12 N/A.
+- **C-09/C-36 EU-AI-Act:** AI-System-Inventar + Article-50-Bewertung + „KI-Entwurf"-
+  Kennzeichnung (UI-Test).
+- **C-24/C-25/C-26 Assurance:** Prompt-Secret-Scan, Lizenz-/Copyleft-Scan, AI-BOM +
+  Mandat-Provenance am Deploy verifiziert (fail-closed).
+- **C-37 Rechenschaft:** jede der 180 Quelldateien fällt unter genau eine
+  Owning-Role; Policy-Bundle verifiziert; geplante Spot-Rekonstruktion fällt laut,
+  wenn die Kette bricht.
 
-# Executive Summary — Stand nach Remediation
+## Warum `production_eligible` `false` bleibt — die Liste
+`production_eligible` wird **computed**, nicht behauptet. Es bleibt false, solange
+irgendein Blocker offen ist. Offen sind, ausschließlich aus Part 1:
+1. **A-01 / A-39 (STOP-SHIP) — der unabhängige Fremd-Vendor-Verifier.** Regel 6 /
+   Artikel IV verlangen, dass jede Änderung von einem Verifier *eines anderen
+   Anbieters* angegriffen wird. In dieser Ein-Vendor-Umgebung existiert der nicht.
+   Das ist kein Versäumnis, sondern eine Umgebungsgrenze — und der einzige Grund,
+   der allein schon die Freigabe verwehrt. Kompensation verdrahtet; Tripwire scharf.
+2. **A-06/A-08/B-11/A-36 (BLOCKER-1):** kein geübter/getimter Rollback, kein DAST,
+   kein Rollback-Signal, keine fortlaufende Kalibrier-Injektion (braucht Cron-Host).
+3. **13 BLOCKER-2:** Architektur-Fitness-/Fuzz-/CWV-Gates, Auto-Halt, Eval-Gate
+   (durch C-10 teilweise gemildert), Patch-SLA/WAF, Auto-Remediation.
 
-## Kurzfassung
-Aus dem Discovery-Ausgang **0 PASS / 32 FAIL** wurde durch Wave 1–3:
-**11 PASS · 35 PARTIAL · 18 FAIL · 12 N/A · 3 NO-EVIDENCE.**
-Kein offenes STOP-SHIP mehr; höchstes offenes Band ist BLOCKER-1 (A-24/B-03,
-Observability/Recovery). `production_eligible` bleibt **false** (Track C/Part 2
-ungeprüft **und** offene Blocker).
+Keiner dieser 19 ist ein KI-Sicherheits- oder Datenschutz-Loch. Es ist die
+Betriebs- und Assurance-Reife, die ein Solo-Self-Host-Blog noch nicht erreicht hat.
 
-## Was jetzt steht (mit demonstrierter stehender Kontrolle)
-- **Deterministischer CI-Gate** (A-01/B-01): typecheck+lint+tests+build+
-  source-gates+secret-scan+separation+gate-selftest+calibration; Security-Job
-  (npm audit, deps-existence, SBOM); Mutation-Job; Deploy-Admission fail-closed.
-- **Mutation-Testing** (A-02) 82,91 % Kernlogik, Ratchet break=78.
-- **Secret-Scan** (B-06), **Gewaltenteilung** (B-35, CODEOWNERS+Check),
-  **Gate-Selbsttest** (beweist Blockieren), **Kalibrier-Korpus** (A-36).
-- **ESLint-Standards+A11y-Gate** (A-13); **axe-Runtime** strikt grün nach
-  **Kontrast-Fix** (Akzent #339e92→#277a70, WCAG-AA) — A-22.
-- **Prompt-Registry** (A-20/B-05), **ADRs** (A-09), **NFR+KI-Budgets** (A-17/A-27),
-  **Restore-Drill** (B-31), **Modell-Alias-/Stub-/Bare-Handler-Lints** (B-13/A-16/A-26).
-- **Verfassung** `IN_FORCE_PROVISIONAL` (bindend) + Mandat/Manifest, hash-attestiert;
-  **Ausnahmen-Ledger** (F1–F4) + **Residual-Register** mit Tripwires.
+## Was als Nächstes schiefgehen wird — und was darauf wacht
+- **Ein still hinzugefügter Tool-/RAG-/Agenten-Pfad** würde 12 N/A-Verdikte
+  ungültig machen → `ai-capability-guard` fällt den Build.
+- **Ein neuer PII-Store ohne Eintrag** → `data-map` fällt den Build.
+- **Ein neuer ungeguardeter Admin-Handler** → `authz-coverage` blockiert den Merge.
+- **Ein Provider-Modellwechsel** kann Injection-/Jailbreak-Zahlen verschieben →
+  Modell gepinnt, Wechsel ist eine Code-Änderung durchs Gate; C-30-Tripwire.
+- **Ein öffentlich-nutzerseitiger KI-Endpunkt** reaktiviert C-07/C-29/C-38 →
+  dann sind admin-only-Kompensationen nicht mehr gültig.
 
-## Was offen bleibt (ehrlich)
-- **Volle Ratifizierung (RATIFIED@v1.0)** wartet auf die verbliebenen BLOCKER-1:
-  **A-24** (SLOs/Golden-Signals/Auto-Recovery) und **B-03** (OpenTelemetry/
-  korrelierte Traces). Für einen Solo-Blog sind das große Infra-Bausteine —
-  entweder gebaut oder als Residual in-command akzeptiert.
-- Weitere infra-/prozesslastige FAIL (B-07 Replay, B-10 Eval-Gate, B-28
-  Detection→Action, B-17/B-19/B-29 …) als Residual/N-A mit Tripwire geführt.
-- **Track C (Part 2)** — Security/Privacy — komplett ungeprüft; hält
-  `production_eligible=false`.
+## Die zwei Tests, ein letztes Mal
+> *Wenn alle Menschen einen Monat in Urlaub gingen — hielte das noch?* Die
+> Track-C-Kontrollen ja (sie laufen im Gate); die 19 offenen Part-1-Posten
+> brauchen Menschen-/Infra-Arbeit, die noch aussteht.
+> *Wenn niemand ein Jahr lang etwas anfasst — wäre es noch wahr?* Die N/A-Verdikte
+> bleiben wahr, solange der Guard sie bewacht; die Provenance-Kette wird bei jedem
+> Deploy neu rekonstruiert; die Datenkarte bei jedem Build neu generiert.
 
----
-
-SCOPE: TRACKS A/B (KATALOG v1.0) — DISCOVERY-DURCHGANG (Phasen 0–3) — NICHT FÜR PRODUKTIONSVERKEHR FREIGEGEBEN, SOLANGE TRACK C (PART 2) NICHT AUDITIERT IST
-
-# Executive Summary — was kaputt ist und was als Nächstes bricht
-
-**Ein Satz vorweg, so ehrlich wie das Mandat es verlangt:** In diesem System hat
-**weder ein Mensch noch eine Maschine je eine Zeile Produktionscode unabhängig
-verifiziert** — es gibt keine CI, kein deterministisches Gate und keinen
-unabhängigen Verifier. Ein „grüner Build" existiert nicht, weil es keinen Build-
-Gatekeeper gibt. Das ist der Kernbefund (`A-01`+`A-39` = `STOP-SHIP`).
-
-## Was dieser Durchgang ist — und was nicht
-Erledigt: **Phasen 0–3** (einfrieren, kartieren, Katalog laufen lassen) — rein
-lesend, keine Änderung am Code. **Nicht** erledigt: Phasen 4–7 (Reparatur,
-Verfassung, stehendes Regime) — das Mandat verbietet Reparaturen vor Abschluss
-von Phase 3, und diese Phasen brauchen deine Entscheidungen. Artefakte:
-`audit/00-system-map.md`, `audit/00-audit-surface.json`, `audit/03-findings.md`,
-`audit/03-findings.json`, diese Zusammenfassung.
-
-## Verdikt-Bilanz (79 Prüfungen)
-**0 × PASS · 32 × PARTIAL · 32 × FAIL · 12 × N/A · 3 × NO-EVIDENCE.**
-Kein einziges `PASS` ist kein Versagen der Bewertung: Nach §3 kann nichts `PASS`
-sein, das keine **stehende Kontrolle** hat — und dieses System hat praktisch
-keine, weil es keine CI gibt.
-
-## Die wichtigste Nuance: das Mandat passt nur teilweise
-Das Mandat ist für ein **autonom, CI-gegatet, ohne Review betriebenes** System
-geschrieben. Dieses System ist ein **von einer Person betriebener, manuell
-deployter Food-Blog**. Deshalb sind ~12 Prüfungen ehrlich **N/A** (kein
-Multi-Tenant, kein Agenten-Runtime, kein Tool-Use, kein RAG), und viele
-„FAILs" sind eigentlich **„nie gebaut, weil das Betriebsmodell ein anderes ist"**
-— nicht „gebaut und kaputt". Das ändert die Dringlichkeit, nicht die Zählung.
-
-## Was tatsächlich gut ist (heute, ungehalten)
-- **SQL durchgehend parametrisiert** (Drizzle + gebundene Parameter); der eine
-  dynamische Tabellenname ist eine **Compile-Zeit-Allowlist**; FTS-Query bereinigt.
-- **Modell gepinnt** (`claude-opus-4-8`, kein „latest") — verhindert eine ganze
-  Klasse unerklärlicher Incidents.
-- **Kein Tool-Use im KI-Feature** — das Modell kann nichts schreiben/senden/löschen;
-  die gefährlichsten KI-Runtime-Risiken (Exfiltration, „lethal trifecta",
-  Denial-of-Wallet über Tool-Schleifen) sind strukturell abwesend.
-- **Keine Secrets im Repo**; Rate-Limiting vorhanden; strikte CSP + Security-Header.
-
-## Die fünf schwersten realen Lücken (in dieser Reihenfolge angehen)
-1. **Kein Verifikations-Gate (`A-01`/`B-01`/`A-39`).** Jede Änderung geht ohne
-   automatische Prüfung live. *Nächster Bruch:* eine fehlerhafte Migration oder ein
-   Typfehler erreicht Produktion, wie beim jüngsten DM2-Ausfall bereits geschehen.
-   *Günstigster Fix:* ein GitHub-Actions-Workflow, der `typecheck` + `npm test` +
-   `next build` bei jedem Push erzwingt. Ein Nachmittag Arbeit, schließt den
-   größten Teil dieser Lücke.
-2. **Testnetz ungeprüft (`A-02`/`A-36`).** 28 Testdateien, aber niemand weiß, ob
-   sie echte Fehler fangen (kein Mutation-Testing) und nichts erzwingt sie.
-3. **Keine Observability/Recovery (`A-24`/`B-03`/`B-28`).** Wenn die Seite
-   ausfällt, merkt es niemand automatisch — genau das ist zuletzt passiert.
-4. **Keine Lieferketten-Gates (`A-08`/`B-04`/`A-38`).** Deps sind gepinnt, aber
-   nichts scannt auf Schwachstellen, erfundene Pakete oder Lizenzkonflikte.
-5. **Barrierefreiheit ungeprüft (`A-22`).** WCAG 2.2 AA ist in der EU
-   Rechtspflicht; hier gibt es kein automatisiertes A11y-Gate.
-
-## Empfehlung
-Für einen Solo-Food-Blog ist das volle „Regime" des Mandats überdimensioniert.
-**Verhältnismäßig** wäre ein schlankes, dauerhaft wirkendes Minimum:
-(a) ein CI-Workflow (typecheck + test + build als blockierendes Gate),
-(b) `npm audit`/Dependency-Scan darin,
-(c) ein A11y-Check,
-(d) eine ESLint-Flat-Config (fehlt aktuell),
-(e) ein einmal geübter, dokumentierter Restore-Drill.
-Das schließt die realistisch wichtigsten Befunde 1–5 und ist an einem Tag machbar
-— **ohne** die schwergewichtige Verfassung/Ratchet-Maschinerie, die hier niemand
-pflegen würde (und die das Mandat selbst als „unmaintained = abandoned" warnt).
-
-**Nächster Schritt liegt bei dir:** Soll ich (Phase 4/5) dieses schlanke Minimum
-tatsächlich einbauen? Reparaturen ändern Code — deshalb halte ich hier, wie das
-Mandat es verlangt, an der Grenze zwischen Discovery und Reparatur an.
+**Das System ist nicht produktionsreif. Es ist ehrlich vermessen, und die
+Maschine, die es dicht hält, läuft.**

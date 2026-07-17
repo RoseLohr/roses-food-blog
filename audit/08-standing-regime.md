@@ -41,3 +41,25 @@ folgenden Wellen scharf geschaltet wird, und das Ratchet-Register (S11).
 ## Owning-Rolle des Regimes
 `platform-quality` (hier: der in-command-Betreiber). Gesundheitszahl: die
 Pipeline-Catch-Rate, sobald Wave 1c sie misst.
+
+---
+
+## Track-C-Baselines im Ratchet-Register (Phase 7′, v2.0)
+
+Aus `pending-baseline: part2` in gemessene Böden überführt (S11 — nur besser):
+
+| Größe | Baseline | Kontrolle | Ratchet |
+|---|---|---|---|
+| Admin-Handler ohne Authz-Test | 0 (49/49) | `authz-coverage.mjs` | bleibt 0 |
+| Prod-Bestandteile ohne Provenance-Kette | 0 (180/180 Owning-Role) | `provenance-reconstruct.mjs` | bleibt 0 |
+| Unregistrierte PII-Stores | 0 | `data-map.mjs` | bleibt 0 |
+| LLM-Matrix leere Zellen | 0 (10/10) | `llm-matrix-check.mjs` | bleibt 0 |
+| Nicht-deklarierte Trust-Boundaries | 0 (3/3) | `boundary-check.mjs` | bleibt 0 |
+| Secrets/PII im Prompt | 0 | `prompt-scan.mjs` | bleibt 0 |
+| Starkes Copyleft (Deps) | 0 (506 geprüft) | `license-scan.mjs` | bleibt 0 |
+| Reaktivierende KI-Fähigkeiten | 0 | `ai-capability-guard.mjs` | bleibt 0 |
+| Golden-Eval (Saison) | 100 % (eingefroren) | `ai-eval.golden.test.ts` | nur steigen |
+| Injection-ASR-Ceiling | kein konsequentes Bein (UNSETTLED) | Guard + Containment-Test | darf nicht steigen |
+| ops_event-Retention | 90 Tage | `purgeOldOpsEvents` | nur kürzer |
+
+**Neue Kalibrier-Seeds:** S7 (Injection), S8 (Exfil), S9 (Authz) — aktiv, `--strict` grün.

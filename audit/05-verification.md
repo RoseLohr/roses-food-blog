@@ -93,3 +93,15 @@ strukturell nicht verfügbar in einer Ein-Vendor-Umgebung); BLOCKER-1 A-06, A-08
 B-11, A-36; BLOCKER-2 A-04, A-09, A-10, A-17, A-25, A-33, A-34, B-02, B-05, B-07,
 B-10, B-12, B-28. **production_eligible bleibt daher false** — Track C ist
 geschlossen, aber das Gesamt-Gate hält an Part-1-Resten.
+
+## Phase 7′ — Amendment, Re-Ratifizierung, Freigabe-Berechnung
+
+- **Verfassung amendiert (stärkend, Artikel XIII):** Track-C-Baselines eingetragen,
+  12 Gate-Kontrollen verdrahtet; keine Schwächung. Hash `65a0f3fb…` attestiert.
+- **Amendment-Gate erneut bewiesen:** ungegateter Verfassungs-Edit von
+  `constitution-hash --verify` abgelehnt (`audit/evidence/phase7prime-amendment-gate.txt`).
+- **Mandat-Provenance re-attestiert:** part1/part2/combined verifiziert; mandate.md
+  deterministisch (`mandate-hash --verify`).
+- **engagement-status:** part2_status COMPLETE, security_scope_audited true,
+  constitution_state RATIFIED, catalogue v2.0. `production_eligible` **computed = false**
+  (2 STOP-SHIP, 4 B1, 13 B2 offen — alle Part 1). Admission fail-closed (exit 1) bestätigt.

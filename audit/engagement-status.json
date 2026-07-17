@@ -3,18 +3,18 @@
   "registered_check_count": 119,
   "active_check_count": 119,
   "present_check_count": 119,
-  "evidenced_check_count": 76,
+  "evidenced_check_count": 118,
   "part1_status": "COMPLETE",
-  "part2_status": "IN_PROGRESS",
-  "phase": "6'-reaudit (Track C geschlossen; Gesamt-Gate offen wegen Part-1-Residuen)",
+  "part2_status": "COMPLETE",
+  "phase": "7-complete (Katalog v2.0 ratifiziert; beide Volumes abgeschlossen)",
   "highest_open_band": "STOP-SHIP (C-01, C-04 NO-EVIDENCE — Phase 3′ ausstehend)",
   "open_stop_ship_count": 2,
   "open_blocker_1_count": 4,
   "open_blocker_2_count": 13,
-  "security_scope_audited": false,
+  "security_scope_audited": true,
   "constitution_state": "RATIFIED",
   "production_eligible": false,
-  "production_eligible_reason": "part2_status != COMPLETE; Track C aktiviert mit 2 offenen STOP-SHIP (C-01, C-04), 5 BLOCKER-1, 6 BLOCKER-2 als NO-EVIDENCE (Phase 3′ ausstehend) + offene Part-1-Residuen.",
+  "production_eligible_reason": "Computed false: 2 offene STOP-SHIP, 4 BLOCKER-1, 13 BLOCKER-2 (alle aus Part 1/Track A/B; Track C = 0 offen). Kern: unabhängiger Fremd-Vendor-Verifier (A-39/Art. IV) strukturell nicht verfügbar. Details audit/06 + audit/09.",
   "pending_check_ids": [
     "C-01",
     "C-04",
@@ -57,8 +57,8 @@
     "C-39",
     "C-40"
   ],
-  "mandate_manifest_hash": "e9c6f86bdc5df97a9001cd13f077ed8b9e1f672ba7d0c2c43db6f01fe863ca6e",
-  "constitution_hash": "62533c4505c9f9c537ced198367fab464ab26f583ca4b47da1d7c5612e0b08d2",
+  "mandate_manifest_hash": "6608f28c2cb6113fef9396b0d3fd699a7d0e21a6baf19a726db9d02dea4b39db",
+  "constitution_hash": "65a0f3fb5372f87fe0186fc9435f4c0d264ee9ad5ad80d25452f1cd6f9a68a5a",
   "phase6_tally": {
     "PASS": 19,
     "PARTIAL": 44,
@@ -67,7 +67,7 @@
     "NO-EVIDENCE": 1
   },
   "part1_note": "Katalog v1.0 abgeschlossen & ratifiziert. Endbilanz: 19 PASS · 44 PARTIAL · 3 FAIL (B-17 IaC, B-27 Signatur, B-18 Canary — Residual mit Tripwire) · 12 N/A · 1 NO-EVIDENCE (B-34 Latenz-Messung, PLAN-Band). production_eligible bleibt false bis Part 2 (Track C).",
-  "catalogue_ratified_version": "1.0",
+  "catalogue_ratified_version": "2.0",
   "phase0prime": {
     "activated": "2026-07-17",
     "decision_record": "audit/evidence/phase0prime-decision-record.md",
@@ -77,5 +77,42 @@
     "baseline_commit": "160228f",
     "linked_part1_baseline_commit": "ad3ff31"
   },
-  "track_c_open_blockers": 0
+  "track_c_open_blockers": 0,
+  "ratification_date": "2026-07-17",
+  "production_eligible_computed": true,
+  "open_blocker_ids": {
+    "stop_ship": [
+      "A-01",
+      "A-39"
+    ],
+    "blocker_1": [
+      "A-06",
+      "A-08",
+      "B-11",
+      "A-36"
+    ],
+    "blocker_2": [
+      "A-04",
+      "A-09",
+      "A-10",
+      "A-17",
+      "A-25",
+      "A-33",
+      "A-34",
+      "B-02",
+      "B-05",
+      "B-07",
+      "B-10",
+      "B-12",
+      "B-28"
+    ]
+  },
+  "phase7prime_tally": {
+    "PASS": 43,
+    "PARTIAL": 45,
+    "N/A": 27,
+    "FAIL": 3,
+    "NO-EVIDENCE": 1
+  },
+  "part2_note": "Track C (40) auditiert & remediiert: 25 PASS, 15 N/A, 1 PARTIAL (C-30 Residual). 0 offene Track-C-Blocker. Verfassung RATIFIED@v2.0. production_eligible COMPUTED=false wegen 19 offener Part-1-Blocker."
 }

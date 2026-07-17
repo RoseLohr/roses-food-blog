@@ -2,11 +2,12 @@
 # The Standing Constitution — Roses Food Blog
 
 > **Derived from** the 119-check Due-Diligence Mandate (`governance/mandate.md`).
-> **State:** `RATIFIED` (Katalog v1.0, Phase 7) — bindet jede Änderung in
-> jeder Spur, während finale Baselines noch gemessen werden. **Niemals**
-> ausreichend für Produktionsfreigabe: das erfordert `RATIFIED` (Phase 7) **und**
-> die von Part 2 auditierte Track-C-Scope. Wo Artikel und stehende Kontrolle sich
-> widersprechen, bindet das Strengere.
+> **State:** `RATIFIED` (Katalog **v2.0**, Phase 7′) — beide Volumes auditiert,
+> Track-C-Baselines gemessen und unten eingetragen. Bindet jede Änderung in jeder
+> Spur. `RATIFIED@v2.0` ist notwendige, **nicht hinreichende** Bedingung für die
+> Produktionsfreigabe: diese ist **computed** aus den Gate-Invarianten (Part 1 §8)
+> und bleibt `false`, solange irgendein Blocker offen ist. Wo Artikel und stehende
+> Kontrolle sich widersprechen, bindet das Strengere.
 
 **Proportionalitäts-Hinweis (in-command-Beschluss, Ausnahmen-Ledger F1–F4):**
 Dieses Repository ist ein von einer Person betriebener, manuell deployter
@@ -19,11 +20,11 @@ sind als **akzeptierte Residualrisiken mit Tripwire und benannter Rolle** in
 gelassen.
 
 ## Zustandsfelder
-- `constitution_state`: `RATIFIED` (v1.0; Track-C-Register-Slots `pending-baseline: part2`)
-- in Kraft seit: 2026-07-16, Commit: `<siehe governance/mandate/manifest.json → generated_from_commit>`
-- `catalogue_version`: `1.0`
+- `constitution_state`: `RATIFIED` (v2.0; Track-C-Register-Slots mit Baseline gefüllt, siehe unten)
+- in Kraft seit: 2026-07-16 (v1.0), amendiert & re-ratifiziert 2026-07-17 (v2.0)
+- `catalogue_version`: `2.0`
 - `constitution_hash`: siehe `audit/engagement-status.json → constitution_hash` (nach Commit attestiert)
-- `ratification_date`: `pending-phase-7`
+- `ratification_date`: `2026-07-17` (v2.0, Phase 7′)
 
 ## Preamble
 Dieses Repository wird von KI-Agenten geschrieben und gewartet. Kein Mensch prüft
@@ -58,7 +59,8 @@ Spezifikation abgeleitet (nie aus dem Code); die kleinste Änderung; volle Suite
 Mutation-Testing über das geänderte Modul ≥ `{{mutation_floor=pending-baseline}}`;
 repository-weiter Klon-Sweep; eine stehende Kontrolle, installiert **und
 demonstriert**; adversariale Verifikation; progressive Ausrollung mit getestetem
-Auto-Abort. *Ableitung:* `A-02 A-04 A-06 A-07 B-18`; Mandat Phase 5.
+Auto-Abort. Mutation-Floor über geänderte Kernmodule: **78 %** (Baseline 82,91 %).
+*Ableitung:* `A-02 A-04 A-06 A-07 B-18`; Mandat Phase 5.
 
 ### Artikel IV — Unabhängigkeit
 Der Generator benotet seine eigene Arbeit nie. Die Verifier-Flotte (≥2 Modelle
@@ -176,3 +178,42 @@ Verfassung ist ein Amendment (Artikel XIII) und automatisch ein Finding.
 (Eval-Gate für Prompt-Änderungen), R-A33 (Cold-Start-SLI), R-A07 (Klon-Messung),
 B-17/B-27/B-29 (IaC/Signatur/Chaos), R-CADENCE (Cron-Host), F2-Posten
 (Fremd-Vendor-Verifier, separates Policy-Repo). Jeder mit Tripwire + Rolle.
+
+---
+
+## Amendment & Re-Ratifizierung (Phase 7′, Katalog v2.0)
+
+**Strengthening Amendment (Artikel XIII):** Dieses Amendment **stärkt** — es füllt
+die Track-C-Register-Slots mit gemessenen Baselines und verdrahtet 12 neue stehende
+Kontrollen im Gate. Keine Kontrolle wird geschwächt; Artikel XIII selbst unverändert.
+
+**Gemessene Track-C-Baselines (S11-Böden — dürfen nur besser werden):**
+- Injection-Attack-Surface: **kein konsequentes Bein** (kein Tool/Egress im KI-Pfad),
+  erzwungen `ai-capability-guard.mjs`; Restrisiko UNSETTLED, schriftlich akzeptiert.
+- Guardrail-FN-Rate, Halluzinationsrate: **N/A** (keine Guardrail-Schicht; keine
+  nutzerseitige Generierung; Saison deterministisch) — Tripwire bei öffentlichem KI-Endpunkt.
+- Prod-Bestandteile ohne attestierte Provenance-Kette: **0** (180 Dateien je Owning-Role
+  + Policy-Bundle), `provenance-reconstruct.mjs`.
+- Admin-Handler ohne Server-Authz-Test: **0** (49/49), `authz-coverage.mjs`.
+- Unregistrierte PII-Stores: **0** (Datenkarte generiert+gedifft), `data-map.mjs`.
+- LLM-Risiko-Matrix leere Zellen: **0** (10/10), `llm-matrix-check.mjs`.
+- Nicht-deklarierte Trust-Boundaries: **0** (3/3), `boundary-check.mjs`.
+- Secrets/PII im Prompt: **0**, `prompt-scan.mjs`. Starkes Copyleft: **0**, `license-scan.mjs`.
+- Golden-Eval (Saison-Achse): **100 %** eingefroren, `tests/ai-eval.golden.test.ts`.
+
+**Neue Gate-Kontrollen (alle CI-blockierend, jede fangen gesehen — `audit/05-verification.md`):**
+authz-coverage · ai-capability-guard · data-map · llm-matrix · prompt-scan · ai-budget ·
+boundary-check · provenance-reconstruct · ai-bom · mandate-hash · license-scan · Erasure-Kanarie.
+
+**Amendment-Gate erneut bewiesen:** ein ungegateter Verfassungs-Edit (ohne Attest)
+wird von `constitution-hash --verify` abgelehnt — Protokoll
+`audit/evidence/phase7prime-amendment-gate.txt`.
+
+**Produktionsfreigabe — ehrlich, computed, NICHT behauptet:** `production_eligible`
+bleibt **`false`**. Track C ist geschlossen (0 offene Track-C-Blocker), aber die
+Gesamt-119-Berechnung trägt **19 offene Part-1-Blocker** (PARTIAL in Blocker-Bändern),
+die die Zwei-Volume-Definition-of-Done als offen zählt — allen voran der **unabhängige
+Fremd-Vendor-Verifier** (Artikel IV, `A-39`/F2), der in einer Ein-Vendor-Umgebung
+strukturell nicht verfügbar ist. Die Liste steht in `audit/06-residual-risk-register.md`
+und `audit/09-executive-summary.md`. Die Freigabe wird nicht per Beschluss erteilt;
+sie wird verdient, wenn diese Blocker schließen.
