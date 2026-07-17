@@ -11,13 +11,6 @@ updates:
     groups:
       alle-minor-patch:
         update-types: ["minor", "patch"]
-    ignore:
-      # sharp MUSS zur von Next gebündelten Version (0.34.x) passen. Ein eigen-
-      # ständiger Bump (z. B. 0.34.5 -> 0.35.3) erzeugt zwei sharp-Bäume; dann
-      # meldet `npm ls --all` „invalid" und die SBOM-Erzeugung (security-Job)
-      # bricht. sharp wird daher NICHT unabhängig gebumpt, sondern mit Next
-      # mitgezogen. (Root-Cause-Fix, kein Workaround — siehe CLAUDE.md.)
-      - dependency-name: "sharp"
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:

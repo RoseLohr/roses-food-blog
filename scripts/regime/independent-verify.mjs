@@ -53,6 +53,19 @@ const MODEL_PREFERENCE = [
  * GET /v1/models. So läuft der Verifier immer auf dem besten verfügbaren Modell,
  * ohne dass eine nicht freigeschaltete ID einen HTTP 400 auslöst.
  */
+/**
+ * Für eine Präferenz `p` das passende Modell aus `ids` wählen: EXAKTE ID zuerst,
+ * sonst NUR einen datierten Snapshot `p-YYYY-MM-DD` — niemals eine Variante wie
+ * `p-mini`/`p-nano` (die wäre schwächer, nicht „dasselbe Modell"). Bei mehreren
+ * Snapshots den NEUESTEN (spätestes Datum), unabhängig von der /models-Reihenfolge.
+ */
+function pickForPref(ids, p) {
+  if (ids.includes(p)) return p;
+  const esc = p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const dated = ids.filter((id) => new RegExp(`^${esc}-\\d{4}-\\d{2}-\\d{2}$`).test(id)).sort();
+  return dated.length ? dated[dated.length - 1] : null;
+}
+
 async function resolveModel() {
   if (process.env.VERIFIER_MODEL) return process.env.VERIFIER_MODEL;
   try {
@@ -61,8 +74,8 @@ async function resolveModel() {
       const data = await res.json();
       const ids = (data?.data || []).map((m) => m?.id).filter(Boolean);
       for (const p of MODEL_PREFERENCE) {
-        const hit = ids.find((id) => id === p || id.startsWith(p + "-"));
-        if (hit) return hit; // exakte ID oder datierter Snapshot (p-2026-…)
+        const hit = pickForPref(ids, p);
+        if (hit) return hit;
       }
     }
   } catch { /* Netz-/Parsefehler → Default unten */ }
