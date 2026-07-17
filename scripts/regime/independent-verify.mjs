@@ -172,7 +172,13 @@ votes.forEach((x, i) => {
   }
   // Auch die BEGRÜNDUNG mitschreiben (nicht nur refuted/confidence) — die liefert
   // das Modell ohnehin; im CI-Log ist sie der eigentlich informative Teil.
-  const reason = x.v?.reason ? ` — Begründung: ${String(x.v.reason).replace(/\s+/g, " ").trim().slice(0, 600)}` : "";
+  // Sanitisiert gegen Log-Injection: ALLE Steuerzeichen (C0/C1, inkl. Zeilen-
+  // umbrüchen und ANSI-ESC ) werden entfernt — der Text stammt aus Modell-
+  // Output, der vom (attacker-beeinflussbaren) Diff mitgeprägt ist. Danach
+  // Whitespace normalisieren, trimmen, begrenzen. Kein Geheimnis-Leak: der reason
+  // ist Modell-Analyse eines ohnehin öffentlichen Diffs (secret-scan hält Secrets fern).
+  const clean = (s) => String(s).replace(/[\u0000-\u001f\u007f-\u009f]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 600);
+  const reason = x.v?.reason ? ` — Begründung: ${clean(x.v.reason)}` : "";
   console.log(`  Verifier ${i + 1}/${PANEL} (${MODEL}): refuted=${x.v?.refuted} confidence=${x.v?.confidence}${reason}`);
 });
 const verdict = aggregate(votes, PANEL);
