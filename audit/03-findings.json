@@ -3,8 +3,9 @@
   "commit": "ad3ff31",
   "count": 79,
   "tally": {
-    "PARTIAL": 32,
-    "FAIL": 32,
+    "PASS": 11,
+    "PARTIAL": 34,
+    "FAIL": 19,
     "N/A": 12,
     "NO-EVIDENCE": 3
   },
@@ -13,16 +14,16 @@
       "id": "B-06",
       "priority": 10,
       "band": "STOP-SHIP",
-      "verdict": "PARTIAL",
-      "evidence": ".env nicht im Git; keine Secret-Literale; aber keine Rotation/History-Scan/CI",
-      "standing_control": null
+      "verdict": "PASS",
+      "evidence": "secret-scan (Muster+Selbsttest), keine Secrets im Repo",
+      "standing_control": "installiert & demonstriert (Wave 1–3, CI)"
     },
     {
       "id": "A-01",
       "priority": 9,
       "band": "STOP-SHIP",
-      "verdict": "FAIL",
-      "evidence": "kein deterministisches Merge/Deploy-Gate, keine CI, Deploy = manuell",
+      "verdict": "PARTIAL",
+      "evidence": "CI-Gate + Selbsttest vorhanden; unabh. Fremd-Vendor-Verifier residual (A-39/F2)",
       "standing_control": null
     },
     {
@@ -37,9 +38,9 @@
       "id": "A-02",
       "priority": 9,
       "band": "BLOCKER-1",
-      "verdict": "PARTIAL",
-      "evidence": "28 Testdateien mit echten Assertions; kein Mutation-Gate; nur manuell",
-      "standing_control": null
+      "verdict": "PASS",
+      "evidence": "Mutation-Testing 82,91% (break=78) als Meta-Gate; CI-Job",
+      "standing_control": "installiert & demonstriert (Wave 1–3, CI)"
     },
     {
       "id": "A-06",
@@ -53,8 +54,8 @@
       "id": "A-08",
       "priority": 9,
       "band": "BLOCKER-1",
-      "verdict": "FAIL",
-      "evidence": "kein SAST/DAST/SCA/Secret-Scan-Gate, kein SBOM",
+      "verdict": "PARTIAL",
+      "evidence": "SAST(lint)/SCA/Secret/SBOM in CI; DAST fehlt",
       "standing_control": null
     },
     {
@@ -69,9 +70,9 @@
       "id": "B-01",
       "priority": 9,
       "band": "BLOCKER-1",
-      "verdict": "FAIL",
-      "evidence": "keine Pipeline; nichts erzwingt Tests",
-      "standing_control": null
+      "verdict": "PASS",
+      "evidence": "CI-Gate + gate-selftest beweist Blockieren",
+      "standing_control": "installiert & demonstriert (Wave 1–3, CI)"
     },
     {
       "id": "B-03",
@@ -85,9 +86,9 @@
       "id": "B-04",
       "priority": 9,
       "band": "BLOCKER-1",
-      "verdict": "PARTIAL",
-      "evidence": "lockfile pinnt; keine Existenz-/SCA-Gates",
-      "standing_control": null
+      "verdict": "PASS",
+      "evidence": "deps-existence + Lockfile + npm audit ≥high in CI",
+      "standing_control": "installiert & demonstriert (Wave 1–3, CI)"
     },
     {
       "id": "B-11",
@@ -117,24 +118,24 @@
       "id": "A-36",
       "priority": 6,
       "band": "BLOCKER-1",
-      "verdict": "FAIL",
-      "evidence": "keine Seeded-Defect-Kalibrierung/Catch-Rate (eskaliert)",
+      "verdict": "PARTIAL",
+      "evidence": "Kalibrier-Korpus + Selbsttest; fortlaufende Injektion braucht Cron (R-CADENCE)",
       "standing_control": null
     },
     {
       "id": "A-04",
       "priority": 8,
       "band": "BLOCKER-2",
-      "verdict": "FAIL",
-      "evidence": "keine testbaren Akzeptanzkriterien/Spec-Gate",
+      "verdict": "PARTIAL",
+      "evidence": "noch kein Spec-Coverage-Gate",
       "standing_control": null
     },
     {
       "id": "A-09",
       "priority": 8,
       "band": "BLOCKER-2",
-      "verdict": "FAIL",
-      "evidence": "keine ADRs/Fitness-Functions",
+      "verdict": "PARTIAL",
+      "evidence": "ADRs vorhanden; Architektur-Fitness-Function fehlt",
       "standing_control": null
     },
     {
@@ -149,17 +150,17 @@
       "id": "A-17",
       "priority": 8,
       "band": "BLOCKER-2",
-      "verdict": "FAIL",
-      "evidence": "keine NFR-Tabelle mit Zahlen/Tests",
+      "verdict": "PARTIAL",
+      "evidence": "NFR-Tabelle vorhanden; einige Messungen pending (CWV)",
       "standing_control": null
     },
     {
       "id": "A-22",
       "priority": 8,
       "band": "BLOCKER-2",
-      "verdict": "PARTIAL",
-      "evidence": "semantisches HTML/Alt; kein A11y/CWV-Gate (WCAG=EU-Pflicht)",
-      "standing_control": null
+      "verdict": "PASS",
+      "evidence": "jsx-a11y statisch + axe-Runtime strikt (Kontrast behoben, 5/5)",
+      "standing_control": "installiert & demonstriert (Wave 1–3, CI)"
     },
     {
       "id": "A-25",
@@ -197,8 +198,8 @@
       "id": "B-05",
       "priority": 8,
       "band": "BLOCKER-2",
-      "verdict": "FAIL",
-      "evidence": "kein Modell/Prompt-Registry; Prompt=Inline-String",
+      "verdict": "PARTIAL",
+      "evidence": "Prompt in Registry; volles Modell/Prompt-Registry-Lifecycle pending",
       "standing_control": null
     },
     {
@@ -229,9 +230,9 @@
       "id": "B-13",
       "priority": 8,
       "band": "BLOCKER-2",
-      "verdict": "PARTIAL",
-      "evidence": "Modell gepinnt (kein latest); kein CI-Check",
-      "standing_control": null
+      "verdict": "PASS",
+      "evidence": "Modell gepinnt + Alias-Lint (source-gates)",
+      "standing_control": "installiert & demonstriert (Wave 1–3, CI)"
     },
     {
       "id": "B-15",
@@ -253,9 +254,9 @@
       "id": "B-31",
       "priority": 8,
       "band": "BLOCKER-2",
-      "verdict": "PARTIAL",
-      "evidence": "Backups vorhanden; kein getimter Restore-Drill",
-      "standing_control": null
+      "verdict": "PASS",
+      "evidence": "Restore-Drill-Skript ausgeführt (Wave 2)",
+      "standing_control": "installiert & demonstriert (Wave 1–3, CI)"
     },
     {
       "id": "A-05",
@@ -293,9 +294,9 @@
       "id": "A-13",
       "priority": 7,
       "band": "MUST-FIX",
-      "verdict": "PARTIAL",
-      "evidence": "ESLint-Flat-Config fehlt; tsc grün; kein Gate",
-      "standing_control": null
+      "verdict": "PASS",
+      "evidence": "ESLint-Flat-Gate (Standards+a11y) blockierend in CI",
+      "standing_control": "installiert & demonstriert (Wave 1–3, CI)"
     },
     {
       "id": "A-18",
@@ -333,16 +334,16 @@
       "id": "A-26",
       "priority": 7,
       "band": "MUST-FIX",
-      "verdict": "PARTIAL",
-      "evidence": "catch meist UI-Meldungen; kein Bare-Handler-Lint",
-      "standing_control": null
+      "verdict": "PASS",
+      "evidence": "Bare-Handler-Lint; Selbsttest",
+      "standing_control": "installiert & demonstriert (Wave 1–3, CI)"
     },
     {
       "id": "A-27",
       "priority": 7,
       "band": "MUST-FIX",
       "verdict": "PARTIAL",
-      "evidence": "Timeout/max_tokens; keine erzwungenen Budgets",
+      "evidence": "KI-Budgets gesetzt (timeout/max_tokens); Infra-Kosten-Cap pending",
       "standing_control": null
     },
     {
@@ -365,8 +366,8 @@
       "id": "A-38",
       "priority": 7,
       "band": "MUST-FIX",
-      "verdict": "FAIL",
-      "evidence": "kein Lizenz-Scan/SBOM/IP-Position",
+      "verdict": "PARTIAL",
+      "evidence": "SBOM in CI; Lizenz-Scan + IP-Position pending",
       "standing_control": null
     },
     {
@@ -381,8 +382,8 @@
       "id": "B-09",
       "priority": 7,
       "band": "MUST-FIX",
-      "verdict": "FAIL",
-      "evidence": "keine signierte Provenance/Verify-on-Deploy",
+      "verdict": "PARTIAL",
+      "evidence": "SBOM erzeugt; Signatur/Verify-on-Deploy pending",
       "standing_control": null
     },
     {
@@ -469,17 +470,17 @@
       "id": "A-16",
       "priority": 6,
       "band": "SHOULD-FIX",
-      "verdict": "PARTIAL",
-      "evidence": "0 Stub-Marker; kein Stub-Lint",
-      "standing_control": null
+      "verdict": "PASS",
+      "evidence": "Stub-Lint (source-gates) + Gate-Selbsttest",
+      "standing_control": "installiert & demonstriert (Wave 1–3, CI)"
     },
     {
       "id": "A-20",
       "priority": 6,
       "band": "SHOULD-FIX",
-      "verdict": "FAIL",
-      "evidence": "Prompt=Inline-String; kein Gate",
-      "standing_control": null
+      "verdict": "PASS",
+      "evidence": "Prompt-Registry; Inline-Prompt per source-gate verboten",
+      "standing_control": "installiert & demonstriert (Wave 1–3, CI)"
     },
     {
       "id": "A-29",
@@ -517,8 +518,8 @@
       "id": "B-14",
       "priority": 6,
       "band": "SHOULD-FIX",
-      "verdict": "FAIL",
-      "evidence": "keine Prompt/Config-Governance",
+      "verdict": "PARTIAL",
+      "evidence": "Prompt-Governance über Registry+Gate; Audit-Trail pending",
       "standing_control": null
     },
     {
@@ -565,8 +566,8 @@
       "id": "B-35",
       "priority": 6,
       "band": "SHOULD-FIX",
-      "verdict": "FAIL",
-      "evidence": "kein Gate/Policy-Bundle; keine Segregation",
+      "verdict": "PARTIAL",
+      "evidence": "CODEOWNERS-Separation + Check; separates Repo/Credentials residual (F2)",
       "standing_control": null
     },
     {
@@ -641,5 +642,6 @@
       "evidence": "Inferenz-Ökonomie gering-materiell",
       "standing_control": null
     }
-  ]
+  ],
+  "phase6_updated": true
 }

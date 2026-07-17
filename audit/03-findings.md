@@ -1,4 +1,12 @@
-# audit/03 — Befunde (Phase 3, Katalog v1.0, 79 Prüfungen)
+# audit/03 — Befunde (Phase 3 + Phase-6-Re-Audit, Katalog v1.0)
+
+> **Phase-6-Stand (nach Remediation Wave 1–3):** 11 PASS · 34 PARTIAL · 19 FAIL ·
+> 12 N/A · 3 NO-EVIDENCE. Discovery-Ausgang war 0 PASS / 32 FAIL. Verdikte nur
+> mit **demonstrierter** stehender Kontrolle auf PASS gehoben (§3); Maschinen-
+> lesbar in `audit/03-findings.json`. Verbleibende FAIL sind überwiegend infra-
+> lastige Checks (Observability/SLO/Canary/IaC), die für einen Solo-Blog als
+> Residual mit Tripwire geführt oder N/A sind — siehe `audit/06`/`audit/10`.
+
 
 **Erster beweisbasierter Durchgang gegen Commit `ad3ff31`. Rein lesend.**
 
