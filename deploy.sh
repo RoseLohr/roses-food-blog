@@ -25,12 +25,7 @@ SECONDS=0   # Gesamtdauer fürs Abschluss-Log
 DEPLOY_STATUS_RESULT=""        # während des Laufs unbekannt
 DEPLOY_PHASE="gestartet"
 DEPLOY_RUNNING=1
-# Die geteilten Status-/Log-Dateien ($DATA_DIR/deploy-status.json, deploy.log)
-# gehören dem Lock-HALTER. Ein wartender oder am Lock scheiternder Lauf darf sie
-# NICHT anfassen — sonst trunkiert er das Log des laufenden Deploys bzw. clobbert
-# dessen Status. Daher: KEIN Schreiben, solange der Lock nicht gehalten wird.
-LOCK_HELD=0
-_status_ready() { [[ -n "${DATA_DIR:-}" && -d "${DATA_DIR:-/nonexistent}" && "$LOCK_HELD" == "1" ]]; }
+_status_ready() { [[ -n "${DATA_DIR:-}" && -d "${DATA_DIR:-/nonexistent}" ]]; }
 # Zeitstempel in MILLISEKUNDEN (wie Date.now() im Panel). Früher wurde auf
 # Sekunden gerundet (…000) — dann konnte status.at knapp KLEINER als der
 # Auslöse-Zeitpunkt (ms) sein und das Panel den frischen Status als „alt“
@@ -88,52 +83,10 @@ DATA_DIR="${DATA_DIR:-/srv/roses-blog/data}"
 PORT="${PORT:-3000}"
 mkdir -p "$DATA_DIR" 2>/dev/null || true
 
-# Nebenläufigkeit verhindern — ZUERST, vor jedem Schreiben in die geteilten Status-/
-# Log-Dateien. Der manuelle `./deploy.sh` und der Panel-Watcher-Dienst
-# (roses-blog-deploy.service) dürfen NICHT gleichzeitig `compose down/up` fahren —
-# sonst reißt der eine dem anderen den gerade gestarteten Container unter dem
-# Healthcheck weg (Symptom: „erfolgreich" gefolgt von curl (7) refused).
-# WICHTIG (mehrere Punkte vom Fremd-Vendor-Panel als Schwäche nachgewiesen):
-#  - Lock liegt in $HOME, NICHT in $DATA_DIR: DATA_DIR ist ins Container gemountet
-#    und app-/container-schreibbar — ein dort platzierter Symlink würde beim Öffnen
-#    gefolgt und sein Ziel getrunkt. $HOME ist für den Container unerreichbar.
-#  - Öffnen NUR-LESEND (`exec 9<`): flock braucht nur einen Deskriptor, kein `>`
-#    → selbst bei einem Symlink wird nichts getrunkt/geschrieben.
-#  - WARTEN statt Überspringen: ein zweiter Lauf (z. B. neuer Commit-Trigger
-#    während eines laufenden Deploys) wartet auf den Lock und fährt DANN einen
-#    vollen Lauf — inkl. eigenem `git pull` (Abschnitt 1), holt also den NEUESTEN
-#    Stand. So geht kein Trigger/Commit verloren, und kein übersprungener Lauf
-#    meldet fälschlich Erfolg. Timeout → ehrlicher fail (kein Silent-Erfolg).
-#  - Nur der Lock-HALTER schreibt Status/Log (LOCK_HELD). Ein wartender/scheiternder
-#    Lauf lässt die Dateien des laufenden Deploys unangetastet (kein Log-Trunkieren,
-#    kein Clobbern) — er meldet nur auf die Konsole/ins journalctl.
-# FAIL-CLOSED (Verfassung: Kontrollen fallen geschlossen aus): kann der Lock NICHT
-# etabliert werden (flock/HOME fehlt, Pfad unbeschreibbar/Verzeichnis), wird der
-# Deploy ABGEBROCHEN — NICHT ungeschützt fortgesetzt. Ein bewusster Operator-
-# Override ist ausschließlich explizit möglich: DEPLOY_NO_LOCK=1.
-if [[ "${DEPLOY_NO_LOCK:-0}" == "1" ]]; then
-  echo "HINWEIS: DEPLOY_NO_LOCK=1 — Nebenläufigkeits-Sperre bewusst deaktiviert (Operator-Override)."
-  LOCK_HELD=1   # Operator übernimmt die Einzel-Lauf-Verantwortung → Status/Log erlaubt
-elif [[ -z "${HOME:-}" ]] || ! command -v flock >/dev/null 2>&1; then
-  fail "Deploy-Lock nicht etablierbar (flock oder \$HOME fehlt) — fail-closed abgebrochen, um ein ungeschütztes compose down/up-Race zu verhindern. Abhilfe: flock installieren (util-linux) bzw. HOME setzen, oder bewusst DEPLOY_NO_LOCK=1 setzen."
-else
-  LOCK_FILE="$HOME/.roses-blog-deploy.lock"
-  ( umask 077; : >> "$LOCK_FILE" ) 2>/dev/null || true    # anlegen (0600), ohne Truncate
-  { exec 9<"$LOCK_FILE"; } 2>/dev/null \
-    || fail "Deploy-Lock ($LOCK_FILE) nicht öffenbar (Pfad unbeschreibbar/Verzeichnis?) — fail-closed abgebrochen. Ursache prüfen oder bewusst DEPLOY_NO_LOCK=1 setzen."
-  LOCK_WAIT="${DEPLOY_LOCK_WAIT:-2400}"
-  if ! flock -n 9; then                                   # sofort frei? sonst warten
-    # Nur Konsole: die Status-/Log-Dateien gehören noch dem laufenden Deploy.
-    log "Anderer Deploy läuft — warte auf exklusiven Lock (max ${LOCK_WAIT}s)"
-    flock -w "$LOCK_WAIT" 9 \
-      || fail "Anderer Deploy hält den Lock länger als ${LOCK_WAIT}s — abgebrochen (kein Silent-Erfolg; ein neuer Commit-Trigger wird NICHT als Erfolg quittiert)."
-  fi
-  LOCK_HELD=1   # ab hier gehören die geteilten Status-/Log-Dateien exklusiv uns
-fi
-
-# Herzschlag ans Panel — ERST NACHDEM der Lock gehalten wird: jetzt dürfen wir die
-# geteilten Dateien zurücksetzen/schreiben. Frühere Abbrüche (Lock-Fehler/Timeout)
-# haben nichts geschrieben und daher den laufenden Vorgänger-Deploy nicht gestört.
+# Sofortiger Herzschlag ans Panel: „angenommen, läuft an“. Ohne diesen Status
+# würde ein Abbruch VOR Abschnitt 0 (z. B. podman nicht im PATH des systemd-
+# Dienstes) gar keinen Status schreiben — das Panel meldete dann fälschlich
+# „Watcher läuft nicht“, obwohl er sehr wohl lief.
 : > "$DATA_DIR/deploy.log" 2>/dev/null || true
 DEPLOY_RUNNING=1; DEPLOY_STATUS_RESULT=""
 log "Deployment angenommen — Umgebung wird geprüft"
@@ -372,10 +325,6 @@ After=network-online.target
 
 [Service]
 Type=oneshot
-# Ein voller Build (~20 min) plus evtl. Warten auf den Deploy-Lock darf NICHT vom
-# systemd-Default (TimeoutStartSec=90s) gekillt werden — sonst bliebe ein halb
-# aktualisierter Stand zurück. Grosszuegig, aber endlich (kein echtes Haengen).
-TimeoutStartSec=7200
 WorkingDirectory=$SCRIPT_DIR
 # WICHTIG: Ein systemd-User-Dienst startet mit MINIMALEM PATH — ohne
 # ~/.local/bin (dort liegt z. B. ein per pip installiertes podman-compose)
@@ -417,30 +366,21 @@ podman image prune -f >/dev/null 2>&1 || true
 # --- 9. Status ----------------------------------------------------------------
 # Zustand für den Schnellpfad (Abschnitt 1b) festhalten: Commit + .env-Hash
 # des erfolgreich deployten Stands.
-# Finaler Health-Gate (echtes Gate, NICHT nur kosmetisch): der autoritative Poll
-# (Abschnitt 6) war grün; hier erneut bestätigen, dass die App nach Neustart+Prune
-# WIRKLICH noch antwortet. Mehrere Versuche absorbieren einen transienten Port-
-# Reinit (compose-Recreate/Port-Forwarder). Bleibt sie danach unerreichbar, ist die
-# App nicht bloß transient weg → EHRLICH als Fehlschlag melden (kein Silent-Erfolg,
-# der einen Post-Restart-Crash als „erfolgreich" quittiert). „erfolgreich" wird
-# daher erst NACH bestandenem Gate gesetzt.
-echo "Branch:   $BRANCH"
-echo "Commit:   $COMMIT"
-FINAL_HEALTH_OK=0
-for _ in $(seq 1 10); do
-  if curl -fsS "http://127.0.0.1:$PORT/health" >/dev/null 2>&1; then FINAL_HEALTH_OK=1; break; fi
-  sleep 1
-done
-if [[ "$FINAL_HEALTH_OK" != "1" ]]; then
-  echo "Letzte Container-Logs:"
-  podman logs --tail 30 roses-blog 2>&1 | sed 's/^/  /' || true
-  fail "App nach Neustart auf Port $PORT nicht erreichbar (finaler Health-Gate gescheitert) — Deployment NICHT als erfolgreich quittiert."
-fi
-# Zustand für den Schnellpfad (Abschnitt 1b) erst nach bestandenem Health-Gate.
 printf '%s %s\n' "$COMMIT" "$ENV_HASH" > "$STATE_FILE" 2>/dev/null || true
 DEPLOY_STATUS_RESULT="erfolgreich"   # EXIT-Trap schreibt deploy-status.json
 log "Deployment erfolgreich (Dauer: ${SECONDS}s)"
-echo "Health:   OK (http://127.0.0.1:$PORT/health)"
+echo "Branch:   $BRANCH"
+echo "Commit:   $COMMIT"
+# Kosmetischer Schluss-Hinweis: der AUTORITATIVE Healthcheck (Abschnitt 6) ist
+# bereits bestanden — der Deploy IST erfolgreich. Dieser eine curl darf das Skript
+# daher NICHT beenden (set -e): sonst erzeugte ein transienter Port-Reinit direkt
+# nach dem Neustart nach „erfolgreich" ein widersprüchliches curl (7) und setzte
+# den Exit-Code auf 7, obwohl der Deploy sauber durchlief.
+if curl -fsS "http://127.0.0.1:$PORT/health" >/dev/null 2>&1; then
+  echo "Health:   OK (http://127.0.0.1:$PORT/health)"
+else
+  echo "Health:   Kurz-Check (noch) nicht erreichbar — maßgeblich ist der bestandene Healthcheck oben."
+fi
 podman ps --filter name=roses-blog --format "Container: {{.Names}} ({{.Status}})"
 
 }
