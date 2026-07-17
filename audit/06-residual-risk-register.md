@@ -20,12 +20,13 @@ Zeile wird geschlossen, sobald ihr Fix + stehende Kontrolle steht, oder bleibt m
 aktualisiertem Tripwire bestehen.
 
 ---
-## R-CONTRAST — Marken-Akzent unter WCAG-AA-Kontrast (A-22)
+## R-CONTRAST — BEHOBEN (A-22) ✅
 - **Risiko:** Der Teal-Akzent `#339e92` (`--color-rose-primary`/`--color-accent`)
   erreicht als Text/kleine UI nur ~3,0–3,25:1 auf hellem Grund (nötig: 4,5:1).
   Betrifft Links („Alle Rezepte …"), Pill-Buttons, Primär-Buttons; `#2b857b` auf
   Weiß liegt mit 4,42:1 knapp darunter. WCAG 2.2 AA ist in der EU Rechtspflicht.
-- **Warum offen:** Der Fix ist ein Ein-Token-Wechsel (Akzent auf ≥4,5:1
+- **Status:** Erledigt (in-command Option 1): Akzent-Tokens auf #277a70 abgedunkelt (≥4,5:1 auf Weiß & Creme), Weltkarten-Hex nachgezogen, sk-freiland ebenfalls. axe-Test 5/5 strikt grün, kein color-contrast-Verstoß mehr.
+- **Ursprünglicher Kontext:** Der Fix war ein Ein-Token-Wechsel (Akzent auf ≥4,5:1
   abdunkeln), ändert aber die **Markenfarbe überall** — eine In-command-Design-
   Entscheidung, nicht eigenmächtig durch den Auditor.
 - **Kompensation:** statischer jsx-a11y-Gate aktiv; axe-Runtime-Test blockiert

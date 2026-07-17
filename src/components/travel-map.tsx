@@ -68,7 +68,7 @@ function popupElement(p: TravelMapPin): HTMLElement {
     cityLink.title = dict.travelList.mapOpenInMaps;
     cityLink.textContent = p.restaurantCity;
     cityLink.style.cssText =
-      "color:#2b857b;text-decoration:underline;font-weight:400";
+      "color:#277a70;text-decoration:underline;font-weight:400";
     head.appendChild(cityLink);
   }
   root.appendChild(head);
@@ -95,7 +95,7 @@ function popupElement(p: TravelMapPin): HTMLElement {
   nameRow.style.cssText =
     "margin:6px 0 0;font-size:13px;display:flex;justify-content:space-between;gap:8px;align-items:baseline";
   const nameLink = document.createElement("a");
-  nameLink.style.cssText = "color:#2b857b;text-decoration:underline;min-width:0";
+  nameLink.style.cssText = "color:#277a70;text-decoration:underline;min-width:0";
   const counter = document.createElement("span");
   counter.style.cssText = "color:#4c4b5b;font-size:11px;white-space:nowrap";
   nameRow.appendChild(nameLink);
@@ -157,7 +157,7 @@ const CAPITAL_MIN_ZOOM = 7;
 const PIN_SVG = `
   <svg width="28" height="28" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
     <path d="M12 2C8.1 2 5 5.1 5 9c0 5.2 7 13 7 13s7-7.8 7-13c0-3.9-3.1-7-7-7z"
-      fill="#339e92" stroke="#ffffff" stroke-width="1.6" stroke-linejoin="round" />
+      fill="#277a70" stroke="#ffffff" stroke-width="1.6" stroke-linejoin="round" />
     <circle cx="12" cy="9" r="2.6" fill="#ffffff" />
   </svg>`;
 
@@ -313,7 +313,7 @@ export function TravelMap({ pins }: { pins: TravelMapPin[] }) {
         spiderfyDistanceMultiplier: 1.4,
         iconCreateFunction: (cluster) =>
           L.divIcon({
-            html: `<span style="display:flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:9999px;background:#339e92;color:#fff;font-family:'Nunito Sans',system-ui,sans-serif;font-size:13px;font-weight:700;box-shadow:0 0 0 4px rgba(51,158,146,0.3)">${cluster.getChildCount()}</span>`,
+            html: `<span style="display:flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:9999px;background:#277a70;color:#fff;font-family:'Nunito Sans',system-ui,sans-serif;font-size:13px;font-weight:700;box-shadow:0 0 0 4px rgba(39,122,112,0.3)">${cluster.getChildCount()}</span>`,
             className: "travel-map-cluster",
             iconSize: [34, 34],
             iconAnchor: [17, 17],

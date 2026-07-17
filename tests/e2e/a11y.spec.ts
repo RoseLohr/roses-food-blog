@@ -19,7 +19,8 @@ import AxeBuilder from "@axe-core/playwright";
 const SEITEN = ["/", "/rezepte", "/reisen", "/saisonkalender", "/suche"];
 
 // Einzige geduldete schwere Regel (dokumentierte Altlast R-CONTRAST). Nur kürzen.
-const ALTLAST = new Set<string>(["color-contrast"]);
+// Kontrast-Altlast behoben (Akzent auf #277a70 abgedunkelt, WCAG-AA). Leer = strikt.
+const ALTLAST = new Set<string>([]);
 
 for (const pfad of SEITEN) {
   test(`A11y (keine NEUEN serious/critical) — ${pfad}`, async ({ page }) => {

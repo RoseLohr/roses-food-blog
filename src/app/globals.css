@@ -32,16 +32,16 @@
      Umstellung zentral hier passiert und nicht in dutzenden Dateien. */
   /* Einheitlicher Marken-Grünton #339E92 (Teal-Grün) mit abgeleiteten
      Schattierungen: dunkler für Hover, heller für dunkle Hintergründe. */
-  --color-rose-primary: #339e92; /* Marken-Akzent, kontraststark auf Weiß */
-  --color-rose-primary-dark: #2b857b; /* Hover/aktiv (dunkler) */
-  --color-accent: #339e92;
+  --color-rose-primary: #277a70; /* Marken-Akzent, WCAG-AA auf Weiß (≥4,5:1) */
+  --color-rose-primary-dark: #20675e; /* Hover/aktiv (dunkler) */
+  --color-accent: #277a70;
   --color-accent-2: #38b0a3; /* leicht helleres Teal fürs Verlaufs-Ende */
   --color-cream: #f4f6f5; /* sehr helles Grau statt Creme */
   --color-cream-deep: #e8ebea;
   --color-ink: #111111;
   --color-ink-soft: #4c4b5b;
   --color-sage: #7a8b6f;
-  --color-leaf: #339e92;
+  --color-leaf: #277a70;
   --color-leaf-soft: #5cc4b8; /* heller Ton für Text auf dunklem Grund */
 }
 
@@ -459,7 +459,7 @@ html {
 /* Aufklappen ganzer Produktzeilen.                                  */
 /* ---------------------------------------------------------------- */
 :root {
-  --sk-freiland: #339e92; /* Freiland: Markengrün — die „echte" Saison */
+  --sk-freiland: #277a70; /* Freiland: Markengrün — die „echte" Saison */
   --sk-gewaechshaus: #8ccfc6; /* Gewächshaus: heller Verwandter */
   --sk-lager: #d9a441; /* Lager: warmes Ocker */
   --sk-import: #b3bcc7; /* Import: zurückhaltendes Graublau */
