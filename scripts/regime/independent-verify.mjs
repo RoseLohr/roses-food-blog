@@ -165,12 +165,16 @@ async function verifyOnce(i) {
 }
 
 const votes = await Promise.all(Array.from({ length: PANEL }, (_, i) => verifyOnce(i)));
-votes.forEach((x, i) =>
-  console.log(
-    `  Verifier ${i + 1}/${PANEL} (${MODEL}): ` +
-    (x.ok ? `refuted=${x.v?.refuted} confidence=${x.v?.confidence}` : `Fehler (${x.reason})`),
-  ),
-);
+votes.forEach((x, i) => {
+  if (!x.ok) {
+    console.log(`  Verifier ${i + 1}/${PANEL} (${MODEL}): Fehler (${x.reason})`);
+    return;
+  }
+  // Auch die BEGRÜNDUNG mitschreiben (nicht nur refuted/confidence) — die liefert
+  // das Modell ohnehin; im CI-Log ist sie der eigentlich informative Teil.
+  const reason = x.v?.reason ? ` — Begründung: ${String(x.v.reason).replace(/\s+/g, " ").trim().slice(0, 600)}` : "";
+  console.log(`  Verifier ${i + 1}/${PANEL} (${MODEL}): refuted=${x.v?.refuted} confidence=${x.v?.confidence}${reason}`);
+});
 const verdict = aggregate(votes, PANEL);
 if (verdict.block) {
   console.error(`⛔ Fremd-Vendor-Panel blockiert die Änderung: ${verdict.reason}`);
