@@ -48,3 +48,15 @@ Hoffnung — und Hoffnung hat diesen Codebestand gebaut.
 ### C-23 · ops_event-Retention — `purgeOldOpsEvents`
 - 90-Tage-Purge, bei jedem Monitor-Tick durchgesetzt; Observability-Store kann
   nicht unbegrenzt wachsen. Datenkarte klassifiziert ihn personenbezug-frei.
+
+## Welle 3 — Sicherheits-Gates + Doku (BLOCKER C-02, C-05, C-07, C-09, C-26; + C-24, C-25, C-36)
+
+- **C-05 · LLM-Matrix** (`llm-matrix-check.mjs`): 10 Kategorien, jede Kontrolle+Test; Seed = geleerte Zelle gefangen. CI-Step.
+- **C-24 · Prompt-Scan** (`prompt-scan.mjs`): Seed = Fake-Key im Prompt gefangen; reale Prompts sauber. CI-Step.
+- **C-05/B-08 · KI-Budget** (`ai-budget-check.mjs`): Seed = Aufruf ohne max_tokens/timeout gefangen. CI-Step.
+- **C-02 · Boundary-Detektor** (`boundary-check.mjs`): 3 Egress/Exec deklariert; Seed = neue Egress-Datei gefangen. Threat-Model + boundaries.json. CI-Step.
+- **C-07 · Injection-Containment** (`tests/injection.containment.test.ts`): Schema strippt Zusatz-/Aktionsfelder; kein handlungsartiges Feld. Restrisiko schriftlich (injection-residual.md).
+- **C-09/C-36 · KI-Kennzeichnung** (`tests/ai-disclosure.test.ts`): Entwurf trägt „KI-Entwurf"-Badge; i18n + Komponente asserted. AI-System-Inventar + Article-50-Bewertung.
+- **C-26 · AI-BOM** (`ai-bom.mjs --verify`): Modelle im Code == AI-BOM (claude-opus-4-8, 0 Datensätze/Adapter). CI-Step (security).
+- **C-26/C-37 · Mandat-Provenance** (`mandate-hash.mjs --verify`): part1/part2/combined attestiert, mandate.md deterministisch. CI-Step + Deploy-Voraussetzung.
+- **C-25 · Lizenz-Scan** (`license-scan.mjs`): 506 Deps, kein starkes Copyleft; Seed = AGPL erkannt. IP-Position dokumentiert. CI-Step.

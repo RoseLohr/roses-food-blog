@@ -47,6 +47,14 @@ jobs:
         run: node scripts/regime/ai-capability-guard.mjs --selftest
       - name: Datenkarte (C-04/C-23, kein unregistrierter PII-Store)
         run: node scripts/regime/data-map.mjs --selftest
+      - name: LLM-Risiko-Matrix (C-05, keine leere Zelle)
+        run: node scripts/regime/llm-matrix-check.mjs --selftest
+      - name: Prompt-Scan (C-24, keine Secrets/PII im Prompt)
+        run: node scripts/regime/prompt-scan.mjs --selftest
+      - name: KI-Budget (C-05/B-08, Caps im KI-Pfad)
+        run: node scripts/regime/ai-budget-check.mjs --selftest
+      - name: Trust-Boundary-Detektor (C-02, neue Integration deklariert)
+        run: node scripts/regime/boundary-check.mjs --selftest
       - name: Kalibrierung (A-36, Kontrollen fangen ihre Seeds — inkl. Track C)
         run: node scripts/regime/calibration/inject.mjs --strict
       - name: Tests (vitest)
@@ -74,6 +82,12 @@ jobs:
         run: node scripts/regime/deps-existence.mjs
       - name: SBOM erzeugen (CycloneDX, A-38/B-09)
         run: npx --yes @cyclonedx/cyclonedx-npm@latest --output-file sbom.json
+      - name: AI-BOM konsistent mit Code (C-26)
+        run: node scripts/regime/ai-bom.mjs --verify
+      - name: Mandat-Provenance verifiziert (C-26/C-37, fail-closed)
+        run: node scripts/regime/mandate-hash.mjs --verify
+      - name: Lizenz-Scan (C-25, Copyleft-Konflikte blockieren)
+        run: node scripts/regime/license-scan.mjs
       - uses: actions/upload-artifact@v4
         with:
           name: sbom

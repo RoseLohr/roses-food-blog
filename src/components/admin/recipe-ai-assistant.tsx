@@ -171,7 +171,15 @@ export function RecipeAiAssistant({
       {draft && (
         <div className="mt-4 border border-ink/10 bg-white p-4">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <h3 className="text-base font-semibold">{a.previewTitle}</h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-base font-semibold">{a.previewTitle}</h3>
+              <span
+                data-testid="ai-disclosure"
+                className="rounded bg-leaf/10 px-2 py-0.5 text-xs font-semibold text-leaf"
+              >
+                {a.aiDisclosure}
+              </span>
+            </div>
             <div className="flex gap-2">
               <button
                 type="button"

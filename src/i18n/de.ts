@@ -645,6 +645,7 @@ export const de = {
       noKey:
         "Kein Anthropic-API-Schlüssel hinterlegt. Bitte unter Einstellungen → KI-Assistent eintragen.",
       previewTitle: "Vorschau",
+      aiDisclosure: "KI-Entwurf",
       apply: "Übernehmen",
       applying: "Wird übernommen …",
       discard: "Verwerfen",
