@@ -93,9 +93,12 @@ const FALLBACK_MODEL = "gpt-4o-2024-08-06";
 // Defektklassen und teilen keine blinden Flecken. Überschreibbar via
 // VERIFIER_PANEL_MODELS (Komma-getrennt). Ein Einzel-Pin (VERIFIER_MODEL) hat
 // Vorrang und gilt dann für alle Stimmen.
-const PANEL_MODELS_RAW = (process.env.VERIFIER_PANEL_MODELS
-  || "gpt-5.3-codex,gpt-5.6-terra,gpt-4.1-mini")
+const DEFAULT_PANEL_MODELS = ["gpt-5.3-codex", "gpt-5.6-terra", "gpt-4.1-mini"];
+const _envPanelModels = (process.env.VERIFIER_PANEL_MODELS || "")
   .split(",").map((s) => s.trim()).filter(Boolean);
+// Eine leere/„,"-Eingabe darf NICHT zu einer leeren Liste führen (PANEL ohne
+// Modelle → POST ohne `model` → Dauerblock) — dann greift die Default-Liste.
+const PANEL_MODELS_RAW = _envPanelModels.length ? _envPanelModels : DEFAULT_PANEL_MODELS;
 
 /**
  * Löst die Panelisten-Modelle auf (ein Modell pro Stimme):
@@ -405,30 +408,59 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // (400/403/404) NICHT retryen — das Ergebnis ändert sich nicht.
 const isTransient = (s) => s === 401 || s === 408 || s === 409 || s === 429 || s >= 500;
 
+const H = { "Content-Type": "application/json", Authorization: `Bearer ${KEY}` };
+
+/** Text aus einer Responses-API-Antwort ziehen: output_text (falls vorhanden) oder
+ *  aus output[].content[].text zusammensetzen. */
+function extractResponsesText(data) {
+  if (typeof data?.output_text === "string" && data.output_text) return data.output_text;
+  const parts = [];
+  for (const item of data?.output || []) {
+    for (const c of item?.content || []) {
+      if (typeof c?.text === "string") parts.push(c.text);
+    }
+  }
+  return parts.join("");
+}
+
 async function attemptOnce(i) {
-  // MINIMALE, breit kompatible Anfrage: kein temperature/seed/response_format —
-  // neuere Modelle (GPT-5.x/Sol) lehnen diese Parameter teils mit HTTP 400 ab.
+  const sys = system + (LENSES[i % LENSES.length] || "");
+  const finish = (content) => { const v = parseVerdict(content ?? ""); return { ok: true, v, decision: decide(v) }; };
+  // Bevorzugt Chat Completions. MINIMALE, breit kompatible Anfrage: kein
+  // temperature/seed/response_format — neuere Modelle lehnen die teils mit 400 ab.
   const res = await fetch(`${BASE}/chat/completions`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${KEY}` },
+    headers: H,
     body: JSON.stringify({
       model: MODELS[i],
-      messages: [
-        { role: "system", content: system + (LENSES[i % LENSES.length] || "") },
-        { role: "user", content: user },
-      ],
+      messages: [{ role: "system", content: sys }, { role: "user", content: user }],
     }),
   });
-  if (!res.ok) {
-    // Fehler-BODY mitschreiben (nicht nur den Status) — sonst bleibt die Ursache
-    // eines 400 unsichtbar. Whitespace normalisiert, begrenzt.
-    let detail = "";
-    try { detail = (await res.text()).replace(/\s+/g, " ").slice(0, 300); } catch { detail = "(kein Body)"; }
-    return { ok: false, status: res.status, reason: `API ${res.status}: ${detail}` };
+  if (res.ok) {
+    const data = await res.json();
+    return finish(data.choices?.[0]?.message?.content ?? "");
   }
-  const data = await res.json();
-  const v = parseVerdict(data.choices?.[0]?.message?.content ?? "");
-  return { ok: true, v, decision: decide(v) };
+  // Fehler-BODY mitschreiben (nicht nur den Status) — und daran die Endpoint-Weiche.
+  let body = "";
+  try { body = await res.text(); } catch { body = ""; }
+  // Manche Modelle (z. B. *-codex/Reasoning) unterstützen NUR die Responses-API —
+  // der 404 nennt genau das. Dann dorthin ausweichen (gleiche Semantik, andere Form:
+  // system→instructions, user→input; Antworttext aus output[]).
+  if (res.status === 404 && /v1\/responses|responses endpoint/i.test(body)) {
+    const r2 = await fetch(`${BASE}/responses`, {
+      method: "POST",
+      headers: H,
+      body: JSON.stringify({ model: MODELS[i], instructions: sys, input: user }),
+    });
+    if (r2.ok) {
+      const data = await r2.json();
+      return finish(extractResponsesText(data));
+    }
+    let b2 = ""; try { b2 = (await r2.text()).replace(/\s+/g, " ").slice(0, 300); } catch { b2 = "(kein Body)"; }
+    return { ok: false, status: r2.status, reason: `Responses-API ${r2.status}: ${b2}` };
+  }
+  const detail = body.replace(/\s+/g, " ").slice(0, 300) || "(kein Body)";
+  return { ok: false, status: res.status, reason: `API ${res.status}: ${detail}` };
 }
 
 async function verifyOnce(i) {
