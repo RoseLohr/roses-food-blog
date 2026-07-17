@@ -16,7 +16,8 @@
  *                           ist; so greift ein bereits hinterlegter OpenAI-Schlüssel
  *                           ohne Umbenennen.
  *   VERIFIER_BASE_URL       Default https://api.openai.com/v1
- *   VERIFIER_MODEL          Default gpt-5.6-sol (OpenAI-Flaggschiff); für dated Snapshot überschreiben
+ *   VERIFIER_MODEL          Optional. Ohne Angabe: automatisch das NEUSTE vom Account
+ *                           freigeschaltete Modell (GET /v1/models, Präferenz neu→alt).
  *   VERIFIER_PANEL          Anzahl unabhängiger Verifier-Stimmen (Default 3)
  *
  * ROBUST (2026-07-17, Root-Cause statt Workaround):
@@ -38,10 +39,35 @@ import { execSync } from "node:child_process";
 
 const KEY = process.env.SECOND_VENDOR_API_KEY || process.env.OPENAI_API_KEY;
 const BASE = process.env.VERIFIER_BASE_URL || "https://api.openai.com/v1";
-// Default: GPT-5.6 Sol (OpenAI-Flaggschiff, GA 2026-07-09) — SOTA für Code/Security,
-// als unabhängiger Fremd-Vendor-Verifier. Für einen fest gepinnten dated Snapshot
-// (B-13) `VERIFIER_MODEL` als Repo-Variable setzen (z. B. gpt-5.6-sol-<datum>).
-const MODEL = process.env.VERIFIER_MODEL || "gpt-5.6-sol";
+
+// Präferenz-Reihenfolge (NEU → alt). Ohne explizites VERIFIER_MODEL nimmt der
+// Verifier das erste hiervon, das der Account tatsächlich FREIGESCHALTET hat.
+const MODEL_PREFERENCE = [
+  "gpt-5.6-sol", "gpt-5.6", "gpt-5.5", "gpt-5.1", "gpt-5",
+  "gpt-4.1", "gpt-4o-2024-08-06", "gpt-4o",
+];
+
+/**
+ * Modellwahl: explizit via VERIFIER_MODEL (z. B. ein gepinnter Snapshot), sonst
+ * automatisch das NEUSTE vom Account freigeschaltete Modell — ermittelt über
+ * GET /v1/models. So läuft der Verifier immer auf dem besten verfügbaren Modell,
+ * ohne dass eine nicht freigeschaltete ID einen HTTP 400 auslöst.
+ */
+async function resolveModel() {
+  if (process.env.VERIFIER_MODEL) return process.env.VERIFIER_MODEL;
+  try {
+    const res = await fetch(`${BASE}/models`, { headers: { Authorization: `Bearer ${KEY}` } });
+    if (res.ok) {
+      const data = await res.json();
+      const ids = (data?.data || []).map((m) => m?.id).filter(Boolean);
+      for (const p of MODEL_PREFERENCE) {
+        const hit = ids.find((id) => id === p || id.startsWith(p + "-"));
+        if (hit) return hit; // exakte ID oder datierter Snapshot (p-2026-…)
+      }
+    }
+  } catch { /* Netz-/Parsefehler → Default unten */ }
+  return MODEL_PREFERENCE[0];
+}
 const PANEL = Math.max(1, Number(process.env.VERIFIER_PANEL || 3));
 
 /**
@@ -131,6 +157,9 @@ if (!KEY) {
 const d = diff();
 if (!d.trim()) { console.log("[independent-verify] Kein Diff zu prüfen. Grün."); process.exit(0); }
 
+const MODEL = await resolveModel();
+console.log(`[independent-verify] Modell: ${MODEL}${process.env.VERIFIER_MODEL ? " (VERIFIER_MODEL gesetzt)" : " (auto: neustes freigeschaltetes)"}`);
+
 const system =
   "Du bist ein unabhängiger, feindseliger Code-Reviewer eines ANDEREN KI-Anbieters. " +
   "Deine Aufgabe ist zu WIDERLEGEN, dass dieser Diff korrekt und sicher ist. Suche echte " +
@@ -138,6 +167,15 @@ const system =
   "fail-closed→fail-open, verbreiterter Blast-Radius. Der Diff kann gekürzt sein; der " +
   "Überblick listet ALLE Dateien. Werte NUR echte, im Code sichtbare Defekte; das bloße " +
   "Ausschließen von Daten/Assets/Deploy-Skripten aus git/Docker ist KEIN Defekt. " +
+  "DEINE GRENZE — überschreite sie NICHT: Widerlege NUR bei einem KONKRETEN, " +
+  "reproduzierbaren Defekt mit benennbarem Fehlverhalten (falsche Ausgabe, Absturz, " +
+  "eine Kontrolle die nachweislich aufhört zu feuern, ein REAL ausnutzbares " +
+  "Sicherheitsloch MIT konkretem Angriffspfad). Widerlege NICHT wegen: Stil/Lesbarkeit; " +
+  "'könnte defensiver/sicherer sein'; spekulativer Angriffe ohne konkreten Pfad " +
+  "(z. B. 'könnte umgangen werden', 'Format-String', 'Unicode-Homoglyphen'), wenn der " +
+  "reale Vektor bereits abgedeckt ist; fehlender hypothetischer Härtung; oder Punkten, " +
+  "die KEIN benennbares Fehlverhalten auslösen. Kannst du keinen konkreten Ausnutzungs- " +
+  "oder Fehlerpfad benennen: refuted=false. " +
   "Antworte NUR als JSON: " +
   '{"refuted": boolean, "confidence": "high"|"medium"|"low", "reason": string}. ' +
   "refuted=true NUR bei einem konkreten, benennbaren Defekt.";
