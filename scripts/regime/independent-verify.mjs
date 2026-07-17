@@ -117,6 +117,32 @@ export function aggregate(votes, panelSize) {
   return { block: false, reason: `${refutes.length}/${valid.length} Refutate (< Mehrheit ${need})` };
 }
 
+/**
+ * Integritäts-Gate gegen SCHEIN-GRÜN (A-01/A-39). Grün darf nur passieren, wenn
+ * das Panel nachweislich ECHT gearbeitet hat — nicht, wenn es bloß auf „ok"
+ * geschaltet wurde. Fail-CLOSED. Verlangt, dass eine MEHRHEIT der Stimmen eine
+ * geparste Antwort MIT nicht-leerer Begründung trägt UND diese Begründungen
+ * PAARWEISE VERSCHIEDEN (unique) sind — identische/leere Begründungen über alle
+ * Stimmen sind das Signatur-Muster einer kanned/gefälschten Grün-Antwort.
+ * `votes`: Array aus { ok, v?:{refuted,reason} }. Rein & testbar.
+ */
+export function attestReasons(votes, panelSize) {
+  const need = Math.floor(panelSize / 2) + 1; // Mehrheit
+  // Kanonischer Vergleichs-Schlüssel auf dem ROHSTRING (nicht JSON-quotiert): sonst
+  // schützen die Anführungszeichen innenliegende Leerzeichen vor trim() und rein
+  // whitespace-/case-verschiedene Begründungen zählten fälschlich als eindeutig.
+  const norm = (r) => String(r).replace(/\s+/g, " ").trim().toLowerCase();
+  const reasoned = votes.filter(
+    (x) => x.ok && x.v && typeof x.v.refuted === "boolean" && String(x.v.reason ?? "").trim() !== "",
+  );
+  if (reasoned.length < need)
+    return { block: true, reason: `nur ${reasoned.length}/${panelSize} Stimmen mit echter Begründung (< Mehrheit ${need}) → Schein-Grün-Verdacht, fail-closed` };
+  const distinct = new Set(reasoned.map((x) => norm(x.v.reason)));
+  if (distinct.size < reasoned.length)
+    return { block: true, reason: `Begründungen nicht eindeutig (${distinct.size}/${reasoned.length} verschieden) → Schein-Grün-Verdacht, fail-closed` };
+  return { block: false, reason: `${reasoned.length} eindeutige Begründungen attestiert` };
+}
+
 const DIFF_OPTS = { encoding: "utf8", maxBuffer: 256 * 1024 * 1024 };
 // Binär-/Asset-/GeoJSON-Rauschen ausschließen. WICHTIG: package-lock.json bleibt im
 // --stat-ÜBERBLICK sichtbar (nur sein riesiger Body wird aus dem Code-Auszug
@@ -162,7 +188,17 @@ if (process.argv.includes("--selftest")) {
   expect(aggregate([B, P, P], 3).block === false, "Minderheit 1/3 darf NICHT blocken.");
   expect(aggregate([P, P, P], 3).block === false, "0 Refutate müssen durchlassen.");
   expect(aggregate([P, E, E], 3).block === true, "zu wenige gültige Stimmen → fail-closed block.");
-  console.log("   ✓ Selbsttest: decide() + aggregate() (Mehrheit + fail-closed) korrekt.");
+  // attestReasons() (Schein-Grün-Gate: echte, eindeutige Begründungen erzwingen)
+  const R = (reason, refuted = false) => ({ ok: true, v: { refuted, reason } });
+  expect(attestReasons([R("a"), R("b"), R("c")], 3).block === false, "3 eindeutige Begründungen müssen passieren.");
+  expect(attestReasons([R("gleich"), R("gleich"), R("gleich")], 3).block === true, "identische Begründungen (kanned) müssen blocken.");
+  expect(attestReasons([R("A B"), R(" a   b "), R("c")], 3).block === true, "nur Whitespace/Case-verschieden zählt NICHT als eindeutig → blocken.");
+  expect(attestReasons([R(""), R(""), R("")], 3).block === true, "leere Begründungen müssen fail-closed blocken.");
+  expect(attestReasons([R("a"), R("b"), E], 3).block === false, "Mehrheit (2/3) mit eindeutigen Begründungen genügt.");
+  expect(attestReasons([R("a"), E, E], 3).block === true, "nur 1/3 begründet (< Mehrheit) → fail-closed blocken.");
+  expect(attestReasons([{ ok: true, v: null }, R("b"), R("c")], 3).block === false, "unparsbare Stimme ignoriert, Rest eindeutig → passiert.");
+  expect(attestReasons([R("solo")], 1).block === false, "Panel=1 mit echter Begründung passiert.");
+  console.log("   ✓ Selbsttest: decide() + aggregate() + attestReasons() (Schein-Grün-Gate) korrekt.");
   process.exit(0);
 }
 
@@ -282,5 +318,13 @@ if (verdict.block) {
   console.error(`⛔ Fremd-Vendor-Panel blockiert die Änderung: ${verdict.reason}`);
   process.exit(1);
 }
-console.log(`[independent-verify] Fremd-Vendor-Panel bestätigt (${verdict.reason}). Grün.`);
+// SCHEIN-GRÜN-GATE: Grün nur, wenn nachweislich echt gearbeitet wurde — eine
+// Mehrheit der Stimmen muss eine nicht-leere, PAARWEISE VERSCHIEDENE Begründung
+// tragen. So kann ein leeres/kanned „ok" nicht als Freigabe durchgehen (fail-closed).
+const attest = attestReasons(votes, PANEL);
+if (attest.block) {
+  console.error(`⛔ Integritäts-Gate (Schein-Grün): ${attest.reason}`);
+  process.exit(1);
+}
+console.log(`[independent-verify] Fremd-Vendor-Panel bestätigt (${verdict.reason}; ${attest.reason}). Grün.`);
 process.exit(0);
