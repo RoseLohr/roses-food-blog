@@ -48,12 +48,21 @@ export function decide(v) {
   return { block: false };
 }
 
+// GEHÄRTET: großer maxBuffer (execSync wirft sonst RangeError bei umfangreichen
+// Diffs) und Ausschluss von Binär-/Asset-Pfaden (.admin-data-Uploads, Bilder,
+// Fonts) — die sind für ein Code-Review Rauschen und blähen den Puffer auf.
+const DIFF_OPTS = { encoding: "utf8", maxBuffer: 256 * 1024 * 1024 };
+const EXCLUDE =
+  " -- . ':(exclude,glob).admin-data/**' ':(exclude,glob)**/*.webp'" +
+  " ':(exclude,glob)**/*.{png,jpg,jpeg,gif,ico,woff,woff2,ttf,pdf}'" +
+  " ':(exclude,glob)**/package-lock.json'";
+
 function diff() {
   try {
-    const base = execSync("git merge-base origin/main HEAD 2>/dev/null || echo HEAD~1", { encoding: "utf8" }).trim();
-    return execSync(`git diff ${base}...HEAD`, { encoding: "utf8" }).slice(0, 60_000);
+    const base = execSync("git merge-base origin/main HEAD 2>/dev/null || echo HEAD~1", DIFF_OPTS).trim();
+    return execSync(`git diff ${base}...HEAD${EXCLUDE}`, DIFF_OPTS).slice(0, 60_000);
   } catch {
-    return execSync("git diff HEAD~1...HEAD", { encoding: "utf8" }).slice(0, 60_000);
+    return execSync(`git diff HEAD~1...HEAD${EXCLUDE}`, DIFF_OPTS).slice(0, 60_000);
   }
 }
 

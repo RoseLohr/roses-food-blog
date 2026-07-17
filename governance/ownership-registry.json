@@ -10,7 +10,8 @@
       "src/app/admin",
       "src/app/api/beacon",
       "src/app/api/ingredients",
-      "src/app/api/likes"
+      "src/app/api/likes",
+      "src/app/api/deploy-hook"
     ],
     "ai-security": [
       "src/lib/ai-recipe",
