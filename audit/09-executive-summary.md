@@ -2,9 +2,9 @@ SCOPE: TRACKS A/B (KATALOG v1.0) ABGESCHLOSSEN & RATIFIZIERT — TRACK C (SECURI
 
 # Executive Summary — Part 1 abgeschlossen (Phase 7)
 
-**Endbilanz Katalog v1.0 (79 Prüfungen):** 13 PASS · 41 PARTIAL · 11 FAIL
-(MUST-FIX und darunter, per §3 als Residual mit Kompensation + Tripwire
-getragen) · 12 N/A (Ausnahmen-Ledger F1) · 2 NO-EVIDENCE (Residual).
+**Endbilanz Katalog v1.0 (79 Prüfungen):** 19 PASS · 44 PARTIAL · 3 FAIL
+(B-17 IaC, B-27 Artefakt-Signatur, B-18 Canary — Residual mit Tripwire) ·
+12 N/A (Ausnahmen-Ledger F1) · 1 NO-EVIDENCE (B-34, PLAN-Band).
 **Keine offenen STOP-SHIP/BLOCKER.** Verfassung **RATIFIED@v1.0**
 (Amendment-Gate bewiesen: audit/evidence/phase7-amendment-gate.txt).
 A-24/B-03 geschlossen durch Observability + SLO + automatischen
