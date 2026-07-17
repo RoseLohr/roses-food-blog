@@ -111,7 +111,7 @@ export function aggregate(votes, panelSize) {
     return { block: true, reason: `nur ${valid.length}/${panelSize} gültige Verifier-Stimmen (Rest Fehler) → fail-closed` };
   const refutes = valid.filter((x) => x.decision.block);
   if (refutes.length >= need) {
-    const reasons = refutes.map((r) => r.decision.reason).filter(Boolean).join(" | ").slice(0, 400);
+    const reasons = refutes.map((r) => r.decision.reason).filter(Boolean).join(" | ").slice(0, 900);
     return { block: true, reason: `${refutes.length}/${valid.length} Verifier widerlegen: ${reasons}` };
   }
   return { block: false, reason: `${refutes.length}/${valid.length} Refutate (< Mehrheit ${need})` };
@@ -121,9 +121,15 @@ export function aggregate(votes, panelSize) {
  * Integritäts-Gate gegen SCHEIN-GRÜN (A-01/A-39). Grün darf nur passieren, wenn
  * das Panel nachweislich ECHT gearbeitet hat — nicht, wenn es bloß auf „ok"
  * geschaltet wurde. Fail-CLOSED. Verlangt, dass eine MEHRHEIT der Stimmen eine
- * geparste Antwort MIT nicht-leerer Begründung trägt UND diese Begründungen
- * PAARWEISE VERSCHIEDEN (unique) sind — identische/leere Begründungen über alle
- * Stimmen sind das Signatur-Muster einer kanned/gefälschten Grün-Antwort.
+ * geparste Antwort MIT nicht-leerer Begründung trägt UND darunter mindestens
+ * eine MEHRHEIT VERSCHIEDENER (eindeutiger) Begründungen liegt — durchweg
+ * identische/leere Begründungen (distinct ≤ 1) sind das Signatur-Muster einer
+ * kanned/gefälschten Grün-Antwort und blocken.
+ * NICHT „alle paarweise verschieden": zwei Stimmen dürfen zufällig dieselbe
+ * knappe Phrase liefern (z. B. 'kein konkreter Fehlerpfad'), solange insgesamt
+ * eine Mehrheit eigenständiger Begründungen vorliegt — sonst blockierte das Gate
+ * legitime Grün-Fälle (genau dieser Fehler wurde vom Fremd-Vendor-Panel
+ * nachgewiesen: [„a",„a",„b"] hat eine 2/3-Mehrheit eindeutiger Gründe).
  * `votes`: Array aus { ok, v?:{refuted,reason} }. Rein & testbar.
  */
 export function attestReasons(votes, panelSize) {
@@ -138,9 +144,9 @@ export function attestReasons(votes, panelSize) {
   if (reasoned.length < need)
     return { block: true, reason: `nur ${reasoned.length}/${panelSize} Stimmen mit echter Begründung (< Mehrheit ${need}) → Schein-Grün-Verdacht, fail-closed` };
   const distinct = new Set(reasoned.map((x) => norm(x.v.reason)));
-  if (distinct.size < reasoned.length)
-    return { block: true, reason: `Begründungen nicht eindeutig (${distinct.size}/${reasoned.length} verschieden) → Schein-Grün-Verdacht, fail-closed` };
-  return { block: false, reason: `${reasoned.length} eindeutige Begründungen attestiert` };
+  if (distinct.size < need)
+    return { block: true, reason: `nur ${distinct.size} verschiedene Begründung(en) unter ${reasoned.length} Stimmen (< Mehrheit ${need}) → Schein-Grün-Verdacht, fail-closed` };
+  return { block: false, reason: `${distinct.size} eigenständige Begründungen attestiert` };
 }
 
 const DIFF_OPTS = { encoding: "utf8", maxBuffer: 256 * 1024 * 1024 };
@@ -191,10 +197,12 @@ if (process.argv.includes("--selftest")) {
   // attestReasons() (Schein-Grün-Gate: echte, eindeutige Begründungen erzwingen)
   const R = (reason, refuted = false) => ({ ok: true, v: { refuted, reason } });
   expect(attestReasons([R("a"), R("b"), R("c")], 3).block === false, "3 eindeutige Begründungen müssen passieren.");
-  expect(attestReasons([R("gleich"), R("gleich"), R("gleich")], 3).block === true, "identische Begründungen (kanned) müssen blocken.");
-  expect(attestReasons([R("A B"), R(" a   b "), R("c")], 3).block === true, "nur Whitespace/Case-verschieden zählt NICHT als eindeutig → blocken.");
+  expect(attestReasons([R("a"), R("a"), R("b")], 3).block === false, "2/3-Mehrheit eindeutiger Begründungen genügt (ein Duplikat erlaubt).");
+  expect(attestReasons([R("gleich"), R("gleich"), R("gleich")], 3).block === true, "durchweg identische Begründungen (kanned) müssen blocken.");
+  expect(attestReasons([R("A B"), R(" a   b "), R("a b")], 3).block === true, "nach Whitespace/Case-Normalisierung alle gleich → distinct=1 → blocken.");
   expect(attestReasons([R(""), R(""), R("")], 3).block === true, "leere Begründungen müssen fail-closed blocken.");
   expect(attestReasons([R("a"), R("b"), E], 3).block === false, "Mehrheit (2/3) mit eindeutigen Begründungen genügt.");
+  expect(attestReasons([R("a"), R("a"), E], 3).block === true, "2 begründete Stimmen, aber nur 1 eindeutig (< Mehrheit) → blocken.");
   expect(attestReasons([R("a"), E, E], 3).block === true, "nur 1/3 begründet (< Mehrheit) → fail-closed blocken.");
   expect(attestReasons([{ ok: true, v: null }, R("b"), R("c")], 3).block === false, "unparsbare Stimme ignoriert, Rest eindeutig → passiert.");
   expect(attestReasons([R("solo")], 1).block === false, "Panel=1 mit echter Begründung passiert.");
@@ -236,10 +244,13 @@ const system =
   "Antworte NUR als JSON, ohne Prosa/Markdown: " +
   '{"refuted": boolean, "confidence": "high"|"medium"|"low", "reason": string}. ' +
   "reason IMMER ausfüllen (auch bei refuted=false), maximal knapp/maschinell, Abkürzungen " +
-  "ok, keine ganzen Sätze, aber technisch aussagekräftig, ≤200 Zeichen. Bei refuted=true " +
-  "Schema 'pfad/datei:Zeile — Defekt — Fehlverhalten'. Bei refuted=false in 3–8 Wörtern, WAS " +
-  "geprüft wurde + warum kein Defekt (z. B. 'geprüft: HMAC/Auth + fail-closed; kein konkreter " +
-  "Fehlerpfad'). refuted=true NUR bei konkretem, benennbarem Defekt.";
+  "ok, keine ganzen Sätze, aber technisch aussagekräftig. So kurz wie möglich, aber lang " +
+  "genug für die Substanz: bei MEHREREN Defekten die wichtigsten (bis zu 3) mit ' ; ' " +
+  "getrennt AUFLISTEN — lieber je Punkt stark abgekürzt als einen weglassen. Obergrenze " +
+  "~500 Zeichen. Bei refuted=true je Punkt Schema 'pfad/datei:Zeile — Defekt — Fehlverhalten'. " +
+  "Bei refuted=false in 3–8 Wörtern, WAS geprüft wurde + warum kein Defekt (z. B. 'geprüft: " +
+  "HMAC/Auth + fail-closed; kein konkreter Fehlerpfad'). refuted=true NUR bei konkretem, " +
+  "benennbarem Defekt.";
 
 const user = "DIFF (Überblick + Code-Auszug):\n\n" + d;
 
@@ -310,7 +321,7 @@ votes.forEach((x, i) => {
   // Begründungs-Spalte IMMER schreiben — sonst bleibt bei leerem reason (z. B. wenn
   // ein Modell die Anweisung ignoriert) nur "false/high" übrig und das Log ist blind.
   const raw = x.v?.reason;
-  const reason = raw ? JSON.stringify(raw).slice(0, 600) : '"(keine Begründung geliefert)"';
+  const reason = raw ? JSON.stringify(raw).slice(0, 800) : '"(keine Begründung geliefert)"';
   console.log(`  Verifier ${i + 1}/${PANEL} (${MODEL}): refuted=${x.v?.refuted} confidence=${x.v?.confidence} — Begründung: ${reason}`);
 });
 const verdict = aggregate(votes, PANEL);
