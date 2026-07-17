@@ -5,7 +5,7 @@
  */
 export const de = {
   site: {
-    name: "Roses Food Blog",
+    name: "Rose’s Gourmet Compass",
     tagline: "Gesunde Rezepte & kulinarische Reisen",
     skipToContent: "Zum Inhalt springen",
     searchPlaceholder: "Zum Suchen Enter drücken",
@@ -14,7 +14,7 @@ export const de = {
     ok: "ok",
   },
   home: {
-    welcome: "Willkommen auf Roses Food Blog",
+    welcome: "Willkommen auf Rose’s Gourmet Compass",
     intro:
       "Hier entstehen gesunde Rezepte für jeden Tag und Reiseberichte übers Essen in aller Welt.",
     sliderLabel: "Empfohlene Rezepte",
@@ -142,7 +142,7 @@ export const de = {
     empty: "Noch keine Rezepte in dieser Kategorie.",
     metaTitle: (name: string) => `${name} – Rezepte`,
     metaDescription: (name: string) =>
-      `Alle Rezepte der Kategorie „${name}“ auf Roses Food Blog.`,
+      `Alle Rezepte der Kategorie „${name}“ auf Rose’s Gourmet Compass.`,
   },
   travelList: {
     title: "Kulinarische Reisen",
@@ -506,7 +506,7 @@ export const de = {
       smtpPass: "Passwort",
       smtpPassKeep: "Leer lassen, um das gespeicherte Passwort beizubehalten.",
       smtpFrom: "Absender (Name & Adresse)",
-      smtpFromHint: 'z. B. Roses Food Blog <newsletter@example.de>',
+      smtpFromHint: 'z. B. Rose’s Gourmet Compass <newsletter@example.de>',
       emailRate: "Max. Mails pro Minute",
       passwordSet: "gespeichert",
       passwordUnset: "nicht gesetzt",

@@ -43,12 +43,12 @@ export async function sendTestEmailAction(): Promise<void> {
   try {
     const email = renderEmail({
       markdown:
-        "Dies ist eine **Testmail** von Roses Food Blog.\n\nWenn du sie erhältst, ist der SMTP-Versand korrekt eingerichtet.",
+        "Dies ist eine **Testmail** von Rose’s Gourmet Compass.\n\nWenn du sie erhältst, ist der SMTP-Versand korrekt eingerichtet.",
       unsubscribeUrl: getBaseUrl(),
     });
     await sendEmail({
       to: admin.email,
-      subject: "Testmail – Roses Food Blog",
+      subject: "Testmail – Rose’s Gourmet Compass",
       html: email.html,
       text: email.text,
     });

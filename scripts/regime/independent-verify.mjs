@@ -237,14 +237,21 @@ export function attestProof(votes, challenge, panelSize) {
 }
 
 const DIFF_OPTS = { encoding: "utf8", maxBuffer: 256 * 1024 * 1024 };
-// Binär-/Asset-/GeoJSON-Rauschen ausschließen. WICHTIG: package-lock.json bleibt im
-// --stat-ÜBERBLICK sichtbar (nur sein riesiger Body wird aus dem Code-Auszug
-// gelassen) — sonst schließt ein Reviewer fälschlich, das Lockfile sei zur
-// package.json-Änderung nicht aktualisiert worden (npm-ci-Bruch).
+// DATENSCHUTZ/GOVERNANCE: NUR Code geht an den Fremd-Vendor (OpenAI). Nicht-Code —
+// insbesondere BILDER (Raster UND Vektor/SVG), Schriften, Binär-/Asset-/GeoJSON-
+// Daten — wird weder in den --stat-Überblick noch in den Code-Auszug aufgenommen,
+// verlässt also nie den eigenen Origin. SVG/GeoJSON sind Text und würden sonst
+// mitgesendet; daher explizit ausgeschlossen (auch app/icon.svg, /public/brand/*.svg …).
+// ACHTUNG git-Pathspec: `:(glob)` unterstützt KEINE Brace-Expansion ({a,b}). Ein
+// früher genutztes `**/*.{png,jpg,…}` matchte NIE — d. h. selbst Rasterbilder gingen
+// bis dato an den Vendor. Daher wird JEDE Endung als EIGENER Pathspec ausgeschlossen.
+// WICHTIG: package-lock.json bleibt im --stat-ÜBERBLICK sichtbar (nur sein riesiger
+// Body wird aus dem Code-Auszug gelassen) — sonst schließt ein Reviewer fälschlich,
+// das Lockfile sei zur package.json-Änderung nicht aktualisiert worden (npm-ci-Bruch).
+const EXCLUDE_EXTS = ["webp", "png", "jpg", "jpeg", "gif", "ico", "svg", "avif", "bmp", "tiff", "woff", "woff2", "ttf", "otf", "eot", "pdf", "geojson"];
 const EXCLUDE_STAT =
-  " -- . ':(exclude,glob).admin-data/**' ':(exclude,glob)**/*.webp'" +
-  " ':(exclude,glob)**/*.{png,jpg,jpeg,gif,ico,woff,woff2,ttf,pdf}'" +
-  " ':(exclude,glob)**/*.geojson'";
+  " -- . ':(exclude,glob).admin-data/**'" +
+  EXCLUDE_EXTS.map((e) => ` ':(exclude,glob)**/*.${e}'`).join("");
 const EXCLUDE_BODY = EXCLUDE_STAT + " ':(exclude,glob)**/package-lock.json'";
 
 function sh(cmd) {
