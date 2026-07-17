@@ -100,7 +100,7 @@ jobs:
         run: node scripts/regime/mandate-hash.mjs --verify
       - name: Lizenz-Scan (C-25, Copyleft-Konflikte blockieren)
         run: node scripts/regime/license-scan.mjs
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: sbom
           path: sbom.json
