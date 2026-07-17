@@ -46,6 +46,11 @@ diesem Repository arbeitet. Sie ist Teil des Governance-Regimes (A-32/A-33/A-37)
 - **Vor jedem Push den VOLLEN Gate-Lauf lokal fahren** (nicht nur die geänderten
   Skripte) — Root-Cause-Disziplin heißt auch, rote Checks nicht erst in CI zu
   entdecken.
+- **IMMER den PR beobachten (angeordnet, verbindlich):** Nach jedem erstellten
+  ODER aktualisierten Pull Request den PR abonnieren (CI- **und** Review-
+  Aktivität, `subscribe_pr_activity`) und dranbleiben, bis er gemergt/geschlossen
+  ist — Fehlschläge autonom an der Wurzel fixen (kein Workaround) und Review-
+  Kommentare beantworten, sobald sie eintreffen. Nicht abwarten, bis jemand fragt.
 
 ## Betrieb (Kurzüberblick)
 - Next.js 16 standalone in podman; Deploy: `./deploy.sh` auf dem Server

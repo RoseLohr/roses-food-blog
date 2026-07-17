@@ -16,7 +16,7 @@
  *                           ist; so greift ein bereits hinterlegter OpenAI-Schlüssel
  *                           ohne Umbenennen.
  *   VERIFIER_BASE_URL       Default https://api.openai.com/v1
- *   VERIFIER_MODEL          Default gpt-4o-2024-08-06 (gepinnter Snapshot, B-13)
+ *   VERIFIER_MODEL          Default gpt-5.6-sol (OpenAI-Flaggschiff); für dated Snapshot überschreiben
  *   VERIFIER_PANEL          Anzahl unabhängiger Verifier-Stimmen (Default 3)
  *
  * ROBUST (2026-07-17, Root-Cause statt Workaround):
@@ -38,7 +38,10 @@ import { execSync } from "node:child_process";
 
 const KEY = process.env.SECOND_VENDOR_API_KEY || process.env.OPENAI_API_KEY;
 const BASE = process.env.VERIFIER_BASE_URL || "https://api.openai.com/v1";
-const MODEL = process.env.VERIFIER_MODEL || "gpt-4o-2024-08-06";
+// Default: GPT-5.6 Sol (OpenAI-Flaggschiff, GA 2026-07-09) — SOTA für Code/Security,
+// als unabhängiger Fremd-Vendor-Verifier. Für einen fest gepinnten dated Snapshot
+// (B-13) `VERIFIER_MODEL` als Repo-Variable setzen (z. B. gpt-5.6-sol-<datum>).
+const MODEL = process.env.VERIFIER_MODEL || "gpt-5.6-sol";
 const PANEL = Math.max(1, Number(process.env.VERIFIER_PANEL || 3));
 
 /**
