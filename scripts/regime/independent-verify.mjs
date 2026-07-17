@@ -197,8 +197,12 @@ const system =
   "reale Vektor bereits abgedeckt ist; fehlender hypothetischer Härtung; oder Punkten, " +
   "die KEIN benennbares Fehlverhalten auslösen. Kannst du keinen konkreten Ausnutzungs- " +
   "oder Fehlerpfad benennen: refuted=false. " +
-  "Antworte NUR als JSON: " +
+  "Antworte NUR als JSON, ohne Prosa/Markdown/Vor- oder Nachtext: " +
   '{"refuted": boolean, "confidence": "high"|"medium"|"low", "reason": string}. ' +
+  "HALTE reason SO KURZ WIE MÖGLICH: maschinell/telegrammartig, Abkürzungen erlaubt, " +
+  "KEINE ganzen Sätze, keine Wiederholung der Aufgabe — aber technisch AUSREICHEND. " +
+  "Schema: 'pfad/datei:Zeile — Defekt — konkretes Fehlverhalten'. Ziel ≤ 200 Zeichen. " +
+  'Bei refuted=false: reason leer "" oder ein Wort. ' +
   "refuted=true NUR bei einem konkreten, benennbaren Defekt.";
 
 const user = "DIFF (Überblick + Code-Auszug):\n\n" + d;
