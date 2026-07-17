@@ -1039,3 +1039,26 @@ export const emailQueue = sqliteTable(
     ),
   ],
 );
+
+/**
+ * B-03/A-24 — Betriebs-Ereignisse (Golden Signals) für Observability + SLO.
+ * Schlank, ohne Personenbezug. Wird vom onRequestError-Hook (Fehler) und vom
+ * Selbst-Monitor-Cron (health/alert) beschrieben; der Monitor liest die
+ * Fehlerrate im Fenster daraus.
+ */
+export const opsEvent = sqliteTable(
+  "ops_event",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    kind: text("kind", { enum: ["error", "request", "health", "alert"] }).notNull(),
+    route: text("route"),
+    status: integer("status"),
+    durationMs: integer("duration_ms"),
+    detail: text("detail"),
+    createdAt: now(),
+  },
+  (t) => [
+    index("ops_event_time_idx").on(t.createdAt),
+    index("ops_event_kind_idx").on(t.kind, t.createdAt),
+  ],
+);
