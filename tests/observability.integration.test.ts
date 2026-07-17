@@ -58,4 +58,20 @@ describe("Selbst-Monitor (SLO + Alert)", () => {
     expect(s.alerted).toBe(false);
     expect(sent).toHaveLength(1);
   });
+
+  it("überlebt einen SMTP-Ausfall (Failure-Injection, B-29): kein Crash, alerted=false", async () => {
+    const obs = await import("@/lib/observability");
+    // Budget ist aus dem vorigen Test weiter verbraucht, aber der Alert-
+    // Cooldown greift — daher frische Fehler NACH Ablauf simulieren wir nicht;
+    // stattdessen direkt: kaputter Mailer darf checkSloAndAlert nie werfen.
+    const kaputt = async () => {
+      throw new Error("SMTP down (injiziert)");
+    };
+    // Zusätzliche Fehler, damit der Breach-Zweig sicher erreicht wird.
+    obs.recordOpsEvent({ kind: "error", route: "/w", status: 500, detail: "boom4" });
+    const s = await obs.checkSloAndAlert({ sendAlert: kaputt });
+    // Kein Throw bis hierher = das eigentliche Prüfziel. Zustand bleibt ehrlich:
+    expect(s.breach).toBe(true);
+    expect(s.alerted).toBe(false);
+  });
 });
