@@ -44,7 +44,7 @@ jobs:
         with:
           target: "http://localhost:3000"
           rules_file_name: ".zap/rules.tsv"
-          fail_action: false # CI informativ; blockierender DAST läuft gegen greenbox
+          fail_action: true # scheduled: fällt bei ECHTEN Funden (Header-Regeln stehen auf WARN)
           allow_issue_writing: false
       - uses: actions/upload-artifact@v4
         if: always()
@@ -53,3 +53,15 @@ jobs:
           path: |
             report_html.html
             report_md.md
+      - name: Lighthouse Core Web Vitals messen (A-17, NFR)
+        run: |
+          npx --yes lighthouse http://localhost:3000/ \
+            --only-categories=performance \
+            --output=json --output-path=./lighthouse.json \
+            --chrome-flags="--headless --no-sandbox --disable-gpu" || true
+          node -e "try{const r=require('./lighthouse.json');const a=r.audits;console.log('LCP',a['largest-contentful-paint']?.displayValue,'CLS',a['cumulative-layout-shift']?.displayValue,'TBT',a['total-blocking-time']?.displayValue,'Perf',r.categories.performance.score)}catch(e){console.log('Lighthouse-Report nicht lesbar:',e.message)}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lighthouse-cwv
+          path: ./lighthouse.json

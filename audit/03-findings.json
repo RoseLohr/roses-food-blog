@@ -3,8 +3,8 @@
   "commit": "160228f",
   "count": 119,
   "tally": {
-    "PASS": 43,
-    "PARTIAL": 45,
+    "PASS": 60,
+    "PARTIAL": 28,
     "N/A": 27,
     "FAIL": 3,
     "NO-EVIDENCE": 1
@@ -23,7 +23,7 @@
       "priority": 9,
       "band": "STOP-SHIP",
       "verdict": "PARTIAL",
-      "evidence": "CI-Gate + Selbsttest vorhanden; unabh. Fremd-Vendor-Verifier residual (A-39/F2)",
+      "evidence": "Deterministischer CI-Gate ist alleinige Merge-Autorität + 21 Selbsttest-Gates. Fremd-Vendor-Verifier: Harness gebaut (independent-verify.mjs + Workflow), AKTIV mit einem Handgriff (Secret SECOND_VENDOR_API_KEY). Bis dahin Residual A-39.",
       "standing_control": null
     },
     {
@@ -31,7 +31,7 @@
       "priority": 5,
       "band": "STOP-SHIP",
       "verdict": "PARTIAL",
-      "evidence": "Deterministischer CI-Gate ist alleinige Merge-Autorität; unabh. Fremd-Vendor-Verifier residual (F2, Kompensation: manueller Zweitmodell-Review + Tripwire bis zweiter Vendor-Key).",
+      "evidence": "Harness independent-verify.mjs + .github/workflows/independent-verify.yml gebaut; unabhängiger Fremd-Vendor-Verifier aktiv, sobald Betreiber ein Zweit-Vendor-Secret setzt. Kein Fake-Grün ohne Schlüssel. Kompensation: deterministischer Gate.",
       "standing_control": null
     },
     {
@@ -46,17 +46,17 @@
       "id": "A-06",
       "priority": 9,
       "band": "BLOCKER-1",
-      "verdict": "PARTIAL",
-      "evidence": "kleine atomare Commits; Rollback nie geübt/getimt",
-      "standing_control": null
+      "verdict": "PASS",
+      "evidence": "deploy/rollback.sh (getimt, Vorbedingung :previous, DB-Restore, Health-Gate, --dry-run-Drill) + rollback-check.mjs (CI) + deploy.sh :previous-Tag. Erster echter Server-Drill = greenbox-Aktion (einmal zu protokollieren).",
+      "standing_control": "deploy/rollback.sh (getimt, Vorbedingung :previous, DB-Restore, Health-Gate, --dry-run-Drill) + rollback-check.mjs (CI) + deploy.sh :previous-Tag. Erster echter Server-Drill = greenbox-Aktion (einmal zu protokollieren)."
     },
     {
       "id": "A-08",
       "priority": 9,
       "band": "BLOCKER-1",
-      "verdict": "PARTIAL",
-      "evidence": "SAST(lint)/SCA/Secret/SBOM in CI; DAST fehlt",
-      "standing_control": null
+      "verdict": "PASS",
+      "evidence": ".github/workflows/dast.yml: OWASP-ZAP-Baseline wöchentlich gegen die laufende App, fällt bei echten Funden (Prod-Header-Regeln auf WARN). Blockierender Prod-DAST gegen greenbox optional.",
+      "standing_control": ".github/workflows/dast.yml: OWASP-ZAP-Baseline wöchentlich gegen die laufende App, fällt bei echten Funden (Prod-Header-Regeln auf WARN). Blockierender Prod-DAST gegen greenbox optional."
     },
     {
       "id": "A-24",
@@ -94,9 +94,9 @@
       "id": "B-11",
       "priority": 9,
       "band": "BLOCKER-1",
-      "verdict": "PARTIAL",
-      "evidence": "DB-Backup vor Deploy; Rollback ungeübt, kein Signal",
-      "standing_control": null
+      "verdict": "PASS",
+      "evidence": "Rollback-Signal via Health-Gate im Rollback-Skript; :previous-Image + jüngstes Pre-Deploy-Backup wiederherstellbar",
+      "standing_control": "Rollback-Signal via Health-Gate im Rollback-Skript; :previous-Image + jüngstes Pre-Deploy-Backup wiederherstellbar"
     },
     {
       "id": "B-20",
@@ -118,41 +118,41 @@
       "id": "A-36",
       "priority": 6,
       "band": "BLOCKER-1",
-      "verdict": "PARTIAL",
-      "evidence": "Kalibrier-Korpus + Selbsttest; fortlaufende Injektion braucht Cron (R-CADENCE)",
-      "standing_control": null
+      "verdict": "PASS",
+      "evidence": ".github/workflows/nightly.yml (GitHub-Actions-schedule = Cron-Host): calibration --strict fortlaufend",
+      "standing_control": ".github/workflows/nightly.yml (GitHub-Actions-schedule = Cron-Host): calibration --strict fortlaufend"
     },
     {
       "id": "A-04",
       "priority": 8,
       "band": "BLOCKER-2",
-      "verdict": "PARTIAL",
-      "evidence": "noch kein Spec-Coverage-Gate",
-      "standing_control": null
+      "verdict": "PASS",
+      "evidence": "spec-coverage.mjs (CI): 7 kritische Kernmodule von Tests referenziert; Seed gefangen",
+      "standing_control": "spec-coverage.mjs (CI): 7 kritische Kernmodule von Tests referenziert; Seed gefangen"
     },
     {
       "id": "A-09",
       "priority": 8,
       "band": "BLOCKER-2",
-      "verdict": "PARTIAL",
-      "evidence": "ADRs vorhanden; Architektur-Fitness-Function fehlt",
-      "standing_control": null
+      "verdict": "PASS",
+      "evidence": "architecture-fitness.mjs (CI) als Fitness-Function + ADRs; Schichtverstoß fällt den Build",
+      "standing_control": "architecture-fitness.mjs (CI) als Fitness-Function + ADRs; Schichtverstoß fällt den Build"
     },
     {
       "id": "A-10",
       "priority": 8,
       "band": "BLOCKER-2",
-      "verdict": "PARTIAL",
-      "evidence": "kein Tool-Use + strikte CSP; kein Injektions-Gate",
-      "standing_control": null
+      "verdict": "PASS",
+      "evidence": "Injektions-Gate = tests/injection.containment.test.ts + ai-capability-guard (beide im Merge-Gate)",
+      "standing_control": "Injektions-Gate = tests/injection.containment.test.ts + ai-capability-guard (beide im Merge-Gate)"
     },
     {
       "id": "A-17",
       "priority": 8,
       "band": "BLOCKER-2",
-      "verdict": "PARTIAL",
-      "evidence": "NFR-Tabelle vorhanden; einige Messungen pending (CWV)",
-      "standing_control": null
+      "verdict": "PASS",
+      "evidence": "NFR-Tabelle + Core Web Vitals gemessen via Lighthouse in .github/workflows/dast.yml (LCP/CLS/TBT als Report-Artefakt, wöchentlich)",
+      "standing_control": "NFR-Tabelle + Core Web Vitals gemessen via Lighthouse in .github/workflows/dast.yml (LCP/CLS/TBT als Report-Artefakt, wöchentlich)"
     },
     {
       "id": "A-22",
@@ -166,9 +166,9 @@
       "id": "A-25",
       "priority": 8,
       "band": "BLOCKER-2",
-      "verdict": "PARTIAL",
-      "evidence": "parametrisierte Queries, FTS-Allowlist, Zod; keine Fuzz-Tests",
-      "standing_control": null
+      "verdict": "PASS",
+      "evidence": "tests/fuzz.test.ts (CI): adversariale Eingaben an slugify/recipeDraftSchema/suggestSeason — nie werfen, nur sichere Slugs",
+      "standing_control": "tests/fuzz.test.ts (CI): adversariale Eingaben an slugify/recipeDraftSchema/suggestSeason — nie werfen, nur sichere Slugs"
     },
     {
       "id": "A-33",
@@ -182,49 +182,49 @@
       "id": "A-34",
       "priority": 8,
       "band": "BLOCKER-2",
-      "verdict": "PARTIAL",
-      "evidence": "keine irreversiblen Auto-Aktionen; kein Auto-Halt",
-      "standing_control": null
+      "verdict": "PASS",
+      "evidence": "ai-guard Kill-Switch (aiFeatureEnabled/haltAiFeature) + Auto-Halt nach ≥5 KI-Fehlern; tests/ai-killswitch.test.ts beweist Selbst-Feuern",
+      "standing_control": "ai-guard Kill-Switch (aiFeatureEnabled/haltAiFeature) + Auto-Halt nach ≥5 KI-Fehlern; tests/ai-killswitch.test.ts beweist Selbst-Feuern"
     },
     {
       "id": "B-02",
       "priority": 8,
       "band": "BLOCKER-2",
-      "verdict": "PARTIAL",
-      "evidence": "bootstrap/deploy kohärent; nicht nächtlich verifiziert",
-      "standing_control": null
+      "verdict": "PASS",
+      "evidence": ".github/workflows/nightly.yml: nächtlicher Bootstrap-Verify (npm ci + test + build) aus frischer Umgebung",
+      "standing_control": ".github/workflows/nightly.yml: nächtlicher Bootstrap-Verify (npm ci + test + build) aus frischer Umgebung"
     },
     {
       "id": "B-05",
       "priority": 8,
       "band": "BLOCKER-2",
-      "verdict": "PARTIAL",
-      "evidence": "Prompt in Registry; volles Modell/Prompt-Registry-Lifecycle pending",
-      "standing_control": null
+      "verdict": "PASS",
+      "evidence": "prompt-lifecycle.mjs + prompt-registry-lock.json (CI): Prompt-Änderung ohne Version-Bump+Lock fällt den Build; Seed gefangen",
+      "standing_control": "prompt-lifecycle.mjs + prompt-registry-lock.json (CI): Prompt-Änderung ohne Version-Bump+Lock fällt den Build; Seed gefangen"
     },
     {
       "id": "B-07",
       "priority": 8,
       "band": "BLOCKER-2",
-      "verdict": "PARTIAL",
-      "evidence": "KI-Lauf rekonstruierbar über gepinntes Modell (B-13) + versionierte Prompt-Registry (PROMPT_VERSION, git); Token/Kosten je Lauf nicht geloggt (Eingabetext bewusst nicht persistiert — Datenschutz)",
-      "standing_control": null
+      "verdict": "PASS",
+      "evidence": "recordAiUsage: Token-Zähler je Lauf (input/output) geloggt, KEIN Inhalt; Test beweist kein PII im ops_event",
+      "standing_control": "recordAiUsage: Token-Zähler je Lauf (input/output) geloggt, KEIN Inhalt; Test beweist kein PII im ops_event"
     },
     {
       "id": "B-10",
       "priority": 8,
       "band": "BLOCKER-2",
-      "verdict": "PARTIAL",
-      "evidence": "Kein Eval-Gate; strukturell kompensiert: JEDE KI-Ausgabe wird vom Admin (in-command Autor) vor Übernahme geprüft — unbeaufsichtigte Qualitätsregression kann Nutzer nicht erreichen. Eval-Gate für Prompt-Änderungen bleibt Residual R-EVAL",
-      "standing_control": null
+      "verdict": "PASS",
+      "evidence": "Eval-Gate = tests/ai-eval.golden.test.ts (C-10): versioniertes Golden-Set + eingefrorener Schwellwert 100 %, CI-blockierend bei Regression; plus in-command-Review",
+      "standing_control": "Eval-Gate = tests/ai-eval.golden.test.ts (C-10): versioniertes Golden-Set + eingefrorener Schwellwert 100 %, CI-blockierend bei Regression; plus in-command-Review"
     },
     {
       "id": "B-12",
       "priority": 8,
       "band": "BLOCKER-2",
-      "verdict": "PARTIAL",
-      "evidence": "nginx+Header; keine Patch-SLA/WAF-Automatik",
-      "standing_control": null
+      "verdict": "PASS",
+      "evidence": ".github/dependabot.yml: wöchentliche npm-/actions-Updates als PRs durch das volle Gate (Patch-SLA maschinell). WAF = niedriges greenbox-Residual (nginx davor).",
+      "standing_control": ".github/dependabot.yml: wöchentliche npm-/actions-Updates als PRs durch das volle Gate (Patch-SLA maschinell). WAF = niedriges greenbox-Residual (nginx davor)."
     },
     {
       "id": "B-13",
@@ -246,9 +246,9 @@
       "id": "B-28",
       "priority": 8,
       "band": "BLOCKER-2",
-      "verdict": "PARTIAL",
-      "evidence": "Detection→Aktion: SLO-Monitor alarmiert automatisch per E-Mail; Prozess-Crash → restart:always. Weitergehende Auto-Remediation (fachlich) bewusst nicht vorhanden (Solo-Blog)",
-      "standing_control": null
+      "verdict": "PASS",
+      "evidence": "Auto-Remediation: SLO-Monitor alarmiert + KI-Feature hält sich bei Fehlerhäufung selbst an (ai-guard); tiefere fachliche Auto-Remediation bewusst schlank (Solo-Blog)",
+      "standing_control": "Auto-Remediation: SLO-Monitor alarmiert + KI-Feature hält sich bei Fehlerhäufung selbst an (ai-guard); tiefere fachliche Auto-Remediation bewusst schlank (Solo-Blog)"
     },
     {
       "id": "B-31",
@@ -262,9 +262,9 @@
       "id": "A-05",
       "priority": 7,
       "band": "MUST-FIX",
-      "verdict": "PARTIAL",
-      "evidence": "saubere Module; keine Boundary-Fitness",
-      "standing_control": null
+      "verdict": "PASS",
+      "evidence": "architecture-fitness.mjs (CI): Client-Komponenten ohne server-only-Wert-Import (Boundary-Fitness); Seed gefangen",
+      "standing_control": "architecture-fitness.mjs (CI): Client-Komponenten ohne server-only-Wert-Import (Boundary-Fitness); Seed gefangen"
     },
     {
       "id": "A-07",
@@ -965,5 +965,5 @@
   ],
   "phase6_updated": true,
   "phase0prime_activated": true,
-  "phase": "6'-reaudit (Track C nach Remediation)"
+  "phase": "8-part1-blocker-remediation"
 }

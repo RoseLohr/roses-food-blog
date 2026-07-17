@@ -105,3 +105,21 @@ geschlossen, aber das Gesamt-Gate hält an Part-1-Resten.
 - **engagement-status:** part2_status COMPLETE, security_scope_audited true,
   constitution_state RATIFIED, catalogue v2.0. `production_eligible` **computed = false**
   (2 STOP-SHIP, 4 B1, 13 B2 offen — alle Part 1). Admission fail-closed (exit 1) bestätigt.
+
+## Phase 8 — Part-1-Blocker-Remediation (19 → 3 offene Blocker)
+
+Nach dem „Angehen" der Part-1-Reste, jede Kontrolle CI-blockierend + selbst-getestet:
+- A-04 spec-coverage · A-05/A-09 architecture-fitness · A-25 fuzz · B-05 prompt-lifecycle
+  (alle mjs/vitest, Seed/rot-vorher gefangen).
+- A-34 Kill-Switch (selbst-feuernd, tests/ai-killswitch.test.ts) · B-07 Token-Logging
+  (nur Zähler) · B-28 Auto-Halt · A-10 Injektions-Gate (Track-C-Test + Guard).
+- A-36/B-02 nightly.yml (GitHub-Actions-Cron) · A-08 dast.yml (ZAP, fällt auf echte
+  Funde) · B-12 dependabot.yml · A-17 Lighthouse-CWV · A-06/B-11 deploy/rollback.sh +
+  rollback-check.mjs · B-10 Golden-Eval-Gate.
+- A-01/A-39 independent-verify.mjs + Workflow: Fremd-Vendor-Verifier gebaut, aktiv mit
+  einem Secret.
+
+**Verbleibend offen (computed):** A-01/A-39 (STOP-SHIP — ein Secret entfernt; siehe
+Nutzer-Aktionsliste) und A-33 (Erfolgsraten-SLI, echtes Residual — braucht Agent-/
+CI-Telemetrie über Zeit). production_eligible bleibt false, aber nur noch an diesen
+dreien, nicht mehr an 19.

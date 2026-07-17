@@ -6,15 +6,15 @@
   "evidenced_check_count": 118,
   "part1_status": "COMPLETE",
   "part2_status": "COMPLETE",
-  "phase": "7-complete (Katalog v2.0 ratifiziert; beide Volumes abgeschlossen)",
+  "phase": "8-part1-blocker-remediation (19→3 offene Blocker)",
   "highest_open_band": "STOP-SHIP (C-01, C-04 NO-EVIDENCE — Phase 3′ ausstehend)",
   "open_stop_ship_count": 2,
-  "open_blocker_1_count": 4,
-  "open_blocker_2_count": 13,
+  "open_blocker_1_count": 0,
+  "open_blocker_2_count": 1,
   "security_scope_audited": true,
   "constitution_state": "RATIFIED",
   "production_eligible": false,
-  "production_eligible_reason": "Computed false: 2 offene STOP-SHIP, 4 BLOCKER-1, 13 BLOCKER-2 (alle aus Part 1/Track A/B; Track C = 0 offen). Kern: unabhängiger Fremd-Vendor-Verifier (A-39/Art. IV) strukturell nicht verfügbar. Details audit/06 + audit/09.",
+  "production_eligible_reason": "Computed false: 2 STOP-SHIP (A-01/A-39: Fremd-Vendor-Secret setzen), 0 B1, 1 B2 (A-33 Erfolgsraten-SLI). 19→3 offene Blocker.",
   "pending_check_ids": [
     "C-01",
     "C-04",
@@ -85,26 +85,9 @@
       "A-01",
       "A-39"
     ],
-    "blocker_1": [
-      "A-06",
-      "A-08",
-      "B-11",
-      "A-36"
-    ],
+    "blocker_1": [],
     "blocker_2": [
-      "A-04",
-      "A-09",
-      "A-10",
-      "A-17",
-      "A-25",
-      "A-33",
-      "A-34",
-      "B-02",
-      "B-05",
-      "B-07",
-      "B-10",
-      "B-12",
-      "B-28"
+      "A-33"
     ]
   },
   "phase7prime_tally": {
