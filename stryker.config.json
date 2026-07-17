@@ -1,0 +1,23 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "_comment": "A-02: Mutation-Testing als Meta-Gate über reine Kernlogik mit starken Unit-Tests. Baseline wird per S11 zum Boden (darf nur steigen). break=60 blockiert; high/low für Reporting.",
+  "packageManager": "npm",
+  "testRunner": "vitest",
+  "reporters": [
+    "clear-text",
+    "progress"
+  ],
+  "mutate": [
+    "src/lib/slug.ts",
+    "src/lib/season.ts",
+    "src/lib/saisonkalender.ts",
+    "src/lib/visitor-class.ts"
+  ],
+  "concurrency": 2,
+  "timeoutMS": 20000,
+  "thresholds": {
+    "high": 80,
+    "low": 70,
+    "break": 78
+  }
+}

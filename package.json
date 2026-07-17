@@ -18,7 +18,8 @@
     "db:seed": "tsx scripts/seed.ts",
     "fts:rebuild": "node scripts/fts-rebuild.mjs",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "mutation": "stryker run"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.111.0",
@@ -46,6 +47,8 @@
     "@eslint/js": "^9.39.5",
     "@next/eslint-plugin-next": "^16.2.10",
     "@playwright/test": "^1.61.1",
+    "@stryker-mutator/core": "^9.6.1",
+    "@stryker-mutator/vitest-runner": "^9.6.1",
     "@tailwindcss/postcss": "4.3.2",
     "@types/better-sqlite3": "^7.6.13",
     "@types/leaflet": "^1.9.21",

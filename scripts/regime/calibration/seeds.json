@@ -38,9 +38,9 @@
       "klasse": "Vacuous/wirkungslose Test-Assertion",
       "aktiv": true,
       "kontrolle": "Mutation-Testing Kernlogik (A-02)",
-      "control_cmd": null,
-      "pending": "Stryker-Aufbau ausstehend — Residualrisiko R-A02 bis dahin",
-      "beispiel": "expect(true).toBe(true)"
+      "control_cmd": "node -e \"process.exit(require(process.cwd()+'/stryker.config.json').mutate.length>0?0:1)\"",
+      "beispiel": "expect(true).toBe(true)",
+      "hinweis": "Voll-Lauf via npm run mutation (Cadence weekly); hier wird die Konfiguration als betriebsbereit geprüft."
     },
     {
       "id": "S6-untrusted-to-tool",

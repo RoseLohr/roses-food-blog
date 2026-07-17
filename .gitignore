@@ -30,3 +30,7 @@ test-results/
 # Regime: Temp des Gate-Selbsttests + generierte SBOM
 .gate-selftest-*/
 sbom.json
+
+# Stryker (Mutation-Testing) Temp + Reports
+.stryker-tmp/
+reports/

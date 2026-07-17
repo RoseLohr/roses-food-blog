@@ -71,6 +71,21 @@ jobs:
           name: sbom
           path: sbom.json
 
+  # ---- Mutation-Testing: das Meta-Gate über die Kernlogik (A-02, S4) --------
+  # Der Test-Suite selbst wird geprüft: kann sie injizierte Fehler fangen?
+  # break=78 (Baseline 82,91 %) blockiert eine Regression des Sicherheitsnetzes.
+  mutation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Mutation-Score Kernlogik (blockiert unter 78 %)
+        run: npm run mutation
+
   # ---- Deploy-Admission: beweist die fail-closed-Sperre (Artikel XV) --------
   # Der Job ist GRÜN, wenn die Admission KORREKT VERWEIGERT wird — solange
   # production_eligible=false (Track C ungeprüft), darf nichts nach Produktion.
