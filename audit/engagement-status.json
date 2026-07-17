@@ -1,20 +1,20 @@
 {
-  "catalogue_version": "1.0",
+  "catalogue_version": "2.0",
   "registered_check_count": 119,
-  "active_check_count": 79,
-  "present_check_count": 79,
+  "active_check_count": 119,
+  "present_check_count": 119,
   "evidenced_check_count": 76,
   "part1_status": "COMPLETE",
-  "part2_status": "NOT_STARTED",
-  "phase": "7-complete (Katalog v1.0 ratifiziert)",
-  "highest_open_band": "MUST-FIX (als Residual mit Tripwire getragen, §3)",
-  "open_stop_ship_count": 0,
-  "open_blocker_1_count": 0,
-  "open_blocker_2_count": 0,
+  "part2_status": "IN_PROGRESS",
+  "phase": "0'-active (Katalog v2.0 aktiviert per Beschlussakte; Re-Ratifizierung Phase 7')",
+  "highest_open_band": "STOP-SHIP (C-01, C-04 NO-EVIDENCE — Phase 3′ ausstehend)",
+  "open_stop_ship_count": 2,
+  "open_blocker_1_count": 5,
+  "open_blocker_2_count": 6,
   "security_scope_audited": false,
   "constitution_state": "RATIFIED",
   "production_eligible": false,
-  "production_eligible_reason": "part2_status != COMPLETE (Track C STOP-SHIP C-01/C-04 unaudited) UND offene Blocker in Track A/B",
+  "production_eligible_reason": "part2_status != COMPLETE; Track C aktiviert mit 2 offenen STOP-SHIP (C-01, C-04), 5 BLOCKER-1, 6 BLOCKER-2 als NO-EVIDENCE (Phase 3′ ausstehend) + offene Part-1-Residuen.",
   "pending_check_ids": [
     "C-01",
     "C-04",
@@ -66,5 +66,15 @@
     "FAIL": 3,
     "NO-EVIDENCE": 1
   },
-  "part1_note": "Katalog v1.0 abgeschlossen & ratifiziert. Endbilanz: 19 PASS · 44 PARTIAL · 3 FAIL (B-17 IaC, B-27 Signatur, B-18 Canary — Residual mit Tripwire) · 12 N/A · 1 NO-EVIDENCE (B-34 Latenz-Messung, PLAN-Band). production_eligible bleibt false bis Part 2 (Track C)."
+  "part1_note": "Katalog v1.0 abgeschlossen & ratifiziert. Endbilanz: 19 PASS · 44 PARTIAL · 3 FAIL (B-17 IaC, B-27 Signatur, B-18 Canary — Residual mit Tripwire) · 12 N/A · 1 NO-EVIDENCE (B-34 Latenz-Messung, PLAN-Band). production_eligible bleibt false bis Part 2 (Track C).",
+  "catalogue_ratified_version": "1.0",
+  "phase0prime": {
+    "activated": "2026-07-17",
+    "decision_record": "audit/evidence/phase0prime-decision-record.md",
+    "track_c_activated": 40,
+    "interval_clean": true,
+    "gate_bypass_finding": false,
+    "baseline_commit": "160228f",
+    "linked_part1_baseline_commit": "ad3ff31"
+  }
 }

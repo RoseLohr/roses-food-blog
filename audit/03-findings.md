@@ -157,3 +157,23 @@ wurden mindestens von einer Prüfung berührt (Auth, Eingabevalidierung,
 Fehlerbehandlung, Egress, Secrets, Deploy-Kette). Kein Oberflächen-Item blieb
 ungeprüft. Detaillierte Zeile-für-Zeile-Zuordnung ist in diesem ersten Durchgang
 nicht vollständig materialisiert — das ist die offene Arbeit für einen zweiten Pass.
+
+---
+
+## Track C — Security, Privacy & Assurance (Katalog v2.0, Phase 0′ aktiviert)
+
+Am 2026-07-17 per Beschlussakte (`audit/evidence/phase0prime-decision-record.md`)
+aktiviert. Alle 40 Prüfungen `C-01`…`C-40` treten als **NO-EVIDENCE** ein und
+blockieren an ihren Bändern, bis Phase 3′ jeden Fall gegen die frozen
+Phase-0′-Baseline (`160228f`) prüft. Bandverteilung:
+
+- **STOP-SHIP (10):** `C-01` Kern-App-Sicherheit · `C-04` Datenschutz/GDPR
+- **BLOCKER-1 (9):** `C-03` Lieferkette/halluzinierte Pakete · `C-05` LLM-Risiko-Taxonomie · `C-07` Prompt-Injection · `C-09` EU-AI-Act · `C-27` Sektor-Compliance
+- **BLOCKER-2 (8):** `C-02` Threat-Model · `C-06` agentische Risiko-Taxonomie · `C-08` „gefährliche Drei" · `C-10` Evaluierungsmethodik · `C-23` PII in Logs/Traces · `C-26` SBOM/AI-BOM/Provenance
+- **MUST-FIX (7):** `C-11` KI-Risikoprogramm · `C-12` Excessive Agency · `C-15` Guardrail-Tests · `C-16` Maschinenidentität · `C-17` Tool-Poisoning · `C-18` Connector-Sicherheit · `C-21` Trainingsdaten-Governance · `C-22` Retrieval-vs-Generation · `C-24` System-Prompt-Leakage · `C-28` Residency · `C-34` Provider-Training
+- **SHOULD-FIX (6):** `C-13` KI-Managementsystem · `C-14` Judge-Validierung · `C-19` Memory-Poisoning · `C-20` Responsible-AI-Dimensionen · `C-25` Copyright generierter Code · `C-29` Content-Safety · `C-30` Jailbreak-Resistenz · `C-32` Vektor/Embedding · `C-33` KI-Nutzungspolitik · `C-36` Transparenz/Kennzeichnung · `C-38` Fabrikation/Zitate
+- **PLAN (5):** `C-31` Adversarial-Taxonomie · `C-37` Rechenschaft ohne Unterschrift *(eskaliert zu BLOCKER-1, falls ein Prod-Bestandteil keine attestierte Provenance-Kette trägt — Phase-3′-Entscheidung)*
+- **ASSESS (≤4):** `C-35` Benchmark-Kontamination · `C-39` Lifecycle-Standards · `C-40` Gesellschaft/Umwelt
+
+Verdikte, N/A-Begründungen (schriftlich, mit Reaktivierungs-Tripwire) und
+stehende Kontrollen folgen in Phase 3′/5′.

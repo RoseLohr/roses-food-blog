@@ -1,5 +1,6 @@
 {
   "catalogue_version": "1.0",
+  "catalogue_version_note": "Bleibt 1.0 bis Phase 7′ (Re-Ratifizierung auf v2.0). Part 2 ist ab Phase 0′ (Katalog-v2.0-Aktivierung per Beschlussakte, audit/evidence/phase0prime-decision-record.md) geliefert und aktiv; die endgültige Re-Attestierung aller drei Hashes erfolgt in Phase 7′.",
   "parts": [
     {
       "name": "part1",
@@ -10,14 +11,14 @@
     {
       "name": "part2",
       "path": "governance/mandate/part2.md",
-      "sha256": "e72846bebff994d8eba7f7f38be88943cc34c1af9920039a73f5d4a3400ddc51",
+      "sha256": "dcacc17151d3d40104f692ad153f8f81a54369bf97f6ab8b3634104cf98ecf35",
       "scope": "Track C, catalogue v2.0",
-      "status": "NOT_DELIVERED"
+      "status": "DELIVERED"
     }
   ],
   "combined_mandate": {
     "path": "governance/mandate.md",
-    "sha256": "21784f37e09103ec185ca45e4992b98e66b234bc9b7fe14b21f0ab71540abe2d"
+    "sha256": "ba93ff3bf9e2f77623e48a21cbe339bee2fd57e47b9bd052d01c00d9cf1b67d8"
   },
   "concatenation_rule": "cat part1.md > mandate.md; printf newline >> mandate.md; cat part2.md >> mandate.md",
   "required_check_ids": [

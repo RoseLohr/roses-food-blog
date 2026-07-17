@@ -1,13 +1,13 @@
 {
-  "catalogue_version": "1.0",
-  "commit": "ad3ff31",
-  "count": 79,
+  "catalogue_version": "2.0",
+  "commit": "160228f",
+  "count": 119,
   "tally": {
     "PASS": 19,
     "PARTIAL": 44,
     "N/A": 12,
     "FAIL": 3,
-    "NO-EVIDENCE": 1
+    "NO-EVIDENCE": 41
   },
   "findings": [
     {
@@ -641,7 +641,328 @@
       "verdict": "N/A",
       "evidence": "Inferenz-Ökonomie gering-materiell",
       "standing_control": null
+    },
+    {
+      "id": "C-01",
+      "priority": 10,
+      "band": "STOP-SHIP",
+      "verdict": "NO-EVIDENCE",
+      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "standing_control": null
+    },
+    {
+      "id": "C-04",
+      "priority": 10,
+      "band": "STOP-SHIP",
+      "verdict": "NO-EVIDENCE",
+      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "standing_control": null
+    },
+    {
+      "id": "C-03",
+      "priority": 9,
+      "band": "BLOCKER-1",
+      "verdict": "NO-EVIDENCE",
+      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "standing_control": null
+    },
+    {
+      "id": "C-05",
+      "priority": 9,
+      "band": "BLOCKER-1",
+      "verdict": "NO-EVIDENCE",
+      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "standing_control": null
+    },
+    {
+      "id": "C-07",
+      "priority": 9,
+      "band": "BLOCKER-1",
+      "verdict": "NO-EVIDENCE",
+      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "standing_control": null
+    },
+    {
+      "id": "C-09",
+      "priority": 9,
+      "band": "BLOCKER-1",
+      "verdict": "NO-EVIDENCE",
+      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "standing_control": null
+    },
+    {
+      "id": "C-27",
+      "priority": 9,
+      "band": "BLOCKER-1",
+      "verdict": "NO-EVIDENCE",
+      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "standing_control": null
+    },
+    {
+      "id": "C-02",
+      "priority": 8,
+      "band": "BLOCKER-2",
+      "verdict": "NO-EVIDENCE",
+      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "standing_control": null
+    },
+    {
+      "id": "C-06",
+      "priority": 8,
+      "band": "BLOCKER-2",
+      "verdict": "NO-EVIDENCE",
+      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "standing_control": null
+    },
+    {
+      "id": "C-08",
+      "priority": 8,
+      "band": "BLOCKER-2",
+      "verdict": "NO-EVIDENCE",
+      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "standing_control": null
+    },
+    {
+      "id": "C-10",
+      "priority": 8,
+      "band": "BLOCKER-2",
+      "verdict": "NO-EVIDENCE",
+      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "standing_control": null
+    },
+    {
+      "id": "C-23",
+      "priority": 8,
+      "band": "BLOCKER-2",
+      "verdict": "NO-EVIDENCE",
+      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "standing_control": null
+    },
+    {
+      "id": "C-26",
+      "priority": 8,
+      "band": "BLOCKER-2",
+      "verdict": "NO-EVIDENCE",
+      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "standing_control": null
+    },
+    {
+      "id": "C-11",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "NO-EVIDENCE",
+      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "standing_control": null
+    },
+    {
+      "id": "C-12",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "NO-EVIDENCE",
+      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "standing_control": null
+    },
+    {
+      "id": "C-15",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "NO-EVIDENCE",
+      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "standing_control": null
+    },
+    {
+      "id": "C-16",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "NO-EVIDENCE",
+      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "standing_control": null
+    },
+    {
+      "id": "C-17",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "NO-EVIDENCE",
+      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "standing_control": null
+    },
+    {
+      "id": "C-18",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "NO-EVIDENCE",
+      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "standing_control": null
+    },
+    {
+      "id": "C-21",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "NO-EVIDENCE",
+      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "standing_control": null
+    },
+    {
+      "id": "C-22",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "NO-EVIDENCE",
+      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "standing_control": null
+    },
+    {
+      "id": "C-24",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "NO-EVIDENCE",
+      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "standing_control": null
+    },
+    {
+      "id": "C-28",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "NO-EVIDENCE",
+      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "standing_control": null
+    },
+    {
+      "id": "C-34",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "NO-EVIDENCE",
+      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "standing_control": null
+    },
+    {
+      "id": "C-13",
+      "priority": 6,
+      "band": "SHOULD-FIX",
+      "verdict": "NO-EVIDENCE",
+      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "standing_control": null
+    },
+    {
+      "id": "C-14",
+      "priority": 6,
+      "band": "SHOULD-FIX",
+      "verdict": "NO-EVIDENCE",
+      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "standing_control": null
+    },
+    {
+      "id": "C-19",
+      "priority": 6,
+      "band": "SHOULD-FIX",
+      "verdict": "NO-EVIDENCE",
+      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "standing_control": null
+    },
+    {
+      "id": "C-20",
+      "priority": 6,
+      "band": "SHOULD-FIX",
+      "verdict": "NO-EVIDENCE",
+      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "standing_control": null
+    },
+    {
+      "id": "C-25",
+      "priority": 6,
+      "band": "SHOULD-FIX",
+      "verdict": "NO-EVIDENCE",
+      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "standing_control": null
+    },
+    {
+      "id": "C-29",
+      "priority": 6,
+      "band": "SHOULD-FIX",
+      "verdict": "NO-EVIDENCE",
+      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "standing_control": null
+    },
+    {
+      "id": "C-30",
+      "priority": 6,
+      "band": "SHOULD-FIX",
+      "verdict": "NO-EVIDENCE",
+      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "standing_control": null
+    },
+    {
+      "id": "C-32",
+      "priority": 6,
+      "band": "SHOULD-FIX",
+      "verdict": "NO-EVIDENCE",
+      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "standing_control": null
+    },
+    {
+      "id": "C-33",
+      "priority": 6,
+      "band": "SHOULD-FIX",
+      "verdict": "NO-EVIDENCE",
+      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "standing_control": null
+    },
+    {
+      "id": "C-36",
+      "priority": 6,
+      "band": "SHOULD-FIX",
+      "verdict": "NO-EVIDENCE",
+      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "standing_control": null
+    },
+    {
+      "id": "C-38",
+      "priority": 6,
+      "band": "SHOULD-FIX",
+      "verdict": "NO-EVIDENCE",
+      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "standing_control": null
+    },
+    {
+      "id": "C-31",
+      "priority": 5,
+      "band": "PLAN",
+      "verdict": "NO-EVIDENCE",
+      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "standing_control": null
+    },
+    {
+      "id": "C-37",
+      "priority": 5,
+      "band": "PLAN",
+      "verdict": "NO-EVIDENCE",
+      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "standing_control": null
+    },
+    {
+      "id": "C-35",
+      "priority": 4,
+      "band": "ASSESS",
+      "verdict": "NO-EVIDENCE",
+      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "standing_control": null
+    },
+    {
+      "id": "C-39",
+      "priority": 4,
+      "band": "ASSESS",
+      "verdict": "NO-EVIDENCE",
+      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "standing_control": null
+    },
+    {
+      "id": "C-40",
+      "priority": 4,
+      "band": "ASSESS",
+      "verdict": "NO-EVIDENCE",
+      "evidence": "Phase 0′ aktiviert (Katalog v2.0); Prüfung ausstehend — Phase 3′.",
+      "standing_control": null
     }
   ],
-  "phase6_updated": true
+  "phase6_updated": true,
+  "phase0prime_activated": true
 }

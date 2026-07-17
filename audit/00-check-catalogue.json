@@ -1,10 +1,10 @@
 {
-  "catalogue_version": "1.0",
+  "catalogue_version": "2.0",
   "generated_from_commit": "aeb7930f72f919b0415df451f25d81c391647998",
   "total_defined": 119,
-  "active_count": 79,
-  "planned_extension_count": 40,
-  "note": "Master-Index (Navigation/Validierung), KEINE normative Wiedergabe der Prüftexte — die stehen in governance/mandate.md.",
+  "active_count": 119,
+  "planned_extension_count": 0,
+  "note": "Master-Index (Navigation/Validierung), KEINE normative Wiedergabe der Prüftexte — die stehen in governance/mandate.md. | v2.0 aktiviert Phase 0′ (2026-07-17): 40 Track-C-Prüfungen active, Beschlussakte audit/evidence/phase0prime-decision-record.md.",
   "mandate": {
     "part1_sha256": "e649ea7ccb4f1bd495b9a7ab2e0a40476824a63da3507b6e33d529dcf2f90742",
     "part2_sha256": "e72846bebff994d8eba7f7f38be88943cc34c1af9920039a73f5d4a3400ddc51",
@@ -150,7 +150,7 @@
       "priority": 10,
       "founding_band": "STOP-SHIP",
       "within_band_order": 1,
-      "scope_status": "planned-extension:part2",
+      "scope_status": "active",
       "structural_fix": false
     },
     {
@@ -160,7 +160,7 @@
       "priority": 10,
       "founding_band": "STOP-SHIP",
       "within_band_order": 2,
-      "scope_status": "planned-extension:part2",
+      "scope_status": "active",
       "structural_fix": false
     },
     {
@@ -280,7 +280,7 @@
       "priority": 9,
       "founding_band": "BLOCKER-1",
       "within_band_order": 1,
-      "scope_status": "planned-extension:part2",
+      "scope_status": "active",
       "structural_fix": false
     },
     {
@@ -290,7 +290,7 @@
       "priority": 9,
       "founding_band": "BLOCKER-1",
       "within_band_order": 2,
-      "scope_status": "planned-extension:part2",
+      "scope_status": "active",
       "structural_fix": false
     },
     {
@@ -300,7 +300,7 @@
       "priority": 9,
       "founding_band": "BLOCKER-1",
       "within_band_order": 3,
-      "scope_status": "planned-extension:part2",
+      "scope_status": "active",
       "structural_fix": false
     },
     {
@@ -310,7 +310,7 @@
       "priority": 9,
       "founding_band": "BLOCKER-1",
       "within_band_order": 4,
-      "scope_status": "planned-extension:part2",
+      "scope_status": "active",
       "structural_fix": false
     },
     {
@@ -320,7 +320,7 @@
       "priority": 9,
       "founding_band": "BLOCKER-1",
       "within_band_order": 5,
-      "scope_status": "planned-extension:part2",
+      "scope_status": "active",
       "structural_fix": false
     },
     {
@@ -500,7 +500,7 @@
       "priority": 8,
       "founding_band": "BLOCKER-2",
       "within_band_order": 1,
-      "scope_status": "planned-extension:part2",
+      "scope_status": "active",
       "structural_fix": false
     },
     {
@@ -510,7 +510,7 @@
       "priority": 8,
       "founding_band": "BLOCKER-2",
       "within_band_order": 2,
-      "scope_status": "planned-extension:part2",
+      "scope_status": "active",
       "structural_fix": false
     },
     {
@@ -520,7 +520,7 @@
       "priority": 8,
       "founding_band": "BLOCKER-2",
       "within_band_order": 3,
-      "scope_status": "planned-extension:part2",
+      "scope_status": "active",
       "structural_fix": false
     },
     {
@@ -530,7 +530,7 @@
       "priority": 8,
       "founding_band": "BLOCKER-2",
       "within_band_order": 4,
-      "scope_status": "planned-extension:part2",
+      "scope_status": "active",
       "structural_fix": false
     },
     {
@@ -540,7 +540,7 @@
       "priority": 8,
       "founding_band": "BLOCKER-2",
       "within_band_order": 5,
-      "scope_status": "planned-extension:part2",
+      "scope_status": "active",
       "structural_fix": false
     },
     {
@@ -550,7 +550,7 @@
       "priority": 8,
       "founding_band": "BLOCKER-2",
       "within_band_order": 6,
-      "scope_status": "planned-extension:part2",
+      "scope_status": "active",
       "structural_fix": false
     },
     {
@@ -800,7 +800,7 @@
       "priority": 7,
       "founding_band": "MUST-FIX",
       "within_band_order": 1,
-      "scope_status": "planned-extension:part2",
+      "scope_status": "active",
       "structural_fix": false
     },
     {
@@ -810,7 +810,7 @@
       "priority": 7,
       "founding_band": "MUST-FIX",
       "within_band_order": 2,
-      "scope_status": "planned-extension:part2",
+      "scope_status": "active",
       "structural_fix": false
     },
     {
@@ -820,7 +820,7 @@
       "priority": 7,
       "founding_band": "MUST-FIX",
       "within_band_order": 3,
-      "scope_status": "planned-extension:part2",
+      "scope_status": "active",
       "structural_fix": false
     },
     {
@@ -830,7 +830,7 @@
       "priority": 7,
       "founding_band": "MUST-FIX",
       "within_band_order": 4,
-      "scope_status": "planned-extension:part2",
+      "scope_status": "active",
       "structural_fix": false
     },
     {
@@ -840,7 +840,7 @@
       "priority": 7,
       "founding_band": "MUST-FIX",
       "within_band_order": 5,
-      "scope_status": "planned-extension:part2",
+      "scope_status": "active",
       "structural_fix": false
     },
     {
@@ -850,7 +850,7 @@
       "priority": 7,
       "founding_band": "MUST-FIX",
       "within_band_order": 6,
-      "scope_status": "planned-extension:part2",
+      "scope_status": "active",
       "structural_fix": false
     },
     {
@@ -860,7 +860,7 @@
       "priority": 7,
       "founding_band": "MUST-FIX",
       "within_band_order": 7,
-      "scope_status": "planned-extension:part2",
+      "scope_status": "active",
       "structural_fix": false
     },
     {
@@ -870,7 +870,7 @@
       "priority": 7,
       "founding_band": "MUST-FIX",
       "within_band_order": 8,
-      "scope_status": "planned-extension:part2",
+      "scope_status": "active",
       "structural_fix": false
     },
     {
@@ -880,7 +880,7 @@
       "priority": 7,
       "founding_band": "MUST-FIX",
       "within_band_order": 9,
-      "scope_status": "planned-extension:part2",
+      "scope_status": "active",
       "structural_fix": false
     },
     {
@@ -890,7 +890,7 @@
       "priority": 7,
       "founding_band": "MUST-FIX",
       "within_band_order": 10,
-      "scope_status": "planned-extension:part2",
+      "scope_status": "active",
       "structural_fix": false
     },
     {
@@ -900,7 +900,7 @@
       "priority": 7,
       "founding_band": "MUST-FIX",
       "within_band_order": 11,
-      "scope_status": "planned-extension:part2",
+      "scope_status": "active",
       "structural_fix": false
     },
     {
@@ -1080,7 +1080,7 @@
       "priority": 6,
       "founding_band": "SHOULD-FIX",
       "within_band_order": 1,
-      "scope_status": "planned-extension:part2",
+      "scope_status": "active",
       "structural_fix": false
     },
     {
@@ -1090,7 +1090,7 @@
       "priority": 6,
       "founding_band": "SHOULD-FIX",
       "within_band_order": 2,
-      "scope_status": "planned-extension:part2",
+      "scope_status": "active",
       "structural_fix": false
     },
     {
@@ -1100,7 +1100,7 @@
       "priority": 6,
       "founding_band": "SHOULD-FIX",
       "within_band_order": 3,
-      "scope_status": "planned-extension:part2",
+      "scope_status": "active",
       "structural_fix": false
     },
     {
@@ -1110,7 +1110,7 @@
       "priority": 6,
       "founding_band": "SHOULD-FIX",
       "within_band_order": 4,
-      "scope_status": "planned-extension:part2",
+      "scope_status": "active",
       "structural_fix": false
     },
     {
@@ -1120,7 +1120,7 @@
       "priority": 6,
       "founding_band": "SHOULD-FIX",
       "within_band_order": 5,
-      "scope_status": "planned-extension:part2",
+      "scope_status": "active",
       "structural_fix": false
     },
     {
@@ -1130,7 +1130,7 @@
       "priority": 6,
       "founding_band": "SHOULD-FIX",
       "within_band_order": 6,
-      "scope_status": "planned-extension:part2",
+      "scope_status": "active",
       "structural_fix": false
     },
     {
@@ -1140,7 +1140,7 @@
       "priority": 6,
       "founding_band": "SHOULD-FIX",
       "within_band_order": 7,
-      "scope_status": "planned-extension:part2",
+      "scope_status": "active",
       "structural_fix": false
     },
     {
@@ -1150,7 +1150,7 @@
       "priority": 6,
       "founding_band": "SHOULD-FIX",
       "within_band_order": 8,
-      "scope_status": "planned-extension:part2",
+      "scope_status": "active",
       "structural_fix": false
     },
     {
@@ -1160,7 +1160,7 @@
       "priority": 6,
       "founding_band": "SHOULD-FIX",
       "within_band_order": 9,
-      "scope_status": "planned-extension:part2",
+      "scope_status": "active",
       "structural_fix": false
     },
     {
@@ -1170,7 +1170,7 @@
       "priority": 6,
       "founding_band": "SHOULD-FIX",
       "within_band_order": 10,
-      "scope_status": "planned-extension:part2",
+      "scope_status": "active",
       "structural_fix": false
     },
     {
@@ -1180,7 +1180,7 @@
       "priority": 6,
       "founding_band": "SHOULD-FIX",
       "within_band_order": 11,
-      "scope_status": "planned-extension:part2",
+      "scope_status": "active",
       "structural_fix": false
     },
     {
@@ -1260,7 +1260,7 @@
       "priority": 5,
       "founding_band": "PLAN",
       "within_band_order": 1,
-      "scope_status": "planned-extension:part2",
+      "scope_status": "active",
       "structural_fix": false
     },
     {
@@ -1270,7 +1270,7 @@
       "priority": 5,
       "founding_band": "PLAN",
       "within_band_order": 2,
-      "scope_status": "planned-extension:part2",
+      "scope_status": "active",
       "structural_fix": false
     },
     {
@@ -1300,7 +1300,7 @@
       "priority": 4,
       "founding_band": "ASSESS",
       "within_band_order": 1,
-      "scope_status": "planned-extension:part2",
+      "scope_status": "active",
       "structural_fix": false
     },
     {
@@ -1310,7 +1310,7 @@
       "priority": 4,
       "founding_band": "ASSESS",
       "within_band_order": 2,
-      "scope_status": "planned-extension:part2",
+      "scope_status": "active",
       "structural_fix": false
     },
     {
@@ -1320,7 +1320,7 @@
       "priority": 4,
       "founding_band": "ASSESS",
       "within_band_order": 3,
-      "scope_status": "planned-extension:part2",
+      "scope_status": "active",
       "structural_fix": false
     }
   ]
