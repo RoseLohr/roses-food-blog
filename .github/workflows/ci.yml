@@ -63,6 +63,10 @@ jobs:
         run: node scripts/regime/spec-coverage.mjs --selftest
       - name: Prompt-Lifecycle (B-05, Prompt-Änderung = Version-Bump + Lock)
         run: node scripts/regime/prompt-lifecycle.mjs --selftest
+      - name: Rollback-Fähigkeit + Drill (A-06/B-11)
+        run: node scripts/regime/rollback-check.mjs --selftest
+      - name: Shell-Syntax (deploy.sh + rollback.sh)
+        run: bash -n deploy.sh && bash -n deploy/rollback.sh
       - name: Kalibrierung (A-36, Kontrollen fangen ihre Seeds — inkl. Track C)
         run: node scripts/regime/calibration/inject.mjs --strict
       - name: Tests (vitest)

@@ -1,0 +1,9 @@
+# ZAP-Baseline-Regeln (A-08). Header-Regeln, die in Produktion von nginx gesetzt
+# werden (in CI aber fehlen), auf WARN statt FAIL — keine Falsch-Positiven.
+# Format: <ruleId>\t<WARN|IGNORE|FAIL>\t<comment>
+10035	WARN	Strict-Transport-Security (nginx in Prod)
+10038	WARN	Content-Security-Policy (nginx in Prod)
+10020	WARN	X-Frame-Options (nginx in Prod)
+10021	WARN	X-Content-Type-Options (nginx in Prod)
+10063	WARN	Permissions-Policy (nginx in Prod)
+10096	WARN	Timestamp Disclosure (rauscharm)

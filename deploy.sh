@@ -200,6 +200,12 @@ podman build "${BUILD_OPTS[@]}" --target deps -t localhost/roses-blog:cache-deps
   || fail "Image-Build fehlgeschlagen (Stufe: Abhängigkeiten/npm ci)."
 podman build "${BUILD_OPTS[@]}" --target build -t localhost/roses-blog:cache-build . \
   || fail "Image-Build fehlgeschlagen (Stufe: App-Build/next build)."
+# Rollback-Vorbereitung (A-06/B-11): das aktuell laufende :latest als :previous
+# sichern, BEVOR es überschrieben wird — so kann deploy/rollback.sh es in
+# Sekunden zurückrollen (samt DB-Backup aus Abschnitt 4).
+if podman image exists localhost/roses-blog:latest 2>/dev/null; then
+  podman tag localhost/roses-blog:latest localhost/roses-blog:previous || true
+fi
 podman build "${BUILD_OPTS[@]}" -t localhost/roses-blog:latest . \
   || fail "Image-Build fehlgeschlagen (Stufe: Laufzeit-Image)."
 
