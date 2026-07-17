@@ -150,7 +150,7 @@ export function SiteHeader({
               (next/image bringt für reine Vektorgrafik keinen Mehrwert). */}
           <img
             src="/brand/logo-horizontal.svg"
-            alt="Rose’s Gourmet Compass"
+            alt={dict.site.name}
             width={160}
             height={42}
             className="h-9 w-auto sm:h-10"

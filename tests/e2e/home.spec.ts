@@ -9,9 +9,10 @@ test.describe("Öffentliche Startseite — Tiny-Salt-Optik", () => {
   }) => {
     await page.goto("/");
     const header = page.locator("header");
-    // Text-Name wurde durch das horizontale Marken-Logo (SVG) ersetzt.
+    // Text-Name wurde durch das horizontale Marken-Logo (SVG) ersetzt; das Logo
+    // trägt den Seitennamen als accessible name (alt = dict.site.name).
     await expect(
-      header.getByRole("img", { name: "Rose’s Gourmet Compass" }),
+      header.getByRole("img", { name: dict.site.name }),
     ).toBeVisible();
     await expect(
       header.getByText(dict.site.tagline, { exact: true }),

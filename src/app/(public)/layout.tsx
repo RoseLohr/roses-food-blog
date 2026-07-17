@@ -62,7 +62,7 @@ export default async function PublicLayout({
             {/* Negativ-Logo (weiß) auf dem dunklen Band, statisches Vektor-SVG aus /public. */}
             <img
               src="/brand/logo-horizontal-white.svg"
-              alt="Rose’s Gourmet Compass"
+              alt={dict.site.name}
               width={150}
               height={40}
               className="mb-3 h-8 w-auto"
