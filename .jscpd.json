@@ -1,0 +1,8 @@
+{
+  "$comment": "A-07 Klon-Tripwire: gemessener Baseline 4,83% duplizierte Zeilen (127 Klone, min-tokens 50). threshold=5.5 lässt kleinen Headroom für ehrliche Arbeit; Überschreiten bricht den Build (S11: darf nur sinken; Absenken der Schwelle ist normal, Anheben ein Amendment).",
+  "path": ["src"],
+  "minTokens": 50,
+  "threshold": 5.5,
+  "reporters": ["consoleFull"],
+  "gitignore": true
+}

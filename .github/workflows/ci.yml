@@ -33,6 +33,8 @@ jobs:
         run: npm run lint
       - name: Quelltext-Gates (Stubs A-16, Modell-Aliase B-13)
         run: node scripts/regime/source-gates.mjs
+      - name: Klon-Tripwire (A-07, Schwelle 5,5 %)
+        run: npx jscpd --config .jscpd.json --silent
       - name: Secret-Scan (B-06, STOP-SHIP)
         run: node scripts/regime/secret-scan.mjs
       - name: Gewaltenteilung (B-35, CODEOWNERS deckt geschützte Pfade)
