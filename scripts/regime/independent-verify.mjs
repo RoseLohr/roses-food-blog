@@ -16,9 +16,14 @@
  *                           ist; so greift ein bereits hinterlegter OpenAI-Schlüssel
  *                           ohne Umbenennen.
  *   VERIFIER_BASE_URL       Default https://api.openai.com/v1
- *   VERIFIER_MODEL          Optional. Ohne Angabe: automatisch das NEUSTE vom Account
- *                           freigeschaltete Modell (GET /v1/models, Präferenz neu→alt).
- *   VERIFIER_PANEL          Anzahl unabhängiger Verifier-Stimmen (Default 3)
+ *   VERIFIER_MODEL          Optional Einzel-Pin: dieses eine Modell für ALLE Stimmen
+ *                           (Vorrang vor VERIFIER_PANEL_MODELS).
+ *   VERIFIER_PANEL_MODELS   Komma-getrennte Liste — je Stimme EIN anderes Modell
+ *                           (Modell-Diversität). Default: gpt-5.3-codex, gpt-5.6-tera,
+ *                           gpt-4.1-mini. Nicht freigeschaltete IDs → Warnung + Fallback
+ *                           auf das neueste verfügbare Modell (kein harter 404-Block).
+ *   VERIFIER_PANEL          Stimmenzahl NUR im Einzel-Pin-Modus (VERIFIER_MODEL); im
+ *                           Diversitäts-Modus ergibt sie sich aus der Modell-Liste.
  *
  * ROBUST (2026-07-17, Root-Cause statt Workaround):
  *  - Kontext statt blinder Byte-Kappung: der Prompt bekommt den VOLLEN Datei-
@@ -67,26 +72,62 @@ function pickForPref(ids, p) {
   return dated.length ? dated[dated.length - 1] : null;
 }
 
-async function resolveModel() {
-  if (process.env.VERIFIER_MODEL) return process.env.VERIFIER_MODEL;
+/** Verfügbare Modell-IDs des Accounts (GET /v1/models). null bei Nichtverfügbarkeit. */
+async function fetchModelIds() {
   try {
     const res = await fetch(`${BASE}/models`, { headers: { Authorization: `Bearer ${KEY}` } });
     if (res.ok) {
       const data = await res.json();
-      const ids = (data?.data || []).map((m) => m?.id).filter(Boolean);
-      for (const p of MODEL_PREFERENCE) {
-        const hit = pickForPref(ids, p);
-        if (hit) return hit;
-      }
+      return (data?.data || []).map((m) => m?.id).filter(Boolean);
     }
-  } catch { /* Netz-/Parsefehler → sicherer Fallback unten */ }
-  // Ist /models nicht verfügbar (404/nicht unterstützt) ODER matcht keine Präferenz,
-  // NICHT auf das neueste/knappste Modell zurückfallen (das lehnt ein Anbieter evtl.
-  // ab → alle Panel-Stimmen als API-Fehler → Kontrolle blockiert dauerhaft), sondern
-  // auf ein BREIT verfügbares, gepinntes Modell.
-  return "gpt-4o-2024-08-06";
+  } catch { /* Netz-/Parsefehler → null */ }
+  return null;
 }
-const PANEL = Math.max(1, Number(process.env.VERIFIER_PANEL || 3));
+
+// BREIT verfügbares, gepinntes Fallback-Modell (NICHT das knappste/neueste — das
+// lehnt ein Anbieter evtl. ab → Stimme als API-Fehler → Kontrolle blockiert dauerhaft).
+const FALLBACK_MODEL = "gpt-4o-2024-08-06";
+
+// Panel-Modelle: je Stimme EIN ANDERES Modell. Modell-Diversität schlägt bloße
+// Lens-Diversität — verschiedene Modelle/Trainings fangen unterschiedliche
+// Defektklassen und teilen keine blinden Flecken. Überschreibbar via
+// VERIFIER_PANEL_MODELS (Komma-getrennt). Ein Einzel-Pin (VERIFIER_MODEL) hat
+// Vorrang und gilt dann für alle Stimmen.
+const PANEL_MODELS_RAW = (process.env.VERIFIER_PANEL_MODELS
+  || "gpt-5.3-codex,gpt-5.6-tera,gpt-4.1-mini")
+  .split(",").map((s) => s.trim()).filter(Boolean);
+
+/**
+ * Löst die Panelisten-Modelle auf (ein Modell pro Stimme):
+ *  - VERIFIER_MODEL gesetzt → dieses eine Modell für alle Stimmen.
+ *  - sonst jede gewünschte ID gegen /v1/models auflösen (exakt/datierter Snapshot);
+ *    nicht auflösbar → sichtbare WARNUNG + Fallback auf das neueste verfügbare
+ *    Präferenz-Modell (statt hartem 404, das die Kontrolle dauerhaft blockte).
+ *  - /models gar nicht verfügbar → Fallback-Modell für alle.
+ */
+async function resolvePanelModels(panelSize) {
+  if (process.env.VERIFIER_MODEL)
+    return Array.from({ length: panelSize }, () => process.env.VERIFIER_MODEL);
+  const ids = await fetchModelIds();
+  if (!ids) {
+    console.log(`[independent-verify] /v1/models nicht verfügbar → Fallback-Modell ${FALLBACK_MODEL} für alle Stimmen.`);
+    return Array.from({ length: panelSize }, () => FALLBACK_MODEL);
+  }
+  let newest = FALLBACK_MODEL;
+  for (const p of MODEL_PREFERENCE) { const h = pickForPref(ids, p); if (h) { newest = h; break; } }
+  return PANEL_MODELS_RAW.map((want) => {
+    const hit = pickForPref(ids, want);
+    if (hit) return hit;
+    console.log(`[independent-verify] WARNUNG: Panel-Modell „${want}" nicht im Account freigeschaltet → Fallback ${newest} (VERIFIER_PANEL_MODELS anpassen).`);
+    return newest;
+  });
+}
+
+// Panel-Größe: im Diversitäts-Modus = Anzahl der Panelisten-Modelle; bei Einzel-Pin
+// (VERIFIER_MODEL) über VERIFIER_PANEL steuerbar.
+const PANEL = process.env.VERIFIER_MODEL
+  ? Math.max(1, Number(process.env.VERIFIER_PANEL || 3))
+  : Math.max(1, PANEL_MODELS_RAW.length);
 
 /**
  * Reine Entscheidungsfunktion PRO Stimme. Fail-CLOSED: eine Antwort ohne
@@ -290,13 +331,13 @@ if (!KEY) {
 const d = diff();
 if (!d.trim()) { console.log("[independent-verify] Kein Diff zu prüfen. Grün."); process.exit(0); }
 
-const MODEL = await resolveModel();
-console.log(`[independent-verify] Modell: ${MODEL}${process.env.VERIFIER_MODEL ? " (VERIFIER_MODEL gesetzt)" : " (auto: neustes freigeschaltetes)"}`);
+// Ein Modell pro Panelist (Modell-Diversität). MODELS[i] ist das Modell der i-ten Stimme.
+const MODELS = await resolvePanelModels(PANEL);
+console.log(`[independent-verify] Panel (${MODELS.length} Stimmen, je 1 Modell): ${MODELS.join(", ")}${process.env.VERIFIER_MODEL ? " (VERIFIER_MODEL gesetzt)" : ""}`);
 
 // Proof-of-Check: pro Lauf eine ZUFÄLLIGE, vorab nicht bekannte Challenge. Jede
-// GRÜN tragende Stimme muss sie als proz „<challenge>-<tier>" zurückspiegeln —
-// nur ein echter Modell-Roundtrip DIESES Laufs kennt sie. So kann ein künftiges,
-// hartcodiertes „pass → grün" (ohne echte Prüfung) das Panel NICHT passieren.
+// GRÜN tragende Stimme muss sie als proof „<challenge>-<tier>" zurückspiegeln (siehe
+// attestProof: schützt gegen In-Code-Kurzschluss „return grün" ohne Endpoint-Roundtrip).
 const CHALLENGE = randomBytes(9).toString("hex"); // 18 Hex-Zeichen, pro Lauf frisch
 
 // Kompakter System-Prompt: minimaler Request bei voller semantischer Schärfe.
@@ -371,7 +412,7 @@ async function attemptOnce(i) {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${KEY}` },
     body: JSON.stringify({
-      model: MODEL,
+      model: MODELS[i],
       messages: [
         { role: "system", content: system + (LENSES[i % LENSES.length] || "") },
         { role: "user", content: user },
@@ -414,7 +455,7 @@ async function verifyOnce(i) {
 const votes = await Promise.all(Array.from({ length: PANEL }, (_, i) => verifyOnce(i)));
 votes.forEach((x, i) => {
   if (!x.ok) {
-    console.log(`  Verifier ${i + 1}/${PANEL} (${MODEL}): Fehler (${x.reason})`);
+    console.log(`  Verifier ${i + 1}/${PANEL} (${MODELS[i]}): Fehler (${x.reason})`);
     return;
   }
   // Auch die BEGRÜNDUNG mitschreiben (nicht nur refuted/confidence) — die liefert
@@ -430,7 +471,7 @@ votes.forEach((x, i) => {
   // ein Modell die Anweisung ignoriert) nur "false/high" übrig und das Log ist blind.
   const raw = x.v?.reason;
   const reason = raw ? JSON.stringify(raw).slice(0, 1000) : '"(keine Begründung geliefert)"';
-  console.log(`  Verifier ${i + 1}/${PANEL} (${MODEL}): refuted=${x.v?.refuted} confidence=${x.v?.confidence} — Begründung: ${reason}`);
+  console.log(`  Verifier ${i + 1}/${PANEL} (${MODELS[i]}): refuted=${x.v?.refuted} confidence=${x.v?.confidence} — Begründung: ${reason}`);
 });
 const verdict = aggregate(votes, PANEL);
 if (verdict.block) {
