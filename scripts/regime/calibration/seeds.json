@@ -94,6 +94,15 @@
       "control_cmd": "node scripts/regime/independent-verify.mjs --selftest",
       "beispiel": "alle Panel-Stimmen refuted=false mit leerem oder identischem reason → als Grün durchgewinkt",
       "hinweis": "attestReasons() verlangt für Grün, dass eine Mehrheit der Stimmen eine nicht-leere, paarweise verschiedene Begründung trägt (fail-closed). Verhindert, dass ein leeres/kanned 'ok' als Freigabe zählt. Der Selbsttest übt das Gate aus; inject.mjs --strict friert eine Regression ein."
+    },
+    {
+      "id": "S12-verifier-hardcoded-green",
+      "klasse": "Hartcodiertes Grün des Fremd-Vendor-Verifiers (A-39): Freigabe ohne echten Modell-Roundtrip",
+      "aktiv": true,
+      "kontrolle": "independent-verify attestProof() Proof-of-Check-Gate (A-01/A-39)",
+      "control_cmd": "node scripts/regime/independent-verify.mjs --selftest",
+      "beispiel": "Verifier durch pauschales 'return {block:false}' ersetzt → Grün-Stimmen ohne gültiges Challenge-Echo im proof-Feld",
+      "hinweis": "Der Harness erzeugt pro Lauf eine zufällige Challenge und verlangt sie im proof-Feld jeder Grün-Stimme ('<challenge>-<tier>'). attestProof() blockt fail-closed, wenn keine Mehrheit der Grün-Stimmen die Challenge zurückspiegelt — ein statisches/hartcodiertes Grün kennt sie nicht. Der Selbsttest übt das Gate aus; inject.mjs --strict friert eine Regression ein."
     }
   ]
 }

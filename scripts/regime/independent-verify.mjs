@@ -36,6 +36,7 @@
  *   --selftest   übt decide()+aggregate() aus (fail-closed, medium-blockt, Mehrheit).
  */
 import { execSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
 
 const KEY = process.env.SECOND_VENDOR_API_KEY || process.env.OPENAI_API_KEY;
 const BASE = process.env.VERIFIER_BASE_URL || "https://api.openai.com/v1";
@@ -157,6 +158,31 @@ export function attestReasons(votes, panelSize) {
   return { block: false, reason: `${distinct.size} eigenständige Grün-Begründungen attestiert` };
 }
 
+/**
+ * Proof-of-Check-Gate gegen HARTCODIERTES Grün (A-01/A-39). Eine künftige (z. B.
+ * KI-)Änderung, die die Prüfung durch ein pauschales „pass → grün" ersetzt, soll
+ * NICHT durchkommen. Der Harness erzeugt pro Lauf eine ZUFÄLLIGE Challenge (nicht
+ * vorab bekannt) und sendet sie im Prompt; jede GRÜN tragende Stimme muss als
+ * `proof` genau `"<challenge>-<tier>"` zurückgeben (tier = eine vom Modell zufällig
+ * gewählte Ganzzahl). Nur ein ECHTER Modell-Roundtrip DIESES Laufs kennt die
+ * Challenge — ein statisches/hartcodiertes Grün kann sie nicht liefern.
+ * Verlangt: eine MEHRHEIT gültiger Proofs unter den Grün-Stimmen. Fail-CLOSED.
+ * Rein & testbar: `challenge` wird als Argument übergeben (kein globaler Zustand).
+ */
+export function attestProof(votes, challenge, panelSize) {
+  const need = Math.floor(panelSize / 2) + 1; // Mehrheit
+  const validProof = (v) => {
+    if (typeof v?.proof !== "string" || !challenge) return false;
+    const pre = challenge + "-";
+    return v.proof.startsWith(pre) && /^\d{1,6}$/.test(v.proof.slice(pre.length));
+  };
+  const green = votes.filter((x) => x.ok && x.v && typeof x.v.refuted === "boolean" && !decide(x.v).block);
+  const proven = green.filter((x) => validProof(x.v));
+  if (proven.length < need)
+    return { block: true, reason: `nur ${proven.length}/${panelSize} Grün-Stimmen mit gültigem Proof-of-Check (Challenge-Echo) (< Mehrheit ${need}) → Verdacht auf hartcodiertes Grün, fail-closed` };
+  return { block: false, reason: `${proven.length} Proof-of-Check (Challenge-Echo) bestätigt` };
+}
+
 const DIFF_OPTS = { encoding: "utf8", maxBuffer: 256 * 1024 * 1024 };
 // Binär-/Asset-/GeoJSON-Rauschen ausschließen. WICHTIG: package-lock.json bleibt im
 // --stat-ÜBERBLICK sichtbar (nur sein riesiger Body wird aus dem Code-Auszug
@@ -221,7 +247,18 @@ if (process.argv.includes("--selftest")) {
   expect(attestReasons([R(g1), E, E], 3).block === true, "nur 1/3 Grün begründet (< Mehrheit) → fail-closed blocken.");
   expect(attestReasons([{ ok: true, v: null }, R(g1), R(g2)], 3).block === false, "unparsbare Stimme ignoriert, Rest eindeutig → passiert.");
   expect(attestReasons([R("grund solo aaaa")], 1).block === false, "Panel=1 mit echter Begründung passiert.");
-  console.log("   ✓ Selbsttest: decide() + aggregate() + attestReasons() (Schein-Grün-Gate) korrekt.");
+  // attestProof() (Proof-of-Check gegen hartcodiertes Grün: Challenge-Echo erzwingen)
+  const CH = "abc123def456";
+  const PR = (proof, refuted = false) => ({ ok: true, v: { refuted, reason: "grund lang genug", proof } });
+  expect(attestProof([PR(`${CH}-7`), PR(`${CH}-42`), PR(`${CH}-9`)], CH, 3).block === false, "3 gültige Challenge-Echos müssen passieren.");
+  expect(attestProof([PR(`${CH}-7`), PR(`${CH}-42`), E], CH, 3).block === false, "2/3-Mehrheit gültiger Proofs genügt.");
+  expect(attestProof([PR("kein-echo-1"), PR("kein-echo-2"), PR("kein-echo-3")], CH, 3).block === true, "falsche Challenge (hartcodiertes Grün) muss blocken.");
+  expect(attestProof([PR(`${CH}-7`), PR(""), PR("")], CH, 3).block === true, "nur 1/3 mit gültigem Proof (< Mehrheit) → blocken.");
+  expect(attestProof([PR(`${CH}-x`), PR(`${CH}-y`), PR(`${CH}-z`)], CH, 3).block === true, "Tier nicht numerisch → ungültiger Proof → blocken.");
+  expect(attestProof([PR(`${CH}-7`), PR(`${CH}-8`), PR("nope-1", true)], CH, 3).block === false, "Refutat-Stimme ohne Proof egal, solange Grün-Mehrheit gültige Proofs hat.");
+  expect(attestProof([PR(`${CH}-7`)], CH, 1).block === false, "Panel=1 mit gültigem Proof passiert.");
+  expect(attestProof([PR(`${CH}-7`), PR(`${CH}-8`), PR(`${CH}-9`)], "", 3).block === true, "leere Challenge → kein Proof gültig → fail-closed.");
+  console.log("   ✓ Selbsttest: decide() + aggregate() + attestReasons() + attestProof() (Schein-Grün- + Proof-of-Check-Gate) korrekt.");
   process.exit(0);
 }
 
@@ -240,6 +277,12 @@ if (!d.trim()) { console.log("[independent-verify] Kein Diff zu prüfen. Grün."
 const MODEL = await resolveModel();
 console.log(`[independent-verify] Modell: ${MODEL}${process.env.VERIFIER_MODEL ? " (VERIFIER_MODEL gesetzt)" : " (auto: neustes freigeschaltetes)"}`);
 
+// Proof-of-Check: pro Lauf eine ZUFÄLLIGE, vorab nicht bekannte Challenge. Jede
+// GRÜN tragende Stimme muss sie als proz „<challenge>-<tier>" zurückspiegeln —
+// nur ein echter Modell-Roundtrip DIESES Laufs kennt sie. So kann ein künftiges,
+// hartcodiertes „pass → grün" (ohne echte Prüfung) das Panel NICHT passieren.
+const CHALLENGE = randomBytes(9).toString("hex"); // 18 Hex-Zeichen, pro Lauf frisch
+
 // Kompakter System-Prompt: minimaler Request bei voller semantischer Schärfe.
 // Jede Grenze/Regel des Panels bleibt erhalten — nur Füllwerk/Doppelungen sind
 // entfernt. Spart Input-Tokens bei JEDER der PANEL-Anfragen (× Stimmenzahl), ohne
@@ -257,15 +300,18 @@ const system =
   "(falsche Ausgabe, Absturz, Kontrolle feuert nachweislich nicht mehr, real ausnutzbares " +
   "Loch MIT Angriffspfad). Kein konkreter Ausnutzungs-/Fehlerpfad → refuted=false. " +
   "Antworte NUR als JSON, ohne Prosa/Markdown: " +
-  '{"refuted": boolean, "confidence": "high"|"medium"|"low", "reason": string}. ' +
-  "reason IMMER ausfüllen (auch bei refuted=false), maximal knapp/maschinell, Abkürzungen " +
-  "ok, keine ganzen Sätze, aber technisch aussagekräftig. So kurz wie möglich, aber lang " +
-  "genug für die Substanz: bei MEHREREN Defekten die wichtigsten (bis zu 3) mit ' ; ' " +
-  "getrennt AUFLISTEN — lieber je Punkt stark abgekürzt als einen weglassen. Obergrenze " +
-  "~500 Zeichen. Bei refuted=true je Punkt Schema 'pfad/datei:Zeile — Defekt — Fehlverhalten'. " +
-  "Bei refuted=false in 3–8 Wörtern, WAS geprüft wurde + warum kein Defekt (z. B. 'geprüft: " +
-  "HMAC/Auth + fail-closed; kein konkreter Fehlerpfad'). refuted=true NUR bei konkretem, " +
-  "benennbarem Defekt.";
+  '{"refuted": boolean, "confidence": "high"|"medium"|"low", "reason": string, "proof": string}. ' +
+  "reason IMMER ausfüllen (auch bei refuted=false), maximal knapp/maschinell, Abkürzungen ok, " +
+  "keine ganzen Sätze, aber technisch aussagekräftig. Benenne ALLE gefundenen Defekte — jeden " +
+  "EXTREM kompakt/telegrammartig, mit ' ; ' getrennt; lieber jeden Punkt noch stärker abkürzen " +
+  "als einen weglassen. Obergrenze ~800 Zeichen. Bei refuted=true je Punkt Schema " +
+  "'pfad/datei:Zeile — Defekt — Fehlverhalten'. Bei refuted=false in 3–8 Wörtern, WAS geprüft " +
+  "wurde + warum kein Defekt. " +
+  "PROOF-OF-CHECK: Bei refuted=false MUSS proof EXAKT '" + CHALLENGE + "-<tier>' sein, wobei " +
+  "<tier> eine von dir zufällig gewählte Ganzzahl 1–9999 ist (z. B. '" + CHALLENGE + "-4213'). " +
+  "Das beweist, dass du diese Prüfung wirklich ausgeführt hast; fehlender/falscher proof macht " +
+  "ein Grün ungültig. Bei refuted=true ist proof optional. " +
+  "refuted=true NUR bei konkretem, benennbarem Defekt.";
 
 const user = "DIFF (Überblick + Code-Auszug):\n\n" + d;
 
@@ -362,7 +408,7 @@ votes.forEach((x, i) => {
   // Begründungs-Spalte IMMER schreiben — sonst bleibt bei leerem reason (z. B. wenn
   // ein Modell die Anweisung ignoriert) nur "false/high" übrig und das Log ist blind.
   const raw = x.v?.reason;
-  const reason = raw ? JSON.stringify(raw).slice(0, 800) : '"(keine Begründung geliefert)"';
+  const reason = raw ? JSON.stringify(raw).slice(0, 1000) : '"(keine Begründung geliefert)"';
   console.log(`  Verifier ${i + 1}/${PANEL} (${MODEL}): refuted=${x.v?.refuted} confidence=${x.v?.confidence} — Begründung: ${reason}`);
 });
 const verdict = aggregate(votes, PANEL);
@@ -371,12 +417,18 @@ if (verdict.block) {
   process.exit(1);
 }
 // SCHEIN-GRÜN-GATE: Grün nur, wenn nachweislich echt gearbeitet wurde — eine
-// Mehrheit der Stimmen muss eine nicht-leere, PAARWEISE VERSCHIEDENE Begründung
-// tragen. So kann ein leeres/kanned „ok" nicht als Freigabe durchgehen (fail-closed).
+// Mehrheit der Grün-Stimmen muss eine echte, eigenständige Begründung tragen.
 const attest = attestReasons(votes, PANEL);
 if (attest.block) {
   console.error(`⛔ Integritäts-Gate (Schein-Grün): ${attest.reason}`);
   process.exit(1);
 }
-console.log(`[independent-verify] Fremd-Vendor-Panel bestätigt (${verdict.reason}; ${attest.reason}). Grün.`);
+// PROOF-OF-CHECK-GATE: die Grün-Stimmen müssen die Lauf-Challenge zurückspiegeln —
+// ein hartcodiertes „pass → grün" ohne echten Modell-Roundtrip kommt so nicht durch.
+const proof = attestProof(votes, CHALLENGE, PANEL);
+if (proof.block) {
+  console.error(`⛔ Proof-of-Check-Gate: ${proof.reason}`);
+  process.exit(1);
+}
+console.log(`[independent-verify] Fremd-Vendor-Panel bestätigt (${verdict.reason}; ${attest.reason}; ${proof.reason}). Grün.`);
 process.exit(0);

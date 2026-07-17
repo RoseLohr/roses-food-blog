@@ -98,25 +98,26 @@ mkdir -p "$DATA_DIR" 2>/dev/null || true
 #    vollen Lauf — inkl. eigenem `git pull` (Abschnitt 1), holt also den NEUESTEN
 #    Stand. So geht kein Trigger/Commit verloren, und kein übersprungener Lauf
 #    meldet fälschlich Erfolg. Timeout → ehrlicher fail (kein Silent-Erfolg).
-# Fehlt flock oder $HOME, degradiert es auf das bisherige Verhalten (ohne Lock).
-# Kann der Lock NICHT etabliert werden (flock/HOME fehlt, Pfad unbeschreibbar oder
-# ein Verzeichnis), NICHT still ungeschützt weiterlaufen — sondern sichtbar warnen,
-# damit die deaktivierte Nebenläufigkeits-Sperre nicht unbemerkt bleibt.
-if [[ -n "${HOME:-}" ]] && command -v flock >/dev/null 2>&1; then
-  LOCK_FILE="$HOME/.roses-blog-deploy.lock"
-  ( umask 077; : >> "$LOCK_FILE" ) 2>/dev/null || true   # anlegen (0600), ohne Truncate
-  if { exec 9<"$LOCK_FILE"; } 2>/dev/null; then           # NUR-LESEND → kein Truncate
-    LOCK_WAIT="${DEPLOY_LOCK_WAIT:-2400}"
-    if ! flock -n 9; then
-      log "Anderer Deploy läuft — warte auf exklusiven Lock (max ${LOCK_WAIT}s)"
-      flock -w "$LOCK_WAIT" 9 \
-        || fail "Anderer Deploy hält den Lock länger als ${LOCK_WAIT}s — abgebrochen (kein Silent-Erfolg; ein neuer Commit-Trigger wird NICHT als Erfolg quittiert)."
-    fi
-  else
-    echo "WARNUNG: Deploy-Lock ($LOCK_FILE) nicht öffenbar — Nebenläufigkeitsschutz INAKTIV. Parallele Deploys sind NICHT verhindert."
-  fi
+# FAIL-CLOSED (Verfassung: Kontrollen fallen geschlossen aus): kann der Lock NICHT
+# etabliert werden (flock/HOME fehlt, Pfad unbeschreibbar/Verzeichnis), wird der
+# Deploy ABGEBROCHEN — NICHT ungeschützt fortgesetzt. Sonst liefe er fail-open in
+# genau das compose down/up-Race, das der Lock verhindern soll. Ein bewusster
+# Operator-Override ist ausschließlich explizit möglich: DEPLOY_NO_LOCK=1.
+if [[ "${DEPLOY_NO_LOCK:-0}" == "1" ]]; then
+  echo "HINWEIS: DEPLOY_NO_LOCK=1 — Nebenläufigkeits-Sperre bewusst deaktiviert (Operator-Override)."
+elif [[ -z "${HOME:-}" ]] || ! command -v flock >/dev/null 2>&1; then
+  fail "Deploy-Lock nicht etablierbar (flock oder \$HOME fehlt) — fail-closed abgebrochen, um ein ungeschütztes compose down/up-Race zu verhindern. Abhilfe: flock installieren (util-linux) bzw. HOME setzen, oder bewusst DEPLOY_NO_LOCK=1 setzen."
 else
-  echo "WARNUNG: flock oder \$HOME nicht verfügbar — Deploy-Lock INAKTIV. Parallele Deploys (manuell + Panel-Watcher) sind NICHT verhindert."
+  LOCK_FILE="$HOME/.roses-blog-deploy.lock"
+  ( umask 077; : >> "$LOCK_FILE" ) 2>/dev/null || true    # anlegen (0600), ohne Truncate
+  { exec 9<"$LOCK_FILE"; } 2>/dev/null \
+    || fail "Deploy-Lock ($LOCK_FILE) nicht öffenbar (Pfad unbeschreibbar/Verzeichnis?) — fail-closed abgebrochen. Ursache prüfen oder bewusst DEPLOY_NO_LOCK=1 setzen."
+  LOCK_WAIT="${DEPLOY_LOCK_WAIT:-2400}"
+  if ! flock -n 9; then                                   # sofort frei? sonst warten
+    log "Anderer Deploy läuft — warte auf exklusiven Lock (max ${LOCK_WAIT}s)"
+    flock -w "$LOCK_WAIT" 9 \
+      || fail "Anderer Deploy hält den Lock länger als ${LOCK_WAIT}s — abgebrochen (kein Silent-Erfolg; ein neuer Commit-Trigger wird NICHT als Erfolg quittiert)."
+  fi
 fi
 
 # Sofortiger Herzschlag ans Panel: „angenommen, läuft an“. Ohne diesen Status
