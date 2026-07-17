@@ -24,7 +24,10 @@ jobs:
           node-version: "22"
       - name: Fremd-Vendor-Verifier (Regel 6 / Artikel IV)
         env:
+          # Aktiviert, sobald EINER der beiden Schlüssel gesetzt ist. OPENAI_API_KEY
+          # wird akzeptiert, da OpenAI der Default-Anbieter ist (kein Umbenennen nötig).
           SECOND_VENDOR_API_KEY: ${{ secrets.SECOND_VENDOR_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           VERIFIER_BASE_URL: ${{ vars.VERIFIER_BASE_URL }}
           VERIFIER_MODEL: ${{ vars.VERIFIER_MODEL }}
         run: node scripts/regime/independent-verify.mjs

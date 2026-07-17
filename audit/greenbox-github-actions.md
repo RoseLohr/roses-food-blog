@@ -9,14 +9,20 @@ Ein Zweit-Anbieter-Schlüssel (NICHT Anthropic — z. B. OpenAI/Gemini). Das
 Harness (`scripts/regime/independent-verify.mjs` + Workflow) wartet darauf.
 
 **Auf GitHub** (Repo → Settings → Secrets and variables → Actions):
-- Secret `SECOND_VENDOR_API_KEY` = dein OpenAI-/Gemini-Key.
-- (optional Variables) `VERIFIER_BASE_URL`, `VERIFIER_MODEL` (Default OpenAI/gpt-4o).
+- Secret `OPENAI_API_KEY` **oder** `SECOND_VENDOR_API_KEY` = dein Zweit-Anbieter-Key
+  (NICHT Anthropic). Beide Namen werden akzeptiert — `OPENAI_API_KEY` reicht.
+- (optional Variables) `VERIFIER_BASE_URL`, `VERIFIER_MODEL`
+  (Default `https://api.openai.com/v1` / `gpt-4o-2024-08-06`, gepinnt).
 
-Per CLI (falls `gh` vorhanden):
+Per CLI (falls `gh` vorhanden) — einer der beiden genügt:
 ```
-gh secret set SECOND_VENDOR_API_KEY --repo RoseLohr/roses-food-blog
+gh secret set OPENAI_API_KEY --repo RoseLohr/roses-food-blog
 ```
-Danach greift bei jedem PR ein unabhängiger Fremd-Vendor-Verifier den Diff an.
+Danach greift bei jedem PR ein unabhängiger Fremd-Vendor-Verifier den Diff an
+und blockiert bei einem Refutat (confidence ≥ medium).
+
+> Status: `OPENAI_API_KEY` ist bereits hinterlegt → A-39-Harness ist **aktiv**,
+> sobald dieser Branch/PR läuft.
 
 ## 2. Branch-Protection einschalten → macht das Gate erst bindend
 Ohne Branch-Protection ist CI grün, aber ein Merge ist trotzdem erzwingbar.

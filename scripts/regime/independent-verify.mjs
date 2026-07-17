@@ -11,9 +11,12 @@
  * dokumentierte Residual (A-39) — es wird NICHT grün gefälscht.
  *
  * Provider-agnostisch (OpenAI-kompatibles Chat-API):
- *   SECOND_VENDOR_API_KEY   Pflicht zum Aktivieren (anderer Anbieter als Anthropic)
+ *   SECOND_VENDOR_API_KEY   Aktiviert den Verifier (anderer Anbieter als Anthropic).
+ *   OPENAI_API_KEY          Fallback — wird akzeptiert, da OpenAI der Default-Anbieter
+ *                           ist; so greift ein bereits hinterlegter OpenAI-Schlüssel
+ *                           ohne Umbenennen.
  *   VERIFIER_BASE_URL       Default https://api.openai.com/v1
- *   VERIFIER_MODEL          Default gpt-4o
+ *   VERIFIER_MODEL          Default gpt-4o-2024-08-06 (gepinnter Snapshot, B-13)
  *
  * GEHÄRTET (wf_ac30593b): die Block/Pass-Entscheidung ist als reine, testbare
  * Funktion `decide()` extrahiert und der --selftest übt sie WIRKLICH aus (früher
@@ -29,9 +32,9 @@
  */
 import { execSync } from "node:child_process";
 
-const KEY = process.env.SECOND_VENDOR_API_KEY;
+const KEY = process.env.SECOND_VENDOR_API_KEY || process.env.OPENAI_API_KEY;
 const BASE = process.env.VERIFIER_BASE_URL || "https://api.openai.com/v1";
-const MODEL = process.env.VERIFIER_MODEL || "gpt-4o";
+const MODEL = process.env.VERIFIER_MODEL || "gpt-4o-2024-08-06";
 
 /**
  * Reine Entscheidungsfunktion. Fail-CLOSED: eine Antwort ohne boolesches
@@ -70,7 +73,7 @@ if (process.argv.includes("--selftest")) {
 
 if (!KEY) {
   console.log(
-    "[independent-verify] RESIDUAL A-39: kein Zweit-Vendor-Schlüssel (SECOND_VENDOR_API_KEY) hinterlegt.\n" +
+    "[independent-verify] RESIDUAL A-39: kein Zweit-Vendor-Schlüssel (SECOND_VENDOR_API_KEY oder OPENAI_API_KEY) hinterlegt.\n" +
     "  Der unabhängige Fremd-Vendor-Verifier ist NICHT aktiv. Kompensation: deterministisches\n" +
     "  Gate ist alleinige Merge-Autorität. Zum Aktivieren: Secret setzen (siehe README/Nutzerliste).",
   );
