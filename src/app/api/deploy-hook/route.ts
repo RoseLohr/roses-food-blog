@@ -1,5 +1,12 @@
 /**
- * GitHub-Webhook — Auto-Deploy nach erfolgreichem Merge auf `main`.
+ * GitHub-Webhook — Auto-Deploy nach Push/Merge auf den DEPLOY-BRANCH.
+ *
+ * Deploy-Branch = der Branch, den der Server ausliefert (deploy.sh deployt den
+ * ausgecheckten Branch bzw. DEPLOY_BRANCH). Dieser ist projektabhängig NICHT
+ * zwingend `main`: hier ist der Default-Branch `claude/roses-food-blog-vxs3vm`.
+ * Welcher Branch triggert, wird daher NICHT hartkodiert, sondern (in dieser
+ * Reihenfolge) bestimmt: `DEPLOY_HOOK_BRANCH` (Env-Override) → der im Payload
+ * mitgelieferte `repository.default_branch` → Fallback `main`.
  *
  * Sicherheitsmodell (bewusst wie das Panel):
  *  - GitHub signiert jeden Payload per HMAC-SHA256 mit dem geteilten Secret
@@ -7,13 +14,12 @@
  *    Ohne gültige Signatur passiert NICHTS (fail-closed) — die Signatur IST die
  *    Authentifizierung (daher kein Admin-Session-Guard; GitHub ist der Aufrufer).
  *  - Es wird KEIN Host-Kommando aus dem Container ausgeführt. Bei einem `push`
- *    auf `refs/heads/main` schreibt die Route dieselbe Auslöse-Datei wie das Panel
+ *    auf den Deploy-Branch schreibt die Route dieselbe Auslöse-Datei wie das Panel
  *    (`requestDeploy`); der Host-seitige Watcher startet daraufhin fix `./deploy.sh`
  *    (keine Parameter aus dem Container). Die Container-Isolation bleibt gewahrt.
  *
- * CI-Bezug: Ein `push` auf `main` entsteht erst NACH einem Merge — und Merges
- * sind durch Branch-Protection an das grüne Gate gebunden. „Erfolgreich gemerged"
- * ⇒ CI war grün.
+ * CI-Bezug: Ein Push auf den Deploy-Branch entsteht bei geschütztem Branch erst
+ * NACH einem grünen Merge. „Erfolgreich gemerged" ⇒ CI war grün.
  */
 import crypto from "node:crypto";
 import { NextResponse } from "next/server";
@@ -55,15 +61,25 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, ignored: `event:${event ?? "?"}` });
   }
 
-  let payload: { ref?: unknown; deleted?: unknown };
+  let payload: {
+    ref?: unknown;
+    deleted?: unknown;
+    repository?: { default_branch?: unknown };
+  };
   try {
     payload = JSON.parse(raw);
   } catch {
     return NextResponse.json({ error: "invalid_json" }, { status: 400 });
   }
-  // Nur ein echter, nicht-löschender Push auf main löst aus.
-  if (payload.ref !== "refs/heads/main" || payload.deleted === true) {
-    return NextResponse.json({ ok: true, ignored: "not-main" });
+  // Deploy-Branch bestimmen (Override → Default-Branch aus Payload → main).
+  const defaultBranch =
+    typeof payload.repository?.default_branch === "string"
+      ? payload.repository.default_branch
+      : "";
+  const deployBranch = process.env.DEPLOY_HOOK_BRANCH || defaultBranch || "main";
+  // Nur ein echter, nicht-löschender Push auf den Deploy-Branch löst aus.
+  if (payload.ref !== `refs/heads/${deployBranch}` || payload.deleted === true) {
+    return NextResponse.json({ ok: true, ignored: "not-deploy-branch" });
   }
 
   try {

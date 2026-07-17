@@ -73,14 +73,21 @@ Datenkarte, Provenance, Mandat-/Verfassungs-Hash. Kein Handanlegen nötig.
 **Wenn (1) + (2) erledigt sind, bleibt production_eligible nur noch an A-33 hängen —
 und A-33 ist ein SLI-Aufbau über Zeit, kein Sicherheits-/Datenschutz-Loch.**
 
-## 4. Auto-Deploy nach Merge auf `main` (GitHub-Webhook)
+## 4. Auto-Deploy nach Push/Merge auf den Deploy-Branch (GitHub-Webhook)
 
-Nach jedem erfolgreichen Merge auf `main` ruft GitHub einen Webhook auf dem
-Foodblog-Container auf; der Empfänger `POST /api/deploy-hook` verifiziert die
-HMAC-Signatur und schreibt — bei `push` auf `main` — dieselbe Auslöse-Datei wie
-das Panel. Der bereits laufende Host-Watcher startet daraufhin `./deploy.sh`.
-**Kein neuer Host-Setup nötig** (der Watcher aus Punkt „Deploy-from-panel" reicht);
-der Container führt weiterhin kein Host-Kommando aus.
+> **Wichtig — Branch:** Der Default-Branch dieses Repos ist
+> `claude/roses-food-blog-vxs3vm` (NICHT `main`). `deploy.sh` deployt den auf der
+> greenbox ausgecheckten Branch — also denselben. Der Webhook triggert daher auf
+> dem **Deploy-Branch**, nicht auf `main`. Automatik: der Empfänger liest den
+> `repository.default_branch` aus dem Payload; abweichend per Env
+> `DEPLOY_HOOK_BRANCH` überschreibbar. „Auf Main gemerged" = Push auf diesen
+> Deploy-Branch.
+
+Nach jedem Push/Merge auf den Deploy-Branch ruft GitHub den Webhook auf dem
+Foodblog-Container auf; `POST /api/deploy-hook` verifiziert die HMAC-Signatur und
+schreibt dieselbe Auslöse-Datei wie das Panel. Der bereits laufende Host-Watcher
+startet daraufhin `./deploy.sh`. **Kein neuer Host-Setup nötig** (der Watcher aus
+„Deploy-from-panel" reicht); der Container führt kein Host-Kommando aus.
 
 **a) Secret erzeugen** (auf der greenbox oder lokal):
 ```
@@ -89,7 +96,9 @@ openssl rand -hex 32
 
 **b) Secret dem Container geben** — dieselbe Env wie `ANTHROPIC_API_KEY`, Variable
 `GITHUB_WEBHOOK_SECRET=<der-hex-Wert>`, dann Container neu starten (`./deploy.sh`).
-Ohne diese Env ist der Endpunkt **aus** (503, fail-closed).
+Ohne diese Env ist der Endpunkt **aus** (503, fail-closed). Optional
+`DEPLOY_HOOK_BRANCH=<branch>` setzen, falls ein anderer als der Default-Branch
+deployt werden soll.
 
 **c) Webhook bei GitHub anlegen** — Repo → Settings → Webhooks → Add webhook:
 - Payload URL: `https://<deine-blog-domain>/api/deploy-hook`
@@ -97,16 +106,20 @@ Ohne diese Env ist der Endpunkt **aus** (503, fail-closed).
 - Secret: **derselbe** hex-Wert aus (a)
 - Events: nur „Just the push event."
 
-Per CLI (einen Wert einsetzen — nutze **exakt** dasselbe Secret wie in (b)):
+Per CLI (Secret vorher exportieren: `export GITHUB_WEBHOOK_SECRET=<hex aus a>`):
 ```
 gh api -X POST repos/RoseLohr/roses-food-blog/hooks -f name=web -F active=true -f 'events[]=push' -f config[url]=https://<deine-blog-domain>/api/deploy-hook -f config[content_type]=json -f config[secret]="$GITHUB_WEBHOOK_SECRET"
 ```
 
-**d) Testen** — GitHub sendet beim Anlegen automatisch ein `ping` (erwartet 200).
-Danach einmal echt:
-```
-git commit --allow-empty -m "chore: Auto-Deploy-Webhook testen" && git push origin main
-```
-Ergebnis prüfbar unter GitHub → Webhooks → „Recent Deliveries" (204/202 = ok) und im
-Panel unter „Aktualisierung" (Status/Log). Ungültige Signatur → 401, fremder Branch →
-ignoriert, kein Deploy.
+**d) Testen** — GitHub sendet beim Anlegen automatisch ein `ping` (erwartet 200) —
+das bestätigt bereits, dass Endpunkt + Secret stimmen. Prüfbar unter GitHub →
+Settings → Webhooks → dein Hook → „Recent Deliveries" (grünes Häkchen / 200).
+Einen echten Deploy löst danach JEDER Push/Merge auf den Deploy-Branch aus (also
+der normale Betrieb) — kein Sonder-Testcommit nötig. Kontrolle im Panel unter
+„Aktualisierung" (Status/Log). Ungültige Signatur → 401, fremder Branch →
+ignoriert (kein Deploy).
+
+> **NICHT** `git push origin main` zum Testen benutzen: du arbeitest auf dem
+> Deploy-Branch, dein lokales `main` ist verwaist/zurück — der Push wird als
+> non-fast-forward abgelehnt und triggert ohnehin nichts. Push (oder Merge) auf
+> `claude/roses-food-blog-vxs3vm` ist der richtige Auslöser.
