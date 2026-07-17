@@ -364,23 +364,30 @@ fi
 podman image prune -f >/dev/null 2>&1 || true
 
 # --- 9. Status ----------------------------------------------------------------
-# Zustand für den Schnellpfad (Abschnitt 1b) festhalten: Commit + .env-Hash
-# des erfolgreich deployten Stands.
+echo "Branch:   $BRANCH"
+echo "Commit:   $COMMIT"
+# Finaler Health-Gate: der autoritative Healthcheck (Abschnitt 6) war grün; hier
+# kurz erneut bestätigen, dass die App nach Neustart+Prune WIRKLICH noch antwortet.
+# Mehrere Versuche absorbieren einen transienten Port-Reinit direkt nach dem
+# Neustart (das war das ursprüngliche „erfolgreich + curl (7)"-Symptom — kein
+# nacktes `curl && …`, das unter set -e das Skript mit Exit 7 beendet hätte).
+# Bleibt /health danach unerreichbar, ist die App NICHT bloß transient weg →
+# EHRLICH als Fehlschlag melden (fail-closed), kein „erfolgreich"-Silent-Pass.
+FINAL_HEALTH_OK=0
+for _ in $(seq 1 15); do
+  if curl -fsS "http://127.0.0.1:$PORT/health" >/dev/null 2>&1; then FINAL_HEALTH_OK=1; break; fi
+  sleep 1
+done
+if [[ "$FINAL_HEALTH_OK" != "1" ]]; then
+  echo "Letzte Container-Logs:"
+  podman logs --tail 30 roses-blog 2>&1 | sed 's/^/  /' || true
+  fail "App nach Neustart auf Port $PORT nicht erreichbar (finaler Health-Gate gescheitert) — NICHT als erfolgreich quittiert."
+fi
+# Erst NACH bestandenem Health-Gate: Schnellpfad-State festhalten + Erfolg markieren.
 printf '%s %s\n' "$COMMIT" "$ENV_HASH" > "$STATE_FILE" 2>/dev/null || true
 DEPLOY_STATUS_RESULT="erfolgreich"   # EXIT-Trap schreibt deploy-status.json
 log "Deployment erfolgreich (Dauer: ${SECONDS}s)"
-echo "Branch:   $BRANCH"
-echo "Commit:   $COMMIT"
-# Kosmetischer Schluss-Hinweis: der AUTORITATIVE Healthcheck (Abschnitt 6) ist
-# bereits bestanden — der Deploy IST erfolgreich. Dieser eine curl darf das Skript
-# daher NICHT beenden (set -e): sonst erzeugte ein transienter Port-Reinit direkt
-# nach dem Neustart nach „erfolgreich" ein widersprüchliches curl (7) und setzte
-# den Exit-Code auf 7, obwohl der Deploy sauber durchlief.
-if curl -fsS "http://127.0.0.1:$PORT/health" >/dev/null 2>&1; then
-  echo "Health:   OK (http://127.0.0.1:$PORT/health)"
-else
-  echo "Health:   Kurz-Check (noch) nicht erreichbar — maßgeblich ist der bestandene Healthcheck oben."
-fi
+echo "Health:   OK (http://127.0.0.1:$PORT/health)"
 podman ps --filter name=roses-blog --format "Container: {{.Names}} ({{.Status}})"
 
 }

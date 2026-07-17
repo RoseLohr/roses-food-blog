@@ -161,14 +161,19 @@ export function attestReasons(votes, panelSize) {
 }
 
 /**
- * Proof-of-Check-Gate gegen HARTCODIERTES Grün (A-01/A-39). Eine künftige (z. B.
- * KI-)Änderung, die die Prüfung durch ein pauschales „pass → grün" ersetzt, soll
- * NICHT durchkommen. Der Harness erzeugt pro Lauf eine ZUFÄLLIGE Challenge (nicht
- * vorab bekannt) und sendet sie im Prompt; jede GRÜN tragende Stimme muss als
- * `proof` genau `"<challenge>-<tier>"` zurückgeben (tier = eine vom Modell zufällig
- * gewählte Ganzzahl). Nur ein ECHTER Modell-Roundtrip DIESES Laufs kennt die
- * Challenge — ein statisches/hartcodiertes Grün kann sie nicht liefern.
- * Verlangt: eine MEHRHEIT gültiger Proofs unter den Grün-Stimmen. Fail-CLOSED.
+ * Proof-of-Check-Gate gegen HARTCODIERTES Grün IM CODE (A-01/A-39). Der Harness
+ * erzeugt pro Lauf eine ZUFÄLLIGE Challenge und sendet sie im Prompt; jede GRÜN
+ * tragende Stimme muss sie als `proof` „<challenge>-<tier>" zurückgeben (tier =
+ * zufällige Ganzzahl 1–9999). Verlangt eine MEHRHEIT gültiger Proofs unter den
+ * Grün-Stimmen. Fail-CLOSED.
+ * REICHWEITE (ehrlich, kein Überclaim): Das schützt gegen eine künftige Änderung,
+ * die die Prüfung durch ein pauschales „return grün" ersetzt, OHNE den Endpoint
+ * zu rufen bzw. dessen Antwort zu verwerten — ein solcher Kurzschluss trägt keinen
+ * laufgültigen Challenge-Echo und blockt. Es BEWEIST NICHT kryptografisch einen
+ * echten LLM-Roundtrip: die Challenge steht im Request, ein bösartiger/modellloser
+ * Vendor-Endpoint könnte sie auslesen und zurückspiegeln. Das ist die inhärente,
+ * dokumentierte A-39-Vertrauensannahme (Endpoint = unabhängiger Fremd-Vendor),
+ * kompensiert dadurch, dass das deterministische Gate alleinige Merge-Autorität ist.
  * Rein & testbar: `challenge` wird als Argument übergeben (kein globaler Zustand).
  */
 export function attestProof(votes, challenge, panelSize) {
@@ -310,6 +315,11 @@ const system =
   "Widerlege NUR bei KONKRETEM, reproduzierbarem Defekt mit benennbarem Fehlverhalten " +
   "(falsche Ausgabe, Absturz, Kontrolle feuert nachweislich nicht mehr, real ausnutzbares " +
   "Loch MIT Angriffspfad). Kein konkreter Ausnutzungs-/Fehlerpfad → refuted=false. " +
+  "NICHT widerlegen wegen der inhärenten A-39-Vertrauensannahme selbst: dass ein " +
+  "bösartiger/modellloser Vendor-Endpoint den Verifier (aggregate/attestReasons/" +
+  "attestProof, inkl. Challenge-Echo) täuschen könnte, ist das DOKUMENTIERTE, durch " +
+  "das deterministische Gate kompensierte Residual — kein Defekt DIESES Diffs. Werte " +
+  "nur konkrete Defekte in der Logik des Diffs selbst. " +
   "Antworte NUR als JSON, ohne Prosa/Markdown: " +
   '{"refuted": boolean, "confidence": "high"|"medium"|"low", "reason": string, "proof": string}. ' +
   "reason IMMER ausfüllen (auch bei refuted=false), maximal knapp/maschinell, Abkürzungen ok, " +
