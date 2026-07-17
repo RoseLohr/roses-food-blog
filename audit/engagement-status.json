@@ -6,11 +6,11 @@
   "evidenced_check_count": 76,
   "part1_status": "COMPLETE",
   "part2_status": "IN_PROGRESS",
-  "phase": "0'-active (Katalog v2.0 aktiviert per Beschlussakte; Re-Ratifizierung Phase 7')",
+  "phase": "6'-reaudit (Track C geschlossen; Gesamt-Gate offen wegen Part-1-Residuen)",
   "highest_open_band": "STOP-SHIP (C-01, C-04 NO-EVIDENCE — Phase 3′ ausstehend)",
   "open_stop_ship_count": 2,
-  "open_blocker_1_count": 5,
-  "open_blocker_2_count": 6,
+  "open_blocker_1_count": 4,
+  "open_blocker_2_count": 13,
   "security_scope_audited": false,
   "constitution_state": "RATIFIED",
   "production_eligible": false,
@@ -76,5 +76,6 @@
     "gate_bypass_finding": false,
     "baseline_commit": "160228f",
     "linked_part1_baseline_commit": "ad3ff31"
-  }
+  },
+  "track_c_open_blockers": 0
 }

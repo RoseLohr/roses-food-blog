@@ -231,3 +231,52 @@ Initialverdikte bleiben im Audit-Trail erhalten (Phase 6′ aktualisiert den Zus
 | C-40 | Gesellschaft/Umwelt | ASSESS | **N/A** | N/A — immateriell |
 
 **Track-C-Bilanz Phase 3′:** {"PARTIAL":23,"FAIL":2,"N/A":15} · offene Blocker: C-01, C-04 (STOP-SHIP); C-03, C-05, C-07, C-09, C-37 (BLOCKER-1); C-02, C-08, C-10, C-23, C-26 (BLOCKER-2). C-37 zu BLOCKER-1 eskaliert (Prod-Bestandteile ohne attestierte Provenance-Kette).
+
+---
+
+## Track C — Phase-6′-Verdikte (nach Remediation)
+
+| ID | Band | Verdikt | Stehende Kontrolle |
+|---|---|---|---|
+| C-01 | STOP-SHIP | **PASS** | authz-coverage.mjs (CI, --selftest) + Kalibrier-Seed S9; Ratchet: ungeguardete Handler=0 |
+| C-02 | BLOCKER-2 | **PASS** | boundary-check.mjs (CI) + threat-model.md; neue Integration ohne Threat-Eintrag → Build fällt |
+| C-03 | BLOCKER-1 | **PASS** | deps-existence.mjs + Lockfile + npm audit + Seed S3 (monatlich); Registry-Alter als nächtliche Kadenz + Playbook |
+| C-04 | STOP-SHIP | **PASS** | data-map.mjs (CI, generiert+gedifft) + tests/erasure.integration.test.ts (Kanarie) + Retention; DPIA/RoPA |
+| C-05 | BLOCKER-1 | **PASS** | llm-matrix-check.mjs (leere Zelle→Build fällt) + ai-budget-check.mjs (Caps) |
+| C-06 | BLOCKER-2 | **N/A** | ai-capability-guard.mjs (Tool-Use/Agent→Build fällt); Reaktivierungs-Tripwire |
+| C-07 | BLOCKER-1 | **PASS** | tests/injection.containment.test.ts + ai-capability-guard.mjs + Seed S7; Restrisiko schriftlich (injection-residual.md) |
+| C-08 | BLOCKER-2 | **PASS** | ai-capability-guard.mjs (No-Egress/Trifecta) + Seed S8; per Inspektion entscheidbar |
+| C-09 | BLOCKER-1 | **PASS** | ai-system-inventory.md (Article-50-Bewertung) + tests/ai-disclosure.test.ts |
+| C-10 | BLOCKER-2 | **PASS** | tests/ai-eval.golden.test.ts (Golden-Set, eingefrorener Schwellwert 100 %, Ratchet) |
+| C-11 | MUST-FIX | **PASS** | governance/ai-governance.md (NIST-RMF govern/map/measure/manage, pipeline-emittierte Evidenz) |
+| C-12 | MUST-FIX | **PASS** | ai-capability-guard.mjs (Least-Agency-Assertion: null Tools/Scopes) |
+| C-13 | SHOULD-FIX | **N/A** | ai-capability-guard/keine MS-Behauptung; Tripwire bei Zertifizierungsanspruch |
+| C-14 | SHOULD-FIX | **N/A** | ai-capability-guard; Tripwire bei erstem Modell-bewertet-Modell-Gate |
+| C-15 | MUST-FIX | **N/A** | ai-capability-guard + Injektions-Suite (adversariale Absicht); Tripwire bei Guardrail-Schicht |
+| C-16 | MUST-FIX | **N/A** | ai-capability-guard; Tripwire bei erster Agenten-Identität |
+| C-17 | MUST-FIX | **N/A** | ai-capability-guard (MCP/Tool→Build fällt); Tripwire bei erster Tool-Anbindung |
+| C-18 | MUST-FIX | **N/A** | ai-capability-guard; Tripwire bei erstem Connector |
+| C-19 | SHOULD-FIX | **N/A** | ai-capability-guard; Tripwire bei erstem Memory-/Kontext-Store |
+| C-20 | SHOULD-FIX | **PASS** | governance/ai-governance.md (Dimensionen mit Owner+Maß) + ai-disclosure.test.ts |
+| C-21 | MUST-FIX | **N/A** | ai-capability-guard (Fine-Tune→Build fällt); Tripwire bei Custom-Modell |
+| C-22 | MUST-FIX | **N/A** | ai-capability-guard (Embeddings→Build fällt); Tripwire bei RAG |
+| C-23 | BLOCKER-2 | **PASS** | data-map.mjs (Store-Klassifikation) + purgeOldOpsEvents (90 T) + logJson personenbezug-frei |
+| C-24 | MUST-FIX | **PASS** | prompt-scan.mjs (Secrets/PII im Prompt→Build fällt) + Prompt-Registry (A-20) |
+| C-25 | SHOULD-FIX | **PASS** | license-scan.mjs (kein AGPL/GPL/SSPL) + ip-position.md |
+| C-26 | BLOCKER-2 | **PASS** | ai-bom.mjs --verify (Modelle==Code) + mandate-hash.mjs --verify (fail-closed am Deploy) |
+| C-27 | BLOCKER-1 | **N/A** | Applikabilität bestimmt (nur GDPR, via C-04); Tripwire bei Zahlungs-/Gesundheitsdaten/Zertifizierung |
+| C-28 | MUST-FIX | **PASS** | data-map.mjs (jeder Store bekannt) + governance/ai-governance.md (Residency) |
+| C-29 | SHOULD-FIX | **PASS** | governance/ai-governance.md (Content-Safety, admin-only) + ai-capability-guard (Tripwire öffentlicher Endpunkt) |
+| C-30 | SHOULD-FIX | **PARTIAL** | — (Residual) |
+| C-31 | PLAN | **PASS** | boundary-check.mjs + ai-capability-guard (7 agentische Schichten leer gehalten) |
+| C-32 | SHOULD-FIX | **N/A** | ai-capability-guard (Embeddings→Build fällt); Tripwire bei Vektor-Store |
+| C-33 | SHOULD-FIX | **PASS** | governance/ai-governance.md (Klausel→Gate-Mapping); Klauseln maschinell erzwungen |
+| C-34 | MUST-FIX | **PASS** | B-13 Modell-Pin (Wechsel=Code-Änderung durchs Gate) + governance/ai-governance.md (Provider-Terms/DPA) |
+| C-35 | ASSESS | **N/A** | ai-capability-guard/keine Benchmark-Aussage; Tripwire bei erster Benchmark-Behauptung |
+| C-36 | SHOULD-FIX | **PASS** | tests/ai-disclosure.test.ts (KI-Entwurf-Badge) + Kennzeichnungs-Erklärung |
+| C-37 | BLOCKER-1 | **PASS** | provenance-reconstruct.mjs (180 Dateien je Owning-Role, Policy-Bundle, Spot) + mandate-hash.mjs |
+| C-38 | SHOULD-FIX | **PASS** | governance/ai-governance.md (keine Zitat-Fläche, in-command-Autorschaft) + ai-capability-guard |
+| C-39 | ASSESS | **N/A** | an C-13 gekoppelt; Tripwire bei MS-Behauptung |
+| C-40 | ASSESS | **N/A** | Tripwire bei Berichtspflicht/Workload-Formänderung |
+
+**Bilanz:** {"PASS":24,"N/A":15,"PARTIAL":1} · offene Track-C-Blocker: 0.

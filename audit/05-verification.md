@@ -74,3 +74,22 @@ Hoffnung — und Hoffnung hat diesen Codebestand gebaut.
   Schwellwert 100 % exakt, Ratchet (nur steigen). In CI (npm test).
 - **C-11/20/28/29/30/31/33/34/38/40** (`governance/ai-governance.md`): je Owner + Maß/Kontrolle
   + Tripwire; erzwingende Gates verlinkt (Policy-Enforcement-Mapping C-33).
+
+## Phase 6′ — Re-Audit + Schluss-Sample (10 % von 119)
+
+**Track-C-Bilanz nach Remediation:** 25 PASS, 15 N/A, 1 PARTIAL (C-30, SHOULD-FIX,
+Residual R-C30 mit Tripwire). **Offene Track-C-Blocker: 0.**
+
+**Schluss-Sample** (12 Prüfungen ≥ 10 %; Bänder STOP-SHIP/B1/B2/MUST/SHOULD;
+Tracks A+B+C): alle Kontrollen erneut ausgeführt, alle grün —
+B-06 (A), A-01 (A), B-04 (B), B-13 (B), C-01/C-04/C-05/C-08/C-02/C-24/C-26/C-37/C-25 (C).
+Kein Disagreement → keine Ausweitung nötig.
+
+**Ehrliche Gesamtlage (computed, nicht behauptet):** über alle 119 Prüfungen
+bleiben **19 offene Blocker aus Part 1** (Track A/B, PARTIAL in Blocker-Bändern),
+die Part 1 als Residuen trug, die die strengere Zwei-Volume-Definition-of-Done aber
+als offen zählt: STOP-SHIP A-01, A-39 (unabhängiger Fremd-Vendor-Verifier —
+strukturell nicht verfügbar in einer Ein-Vendor-Umgebung); BLOCKER-1 A-06, A-08,
+B-11, A-36; BLOCKER-2 A-04, A-09, A-10, A-17, A-25, A-33, A-34, B-02, B-05, B-07,
+B-10, B-12, B-28. **production_eligible bleibt daher false** — Track C ist
+geschlossen, aber das Gesamt-Gate hält an Part-1-Resten.
