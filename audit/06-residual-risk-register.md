@@ -18,3 +18,20 @@ gibt es hier nicht.
 **Hinweis:** Diese Liste schrumpft, während die Remediations-Wellen laufen. Jede
 Zeile wird geschlossen, sobald ihr Fix + stehende Kontrolle steht, oder bleibt mit
 aktualisiertem Tripwire bestehen.
+
+---
+## R-CONTRAST — Marken-Akzent unter WCAG-AA-Kontrast (A-22)
+- **Risiko:** Der Teal-Akzent `#339e92` (`--color-rose-primary`/`--color-accent`)
+  erreicht als Text/kleine UI nur ~3,0–3,25:1 auf hellem Grund (nötig: 4,5:1).
+  Betrifft Links („Alle Rezepte …"), Pill-Buttons, Primär-Buttons; `#2b857b` auf
+  Weiß liegt mit 4,42:1 knapp darunter. WCAG 2.2 AA ist in der EU Rechtspflicht.
+- **Warum offen:** Der Fix ist ein Ein-Token-Wechsel (Akzent auf ≥4,5:1
+  abdunkeln), ändert aber die **Markenfarbe überall** — eine In-command-Design-
+  Entscheidung, nicht eigenmächtig durch den Auditor.
+- **Kompensation:** statischer jsx-a11y-Gate aktiv; axe-Runtime-Test blockiert
+  jede *neue* schwere Verletzung (nur `color-contrast` als benannte Altlast geduldet).
+- **Tripwire:** `npm run test:a11y` — die Altlast-Liste darf nur schrumpfen; jede
+  neue schwere Regel bricht sofort.
+- **Owner:** in-command (Design). **Restoring milestone:** Palette-Entscheidung.
+- **Vorschlag:** `--color-rose-primary`/`--color-accent` von `#339e92` auf ~`#277a70`
+  (≈4,6:1 auf Weiß) abdunkeln; heller Ton bleibt für große Dekor-Flächen möglich.
