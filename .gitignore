@@ -11,9 +11,26 @@ coverage/
 *.db-journal
 *.db-wal
 *.db-shm
-data/
+# Laufzeit-Datenverzeichnis (DATA_DIR) — nur im Wurzelverzeichnis;
+# src/data/ (statische Datensätze wie der Saisonkalender) bleibt versioniert.
+/data/
+.admin-data/
+.e2e-data/
 
 # Sonstiges
 .DS_Store
 *.tsbuildinfo
 next-env.d.ts
+
+# Playwright (E2E-Frontend-Tests)
+.pw-data/
+playwright-report/
+test-results/
+
+# Regime: Temp des Gate-Selbsttests + generierte SBOM
+.gate-selftest-*/
+sbom.json
+
+# Stryker (Mutation-Testing) Temp + Reports
+.stryker-tmp/
+reports/

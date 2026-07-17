@@ -1,0 +1,17 @@
+# B-12 (Patch-Automatik) — wöchentliche Abhängigkeits-Updates als PRs.
+# Jeder Update-PR durchläuft das volle CI-Gate (inkl. deps-existence, audit,
+# license-scan), bevor er mergefähig ist. Damit ist die Patch-SLA maschinell.
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    groups:
+      alle-minor-patch:
+        update-types: ["minor", "patch"]
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

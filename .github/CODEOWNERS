@@ -1,0 +1,18 @@
+# Gewaltenteilung (Mandat B-35, Verfassung Artikel II): das Policy-Bundle und
+# die Verfassung dürfen NICHT von derselben Identität geschrieben werden, die den
+# Code schreibt, den sie gaten. Beim Solo-Setup ohne separates Repo ist dies die
+# strukturelle Ersatz-Trennung: Änderungen an Gate/Verfassung/Evidence verlangen
+# ausdrückliche, gesonderte Freigabe durch die verantwortliche Rolle.
+#
+# Ein Bruch dieser Trennung ist ein STOP-SHIP (Artikel II).
+
+# Das deterministische Gate selbst
+/.github/workflows/    @RoseLohr
+/scripts/regime/       @RoseLohr
+
+# Verfassung, Mandat, Manifest — die Gründungsdokumente
+/governance/           @RoseLohr
+
+# Evidence-Ledger und Engagement-Status (nur Runner/Gate-Rolle)
+/audit/engagement-status.json   @RoseLohr
+/audit/evidence/                @RoseLohr

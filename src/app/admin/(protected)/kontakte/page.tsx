@@ -87,7 +87,7 @@ export default async function ContactsPage(props: {
         )
     : [];
 
-  const selectCls = "rounded-lg border border-ink-soft/30 px-3 py-1.5 text-sm";
+  const selectCls = "border border-ink-soft/30 px-3 py-1.5 text-sm";
 
   const exportParams = new URLSearchParams();
   if (statusFilter) exportParams.set("status", statusFilter);
@@ -107,7 +107,7 @@ export default async function ContactsPage(props: {
         </a>
       </div>
       {message && (
-        <p role="status" className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
+        <p role="status" className="mb-4 bg-amber-50 p-3 text-sm text-amber-900">
           {message}
         </p>
       )}
@@ -186,7 +186,7 @@ export default async function ContactsPage(props: {
       {contacts.length === 0 ? (
         <p className="text-ink-soft">{d.empty}</p>
       ) : (
-        <div className="overflow-x-auto rounded-2xl bg-white shadow-sm">
+        <div className="overflow-x-auto bg-white shadow-sm">
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="border-b border-ink/10 text-ink-soft">
@@ -216,10 +216,10 @@ export default async function ContactsPage(props: {
                     <span
                       className={
                         c.status === "aktiv"
-                          ? "rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-900"
+                          ? "bg-green-100 px-2 py-0.5 text-xs text-green-900"
                           : c.status === "unbestaetigt"
-                            ? "rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-900"
-                            : "rounded-full bg-gray-200 px-2 py-0.5 text-xs text-gray-700"
+                            ? "bg-amber-100 px-2 py-0.5 text-xs text-amber-900"
+                            : "bg-gray-200 px-2 py-0.5 text-xs text-gray-700"
                       }
                     >
                       {d.statusLabels[c.status]}

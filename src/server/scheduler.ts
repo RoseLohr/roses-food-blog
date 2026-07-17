@@ -19,7 +19,7 @@ export function startScheduler(): void {
   // länger als sein Intervall (z. B. langsames/nicht erreichbares SMTP),
   // startet der nächste Tick sonst parallel und würde dieselben "wartend"-
   // Zeilen erneut versenden. Ein Flag je Job verhindert das.
-  const running = { email: false, sequence: false };
+  const running = { email: false, sequence: false, monitor: false };
 
   // Nachts: Tracking-Tagesaggregation (idempotent)
   cron.schedule(
@@ -61,6 +61,28 @@ export function startScheduler(): void {
       console.error("[cron] Sequenz-Planung fehlgeschlagen:", err);
     } finally {
       running.sequence = false;
+    }
+  });
+
+  // Alle 5 Minuten: Selbst-Monitor (B-03/A-24). Prüft DB-Health + Fehlerbudget
+  // und alarmiert bei SLO-Verletzung automatisch per E-Mail (SMTP) — ohne
+  // wachenden Menschen, mit Cooldown gegen Alarm-Spam.
+  cron.schedule("*/5 * * * *", async () => {
+    if (running.monitor) return;
+    running.monitor = true;
+    try {
+      const { checkSloAndAlert } = await import("@/lib/observability");
+      const s = await checkSloAndAlert();
+      if (s.breach) {
+        console.error(
+          `[monitor] SLO-Verletzung: ${s.reason}` +
+            (s.alerted ? " — Alarm gesendet." : " — (Cooldown/kein SMTP)."),
+        );
+      }
+    } catch (err) {
+      console.error("[cron] Selbst-Monitor fehlgeschlagen:", err);
+    } finally {
+      running.monitor = false;
     }
   });
 

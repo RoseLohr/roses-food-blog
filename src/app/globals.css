@@ -1,23 +1,382 @@
 @import "tailwindcss";
 
-@theme {
-  /* Selbst gehostete System-Schrift-Stacks — keine externen Fonts,
-     keine Font-Downloads zur Laufzeit (Annahme B19). */
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
-    "Helvetica Neue", Arial, sans-serif;
-  --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia,
-    ui-serif, serif;
+/* Selbst gehostete Webfonts: Raleway (serifenlos) für Überschriften,
+   Nunito Sans für Fließtext. Variable Fonts, latin-Subset (deckt deutsche
+   Umlaute ab). Ausgeliefert vom eigenen Origin unter /fonts — keine externen
+   CDNs, kein Font-Download zur Laufzeit (Annahme B19). font-display: swap hält
+   den Text sofort sichtbar. Raleway steht unter der SIL Open Font License. */
+@font-face {
+  font-family: "Raleway";
+  font-style: normal;
+  font-weight: 400 900;
+  font-display: swap;
+  src: url("/fonts/raleway.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Nunito Sans";
+  font-style: normal;
+  font-weight: 200 1000;
+  font-display: swap;
+  src: url("/fonts/nunito-sans.woff2") format("woff2");
+}
 
-  /* Warme, freundliche Food-Blog-Palette (angelehnt an Tiny Salt) */
-  --color-rose-primary: #b0413e;
-  --color-rose-primary-dark: #8f3230;
-  --color-cream: #faf6f0;
-  --color-cream-deep: #f3ead9;
-  --color-ink: #2d2a26;
-  --color-ink-soft: #5c564e;
+@theme {
+  --font-sans: "Nunito Sans", ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-display: "Raleway", ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+  /* Tiny-Salt-Palette: grüner Akzent (#4FD675 → Teal #4FD6C8),
+     tiefes Tinten­schwarz, weicher Grau-Fließtext, weißer Grund.
+     Die Token-NAMEN bleiben (rose-primary = Marken-Akzent), damit die
+     Umstellung zentral hier passiert und nicht in dutzenden Dateien. */
+  /* Einheitlicher Marken-Grünton #339E92 (Teal-Grün) mit abgeleiteten
+     Schattierungen: dunkler für Hover, heller für dunkle Hintergründe. */
+  --color-rose-primary: #277a70; /* Marken-Akzent, WCAG-AA auf Weiß (≥4,5:1) */
+  --color-rose-primary-dark: #20675e; /* Hover/aktiv (dunkler) */
+  --color-accent: #277a70;
+  --color-accent-2: #38b0a3; /* leicht helleres Teal fürs Verlaufs-Ende */
+  --color-cream: #f4f6f5; /* sehr helles Grau statt Creme */
+  --color-cream-deep: #e8ebea;
+  --color-ink: #111111;
+  --color-ink-soft: #4c4b5b;
   --color-sage: #7a8b6f;
-  --color-leaf: #6db983;
-  --color-leaf-soft: #8fce9d;
+  --color-leaf: #277a70;
+  --color-leaf-soft: #5cc4b8; /* heller Ton für Text auf dunklem Grund */
+}
+
+/* Sanftes Scrollen zu Ankern (Inhaltsverzeichnis der Reiseberichte).
+   Bei prefers-reduced-motion wird scroll-behavior weiter unten global auf
+   "auto" zurückgesetzt. Etwas Luft über dem Sprungziel. */
+html {
+  scroll-behavior: smooth;
+}
+:target {
+  scroll-margin-top: 1.25rem;
+}
+
+/* Full-Bleed: Element auf volle Viewportbreite ziehen (Startseiten-Hero),
+   auch aus einem zentrierten max-w-Container heraus. `overflow-x: clip` am
+   Body (siehe Root-Layout) verhindert horizontales Scrollen, ohne
+   position:sticky zu brechen (anders als overflow-x:hidden). */
+.full-bleed {
+  width: 100vw;
+  margin-inline: calc(50% - 50vw);
+}
+
+/* Zutatenzeile im Rezept-Editor: auf schmalen Bildschirmen (Handy hochkant)
+   gestapelt, damit ALLE Felder sichtbar und gut bedienbar sind; ab 640px in
+   einer Zeile (Menge · Einheit · Name · Zusatz · Entfernen). Bewusst als eigene
+   Regel statt Utility-Klassen, damit das Layout unabhängig vom CSS-Chunking
+   zuverlässig greift. */
+.zutat-row {
+  display: grid;
+  gap: 0.5rem;
+  align-items: start;
+  grid-template-columns: 5rem 1fr; /* Handy: Menge | Einheit */
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid rgb(17 17 17 / 0.1);
+}
+.zutat-row > .zutat-name,
+.zutat-row > .zutat-note,
+.zutat-row > .zutat-remove {
+  grid-column: 1 / -1; /* volle Breite auf dem Handy */
+}
+.zutat-row > .zutat-remove {
+  justify-self: end;
+}
+.zutat-row > .zutat-remove::before {
+  content: "Entfernen "; /* auf dem Handy Beschriftung, Desktop nur „×“ */
+}
+@media (min-width: 640px) {
+  .zutat-row {
+    align-items: center;
+    grid-template-columns: 5rem 6rem 1fr 1fr auto;
+    padding-bottom: 0;
+    border-bottom: 0;
+  }
+  .zutat-row > .zutat-name,
+  .zutat-row > .zutat-note,
+  .zutat-row > .zutat-remove {
+    grid-column: auto;
+    justify-self: auto;
+  }
+  .zutat-row > .zutat-remove::before {
+    content: "";
+  }
+}
+
+/* ===========================================================================
+   Newsletter-Box („Version 3": Teal-Band, E-Mail zuerst) und der
+   Willkommensschritt (helle Karte, fragt Name & Interessen später ab).
+   Bewusst als eigene Regeln statt Utility-Klassen, damit Verlauf und
+   Zweispalten-/Stapel-Layout unabhängig vom Turbopack-CSS-Chunking zuverlässig
+   greifen (gleiches Muster wie .zutat-row). Das Band ist immer Teal — kein
+   Dark-Mode-Umschalten nötig, weil der Blog durchgängig hell ist.
+   =========================================================================== */
+.nl-box {
+  position: relative;
+  overflow: hidden;
+  color: #fff;
+  padding: 2.5rem 1.75rem;
+  background: linear-gradient(
+    135deg,
+    var(--color-accent) 0%,
+    var(--color-accent-2) 100%
+  );
+}
+.nl-box__envelope {
+  position: absolute;
+  bottom: -2.5rem;
+  left: -2rem;
+  width: 13rem;
+  transform: rotate(-12deg);
+  opacity: 0.12;
+  pointer-events: none;
+}
+.nl-box__cols {
+  position: relative;
+  display: grid;
+  gap: 1.5rem;
+  align-items: center;
+}
+@media (min-width: 640px) {
+  .nl-box {
+    padding: 2.75rem 2.25rem;
+  }
+  .nl-box__cols {
+    grid-template-columns: 1.05fr 1fr;
+    gap: 2rem;
+  }
+}
+.nl-box__eyebrow {
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgb(255 255 255 / 0.85);
+  margin-bottom: 0.5rem;
+}
+.nl-box__title {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 700;
+  font-size: clamp(1.55rem, 4vw, 2rem);
+  line-height: 1.15;
+  margin-bottom: 0.5rem;
+}
+.nl-box__intro {
+  color: rgb(255 255 255 / 0.9);
+  font-size: 0.92rem;
+  max-width: 26rem;
+}
+.nl-box__form {
+  display: grid;
+  gap: 0.7rem;
+}
+.nl-box__row {
+  display: flex;
+  gap: 0.6rem;
+}
+.nl-box__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  background: #fff;
+  color: var(--color-ink);
+  padding: 0.85rem 1rem;
+  font: inherit;
+  font-size: 0.95rem;
+}
+.nl-box__input::placeholder {
+  color: #8b948f;
+}
+.nl-box__btn {
+  flex: 0 0 auto;
+  border: 0;
+  cursor: pointer;
+  background: #fff;
+  color: var(--color-rose-primary-dark);
+  font: inherit;
+  font-weight: 800;
+  font-size: 0.82rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  padding: 0.9rem 1.5rem;
+  border-radius: 0.5rem;
+}
+.nl-box__btn:hover {
+  background: var(--color-cream-deep);
+}
+.nl-box__btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.nl-box__consent {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  color: rgb(255 255 255 / 0.85);
+}
+.nl-box__consent input {
+  margin-top: 0.15rem;
+  accent-color: #fff;
+}
+.nl-box__consent a {
+  color: #fff;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.nl-box__note {
+  position: relative;
+  background: rgb(255 255 255 / 0.14);
+  border: 1px solid rgb(255 255 255 / 0.35);
+  padding: 1rem 1.15rem;
+  font-size: 0.9rem;
+  color: #fff;
+}
+.nl-box__note--error {
+  background: rgb(178 59 59 / 0.25);
+  border-color: rgb(255 255 255 / 0.5);
+}
+@media (max-width: 460px) {
+  .nl-box__row {
+    flex-direction: column;
+  }
+  .nl-box__btn {
+    width: 100%;
+  }
+}
+
+/* Willkommensschritt – helle Karte im Blog-Stil */
+.nl-welcome {
+  background: #fff;
+  color: var(--color-ink);
+  border: 1px solid var(--color-accent);
+  border-top: 6px solid var(--color-accent);
+  padding: 2rem 1.75rem;
+  text-align: left;
+}
+.nl-welcome__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--color-rose-primary-dark);
+  font-weight: 700;
+  font-size: 0.85rem;
+  margin-bottom: 0.6rem;
+}
+.nl-welcome__title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(1.4rem, 4vw, 1.75rem);
+  margin-bottom: 0.35rem;
+}
+.nl-welcome__intro {
+  color: var(--color-ink-soft);
+  font-size: 0.95rem;
+  margin-bottom: 1.5rem;
+  max-width: 34rem;
+}
+.nl-welcome__form {
+  display: grid;
+  gap: 1.1rem;
+  max-width: 34rem;
+}
+.nl-welcome__names {
+  display: grid;
+  gap: 0.9rem;
+}
+@media (min-width: 520px) {
+  .nl-welcome__names {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+.nl-welcome__lab {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-ink-soft);
+  margin-bottom: 0.35rem;
+}
+.nl-welcome__input {
+  width: 100%;
+  background: #fff;
+  color: var(--color-ink);
+  border: 1px solid rgb(17 17 17 / 0.18);
+  padding: 0.75rem 0.9rem;
+  font: inherit;
+  font-size: 0.95rem;
+}
+.nl-welcome__legend {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-ink-soft);
+  margin-bottom: 0.55rem;
+}
+.nl-welcome__pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.nl-welcome__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  border: 1px solid rgb(17 17 17 / 0.18);
+  padding: 0.4rem 0.85rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+  user-select: none;
+}
+.nl-welcome__pill:hover {
+  border-color: var(--color-accent);
+}
+.nl-welcome__pill input {
+  accent-color: var(--color-accent);
+}
+.nl-welcome__actions {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+}
+.nl-welcome__btn {
+  border: 0;
+  cursor: pointer;
+  background: var(--color-accent);
+  color: #fff;
+  font: inherit;
+  font-weight: 800;
+  font-size: 0.82rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  padding: 0.85rem 1.5rem;
+  border-radius: 0.5rem;
+}
+.nl-welcome__btn:hover {
+  background: var(--color-rose-primary-dark);
+}
+.nl-welcome__btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.nl-welcome__skip {
+  background: none;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.9rem;
+  color: var(--color-ink-soft);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.nl-welcome__skip:hover {
+  color: var(--color-rose-primary-dark);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -80,7 +439,6 @@
 .prose-content code {
   background: var(--color-cream);
   padding: 0.1em 0.35em;
-  border-radius: 0.25em;
   font-size: 0.9em;
 }
 
@@ -91,5 +449,433 @@
   a {
     text-decoration: none;
     color: inherit;
+  }
+}
+
+/* ---------------------------------------------------------------- */
+/* Saisonkalender (/saisonkalender)                                  */
+/* Plain CSS statt Tailwind-Utilities: 52-Spalten-Balkenraster mit   */
+/* klebender Namensspalte, farbigen Saison-Segmenten und dezentem    */
+/* Aufklappen ganzer Produktzeilen.                                  */
+/* ---------------------------------------------------------------- */
+:root {
+  --sk-freiland: #277a70; /* Freiland: Markengrün — die „echte" Saison */
+  --sk-gewaechshaus: #8ccfc6; /* Gewächshaus: heller Verwandter */
+  --sk-lager: #d9a441; /* Lager: warmes Ocker */
+  --sk-import: #b3bcc7; /* Import: zurückhaltendes Graublau */
+  --sk-name-w: 200px;
+}
+
+.sk-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+.sk-chip {
+  border: 1px solid rgba(17, 17, 17, 0.2);
+  background: #fff;
+  padding: 0.35rem 0.8rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s;
+}
+.sk-chip:hover {
+  background: var(--color-cream);
+}
+.sk-chip[aria-pressed="true"] {
+  background: var(--color-rose-primary);
+  border-color: var(--color-rose-primary);
+  color: #fff;
+}
+.sk-swatch {
+  display: inline-block;
+  width: 0.7rem;
+  height: 0.7rem;
+  margin-right: 0.4rem;
+  vertical-align: -1px;
+}
+/* Legenden-Chips: abgewählt = Farbfeld ausgegraut, Chip bleibt neutral */
+.sk-chip--legend[aria-pressed="false"] {
+  color: var(--color-ink-soft);
+}
+.sk-chip--legend[aria-pressed="false"] .sk-swatch {
+  opacity: 0.25;
+}
+.sk-chip--legend[aria-pressed="true"] {
+  background: #fff;
+  border-color: rgba(17, 17, 17, 0.35);
+  color: var(--color-ink);
+}
+
+.sk-scroll {
+  overflow-x: auto;
+  border: 1px solid rgba(17, 17, 17, 0.1);
+  background: #fff;
+}
+.sk-grid {
+  min-width: 900px;
+}
+/* Monatsmodus („Jetzt in Saison"): die Wochen behalten etwa die Spalten-
+   breite der Jahresansicht (feste 18px), und die Tabelle schrumpft auf
+   Namensspalte + Monat — keine leere weiße Fläche daneben. */
+.sk-scroll--month {
+  width: max-content;
+  max-width: 100%;
+}
+.sk-grid--month {
+  min-width: 0;
+}
+.sk-grid--month .sk-rowgrid {
+  grid-template-columns: var(--sk-name-w) calc(var(--sk-weeks, 52) * 18px);
+}
+.sk-grid--month .sk-month:last-child {
+  border-right: 1px solid rgba(17, 17, 17, 0.08);
+}
+.sk-rowgrid {
+  display: grid;
+  grid-template-columns: var(--sk-name-w) minmax(0, 1fr);
+  align-items: stretch;
+  /* Kette für die klebende Namensspalte: Zeilen-Hintergrund durchreichen,
+     damit die Spalte die Balken beim Scrollen wirklich verdeckt. */
+  background: inherit;
+}
+.sk-name {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: inherit;
+  padding: 0.45rem 0.75rem;
+  border-right: 1px solid rgba(17, 17, 17, 0.08);
+  min-width: 0;
+}
+
+/* Monatskopf */
+.sk-head {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: #fff;
+  border-bottom: 1px solid rgba(17, 17, 17, 0.12);
+}
+.sk-months {
+  display: grid;
+  grid-template-columns: repeat(var(--sk-weeks, 52), 1fr);
+}
+.sk-month {
+  border-left: 1px solid rgba(17, 17, 17, 0.08);
+  padding: 0.35rem 0 0.35rem 0.35rem;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-ink-soft);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+/* Kategorien-Zwischenüberschrift */
+.sk-group {
+  background: var(--color-cream);
+  border-bottom: 1px solid rgba(17, 17, 17, 0.08);
+}
+.sk-group .sk-name {
+  font-family: var(--font-display);
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+/* Produktzeile: komplette Zeile ist der Aufklapp-Button — bewusst ohne
+   Pfeil; Zähler-Badge + Hover-Ton signalisieren „hier steckt mehr drin". */
+.sk-prow {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: #fff;
+  border: 0;
+  border-bottom: 1px solid rgba(17, 17, 17, 0.06);
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  transition: background-color 0.15s;
+}
+.sk-prow:hover {
+  background: var(--color-cream);
+}
+.sk-prow[aria-expanded="true"] {
+  background: var(--color-cream);
+  box-shadow: inset 3px 0 0 var(--color-rose-primary);
+}
+.sk-pname {
+  display: flex;
+  flex-wrap: wrap; /* „aus N Ländern" rückt in die nächste Zeile statt den
+                      Produktnamen abzuschneiden */
+  align-items: center;
+  gap: 0.1rem 0.45rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  min-width: 0;
+}
+/* Produktname immer komplett lesbar: umbrechen statt Ellipsis */
+.sk-pname > span:not(.sk-count) {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+.sk-prow:hover .sk-pname > span:not(.sk-count),
+.sk-prow[aria-expanded="true"] .sk-pname > span:not(.sk-count) {
+  color: var(--color-rose-primary-dark);
+}
+/* Aufklapp-Pfeilkopf am Produkt — dreht sich beim Öffnen */
+.sk-caret {
+  flex: none;
+  color: var(--color-ink-soft);
+  transition: transform 0.15s, color 0.15s;
+}
+.sk-prow:hover .sk-caret {
+  color: var(--color-rose-primary-dark);
+}
+.sk-prow[aria-expanded="true"] .sk-caret {
+  transform: rotate(180deg);
+  color: var(--color-rose-primary-dark);
+}
+/* Länder-Hinweis am Produkt: ganz klein, z. B. „aus 9 Ländern" */
+.sk-count {
+  flex: none;
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: var(--color-ink-soft);
+  white-space: nowrap;
+}
+.sk-prow[aria-expanded="true"] .sk-count {
+  color: var(--color-rose-primary-dark);
+}
+
+/* Fußnoten-Ziffern (Quellenverweise) — nie innerhalb der Zahl umbrechen */
+.sk-fn {
+  margin-left: 0.15rem;
+  font-size: 0.58rem;
+  font-weight: 600;
+  color: var(--color-ink-soft);
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
+/* Berechnungsart-Legende (Buchstaben-Fußnoten) unter dem Kalender */
+.sk-qualities {
+  margin-top: 0.6rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 2rem;
+  font-size: 0.72rem;
+  line-height: 1.5;
+  color: var(--color-ink-soft);
+}
+
+/* Quellenverzeichnis unter dem Kalender */
+.sk-sources {
+  margin-top: 0.6rem;
+  list-style: decimal;
+  padding-left: 1.4rem;
+  font-size: 0.72rem;
+  line-height: 1.5;
+  color: var(--color-ink-soft);
+}
+.sk-sources li {
+  padding-left: 0.2rem;
+  break-inside: avoid;
+}
+@media (min-width: 768px) {
+  .sk-sources {
+    column-count: 2;
+    column-gap: 2.5rem;
+  }
+}
+
+/* Balkenspur: 52 Wochen, dezente Wochenlinien, Monatslinien etwas kräftiger.
+   Unter dem Balken liegt die KW-Zone (Lineal-Ticks + Wochenzahlen an den
+   Saisonrändern) — daher höher als der Balken selbst. */
+.sk-track {
+  position: relative;
+  height: 41px;
+  margin: 0;
+  overflow: hidden;
+  /* --sk-weeks kommt vom Grid-Container: 52 im Jahresmodus, 4–5 im
+     „Jetzt in Saison"-Monatsmodus. */
+  background-image: repeating-linear-gradient(
+    90deg,
+    rgba(17, 17, 17, 0.045) 0,
+    rgba(17, 17, 17, 0.045) 1px,
+    transparent 1px,
+    transparent calc(100% / var(--sk-weeks, 52))
+  );
+}
+.sk-seg {
+  position: absolute;
+  top: 6px;
+  bottom: 21px;
+}
+
+/* KW-Beschriftung der Saisonränder: Tick-Strich (verlängert die Balken-
+   kante nach unten) + Wochenzahl darunter */
+.sk-tick {
+  position: absolute;
+  bottom: 12px;
+  width: 1px;
+  height: 9px;
+  background: var(--color-ink-soft);
+  opacity: 0.55;
+}
+.sk-tick--end {
+  margin-left: -1px;
+}
+.sk-kw {
+  position: absolute;
+  bottom: 1px;
+  font-size: 0.56rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--color-ink-soft);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.sk-kw--start {
+  transform: translateX(-2px);
+}
+.sk-kw--end {
+  transform: translateX(-100%) translateX(2px);
+}
+.sk-kw--merged {
+  transform: translateX(-50%);
+}
+.sk-seg--freiland {
+  background: var(--sk-freiland);
+}
+.sk-seg--gewaechshaus {
+  background: var(--sk-gewaechshaus);
+}
+.sk-seg--lager {
+  background: var(--sk-lager);
+}
+.sk-seg--import {
+  background: var(--sk-import);
+}
+.sk-now {
+  position: absolute;
+  top: 0;
+  bottom: 12px; /* endet über den KW-Zahlen */
+  width: 2px;
+  margin-left: -1px;
+  background: var(--color-ink);
+  opacity: 0.4;
+}
+
+/* Untereinträge (Sorte/Herkunft/Vorhaltung) */
+.sk-sub {
+  background: #fdfdfd;
+  border-bottom: 1px solid rgba(17, 17, 17, 0.06);
+  box-shadow: inset 3px 0 0 var(--color-cream-deep);
+}
+.sk-sub .sk-name {
+  padding-left: 1.4rem;
+}
+/* Sorten-/Eintragsname ebenfalls voll lesbar (umbrechen statt Ellipsis) */
+.sk-sub-label {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 600;
+  overflow-wrap: break-word;
+}
+.sk-sub-origin {
+  display: block;
+  font-size: 0.68rem;
+  color: var(--color-ink-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sk-sub .sk-track {
+  height: 36px;
+}
+.sk-sub .sk-seg {
+  top: 5px;
+  bottom: 19px;
+}
+.sk-sub .sk-tick {
+  height: 7px;
+}
+
+/* „Import"-Sammelzeile: zuklappbar wie die Produktzeile, eine Ebene tiefer */
+.sk-agg {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  border-bottom: 1px solid rgba(17, 17, 17, 0.06);
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  transition: background-color 0.15s;
+}
+.sk-agg:hover {
+  background: var(--color-cream);
+}
+.sk-agg[aria-expanded="true"] {
+  background: var(--color-cream);
+  box-shadow: inset 3px 0 0 var(--color-rose-primary), inset 6px 0 0 #fff;
+}
+.sk-agg:hover .sk-sub-label,
+.sk-agg[aria-expanded="true"] .sk-sub-label {
+  color: var(--color-rose-primary-dark);
+}
+
+/* Einzel-Importe unter der Sammelzeile: noch eine Stufe eingerückt */
+.sk-sub--nested {
+  background: #fff;
+}
+.sk-sub--nested .sk-name {
+  padding-left: 2.3rem;
+}
+
+/* Sorten-Block im Import: Sortenname links, je Herkunftsland ein
+   beschrifteter Balken rechts (untereinander, Balken bleiben ausgerichtet) */
+.sk-variety .sk-name {
+  align-self: start;
+  padding-top: 0.5rem;
+}
+.sk-variety-body {
+  display: flex;
+  flex-direction: column;
+  padding: 0.25rem 0 0.35rem;
+}
+.sk-origin-cap {
+  display: block;
+  padding: 0.2rem 0.5rem 0;
+  font-size: 0.66rem;
+  line-height: 1.25;
+  color: var(--color-ink-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sk-origin-line .sk-track {
+  height: 32px;
+}
+.sk-origin-line .sk-seg {
+  top: 3px;
+  bottom: 17px;
+}
+.sk-origin-line .sk-tick {
+  height: 5px;
+}
+
+@media (max-width: 640px) {
+  :root {
+    --sk-name-w: 148px;
   }
 }

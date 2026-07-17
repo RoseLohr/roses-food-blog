@@ -38,7 +38,7 @@ const FIXTURE = {
 };
 
 // Nur den Netzwerk-Client mocken; zodOutputFormat + Schema laufen echt.
-const parseMock = vi.fn(async () => ({
+const parseMock = vi.fn(async (_args: Record<string, unknown>) => ({
   stop_reason: "end_turn",
   parsed_output: FIXTURE,
 }));
@@ -63,10 +63,13 @@ afterAll(() => {
 });
 
 describe("KI-Rezeptassistent", () => {
-  it("wirft ohne API-Schlüssel", async () => {
+  it("wirft mit klarer Meldung ohne API-Schlüssel", async () => {
     delete process.env.ANTHROPIC_API_KEY;
-    const { generateRecipeDraft, AI_NO_KEY } = await import("@/lib/ai-recipe");
-    await expect(generateRecipeDraft("Rührei")).rejects.toThrow(AI_NO_KEY);
+    const { generateRecipeDraft, AiRecipeError } = await import("@/lib/ai-recipe");
+    await expect(generateRecipeDraft("Rührei")).rejects.toBeInstanceOf(
+      AiRecipeError,
+    );
+    await expect(generateRecipeDraft("Rührei")).rejects.toThrow(/API-Schlüssel/);
     expect(parseMock).not.toHaveBeenCalled();
   });
 
@@ -79,13 +82,38 @@ describe("KI-Rezeptassistent", () => {
     expect(draft.difficulty).toBe("leicht");
     expect(draft.sections[0].ingredients[0].unit).toBe("Stück");
 
-    // Modell mit Opus 4.8, adaptivem Thinking und JSON-Schema-Format aufgerufen
+    // Modell mit Opus 4.8 und JSON-Schema-Format aufgerufen
     expect(parseMock).toHaveBeenCalledTimes(1);
-    const args = parseMock.mock.calls[0][0] as Record<string, unknown>;
+    const args = parseMock.mock.calls[0][0];
     expect(args.model).toBe("claude-opus-4-8");
-    expect(args.thinking).toEqual({ type: "adaptive" });
     const outputConfig = args.output_config as { effort: string; format: unknown };
     expect(outputConfig.effort).toBe("high");
     expect(outputConfig.format).toBeTruthy(); // zodOutputFormat(recipeDraftSchema)
+  });
+
+  it("führt einen Hintergrund-Job aus und liefert den Entwurf", async () => {
+    process.env.ANTHROPIC_API_KEY = "sk-ant-test";
+    const { startRecipeJob, getRecipeJob } = await import("@/lib/ai-recipe-jobs");
+    const id = startRecipeJob("Zucchini, Feta, Ofen");
+    expect(getRecipeJob(id)?.status).toBe("running");
+    for (let i = 0; i < 100 && getRecipeJob(id)?.status === "running"; i++) {
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    const job = getRecipeJob(id);
+    expect(job?.status).toBe("done");
+    expect(job?.draft?.title).toBe("Ofengemüse mit Feta");
+  });
+
+  it("hält einen Job-Fehler mit klarer Meldung fest", async () => {
+    delete process.env.ANTHROPIC_API_KEY;
+    const { startRecipeJob, getRecipeJob } = await import("@/lib/ai-recipe-jobs");
+    const id = startRecipeJob("egal");
+    for (let i = 0; i < 100 && getRecipeJob(id)?.status === "running"; i++) {
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    const job = getRecipeJob(id);
+    expect(job?.status).toBe("error");
+    expect(job?.code).toBe("no_key");
+    expect(job?.error).toMatch(/API-Schlüssel/);
   });
 });

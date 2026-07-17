@@ -23,7 +23,7 @@ export default async function RecipePreviewPage(props: {
 
   return (
     <>
-      <div className="mb-6 flex items-center justify-between gap-4 rounded-xl bg-amber-100 p-3 text-sm text-amber-900">
+      <div className="mb-6 flex items-center justify-between gap-4 bg-amber-100 p-3 text-sm text-amber-900">
         <p>{dict.admin.recipes.previewBanner}</p>
         <Link
           href={`/admin/rezepte/${recipeId}`}
@@ -32,18 +32,18 @@ export default async function RecipePreviewPage(props: {
           {dict.common.back}
         </Link>
       </div>
-      <div className="rounded-2xl bg-white p-6 shadow-sm md:p-10">
+      <div className="bg-white p-6 shadow-sm md:p-10">
         <RecipeView full={full} baseUrl={getBaseUrl()} />
       </div>
 
       {full.adminNotes.length > 0 && (
-        <section className="mt-6 rounded-2xl border border-dashed border-ink/30 bg-white p-5">
+        <section className="mt-6 border border-dashed border-ink/30 bg-white p-5">
           <h2 className="mb-2 font-semibold">
             {dict.admin.recipes.internalNotes}
           </h2>
           <ul className="flex flex-col gap-2 text-sm">
             {full.adminNotes.map((n) => (
-              <li key={n.id} className="rounded-lg bg-cream p-3">
+              <li key={n.id} className="bg-cream p-3">
                 {n.text}
               </li>
             ))}

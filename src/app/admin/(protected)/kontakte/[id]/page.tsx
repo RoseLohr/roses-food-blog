@@ -12,7 +12,7 @@ const d = dict.admin.contacts;
 
 export const metadata: Metadata = { title: d.detailTitle };
 
-const inputCls = "w-full rounded-lg border border-ink-soft/30 px-3 py-2 text-sm";
+const inputCls = "w-full border border-ink-soft/30 px-3 py-2 text-sm";
 const labelCls = "mb-1 block text-sm font-medium";
 
 export default async function ContactDetailPage(props: {
@@ -80,13 +80,13 @@ export default async function ContactDetailPage(props: {
         {d.detailTitle}: {`${contact.firstName} ${contact.lastName}`.trim() || contact.email}
       </h1>
       {message && (
-        <p role="status" className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
+        <p role="status" className="mb-4 bg-amber-50 p-3 text-sm text-amber-900">
           {message}
         </p>
       )}
 
       <div className="grid max-w-5xl gap-6 lg:grid-cols-2">
-        <section className="rounded-2xl bg-white p-5 shadow-sm">
+        <section className="bg-white p-5 shadow-sm">
           <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
             {facts.map(([label, value]) => (
               <div key={label} className="contents">
@@ -177,14 +177,14 @@ export default async function ContactDetailPage(props: {
           )}
         </section>
 
-        <section className="rounded-2xl bg-white p-5 shadow-sm">
+        <section className="bg-white p-5 shadow-sm">
           <h2 className="mb-3 text-lg font-semibold">{d.activity}</h2>
           {activity.length === 0 ? (
             <p className="text-sm text-ink-soft">{dict.common.none}</p>
           ) : (
             <ol className="flex flex-col gap-2 text-sm">
               {activity.map((a) => (
-                <li key={a.id} className="rounded-lg border border-ink/5 bg-cream/50 p-2.5">
+                <li key={a.id} className="border border-ink/5 bg-cream/50 p-2.5">
                   <span className="font-medium">
                     {d.activityTypes[a.type] ?? a.type}
                   </span>{" "}

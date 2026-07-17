@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { confirmContact } from "@/lib/newsletter";
+import { confirmContact, getOfferedInterests } from "@/lib/newsletter";
+import { NewsletterWelcome } from "@/components/newsletter-welcome";
 import { rateLimit } from "@/lib/ratelimit";
 import { getClientIp } from "@/lib/request";
 import { t } from "@/i18n/de";
@@ -20,13 +21,35 @@ export default async function ConfirmPage(props: {
   const { token } = await props.params;
   const ip = await getClientIp();
   const limited = !rateLimit(`confirm:${ip}`, 10, 60_000).ok;
-  const result = limited ? "ungueltig" : await confirmContact(token);
+  const result = limited
+    ? ({ outcome: "ungueltig" } as const)
+    : await confirmContact(token);
+
+  // Frisch bestätigt → freundlicher Willkommensschritt (Name & Interessen,
+  // optional). Der Kontakt wird über seinen Abmelde-Token ergänzt.
+  if (result.outcome === "bestaetigt" && result.profile) {
+    const interests = await getOfferedInterests();
+    return (
+      <main className="mx-auto max-w-xl py-12">
+        <NewsletterWelcome
+          token={result.profile.unsubscribeToken}
+          interests={interests}
+          firstName={result.profile.firstName}
+          lastName={result.profile.lastName}
+          selectedInterestIds={result.profile.interestIds}
+        />
+      </main>
+    );
+  }
 
   const messages = {
-    bestaetigt: dict.newsletter.confirmSuccess,
     bereits_aktiv: dict.newsletter.confirmAlready,
     ungueltig: dict.newsletter.confirmInvalid,
   } as const;
+  const message =
+    result.outcome === "bereits_aktiv"
+      ? messages.bereits_aktiv
+      : messages.ungueltig;
 
   return (
     <main className="mx-auto max-w-xl py-12 text-center">
@@ -35,13 +58,13 @@ export default async function ConfirmPage(props: {
       </h1>
       <p
         role="status"
-        className={`mt-6 rounded-2xl p-5 ${
-          result === "ungueltig"
+        className={`mt-6 p-5 ${
+          result.outcome === "ungueltig"
             ? "bg-red-50 text-red-900"
             : "bg-green-50 text-green-900"
         }`}
       >
-        {messages[result]}
+        {message}
       </p>
       <Link
         href="/"

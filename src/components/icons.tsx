@@ -75,6 +75,39 @@ export function IconShare({ className }: { className?: string }) {
   );
 }
 
+/** Land — Globus (stilistisch passend zu Region/Stadt: gleiche Strichstärke). */
+export function IconCountry({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} {...base}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3 12h18" />
+      <path d="M12 3c2.5 2.4 3.8 5.6 3.8 9s-1.3 6.6-3.8 9c-2.5-2.4-3.8-5.6-3.8-9S9.5 5.4 12 3Z" />
+    </svg>
+  );
+}
+
+/** Region — Landkarte mit Faltung. */
+export function IconRegion({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} {...base}>
+      <path d="M9 4 3.5 6v14L9 18l6 2 5.5-2V4L15 6 9 4Z" />
+      <path d="M9 4v14M15 6v14" />
+    </svg>
+  );
+}
+
+/** Stadt — Häuserzeile/Gebäude. */
+export function IconCity({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} {...base}>
+      <path d="M3 21h18" />
+      <path d="M5 21V9l6-4 6 4v12" />
+      <path d="M9 21v-5h4v5" />
+      <path d="M9 11h.01M15 11h.01" />
+    </svg>
+  );
+}
+
 export function IconHeart({
   className,
   filled = false,

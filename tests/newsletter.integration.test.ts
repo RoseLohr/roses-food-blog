@@ -98,7 +98,10 @@ describe("Double-Opt-in-Flow", () => {
 
     const [before] = await db.select().from(schema.contact);
     const result = await confirmContact(before.confirmToken!);
-    expect(result).toBe("bestaetigt");
+    expect(result.outcome).toBe("bestaetigt");
+    // Willkommensschritt bekommt Abmelde-Token + bisherige Angaben zurück
+    expect(result.profile?.unsubscribeToken).toBe(before.unsubscribeToken);
+    expect(result.profile?.interestIds).toEqual([1]);
 
     const [after] = await db.select().from(schema.contact);
     expect(after.status).toBe("aktiv");
@@ -115,8 +118,8 @@ describe("Double-Opt-in-Flow", () => {
     expect(logs.every((l) => l.status === "geplant")).toBe(true);
 
     // Ungültiger Token
-    expect(await confirmContact("f".repeat(48))).toBe("ungueltig");
-    expect(await confirmContact("zu-kurz")).toBe("ungueltig");
+    expect((await confirmContact("f".repeat(48))).outcome).toBe("ungueltig");
+    expect((await confirmContact("zu-kurz")).outcome).toBe("ungueltig");
   });
 
   it("fällige Sequenzschritte werden eingereiht und versendet", async () => {

@@ -29,6 +29,10 @@ const nextConfig: NextConfig = {
   // daher komplett deaktivieren.
   images: { unoptimized: true },
   experimental: {
+    // Persistenter Turbopack-Build-Cache (.next/cache/turbopack). deploy.sh
+    // reicht das Verzeichnis als Host-Mount in den Image-Build durch —
+    // Folge-Deployments bauen dadurch nur noch das Geänderte neu.
+    turbopackFileSystemCacheForBuild: true,
     serverActions: {
       // Bild-Uploads in der Medienbibliothek (max. 15 MB + Formular-Overhead)
       bodySizeLimit: "20mb",

@@ -158,6 +158,20 @@ Das ist der gesamte Update-Vorgang: git pull → Image-Build → DB-Backup →
 Migrationen → Neustart → Healthcheck → Statusausgabe. Kurze Downtime
 (wenige Sekunden) ist akzeptabel (A6).
 
+Das Deployment ist auf Geschwindigkeit optimiert:
+
+- **Schnellpfad:** Gibt es keine neuen Commits und läuft der Container
+  gesund, endet `./deploy.sh` nach wenigen Sekunden ohne Rebuild und ohne
+  Neustart. `FORCE_DEPLOY=1 ./deploy.sh` erzwingt den vollen Lauf.
+- **Layer-Cache:** Die Build-Zwischenstufen bleiben als
+  `roses-blog:cache-deps`/`cache-build` getaggt erhalten — `npm ci` läuft
+  nur noch, wenn sich `package-lock.json` ändert.
+- **Persistente Build-Caches** unter `$DATA_DIR/build-cache/` (npm-Downloads
+  und Turbopack-Compilercache): Folge-Builds kompilieren nur Geändertes.
+  Bei Verdacht auf einen defekten Cache: `NO_CACHE=1 ./deploy.sh` baut
+  einmalig komplett frisch (und `rm -rf $DATA_DIR/build-cache` leert die
+  Caches dauerhaft).
+
 ## Backup & Restore
 
 `deploy/backup.sh` erzeugt in `$DATA_DIR/backups/`:

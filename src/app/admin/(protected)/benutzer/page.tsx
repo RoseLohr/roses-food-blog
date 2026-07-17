@@ -21,11 +21,11 @@ export default async function UsersPage(props: {
     <>
       <h1 className="mb-6 text-2xl font-bold">{dict.admin.users.title}</h1>
       {message && (
-        <p role="status" className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
+        <p role="status" className="mb-4 bg-amber-50 p-3 text-sm text-amber-900">
           {message}
         </p>
       )}
-      <div className="overflow-x-auto rounded-2xl bg-white shadow-sm">
+      <div className="overflow-x-auto bg-white shadow-sm">
         <table className="w-full text-left text-sm">
           <thead>
             <tr className="border-b border-ink/10 text-ink-soft">
@@ -65,7 +65,7 @@ export default async function UsersPage(props: {
       </h2>
       <form
         action={createUserAction}
-        className="flex max-w-md flex-col gap-3 rounded-2xl bg-white p-5 shadow-sm"
+        className="flex max-w-md flex-col gap-3 bg-white p-5 shadow-sm"
       >
         <label className="text-sm font-medium" htmlFor="new-name">
           {dict.admin.users.name}
@@ -74,7 +74,7 @@ export default async function UsersPage(props: {
           id="new-name"
           name="name"
           required
-          className="rounded-lg border border-ink-soft/30 px-3 py-2"
+          className="border border-ink-soft/30 px-3 py-2"
         />
         <label className="text-sm font-medium" htmlFor="new-email">
           {dict.admin.users.email}
@@ -84,7 +84,7 @@ export default async function UsersPage(props: {
           name="email"
           type="email"
           required
-          className="rounded-lg border border-ink-soft/30 px-3 py-2"
+          className="border border-ink-soft/30 px-3 py-2"
         />
         <label className="text-sm font-medium" htmlFor="new-password">
           {dict.admin.users.password}
@@ -95,7 +95,7 @@ export default async function UsersPage(props: {
           type="password"
           minLength={10}
           required
-          className="rounded-lg border border-ink-soft/30 px-3 py-2"
+          className="border border-ink-soft/30 px-3 py-2"
         />
         <button
           type="submit"

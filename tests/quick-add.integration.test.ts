@@ -54,19 +54,20 @@ describe("Sofort-Anlage", () => {
     expect(created.name).toBe("Frühstück");
     expect(created.existed).toBeUndefined();
 
-    // Persistiert inkl. Slug
+    // Persistiert inkl. Slug und Art
     const [row] = await db
       .select()
-      .from(schema.category)
-      .where(eq(schema.category.id, created.id));
+      .from(schema.taxonomy)
+      .where(eq(schema.taxonomy.id, created.id));
     expect(row.slug).toBe("fruehstueck");
+    expect(row.type).toBe("kategorie");
 
     // Erneut mit anderer Groß-/Kleinschreibung -> selber Eintrag, existed=true
     const again = await (await call({ kind: "taxonomy", type: "kategorie", name: "frühstück" })).json();
     expect(again.id).toBe(created.id);
     expect(again.existed).toBe(true);
 
-    const all = await db.select().from(schema.category);
+    const all = await db.select().from(schema.taxonomy);
     expect(all).toHaveLength(1);
   });
 
@@ -97,11 +98,11 @@ describe("Sofort-Anlage", () => {
     const { eq } = await import("drizzle-orm");
     const seg = await (await call({ kind: "segment", name: "Newsletter" })).json();
     expect(seg.name).toBe("Newsletter");
-    const [row] = await db
+    const rules = await db
       .select()
-      .from(schema.segment)
-      .where(eq(schema.segment.id, seg.id));
-    expect(row.ruleInterestIds).toBe("[]");
+      .from(schema.segmentRuleInterest)
+      .where(eq(schema.segmentRuleInterest.segmentId, seg.id));
+    expect(rules).toHaveLength(0);
   });
 
   it("weist ungültige Eingaben ab", async () => {

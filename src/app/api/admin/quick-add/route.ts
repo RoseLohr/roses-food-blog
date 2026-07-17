@@ -11,7 +11,11 @@ import { db, schema } from "@/db";
 import { getCurrentAdmin } from "@/lib/auth";
 import { isSameOriginRequest } from "@/lib/csrf";
 import { slugify, uniqueSlug } from "@/lib/slug";
-import { TAXONOMY_TABLES, isTaxonomyType } from "@/lib/taxonomies";
+import {
+  findOrCreateTaxonomy,
+  isTaxonomyType,
+  taxonomiesOfType,
+} from "@/lib/taxonomies";
 
 const bodySchema = z.object({
   kind: z.enum(["taxonomy", "interest", "contactTag", "segment", "ingredient"]),
@@ -43,21 +47,13 @@ export async function POST(req: Request) {
       if (!body.type || !isTaxonomyType(body.type)) {
         return NextResponse.json({ error: "invalid_type" }, { status: 400 });
       }
-      const table = TAXONOMY_TABLES[body.type];
-      const existing = await db
-        .select({ id: table.id, name: table.name })
-        .from(table)
-        .where(sql`lower(${table.name}) = ${lower}`)
-        .limit(1);
-      if (existing[0]) return NextResponse.json({ ...existing[0], existed: true });
-      const slugs = new Set(
-        (await db.select({ slug: table.slug }).from(table)).map((r) => r.slug),
-      );
-      const [row] = await db
-        .insert(table)
-        .values({ name, slug: uniqueSlug(slugify(name), (s) => slugs.has(s)) })
-        .returning({ id: table.id, name: table.name });
-      return NextResponse.json(row);
+      const rows = await taxonomiesOfType(body.type);
+      const found = rows.find((r) => r.name.toLowerCase() === lower);
+      if (found) {
+        return NextResponse.json({ id: found.id, name: found.name, existed: true });
+      }
+      const row = await findOrCreateTaxonomy(body.type, name);
+      return NextResponse.json({ id: row.id, name: row.name });
     }
 
     if (body.kind === "ingredient") {
@@ -95,9 +91,7 @@ export async function POST(req: Request) {
     if (existing[0]) return NextResponse.json({ ...existing[0], existed: true });
 
     const values =
-      body.kind === "segment"
-        ? { name, ruleInterestIds: "[]", createdAt: new Date() }
-        : { name };
+      body.kind === "segment" ? { name, createdAt: new Date() } : { name };
     const [row] = await db
       .insert(table)
       .values(values as never)

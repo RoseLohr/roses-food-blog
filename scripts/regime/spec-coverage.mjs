@@ -1,0 +1,75 @@
+#!/usr/bin/env node
+/**
+ * A-04 — Spec-Coverage-Gate. GEHÄRTET (wf_ac30593b): „abgedeckt" verlangt jetzt
+ * eine ECHTE Import-Referenz aus einer Testdatei (Kommentare gestrippt), nicht
+ * mehr eine beliebige Substring-Erwähnung. Eine bloße Kommentarzeile
+ * „// TODO: lib/season testen" zählt nicht mehr als Test.
+ *
+ *   (Standard)   Exit≠0, wenn ein kritisches Modul keinen importierenden Test hat.
+ *   --selftest   ein real ungetestetes Kernmodul MUSS als unbedeckt erkannt werden.
+ */
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+
+const stryker = JSON.parse(fs.readFileSync(path.join(ROOT, "stryker.config.json"), "utf8")).mutate || [];
+const EXTRA = ["src/lib/contacts.ts", "src/lib/ai-recipe.ts", "src/lib/observability.ts"];
+const CRITICAL = [...new Set([...stryker, ...EXTRA])];
+
+/** Kommentare entfernen, dann Import-/Require-Ziele extrahieren. */
+function importTargets(src) {
+  const code = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+  const out = [];
+  for (const m of code.matchAll(/(?:from|import|require)\s*\(?\s*["']([^"']+)["']/g)) out.push(m[1]);
+  return out;
+}
+
+function testTargetSets() {
+  const dir = path.join(ROOT, "tests");
+  const sets = [];
+  const walk = (d) => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) walk(p);
+      else if (/\.(test|spec)\.[tj]sx?$/.test(e.name)) sets.push(importTargets(fs.readFileSync(p, "utf8")));
+    }
+  };
+  walk(dir);
+  return sets;
+}
+
+/** Wird das Modul per Import in irgendeinem Test wirklich referenziert? */
+function covered(modPath, sets) {
+  const base = modPath.replace(/^src\//, "").replace(/\.tsx?$/, ""); // lib/slug
+  const alias = "@/" + base;
+  const tail = "/" + path.basename(base); // /slug
+  return sets.some((targets) =>
+    targets.some((t) => t === alias || t.endsWith("/" + base) || t.endsWith(tail) || t.replace(/\.tsx?$/, "") === alias),
+  );
+}
+
+const sets = testTargetSets();
+
+if (process.argv.includes("--selftest")) {
+  // Ein Modul, das KEIN Test importiert (nur in einem Kommentar erwähnt), muss unbedeckt sein.
+  const fakeSets = [importTargets('// TODO: irgendwann lib/does-not-exist-core testen\nimport { x } from "@/lib/slug";')];
+  if (covered("src/lib/does-not-exist-core.ts", fakeSets)) {
+    console.error("⛔ Selbsttest FEHLGESCHLAGEN: Kommentar-Erwähnung fälschlich als Abdeckung gewertet.");
+    process.exit(1);
+  }
+  if (!covered("src/lib/slug.ts", fakeSets)) {
+    console.error("⛔ Selbsttest FEHLGESCHLAGEN: echter Import nicht als Abdeckung erkannt.");
+    process.exit(1);
+  }
+  console.log("   ✓ Selbsttest: Kommentar-Erwähnung ≠ Abdeckung; echter Import = Abdeckung.");
+}
+
+const uncovered = CRITICAL.filter((m) => !covered(m, sets));
+if (uncovered.length) {
+  for (const m of uncovered) console.error(`   ✗ Kritisches Modul ohne importierenden Test: ${m}`);
+  console.error(`\n⛔ Spec-Coverage: ${uncovered.length} ungetestete(s) Kernmodul(e). Merge blockiert (A-04).`);
+  process.exit(1);
+}
+console.log(`[spec-coverage] ${CRITICAL.length} kritische Kernmodule, alle per Import von Tests referenziert. Grün.`);

@@ -5,6 +5,7 @@ import type { Metadata } from "next";
 import { eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { db, schema } from "@/db";
+import { mediaImageWithWidths } from "@/lib/media";
 import { renderMarkdown } from "@/lib/markdown";
 import { JsonLd, breadcrumbJsonLd } from "@/lib/jsonld";
 import { PageTracker } from "@/components/page-tracker";
@@ -21,13 +22,7 @@ async function loadPage(slug: string) {
     .from(schema.page)
     .where(eq(schema.page.slug, slug));
   if (!page || page.status !== "veroeffentlicht") return null;
-  const heroImage = page.heroImageId
-    ? ((await db
-        .select()
-        .from(schema.mediaImage)
-        .where(eq(schema.mediaImage.id, page.heroImageId))
-        .limit(1))[0] ?? null)
-    : null;
+  const heroImage = await mediaImageWithWidths(page.heroImageId);
   return { page, heroImage };
 }
 
@@ -63,7 +58,7 @@ export default async function CmsPage(props: {
       />
       <h1 className="font-display text-3xl font-bold md:text-4xl">{page.title}</h1>
       {heroImage && (
-        <div className="mt-6 overflow-hidden rounded-2xl">
+        <div className="mt-6 overflow-hidden">
           <ResponsiveImg
             image={heroImage}
             sizes="(max-width: 768px) 100vw, 768px"

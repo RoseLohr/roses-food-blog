@@ -22,6 +22,7 @@ export async function POST(req: Request) {
   try {
     const form = await req.formData();
     file = form.get("datei");
+    // „altText" ist zugleich die Bildbeschreibung (ein Feld).
     altText = String(form.get("altText") ?? "").trim();
   } catch {
     return NextResponse.json({ error: "invalid" }, { status: 400 });

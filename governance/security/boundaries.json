@@ -1,0 +1,35 @@
+{
+  "_comment": "C-02 — deklarierte Trust-Boundaries / Egress- / Integrations- / Ausführungspunkte. scripts/regime/boundary-check.mjs scannt src/lib + src/app auf externe Egress-/Exec-Marker und verlangt für JEDE solche Datei einen Eintrag hier + einen Threat-Model-Verweis. Eine neue Integration ohne Eintrag fällt den Build.",
+  "version": "1.0",
+  "threat_model": "governance/security/threat-model.md",
+  "boundaries": {
+    "src/lib/ai-recipe.ts": {
+      "kind": "network-egress",
+      "target": "api.anthropic.com (KI-Modell, gepinnt claude-opus-4-8)",
+      "trust": "untrusted output; admin-only Auslöser; Ausgangstext nicht persistiert",
+      "threats": "Injection (C-07, schema-gebunden), Datenabfluss (kein PII im Prompt, C-24), Kosten (Caps, C-05)",
+      "stride": "Tampering/Info-Disclosure — gemindert durch Schema-Bindung + kein Tool/Egress"
+    },
+    "src/lib/mailer.ts": {
+      "kind": "network-egress",
+      "target": "SMTP-Server (Newsletter-/Alarm-Versand)",
+      "trust": "Auftragsverarbeiter; Rate-Limit + Queue",
+      "threats": "Spoofing (SPF/DKIM beim Provider), Info-Disclosure (Empfänger-PII)",
+      "stride": "Info-Disclosure — gemindert durch Einwilligung + Erasure"
+    },
+    "src/lib/media.ts": {
+      "kind": "local-exec",
+      "target": "Bildwerkzeug (sharp nativ / vips execFile-Fallback)",
+      "trust": "lokale Ausführung fester Argumente; keine nutzerkontrollierte Kommandozeile",
+      "threats": "Command-Injection (Argumente fest, keine Shell), Ressourcen (Bildgröße begrenzt)",
+      "stride": "Elevation-of-Privilege — gemindert durch execFile ohne Shell + feste Argumente"
+    },
+    "src/lib/deploy.ts": {
+      "kind": "network-egress",
+      "target": "api.github.com (Deploy-/Repo-Status, admin-only ausgelöst)",
+      "trust": "fester GitHub-API-Host; Token aus Settings/Env; keine nutzerkontrollierte URL",
+      "threats": "Info-Disclosure (Token), SSRF (Host fest)",
+      "stride": "Info-Disclosure — gemindert durch festen Host + admin-only + Token im Vault"
+    }
+  }
+}

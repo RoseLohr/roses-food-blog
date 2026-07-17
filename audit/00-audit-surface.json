@@ -1,0 +1,66 @@
+{
+  "generated_from_commit": "ad3ff3179a2b4f374908c49cf34918d9ddcef2e7",
+  "counts": {
+    "files": 309,
+    "pageRoutes": 62,
+    "apiRoutes": 12,
+    "libs": 45,
+    "migrations": 3,
+    "scripts": 5,
+    "tests": 28,
+    "dependencies": 19,
+    "devDependencies": 13
+  },
+  "apiRoutes": [
+    "src/app/api/admin/ai/ping/route.ts",
+    "src/app/api/admin/daten/export/route.ts",
+    "src/app/api/admin/daten/import/route.ts",
+    "src/app/api/admin/daten/loeschen/route.ts",
+    "src/app/api/admin/deploy/status/route.ts",
+    "src/app/api/admin/deploy/trigger/route.ts",
+    "src/app/api/admin/media/route.ts",
+    "src/app/api/admin/quick-add/route.ts",
+    "src/app/api/admin/recipes/ai/route.ts",
+    "src/app/api/beacon/route.ts",
+    "src/app/api/ingredients/suggest/route.ts",
+    "src/app/api/likes/route.ts"
+  ],
+  "migrations": [
+    "drizzle/0000_init.sql",
+    "drizzle/0001_fts_views_constraints.sql",
+    "drizzle/0002_filter_group_kalorien.sql"
+  ],
+  "scripts": [
+    "scripts/entry.sh",
+    "scripts/fts-rebuild.mjs",
+    "scripts/migrate.mjs",
+    "scripts/seed.ts",
+    "scripts/update-geoip.sh"
+  ],
+  "dataStores": [
+    "SQLite (app.db, WAL) via better-sqlite3 + Drizzle",
+    "FTS5-Virtualtabellen (recipe_fts, travel_fts, dish_fts)",
+    "Uploads-Verzeichnis (DATA_DIR/uploads)",
+    "GeoIP-DB (DATA_DIR/geoip)"
+  ],
+  "egress": [
+    "api.anthropic.com (KI-Rezeptentwurf, nur wenn API-Key gesetzt)",
+    "optional GeoIP-Update-Skript"
+  ],
+  "identities": [
+    "Ein Admin-Konto (adminUser, Passwort via hash-wasm)",
+    "Session-Cookie (auth-core)",
+    "kein Multi-Tenant, kein Multi-Agent-Runtime"
+  ],
+  "deployment": [
+    "Manuell: ./deploy.sh auf dem Server (podman rootless)",
+    "Panel-getriggert: systemd path-unit auf deploy-request",
+    "KEINE CI/CD-Pipeline, KEIN Policy-Bundle, KEIN Merge-Gate"
+  ],
+  "aiSurface": [
+    "Ein KI-Feature: Rezeptentwurf aus Rohtext (Anthropic Messages API, structured output)",
+    "Modell claude-opus-4-8 (gepinnt, kein latest-Alias)",
+    "KEIN Tool-Use — Modell schreibt/sendet/löscht nichts",
+    "Eingabe: vom Admin eingefügter Text; Ausgabe: JSON, vom Admin vor Übernahme geprüft"
+  ]
+}

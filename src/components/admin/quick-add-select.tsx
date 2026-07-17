@@ -71,7 +71,7 @@ export function QuickAddSelect({
   }
 
   const inputCls =
-    "w-full rounded-lg border border-ink-soft/30 px-3 py-2 text-sm";
+    "w-full border border-ink-soft/30 px-3 py-2 text-sm";
 
   return (
     <div>
@@ -111,7 +111,7 @@ export function QuickAddSelect({
               }
             }}
             placeholder={dict.quickAdd.placeholder}
-            className="w-full min-w-0 rounded-lg border border-ink-soft/30 px-2 py-1 text-sm"
+            className="w-full min-w-0 border border-ink-soft/30 px-2 py-1 text-sm"
           />
           <button
             type="button"

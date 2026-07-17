@@ -24,7 +24,7 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="de">
-      <body className="flex min-h-screen flex-col bg-cream text-ink antialiased">
+      <body className="flex min-h-screen flex-col overflow-x-clip bg-cream text-ink antialiased">
         {children}
       </body>
     </html>

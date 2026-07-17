@@ -17,7 +17,7 @@ export interface SlideRow {
   caption: string;
 }
 
-const inputCls = "w-full rounded-lg border border-ink-soft/30 px-3 py-2 text-sm";
+const inputCls = "w-full border border-ink-soft/30 px-3 py-2 text-sm";
 const btnSecondary =
   "rounded-lg border border-ink/20 px-3 py-1.5 text-sm hover:bg-cream";
 
@@ -48,7 +48,7 @@ export function SliderEditor({
     <div className="flex flex-col gap-3">
       <input type="hidden" name="slides" value={JSON.stringify(slides)} />
       {slides.map((s, i) => (
-        <div key={i} className="flex flex-col gap-3 rounded-xl border border-ink/10 p-3">
+        <div key={i} className="flex flex-col gap-3 border border-ink/10 p-3">
           <ImagePicker
             legend={d.sliderImage}
             options={images}

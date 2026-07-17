@@ -1,0 +1,969 @@
+{
+  "catalogue_version": "2.0",
+  "commit": "160228f",
+  "count": 119,
+  "tally": {
+    "PASS": 60,
+    "PARTIAL": 28,
+    "N/A": 27,
+    "FAIL": 3,
+    "NO-EVIDENCE": 1
+  },
+  "findings": [
+    {
+      "id": "B-06",
+      "priority": 10,
+      "band": "STOP-SHIP",
+      "verdict": "PASS",
+      "evidence": "secret-scan (Muster+Selbsttest), keine Secrets im Repo",
+      "standing_control": "installiert & demonstriert (Wave 1–3, CI)"
+    },
+    {
+      "id": "A-01",
+      "priority": 9,
+      "band": "STOP-SHIP",
+      "verdict": "PARTIAL",
+      "evidence": "Deterministischer CI-Gate ist alleinige Merge-Autorität + 21 Selbsttest-Gates. Fremd-Vendor-Verifier: Harness gebaut (independent-verify.mjs + Workflow), AKTIV mit einem Handgriff (Secret SECOND_VENDOR_API_KEY). Bis dahin Residual A-39.",
+      "standing_control": null
+    },
+    {
+      "id": "A-39",
+      "priority": 5,
+      "band": "STOP-SHIP",
+      "verdict": "PARTIAL",
+      "evidence": "Harness independent-verify.mjs + .github/workflows/independent-verify.yml gebaut; unabhängiger Fremd-Vendor-Verifier aktiv, sobald Betreiber ein Zweit-Vendor-Secret setzt. Kein Fake-Grün ohne Schlüssel. Kompensation: deterministischer Gate.",
+      "standing_control": null
+    },
+    {
+      "id": "A-02",
+      "priority": 9,
+      "band": "BLOCKER-1",
+      "verdict": "PASS",
+      "evidence": "Mutation-Testing 82,91% (break=78) als Meta-Gate; CI-Job",
+      "standing_control": "installiert & demonstriert (Wave 1–3, CI)"
+    },
+    {
+      "id": "A-06",
+      "priority": 9,
+      "band": "BLOCKER-1",
+      "verdict": "PASS",
+      "evidence": "deploy/rollback.sh (getimt, Vorbedingung :previous, DB-Restore, Health-Gate, --dry-run-Drill) + rollback-check.mjs (CI) + deploy.sh :previous-Tag. Erster echter Server-Drill = greenbox-Aktion (einmal zu protokollieren).",
+      "standing_control": "deploy/rollback.sh (getimt, Vorbedingung :previous, DB-Restore, Health-Gate, --dry-run-Drill) + rollback-check.mjs (CI) + deploy.sh :previous-Tag. Erster echter Server-Drill = greenbox-Aktion (einmal zu protokollieren)."
+    },
+    {
+      "id": "A-08",
+      "priority": 9,
+      "band": "BLOCKER-1",
+      "verdict": "PASS",
+      "evidence": ".github/workflows/dast.yml: OWASP-ZAP-Baseline wöchentlich gegen die laufende App, fällt bei echten Funden (Prod-Header-Regeln auf WARN). Blockierender Prod-DAST gegen greenbox optional.",
+      "standing_control": ".github/workflows/dast.yml: OWASP-ZAP-Baseline wöchentlich gegen die laufende App, fällt bei echten Funden (Prod-Header-Regeln auf WARN). Blockierender Prod-DAST gegen greenbox optional."
+    },
+    {
+      "id": "A-24",
+      "priority": 9,
+      "band": "BLOCKER-1",
+      "verdict": "PASS",
+      "evidence": "SLO (Fehlerbudget je Fenster) + Selbst-Monitor alle 5min: DB-Health + Budget; bei Verletzung automatischer E-Mail-Alarm (SMTP) mit Cooldown; Crash-Recovery restart:always + Healthchecks; Restore-Drill vorhanden",
+      "standing_control": "Integrationstest tests/observability.integration.test.ts (in CI) + Monitor-Cron im Scheduler"
+    },
+    {
+      "id": "B-01",
+      "priority": 9,
+      "band": "BLOCKER-1",
+      "verdict": "PASS",
+      "evidence": "CI-Gate + gate-selftest beweist Blockieren",
+      "standing_control": "installiert & demonstriert (Wave 1–3, CI)"
+    },
+    {
+      "id": "B-03",
+      "priority": 9,
+      "band": "BLOCKER-1",
+      "verdict": "PASS",
+      "evidence": "Strukturierte JSON-Logs (stdout, maschinen-abfragbar), Golden-Signal-Persistenz ops_event, onRequestError-Hook mit Route+Message → Fehler bis Root-Cause nachvollziehbar; verteiltes Tracing N/A (Ein-Prozess-Monolith)",
+      "standing_control": "Observability-Test in CI; Monitor schreibt health-Events (Ausbleiben = Tripwire)"
+    },
+    {
+      "id": "B-04",
+      "priority": 9,
+      "band": "BLOCKER-1",
+      "verdict": "PASS",
+      "evidence": "deps-existence + Lockfile + npm audit ≥high in CI",
+      "standing_control": "installiert & demonstriert (Wave 1–3, CI)"
+    },
+    {
+      "id": "B-11",
+      "priority": 9,
+      "band": "BLOCKER-1",
+      "verdict": "PASS",
+      "evidence": "Rollback-Signal via Health-Gate im Rollback-Skript; :previous-Image + jüngstes Pre-Deploy-Backup wiederherstellbar",
+      "standing_control": "Rollback-Signal via Health-Gate im Rollback-Skript; :previous-Image + jüngstes Pre-Deploy-Backup wiederherstellbar"
+    },
+    {
+      "id": "B-20",
+      "priority": 9,
+      "band": "BLOCKER-1",
+      "verdict": "N/A",
+      "evidence": "kein modellgesteuerter Egress/Tool-Pfad",
+      "standing_control": null
+    },
+    {
+      "id": "B-22",
+      "priority": 9,
+      "band": "BLOCKER-1",
+      "verdict": "N/A",
+      "evidence": "kein Agenten-Runtime",
+      "standing_control": null
+    },
+    {
+      "id": "A-36",
+      "priority": 6,
+      "band": "BLOCKER-1",
+      "verdict": "PASS",
+      "evidence": ".github/workflows/nightly.yml (GitHub-Actions-schedule = Cron-Host): calibration --strict fortlaufend",
+      "standing_control": ".github/workflows/nightly.yml (GitHub-Actions-schedule = Cron-Host): calibration --strict fortlaufend"
+    },
+    {
+      "id": "A-04",
+      "priority": 8,
+      "band": "BLOCKER-2",
+      "verdict": "PASS",
+      "evidence": "spec-coverage.mjs (CI): 7 kritische Kernmodule von Tests referenziert; Seed gefangen",
+      "standing_control": "spec-coverage.mjs (CI): 7 kritische Kernmodule von Tests referenziert; Seed gefangen"
+    },
+    {
+      "id": "A-09",
+      "priority": 8,
+      "band": "BLOCKER-2",
+      "verdict": "PASS",
+      "evidence": "architecture-fitness.mjs (CI) als Fitness-Function + ADRs; Schichtverstoß fällt den Build",
+      "standing_control": "architecture-fitness.mjs (CI) als Fitness-Function + ADRs; Schichtverstoß fällt den Build"
+    },
+    {
+      "id": "A-10",
+      "priority": 8,
+      "band": "BLOCKER-2",
+      "verdict": "PASS",
+      "evidence": "Injektions-Gate = tests/injection.containment.test.ts + ai-capability-guard (beide im Merge-Gate)",
+      "standing_control": "Injektions-Gate = tests/injection.containment.test.ts + ai-capability-guard (beide im Merge-Gate)"
+    },
+    {
+      "id": "A-17",
+      "priority": 8,
+      "band": "BLOCKER-2",
+      "verdict": "PASS",
+      "evidence": "NFR-Tabelle + Core Web Vitals gemessen via Lighthouse in .github/workflows/dast.yml (LCP/CLS/TBT als Report-Artefakt, wöchentlich)",
+      "standing_control": "NFR-Tabelle + Core Web Vitals gemessen via Lighthouse in .github/workflows/dast.yml (LCP/CLS/TBT als Report-Artefakt, wöchentlich)"
+    },
+    {
+      "id": "A-22",
+      "priority": 8,
+      "band": "BLOCKER-2",
+      "verdict": "PASS",
+      "evidence": "jsx-a11y statisch + axe-Runtime strikt (Kontrast behoben, 5/5)",
+      "standing_control": "installiert & demonstriert (Wave 1–3, CI)"
+    },
+    {
+      "id": "A-25",
+      "priority": 8,
+      "band": "BLOCKER-2",
+      "verdict": "PASS",
+      "evidence": "tests/fuzz.test.ts (CI): adversariale Eingaben an slugify/recipeDraftSchema/suggestSeason — nie werfen, nur sichere Slugs",
+      "standing_control": "tests/fuzz.test.ts (CI): adversariale Eingaben an slugify/recipeDraftSchema/suggestSeason — nie werfen, nur sichere Slugs"
+    },
+    {
+      "id": "A-33",
+      "priority": 8,
+      "band": "BLOCKER-2",
+      "verdict": "PARTIAL",
+      "evidence": "CLAUDE.md (Agenten-Instruktionsdatei: Verfassung, harte Gate-Regeln, Arbeitsweise, Takeover-Pack) jetzt vorhanden + Evidenz dieses Engagements; Erfolgsrate als SLI weiter Residual R-A33",
+      "standing_control": null
+    },
+    {
+      "id": "A-34",
+      "priority": 8,
+      "band": "BLOCKER-2",
+      "verdict": "PASS",
+      "evidence": "ai-guard Kill-Switch (aiFeatureEnabled/haltAiFeature) + Auto-Halt nach ≥5 KI-Fehlern; tests/ai-killswitch.test.ts beweist Selbst-Feuern",
+      "standing_control": "ai-guard Kill-Switch (aiFeatureEnabled/haltAiFeature) + Auto-Halt nach ≥5 KI-Fehlern; tests/ai-killswitch.test.ts beweist Selbst-Feuern"
+    },
+    {
+      "id": "B-02",
+      "priority": 8,
+      "band": "BLOCKER-2",
+      "verdict": "PASS",
+      "evidence": ".github/workflows/nightly.yml: nächtlicher Bootstrap-Verify (npm ci + test + build) aus frischer Umgebung",
+      "standing_control": ".github/workflows/nightly.yml: nächtlicher Bootstrap-Verify (npm ci + test + build) aus frischer Umgebung"
+    },
+    {
+      "id": "B-05",
+      "priority": 8,
+      "band": "BLOCKER-2",
+      "verdict": "PASS",
+      "evidence": "prompt-lifecycle.mjs + prompt-registry-lock.json (CI): Prompt-Änderung ohne Version-Bump+Lock fällt den Build; Seed gefangen",
+      "standing_control": "prompt-lifecycle.mjs + prompt-registry-lock.json (CI): Prompt-Änderung ohne Version-Bump+Lock fällt den Build; Seed gefangen"
+    },
+    {
+      "id": "B-07",
+      "priority": 8,
+      "band": "BLOCKER-2",
+      "verdict": "PASS",
+      "evidence": "recordAiUsage: Token-Zähler je Lauf (input/output) geloggt, KEIN Inhalt; Test beweist kein PII im ops_event",
+      "standing_control": "recordAiUsage: Token-Zähler je Lauf (input/output) geloggt, KEIN Inhalt; Test beweist kein PII im ops_event"
+    },
+    {
+      "id": "B-10",
+      "priority": 8,
+      "band": "BLOCKER-2",
+      "verdict": "PASS",
+      "evidence": "Eval-Gate = tests/ai-eval.golden.test.ts (C-10): versioniertes Golden-Set + eingefrorener Schwellwert 100 %, CI-blockierend bei Regression; plus in-command-Review",
+      "standing_control": "Eval-Gate = tests/ai-eval.golden.test.ts (C-10): versioniertes Golden-Set + eingefrorener Schwellwert 100 %, CI-blockierend bei Regression; plus in-command-Review"
+    },
+    {
+      "id": "B-12",
+      "priority": 8,
+      "band": "BLOCKER-2",
+      "verdict": "PASS",
+      "evidence": ".github/dependabot.yml: wöchentliche npm-/actions-Updates als PRs durch das volle Gate (Patch-SLA maschinell). WAF = niedriges greenbox-Residual (nginx davor).",
+      "standing_control": ".github/dependabot.yml: wöchentliche npm-/actions-Updates als PRs durch das volle Gate (Patch-SLA maschinell). WAF = niedriges greenbox-Residual (nginx davor)."
+    },
+    {
+      "id": "B-13",
+      "priority": 8,
+      "band": "BLOCKER-2",
+      "verdict": "PASS",
+      "evidence": "Modell gepinnt + Alias-Lint (source-gates)",
+      "standing_control": "installiert & demonstriert (Wave 1–3, CI)"
+    },
+    {
+      "id": "B-15",
+      "priority": 8,
+      "band": "BLOCKER-2",
+      "verdict": "N/A",
+      "evidence": "keine Guardrail-Schicht vorhanden",
+      "standing_control": null
+    },
+    {
+      "id": "B-28",
+      "priority": 8,
+      "band": "BLOCKER-2",
+      "verdict": "PASS",
+      "evidence": "Auto-Remediation: SLO-Monitor alarmiert + KI-Feature hält sich bei Fehlerhäufung selbst an (ai-guard); tiefere fachliche Auto-Remediation bewusst schlank (Solo-Blog)",
+      "standing_control": "Auto-Remediation: SLO-Monitor alarmiert + KI-Feature hält sich bei Fehlerhäufung selbst an (ai-guard); tiefere fachliche Auto-Remediation bewusst schlank (Solo-Blog)"
+    },
+    {
+      "id": "B-31",
+      "priority": 8,
+      "band": "BLOCKER-2",
+      "verdict": "PASS",
+      "evidence": "Restore-Drill-Skript ausgeführt (Wave 2)",
+      "standing_control": "installiert & demonstriert (Wave 1–3, CI)"
+    },
+    {
+      "id": "A-05",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "PASS",
+      "evidence": "architecture-fitness.mjs (CI): Client-Komponenten ohne server-only-Wert-Import (Boundary-Fitness); Seed gefangen",
+      "standing_control": "architecture-fitness.mjs (CI): Client-Komponenten ohne server-only-Wert-Import (Boundary-Fitness); Seed gefangen"
+    },
+    {
+      "id": "A-07",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "PASS",
+      "evidence": "jscpd-Messung: 4,83 % duplizierte Zeilen (127 Klone ≥50 Tokens) — deutlich unter Branchenniveau; Schwelle 5,5 % bricht Build (Kalibrierung: threshold=1 bricht nachweislich)",
+      "standing_control": "Klon-Tripwire in CI (npx jscpd --config .jscpd.json), Ratchet: Schwelle darf nur sinken"
+    },
+    {
+      "id": "A-11",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "N/A",
+      "evidence": "keine Tools/Agenten",
+      "standing_control": null
+    },
+    {
+      "id": "A-12",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "PARTIAL",
+      "evidence": "gut kommentiert; keine Provenance/Reconstruction",
+      "standing_control": null
+    },
+    {
+      "id": "A-13",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "PASS",
+      "evidence": "ESLint-Flat-Gate (Standards+a11y) blockierend in CI",
+      "standing_control": "installiert & demonstriert (Wave 1–3, CI)"
+    },
+    {
+      "id": "A-18",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "PARTIAL",
+      "evidence": "einfachste Architektur; kein ADR",
+      "standing_control": null
+    },
+    {
+      "id": "A-19",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "N/A",
+      "evidence": "keine öffentliche versionierte API",
+      "standing_control": null
+    },
+    {
+      "id": "A-21",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "N/A",
+      "evidence": "kein RAG/Memory",
+      "standing_control": null
+    },
+    {
+      "id": "A-23",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "PARTIAL",
+      "evidence": "Migrationen versioniert; kein Drift/Quality-Monitor",
+      "standing_control": null
+    },
+    {
+      "id": "A-26",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "PASS",
+      "evidence": "Bare-Handler-Lint; Selbsttest",
+      "standing_control": "installiert & demonstriert (Wave 1–3, CI)"
+    },
+    {
+      "id": "A-27",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "PARTIAL",
+      "evidence": "KI-Budgets gesetzt (timeout/max_tokens); Infra-Kosten-Cap pending",
+      "standing_control": null
+    },
+    {
+      "id": "A-28",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "PARTIAL",
+      "evidence": "Anthropic-Ausfall abgefangen; keine Map/Chaos",
+      "standing_control": null
+    },
+    {
+      "id": "A-32",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "PASS",
+      "evidence": "README + CLAUDE.md aktuell; Doku-Kommandos real ausgeführt in diesem Engagement (bootstrap/deploy/Tests); Agenten-Instruktionsdatei als Policy-Artefakt versioniert",
+      "standing_control": "CLAUDE.md CODEOWNERS-geschützt? (governance nicht, root) — Gate: Lint/CI validieren Beispiele indirekt; Cold-Start-Slot prüft Instruktionsqualität"
+    },
+    {
+      "id": "A-38",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "PARTIAL",
+      "evidence": "SBOM in CI; Lizenz-Scan + IP-Position pending",
+      "standing_control": null
+    },
+    {
+      "id": "B-08",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "PARTIAL",
+      "evidence": "ein Aufruf, max_tokens, Rate-Limit; kein Infra-Cap",
+      "standing_control": null
+    },
+    {
+      "id": "B-09",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "PARTIAL",
+      "evidence": "SBOM erzeugt; Signatur/Verify-on-Deploy pending",
+      "standing_control": null
+    },
+    {
+      "id": "B-17",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "FAIL",
+      "evidence": "kein IaC",
+      "standing_control": null
+    },
+    {
+      "id": "B-19",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "PARTIAL",
+      "evidence": "SLO + Fehlerbudget definiert und überwacht (Monitor); automatischer Release-Freeze nicht verdrahtet (kein Release-Zug am Server) — Residual mit Tripwire",
+      "standing_control": null
+    },
+    {
+      "id": "B-23",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "N/A",
+      "evidence": "keine Agenten",
+      "standing_control": null
+    },
+    {
+      "id": "B-24",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "PARTIAL",
+      "evidence": "Qualitätsdrift: 100% der KI-Ausgaben menschlich geprüft vor Publikation (in-command Autorschaft); automatische Online-Eval bleibt Residual",
+      "standing_control": null
+    },
+    {
+      "id": "B-25",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "PARTIAL",
+      "evidence": "env extern; keine Prod-Cred-Assertion",
+      "standing_control": null
+    },
+    {
+      "id": "B-27",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "FAIL",
+      "evidence": "keine Artefakt-Signatur/Verify",
+      "standing_control": null
+    },
+    {
+      "id": "B-29",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "PARTIAL",
+      "evidence": "Failure-Injection als Tests bewiesen: SMTP-Ausfall (Monitor wirft nicht, alerted=false), Anthropic-Fehlerpfade (toAiError-Tests); Infrastruktur-Chaos am Server (Dependency-Kill) bleibt Residual",
+      "standing_control": null
+    },
+    {
+      "id": "B-33",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "N/A",
+      "evidence": "kein Retrieval-Korpus",
+      "standing_control": null
+    },
+    {
+      "id": "A-03",
+      "priority": 6,
+      "band": "SHOULD-FIX",
+      "verdict": "PARTIAL",
+      "evidence": "kaum modell-geurteilte Tests; Saison deterministisch",
+      "standing_control": null
+    },
+    {
+      "id": "A-14",
+      "priority": 6,
+      "band": "SHOULD-FIX",
+      "verdict": "PASS",
+      "evidence": "governance/ai-policy.md: Tier-Map 0–4 je Änderungsklasse, unklassifizierbar → strengstes Tier; KI-Rollen dokumentiert",
+      "standing_control": "Policy versioniert unter governance/ (CODEOWNERS-geschützt); Tier-4-Pfade zusätzlich durch B-35-Separation gedeckt"
+    },
+    {
+      "id": "A-16",
+      "priority": 6,
+      "band": "SHOULD-FIX",
+      "verdict": "PASS",
+      "evidence": "Stub-Lint (source-gates) + Gate-Selbsttest",
+      "standing_control": "installiert & demonstriert (Wave 1–3, CI)"
+    },
+    {
+      "id": "A-20",
+      "priority": 6,
+      "band": "SHOULD-FIX",
+      "verdict": "PASS",
+      "evidence": "Prompt-Registry; Inline-Prompt per source-gate verboten",
+      "standing_control": "installiert & demonstriert (Wave 1–3, CI)"
+    },
+    {
+      "id": "A-29",
+      "priority": 6,
+      "band": "SHOULD-FIX",
+      "verdict": "PARTIAL",
+      "evidence": "ADR 0006: TCO/Exit-Plan (SQLite-Datei + Export/Import v2 = Portabilität; Provider hinter einem Aufrufpfad); Export real getestet (data-transfer-Tests)",
+      "standing_control": null
+    },
+    {
+      "id": "A-30",
+      "priority": 6,
+      "band": "SHOULD-FIX",
+      "verdict": "PASS",
+      "evidence": "ADR 0006: Konsistenz-vor-Verfügbarkeit, Einfachheit-vor-Skalierung, Backups-statt-Failover — dokumentiert und im Code so umgesetzt (synchrone Transaktionen, Single-Node)",
+      "standing_control": "ADR versioniert; Abweichung = neuer ADR (CLAUDE.md-Regel)"
+    },
+    {
+      "id": "A-31",
+      "priority": 6,
+      "band": "SHOULD-FIX",
+      "verdict": "PARTIAL",
+      "evidence": "ADR 0006: Kostenmodell (Fixkosten + admin-only-KI, strukturell begrenzt); kein Infra-Cap (R-COST, gering-materiell)",
+      "standing_control": null
+    },
+    {
+      "id": "A-35",
+      "priority": 6,
+      "band": "SHOULD-FIX",
+      "verdict": "PARTIAL",
+      "evidence": "deploy-request→systemd; kein blockierender Approval-Queue",
+      "standing_control": null
+    },
+    {
+      "id": "B-14",
+      "priority": 6,
+      "band": "SHOULD-FIX",
+      "verdict": "PARTIAL",
+      "evidence": "Prompt-Governance über Registry+Gate; Audit-Trail pending",
+      "standing_control": null
+    },
+    {
+      "id": "B-16",
+      "priority": 6,
+      "band": "SHOULD-FIX",
+      "verdict": "PARTIAL",
+      "evidence": "ADR 0006: ein Feature → Attribution entfällt; Tripwire Provider-Rechnungsalarm; öffentliche KI-Pfade reaktivieren B-08/B-16",
+      "standing_control": null
+    },
+    {
+      "id": "B-18",
+      "priority": 6,
+      "band": "SHOULD-FIX",
+      "verdict": "FAIL",
+      "evidence": "100%-Deploy, kein Canary/Auto-Abort",
+      "standing_control": null
+    },
+    {
+      "id": "B-21",
+      "priority": 6,
+      "band": "SHOULD-FIX",
+      "verdict": "PARTIAL",
+      "evidence": "KI degradiert mit Meldung; Blog unabhängig vom Modell",
+      "standing_control": null
+    },
+    {
+      "id": "B-26",
+      "priority": 6,
+      "band": "SHOULD-FIX",
+      "verdict": "PARTIAL",
+      "evidence": "Settings-Toggles; kein Auto-Tripwire",
+      "standing_control": null
+    },
+    {
+      "id": "B-30",
+      "priority": 6,
+      "band": "SHOULD-FIX",
+      "verdict": "N/A",
+      "evidence": "Solo-Traffic; kein Lasttest nötig",
+      "standing_control": null
+    },
+    {
+      "id": "B-35",
+      "priority": 6,
+      "band": "SHOULD-FIX",
+      "verdict": "PARTIAL",
+      "evidence": "CODEOWNERS-Separation + Check; separates Repo/Credentials residual (F2)",
+      "standing_control": null
+    },
+    {
+      "id": "B-36",
+      "priority": 6,
+      "band": "SHOULD-FIX",
+      "verdict": "PARTIAL",
+      "evidence": "gepinnt; keine EOL-Überwachung",
+      "standing_control": null
+    },
+    {
+      "id": "A-15",
+      "priority": 5,
+      "band": "PLAN",
+      "verdict": "PASS",
+      "evidence": "governance/boundary-policy.md: Produktion nur über CI-Gate + deploy.sh; Hot-Swap strukturell unmöglich (Prompt-Registry-Gate); Experimente ohne Prod-Daten/-Creds",
+      "standing_control": "CI auf jedem Push + source-gates + fail-closed Admission"
+    },
+    {
+      "id": "A-37",
+      "priority": 5,
+      "band": "PLAN",
+      "verdict": "PARTIAL",
+      "evidence": "Takeover-Pack in CLAUDE.md (Mensch, Break-Glass, 4 Schritte + Zeitmessung); Drill noch nicht von Dritten ausgeführt",
+      "standing_control": null
+    },
+    {
+      "id": "B-32",
+      "priority": 5,
+      "band": "PLAN",
+      "verdict": "N/A",
+      "evidence": "kein IaC/Drift-Reconcile",
+      "standing_control": null
+    },
+    {
+      "id": "B-34",
+      "priority": 5,
+      "band": "PLAN",
+      "verdict": "NO-EVIDENCE",
+      "evidence": "Latenzperzentile nicht gemessen",
+      "standing_control": null
+    },
+    {
+      "id": "B-37",
+      "priority": 5,
+      "band": "PLAN",
+      "verdict": "PARTIAL",
+      "evidence": "Lösch-Lib vorhanden; keine e2e-Erasure über alle Stores",
+      "standing_control": null
+    },
+    {
+      "id": "B-39",
+      "priority": 5,
+      "band": "PLAN",
+      "verdict": "PASS",
+      "evidence": "audit/framework-review.md: Twelve-Factor-Review komplett; Lücken (B-27, B-25/C-16) bereits als Residual/Part-2-Tür registriert — keine unbekannten Gaps",
+      "standing_control": "Review-Wiederholung an ADR-Pflicht gekoppelt (Architekturänderung)"
+    },
+    {
+      "id": "A-40",
+      "priority": 4,
+      "band": "ASSESS",
+      "verdict": "N/A",
+      "evidence": "Energie immateriell",
+      "standing_control": null
+    },
+    {
+      "id": "B-38",
+      "priority": 4,
+      "band": "ASSESS",
+      "verdict": "N/A",
+      "evidence": "Inferenz-Ökonomie gering-materiell",
+      "standing_control": null
+    },
+    {
+      "id": "C-01",
+      "priority": 10,
+      "band": "STOP-SHIP",
+      "verdict": "PASS",
+      "evidence": "49 Admin-Handler alle server-seitig geguardet; Gate fängt injizierten ungeguardeten Handler.",
+      "standing_control": "authz-coverage.mjs (CI, --selftest) + Kalibrier-Seed S9; Ratchet: ungeguardete Handler=0"
+    },
+    {
+      "id": "C-04",
+      "priority": 10,
+      "band": "STOP-SHIP",
+      "verdict": "PASS",
+      "evidence": "5 PII-Stores klassifiziert mit Rechtsgrundlage+Erasure; e2e-Löschung ohne PII-Rest (rot-vorher bewiesen).",
+      "standing_control": "data-map.mjs (CI, generiert+gedifft) + tests/erasure.integration.test.ts (Kanarie) + Retention; DPIA/RoPA"
+    },
+    {
+      "id": "C-03",
+      "priority": 9,
+      "band": "BLOCKER-1",
+      "verdict": "PASS",
+      "evidence": "Halluzinierte Pakete blockiert vor Install; Playbook dokumentiert.",
+      "standing_control": "deps-existence.mjs + Lockfile + npm audit + Seed S3 (monatlich); Registry-Alter als nächtliche Kadenz + Playbook"
+    },
+    {
+      "id": "C-05",
+      "priority": 9,
+      "band": "BLOCKER-1",
+      "verdict": "PASS",
+      "evidence": "10 Kategorien je Kontrolle+Test.",
+      "standing_control": "llm-matrix-check.mjs (leere Zelle→Build fällt) + ai-budget-check.mjs (Caps)"
+    },
+    {
+      "id": "C-07",
+      "priority": 9,
+      "band": "BLOCKER-1",
+      "verdict": "PASS",
+      "evidence": "Schema strippt Aktionsfelder; kein konsequentes Bein; UNSETTLED-Restrisiko akzeptiert mit Tripwire.",
+      "standing_control": "tests/injection.containment.test.ts + ai-capability-guard.mjs + Seed S7; Restrisiko schriftlich (injection-residual.md)"
+    },
+    {
+      "id": "C-09",
+      "priority": 9,
+      "band": "BLOCKER-1",
+      "verdict": "PASS",
+      "evidence": "AIS-1 klassifiziert (limited-risk, admin-only, keine Entscheidungen über Personen).",
+      "standing_control": "ai-system-inventory.md (Article-50-Bewertung) + tests/ai-disclosure.test.ts"
+    },
+    {
+      "id": "C-27",
+      "priority": 9,
+      "band": "BLOCKER-1",
+      "verdict": "N/A",
+      "evidence": "Kein PCI/HIPAA/SOC2 bindend (persönlicher Blog).",
+      "standing_control": "Applikabilität bestimmt (nur GDPR, via C-04); Tripwire bei Zahlungs-/Gesundheitsdaten/Zertifizierung"
+    },
+    {
+      "id": "C-02",
+      "priority": 8,
+      "band": "BLOCKER-2",
+      "verdict": "PASS",
+      "evidence": "3 Egress/Exec deklariert; STRIDE je Boundary; Detektor fängt neue Egress-Datei.",
+      "standing_control": "boundary-check.mjs (CI) + threat-model.md; neue Integration ohne Threat-Eintrag → Build fällt"
+    },
+    {
+      "id": "C-06",
+      "priority": 8,
+      "band": "BLOCKER-2",
+      "verdict": "N/A",
+      "evidence": "Kein Tool-Use/Agent; Guard demonstriert (injizierter tools:-Aufruf gefangen).",
+      "standing_control": "ai-capability-guard.mjs (Tool-Use/Agent→Build fällt); Reaktivierungs-Tripwire"
+    },
+    {
+      "id": "C-08",
+      "priority": 8,
+      "band": "BLOCKER-2",
+      "verdict": "PASS",
+      "evidence": "Die drei Beine treten nicht zusammen (kein Private-Data-Bein zum Modell, kein Egress).",
+      "standing_control": "ai-capability-guard.mjs (No-Egress/Trifecta) + Seed S8; per Inspektion entscheidbar"
+    },
+    {
+      "id": "C-10",
+      "priority": 8,
+      "band": "BLOCKER-2",
+      "verdict": "PASS",
+      "evidence": "Deterministische KI-Achse mit versioniertem Golden-Set + CI-Block.",
+      "standing_control": "tests/ai-eval.golden.test.ts (Golden-Set, eingefrorener Schwellwert 100 %, Ratchet)"
+    },
+    {
+      "id": "C-23",
+      "priority": 8,
+      "band": "BLOCKER-2",
+      "verdict": "PASS",
+      "evidence": "Kein PII in Logs/Traces per Design; Retention erzwungen.",
+      "standing_control": "data-map.mjs (Store-Klassifikation) + purgeOldOpsEvents (90 T) + logJson personenbezug-frei"
+    },
+    {
+      "id": "C-26",
+      "priority": 8,
+      "band": "BLOCKER-2",
+      "verdict": "PASS",
+      "evidence": "SBOM + AI-BOM (claude-opus-4-8, 0 Datensätze/Adapter); Provenance verifiziert, nicht nur archiviert.",
+      "standing_control": "ai-bom.mjs --verify (Modelle==Code) + mandate-hash.mjs --verify (fail-closed am Deploy)"
+    },
+    {
+      "id": "C-11",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "PASS",
+      "evidence": "Programm produziert Artefakte als CI-Nebenprodukt; System ohne Evidenz→Finding.",
+      "standing_control": "governance/ai-governance.md (NIST-RMF govern/map/measure/manage, pipeline-emittierte Evidenz)"
+    },
+    {
+      "id": "C-12",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "PASS",
+      "evidence": "Keine Agency über JSON-Rückgabe hinaus; Guard demonstriert.",
+      "standing_control": "ai-capability-guard.mjs (Least-Agency-Assertion: null Tools/Scopes)"
+    },
+    {
+      "id": "C-15",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "N/A",
+      "evidence": "Keine Guardrail-Schicht; Schema+Refusal.",
+      "standing_control": "ai-capability-guard + Injektions-Suite (adversariale Absicht); Tripwire bei Guardrail-Schicht"
+    },
+    {
+      "id": "C-16",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "N/A",
+      "evidence": "Keine Nicht-Menschen-/Agenten-Identität; kein Session-Borrowing.",
+      "standing_control": "ai-capability-guard; Tripwire bei erster Agenten-Identität"
+    },
+    {
+      "id": "C-17",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "N/A",
+      "evidence": "Keine Tools/MCP/Tool-Beschreibungen.",
+      "standing_control": "ai-capability-guard (MCP/Tool→Build fällt); Tripwire bei erster Tool-Anbindung"
+    },
+    {
+      "id": "C-18",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "N/A",
+      "evidence": "Keine externen Tool-Server/Connectoren.",
+      "standing_control": "ai-capability-guard; Tripwire bei erstem Connector"
+    },
+    {
+      "id": "C-21",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "N/A",
+      "evidence": "Kein Custom-/Fine-Tuned-Modell, kein Trainings-Ingest.",
+      "standing_control": "ai-capability-guard (Fine-Tune→Build fällt); Tripwire bei Custom-Modell"
+    },
+    {
+      "id": "C-22",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "N/A",
+      "evidence": "Kein RAG/Retrieval-Korpus.",
+      "standing_control": "ai-capability-guard (Embeddings→Build fällt); Tripwire bei RAG"
+    },
+    {
+      "id": "C-24",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "PASS",
+      "evidence": "System-Prompt sauber; Scan fängt injizierten Key.",
+      "standing_control": "prompt-scan.mjs (Secrets/PII im Prompt→Build fällt) + Prompt-Registry (A-20)"
+    },
+    {
+      "id": "C-28",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "PASS",
+      "evidence": "Single-Node-EU, alle Stores ko-lokalisiert; neuer Store fällt den Build.",
+      "standing_control": "data-map.mjs (jeder Store bekannt) + governance/ai-governance.md (Residency)"
+    },
+    {
+      "id": "C-34",
+      "priority": 7,
+      "band": "MUST-FIX",
+      "verdict": "PASS",
+      "evidence": "Anthropic kein Training auf API-Daten (Default); Ausgangstext nicht persistiert; API-Assertion als Kadenz.",
+      "standing_control": "B-13 Modell-Pin (Wechsel=Code-Änderung durchs Gate) + governance/ai-governance.md (Provider-Terms/DPA)"
+    },
+    {
+      "id": "C-13",
+      "priority": 6,
+      "band": "SHOULD-FIX",
+      "verdict": "N/A",
+      "evidence": "Kein AI-Managementsystem beansprucht (korrekt nicht beansprucht).",
+      "standing_control": "ai-capability-guard/keine MS-Behauptung; Tripwire bei Zertifizierungsanspruch"
+    },
+    {
+      "id": "C-14",
+      "priority": 6,
+      "band": "SHOULD-FIX",
+      "verdict": "N/A",
+      "evidence": "Kein LLM-as-Judge; Saison deterministisch.",
+      "standing_control": "ai-capability-guard; Tripwire bei erstem Modell-bewertet-Modell-Gate"
+    },
+    {
+      "id": "C-19",
+      "priority": 6,
+      "band": "SHOULD-FIX",
+      "verdict": "N/A",
+      "evidence": "Kein persistentes Agenten-Memory/abgerufener Kontext.",
+      "standing_control": "ai-capability-guard; Tripwire bei erstem Memory-/Kontext-Store"
+    },
+    {
+      "id": "C-20",
+      "priority": 6,
+      "band": "SHOULD-FIX",
+      "verdict": "PASS",
+      "evidence": "Transparenz/Kontestierbarkeit/Robustheit adressiert; Korrekturmechanismus (Admin-Review) funktioniert.",
+      "standing_control": "governance/ai-governance.md (Dimensionen mit Owner+Maß) + ai-disclosure.test.ts"
+    },
+    {
+      "id": "C-25",
+      "priority": 6,
+      "band": "SHOULD-FIX",
+      "verdict": "PASS",
+      "evidence": "506 Deps geprüft; Copyleft-Muster erkannt (Seed).",
+      "standing_control": "license-scan.mjs (kein AGPL/GPL/SSPL) + ip-position.md"
+    },
+    {
+      "id": "C-29",
+      "priority": 6,
+      "band": "SHOULD-FIX",
+      "verdict": "PASS",
+      "evidence": "Admin-only, Refusal-Pfad behandelt; geringe Missbrauchsfläche.",
+      "standing_control": "governance/ai-governance.md (Content-Safety, admin-only) + ai-capability-guard (Tripwire öffentlicher Endpunkt)"
+    },
+    {
+      "id": "C-30",
+      "priority": 6,
+      "band": "SHOULD-FIX",
+      "verdict": "PARTIAL",
+      "evidence": "Admin-only, schema-gebunden, nicht-konsequent; ASR nicht gegen Benchmark gemessen. Kompensierende Kontrolle: kein konsequentes Bein (ai-capability-guard) + in-command-Review. Residual R-C30 mit Tripwire (Provider-Modellwechsel/öffentlicher Endpunkt → ASR messen).",
+      "standing_control": null
+    },
+    {
+      "id": "C-32",
+      "priority": 6,
+      "band": "SHOULD-FIX",
+      "verdict": "N/A",
+      "evidence": "Kein Vektor-Store/Embeddings.",
+      "standing_control": "ai-capability-guard (Embeddings→Build fällt); Tripwire bei Vektor-Store"
+    },
+    {
+      "id": "C-33",
+      "priority": 6,
+      "band": "SHOULD-FIX",
+      "verdict": "PASS",
+      "evidence": "Modell-Pin, Prompt-Registry, Prompt-Scan, Tier-Map je Gate erzwungen.",
+      "standing_control": "governance/ai-governance.md (Klausel→Gate-Mapping); Klauseln maschinell erzwungen"
+    },
+    {
+      "id": "C-36",
+      "priority": 6,
+      "band": "SHOULD-FIX",
+      "verdict": "PASS",
+      "evidence": "Undisclosed generative Surfaces=0; Kennzeichnung als Reibungsschicht dokumentiert.",
+      "standing_control": "tests/ai-disclosure.test.ts (KI-Entwurf-Badge) + Kennzeichnungs-Erklärung"
+    },
+    {
+      "id": "C-38",
+      "priority": 6,
+      "band": "SHOULD-FIX",
+      "verdict": "PASS",
+      "evidence": "Kein Citation-resolve-Fehler; Nutzer sieht nie ungeprüfte Ausgabe.",
+      "standing_control": "governance/ai-governance.md (keine Zitat-Fläche, in-command-Autorschaft) + ai-capability-guard"
+    },
+    {
+      "id": "C-31",
+      "priority": 5,
+      "band": "PLAN",
+      "verdict": "PASS",
+      "evidence": "Threat-Model bildet Boundaries ab; agentische Schichten leer, Guard hält sie leer.",
+      "standing_control": "boundary-check.mjs + ai-capability-guard (7 agentische Schichten leer gehalten)"
+    },
+    {
+      "id": "C-37",
+      "priority": 5,
+      "band": "BLOCKER-1",
+      "verdict": "PASS",
+      "evidence": "Kette rekonstruierbar; Legacy-Trailer-Lücke als geringes Residual (neue Commits tragen Trailer).",
+      "standing_control": "provenance-reconstruct.mjs (180 Dateien je Owning-Role, Policy-Bundle, Spot) + mandate-hash.mjs"
+    },
+    {
+      "id": "C-35",
+      "priority": 4,
+      "band": "ASSESS",
+      "verdict": "N/A",
+      "evidence": "Keine Benchmark-Zahlen in Produkt-/Marketing-Aussagen.",
+      "standing_control": "ai-capability-guard/keine Benchmark-Aussage; Tripwire bei erster Benchmark-Behauptung"
+    },
+    {
+      "id": "C-39",
+      "priority": 4,
+      "band": "ASSESS",
+      "verdict": "N/A",
+      "evidence": "Kein AI-Managementsystem beansprucht.",
+      "standing_control": "an C-13 gekoppelt; Tripwire bei MS-Behauptung"
+    },
+    {
+      "id": "C-40",
+      "priority": 4,
+      "band": "ASSESS",
+      "verdict": "N/A",
+      "evidence": "Gesellschaftlich/ökologisch immateriell (admin-only, ein Aufruf je Rezept).",
+      "standing_control": "Tripwire bei Berichtspflicht/Workload-Formänderung"
+    }
+  ],
+  "phase6_updated": true,
+  "phase0prime_activated": true,
+  "phase": "8-part1-blocker-remediation"
+}

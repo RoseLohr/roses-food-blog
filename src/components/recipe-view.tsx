@@ -91,14 +91,8 @@ export function RecipeView({
     return rest === 0 ? `${h} Std.` : `${h} Std. ${rest} ${r.minutes}`;
   };
 
+  // kcal wird oben im Kennzahlen-Block gezeigt (nicht mehr in der Tag-Zeile).
   const tagRows: Array<[React.ReactNode, string, string] | null> = [
-    recipe.kcal
-      ? [
-          <IconFlame key="k" className="h-4 w-4" />,
-          r.calories,
-          `${recipe.kcal} ${r.kcalUnit} ${r.perServing}`,
-        ]
-      : null,
     full.categories.length
       ? [
           <IconTag key="c" className="h-4 w-4" />,
@@ -132,7 +126,7 @@ export function RecipeView({
   return (
     <article
       id={containerId}
-      className="overflow-hidden rounded-2xl bg-white shadow-sm print:rounded-none print:shadow-none"
+      className="overflow-hidden bg-white shadow-sm print:shadow-none"
     >
       {/* Hero mit Aktions-Buttons */}
       {full.heroImage && (
@@ -159,11 +153,16 @@ export function RecipeView({
             {recipe.title}
           </h1>
           {recipe.teaser && (
-            <p className="mt-4 leading-relaxed text-ink-soft">{recipe.teaser}</p>
+            <div
+              className="prose-content mt-4 text-ink-soft"
+              dangerouslySetInnerHTML={{ __html: renderMarkdown(recipe.teaser) }}
+            />
           )}
 
-          {/* Meta-Zeile */}
-          <div className="mt-6 flex flex-wrap gap-x-8 gap-y-4">
+          {/* Meta-Zeile: festes 2-Spalten-Raster, damit die Spalten sauber
+              untereinander fluchten (Paare: Portionen+Kalorien,
+              Vorbereitung+Kochzeit, Gesamtzeit+Schwierigkeit) */}
+          <div className="mt-6 grid grid-cols-2 gap-x-6 gap-y-4">
             <MetaChip icon={<IconServings className="h-5 w-5" />} label={r.metaServings}>
               {interactive ? (
                 <ServingsControl
@@ -171,12 +170,16 @@ export function RecipeView({
                   containerId={containerId}
                 />
               ) : (
-                <>
-                  {recipe.servings}{" "}
-                  {recipe.servings === 1 ? r.servingsOne : r.servings}
-                </>
+                // Nur die Zahl — „Portionen" steht bereits als Chip-Label.
+                <>{recipe.servings}</>
               )}
             </MetaChip>
+            {/* Kalorien direkt neben den Portionen (auf Wunsch) */}
+            {recipe.kcal != null && (
+              <MetaChip icon={<IconFlame className="h-5 w-5" />} label={r.calories}>
+                {recipe.kcal} {r.kcalUnit} {r.perServing}
+              </MetaChip>
+            )}
             {recipe.prepMinutes > 0 && (
               <MetaChip icon={<IconClock className="h-5 w-5" />} label={r.metaPrep}>
                 {minutes(recipe.prepMinutes)}
@@ -278,7 +281,21 @@ export function RecipeView({
                           >
                             {step}
                           </span>
-                          <p className="pt-1.5 leading-relaxed">{st.text}</p>
+                          <div className="min-w-0 flex-1 pt-1.5">
+                            <div
+                              className="prose-content"
+                              dangerouslySetInnerHTML={{
+                                __html: renderMarkdown(st.text),
+                              }}
+                            />
+                            {st.image && (
+                              <ResponsiveImg
+                                image={st.image}
+                                sizes="(max-width: 640px) 100vw, 400px"
+                                className="mt-3 w-full max-w-sm object-cover"
+                              />
+                            )}
+                          </div>
                         </li>
                       );
                     })}
@@ -287,24 +304,11 @@ export function RecipeView({
               ));
           })()}
 
-          {/* Weitere Bilder */}
-          {full.images.length > 0 && (
-            <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 print:hidden">
-              {full.images.map((img) => (
-                <ResponsiveImg
-                  key={img.id}
-                  image={img}
-                  sizes="(max-width: 640px) 100vw, 384px"
-                  className="w-full rounded-lg object-cover"
-                />
-              ))}
-            </div>
-          )}
         </section>
 
         {/* Notizen / Tipps */}
         {(recipe.tips || full.publicNotes.length > 0) && (
-          <section className="mt-10 rounded-xl bg-cream-deep/60 p-6 md:p-8">
+          <section className="mt-10 bg-cream-deep/60 p-6 md:p-8">
             <h2 className="font-display text-2xl font-bold tracking-tight">
               {r.notes}
             </h2>

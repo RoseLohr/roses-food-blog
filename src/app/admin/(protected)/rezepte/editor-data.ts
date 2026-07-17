@@ -4,42 +4,38 @@
  */
 import { asc } from "drizzle-orm";
 import { db, schema } from "@/db";
-import { imageUrl } from "@/lib/media";
+import { thumbUrl, variantWidthsByImage } from "@/lib/media";
+import { taxonomiesByType } from "@/lib/taxonomies";
 import { getFullRecipe } from "@/lib/recipes";
 import type { RecipeEditorProps } from "./recipe-editor";
 
 export async function buildEditorProps(
   recipeId: number | null,
 ): Promise<RecipeEditorProps | null> {
-  const [categories, tags, dietTypes, cuisines, equipment, images, ingredients] =
-    await Promise.all([
-      db.select().from(schema.category).orderBy(asc(schema.category.name)),
-      db.select().from(schema.tag).orderBy(asc(schema.tag.name)),
-      db.select().from(schema.dietType).orderBy(asc(schema.dietType.name)),
-      db.select().from(schema.cuisine).orderBy(asc(schema.cuisine.name)),
-      db.select().from(schema.equipment).orderBy(asc(schema.equipment.name)),
-      db
-        .select({
-          id: schema.mediaImage.id,
-          originalName: schema.mediaImage.originalName,
-          altText: schema.mediaImage.altText,
-          fileKey: schema.mediaImage.fileKey,
-          variantWidths: schema.mediaImage.variantWidths,
-        })
-        .from(schema.mediaImage)
-        .orderBy(asc(schema.mediaImage.originalName)),
-      db
-        .select({ name: schema.ingredient.name })
-        .from(schema.ingredient)
-        .orderBy(asc(schema.ingredient.name)),
-    ]);
+  const [grouped, images, ingredients] = await Promise.all([
+    taxonomiesByType(),
+    db
+      .select({
+        id: schema.mediaImage.id,
+        originalName: schema.mediaImage.originalName,
+        altText: schema.mediaImage.altText,
+        fileKey: schema.mediaImage.fileKey,
+      })
+      .from(schema.mediaImage)
+      .orderBy(asc(schema.mediaImage.originalName)),
+    db
+      .select({ name: schema.ingredient.name })
+      .from(schema.ingredient)
+      .orderBy(asc(schema.ingredient.name)),
+  ]);
+  const widthsById = await variantWidthsByImage(images.map((i) => i.id));
 
   const taxonomies = {
-    kategorien: categories,
-    schlagwoerter: tags,
-    ernaehrungsformen: dietTypes,
-    kuechen: cuisines,
-    geraete: equipment,
+    kategorien: grouped.kategorie,
+    schlagwoerter: grouped.schlagwort,
+    ernaehrungsformen: grouped.ernaehrungsform,
+    kuechen: grouped.kueche,
+    geraete: grouped.geraet,
   };
 
   const base: RecipeEditorProps = {
@@ -49,12 +45,14 @@ export async function buildEditorProps(
       slug: "",
       teaser: "",
       heroImageId: null,
-      imageIds: [],
       prepMinutes: 0,
       cookMinutes: 0,
       servings: 4,
       difficulty: "leicht",
       kcal: null,
+      isSeasonal: false,
+      seasonStartWeek: null,
+      seasonEndWeek: null,
       tips: "",
       seoTitle: "",
       seoDescription: "",
@@ -64,14 +62,11 @@ export async function buildEditorProps(
       taxonomySelections: {},
     },
     taxonomies,
-    images: images.map((i) => {
-      const widths: number[] = JSON.parse(i.variantWidths);
-      return {
-        id: i.id,
-        label: i.altText || i.originalName,
-        thumbUrl: imageUrl(i.fileKey, widths[0] ?? 320),
-      };
-    }),
+    images: images.map((i) => ({
+      id: i.id,
+      label: i.altText || i.originalName,
+      thumbUrl: thumbUrl(i.fileKey, widthsById.get(i.id) ?? []),
+    })),
     ingredientNames: ingredients.map((i) => i.name),
   };
 
@@ -88,12 +83,14 @@ export async function buildEditorProps(
       slug: full.recipe.slug,
       teaser: full.recipe.teaser,
       heroImageId: full.recipe.heroImageId,
-      imageIds: full.images.map((i) => i.id),
       prepMinutes: full.recipe.prepMinutes,
       cookMinutes: full.recipe.cookMinutes,
       servings: full.recipe.servings,
       difficulty: full.recipe.difficulty,
       kcal: full.recipe.kcal,
+      isSeasonal: full.recipe.isSeasonal,
+      seasonStartWeek: full.recipe.seasonStartWeek,
+      seasonEndWeek: full.recipe.seasonEndWeek,
       tips: full.recipe.tips,
       seoTitle: full.recipe.seoTitle,
       seoDescription: full.recipe.seoDescription,
@@ -107,7 +104,10 @@ export async function buildEditorProps(
           unit: ing.unit,
           note: ing.note,
         })),
-        steps: s.steps.map((st) => st.text),
+        steps: s.steps.map((st) => ({
+          text: st.text,
+          imageId: st.imageId ?? null,
+        })),
       })),
       notes: [
         ...full.publicNotes.map((n) => ({ text: n.text, isPublic: true })),

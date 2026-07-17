@@ -15,7 +15,14 @@ import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
 import { db, schema } from "@/db";
+import { suggestSeason, type SeasonSuggestion } from "./saisonkalender";
 import { getAnthropicApiKey } from "./settings";
+import { SYSTEM, INTERNAL_TEMPLATE } from "./prompts/recipe-draft";
+import {
+  aiFeatureEnabled,
+  recordAiErrorAndMaybeHalt,
+  recordAiUsage,
+} from "./ai-guard";
 
 export const recipeDraftSchema = z.object({
   title: z.string(),
@@ -34,52 +41,96 @@ export const recipeDraftSchema = z.object({
   cuisines: z.array(z.string()),
   equipment: z.array(z.string()),
   sections: z.array(
-    z.object({
-      name: z.string(),
-      ingredients: z.array(
-        z.object({
-          name: z.string(),
-          amount: z.string(),
-          unit: z.string(),
-          note: z.string(),
-        }),
-      ),
-      steps: z.array(z.string()),
-    }),
+    z
+      .object({
+        name: z.string(),
+        ingredients: z.array(
+          z
+            .object({
+              name: z.string(),
+              amount: z.string(),
+              unit: z.string(),
+              note: z.string(),
+            })
+            .strict(),
+        ),
+        steps: z.array(z.string()),
+      })
+      .strict(),
   ),
-});
+})
+  // C-07-Containment: `.strict()` auf JEDER Objektebene — eine (ggf. injizierte)
+  // Modellausgabe mit unbekanntem Feld (tool, egressUrl, webhookUrl, …) wird
+  // ABGELEHNT statt still gestrippt. Kein Egress-/Aktionsfeld existiert im Schema.
+  .strict();
 
-export type RecipeDraft = z.infer<typeof recipeDraftSchema>;
+/**
+ * Der fertige Entwurf trägt zusätzlich einen deterministisch berechneten
+ * Saison-Vorschlag: Zutaten gegen den statischen Saisonkalender gematcht
+ * (kein KI-Raten, sondern echte Kalenderdaten — siehe lib/saisonkalender).
+ */
+export type RecipeDraft = z.infer<typeof recipeDraftSchema> & {
+  seasonSuggestion: SeasonSuggestion;
+};
 
-/** Fehlercodes, die die Route auswertet, um klare Meldungen zu zeigen. */
-export const AI_NO_KEY = "KEIN_API_KEY";
-export const AI_REFUSED = "ABGELEHNT";
-export const AI_EMPTY = "KEINE_ANTWORT";
+/**
+ * Fehler mit klarer, anzeigbarer Meldung (Deutsch). `code` erlaubt der Route,
+ * einen passenden HTTP-Status zu wählen. Die Meldung wird im Panel angezeigt,
+ * damit man tatsächlich sieht, was schiefging.
+ */
+export class AiRecipeError extends Error {
+  constructor(
+    public code: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = "AiRecipeError";
+  }
+}
 
-const INTERNAL_TEMPLATE = `## Darüber freust du dich
-Ein einladender Einstieg (2–4 Sätze): worum geht es, warum lohnt sich das Rezept, wozu passt es, wie schmeckt es.
-
-## Das macht es besonders
-3–5 kurze Stichpunkte als Markdown-Liste zu den Besonderheiten (Zutaten, Textur, Aufwand …).
-
-## Tipps & Varianten
-2–4 praktische Gelingtipps und mögliche Abwandlungen als Markdown-Liste.
-
-## Aufbewahrung
-Kurzer Absatz zu Haltbarkeit, Aufbewahrung und Aufwärmen.`;
-
-const SYSTEM = `Du bist Redaktionsassistent für einen deutschsprachigen Food- und Reiseblog. Aus einem vom Nutzer eingefügten Ausgangstext (Notizen, Rohtext oder ein Rezept von woanders) erstellst du ein vollständiges, sauber strukturiertes Rezept auf Deutsch.
-
-Regeln:
-- Antworte ausschließlich auf Deutsch, in einladendem, aber nicht kitschigem Ton.
-- Fülle jedes Feld sinnvoll aus. Fehlt eine Angabe, leite sie plausibel aus dem Kontext ab (realistische Zeiten, Portionen, Schwierigkeit). Erfinde keine unrealistischen Werte.
-- Mengen strikt trennen: "amount" enthält nur die Zahl (z. B. "250", "1/2", "1,5"), "unit" nur die Einheit (z. B. "g", "ml", "EL", "TL", "Stück", "Prise"). "note" ist ein optionaler Zusatz (z. B. "fein gehackt"). Fehlt Menge oder Einheit, bleibt das jeweilige Feld leer ("").
-- Gliedere in Abschnitte ("sections") mit sprechendem Namen (z. B. "Teig", "Füllung"). Bei einfachen Rezepten genügt ein Abschnitt mit leerem Namen (""). Jeder Schritt ist ein eigener, klar formulierter Satz ohne führende Nummerierung.
-- "teaser": 1–2 einladende Sätze. "seoTitle": prägnant (~60 Zeichen). "seoDescription": ~155 Zeichen.
-- "difficulty" ist genau einer der Werte: leicht, mittel, schwer.
-- "kcal": geschätzte Kalorien pro Portion als ganze Zahl, oder null, wenn nicht sinnvoll schätzbar.
-- Taxonomie-Vorschläge ("categories", "tags", "dietTypes", "cuisines", "equipment"): kurze, wiederverwendbare Begriffe in gebräuchlicher Form (z. B. Kategorie "Hauptgericht", Küche "Italienisch", Ernährungsform "Vegetarisch", Gerät "Backofen"). Nur wirklich Zutreffendes; leere Liste, wenn nichts passt.
-- "tips" ist der redaktionelle Haupttext als Markdown (## / ### Überschriften, Absätze, Listen). Folge exakt der Stil- bzw. Strukturvorgabe aus der Nutzernachricht.`;
+/** Anthropic-/Netzwerkfehler in eine verständliche deutsche Meldung übersetzen. */
+function toAiError(err: unknown): AiRecipeError {
+  if (err instanceof AiRecipeError) return err;
+  if (err instanceof Anthropic.AuthenticationError)
+    return new AiRecipeError(
+      "auth",
+      "Ungültiger Anthropic-API-Schlüssel. Bitte unter Einstellungen → KI-Assistent prüfen.",
+    );
+  if (err instanceof Anthropic.PermissionDeniedError)
+    return new AiRecipeError(
+      "forbidden",
+      "Zugriff verweigert — der API-Schlüssel hat kein Guthaben oder keine Freigabe für dieses Modell.",
+    );
+  if (err instanceof Anthropic.NotFoundError)
+    return new AiRecipeError(
+      "model",
+      "Das KI-Modell ist für diesen Schlüssel nicht verfügbar.",
+    );
+  if (err instanceof Anthropic.RateLimitError)
+    return new AiRecipeError(
+      "rate",
+      "Rate-Limit erreicht. Bitte in ein paar Minuten erneut versuchen.",
+    );
+  if (err instanceof Anthropic.APIConnectionTimeoutError)
+    return new AiRecipeError(
+      "network",
+      "Der Server konnte api.anthropic.com nicht erreichen (Zeitüberschreitung beim Verbindungsaufbau). Das ist fast immer eine Egress-/Firewall-Sperre oder ein DNS-Problem auf dem Server — nicht der Schlüssel. Über „Verbindung testen“ prüfen.",
+    );
+  if (err instanceof Anthropic.APIConnectionError)
+    return new AiRecipeError(
+      "network",
+      "Keine Verbindung zu api.anthropic.com. Erreicht der Server das Internet (Firewall/DNS/Proxy)? Über „Verbindung testen“ prüfen.",
+    );
+  if (err instanceof Anthropic.APIError)
+    return new AiRecipeError(
+      "api",
+      `KI-Fehler${err.status ? ` (HTTP ${err.status})` : ""}: ${err.message}`,
+    );
+  return new AiRecipeError(
+    "unknown",
+    err instanceof Error ? err.message : "Unbekannter Fehler beim KI-Aufruf.",
+  );
+}
 
 /** Bestehende Rezepttexte mit Substanz als Stil-Referenz (längste zuerst). */
 async function styleReferences(): Promise<string[]> {
@@ -96,8 +147,20 @@ async function styleReferences(): Promise<string[]> {
 export async function generateRecipeDraft(
   sourceText: string,
 ): Promise<RecipeDraft> {
+  // A-34 Kill-Switch: ist das Feature (manuell oder per Auto-Halt) abgeschaltet,
+  // endet der Aufruf sofort — vor jedem Netz-/Schlüsselzugriff.
+  if (!aiFeatureEnabled())
+    throw new AiRecipeError(
+      "disabled",
+      "Der KI-Assistent ist derzeit deaktiviert. Bitte unter Einstellungen → KI-Assistent wieder aktivieren.",
+    );
+
   const apiKey = getAnthropicApiKey();
-  if (!apiKey) throw new Error(AI_NO_KEY);
+  if (!apiKey)
+    throw new AiRecipeError(
+      "no_key",
+      "Kein Anthropic-API-Schlüssel hinterlegt. Bitte unter Einstellungen → KI-Assistent eintragen.",
+    );
 
   const refs = await styleReferences();
   const styleInstruction = refs.length
@@ -108,17 +171,79 @@ export async function generateRecipeDraft(
 
   const userText = `Erstelle aus dem folgenden Ausgangstext ein vollständiges, redaktionell aufbereitetes Rezept auf Deutsch und fülle ALLE Felder aus.\n\n${styleInstruction}\n\n=== Ausgangstext ===\n${sourceText}`;
 
-  const client = new Anthropic({ apiKey });
-  const res = await client.messages.parse({
-    model: "claude-opus-4-8",
-    max_tokens: 16000,
-    thinking: { type: "adaptive" },
-    output_config: { effort: "high", format: zodOutputFormat(recipeDraftSchema) },
-    system: SYSTEM,
-    messages: [{ role: "user", content: userText }],
-  });
+  // Timeout, damit ein hängender Aufruf (z. B. blockierter Egress) nicht ewig
+  // offen bleibt, sondern als klarer Fehler endet. Der Aufruf läuft als
+  // Hintergrund-Job (siehe ai-recipe-jobs.ts), daher stört die Dauer die
+  // HTTP-Antwort nicht.
+  const client = new Anthropic({ apiKey, maxRetries: 1, timeout: 90_000 });
+  let res;
+  try {
+    // Bestes Modell (Opus 4.8), hohe Effort-Stufe. Thinking bewusst NICHT
+    // aktiviert: die Ausgabe ist ohnehin per JSON-Schema strikt gebunden, und
+    // ohne Thinking ist die Antwort schnell genug, um nicht in ein Proxy-Timeout
+    // zu laufen (die Anfrage läuft synchron über den Reverse-Proxy).
+    res = await client.messages.parse({
+      model: "claude-opus-4-8",
+      max_tokens: 8000,
+      output_config: {
+        effort: "high",
+        format: zodOutputFormat(recipeDraftSchema),
+      },
+      system: SYSTEM,
+      messages: [{ role: "user", content: userText }],
+    });
+  } catch (err) {
+    const aiErr = toAiError(err);
+    // B-28/A-34: Fehler verbuchen; bei Häufung hält sich das Feature selbst an.
+    recordAiErrorAndMaybeHalt(`${aiErr.code}: ${aiErr.message}`);
+    throw aiErr;
+  }
 
-  if (res.stop_reason === "refusal") throw new Error(AI_REFUSED);
-  if (!res.parsed_output) throw new Error(AI_EMPTY);
-  return res.parsed_output;
+  // B-07: Token-Nutzung protokollieren (nur Zähler, kein Ausgangstext).
+  recordAiUsage(res.usage);
+
+  if (res.stop_reason === "refusal")
+    throw new AiRecipeError(
+      "refused",
+      "Die KI hat die Anfrage abgelehnt. Bitte den Text anpassen und erneut versuchen.",
+    );
+  if (!res.parsed_output)
+    throw new AiRecipeError(
+      "empty",
+      "Die KI hat keine verwertbare Antwort geliefert. Bitte erneut versuchen.",
+    );
+  const draft = res.parsed_output;
+  const ingredientNames = draft.sections.flatMap((s) =>
+    s.ingredients.map((i) => i.name),
+  );
+  return { ...draft, seasonSuggestion: suggestSeason(ingredientNames) };
+}
+
+/**
+ * Diagnose: prüft in einem leichten Aufruf, ob der Server api.anthropic.com
+ * erreicht und der Schlüssel gültig ist. Unterscheidet damit klar zwischen
+ * Netzwerk-/Egress-Problem und Schlüssel-/Guthaben-Problem.
+ */
+export async function testConnection(): Promise<{
+  ok: boolean;
+  message: string;
+}> {
+  const apiKey = getAnthropicApiKey();
+  if (!apiKey)
+    return {
+      ok: false,
+      message:
+        "Kein Anthropic-API-Schlüssel hinterlegt (Einstellungen → KI-Assistent).",
+    };
+  const client = new Anthropic({ apiKey, maxRetries: 0, timeout: 15_000 });
+  const start = Date.now();
+  try {
+    const model = await client.models.retrieve("claude-opus-4-8");
+    return {
+      ok: true,
+      message: `Verbindung ok (${Date.now() - start} ms). Schlüssel gültig, Modell „${model.display_name ?? model.id}“ verfügbar.`,
+    };
+  } catch (err) {
+    return { ok: false, message: toAiError(err).message };
+  }
 }

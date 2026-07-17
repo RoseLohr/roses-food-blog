@@ -22,7 +22,7 @@ export default async function TravelPreviewPage(props: {
 
   return (
     <>
-      <div className="mb-6 flex items-center justify-between gap-4 rounded-xl bg-amber-100 p-3 text-sm text-amber-900">
+      <div className="mb-6 flex items-center justify-between gap-4 bg-amber-100 p-3 text-sm text-amber-900">
         <p>{dict.admin.travel.previewBanner}</p>
         <Link
           href={`/admin/reisen/${travelId}`}
@@ -31,7 +31,7 @@ export default async function TravelPreviewPage(props: {
           {dict.common.back}
         </Link>
       </div>
-      <div className="rounded-2xl bg-white p-6 shadow-sm md:p-10">
+      <div className="bg-white p-6 shadow-sm md:p-10">
         <TravelView full={full} />
       </div>
     </>

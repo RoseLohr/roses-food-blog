@@ -1,0 +1,141 @@
+# Deterministischer Policy-Gate (Mandat A-01/B-01, Verfassung Artikel I).
+# Bis zu diesem Workflow gab es GAR KEINE CI — der Kernbefund des Audits.
+# Jeder Push/PR durchläuft hier blockierende, maschinelle Prüfungen; kein
+# manueller Promote-Schritt, kein Soft-Fail (`|| true`/continue-on-error) auf
+# den Gate-Bedingungen.
+name: CI-Gate
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  # ---- Merge-Gate: typecheck + lint(a11y/standards) + test + build ----------
+  gate:
+    runs-on: ubuntu-latest
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Typecheck (tsc --noEmit)
+        run: npm run typecheck
+      - name: Lint (Standards + Barrierefreiheit, blockierend)
+        run: npm run lint
+      - name: Quelltext-Gates (Stubs A-16, Modell-Aliase B-13)
+        run: node scripts/regime/source-gates.mjs
+      - name: Klon-Tripwire (A-07, Schwelle 5,5 %)
+        run: npx jscpd --config .jscpd.json --silent
+      - name: Secret-Scan (B-06, STOP-SHIP)
+        run: node scripts/regime/secret-scan.mjs
+      - name: Gewaltenteilung (B-35, CODEOWNERS deckt geschützte Pfade)
+        run: node scripts/regime/separation-check.mjs
+      - name: Gate-Selbsttest (A-01/B-01, Gate blockiert nachweislich)
+        run: node scripts/regime/gate-selftest.mjs
+      - name: Authz-Coverage (C-01, jeder Admin-Handler server-seitig geguardet)
+        run: node scripts/regime/authz-coverage.mjs --selftest
+      - name: KI-Fähigkeits-Guard (Track C, N/A-Reaktivierung bei Tool/RAG/Agent)
+        run: node scripts/regime/ai-capability-guard.mjs --selftest
+      - name: Datenkarte (C-04/C-23, kein unregistrierter PII-Store)
+        run: node scripts/regime/data-map.mjs --selftest
+      - name: LLM-Risiko-Matrix (C-05, keine leere Zelle)
+        run: node scripts/regime/llm-matrix-check.mjs --selftest
+      - name: Prompt-Scan (C-24, keine Secrets/PII im Prompt)
+        run: node scripts/regime/prompt-scan.mjs --selftest
+      - name: KI-Budget (C-05/B-08, Caps im KI-Pfad)
+        run: node scripts/regime/ai-budget-check.mjs --selftest
+      - name: Trust-Boundary-Detektor (C-02, neue Integration deklariert)
+        run: node scripts/regime/boundary-check.mjs --selftest
+      - name: Provenance-Rekonstruktion (C-37, jede Datei einer Owning-Role)
+        run: node scripts/regime/provenance-reconstruct.mjs --selftest
+      - name: Architektur-Fitness (A-05/A-09, keine server-only-Importe im Client)
+        run: node scripts/regime/architecture-fitness.mjs --selftest
+      - name: Spec-Coverage (A-04, jedes Kernmodul getestet)
+        run: node scripts/regime/spec-coverage.mjs --selftest
+      - name: Prompt-Lifecycle (B-05, Prompt-Änderung = Version-Bump + Lock)
+        run: node scripts/regime/prompt-lifecycle.mjs --selftest
+      - name: Rollback-Fähigkeit + Drill (A-06/B-11)
+        run: node scripts/regime/rollback-check.mjs --selftest
+      - name: Shell-Syntax (deploy.sh + rollback.sh)
+        run: bash -n deploy.sh && bash -n deploy/rollback.sh
+      - name: Kalibrierung (A-36, Kontrollen fangen ihre Seeds — inkl. Track C)
+        run: node scripts/regime/calibration/inject.mjs --strict
+      - name: Tests (vitest)
+        run: npm test
+      - name: Build (next, standalone)
+        run: npm run build
+      - name: Findings-Gate (Report; scharf sobald Blocker geschlossen)
+        run: node scripts/regime/findings-gate.mjs
+      - name: Verfassung geladen & gehasht (Session-Steuer, §9.10.5)
+        run: node scripts/regime/constitution-hash.mjs --verify
+
+  # ---- Sicherheits-Gate: Abhängigkeiten, Existenz, SBOM ---------------------
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: npm audit (blockiert ab „high")
+        run: npm audit --audit-level=high
+      - name: Dependency-Existenzprüfung (Anti-Slopsquatting, B-04)
+        run: node scripts/regime/deps-existence.mjs
+      - name: SBOM erzeugen (CycloneDX, A-38/B-09)
+        # Gepinnt (B-13: kein floating @latest) — reproduzierbare CI.
+        run: npx --yes @cyclonedx/cyclonedx-npm@6.0.0 --output-file sbom.json
+      - name: AI-BOM konsistent mit Code (C-26)
+        run: node scripts/regime/ai-bom.mjs --verify
+      - name: Mandat-Provenance verifiziert (C-26/C-37, fail-closed)
+        run: node scripts/regime/mandate-hash.mjs --verify
+      - name: Lizenz-Scan (C-25, Copyleft-Konflikte blockieren)
+        run: node scripts/regime/license-scan.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.json
+
+  # ---- Mutation-Testing: das Meta-Gate über die Kernlogik (A-02, S4) --------
+  # Der Test-Suite selbst wird geprüft: kann sie injizierte Fehler fangen?
+  # break=78 (Baseline 82,91 %) blockiert eine Regression des Sicherheitsnetzes.
+  mutation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Mutation-Score Kernlogik (blockiert unter 78 %)
+        run: npm run mutation
+
+  # ---- Deploy-Admission: beweist die fail-closed-Sperre (Artikel XV) --------
+  # Der Job ist GRÜN, wenn die Admission KORREKT VERWEIGERT wird — solange
+  # production_eligible=false (Track C ungeprüft), darf nichts nach Produktion.
+  deploy-admission-proof:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Admission muss fail-closed verweigern
+        run: |
+          if node scripts/regime/findings-gate.mjs --admission; then
+            echo "FEHLER: Admission wurde freigegeben, obwohl production_eligible=false erwartet ist."
+            exit 1
+          else
+            echo "OK: Deploy-Admission korrekt fail-closed verweigert."
+          fi

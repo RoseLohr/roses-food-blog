@@ -1,13 +1,14 @@
 /**
  * Seed-Daten: Taxonomien, Zutaten (mit generierten Platzhalterbildern),
- * Beispielrezepte, eine Beispielreise, Startseiten-Konfiguration,
- * statische Seiten, Interessen und die Willkommenssequenz (pausiert).
+ * Beispielrezepte, eine Beispielreise (mit Inhalts-Blöcken), Startseiten-
+ * Konfiguration, statische Seiten, Interessen und die Willkommenssequenz.
  *
  * Idempotent: bricht ab, wenn bereits Rezepte existieren.
  * Aufruf: npm run db:seed   (vorher npm run db:migrate)
  */
 import sharp from "sharp";
 import { db, schema } from "../src/db";
+import type { TaxonomyType } from "../src/db/schema";
 import { slugify } from "../src/lib/slug";
 import { storeImage } from "../src/lib/media";
 
@@ -34,17 +35,17 @@ async function main() {
 
   console.log("[seed] Lege Taxonomien an ...");
   const tax = async (
-    table: typeof schema.category,
+    type: TaxonomyType,
     names: string[],
   ): Promise<Record<string, number>> => {
     const rows = await db
-      .insert(table)
-      .values(names.map((name) => ({ name, slug: slugify(name) })))
+      .insert(schema.taxonomy)
+      .values(names.map((name) => ({ type, name, slug: slugify(name) })))
       .returning();
     return Object.fromEntries(rows.map((r) => [r.name, r.id]));
   };
 
-  const categories = await tax(schema.category, [
+  const categories = await tax("kategorie", [
     "Hauptgericht",
     "Dessert",
     "Frühstück",
@@ -52,27 +53,27 @@ async function main() {
     "Suppe",
     "Gebäck",
   ]);
-  const tags = await tax(schema.tag, [
+  const tags = await tax("schlagwort", [
     "schnell",
     "meal prep",
     "sommerlich",
     "herzhaft",
     "süß",
   ]);
-  const diets = await tax(schema.dietType, [
+  const diets = await tax("ernaehrungsform", [
     "Vegetarisch",
     "Vegan",
     "Glutenfrei",
     "Laktosefrei",
   ]);
-  const cuisines = await tax(schema.cuisine, [
+  const cuisines = await tax("kueche", [
     "Italienisch",
     "Asiatisch",
     "Deutsch",
     "Mediterran",
     "Orientalisch",
   ]);
-  const equipments = await tax(schema.equipment, [
+  const equipments = await tax("geraet", [
     "Backofen",
     "Pfanne",
     "Topf",
@@ -297,7 +298,6 @@ async function main() {
     },
   ];
 
-  const recipeIds: number[] = [];
   for (const r of seedRecipes) {
     const heroImageId = await placeholder(r.title.split(" ")[0], r.color);
     const [rec] = await db
@@ -309,7 +309,6 @@ async function main() {
         heroImageId,
         prepMinutes: r.prep,
         cookMinutes: r.cook,
-        totalMinutes: r.prep + r.cook,
         servings: r.servings,
         difficulty: r.difficulty,
         kcal: r.kcal,
@@ -322,7 +321,6 @@ async function main() {
         updatedAt: NOW,
       })
       .returning();
-    recipeIds.push(rec.id);
 
     for (const [i, s] of r.sections.entries()) {
       const [sec] = await db
@@ -336,7 +334,6 @@ async function main() {
       if (s.ingredients.length)
         await db.insert(schema.recipeIngredient).values(
           s.ingredients.map(([name, amount, unit, note], j) => ({
-            recipeId: rec.id,
             sectionId: sec.id,
             ingredientId: ing[name],
             amount,
@@ -351,23 +348,30 @@ async function main() {
         r.notes.map((n) => ({ recipeId: rec.id, ...n, createdAt: NOW })),
       );
 
-    const joins: Array<[any, Record<string, number>, string[], string]> = [
-      [schema.recipeCategory, categories, r.categories, "categoryId"],
-      [schema.recipeTag, tags, r.tags, "tagId"],
-      [schema.recipeDietType, diets, r.diets, "dietTypeId"],
-      [schema.recipeCuisine, cuisines, r.cuisines, "cuisineId"],
-      [schema.recipeEquipment, equipments, r.equipment, "equipmentId"],
+    // Alle Taxonomie-Zuordnungen in EINER Tabelle; erste Kategorie = primär.
+    const taxonomyIds: Array<{ id: number; isPrimary: boolean }> = [
+      ...r.categories.map((n, i) => ({ id: categories[n], isPrimary: i === 0 })),
+      ...r.tags.map((n) => ({ id: tags[n], isPrimary: false })),
+      ...r.diets.map((n) => ({ id: diets[n], isPrimary: false })),
+      ...r.cuisines.map((n) => ({ id: cuisines[n], isPrimary: false })),
+      ...r.equipment.map((n) => ({ id: equipments[n], isPrimary: false })),
     ];
-    for (const [table, lookup, names, col] of joins) {
-      if (names.length)
-        await db.insert(table).values(
-          names.map((n) => ({ recipeId: rec.id, [col]: lookup[n] })),
-        );
-    }
+    if (taxonomyIds.length)
+      await db.insert(schema.recipeTaxonomy).values(
+        taxonomyIds.map((t) => ({
+          recipeId: rec.id,
+          taxonomyId: t.id,
+          isPrimary: t.isPrimary,
+        })),
+      );
   }
 
   console.log("[seed] Lege Beispielreise an ...");
   const travelHero = await placeholder("Sizilien", "#148f77");
+  const travelText =
+    "Sizilien isst man am besten auf der Straße und in kleinen Familienbetrieben.\n\n" +
+    "In **Palermo** führt kein Weg an den Märkten Ballarò und Vucciria vorbei. " +
+    "In **Catania** lohnt der Fischmarkt am Morgen — und abends die Trattorien rund um die Via Plebiscito.";
   const [travel] = await db
     .insert(schema.travelPost)
     .values({
@@ -375,12 +379,10 @@ async function main() {
       slug: slugify("Streetfood und Trattorien in Sizilien"),
       teaser:
         "Eine Woche Palermo und Catania: Arancini am Markt, Pasta alla Norma am Hafen — unsere kulinarischen Entdeckungen.",
-      content:
-        "Sizilien isst man am besten auf der Straße und in kleinen Familienbetrieben.\n\n" +
-        "In **Palermo** führt kein Weg an den Märkten Ballarò und Vucciria vorbei. " +
-        "In **Catania** lohnt der Fischmarkt am Morgen — und abends die Trattorien rund um die Via Plebiscito.",
+      searchText: travelText,
       country: "Italien",
-      destination: "Sizilien",
+      region: "Sizilien",
+      city: "Palermo & Catania",
       heroImageId: travelHero,
       seoTitle: "Sizilien kulinarisch: Streetfood & Trattorien",
       seoDescription:
@@ -392,10 +394,20 @@ async function main() {
     })
     .returning();
 
+  // Inhalt als Blockfolge: ein Textblock (weitere Blöcke im Admin pflegbar).
+  await db.insert(schema.travelBlock).values({
+    travelPostId: travel.id,
+    sortOrder: 0,
+    type: "text",
+    markdown: travelText,
+  });
+
   const restaurants = [
     {
       name: "Trattoria da Nino",
       city: "Palermo",
+      lat: 38.1157,
+      lng: 13.3615,
       description:
         "Familiengeführte Trattoria nahe dem Ballarò-Markt, drei Tische, keine Speisekarte.",
       dishes: [
@@ -417,7 +429,10 @@ async function main() {
     {
       name: "Osteria del Porto",
       city: "Catania",
-      description: "Direkt am Fischmarkt — was morgens ankommt, liegt mittags auf dem Teller.",
+      lat: 37.5079,
+      lng: 15.083,
+      description:
+        "Direkt am Fischmarkt — was morgens ankommt, liegt mittags auf dem Teller.",
       dishes: [
         {
           name: "Risotto al Limone",
@@ -437,6 +452,9 @@ async function main() {
         name: r.name,
         city: r.city,
         description: r.description,
+        // Koordinaten-Override — die Platzhalterbilder tragen kein EXIF-GPS
+        lat: r.lat,
+        lng: r.lng,
         sortOrder: i,
       })
       .returning();
@@ -470,6 +488,11 @@ async function main() {
       "Hallo, ich bin Rose! Hier teile ich gesunde Rezepte für jeden Tag und meine kulinarischen Reisen.",
     aboutTeaserLink: "/ueber-mich",
   });
+  await db.insert(schema.homepageFilterGroup).values([
+    { groupKey: "zeit" },
+    { groupKey: "ernaehrung" },
+    { groupKey: "kalorien" },
+  ]);
   // Slider: Hero-Bilder der ersten drei Rezepte
   const heroRows = await db.select().from(schema.recipe);
   for (const [i, rec] of heroRows.slice(0, 3).entries()) {
@@ -493,7 +516,7 @@ async function main() {
       title: "Datenschutzerklärung",
       slug: "datenschutz",
       content:
-        "> **PLATZHALTER — RECHTSTEXT ERFORDERLICH**\n>\n> Diese Seite muss vor Veröffentlichung durch eine geprüfte Datenschutzerklärung ersetzt werden (Annahme A9). Hinweise für den Text: Es werden nur technisch notwendige Cookies (Admin-Session) gesetzt; das Besucher-Tracking speichert keine IP-Adressen und keine personenbezogenen Daten; Newsletter-Daten werden per Double-Opt-in erhoben und ausschließlich für den Versand genutzt.",
+        "> **PLATZHALTER — RECHTSTEXT ERFORDERLICH**\n>\n> Diese Seite überschreibt die generierte Datenschutzerklärung unter /datenschutz, sobald sie veröffentlicht ist. Solange sie Entwurf bleibt, zeigt der Blog die mitgelieferte DSGVO-orientierte Standarderklärung.",
     },
     {
       title: "Impressum",
@@ -503,20 +526,26 @@ async function main() {
     },
   ];
   await db.insert(schema.page).values(
-    pages.map((p) => ({
+    pages.map((p, i) => ({
       ...p,
       seoTitle: p.title,
       seoDescription: "",
-      status: "veroeffentlicht" as const,
+      // Datenschutz bewusst als Entwurf: die generierte Erklärung greift,
+      // bis ein eigener geprüfter Text veröffentlicht wird.
+      status: (p.slug === "datenschutz" ? "entwurf" : "veroeffentlicht") as
+        | "entwurf"
+        | "veroeffentlicht",
+      isProtected: true,
       createdAt: NOW,
       updatedAt: NOW,
     })),
   );
 
+  // Genau die beiden inhaltlichen Säulen des Blogs — beide öffentlich
+  // (im Newsletter-Willkommensschritt anwählbar).
   await db.insert(schema.interest).values([
-    { name: "Rezepte" },
-    { name: "Reisen" },
-    { name: "Backen" },
+    { name: "Rezepte", isPublic: true },
+    { name: "Reisen", isPublic: true },
   ]);
 
   const [seq] = await db
@@ -545,7 +574,9 @@ async function main() {
   console.log("[seed] Fertig.");
 }
 
-main().then(() => process.exit(0)).catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+main()
+  .then(() => process.exit(0))
+  .catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });

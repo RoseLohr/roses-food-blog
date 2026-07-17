@@ -1,0 +1,67 @@
+# DAST (A-08) — dynamische Sicherheitsanalyse gegen die laufende App.
+# Startet die gebaute App in CI und lässt OWASP ZAP (Baseline) laufen. Der Report
+# wird als Artefakt hochgeladen. HINWEIS: In CI fehlt die nginx-Schicht der
+# greenbox (CSP/HSTS-Header sitzen dort), daher läuft der CI-DAST informativ; der
+# BLOCKIERENDE Prod-DAST gegen die greenbox ist die begleitende Betreiber-Aktion
+# (siehe README / Nutzer-Aktionsliste). Passive Header-Regeln sind in .zap/rules.tsv
+# auf WARN gesetzt, damit keine Falsch-Positiven aus fehlenden Prod-Headern kommen.
+name: DAST
+
+on:
+  schedule:
+    - cron: "40 3 * * 1" # wöchentlich Mo 03:40 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  zap-baseline:
+    runs-on: ubuntu-latest
+    env:
+      DATA_DIR: /tmp/dast-data
+      NEXT_TELEMETRY_DISABLED: "1"
+      PORT: "3000"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: DB migrieren
+        run: mkdir -p "$DATA_DIR" && node scripts/migrate.mjs
+      - name: Build
+        run: npm run build
+      - name: App starten (Hintergrund) + Health abwarten
+        run: |
+          npm start &
+          for i in $(seq 1 30); do
+            curl -sf "http://localhost:3000/health" && break || sleep 2
+          done
+      - name: ZAP Baseline
+        uses: zaproxy/action-baseline@v0.12.0
+        with:
+          target: "http://localhost:3000"
+          rules_file_name: ".zap/rules.tsv"
+          fail_action: true # scheduled: fällt bei ECHTEN Funden (Header-Regeln stehen auf WARN)
+          allow_issue_writing: false
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: zap-report
+          path: |
+            report_html.html
+            report_md.md
+      - name: Lighthouse Core Web Vitals messen (A-17, NFR)
+        run: |
+          npx --yes lighthouse http://localhost:3000/ \
+            --only-categories=performance \
+            --output=json --output-path=./lighthouse.json \
+            --chrome-flags="--headless --no-sandbox --disable-gpu" || true
+          node -e "try{const r=require('./lighthouse.json');const a=r.audits;console.log('LCP',a['largest-contentful-paint']?.displayValue,'CLS',a['cumulative-layout-shift']?.displayValue,'TBT',a['total-blocking-time']?.displayValue,'Perf',r.categories.performance.score)}catch(e){console.log('Lighthouse-Report nicht lesbar:',e.message)}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lighthouse-cwv
+          path: ./lighthouse.json

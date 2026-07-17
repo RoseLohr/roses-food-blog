@@ -1,9 +1,9 @@
 /**
- * Auswertung fürs Admin-Dashboard: kombiniert Tagesaggregate
- * (tracking_daily) mit den noch nicht aggregierten Events von heute.
+ * Auswertung fürs Admin-Dashboard. Einzige Lesequelle ist die DB-View
+ * tracking_unified (Tagesaggregate ∪ noch nicht aggregierte Events).
  */
-import { gte, sql } from "drizzle-orm";
-import { db, schema } from "@/db";
+import { sql } from "drizzle-orm";
+import { db } from "@/db";
 
 export interface StatRow {
   key: string;
@@ -28,22 +28,6 @@ export async function getTrackingStats(days: number): Promise<TrackingStats> {
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
   const sinceDay = dayString(since);
 
-  // Vereinheitlichte Sicht: Tagesaggregate + heutige Roh-Events
-  const unified = sql`
-    SELECT day, content_type, path, country, browser, visitor_type,
-           views, duration_ms_sum, duration_count
-    FROM tracking_daily
-    WHERE day >= ${sinceDay}
-    UNION ALL
-    SELECT date(created_at / 1000, 'unixepoch') AS day,
-           content_type, path, country, browser, visitor_type,
-           1 AS views,
-           COALESCE(duration_ms, 0) AS duration_ms_sum,
-           CASE WHEN duration_ms IS NOT NULL THEN 1 ELSE 0 END AS duration_count
-    FROM tracking_event
-    WHERE created_at >= ${since.getTime()}
-  `;
-
   const group = <T>(dim: string) =>
     db.all<StatRow & { contentType?: string }>(sql`
       SELECT ${sql.raw(dim)} AS key,
@@ -51,7 +35,8 @@ export async function getTrackingStats(days: number): Promise<TrackingStats> {
              SUM(views) AS views,
              SUM(duration_ms_sum) AS durationMsSum,
              SUM(duration_count) AS durationCount
-      FROM (${unified})
+      FROM tracking_unified
+      WHERE day >= ${sinceDay}
       GROUP BY ${sql.raw(dim)}
       ORDER BY views DESC
       LIMIT 100

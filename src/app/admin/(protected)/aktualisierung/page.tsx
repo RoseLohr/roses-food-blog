@@ -5,33 +5,36 @@ import {
   checkRemote,
   currentCommit,
   isDeployPending,
+  readDeployLog,
+  readDeployRequestedAt,
   readDeployStatus,
 } from "@/lib/deploy";
+import { DeployMonitor } from "@/components/admin/deploy-monitor";
 import { t } from "@/i18n/de";
-import { requestDeployAction } from "./actions";
 
 const dict = t();
 const d = dict.admin.deploy;
 
 export const metadata: Metadata = { title: d.title };
+export const dynamic = "force-dynamic";
 
-export default async function DeployPage(props: {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}) {
+export default async function DeployPage() {
   await requireAdmin();
-  const searchParams = await props.searchParams;
-  const message =
-    typeof searchParams.meldung === "string" ? searchParams.meldung : null;
 
   const { repo, branch } = getDeployConfig();
   const current = currentCommit();
-  const pending = isDeployPending();
-  const status = readDeployStatus();
   const remote = await checkRemote();
 
   const configured = Boolean(repo && branch);
   const updateAvailable =
     remote.ok && remote.latest !== undefined && remote.latest !== current;
+
+  const snapshot = {
+    pending: isDeployPending(),
+    requestedAt: readDeployRequestedAt(),
+    status: readDeployStatus(),
+    log: readDeployLog(),
+  };
 
   const badge = (text: string, tone: "ok" | "warn" | "info") => {
     const cls =
@@ -41,7 +44,7 @@ export default async function DeployPage(props: {
           ? "bg-amber-100 text-amber-900"
           : "bg-cream text-ink-soft";
     return (
-      <span className={`rounded-full px-3 py-1 text-sm font-medium ${cls}`}>
+      <span className={`px-3 py-1 text-sm font-medium ${cls}`}>
         {text}
       </span>
     );
@@ -51,23 +54,18 @@ export default async function DeployPage(props: {
     <>
       <h1 className="mb-2 text-2xl font-bold">{d.title}</h1>
       <p className="mb-6 max-w-2xl text-sm text-ink-soft">{d.intro}</p>
-      {message && (
-        <p role="status" className="mb-4 max-w-2xl rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
-          {message}
-        </p>
-      )}
 
       <div className="max-w-2xl space-y-6">
-        <section className="rounded-2xl bg-white p-5 shadow-sm">
+        <section className="bg-white p-5 shadow-sm">
           <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
             <dt className="font-medium text-ink-soft">{d.currentVersion}</dt>
             <dd>
-              <code className="rounded bg-cream px-1.5 py-0.5">{current}</code>
+              <code className="bg-cream px-1.5 py-0.5">{current}</code>
             </dd>
             <dt className="font-medium text-ink-soft">{d.latestVersion}</dt>
             <dd>
               {remote.ok ? (
-                <code className="rounded bg-cream px-1.5 py-0.5">{remote.latest}</code>
+                <code className="bg-cream px-1.5 py-0.5">{remote.latest}</code>
               ) : (
                 <span className="text-ink-soft">{d.unknown}</span>
               )}
@@ -89,26 +87,44 @@ export default async function DeployPage(props: {
                   : badge(d.upToDate, "ok")}
           </div>
 
-          <form action={requestDeployAction} className="mt-5">
-            <button
-              type="submit"
-              disabled={pending}
-              className="rounded-lg bg-rose-primary px-5 py-2 font-semibold text-white hover:bg-rose-primary-dark disabled:opacity-60"
-            >
-              {pending ? d.pending : d.updateButton}
-            </button>
-          </form>
-
-          {status && (
-            <p className="mt-4 text-xs text-ink-soft">
-              {d.lastDeploy}: {new Date(status.at).toLocaleString("de-DE")} · {d.lastResult}:{" "}
-              {status.result}
-              {status.commit ? ` (${status.commit})` : ""}
-            </p>
+          {updateAvailable && remote.notes && remote.notes.length > 0 && (
+            <div className="mt-4 border-t border-ink/5 pt-3">
+              <p className="text-sm font-semibold">{d.releaseNotesTitle}</p>
+              <p className="mb-2 text-xs text-ink-soft">{d.releaseNotesSub}</p>
+              <ul className="space-y-1 text-sm">
+                {remote.notes.slice(0, 12).map((n) => (
+                  <li key={n.sha} className="flex gap-2">
+                    <span className="text-leaf" aria-hidden="true">
+                      •
+                    </span>
+                    <span className="min-w-0">
+                      {n.subject}
+                      {n.sha && (
+                        <code className="ml-1.5 bg-cream px-1 py-0.5 text-xs text-ink-soft">
+                          {n.sha}
+                        </code>
+                      )}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {remote.notes.length > 12 && (
+                <p className="mt-1.5 text-xs text-ink-soft">
+                  {d.releaseNotesMore.replace(
+                    "{n}",
+                    String(remote.notes.length - 12),
+                  )}
+                </p>
+              )}
+            </div>
           )}
+
+          <div className="mt-5">
+            <DeployMonitor initial={snapshot} />
+          </div>
         </section>
 
-        <section className="rounded-2xl border border-ink/10 bg-cream/40 p-5 text-sm">
+        <section className="border border-ink/10 bg-cream/40 p-5 text-sm">
           <h2 className="mb-2 font-semibold">{d.scopeTitle}</h2>
           <p className="mb-4 text-ink-soft">{d.scopeBody}</p>
           <h2 className="mb-2 font-semibold">{d.setupTitle}</h2>

@@ -4,8 +4,12 @@ import { asc } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { RecipeCard } from "@/components/recipe-card";
 import { ResponsiveImg } from "@/components/responsive-img";
+import { IngredientFilter } from "@/components/ingredient-filter";
+import { taxonomiesByType } from "@/lib/taxonomies";
 import {
+  CALORIE_BANDS,
   parseSearchParams,
+  searchDishes,
   searchIngredients,
   searchRecipes,
   searchTravelPosts,
@@ -64,32 +68,73 @@ export default async function SearchPage(props: {
   const hasQuery =
     filters.q !== "" ||
     filters.maxTime !== null ||
+    filters.calorieBands.length > 0 ||
     filters.categorySlugs.length > 0 ||
     filters.tagSlugs.length > 0 ||
     filters.dietSlugs.length > 0 ||
     filters.cuisineSlugs.length > 0 ||
     filters.ingredientSlugs.length > 0;
 
-  const [categories, tags, diets, cuisines, ingredients] = await Promise.all([
-    db.select().from(schema.category).orderBy(asc(schema.category.name)),
-    db.select().from(schema.tag).orderBy(asc(schema.tag.name)),
-    db.select().from(schema.dietType).orderBy(asc(schema.dietType.name)),
-    db.select().from(schema.cuisine).orderBy(asc(schema.cuisine.name)),
+  const [taxByType, ingredients] = await Promise.all([
+    taxonomiesByType(),
     db.select().from(schema.ingredient).orderBy(asc(schema.ingredient.name)),
   ]);
+  const categories = taxByType.kategorie;
+  const tags = taxByType.schlagwort;
+  const diets = taxByType.ernaehrungsform;
+  const cuisines = taxByType.kueche;
 
-  const [recipes, travel, ingredientHits] = hasQuery
+  // Bereich (Rezepte/Reisen/beides) steuert, welche Treffer geladen werden.
+  const wantRecipes = filters.scope !== "reisen";
+  const wantTravel = filters.scope !== "rezepte";
+
+  const [recipes, travel, dishHits, rawIngredientHits] = hasQuery
     ? await Promise.all([
-        searchRecipes(filters),
-        searchTravelPosts(filters.q),
+        wantRecipes ? searchRecipes(filters) : Promise.resolve([]),
+        wantTravel ? searchTravelPosts(filters.q) : Promise.resolve([]),
+        wantTravel ? searchDishes(filters) : Promise.resolve([]),
         searchIngredients(filters.q, filters.ingredientSlugs),
       ])
-    : [[], [], []];
+    : [[], [], [], []];
 
+  // Zutaten-Treffer an den gewählten Bereich anpassen.
+  const ingredientHits = rawIngredientHits
+    .map((h) => ({
+      ...h,
+      recipes: wantRecipes ? h.recipes : [],
+      dishes: wantTravel ? h.dishes : [],
+    }))
+    .filter((h) => h.recipes.length > 0 || h.dishes.length > 0);
+
+  // Rezepte, die bereits unter einem Zutaten-Treffer erscheinen, nicht ein
+  // zweites Mal (in der allgemeinen Rezeptliste) zeigen oder mitzählen.
+  const ingredientRecipeSlugs = new Set(
+    ingredientHits.flatMap((h) => h.recipes.map((r) => r.slug)),
+  );
+  const uniqueRecipes = recipes.filter(
+    (r) => !ingredientRecipeSlugs.has(r.slug),
+  );
+  // Gerichte, die schon unter einem Zutaten-Treffer stehen, nicht doppelt
+  // in der Gerichte-Sektion aufführen.
+  const ingredientDishKeys = new Set(
+    ingredientHits.flatMap((h) =>
+      h.dishes.map((x) => `${x.travelSlug}|${x.restaurantName}|${x.dishName}`),
+    ),
+  );
+  const uniqueDishes = dishHits.filter(
+    (x) =>
+      !ingredientDishKeys.has(`${x.travelSlug}|${x.restaurantName}|${x.dishName}`),
+  );
+  const ingredientDishCount = ingredientHits.reduce(
+    (n, h) => n + h.dishes.length,
+    0,
+  );
   const totalResults =
-    recipes.length +
+    ingredientRecipeSlugs.size +
+    uniqueRecipes.length +
     travel.length +
-    ingredientHits.reduce((n, h) => n + h.recipes.length + h.dishes.length, 0);
+    ingredientDishCount +
+    uniqueDishes.length;
 
   return (
     <main>
@@ -100,10 +145,10 @@ export default async function SearchPage(props: {
 
       <div className="mt-6 grid gap-8 lg:grid-cols-[16rem_1fr]">
         {/* Filter-Formular */}
-        <form method="get" className="flex flex-col gap-5 self-start rounded-2xl bg-white p-5 shadow-sm">
+        <form method="get" className="flex flex-col gap-5 self-start bg-white p-5 shadow-sm">
           <div>
             <label htmlFor="such-q" className="mb-1 block text-sm font-semibold">
-              {dict.search.title}
+              {dict.search.freeTextLabel}
             </label>
             <input
               id="such-q"
@@ -111,9 +156,34 @@ export default async function SearchPage(props: {
               name="q"
               defaultValue={filters.q}
               placeholder={dict.search.placeholder}
-              className="w-full rounded-lg border border-ink-soft/30 px-3 py-2 text-sm"
+              className="w-full border border-ink-soft/30 px-3 py-2 text-sm"
             />
           </div>
+          {/* Bereich: Rezepte, Reisen (inkl. Gerichte) oder beides */}
+          <fieldset>
+            <legend className="mb-1 text-sm font-semibold">
+              {dict.search.scope}
+            </legend>
+            <div className="flex flex-col gap-0.5">
+              {(
+                [
+                  ["alle", dict.search.scopeAll],
+                  ["rezepte", dict.search.scopeRecipes],
+                  ["reisen", dict.search.scopeTravel],
+                ] as const
+              ).map(([value, label]) => (
+                <label key={value} className="flex items-center gap-2 text-sm">
+                  <input
+                    type="radio"
+                    name="bereich"
+                    value={value}
+                    defaultChecked={filters.scope === value}
+                  />
+                  {label}
+                </label>
+              ))}
+            </div>
+          </fieldset>
           <div>
             <label htmlFor="such-zeit" className="mb-1 block text-sm font-semibold">
               {dict.search.time}
@@ -122,7 +192,7 @@ export default async function SearchPage(props: {
               id="such-zeit"
               name="zeit"
               defaultValue={filters.maxTime ?? ""}
-              className="w-full rounded-lg border border-ink-soft/30 px-3 py-2 text-sm"
+              className="w-full border border-ink-soft/30 px-3 py-2 text-sm"
             >
               <option value="">{dict.search.timeAny}</option>
               {TIME_OPTIONS.map((m) => (
@@ -132,6 +202,15 @@ export default async function SearchPage(props: {
               ))}
             </select>
           </div>
+          <FilterGroup
+            legend={dict.search.calories}
+            name="kalorien"
+            options={CALORIE_BANDS.map((band) => ({
+              slug: band,
+              name: dict.search.calorieBands[band],
+            }))}
+            selected={filters.calorieBands}
+          />
           <FilterGroup
             legend={dict.search.categories}
             name="kategorie"
@@ -156,11 +235,10 @@ export default async function SearchPage(props: {
             options={tags}
             selected={filters.tagSlugs}
           />
-          <FilterGroup
-            legend={dict.search.ingredients}
-            name="zutat"
-            options={ingredients}
-            selected={filters.ingredientSlugs}
+          <IngredientFilter
+            initial={ingredients.filter((i) =>
+              filters.ingredientSlugs.includes(i.slug),
+            )}
           />
           <div className="flex items-center gap-3">
             <button
@@ -187,14 +265,14 @@ export default async function SearchPage(props: {
           {ingredientHits.map((hit) => (
             <section
               key={hit.ingredient.id}
-              className="mb-8 rounded-2xl bg-white p-5 shadow-sm"
+              className="mb-8 bg-white p-5 shadow-sm"
             >
               <div className="flex items-center gap-4">
                 {hit.image && (
                   <ResponsiveImg
                     image={hit.image}
-                    sizes="80px"
-                    className="h-20 w-20 rounded-full object-cover"
+                    sizes="160px"
+                    className="h-24 w-auto max-w-[10rem] object-contain"
                   />
                 )}
                 <h2 className="font-display text-2xl font-bold">
@@ -220,17 +298,33 @@ export default async function SearchPage(props: {
                   </h3>
                   <ul className="flex flex-col gap-2">
                     {hit.dishes.map((d, i) => (
-                      <li key={i} className="rounded-xl border border-ink/10 p-3 text-sm">
-                        <strong>{d.dishName}</strong> {dict.search.inRestaurant}{" "}
-                        {d.restaurantName}
-                        {d.restaurantCity ? ` (${d.restaurantCity})` : ""} —{" "}
-                        {dict.search.fromTravel}{" "}
-                        <Link
-                          href={`/reisen/${d.travelSlug}`}
-                          className="text-rose-primary underline-offset-2 hover:underline"
-                        >
-                          {d.travelTitle}
-                        </Link>
+                      <li
+                        key={i}
+                        className="flex items-center gap-3 border border-ink/10 p-3 text-sm"
+                      >
+                        {d.thumbUrl && (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={d.thumbUrl}
+                            alt=""
+                            width={64}
+                            height={64}
+                            loading="lazy"
+                            className="h-16 w-16 shrink-0 object-cover"
+                          />
+                        )}
+                        <span>
+                          <strong>{d.dishName}</strong> {dict.search.inRestaurant}{" "}
+                          {d.restaurantName}
+                          {d.restaurantCity ? ` (${d.restaurantCity})` : ""} —{" "}
+                          {dict.search.fromTravel}{" "}
+                          <Link
+                            href={`/reisen/${d.travelSlug}`}
+                            className="text-rose-primary underline-offset-2 hover:underline"
+                          >
+                            {d.travelTitle}
+                          </Link>
+                        </span>
                       </li>
                     ))}
                   </ul>
@@ -239,16 +333,80 @@ export default async function SearchPage(props: {
             </section>
           ))}
 
-          {recipes.length > 0 && (
+          {uniqueRecipes.length > 0 && (
             <section className="mb-8">
               <h2 className="mb-3 font-display text-2xl font-bold">
                 {dict.search.recipesHeading}
               </h2>
               <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                {recipes.map((r) => (
+                {uniqueRecipes.map((r) => (
                   <RecipeCard key={r.slug} recipe={r} />
                 ))}
               </div>
+            </section>
+          )}
+
+          {/* Gerichte aus Reiseberichten — über Kategorien & Co. gefunden */}
+          {uniqueDishes.length > 0 && (
+            <section className="mb-8">
+              <h2 className="mb-3 font-display text-2xl font-bold">
+                {dict.search.dishesHeading}
+              </h2>
+              <ul className="flex flex-col gap-3">
+                {uniqueDishes.map((x) => (
+                  <li
+                    key={x.dishId}
+                    className="flex items-start gap-3 bg-white p-4 shadow-sm"
+                  >
+                    {x.thumbUrl && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={x.thumbUrl}
+                        alt=""
+                        width={64}
+                        height={64}
+                        loading="lazy"
+                        className="h-16 w-16 shrink-0 object-cover"
+                      />
+                    )}
+                    <span className="min-w-0">
+                    {/* Kein „Aus Reisebericht"-Badge — steht schon in der Überschrift */}
+                    {(x.categories.length > 0 || x.dietTypes.length > 0) && (
+                    <p className="mb-1 flex flex-wrap items-center gap-1.5">
+                      {x.categories.map((c) => (
+                        <span
+                          key={`k-${c}`}
+                          className="border border-leaf px-2 py-0.5 text-[0.68rem] font-semibold uppercase tracking-wide text-leaf"
+                        >
+                          {c}
+                        </span>
+                      ))}
+                      {x.dietTypes.map((dt) => (
+                        <span
+                          key={`e-${dt}`}
+                          className="border border-leaf px-2 py-0.5 text-[0.68rem] font-semibold uppercase tracking-wide text-leaf"
+                        >
+                          {dt}
+                        </span>
+                      ))}
+                    </p>
+                    )}
+                    <p className="text-sm">
+                      <strong>{x.dishName}</strong> {dict.search.inRestaurant}{" "}
+                      {x.restaurantName}
+                      {x.restaurantCity ? ` (${x.restaurantCity})` : ""} —{" "}
+                      {dict.search.fromTravel}{" "}
+                      <Link
+                        href={`/reisen/${x.travelSlug}`}
+                        className="text-rose-primary underline-offset-2 hover:underline"
+                      >
+                        {x.travelTitle}
+                      </Link>
+                    </p>
+                    </span>
+                  </li>
+                ))}
+              </ul>
             </section>
           )}
 
@@ -259,7 +417,7 @@ export default async function SearchPage(props: {
               </h2>
               <ul className="flex flex-col gap-3">
                 {travel.map((p) => (
-                  <li key={p.slug} className="rounded-2xl bg-white p-4 shadow-sm">
+                  <li key={p.slug} className="bg-white p-4 shadow-sm">
                     <Link
                       href={`/reisen/${p.slug}`}
                       className="font-display text-lg font-bold hover:text-rose-primary"
@@ -267,7 +425,7 @@ export default async function SearchPage(props: {
                       {p.title}
                     </Link>
                     <p className="text-xs font-semibold uppercase tracking-wide text-rose-primary">
-                      {[p.country, p.destination].filter(Boolean).join(" · ")}
+                      {[p.country, p.region, p.city].filter(Boolean).join(" · ")}
                     </p>
                     {p.teaser && (
                       <p className="mt-1 text-sm text-ink-soft">{p.teaser}</p>

@@ -2,12 +2,13 @@ import type { Metadata } from "next";
 import { asc, eq, sql } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { requireAdmin } from "@/lib/auth";
-import { imageUrl, thumbUrl } from "@/lib/media";
+import { imageUrl, thumbUrl, variantWidthsByImage } from "@/lib/media";
 import { ImagePicker } from "@/components/admin/image-picker";
 import { t } from "@/i18n/de";
 import {
   createIngredientAction,
   deleteIngredientAction,
+  mergeIngredientsAction,
   updateIngredientAction,
 } from "./actions";
 
@@ -29,7 +30,6 @@ export default async function IngredientsPage(props: {
       name: schema.ingredient.name,
       imageId: schema.ingredient.imageId,
       fileKey: schema.mediaImage.fileKey,
-      variantWidths: schema.mediaImage.variantWidths,
       recipeCount: sql<number>`(SELECT COUNT(*) FROM recipe_ingredient ri WHERE ri.ingredient_id = ${schema.ingredient.id})`,
       dishCount: sql<number>`(SELECT COUNT(*) FROM dish_ingredient di WHERE di.ingredient_id = ${schema.ingredient.id})`,
     })
@@ -43,31 +43,37 @@ export default async function IngredientsPage(props: {
       name: schema.mediaImage.originalName,
       alt: schema.mediaImage.altText,
       fileKey: schema.mediaImage.fileKey,
-      variantWidths: schema.mediaImage.variantWidths,
     })
     .from(schema.mediaImage)
     .orderBy(asc(schema.mediaImage.originalName));
+  const widthsById = await variantWidthsByImage([
+    ...imageRows.map((i) => i.id),
+    ...ingredients.flatMap((i) => (i.imageId ? [i.imageId] : [])),
+  ]);
   const imageChoices = imageRows.map((i) => ({
     id: i.id,
     label: i.alt || i.name,
-    thumbUrl: thumbUrl(i.fileKey, i.variantWidths),
+    thumbUrl: thumbUrl(i.fileKey, widthsById.get(i.id) ?? []),
   }));
 
   return (
     <>
       <h1 className="mb-2 text-2xl font-bold">{dict.admin.ingredients.title}</h1>
-      <p className="mb-6 text-sm text-ink-soft">
+      <p className="mb-1 text-sm text-ink-soft">
         {dict.admin.ingredients.imageHint}
       </p>
+      <p className="mb-6 text-sm text-ink-soft">
+        {dict.admin.ingredients.mergeHint}
+      </p>
       {message && (
-        <p role="status" className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
+        <p role="status" className="mb-4 bg-amber-50 p-3 text-sm text-amber-900">
           {message}
         </p>
       )}
 
       <form
         action={createIngredientAction}
-        className="mb-8 flex max-w-xl flex-wrap items-end gap-3 rounded-2xl bg-white p-5 shadow-sm"
+        className="mb-8 flex max-w-xl flex-wrap items-end gap-3 bg-white p-5 shadow-sm"
       >
         <div className="grow">
           <label className="mb-1 block text-sm font-medium" htmlFor="neu-name">
@@ -77,7 +83,7 @@ export default async function IngredientsPage(props: {
             id="neu-name"
             name="name"
             required
-            className="w-full rounded-lg border border-ink-soft/30 px-3 py-2"
+            className="w-full border border-ink-soft/30 px-3 py-2"
           />
         </div>
         <div className="w-full">
@@ -99,20 +105,23 @@ export default async function IngredientsPage(props: {
 
       <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {ingredients.map((ing) => (
-          <li key={ing.id} className="flex gap-3 rounded-2xl bg-white p-4 shadow-sm">
+          <li key={ing.id} className="flex gap-3 bg-white p-4 shadow-sm">
             {ing.fileKey ? (
               <img
-                src={imageUrl(ing.fileKey, JSON.parse(ing.variantWidths ?? "[320]")[0] ?? 320)}
+                src={imageUrl(
+                  ing.fileKey,
+                  (ing.imageId ? widthsById.get(ing.imageId)?.[0] : null) ?? 320,
+                )}
                 alt=""
                 width={64}
                 height={64}
                 loading="lazy"
-                className="h-16 w-16 shrink-0 rounded-lg object-cover"
+                className="h-16 w-16 shrink-0 object-cover"
               />
             ) : (
               <div
                 aria-hidden
-                className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg bg-cream text-xs text-ink-soft"
+                className="flex h-16 w-16 shrink-0 items-center justify-center bg-cream text-xs text-ink-soft"
               >
                 {dict.admin.recipes.noImage}
               </div>
@@ -127,7 +136,7 @@ export default async function IngredientsPage(props: {
                   id={`name-${ing.id}`}
                   name="name"
                   defaultValue={ing.name}
-                  className="rounded-lg border border-ink-soft/30 px-2 py-1 text-sm font-medium"
+                  className="border border-ink-soft/30 px-2 py-1 text-sm font-medium"
                 />
                 <ImagePicker
                   name="imageId"
@@ -149,6 +158,41 @@ export default async function IngredientsPage(props: {
                   </button>
                 </div>
               </form>
+              {ingredients.length > 1 && (
+                <form
+                  action={mergeIngredientsAction}
+                  className="mt-2 flex items-center gap-2 border-t border-ink-soft/15 pt-2"
+                >
+                  <input type="hidden" name="sourceId" value={ing.id} />
+                  <label className="sr-only" htmlFor={`merge-${ing.id}`}>
+                    {dict.admin.ingredients.mergeInto}
+                  </label>
+                  <select
+                    id={`merge-${ing.id}`}
+                    name="targetId"
+                    required
+                    defaultValue=""
+                    className="min-w-0 grow border border-ink-soft/30 px-2 py-1 text-xs"
+                  >
+                    <option value="" disabled>
+                      {dict.admin.ingredients.merge}
+                    </option>
+                    {ingredients
+                      .filter((other) => other.id !== ing.id)
+                      .map((other) => (
+                        <option key={other.id} value={other.id}>
+                          {other.name}
+                        </option>
+                      ))}
+                  </select>
+                  <button
+                    type="submit"
+                    className="shrink-0 rounded border border-ink/20 px-2 py-0.5 text-xs hover:bg-cream"
+                  >
+                    {dict.admin.ingredients.mergeButton}
+                  </button>
+                </form>
+              )}
               {ing.recipeCount === 0 && ing.dishCount === 0 && (
                 <form action={deleteIngredientAction} className="mt-1 text-right">
                   <input type="hidden" name="id" value={ing.id} />

@@ -71,12 +71,12 @@ describe("Segmente", () => {
 
     const [segment] = await db
       .insert(schema.segment)
-      .values({
-        name: "Rezepte-Fans",
-        ruleInterestIds: JSON.stringify([1]),
-        createdAt: new Date(),
-      })
+      .values({ name: "Rezepte-Fans", createdAt: new Date() })
       .returning();
+    // Regel: Interesse 1 (relational statt JSON)
+    await db
+      .insert(schema.segmentRuleInterest)
+      .values({ segmentId: segment.id, interestId: 1 });
     // Carla manuell zuordnen
     await db
       .insert(schema.contactSegment)

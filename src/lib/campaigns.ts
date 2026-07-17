@@ -2,7 +2,7 @@
  * Kampagnenversand: Testversand an Admin, Versand an ein Segment mit
  * Versandprotokoll je Kontakt (campaign_log) über die Mail-Queue.
  */
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { enqueueEmail } from "./email-queue";
 import { renderEmail } from "./mailer";
@@ -25,17 +25,19 @@ export async function sendCampaignTest(
     .where(eq(schema.campaign.id, campaignId));
   if (!campaign) return false;
 
+  const testUnsubscribeUrl = `${getBaseUrl()}/newsletter/abgemeldet`;
   const rendered = renderEmail({
     markdown: campaign.content,
     firstName: "Test",
     lastName: "Empfängerin",
-    unsubscribeUrl: `${getBaseUrl()}/newsletter/abgemeldet`,
+    unsubscribeUrl: testUnsubscribeUrl,
   });
   await enqueueEmail({
     toEmail: adminEmail,
     subject: `[TEST] ${campaign.subject}`,
     html: rendered.html,
     textBody: rendered.text,
+    unsubscribeUrl: testUnsubscribeUrl,
   });
   return true;
 }
@@ -63,15 +65,27 @@ export async function sendCampaign(campaignId: number): Promise<SendCampaignResu
     .where(eq(schema.campaign.id, campaignId));
 
   for (const contact of recipients) {
+    // Logzeile zuerst (idempotent), damit die Queue-Zeile sie per FK
+    // adressieren kann.
     await db
       .insert(schema.campaignLog)
       .values({ campaignId, contactId: contact.id, status: "eingereiht" })
       .onConflictDoNothing();
+    const [log] = await db
+      .select({ id: schema.campaignLog.id })
+      .from(schema.campaignLog)
+      .where(
+        and(
+          eq(schema.campaignLog.campaignId, campaignId),
+          eq(schema.campaignLog.contactId, contact.id),
+        ),
+      );
+    const unsub = unsubscribeUrl(contact.unsubscribeToken);
     const rendered = renderEmail({
       markdown: campaign.content,
       firstName: contact.firstName,
       lastName: contact.lastName,
-      unsubscribeUrl: unsubscribeUrl(contact.unsubscribeToken),
+      unsubscribeUrl: unsub,
     });
     await enqueueEmail({
       toEmail: contact.email,
@@ -79,7 +93,8 @@ export async function sendCampaign(campaignId: number): Promise<SendCampaignResu
       html: rendered.html,
       textBody: rendered.text,
       contactId: contact.id,
-      campaignId,
+      campaignLogId: log?.id ?? null,
+      unsubscribeUrl: unsub,
     });
   }
   return { ok: true, recipients: recipients.length };

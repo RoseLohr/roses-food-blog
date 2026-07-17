@@ -1,0 +1,44 @@
+# Nächtliche Kadenz (A-36 fortlaufende Kalibrier-Injektion + B-02 Bootstrap-Verify).
+# GitHub-Actions-schedule IST der Cron-Host — kein separater Server nötig.
+name: Nightly-Kadenz
+
+on:
+  schedule:
+    - cron: "17 3 * * *" # täglich 03:17 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  cadence:
+    runs-on: ubuntu-latest
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      # B-02: Bootstrap von Grund auf verifizieren (frische Umgebung).
+      - run: npm ci --no-audit --no-fund
+      - name: Kalibrierung fortlaufend (A-36, --strict — fängt jeden aktiven Seed)
+        run: node scripts/regime/calibration/inject.mjs --strict
+      - name: Tests (Bootstrap-Verify)
+        run: npm test
+      - name: Build (Bootstrap-Verify)
+        run: npm run build
+      - name: Abhängigkeits-Existenz + Alter (C-03 Registry-Alters-Kadenz)
+        run: |
+          node scripts/regime/deps-existence.mjs
+          echo "Neu registrierte/auffällige Pakete (informativ):"
+          npm outdated || true
+      - name: Regime-Gates erneut (Drift-Erkennung)
+        run: |
+          node scripts/regime/constitution-hash.mjs --verify
+          node scripts/regime/mandate-hash.mjs --verify
+          node scripts/regime/data-map.mjs --selftest
+          node scripts/regime/authz-coverage.mjs --selftest
+          node scripts/regime/provenance-reconstruct.mjs --selftest

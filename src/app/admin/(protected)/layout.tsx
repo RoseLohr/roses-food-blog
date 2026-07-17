@@ -1,55 +1,61 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { AdminMobileNav } from "@/components/admin/admin-mobile-nav";
+import { AdminNav, type AdminNavSection } from "@/components/admin/admin-nav";
 import { logoutAction } from "./actions";
 import { requireAdmin } from "@/lib/auth";
 import { t } from "@/i18n/de";
 
 const dict = t();
+const nav = dict.admin.nav;
 
 export const metadata: Metadata = {
   title: { default: dict.admin.title, template: `%s – ${dict.admin.title}` },
   robots: { index: false, follow: false },
 };
 
-type NavKey = keyof typeof dict.admin.nav;
-interface NavGroup {
-  label?: string;
-  items: Array<[string, NavKey]>;
-}
-
-const NAV_GROUPS: NavGroup[] = [
-  { items: [["/admin", "dashboard"]] },
+const NAV_SECTIONS: AdminNavSection[] = [
+  { entries: [{ href: "/admin", label: nav.dashboard }] },
   {
-    label: dict.admin.nav.groupContent,
-    items: [
-      ["/admin/rezepte", "recipes"],
-      ["/admin/reisen", "travel"],
-      ["/admin/seiten", "pages"],
-      ["/admin/startseite", "homepage"],
-      ["/admin/medien", "media"],
-      ["/admin/zutaten", "ingredients"],
-      ["/admin/taxonomien", "taxonomies"],
+    label: nav.groupContent,
+    entries: [
+      // „Beiträge": aufklappbare Gruppe. Zutaten sitzt direkt unter Rezepte.
+      {
+        label: nav.groupPosts,
+        children: [
+          { href: "/admin/rezepte", label: nav.recipes },
+          { href: "/admin/zutaten", label: nav.ingredients },
+          { href: "/admin/reisen", label: nav.travel },
+          { href: "/admin/seiten", label: nav.pages },
+          { href: "/admin/startseite", label: nav.homepage },
+          { href: "/admin/saisonkalender", label: nav.seasonCalendar },
+        ],
+      },
+      { href: "/admin/medien", label: nav.media },
+      { href: "/admin/taxonomien", label: nav.taxonomies },
     ],
   },
   {
-    label: dict.admin.nav.groupNewsletter,
-    items: [
-      ["/admin/kontakte", "contacts"],
-      ["/admin/segmente", "segments"],
-      ["/admin/kampagnen", "campaigns"],
-      ["/admin/sequenzen", "sequences"],
+    label: nav.groupNewsletter,
+    // Newsletter/CRM ist der größte Bereich und wird selten gebraucht — beim
+    // Öffnen des Menüs eingeklappt lassen (öffnet automatisch, wenn man darin ist).
+    defaultCollapsed: true,
+    entries: [
+      { href: "/admin/kontakte", label: nav.contacts },
+      { href: "/admin/segmente", label: nav.segments },
+      { href: "/admin/kampagnen", label: nav.campaigns },
+      { href: "/admin/sequenzen", label: nav.sequences },
+      { href: "/admin/newsletter", label: nav.newsletterDisplay },
     ],
   },
+  { label: nav.groupAnalytics, entries: [{ href: "/admin/statistik", label: nav.tracking }] },
   {
-    label: dict.admin.nav.groupAnalytics,
-    items: [["/admin/statistik", "tracking"]],
-  },
-  {
-    label: dict.admin.nav.groupSystem,
-    items: [
-      ["/admin/benutzer", "users"],
-      ["/admin/einstellungen", "settings"],
-      ["/admin/aktualisierung", "deploy"],
+    label: nav.groupSystem,
+    entries: [
+      { href: "/admin/benutzer", label: nav.users },
+      { href: "/admin/einstellungen", label: nav.settings },
+      { href: "/admin/daten", label: nav.data },
+      { href: "/admin/aktualisierung", label: nav.deploy },
     ],
   },
 ];
@@ -65,62 +71,23 @@ export default async function AdminLayout({
         <Link href="/admin" className="mb-6 text-lg font-bold text-rose-primary">
           {dict.site.name}
         </Link>
-        <nav aria-label={dict.admin.title} className="flex flex-1 flex-col gap-4">
-          {NAV_GROUPS.map((group, i) => (
-            <div key={i} className="border-t border-ink/5 pt-3 first:border-t-0 first:pt-0">
-              {group.label && (
-                <p className="mb-1 px-3 text-xs font-semibold uppercase tracking-wide text-ink-soft/70">
-                  {group.label}
-                </p>
-              )}
-              <ul className="flex flex-col gap-1">
-                {group.items.map(([href, key]) => (
-                  <li key={href}>
-                    <Link
-                      href={href}
-                      className="block rounded-lg px-3 py-1.5 text-sm text-ink-soft hover:bg-cream hover:text-ink"
-                    >
-                      {dict.admin.nav[key]}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
+        <nav aria-label={dict.admin.title} className="flex-1">
+          <AdminNav sections={NAV_SECTIONS} />
         </nav>
         <a
           href="/"
-          className="mt-4 block rounded-lg px-3 py-1.5 text-sm text-ink-soft hover:bg-cream"
+          className="mt-4 block px-3 py-1.5 text-sm text-ink-soft hover:bg-cream"
         >
           {dict.admin.nav.viewSite}
         </a>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex items-center justify-between border-b border-ink/10 bg-white px-4 py-2 md:px-6">
-          <details className="md:hidden">
-            <summary className="cursor-pointer rounded-lg px-2 py-1 text-sm font-semibold">
-              Menü
-            </summary>
-            <nav
-              aria-label={dict.admin.title}
-              className="absolute z-20 mt-1 max-h-[80vh] overflow-y-auto rounded-xl border border-ink/10 bg-white p-3 shadow-lg"
-            >
-              {NAV_GROUPS.map((group, i) => (
-                <div key={i} className="mb-2 last:mb-0">
-                  {group.label && (
-                    <p className="px-2 pb-0.5 pt-1 text-xs font-semibold uppercase tracking-wide text-ink-soft/70">
-                      {group.label}
-                    </p>
-                  )}
-                  {group.items.map(([href, key]) => (
-                    <Link key={href} href={href} className="block px-2 py-1 text-sm">
-                      {dict.admin.nav[key]}
-                    </Link>
-                  ))}
-                </div>
-              ))}
-            </nav>
-          </details>
+          <AdminMobileNav
+            menuLabel={dict.admin.nav.menu}
+            label={dict.admin.title}
+            sections={NAV_SECTIONS}
+          />
           <p className="hidden text-sm text-ink-soft md:block">
             {dict.auth.loggedInAs} <strong>{admin.name}</strong> ({admin.email})
           </p>

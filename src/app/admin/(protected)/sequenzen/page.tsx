@@ -37,20 +37,20 @@ export default async function SequencesPage(props: {
       <h1 className="mb-2 text-2xl font-bold">{d.title}</h1>
       <p className="mb-6 max-w-2xl text-sm text-ink-soft">{d.hint}</p>
       {message && (
-        <p role="status" className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
+        <p role="status" className="mb-4 bg-amber-50 p-3 text-sm text-amber-900">
           {message}
         </p>
       )}
 
       <div className="flex max-w-3xl flex-col gap-8">
         {sequences.map((seq) => (
-          <section key={seq.id} className="rounded-2xl bg-white p-5 shadow-sm">
+          <section key={seq.id} className="bg-white p-5 shadow-sm">
             <div className="mb-3 flex items-center justify-between gap-3">
               <span
                 className={
                   seq.active
-                    ? "rounded-full bg-green-100 px-3 py-1 text-sm text-green-900"
-                    : "rounded-full bg-gray-200 px-3 py-1 text-sm text-gray-700"
+                    ? "bg-green-100 px-3 py-1 text-sm text-green-900"
+                    : "bg-gray-200 px-3 py-1 text-sm text-gray-700"
                 }
               >
                 {seq.active ? d.active : d.paused}
@@ -98,7 +98,7 @@ export default async function SequencesPage(props: {
           </section>
         ))}
 
-        <section className="rounded-2xl bg-white p-5 shadow-sm">
+        <section className="bg-white p-5 shadow-sm">
           <h2 className="mb-3 text-lg font-semibold">{d.newSequence}</h2>
           <form action={saveSequenceAction} className="flex flex-col gap-2">
             <SequenceEditor id={null} name="" steps={[]} />

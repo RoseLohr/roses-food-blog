@@ -24,6 +24,29 @@ export function RecipeAiAssistant({
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<RecipeDraft | null>(null);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+  async function testConnection() {
+    if (testing) return;
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const res = await fetch("/api/admin/ai/ping", { cache: "no-store" });
+      const data = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        message?: string;
+      };
+      setTestResult({
+        ok: Boolean(data.ok),
+        message: data.message || a.failed,
+      });
+    } catch {
+      setTestResult({ ok: false, message: a.failed });
+    } finally {
+      setTesting(false);
+    }
+  }
 
   async function generate() {
     if (!text.trim() || busy) return;
@@ -31,21 +54,55 @@ export function RecipeAiAssistant({
     setError(null);
     setDraft(null);
     try {
-      const res = await fetch("/api/admin/recipes/ai", {
+      // 1) Job starten — antwortet sofort (kein Proxy-Timeout).
+      const startRes = await fetch("/api/admin/recipes/ai", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: text.trim() }),
       });
-      if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(data.error === "KEIN_API_KEY" ? a.noKey : a.failed);
+      if (!startRes.ok) {
+        const data = (await startRes.json().catch(() => ({}))) as {
+          error?: string;
+        };
+        throw new Error(data.error || `${a.failed} (HTTP ${startRes.status})`);
       }
-      setDraft((await res.json()) as RecipeDraft);
+      const { jobId } = (await startRes.json()) as { jobId?: string };
+      if (!jobId) throw new Error(a.failed);
+
+      // 2) Ergebnis pollen.
+      setDraft(await pollJob(jobId));
     } catch (err) {
       setError(err instanceof Error ? err.message : a.failed);
     } finally {
       setBusy(false);
     }
+  }
+
+  async function pollJob(jobId: string): Promise<RecipeDraft> {
+    const deadline = Date.now() + 5 * 60 * 1000; // 5 Minuten Obergrenze
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 2500));
+      let res: Response;
+      try {
+        res = await fetch(
+          `/api/admin/recipes/ai?job=${encodeURIComponent(jobId)}`,
+          { cache: "no-store" },
+        );
+      } catch {
+        continue; // vorübergehend nicht erreichbar (z. B. Neustart)
+      }
+      if (res.status === 404) throw new Error(a.failed);
+      if (!res.ok) continue;
+      const data = (await res.json().catch(() => ({}))) as {
+        status?: string;
+        draft?: RecipeDraft;
+        error?: string;
+      };
+      if (data.status === "done" && data.draft) return data.draft;
+      if (data.status === "error") throw new Error(data.error || a.failed);
+      // status === "running" → weiter pollen
+    }
+    throw new Error(a.timeout);
   }
 
   async function apply() {
@@ -61,7 +118,7 @@ export function RecipeAiAssistant({
   }
 
   return (
-    <section className="rounded-2xl border border-leaf/40 bg-leaf-soft/10 p-5 shadow-sm">
+    <section className="border border-leaf/40 bg-leaf-soft/10 p-5 shadow-sm">
       <h2 className="text-lg font-semibold text-leaf">✨ {a.title}</h2>
       <p className="mb-3 mt-1 text-sm text-ink-soft">{a.intro}</p>
       <textarea
@@ -69,7 +126,7 @@ export function RecipeAiAssistant({
         onChange={(e) => setText(e.target.value)}
         rows={5}
         placeholder={a.placeholder}
-        className="w-full rounded-lg border border-ink-soft/30 bg-white px-3 py-2 text-sm"
+        className="w-full border border-ink-soft/30 bg-white px-3 py-2 text-sm"
       />
       <div className="mt-2 flex flex-wrap items-center gap-3">
         <button
@@ -80,19 +137,49 @@ export function RecipeAiAssistant({
         >
           {busy ? a.generating : a.generate}
         </button>
+        <button
+          type="button"
+          onClick={testConnection}
+          disabled={testing}
+          className="rounded-lg border border-ink/20 px-3 py-2 text-sm hover:bg-cream disabled:opacity-60"
+        >
+          {testing ? a.testing : a.testConnection}
+        </button>
         {busy && <span className="text-sm text-ink-soft">{a.generatingHint}</span>}
       </div>
 
+      {testResult && (
+        <p
+          role="status"
+          className={`mt-3 p-3 text-sm ${
+            testResult.ok
+              ? "bg-leaf-soft/20 text-leaf"
+              : "bg-amber-50 text-amber-900"
+          }`}
+        >
+          {testResult.ok ? "✓ " : "⚠ "}
+          {testResult.message}
+        </p>
+      )}
+
       {error && (
-        <p role="alert" className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-800">
+        <p role="alert" className="mt-3 bg-red-50 p-3 text-sm text-red-800">
           {error}
         </p>
       )}
 
       {draft && (
-        <div className="mt-4 rounded-xl border border-ink/10 bg-white p-4">
+        <div className="mt-4 border border-ink/10 bg-white p-4">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <h3 className="text-base font-semibold">{a.previewTitle}</h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-base font-semibold">{a.previewTitle}</h3>
+              <span
+                data-testid="ai-disclosure"
+                className="rounded bg-leaf/10 px-2 py-0.5 text-xs font-semibold text-leaf"
+              >
+                {a.aiDisclosure}
+              </span>
+            </div>
             <div className="flex gap-2">
               <button
                 type="button"
@@ -126,10 +213,61 @@ function Chips({ label, items }: { label: string; items: string[] }) {
     <div className="flex flex-wrap items-baseline gap-1.5">
       <span className="text-xs font-medium text-ink-soft">{label}:</span>
       {items.map((x) => (
-        <span key={x} className="rounded-full bg-cream px-2 py-0.5 text-xs">
+        <span key={x} className="bg-cream px-2 py-0.5 text-xs">
           {x}
         </span>
       ))}
+    </div>
+  );
+}
+
+/**
+ * Saison-Vorschlag aus dem Saisonkalender (deterministisch, keine KI):
+ * saisonal ja/nein + KW-Spanne, dazu die erkannten Kalender-Produkte.
+ */
+function SeasonSuggestionRow({
+  suggestion,
+}: {
+  suggestion: RecipeDraft["seasonSuggestion"] | undefined;
+}) {
+  // Ältere, noch laufende Jobs können Entwürfe ohne Vorschlag liefern.
+  if (!suggestion) return null;
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex flex-wrap items-baseline gap-1.5">
+        <span className="text-xs font-medium text-ink-soft">
+          {a.seasonTitle}:
+        </span>
+        {suggestion.isSeasonal &&
+        suggestion.startWeek !== null &&
+        suggestion.endWeek !== null ? (
+          <span className="bg-leaf px-2 py-0.5 text-xs font-semibold text-white">
+            {a.seasonYes(suggestion.startWeek, suggestion.endWeek)}
+          </span>
+        ) : (
+          <span className="bg-cream px-2 py-0.5 text-xs" title={a.seasonNoHint}>
+            {a.seasonNo}
+          </span>
+        )}
+      </div>
+      {suggestion.matches.length > 0 && (
+        <div className="flex flex-wrap items-baseline gap-1.5">
+          <span className="text-xs font-medium text-ink-soft">
+            {a.seasonMatches}:
+          </span>
+          {suggestion.matches.map((m) => (
+            <span
+              key={m.product}
+              className={`px-2 py-0.5 text-xs ${
+                m.seasonal ? "bg-leaf-soft/25" : "bg-cream"
+              }`}
+              title={m.ingredient}
+            >
+              {m.product}
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -165,11 +303,13 @@ function DraftPreview({ draft }: { draft: RecipeDraft }) {
         <Chips label={dr.equipment} items={draft.equipment} />
       </div>
 
+      <SeasonSuggestionRow suggestion={draft.seasonSuggestion} />
+
       <div>
         <h4 className="mb-1 font-semibold">{a.sectionsTitle}</h4>
         <div className="flex flex-col gap-3">
           {draft.sections.map((s, i) => (
-            <div key={i} className="rounded-lg bg-cream/50 p-3">
+            <div key={i} className="bg-cream/50 p-3">
               {s.name && <p className="mb-1 font-medium">{s.name}</p>}
               <ul className="mb-2 list-disc pl-5 text-ink-soft">
                 {s.ingredients.map((ing, j) => (

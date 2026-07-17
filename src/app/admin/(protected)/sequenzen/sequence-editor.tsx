@@ -16,7 +16,7 @@ export interface StepRow {
   content: string;
 }
 
-const inputCls = "w-full rounded-lg border border-ink-soft/30 px-3 py-2 text-sm";
+const inputCls = "w-full border border-ink-soft/30 px-3 py-2 text-sm";
 const btnSecondary =
   "rounded-lg border border-ink/20 px-3 py-1.5 text-sm hover:bg-cream";
 
@@ -53,7 +53,7 @@ export function SequenceEditor({
       <h3 className="mt-3 text-sm font-semibold">{d.steps}</h3>
       <ol className="flex flex-col gap-3">
         {steps.map((s, i) => (
-          <li key={i} className="rounded-xl border border-ink/10 p-3">
+          <li key={i} className="border border-ink/10 p-3">
             <div className="grid gap-2 md:grid-cols-[10rem_1fr]">
               <div>
                 <label

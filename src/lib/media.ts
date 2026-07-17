@@ -16,6 +16,7 @@ import { execFile } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
+import { asc, eq, inArray } from "drizzle-orm";
 import { db, schema } from "@/db";
 
 const execFileAsync = promisify(execFile);
@@ -38,17 +39,71 @@ export function srcset(fileKey: string, widths: number[]): string {
 }
 
 /**
- * URL der kleinsten verfügbaren Variante — als Thumbnail für Auswahl-Vorschauen
- * (ImagePicker). `variantWidths` ist der JSON-String aus der DB.
+ * URL der kleinsten verfügbaren Variante — als Thumbnail für
+ * Auswahl-Vorschauen (ImagePicker, Suchtreffer).
  */
-export function thumbUrl(fileKey: string, variantWidths: string): string {
-  let widths: number[] = [];
-  try {
-    widths = JSON.parse(variantWidths || "[]");
-  } catch {
-    widths = [];
-  }
+export function thumbUrl(fileKey: string, widths: number[]): string {
   return imageUrl(fileKey, widths[0] ?? 320);
+}
+
+/**
+ * Verfügbare Varianten-Breiten je Bild (aufsteigend) für eine ID-Menge —
+ * EINE Abfrage gegen media_variant statt JSON-Parsen je Zeile.
+ */
+export async function variantWidthsByImage(
+  imageIds: number[],
+): Promise<Map<number, number[]>> {
+  const map = new Map<number, number[]>();
+  if (imageIds.length === 0) return map;
+  const rows = await db
+    .select()
+    .from(schema.mediaVariant)
+    .where(inArray(schema.mediaVariant.imageId, [...new Set(imageIds)]))
+    .orderBy(asc(schema.mediaVariant.width));
+  for (const r of rows) {
+    const list = map.get(r.imageId);
+    if (list) list.push(r.width);
+    else map.set(r.imageId, [r.width]);
+  }
+  return map;
+}
+
+/** Auswahlliste für den ImagePicker (Label + Thumbnail), alphabetisch. */
+export async function listImageChoices(): Promise<
+  Array<{ id: number; label: string; thumbUrl: string }>
+> {
+  const rows = await db
+    .select({
+      id: schema.mediaImage.id,
+      originalName: schema.mediaImage.originalName,
+      altText: schema.mediaImage.altText,
+      fileKey: schema.mediaImage.fileKey,
+    })
+    .from(schema.mediaImage)
+    .orderBy(asc(schema.mediaImage.originalName));
+  const widthsById = await variantWidthsByImage(rows.map((r) => r.id));
+  return rows.map((r) => ({
+    id: r.id,
+    label: r.altText || r.originalName,
+    thumbUrl: thumbUrl(r.fileKey, widthsById.get(r.id) ?? []),
+  }));
+}
+
+/** Ein Bild inkl. Varianten-Breiten laden (null, wenn nicht vorhanden). */
+export async function mediaImageWithWidths(
+  imageId: number | null | undefined,
+): Promise<
+  (typeof schema.mediaImage.$inferSelect & { variantWidths: number[] }) | null
+> {
+  if (!imageId) return null;
+  const [img] = await db
+    .select()
+    .from(schema.mediaImage)
+    .where(eq(schema.mediaImage.id, imageId))
+    .limit(1);
+  if (!img) return null;
+  const widths = await variantWidthsByImage([img.id]);
+  return { ...img, variantWidths: widths.get(img.id) ?? [] };
 }
 
 export interface StoredImage {
@@ -135,6 +190,32 @@ function backend(): ImageBackend {
 }
 
 /**
+ * Liest die GPS-Position aus den EXIF-Daten (falls vorhanden). Rein in JS
+ * (exifr, CPU-portabel). Fehler/kein GPS → null/null.
+ */
+async function readGeo(
+  buffer: Buffer,
+): Promise<{ lat: number | null; lng: number | null }> {
+  try {
+    const { gps } = await import("exifr");
+    const pos = await gps(buffer);
+    if (
+      pos &&
+      Number.isFinite(pos.latitude) &&
+      Number.isFinite(pos.longitude) &&
+      Math.abs(pos.latitude) <= 90 &&
+      Math.abs(pos.longitude) <= 180 &&
+      !(pos.latitude === 0 && pos.longitude === 0)
+    ) {
+      return { lat: pos.latitude, lng: pos.longitude };
+    }
+  } catch {
+    /* keine oder defekte EXIF-Daten */
+  }
+  return { lat: null, lng: null };
+}
+
+/**
  * Verarbeitet einen Bild-Buffer: Validierung, Neuverarbeitung, Varianten.
  * Wirft Error mit deutscher Meldung bei ungültigen Daten.
  */
@@ -147,7 +228,12 @@ export async function storeImage(
     throw new Error("Datei zu groß (maximal 15 MB).");
   }
 
+  // Zufälliger, URL-sicherer Schlüssel (= Bild-URL-Segment).
   const fileKey = crypto.randomBytes(10).toString("hex");
+
+  // Geo-Position aus EXIF lesen, BEVOR die Varianten die Metadaten entfernen.
+  const { lat, lng } = await readGeo(buffer);
+
   const dir = path.join(uploadsDir(), fileKey);
   fs.mkdirSync(dir, { recursive: true });
   const tmpFile = path.join(dir, "original.tmp");
@@ -175,19 +261,28 @@ export async function storeImage(
       usedWidths.push(w);
     }
 
-    const [row] = await db
-      .insert(schema.mediaImage)
-      .values({
-        fileKey,
-        originalName,
-        altText,
-        width: meta.width,
-        height: meta.height,
-        sizeBytes: buffer.length,
-        variantWidths: JSON.stringify(usedWidths),
-        createdAt: new Date(),
-      })
-      .returning();
+    // Bild + Varianten-Zeilen atomar (sync-Transaktion, better-sqlite3).
+    const row = db.transaction((tx) => {
+      const inserted = tx
+        .insert(schema.mediaImage)
+        .values({
+          fileKey,
+          originalName,
+          altText,
+          width: meta.width,
+          height: meta.height,
+          sizeBytes: buffer.length,
+          lat,
+          lng,
+          createdAt: new Date(),
+        })
+        .returning()
+        .get();
+      tx.insert(schema.mediaVariant)
+        .values(usedWidths.map((w) => ({ imageId: inserted.id, width: w })))
+        .run();
+      return inserted;
+    });
 
     return {
       id: row.id,
@@ -205,8 +300,9 @@ export async function storeImage(
 }
 
 export function deleteImageFiles(fileKey: string): void {
-  // fileKey ist ein von uns erzeugter Hex-String — zur Sicherheit validieren,
-  // damit nie außerhalb von uploads/ gelöscht wird.
-  if (!/^[a-f0-9]{20}$/.test(fileKey)) return;
+  // fileKey ist entweder ein Hex-Schlüssel oder ein Slug (a–z, 0–9, „-").
+  // Streng validieren (keine Punkte/Schrägstriche), damit nie außerhalb von
+  // uploads/ gelöscht wird.
+  if (!/^[a-z0-9][a-z0-9-]{0,59}$/.test(fileKey)) return;
   fs.rmSync(path.join(uploadsDir(), fileKey), { recursive: true, force: true });
 }

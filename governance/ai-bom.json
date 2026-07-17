@@ -1,0 +1,16 @@
+{
+  "_comment": "C-26 AI-BOM — generiert aus dem Code (scripts/regime/ai-bom.mjs --generate). Nicht von Hand pflegen.",
+  "version": "1.0",
+  "models": [
+    {
+      "id": "claude-opus-4-8",
+      "provider": "Anthropic",
+      "hosted": true,
+      "pinned": true,
+      "purpose": "Rezeptentwurf (admin-only)"
+    }
+  ],
+  "datasets": [],
+  "adapters": [],
+  "note": "Kein Custom-/Fine-Tuned-Modell, kein Trainings-/Tuning-Datensatz, kein Adapter (C-21 N/A). Modelle gehostet + gepinnt."
+}

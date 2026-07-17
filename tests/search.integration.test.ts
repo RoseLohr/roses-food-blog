@@ -51,6 +51,24 @@ beforeAll(async () => {
   await mk("Blitz-Salat", "Tomate", "15");
   await mk("Geheimer Entwurf", "Spinat", "10", "entwurf");
 
+  // Rezepte mit Kalorienangabe für den Bänder-Filter (Grenzwerte!):
+  // wenig ≤ 400, mittel 400–650, hoch > 650. Kochzeit 60 hält den
+  // Zubereitungszeit-Test (zeit=30 → nur Blitz-Salat) unberührt.
+  const mkKcal = (titel: string, kcal: string) => {
+    const fd = new FormData();
+    fd.set("titel", titel);
+    fd.set("kochzeit", "60");
+    fd.set("portionen", "4");
+    fd.set("status", "veroeffentlicht");
+    fd.set("kcal", kcal);
+    fd.set("abschnitte", "[]");
+    fd.set("notizen", "[]");
+    return saveRecipeFromForm(fd, admin.id);
+  };
+  await mkKcal("Leichte Bowl", "400");
+  await mkKcal("Mittleres Curry", "650");
+  await mkKcal("Deftiger Braten", "651");
+
   const { saveTravelFromForm } = await import("@/lib/travel-save");
   const fd = new FormData();
   fd.set("titel", "Essen in Neapel");
@@ -100,6 +118,28 @@ describe("Suche", () => {
     const { searchRecipes, parseSearchParams } = await import("@/lib/search");
     const schnell = await searchRecipes(parseSearchParams({ zeit: "30" }));
     expect(schnell.map((h) => h.title)).toEqual(["Blitz-Salat"]);
+  });
+
+  it("filtert nach Kalorien-Bändern inkl. Grenzwerten", async () => {
+    const { searchRecipes, parseSearchParams } = await import("@/lib/search");
+    const wenig = await searchRecipes(parseSearchParams({ kalorien: "wenig" }));
+    expect(wenig.map((h) => h.title)).toEqual(["Leichte Bowl"]); // 400 → wenig
+    const mittel = await searchRecipes(parseSearchParams({ kalorien: "mittel" }));
+    expect(mittel.map((h) => h.title)).toEqual(["Mittleres Curry"]); // 650 → mittel
+    const hoch = await searchRecipes(parseSearchParams({ kalorien: "hoch" }));
+    expect(hoch.map((h) => h.title)).toEqual(["Deftiger Braten"]); // 651 → hoch
+
+    // Mehrfachauswahl = ODER; Rezepte ohne kcal-Angabe bleiben außen vor
+    const beide = await searchRecipes(
+      parseSearchParams({ kalorien: ["wenig", "hoch"] }),
+    );
+    expect(beide.map((h) => h.title).sort()).toEqual([
+      "Deftiger Braten",
+      "Leichte Bowl",
+    ]);
+
+    // Ungültige Werte werden verworfen (kein Filter aktiv)
+    expect(parseSearchParams({ kalorien: "quatsch" }).calorieBands).toEqual([]);
   });
 
   it("findet Reiseberichte per Volltext", async () => {

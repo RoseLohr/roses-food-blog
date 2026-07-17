@@ -1,6 +1,6 @@
 "use server";
 
-import { count, eq } from "drizzle-orm";
+import { count, eq, inArray } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { db, schema } from "@/db";
 import { requireAdmin } from "@/lib/auth";
@@ -24,13 +24,34 @@ export async function saveSegmentAction(formData: FormData): Promise<void> {
   const id = formData.get("id") ? Number(formData.get("id")) : null;
   const name = String(formData.get("name") ?? "").trim();
   if (!name) back(dict.common.error);
-  const ruleInterestIds = JSON.stringify(idsFrom(formData, "regelInteressen"));
+  // Nur existierende Interessen als Regel übernehmen (FK sichert das zusätzlich).
+  const submitted = idsFrom(formData, "regelInteressen");
+  const validInterestIds = submitted.length
+    ? (
+        await db
+          .select({ id: schema.interest.id })
+          .from(schema.interest)
+          .where(inArray(schema.interest.id, submitted))
+      ).map((r) => r.id)
+    : [];
 
   if (id) {
-    await db
-      .update(schema.segment)
-      .set({ name, ruleInterestIds })
-      .where(eq(schema.segment.id, id));
+    db.transaction((tx) => {
+      tx.update(schema.segment)
+        .set({ name })
+        .where(eq(schema.segment.id, id))
+        .run();
+      tx.delete(schema.segmentRuleInterest)
+        .where(eq(schema.segmentRuleInterest.segmentId, id))
+        .run();
+      if (validInterestIds.length) {
+        tx.insert(schema.segmentRuleInterest)
+          .values(
+            validInterestIds.map((interestId) => ({ segmentId: id, interestId })),
+          )
+          .run();
+      }
+    });
     back(dict.common.saved);
   }
   const existing = await db
@@ -38,9 +59,23 @@ export async function saveSegmentAction(formData: FormData): Promise<void> {
     .from(schema.segment)
     .where(eq(schema.segment.name, name));
   if (existing.length) back(dict.admin.taxonomies.exists);
-  await db
-    .insert(schema.segment)
-    .values({ name, ruleInterestIds, createdAt: new Date() });
+  db.transaction((tx) => {
+    const created = tx
+      .insert(schema.segment)
+      .values({ name, createdAt: new Date() })
+      .returning()
+      .get();
+    if (validInterestIds.length) {
+      tx.insert(schema.segmentRuleInterest)
+        .values(
+          validInterestIds.map((interestId) => ({
+            segmentId: created.id,
+            interestId,
+          })),
+        )
+        .run();
+    }
+  });
   back(dict.admin.segments.created);
 }
 
@@ -68,6 +103,27 @@ export async function createInterestAction(formData: FormData): Promise<void> {
   if (existing.length) back(dict.admin.taxonomies.exists);
   await db.insert(schema.interest).values({ name });
   back(dict.admin.taxonomies.created);
+}
+
+/** „Öffentlich“-Schalter: Interesse im Newsletter-Willkommensschritt anbieten. */
+export async function toggleInterestPublicAction(
+  formData: FormData,
+): Promise<void> {
+  await requireAdmin();
+  const id = Number(formData.get("id"));
+  if (Number.isInteger(id)) {
+    const [row] = await db
+      .select()
+      .from(schema.interest)
+      .where(eq(schema.interest.id, id));
+    if (row) {
+      await db
+        .update(schema.interest)
+        .set({ isPublic: !row.isPublic })
+        .where(eq(schema.interest.id, id));
+    }
+  }
+  back(dict.common.saved);
 }
 
 export async function deleteInterestAction(formData: FormData): Promise<void> {

@@ -1,0 +1,11 @@
+# Amendment-Gate-Beweis (Phase 7) — 2026-07-17T03:39:12Z
+
+## Versuch: ungegatete Änderung an governance/constitution.md
+ERGEBNIS: --verify verweigert (exit != 0) — Manipulation erkannt:
+⛔ Verfassungs-Hash weicht ab.
+  Datei:   69ce9c6a32a9ab8152e0e6742f5917618f1af4083b0dcd1ba2e4f35262f13b23
+  Attest:  1d87aa526ed7c0ef33beca41bd863864f146974f35028eaf15c5d1fff97e52f3
+Die Verfassung wurde geändert, ohne den Hash zu attestieren (Amendment-Gate, Artikel XIII).
+
+## Wiederherstellung + Gegenprobe
+[constitution] Hash bestätigt: 1d87aa526ed7c0ef33beca41bd863864f146974f35028eaf15c5d1fff97e52f3

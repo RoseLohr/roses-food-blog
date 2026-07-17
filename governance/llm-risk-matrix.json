@@ -1,0 +1,49 @@
+{
+  "_comment": "C-05 — LLM-Application-Risk-Taxonomie (10 Kategorien). Jede Zelle MUSS eine Kontrolle UND einen Test tragen; eine leere Zelle ist ein Befund, eine Kontrolle ohne Test ein Befund im Kostüm. Erzwungen durch scripts/regime/llm-matrix-check.mjs. N/A braucht eine schriftliche Begründung.",
+  "version": "1.0",
+  "feature": "KI-Rezeptassistent (admin-only, Text→JSON, Modell claude-opus-4-8, kein Tool-Use)",
+  "categories": {
+    "prompt_injection": {
+      "control": "Architektonisches Containment: Ausgabe schema-gebunden (zodOutputFormat), kein Tool/Egress im KI-Pfad, Entwurf wird in-command geprüft.",
+      "test": "tests/injection.containment.test.ts + scripts/regime/ai-capability-guard.mjs"
+    },
+    "sensitive_information_disclosure": {
+      "control": "System-Prompt frei von Secrets/PII (Prompt-Registry); Ausgangstext nie persistiert; Logs personenbezug-frei.",
+      "test": "scripts/regime/prompt-scan.mjs + scripts/regime/secret-scan.mjs"
+    },
+    "supply_chain": {
+      "control": "deps-existence + Lockfile + npm audit + Registry-Alters-Check.",
+      "test": "scripts/regime/deps-existence.mjs (+ Kalibrier-Seed S3)"
+    },
+    "data_and_model_poisoning": {
+      "control": "Kein Custom-/Fine-Tuned-Modell, kein Trainings-Ingest; Modell gepinnt.",
+      "test": "scripts/regime/ai-capability-guard.mjs (Fine-Tune/Adapter → Build fällt)",
+      "na_reason": "Kein eigenes Training/Tuning; nur gehostetes gepinntes Modell (C-21 N/A)."
+    },
+    "improper_output_handling": {
+      "control": "Ausgabe strikt gegen recipeDraftSchema validiert; Markdown gerendert über sichere Pipeline; kein eval/HTML-Injection-Pfad.",
+      "test": "tests/injection.containment.test.ts (Schema-Validierung) + rich-text-Tests"
+    },
+    "excessive_agency": {
+      "control": "Null Agency: keine Tools/Scopes; Ausgabe nur JSON an den Admin.",
+      "test": "scripts/regime/ai-capability-guard.mjs (Tool-Use → Build fällt)"
+    },
+    "system_prompt_leakage": {
+      "control": "Keine sicherheitstragende Regel im Prompt; Controls deterministisch außerhalb des Modells (Authz-Gate, Schema).",
+      "test": "scripts/regime/prompt-scan.mjs (Secrets/PII im Prompt → Build fällt)"
+    },
+    "vector_and_embedding_weaknesses": {
+      "control": "Kein Vektor-Store/Embeddings.",
+      "test": "scripts/regime/ai-capability-guard.mjs (Embeddings → Build fällt)",
+      "na_reason": "Kein RAG/Vektor-Store (C-22/C-32 N/A)."
+    },
+    "misinformation": {
+      "control": "Deterministischer Saison-Match (kein KI-Raten); jede KI-Ausgabe in-command geprüft vor Publikation; keine Zitat-/Link-Fläche.",
+      "test": "tests/season.test.ts (deterministischer Match) + Fabrikations-Position (C-38)"
+    },
+    "unbounded_consumption": {
+      "control": "max_tokens 8000, Timeout 90s, maxRetries 1, admin-only-Aufruf.",
+      "test": "scripts/regime/ai-budget-check.mjs (Caps im KI-Pfad vorhanden)"
+    }
+  }
+}

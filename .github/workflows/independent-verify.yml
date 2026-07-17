@@ -1,0 +1,33 @@
+# A-01/A-39 — Unabhängiger Fremd-Vendor-Verifier. Aktiv, SOBALD der Betreiber ein
+# Secret SECOND_VENDOR_API_KEY (anderer Anbieter als Anthropic) hinterlegt. Ohne
+# Secret meldet der Job das dokumentierte Residual und blockiert NICHT (kein
+# Fake-Grün); mit Secret greift der Verifier den Diff an und blockiert bei einem
+# hochkonfidenten Refutat.
+name: Independent-Verify
+
+on:
+  pull_request:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  cross-vendor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Fremd-Vendor-Verifier (Regel 6 / Artikel IV)
+        env:
+          # Aktiviert, sobald EINER der beiden Schlüssel gesetzt ist. OPENAI_API_KEY
+          # wird akzeptiert, da OpenAI der Default-Anbieter ist (kein Umbenennen nötig).
+          SECOND_VENDOR_API_KEY: ${{ secrets.SECOND_VENDOR_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          VERIFIER_BASE_URL: ${{ vars.VERIFIER_BASE_URL }}
+          VERIFIER_MODEL: ${{ vars.VERIFIER_MODEL }}
+        run: node scripts/regime/independent-verify.mjs

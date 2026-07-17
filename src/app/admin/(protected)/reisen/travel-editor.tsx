@@ -8,6 +8,10 @@
 import { useActionState, useState } from "react";
 import { saveTravelAction, type TravelFormState } from "./actions";
 import { ImagePicker, type ImageChoice } from "@/components/admin/image-picker";
+import {
+  QuickAddCheckboxes,
+  type Option as TaxonomyOption,
+} from "@/components/admin/quick-add-checkboxes";
 import { RichTextEditor } from "@/components/admin/rich-text-editor";
 import { t } from "@/i18n/de";
 
@@ -20,13 +24,32 @@ interface EditorDish {
   imageIds: number[];
   /** Komma-getrennte Eingabe, als String im State gehalten */
   ingredientsText: string;
+  /** Taxonomie-Zuordnungen (gemeinsame Tabellen mit Rezepten), optional */
+  categoryIds: number[];
+  tagIds: number[];
+  dietTypeIds: number[];
+  cuisineIds: number[];
 }
 interface EditorRestaurant {
   name: string;
   city: string;
   description: string;
+  imageId: number | null;
+  /** Koordinaten-Override als Eingabe-Strings ("" = keine Angabe) */
+  lat: string;
+  lng: string;
   dishes: EditorDish[];
 }
+
+/** Inhalts-Block (siehe lib/travel-blocks.ts); imageId 0 = noch kein Bild. */
+export type EditorBlockData =
+  | { type: "text"; markdown: string }
+  | { type: "bild"; imageId: number }
+  | { type: "restaurant"; index: number };
+type EditorBlock = EditorBlockData & { key: string };
+
+let blockUid = 0;
+const nextBlockKey = () => `block-${++blockUid}`;
 
 export interface TravelEditorProps {
   initial: {
@@ -34,9 +57,10 @@ export interface TravelEditorProps {
     title: string;
     slug: string;
     teaser: string;
-    content: string;
+    blocks: EditorBlockData[];
     country: string;
-    destination: string;
+    region: string;
+    city: string;
     heroImageId: number | null;
     imageIds: number[];
     seoTitle: string;
@@ -44,23 +68,52 @@ export interface TravelEditorProps {
     status: string;
     restaurants: EditorRestaurant[];
   };
+  /** Auswahllisten der gemeinsamen Taxonomien (für die Gericht-Zuordnung) */
+  taxonomies: {
+    categories: TaxonomyOption[];
+    tags: TaxonomyOption[];
+    dietTypes: TaxonomyOption[];
+    cuisines: TaxonomyOption[];
+  };
   images: ImageChoice[];
   message?: string | null;
 }
 
-const inputCls = "w-full rounded-lg border border-ink-soft/30 px-3 py-2 text-sm";
+const inputCls = "w-full border border-ink-soft/30 px-3 py-2 text-sm";
 const labelCls = "mb-1 block text-sm font-medium";
 const btnSecondary =
   "rounded-lg border border-ink/20 px-3 py-1.5 text-sm hover:bg-cream";
 
 function emptyDish(): EditorDish {
-  return { name: "", description: "", imageIds: [], ingredientsText: "" };
+  return {
+    name: "",
+    description: "",
+    imageIds: [],
+    ingredientsText: "",
+    categoryIds: [],
+    tagIds: [],
+    dietTypeIds: [],
+    cuisineIds: [],
+  };
 }
 function emptyRestaurant(): EditorRestaurant {
-  return { name: "", city: "", description: "", dishes: [emptyDish()] };
+  return {
+    name: "",
+    city: "",
+    description: "",
+    imageId: null,
+    lat: "",
+    lng: "",
+    dishes: [emptyDish()],
+  };
 }
 
-export function TravelEditor({ initial, images, message }: TravelEditorProps) {
+export function TravelEditor({
+  initial,
+  taxonomies,
+  images,
+  message,
+}: TravelEditorProps) {
   const [state, formAction, pending] = useActionState<TravelFormState, FormData>(
     saveTravelAction,
     {},
@@ -68,12 +121,73 @@ export function TravelEditor({ initial, images, message }: TravelEditorProps) {
   const [restaurants, setRestaurants] = useState<EditorRestaurant[]>(
     initial.restaurants.length ? initial.restaurants : [],
   );
+  const [blocks, setBlocks] = useState<EditorBlock[]>(() =>
+    (initial.blocks.length
+      ? initial.blocks
+      : [{ type: "text", markdown: "" } as EditorBlockData]
+    ).map((b) => ({ ...b, key: nextBlockKey() })),
+  );
+
+  const updateBlock = (i: number, patch: Partial<EditorBlockData>) =>
+    setBlocks((prev) =>
+      prev.map((b, idx) => (idx === i ? ({ ...b, ...patch } as EditorBlock) : b)),
+    );
+  const moveBlock = (i: number, dir: -1 | 1) =>
+    setBlocks((prev) => {
+      const j = i + dir;
+      if (j < 0 || j >= prev.length) return prev;
+      const next = [...prev];
+      [next[i], next[j]] = [next[j], next[i]];
+      return next;
+    });
+  const removeBlock = (i: number) =>
+    setBlocks((prev) => prev.filter((_, idx) => idx !== i));
+  const addBlock = (b: EditorBlockData) =>
+    setBlocks((prev) => [...prev, { ...b, key: nextBlockKey() }]);
+
+  // Restaurant entfernen: Blöcke auf spätere Restaurants nachziehen,
+  // Blöcke auf das entfernte Restaurant mit entfernen.
+  const removeRestaurant = (ri: number) => {
+    setRestaurants((prev) => prev.filter((_, idx) => idx !== ri));
+    setBlocks((prev) =>
+      prev
+        .filter((b) => b.type !== "restaurant" || b.index !== ri)
+        .map((b) =>
+          b.type === "restaurant" && b.index > ri
+            ? { ...b, index: b.index - 1 }
+            : b,
+        ),
+    );
+  };
+
+  // Unvollständige Blöcke (Bild ohne Auswahl, Restaurant ohne Ziel) beim
+  // Absenden weglassen; leere Textblöcke filtert der Server.
+  const serializedBlocks = JSON.stringify(
+    blocks
+      .filter(
+        (b) =>
+          (b.type !== "bild" || b.imageId > 0) &&
+          (b.type !== "restaurant" || (b.index >= 0 && b.index < restaurants.length)),
+      )
+      .map(({ key: _key, ...b }) => b),
+  );
+
+  // "48,2" / "48.2" / "" → number | null (Koordinaten-Override)
+  const parseCoord = (s: string): number | null => {
+    const trimmed = s.trim().replace(",", ".");
+    if (!trimmed) return null;
+    const n = Number(trimmed);
+    return Number.isFinite(n) ? n : null;
+  };
 
   const serialized = JSON.stringify(
     restaurants.map((r) => ({
       name: r.name,
       city: r.city,
       description: r.description,
+      imageId: r.imageId,
+      lat: parseCoord(r.lat),
+      lng: parseCoord(r.lng),
       dishes: r.dishes.map((dish) => ({
         name: dish.name,
         description: dish.description,
@@ -82,6 +196,10 @@ export function TravelEditor({ initial, images, message }: TravelEditorProps) {
           .split(",")
           .map((s) => s.trim())
           .filter(Boolean),
+        categoryIds: dish.categoryIds,
+        tagIds: dish.tagIds,
+        dietTypeIds: dish.dietTypeIds,
+        cuisineIds: dish.cuisineIds,
       })),
     })),
   );
@@ -90,27 +208,51 @@ export function TravelEditor({ initial, images, message }: TravelEditorProps) {
     setRestaurants((prev) =>
       prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)),
     );
+  const updateDish = (ri: number, di: number, patch: Partial<EditorDish>) =>
+    setRestaurants((prev) =>
+      prev.map((r, idx) =>
+        idx === ri
+          ? {
+              ...r,
+              dishes: r.dishes.map((x, dIdx) =>
+                dIdx === di ? { ...x, ...patch } : x,
+              ),
+            }
+          : r,
+      ),
+    );
 
   return (
     <form action={formAction} className="flex max-w-4xl flex-col gap-6">
       {initial.id !== null && <input type="hidden" name="id" value={initial.id} />}
       <input type="hidden" name="restaurants" value={serialized} />
+      <input type="hidden" name="bloecke" value={serializedBlocks} />
 
       {(message || state.error) && (
         <p
           role={state.error ? "alert" : "status"}
           className={
             state.error
-              ? "rounded-lg bg-red-50 p-3 text-sm text-red-800"
-              : "rounded-lg bg-amber-50 p-3 text-sm text-amber-900"
+              ? "bg-red-50 p-3 text-sm text-red-800"
+              : "bg-amber-50 p-3 text-sm text-amber-900"
           }
         >
           {state.error ?? message}
         </p>
       )}
 
-      <section className="rounded-2xl bg-white p-5 shadow-sm">
+      <section className="bg-white p-5 shadow-sm">
         <div className="grid gap-4 md:grid-cols-2">
+          {/* Titelbild ganz oben, über dem Titel (auf Wunsch) */}
+          <div className="md:col-span-2">
+            <ImagePicker
+              name="titelbild"
+              legend={d.fieldHeroImage}
+              options={images}
+              selectedIds={initial.heroImageId ? [initial.heroImageId] : []}
+              multiple={false}
+            />
+          </div>
           <div className="md:col-span-2">
             <label className={labelCls} htmlFor="t-titel">
               {d.fieldTitle} *
@@ -127,38 +269,144 @@ export function TravelEditor({ initial, images, message }: TravelEditorProps) {
             <label className={labelCls} htmlFor="t-land">
               {d.fieldCountry}
             </label>
-            <input id="t-land" name="land" defaultValue={initial.country} className={inputCls} />
+            <input
+              id="t-land"
+              name="land"
+              defaultValue={initial.country}
+              className={inputCls}
+            />
           </div>
           <div>
-            <label className={labelCls} htmlFor="t-ziel">
-              {d.fieldDestination}
+            <label className={labelCls} htmlFor="t-region">
+              {d.fieldRegion}
             </label>
-            <input id="t-ziel" name="reiseziel" defaultValue={initial.destination} className={inputCls} />
+            <input id="t-region" name="region" defaultValue={initial.region} className={inputCls} />
           </div>
-          <div className="md:col-span-2">
-            <label className={labelCls} htmlFor="t-teaser">
-              {d.fieldTeaser}
+          <div>
+            <label className={labelCls} htmlFor="t-stadt">
+              {d.fieldCity}
             </label>
-            <textarea id="t-teaser" name="teaser" rows={2} defaultValue={initial.teaser} className={inputCls} />
+            <input id="t-stadt" name="stadt" defaultValue={initial.city} className={inputCls} />
           </div>
           <div className="md:col-span-2">
             <RichTextEditor
-              name="inhalt"
-              label={d.fieldContent}
-              initialMarkdown={initial.content}
-              minHeightClass="min-h-52"
+              name="teaser"
+              label={d.fieldTeaser}
+              initialMarkdown={initial.teaser}
+              minHeightClass="min-h-20"
             />
           </div>
-          <div>
-            <ImagePicker
-              name="titelbild"
-              legend={d.fieldHeroImage}
-              options={images}
-              selectedIds={initial.heroImageId ? [initial.heroImageId] : []}
-              multiple={false}
-            />
+          <div className="md:col-span-2">
+            <span className={labelCls}>{d.fieldContent}</span>
+            <p className="mb-2 text-xs text-ink-soft">{d.blocksHint}</p>
+            <div className="flex flex-col gap-3">
+              {blocks.map((b, i) => (
+                <div key={b.key} className="border border-ink/10 p-3">
+                  <div className="mb-2 flex items-center gap-1.5">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-ink-soft">
+                      {b.type === "text"
+                        ? d.blockText
+                        : b.type === "bild"
+                          ? d.blockImage
+                          : d.blockRestaurant}
+                    </span>
+                    <div className="ml-auto flex gap-1">
+                      <button
+                        type="button"
+                        onClick={() => moveBlock(i, -1)}
+                        disabled={i === 0}
+                        aria-label={d.blockUp}
+                        title={d.blockUp}
+                        className={`${btnSecondary} px-2 py-0.5 disabled:opacity-40`}
+                      >
+                        ↑
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => moveBlock(i, 1)}
+                        disabled={i === blocks.length - 1}
+                        aria-label={d.blockDown}
+                        title={d.blockDown}
+                        className={`${btnSecondary} px-2 py-0.5 disabled:opacity-40`}
+                      >
+                        ↓
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => removeBlock(i)}
+                        aria-label={dict.admin.recipes.remove}
+                        title={dict.admin.recipes.remove}
+                        className={`${btnSecondary} px-2 py-0.5`}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  </div>
+                  {b.type === "text" && (
+                    <RichTextEditor
+                      initialMarkdown={b.markdown}
+                      minHeightClass="min-h-32"
+                      onChange={(md) => updateBlock(i, { markdown: md })}
+                    />
+                  )}
+                  {b.type === "bild" && (
+                    <ImagePicker
+                      legend={d.blockImage}
+                      options={images}
+                      multiple={false}
+                      value={b.imageId > 0 ? [b.imageId] : []}
+                      onChange={(ids) => updateBlock(i, { imageId: ids[0] ?? 0 })}
+                    />
+                  )}
+                  {b.type === "restaurant" &&
+                    (restaurants.length === 0 ? (
+                      <p className="text-sm text-ink-soft">{d.blockNoRestaurants}</p>
+                    ) : (
+                      <select
+                        aria-label={d.blockRestaurant}
+                        value={b.index}
+                        onChange={(e) =>
+                          updateBlock(i, { index: Number(e.target.value) })
+                        }
+                        className={inputCls}
+                      >
+                        {restaurants.map((r, ri) => (
+                          <option key={ri} value={ri}>
+                            {r.name || `${d.blockRestaurant} ${ri + 1}`}
+                          </option>
+                        ))}
+                      </select>
+                    ))}
+                </div>
+              ))}
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => addBlock({ type: "text", markdown: "" })}
+                  className={btnSecondary}
+                >
+                  + {d.blockText}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => addBlock({ type: "bild", imageId: 0 })}
+                  className={btnSecondary}
+                >
+                  + {d.blockImage}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => addBlock({ type: "restaurant", index: 0 })}
+                  disabled={restaurants.length === 0}
+                  title={restaurants.length === 0 ? d.blockNoRestaurants : undefined}
+                  className={`${btnSecondary} disabled:opacity-40`}
+                >
+                  + {d.blockRestaurant}
+                </button>
+              </div>
+            </div>
           </div>
-          <div>
+          <div className="md:col-span-2">
             <ImagePicker
               name="bilder"
               legend={d.fieldImages}
@@ -171,11 +419,11 @@ export function TravelEditor({ initial, images, message }: TravelEditorProps) {
       </section>
 
       {/* Restaurants */}
-      <section className="rounded-2xl bg-white p-5 shadow-sm">
+      <section className="bg-white p-5 shadow-sm">
         <h2 className="mb-4 text-lg font-semibold">{d.restaurants}</h2>
         <div className="flex flex-col gap-6">
           {restaurants.map((r, ri) => (
-            <div key={ri} className="rounded-xl border border-ink/10 p-4">
+            <div key={ri} className="border border-ink/10 p-4">
               <div className="grid gap-3 md:grid-cols-2">
                 <div>
                   <label className={labelCls} htmlFor={`r-name-${ri}`}>
@@ -199,18 +447,56 @@ export function TravelEditor({ initial, images, message }: TravelEditorProps) {
                     className={inputCls}
                   />
                 </div>
+                <div className="grid grid-cols-2 gap-3 md:col-span-2">
+                  <div>
+                    <label className={labelCls} htmlFor={`r-lat-${ri}`}>
+                      {d.restaurantLat}
+                    </label>
+                    <input
+                      id={`r-lat-${ri}`}
+                      value={r.lat}
+                      inputMode="decimal"
+                      placeholder="z. B. 38,1157"
+                      onChange={(e) => updateRestaurant(ri, { lat: e.target.value })}
+                      className={inputCls}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelCls} htmlFor={`r-lng-${ri}`}>
+                      {d.restaurantLng}
+                    </label>
+                    <input
+                      id={`r-lng-${ri}`}
+                      value={r.lng}
+                      inputMode="decimal"
+                      placeholder="z. B. 13,3615"
+                      onChange={(e) => updateRestaurant(ri, { lng: e.target.value })}
+                      className={inputCls}
+                    />
+                  </div>
+                  <p className="col-span-2 -mt-1 text-xs text-ink-soft">
+                    {d.restaurantCoordsHint}
+                  </p>
+                </div>
                 <div className="md:col-span-2">
-                  <label className={labelCls} htmlFor={`r-beschr-${ri}`}>
-                    {d.restaurantDescription}
-                  </label>
-                  <textarea
-                    id={`r-beschr-${ri}`}
-                    rows={2}
-                    value={r.description}
-                    onChange={(e) =>
-                      updateRestaurant(ri, { description: e.target.value })
+                  <span className={labelCls}>{d.restaurantDescription}</span>
+                  <RichTextEditor
+                    initialMarkdown={r.description}
+                    minHeightClass="min-h-20"
+                    onChange={(md) =>
+                      updateRestaurant(ri, { description: md })
                     }
-                    className={inputCls}
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <ImagePicker
+                    legend={d.restaurantImage}
+                    options={images}
+                    multiple={false}
+                    value={r.imageId ? [r.imageId] : []}
+                    onChange={(ids) =>
+                      updateRestaurant(ri, { imageId: ids[0] ?? null })
+                    }
                   />
                 </div>
               </div>
@@ -218,7 +504,7 @@ export function TravelEditor({ initial, images, message }: TravelEditorProps) {
               <h3 className="mb-2 mt-4 text-sm font-semibold">{d.dishes}</h3>
               <div className="flex flex-col gap-4">
                 {r.dishes.map((dish, di) => (
-                  <div key={di} className="rounded-lg bg-cream/60 p-3">
+                  <div key={di} className="bg-cream/60 p-3">
                     <div className="grid gap-2 md:grid-cols-2">
                       <input
                         aria-label={d.dishName}
@@ -248,20 +534,20 @@ export function TravelEditor({ initial, images, message }: TravelEditorProps) {
                         }
                         className={inputCls}
                       />
-                      <textarea
-                        aria-label={d.dishDescription}
-                        placeholder={d.dishDescription}
-                        rows={2}
-                        value={dish.description}
-                        onChange={(e) =>
-                          updateRestaurant(ri, {
-                            dishes: r.dishes.map((x, idx) =>
-                              idx === di ? { ...x, description: e.target.value } : x,
-                            ),
-                          })
-                        }
-                        className={inputCls}
-                      />
+                      <div className="md:col-span-2">
+                        <span className={labelCls}>{d.dishDescription}</span>
+                        <RichTextEditor
+                          initialMarkdown={dish.description}
+                          minHeightClass="min-h-20"
+                          onChange={(md) =>
+                            updateRestaurant(ri, {
+                              dishes: r.dishes.map((x, idx) =>
+                                idx === di ? { ...x, description: md } : x,
+                              ),
+                            })
+                          }
+                        />
+                      </div>
                       <ImagePicker
                         legend={d.dishImages}
                         options={images}
@@ -275,6 +561,62 @@ export function TravelEditor({ initial, images, message }: TravelEditorProps) {
                         }
                         multiple
                       />
+                      {/* Gemeinsame Taxonomien mit Rezepten — alle optional */}
+                      <details
+                        className="md:col-span-2"
+                        open={
+                          dish.categoryIds.length > 0 ||
+                          dish.tagIds.length > 0 ||
+                          dish.dietTypeIds.length > 0 ||
+                          dish.cuisineIds.length > 0
+                        }
+                      >
+                        <summary className="cursor-pointer text-sm font-medium text-ink-soft hover:text-ink">
+                          {d.dishTaxonomies}
+                        </summary>
+                        <div className="mt-3 grid gap-4 md:grid-cols-2">
+                          <QuickAddCheckboxes
+                            legend={dict.admin.recipes.categories}
+                            options={taxonomies.categories}
+                            kind="taxonomy"
+                            type="kategorie"
+                            value={dish.categoryIds}
+                            onChange={(ids) =>
+                              updateDish(ri, di, { categoryIds: ids })
+                            }
+                          />
+                          <QuickAddCheckboxes
+                            legend={dict.admin.recipes.dietTypes}
+                            options={taxonomies.dietTypes}
+                            kind="taxonomy"
+                            type="ernaehrungsform"
+                            value={dish.dietTypeIds}
+                            onChange={(ids) =>
+                              updateDish(ri, di, { dietTypeIds: ids })
+                            }
+                          />
+                          <QuickAddCheckboxes
+                            legend={dict.admin.recipes.cuisines}
+                            options={taxonomies.cuisines}
+                            kind="taxonomy"
+                            type="kueche"
+                            value={dish.cuisineIds}
+                            onChange={(ids) =>
+                              updateDish(ri, di, { cuisineIds: ids })
+                            }
+                          />
+                          <QuickAddCheckboxes
+                            legend={dict.admin.recipes.tags}
+                            options={taxonomies.tags}
+                            kind="taxonomy"
+                            type="schlagwort"
+                            value={dish.tagIds}
+                            onChange={(ids) =>
+                              updateDish(ri, di, { tagIds: ids })
+                            }
+                          />
+                        </div>
+                      </details>
                     </div>
                     <button
                       type="button"
@@ -302,9 +644,7 @@ export function TravelEditor({ initial, images, message }: TravelEditorProps) {
 
               <button
                 type="button"
-                onClick={() =>
-                  setRestaurants((prev) => prev.filter((_, idx) => idx !== ri))
-                }
+                onClick={() => removeRestaurant(ri)}
                 className={`${btnSecondary} mt-4`}
               >
                 {d.removeRestaurant}
@@ -322,7 +662,7 @@ export function TravelEditor({ initial, images, message }: TravelEditorProps) {
       </section>
 
       {/* SEO + Status */}
-      <section className="rounded-2xl bg-white p-5 shadow-sm">
+      <section className="bg-white p-5 shadow-sm">
         <div className="grid gap-4 md:grid-cols-2">
           <div>
             <label className={labelCls} htmlFor="t-seo-titel">
@@ -344,33 +684,52 @@ export function TravelEditor({ initial, images, message }: TravelEditorProps) {
         </div>
       </section>
 
-      <div className="sticky bottom-0 flex items-center gap-3 rounded-2xl border border-ink/10 bg-white p-4 shadow-lg">
-        <label className="text-sm font-medium" htmlFor="t-status">
-          {dict.admin.recipes.fieldStatus}
-        </label>
-        <select
-          id="t-status"
-          name="status"
-          defaultValue={initial.status}
-          className="rounded-lg border border-ink-soft/30 px-3 py-2 text-sm"
-        >
-          <option value="entwurf">{dict.admin.recipes.statusDraft}</option>
-          <option value="veroeffentlicht">{dict.admin.recipes.statusPublished}</option>
-        </select>
+      <div className="sticky bottom-0 flex flex-col gap-3 border border-ink/10 bg-white p-4 shadow-lg sm:flex-row sm:flex-wrap sm:items-center">
+        <div className="flex items-center gap-2">
+          <label
+            className="whitespace-nowrap text-sm font-medium"
+            htmlFor="t-status"
+          >
+            {dict.admin.recipes.fieldStatus}
+          </label>
+          <select
+            id="t-status"
+            name="status"
+            defaultValue={initial.status}
+            className="min-w-0 flex-1 border border-ink-soft/30 px-3 py-2 text-sm sm:flex-none"
+          >
+            <option value="entwurf">{dict.admin.recipes.statusDraft}</option>
+            <option value="veroeffentlicht">
+              {dict.admin.recipes.statusPublished}
+            </option>
+          </select>
+        </div>
         <button
           type="submit"
           disabled={pending}
-          className="rounded-lg bg-rose-primary px-5 py-2 font-semibold text-white hover:bg-rose-primary-dark disabled:opacity-60"
+          className="w-full rounded-lg bg-rose-primary px-5 py-2 font-semibold text-white hover:bg-rose-primary-dark disabled:opacity-60 sm:w-auto"
         >
           {dict.common.save}
         </button>
         {initial.id !== null && (
-          <a
-            href={`/admin/reisen/${initial.id}/vorschau`}
-            className="text-sm text-ink-soft underline-offset-2 hover:underline"
-          >
-            {dict.admin.recipes.preview}
-          </a>
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-1 sm:ml-auto">
+            <a
+              href={`/admin/reisen/${initial.id}/vorschau`}
+              className="py-1 text-sm text-ink-soft underline-offset-2 hover:underline"
+            >
+              {dict.admin.recipes.preview}
+            </a>
+            {initial.slug && initial.status === "veroeffentlicht" && (
+              <a
+                href={`/reisen/${initial.slug}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="py-1 text-sm text-leaf underline-offset-2 hover:underline"
+              >
+                {dict.admin.recipes.viewPublic}
+              </a>
+            )}
+          </div>
         )}
       </div>
     </form>

@@ -5,7 +5,7 @@
  * Willkommenssequenz geplant). Abmeldung per One-Click-Token.
  */
 import crypto from "node:crypto";
-import { eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db, schema } from "@/db";
 import { getBaseUrl } from "./base-url";
@@ -125,11 +125,14 @@ export async function subscribeContact(
     contactId = created.id;
   }
 
-  // Interessen zuordnen (ersetzen)
-  await db
-    .delete(schema.contactInterest)
-    .where(eq(schema.contactInterest.contactId, contactId));
+  // Interessen zuordnen (ersetzen) — nur wenn welche mitgeschickt wurden.
+  // Die schlanke Box übermittelt keine Interessen mehr (die kommen erst im
+  // Willkommensschritt); ohne diese Bedingung würde eine Wiederanmeldung die
+  // zuvor gewählten Interessen eines Kontakts löschen.
   if (input.interestIds.length) {
+    await db
+      .delete(schema.contactInterest)
+      .where(eq(schema.contactInterest.contactId, contactId));
     const valid = await db
       .select({ id: schema.interest.id })
       .from(schema.interest)
@@ -158,17 +161,32 @@ export async function subscribeContact(
   return { ok: true };
 }
 
-export type ConfirmResult = "bestaetigt" | "bereits_aktiv" | "ungueltig";
+export type ConfirmOutcome = "bestaetigt" | "bereits_aktiv" | "ungueltig";
+
+/** Kontaktdaten für den optionalen Willkommensschritt nach der Bestätigung. */
+export interface ConfirmProfile {
+  /** Schlüssel, mit dem der Willkommensschritt den Kontakt ergänzt. */
+  unsubscribeToken: string;
+  firstName: string;
+  lastName: string;
+  interestIds: number[];
+}
+
+export interface ConfirmResult {
+  outcome: ConfirmOutcome;
+  /** nur bei „bestaetigt" gesetzt (frisch bestätigter Kontakt) */
+  profile?: ConfirmProfile;
+}
 
 /** Double-Opt-in-Bestätigung: Token → Status "aktiv", Einwilligung speichern. */
 export async function confirmContact(confirmToken: string): Promise<ConfirmResult> {
-  if (!/^[a-f0-9]{48}$/.test(confirmToken)) return "ungueltig";
+  if (!/^[a-f0-9]{48}$/.test(confirmToken)) return { outcome: "ungueltig" };
   const [contact] = await db
     .select()
     .from(schema.contact)
     .where(eq(schema.contact.confirmToken, confirmToken));
-  if (!contact) return "ungueltig";
-  if (contact.status === "aktiv") return "bereits_aktiv";
+  if (!contact) return { outcome: "ungueltig" };
+  if (contact.status === "aktiv") return { outcome: "bereits_aktiv" };
 
   await db
     .update(schema.contact)
@@ -180,7 +198,94 @@ export async function confirmContact(confirmToken: string): Promise<ConfirmResul
     .where(eq(schema.contact.id, contact.id));
   await recordContactActivity(contact.id, "bestaetigung");
   await scheduleSequencesForContact(contact.id);
-  return "bestaetigt";
+
+  const rows = await db
+    .select({ interestId: schema.contactInterest.interestId })
+    .from(schema.contactInterest)
+    .where(eq(schema.contactInterest.contactId, contact.id));
+  return {
+    outcome: "bestaetigt",
+    profile: {
+      unsubscribeToken: contact.unsubscribeToken,
+      firstName: contact.firstName,
+      lastName: contact.lastName,
+      interestIds: rows.map((r) => r.interestId),
+    },
+  };
+}
+
+/**
+ * Im Anmeldefluss angebotene Interessen: interest.is_public (im Admin unter
+ * Segmente & Interessen schaltbar; ersetzt die frühere Code-Konstante).
+ * Weitere Interessen bleiben fürs CRM nutzbar, werden Leser:innen aber nicht
+ * zur Auswahl gestellt.
+ */
+export async function getOfferedInterests(): Promise<
+  Array<{ id: number; name: string }>
+> {
+  return db
+    .select({ id: schema.interest.id, name: schema.interest.name })
+    .from(schema.interest)
+    .where(eq(schema.interest.isPublic, true))
+    .orderBy(asc(schema.interest.name));
+}
+
+export const profileSchema = z.object({
+  firstName: z.string().trim().max(100).default(""),
+  lastName: z.string().trim().max(100).default(""),
+  interestIds: z.array(z.number().int().positive()).default([]),
+});
+export type ProfileInput = z.infer<typeof profileSchema>;
+
+/**
+ * Optionaler Willkommensschritt: ergänzt Name & Interessen eines bereits
+ * bestätigten Kontakts, identifiziert über seinen Abmelde-Token (dieselbe
+ * Berechtigung wie der Link in jeder E-Mail). Interessen werden auf die im
+ * Anmeldefluss angebotenen beschränkt. Gibt false zurück, wenn der Token nicht
+ * passt oder der Kontakt nicht aktiv ist.
+ */
+export async function updateContactProfile(
+  unsubToken: string,
+  input: ProfileInput,
+): Promise<boolean> {
+  if (!/^[a-f0-9]{48}$/.test(unsubToken)) return false;
+  const [contact] = await db
+    .select()
+    .from(schema.contact)
+    .where(eq(schema.contact.unsubscribeToken, unsubToken));
+  if (!contact || contact.status !== "aktiv") return false;
+
+  const offered = await getOfferedInterests();
+  const offeredIds = new Set(offered.map((o) => o.id));
+  const interestIds = [...new Set(input.interestIds)].filter((id) =>
+    offeredIds.has(id),
+  );
+
+  await db
+    .update(schema.contact)
+    .set({
+      firstName: input.firstName || contact.firstName,
+      lastName: input.lastName || contact.lastName,
+    })
+    .where(eq(schema.contact.id, contact.id));
+
+  // Angebotene Interessen ersetzen; etwaige nicht angebotene bleiben unberührt.
+  if (offeredIds.size) {
+    await db
+      .delete(schema.contactInterest)
+      .where(
+        and(
+          eq(schema.contactInterest.contactId, contact.id),
+          inArray(schema.contactInterest.interestId, [...offeredIds]),
+        ),
+      );
+  }
+  if (interestIds.length) {
+    await db.insert(schema.contactInterest).values(
+      interestIds.map((interestId) => ({ contactId: contact.id, interestId })),
+    );
+  }
+  return true;
 }
 
 export type UnsubscribeResult = "abgemeldet" | "ungueltig";

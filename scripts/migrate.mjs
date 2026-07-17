@@ -28,9 +28,50 @@ if (!fs.existsSync(path.join(migrationsDir, "meta", "_journal.json"))) {
 
 const { default: Database } = await import("better-sqlite3");
 
-const sqlite = new Database(dbFile);
+let sqlite = new Database(dbFile);
 sqlite.pragma("journal_mode = WAL");
 sqlite.pragma("foreign_keys = ON");
+
+// --- Green-Field-Erkennung (Datenmodell 2.0) --------------------------------
+// Datenbanken aus der ALTEN Migrationslinie (v1: 0000_medical_vision …
+// 0008_seasonal_recipes) sind mit dem neuen Schema inkompatibel und werden
+// bewusst NICHT migriert (abgestimmtes Green-Field-Refactoring — Inhalte
+// werden erst danach eingepflegt). Erkannt wird die alte Linie an den
+// created_at-Werten ihrer Migrations-Buchführung; eine solche Datenbank wird
+// samt Uploads in einen Sicherungsordner verschoben und frisch angelegt.
+const OLD_LINEAGE_WHENS = new Set([
+  1783763588517, 1783763598474, 1783867186679, 1784021542088, 1784300000000,
+  1784400000000, 1784500000000, 1784600000000, 1784700000000,
+]);
+const hasMigrationsTable = sqlite
+  .prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='__drizzle_migrations'",
+  )
+  .get();
+const isOldLineage =
+  hasMigrationsTable &&
+  sqlite
+    .prepare("SELECT created_at FROM __drizzle_migrations")
+    .all()
+    .some((row) => OLD_LINEAGE_WHENS.has(Number(row.created_at)));
+
+if (isOldLineage) {
+  sqlite.close();
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const backupDir = path.join(dataDir, `backup-altes-schema-${stamp}`);
+  fs.mkdirSync(backupDir, { recursive: true });
+  for (const name of ["app.db", "app.db-wal", "app.db-shm", "uploads"]) {
+    const from = path.join(dataDir, name);
+    if (fs.existsSync(from)) fs.renameSync(from, path.join(backupDir, name));
+  }
+  console.log(
+    `[migrate] Datenbank stammt aus der alten Migrationslinie (v1) — ` +
+      `Green-Field-Reset: Sicherung unter ${backupDir}, neue Datenbank wird angelegt.`,
+  );
+  sqlite = new Database(dbFile);
+  sqlite.pragma("journal_mode = WAL");
+  sqlite.pragma("foreign_keys = ON");
+}
 
 // --- Migrationen einlesen (entspricht drizzles readMigrationFiles) ----------
 const journal = JSON.parse(

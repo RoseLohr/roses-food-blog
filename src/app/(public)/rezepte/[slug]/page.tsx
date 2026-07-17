@@ -5,9 +5,7 @@ import { getBaseUrl } from "@/lib/base-url";
 import { imageUrl } from "@/lib/media";
 import { JsonLd, breadcrumbJsonLd, recipeJsonLd } from "@/lib/jsonld";
 import { RecipeView } from "@/components/recipe-view";
-import { LikeButton } from "@/components/like-button";
 import { PageTracker } from "@/components/page-tracker";
-import { NewsletterSection } from "@/components/newsletter-section";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -30,7 +28,7 @@ export async function generateMetadata(props: {
   const ogImage = full.heroImage
     ? `${getBaseUrl()}${imageUrl(
         full.heroImage.fileKey,
-        JSON.parse(full.heroImage.variantWidths).at(-1) ?? 1280,
+        full.heroImage.variantWidths.at(-1) ?? 1280,
       )}`
     : undefined;
   return {
@@ -71,19 +69,7 @@ export default async function RecipePage(props: {
           [full.recipe.title, `/rezepte/${full.recipe.slug}`],
         ])}
       />
-      <RecipeView
-        full={full}
-        baseUrl={getBaseUrl()}
-        extraActions={
-          <LikeButton
-            recipeId={full.recipe.id}
-            initialCount={full.recipe.likeCount}
-          />
-        }
-      />
-      <NewsletterSection
-        source={`${dict.newsletter.sourceRecipePrefix}: ${full.recipe.slug}`}
-      />
+      <RecipeView full={full} baseUrl={getBaseUrl()} />
     </main>
   );
 }
