@@ -10,6 +10,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { readWebhookLast } from "@/lib/deploy";
 import { resetRateLimits } from "@/lib/ratelimit";
 
 const KEY = "test-hook-geheim"; // kurz: kein echtes Geheimnis (B-06)
@@ -38,6 +39,10 @@ function requestFile(): string {
   return path.join(tmp, "deploy-request");
 }
 
+function webhookFile(): string {
+  return path.join(tmp, "deploy-webhook-last.json");
+}
+
 beforeAll(() => {
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), "roses-hook-"));
   process.env.DATA_DIR = tmp;
@@ -50,9 +55,11 @@ beforeEach(() => {
   resetRateLimits();
   process.env.GITHUB_WEBHOOK_SECRET = KEY;
   fs.rmSync(requestFile(), { force: true });
+  fs.rmSync(webhookFile(), { force: true });
 });
 afterEach(() => {
   fs.rmSync(requestFile(), { force: true });
+  fs.rmSync(webhookFile(), { force: true });
 });
 
 describe("GitHub-Deploy-Webhook", () => {
@@ -157,5 +164,54 @@ describe("GitHub-Deploy-Webhook", () => {
     );
     expect(res.status).toBe(503);
     expect(fs.existsSync(requestFile())).toBe(false);
+  });
+});
+
+describe("GitHub-Deploy-Webhook — Empfangsprotokoll", () => {
+  afterEach(() => {
+    delete process.env.DEPLOY_HOOK_BRANCH;
+  });
+
+  it("verifizierter Deploy-Push protokolliert outcome=deploy_requested", async () => {
+    const { POST } = await import("@/app/api/deploy-hook/route");
+    const body = pushBody(`refs/heads/${DEPLOY_BRANCH}`);
+    await POST(
+      request(body, { "x-github-event": "push", "x-hub-signature-256": sign(KEY, body) }),
+    );
+    const last = readWebhookLast();
+    expect(last?.event).toBe("push");
+    expect(last?.outcome).toBe("deploy_requested");
+    expect(typeof last?.at).toBe("number");
+  });
+
+  it("fremder Branch protokolliert outcome=ignored_branch mit erwartet/erhalten", async () => {
+    const { POST } = await import("@/app/api/deploy-hook/route");
+    const body = pushBody("refs/heads/feature/x");
+    await POST(
+      request(body, { "x-github-event": "push", "x-hub-signature-256": sign(KEY, body) }),
+    );
+    const last = readWebhookLast();
+    expect(last?.outcome).toBe("ignored_branch");
+    // Erwarteter (Deploy-)Branch UND erhaltener Ref stehen im Detail.
+    expect(last?.detail).toContain(DEPLOY_BRANCH);
+    expect(last?.detail).toContain("feature/x");
+  });
+
+  it("ping protokolliert outcome=ping", async () => {
+    const { POST } = await import("@/app/api/deploy-hook/route");
+    const body = JSON.stringify({ zen: "Keep it simple." });
+    await POST(
+      request(body, { "x-github-event": "ping", "x-hub-signature-256": sign(KEY, body) }),
+    );
+    expect(readWebhookLast()?.outcome).toBe("ping");
+  });
+
+  it("ungültige Signatur wird NICHT protokolliert (nur echte Lieferungen)", async () => {
+    const { POST } = await import("@/app/api/deploy-hook/route");
+    const body = pushBody(`refs/heads/${DEPLOY_BRANCH}`);
+    await POST(
+      request(body, { "x-github-event": "push", "x-hub-signature-256": sign("falsch", body) }),
+    );
+    expect(readWebhookLast()).toBeNull();
   });
 });

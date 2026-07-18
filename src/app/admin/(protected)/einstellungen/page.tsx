@@ -25,6 +25,11 @@ export default async function SettingsPage(props: {
   const eff = (dbKey: string, envKey: string) => s[dbKey] || process.env[envKey] || "";
   const passIsSet = Boolean(s.smtp_pass || process.env.SMTP_PASS);
   const aiKeyIsSet = Boolean(s.anthropic_api_key || process.env.ANTHROPIC_API_KEY);
+  const deployTokenIsSet = Boolean(
+    s.deploy_github_token ||
+      process.env.DEPLOY_GITHUB_TOKEN ||
+      process.env.GITHUB_TOKEN,
+  );
 
   return (
     <>
@@ -157,6 +162,23 @@ export default async function SettingsPage(props: {
                 defaultValue={eff("deploy_branch", "DEPLOY_BRANCH")}
                 className={inputCls}
               />
+            </div>
+            <div className="sm:col-span-2">
+              <label className={labelCls} htmlFor="deploy_github_token">
+                {d.deployToken}{" "}
+                <span className="font-normal text-ink-soft">
+                  ({deployTokenIsSet ? d.passwordSet : d.passwordUnset})
+                </span>
+              </label>
+              <input
+                id="deploy_github_token"
+                name="deploy_github_token"
+                type="password"
+                autoComplete="new-password"
+                placeholder="github_pat_…"
+                className={inputCls}
+              />
+              <p className="mt-1 text-xs text-ink-soft">{d.deployTokenHint}</p>
             </div>
           </div>
         </section>

@@ -27,11 +27,13 @@ export async function saveSettingsAction(formData: FormData): Promise<void> {
     deploy_repo: str("deploy_repo"),
     deploy_branch: str("deploy_branch"),
   };
-  // Passwort / API-Schlüssel nur überschreiben, wenn ein neuer Wert eingegeben wurde.
+  // Passwort / API-Schlüssel / Token nur überschreiben, wenn ein neuer Wert eingegeben wurde.
   const pass = str("smtp_pass");
   if (pass) values.smtp_pass = pass;
   const aiKey = str("anthropic_api_key");
   if (aiKey) values.anthropic_api_key = aiKey;
+  const deployToken = str("deploy_github_token");
+  if (deployToken) values.deploy_github_token = deployToken;
 
   setSettings(values);
   back(d.saved);

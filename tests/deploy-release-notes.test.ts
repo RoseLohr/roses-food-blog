@@ -6,7 +6,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Konfiguration wird gemockt (keine DB nötig).
-const cfg = { repo: "acme/blog", branch: "main" };
+const cfg = { repo: "acme/blog", branch: "main", token: "" };
 vi.mock("@/lib/settings", () => ({
   getDeployConfig: () => cfg,
 }));
@@ -40,6 +40,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 beforeEach(() => {
   cfg.repo = "acme/blog";
   cfg.branch = "main";
+  cfg.token = "";
   process.env.APP_COMMIT = "abc1234";
 });
 
@@ -104,7 +105,7 @@ describe("checkRemote / Release-Notizen", () => {
     expect(res.error).toBe("not_configured");
   });
 
-  it("behandelt Netzwerkfehler weich (fetch-Fehler)", async () => {
+  it("behandelt Netzwerkfehler weich (unreachable — Container kommt nicht raus)", async () => {
     delete process.env.APP_COMMIT; // einfacher Pfad
     vi.stubGlobal(
       "fetch",
@@ -114,6 +115,48 @@ describe("checkRemote / Release-Notizen", () => {
     );
     const res = await checkRemote();
     expect(res.ok).toBe(false);
-    expect(res.error).toBe("fetch");
+    expect(res.error).toBe("unreachable");
+  });
+
+  it("meldet rate_limited bei erschöpftem GitHub-Limit (403, remaining 0)", async () => {
+    delete process.env.APP_COMMIT; // einfacher Pfad → einzelner Commit-Abruf
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response("rate limit", {
+            status: 403,
+            headers: { "x-ratelimit-remaining": "0" },
+          }),
+      ),
+    );
+    const res = await checkRemote();
+    expect(res.ok).toBe(false);
+    expect(res.error).toBe("rate_limited");
+  });
+
+  it("meldet not_found bei falschem Repo/Branch (404)", async () => {
+    delete process.env.APP_COMMIT; // einfacher Pfad
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("not found", { status: 404 })),
+    );
+    const res = await checkRemote();
+    expect(res.ok).toBe(false);
+    expect(res.error).toBe("not_found");
+  });
+
+  it("sendet den Token als Bearer-Header, wenn konfiguriert", async () => {
+    delete process.env.APP_COMMIT;
+    cfg.token = "ghp_geheim";
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      const headers = new Headers(init?.headers);
+      expect(headers.get("authorization")).toBe("Bearer ghp_geheim");
+      return jsonResponse({ sha: "1234567abc" });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const res = await checkRemote();
+    expect(res.ok).toBe(true);
+    cfg.token = ""; // zurücksetzen für Folge-Tests
   });
 });

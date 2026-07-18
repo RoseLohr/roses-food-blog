@@ -19,6 +19,7 @@ export const SETTING_KEYS = [
   "email_rate",
   "deploy_repo",
   "deploy_branch",
+  "deploy_github_token",
   "anthropic_api_key",
   "newsletter_visible",
   "ai_enabled",
@@ -87,13 +88,24 @@ export function getEmailRatePerMinute(): number {
 export interface DeployConfig {
   repo: string;
   branch: string;
+  /**
+   * Optionaler GitHub-Zugriffstoken für die Update-Prüfung. Ohne Token nutzt
+   * die GitHub-API das unauthentifizierte Limit (60 Anfragen/Stunde pro IP);
+   * mit Token steigt es auf 5000/Stunde und private Repos werden lesbar.
+   */
+  token: string;
 }
 
-/** Repo (owner/name) und Branch für die Update-Prüfung im Admin-Panel. */
+/** Repo (owner/name), Branch und (optional) Token für die Update-Prüfung. */
 export function getDeployConfig(): DeployConfig {
   return {
     repo: getSetting("deploy_repo") || process.env.DEPLOY_REPO || "",
     branch: getSetting("deploy_branch") || process.env.DEPLOY_BRANCH || "",
+    token:
+      getSetting("deploy_github_token") ||
+      process.env.DEPLOY_GITHUB_TOKEN ||
+      process.env.GITHUB_TOKEN ||
+      "",
   };
 }
 

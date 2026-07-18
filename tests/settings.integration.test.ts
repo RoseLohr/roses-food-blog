@@ -69,9 +69,19 @@ describe("Einstellungen", () => {
     expect(getTransporter()).not.toBe(first);
   });
 
-  it("liefert den konfigurierten Deploy-Repo/Branch", async () => {
+  it("liefert den konfigurierten Deploy-Repo/Branch/Token", async () => {
     const { setSettings, getDeployConfig } = await import("@/lib/settings");
-    setSettings({ deploy_repo: "Owner/Repo", deploy_branch: "main" });
-    expect(getDeployConfig()).toEqual({ repo: "Owner/Repo", branch: "main" });
+    // Token explizit setzen — sonst greift der .env-Fallback (z. B. GITHUB_TOKEN
+    // im CI) und der Wert wäre nicht deterministisch.
+    setSettings({
+      deploy_repo: "Owner/Repo",
+      deploy_branch: "main",
+      deploy_github_token: "ghp_test123",
+    });
+    expect(getDeployConfig()).toEqual({
+      repo: "Owner/Repo",
+      branch: "main",
+      token: "ghp_test123",
+    });
   });
 });
