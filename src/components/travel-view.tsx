@@ -186,7 +186,7 @@ function DishItem({
               {dish.dietTypes.map((dt) => (
                 <span
                   key={`e-${dt.id}`}
-                  className="bg-leaf px-2 py-0.5 text-[0.68rem] font-semibold uppercase tracking-wide text-white"
+                  className="border border-leaf px-2 py-0.5 text-[0.68rem] font-semibold uppercase tracking-wide text-leaf"
                 >
                   {dt.name}
                 </span>

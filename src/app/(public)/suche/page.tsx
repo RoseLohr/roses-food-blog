@@ -142,9 +142,9 @@ export default async function SearchPage(props: {
       <h1 className="font-display text-3xl font-bold md:text-4xl">
         {dict.search.title}
       </h1>
-      <p className="mt-2 text-ink-soft">{dict.search.intro}</p>
+      <p className="mt-2 max-w-2xl text-ink-soft">{dict.search.intro}</p>
 
-      <div className="mt-6 grid gap-8 lg:grid-cols-[16rem_1fr]">
+      <div className="mt-8 grid gap-8 lg:grid-cols-[16rem_1fr]">
         {/* Filter-Formular — auf Mobil einklappbar, sobald Ergebnisse angezeigt
             werden (hasQuery). Ab lg immer sichtbar (siehe Komponente). */}
         <SearchFiltersCollapsible defaultOpen={!hasQuery} className="self-start">
@@ -279,7 +279,7 @@ export default async function SearchPage(props: {
                     className="h-24 w-auto max-w-[10rem] object-contain"
                   />
                 )}
-                <h2 className="font-display text-2xl font-bold">
+                <h2 className="font-display text-2xl font-bold md:text-3xl">
                   {dict.search.ingredientHeading}: {hit.ingredient.name}
                 </h2>
               </div>
@@ -288,7 +288,7 @@ export default async function SearchPage(props: {
                   <h3 className="mb-3 mt-5 font-semibold">
                     {dict.search.ingredientRecipes}
                   </h3>
-                  <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                  <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
                     {hit.recipes.map((r) => (
                       <RecipeCard key={r.slug} recipe={r} />
                     ))}
@@ -339,10 +339,10 @@ export default async function SearchPage(props: {
 
           {uniqueRecipes.length > 0 && (
             <section className="mb-8">
-              <h2 className="mb-3 font-display text-2xl font-bold">
+              <h2 className="mb-3 font-display text-2xl font-bold md:text-3xl">
                 {dict.search.recipesHeading}
               </h2>
-              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
                 {uniqueRecipes.map((r) => (
                   <RecipeCard key={r.slug} recipe={r} />
                 ))}
@@ -353,7 +353,7 @@ export default async function SearchPage(props: {
           {/* Gerichte aus Reiseberichten — über Kategorien & Co. gefunden */}
           {uniqueDishes.length > 0 && (
             <section className="mb-8">
-              <h2 className="mb-3 font-display text-2xl font-bold">
+              <h2 className="mb-3 font-display text-2xl font-bold md:text-3xl">
                 {dict.search.dishesHeading}
               </h2>
               <ul className="flex flex-col gap-3">
@@ -416,7 +416,7 @@ export default async function SearchPage(props: {
 
           {travel.length > 0 && (
             <section className="mb-8">
-              <h2 className="mb-3 font-display text-2xl font-bold">
+              <h2 className="mb-3 font-display text-2xl font-bold md:text-3xl">
                 {dict.search.travelHeading}
               </h2>
               <ul className="flex flex-col gap-3">

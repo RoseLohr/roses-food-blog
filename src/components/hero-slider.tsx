@@ -139,11 +139,11 @@ export function HeroSlider({
           className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-5 px-14 pb-16 text-center text-white sm:px-20"
         >
           {slide.category && (
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-leaf-soft">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-leaf-soft">
               {slide.category}
             </p>
           )}
-          <h2 className="font-display text-[1.75rem] font-semibold leading-tight drop-shadow-sm sm:text-[2.25rem] lg:text-[2.75rem]">
+          <h2 className="font-display text-[1.75rem] font-bold leading-tight drop-shadow-sm sm:text-[2.25rem] lg:text-[2.75rem]">
             {slide.href ? (
               <Link
                 href={slide.href}

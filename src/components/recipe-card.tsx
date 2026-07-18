@@ -45,14 +45,14 @@ export function RecipeCard({ recipe }: { recipe: RecipeCardData }) {
         {(recipe.category || recipe.dietType) && (
           <p className="mb-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-leaf">
             {/* Kategorie und – falls vorhanden – Ernährungsform, „/“-getrennt. */}
-            {[recipe.category, recipe.dietType].filter(Boolean).join(" / ")}
+            {[recipe.category, recipe.dietType].filter(Boolean).join(" · ")}
           </p>
         )}
-        <h3 className="font-display text-lg font-bold tracking-tight group-hover:text-leaf">
+        <h3 className="font-display text-lg font-bold group-hover:text-leaf">
           {recipe.title}
         </h3>
         {recipe.teaser && (
-          <p className="mt-1.5 line-clamp-2 text-sm leading-relaxed text-ink-soft">
+          <p className="mt-1.5 line-clamp-3 text-sm leading-relaxed text-ink-soft md:line-clamp-2">
             {recipe.teaser}
           </p>
         )}
