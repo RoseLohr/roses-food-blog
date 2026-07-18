@@ -38,11 +38,11 @@ export function TravelPostCard({ post }: { post: TravelCardData }) {
         ) : (
           <div aria-hidden className="aspect-[2/1] w-full bg-cream" />
         )}
-        <div className="p-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-rose-primary">
+        <div className="p-5">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-leaf">
             {[post.country, post.region, post.city].filter(Boolean).join(" · ")}
           </p>
-          <h2 className="mt-1 font-display text-xl font-bold group-hover:text-rose-primary">
+          <h2 className="mt-1 font-display text-xl font-bold group-hover:text-leaf">
             {post.title}
           </h2>
           {post.teaser && (

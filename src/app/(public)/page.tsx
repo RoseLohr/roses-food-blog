@@ -360,7 +360,7 @@ export default async function HomePage() {
               <h2 className="font-display text-2xl font-bold md:text-3xl">
                 {dict.home.popularTitle}
               </h2>
-              <div className="mt-4 grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+              <div className="mt-4 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
                 {popular.map((r) => (
                   <RecipeCard key={r.slug} recipe={r} />
                 ))}
@@ -374,7 +374,7 @@ export default async function HomePage() {
               <h2 className="font-display text-2xl font-bold md:text-3xl">
                 {dict.home.latestTitle}
               </h2>
-              <div className="mt-4 grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+              <div className="mt-4 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
                 {latest.map((r) => (
                   <RecipeCard key={r.slug} recipe={r} />
                 ))}
@@ -401,7 +401,7 @@ export default async function HomePage() {
                   <li key={c.id}>
                     <Link
                       href={`/suche?kueche=${c.slug}`}
-                      className="block rounded-full border border-rose-primary/40 bg-white px-4 py-1.5 text-sm font-medium text-rose-primary hover:bg-rose-primary hover:text-white"
+                      className="block border border-rose-primary/40 bg-white px-4 py-1.5 text-sm font-medium text-rose-primary hover:bg-rose-primary hover:text-white"
                     >
                       {c.name}
                     </Link>
@@ -437,7 +437,7 @@ export default async function HomePage() {
               )}
               <Link
                 href={config.aboutTeaserLink || "/ueber-mich"}
-                className="mt-5 inline-block rounded-full bg-rose-primary px-7 py-2.5 text-xs font-semibold uppercase tracking-[0.15em] text-white transition-colors hover:bg-rose-primary-dark"
+                className="mt-5 inline-block rounded-lg bg-rose-primary px-7 py-2.5 text-xs font-semibold uppercase tracking-[0.15em] text-white transition-colors hover:bg-rose-primary-dark"
               >
                 {dict.home.aboutMore}
               </Link>

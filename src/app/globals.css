@@ -159,7 +159,6 @@ html {
 }
 .nl-box__title {
   font-family: var(--font-display);
-  font-style: italic;
   font-weight: 700;
   font-size: clamp(1.55rem, 4vw, 2rem);
   line-height: 1.15;
