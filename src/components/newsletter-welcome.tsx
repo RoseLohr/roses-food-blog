@@ -23,12 +23,15 @@ export function NewsletterWelcome({
   firstName,
   lastName,
   selectedInterestIds,
+  siteName,
 }: {
   token: string;
   interests: Array<{ id: number; name: string }>;
   firstName: string;
   lastName: string;
   selectedInterestIds: number[];
+  /** Effektiver Blogname (aus dem Admin); serverseitig gesetzt. */
+  siteName: string;
 }) {
   const [state, formAction, pending] = useActionState<ProfileFormState, FormData>(
     saveProfileAction,
@@ -63,7 +66,7 @@ export function NewsletterWelcome({
           href="/"
           className="font-semibold text-rose-primary underline-offset-2 hover:underline"
         >
-          {dict.site.name} →
+          {siteName} →
         </Link>
       </div>
     );

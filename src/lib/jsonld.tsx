@@ -5,6 +5,7 @@ import type { FullRecipe } from "@/lib/recipes";
 import { formatAmount } from "@/lib/servings";
 import { imageUrl } from "@/lib/media";
 import { getBaseUrl } from "@/lib/base-url";
+import { getSiteName } from "@/lib/settings";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -14,7 +15,7 @@ export function websiteJsonLd() {
   return {
     "@context": "https://schema.org",
     "@type": "WebSite",
-    name: dict.site.name,
+    name: getSiteName(),
     description: dict.site.tagline,
     url: base,
     inLanguage: "de",
@@ -85,7 +86,7 @@ export function recipeJsonLd(full: FullRecipe) {
 
   // Der Blog selbst als Autor/Herausgeber — eine Organisation, kein
   // Personenbezug (Akzeptanzkriterium 14: Autor wird Besuchern nie angezeigt).
-  const org = { "@type": "Organization", name: dict.site.name, url: base };
+  const org = { "@type": "Organization", name: getSiteName(), url: base };
   const url = `${base}/rezepte/${recipe.slug}`;
 
   return {

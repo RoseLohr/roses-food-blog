@@ -4,6 +4,7 @@ import { getFullRecipe } from "@/lib/recipes";
 import { getBaseUrl } from "@/lib/base-url";
 import { RecipeView } from "@/components/recipe-view";
 import { PrintOnLoad } from "./print-on-load";
+import { getSiteName } from "@/lib/settings";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -29,7 +30,7 @@ export default async function RecipePrintPage(props: {
     <main className="mx-auto max-w-3xl bg-white p-8 print:p-0">
       <RecipeView full={full} baseUrl={getBaseUrl()} interactive={false} />
       <p className="mt-8 border-t border-ink/20 pt-3 text-sm text-ink-soft">
-        {dict.site.name} — {getBaseUrl()}/rezepte/{full.recipe.slug}
+        {getSiteName()} — {getBaseUrl()}/rezepte/{full.recipe.slug}
       </p>
       <PrintOnLoad />
     </main>

@@ -4,18 +4,18 @@ import { t } from "../../src/i18n/de";
 const dict = t();
 
 test.describe("Öffentliche Startseite — Tiny-Salt-Optik", () => {
-  test("Header zeigt Marken-Schriftzug + Slogan und Suchpille", async ({
+  test("Header zeigt das Marken-Lockup (Kompass + Jost) und die Suchpille", async ({
     page,
   }) => {
     await page.goto("/");
     const header = page.locator("header");
-    // Kein Logo mehr: Der Seitenname steht als Text-Schriftzug im Header.
+    // Logo-Lockup: Link mit vollem Blognamen als zugänglichem Namen (aria-label
+    // „<Name> – Startseite"), plus die zwei sichtbaren Wortteile in Jost.
     await expect(
-      header.getByText(dict.site.name, { exact: true }),
+      header.getByRole("link", { name: new RegExp(dict.site.name) }),
     ).toBeVisible();
-    await expect(
-      header.getByText(dict.site.tagline, { exact: true }),
-    ).toBeVisible();
+    await expect(header.locator(".rgc-logo__rose")).toHaveText("Rose’s");
+    await expect(header.locator(".rgc-logo__word")).toHaveText("Gourmet Compass");
     await expect(
       page.getByPlaceholder(dict.site.searchPlaceholder),
     ).toBeVisible();

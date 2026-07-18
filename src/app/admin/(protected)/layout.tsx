@@ -4,6 +4,7 @@ import { AdminMobileNav } from "@/components/admin/admin-mobile-nav";
 import { AdminNav, type AdminNavSection } from "@/components/admin/admin-nav";
 import { logoutAction } from "./actions";
 import { requireAdmin } from "@/lib/auth";
+import { getSiteName } from "@/lib/settings";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -69,7 +70,7 @@ export default async function AdminLayout({
     <div className="flex min-h-screen bg-cream">
       <aside className="hidden w-56 shrink-0 flex-col border-r border-ink/10 bg-white p-4 md:flex">
         <Link href="/admin" className="mb-6 text-lg font-bold text-rose-primary">
-          {dict.site.name}
+          {getSiteName()}
         </Link>
         <nav aria-label={dict.admin.title} className="flex-1">
           <AdminNav sections={NAV_SECTIONS} />

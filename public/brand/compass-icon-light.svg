@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 204.50 204.50" width="204.50" height="204.50" role="img" aria-label="Rose’s Gourmet Compass – Kompass">
+<title>Kompass</title>
+<circle cx="102.25" cy="102.25" r="100.000" fill="none" stroke="#ffffff" stroke-width="4.500"/>
+<line x1="102.250" y1="17.250" x2="102.250" y2="4.750" stroke="#ffffff" stroke-opacity="0.95" stroke-width="3.000" stroke-linecap="round"/>
+<line x1="146.750" y1="25.174" x2="151.000" y2="17.813" stroke="#ffffff" stroke-opacity="0.45" stroke-width="1.800" stroke-linecap="round"/>
+<line x1="179.326" y1="57.750" x2="186.687" y2="53.500" stroke="#ffffff" stroke-opacity="0.45" stroke-width="1.800" stroke-linecap="round"/>
+<line x1="187.250" y1="102.250" x2="199.750" y2="102.250" stroke="#ffffff" stroke-opacity="0.95" stroke-width="3.000" stroke-linecap="round"/>
+<line x1="179.326" y1="146.750" x2="186.687" y2="151.000" stroke="#ffffff" stroke-opacity="0.45" stroke-width="1.800" stroke-linecap="round"/>
+<line x1="146.750" y1="179.326" x2="151.000" y2="186.687" stroke="#ffffff" stroke-opacity="0.45" stroke-width="1.800" stroke-linecap="round"/>
+<line x1="102.250" y1="187.250" x2="102.250" y2="199.750" stroke="#ffffff" stroke-opacity="0.95" stroke-width="3.000" stroke-linecap="round"/>
+<line x1="57.750" y1="179.326" x2="53.500" y2="186.687" stroke="#ffffff" stroke-opacity="0.45" stroke-width="1.800" stroke-linecap="round"/>
+<line x1="25.174" y1="146.750" x2="17.813" y2="151.000" stroke="#ffffff" stroke-opacity="0.45" stroke-width="1.800" stroke-linecap="round"/>
+<line x1="17.250" y1="102.250" x2="4.750" y2="102.250" stroke="#ffffff" stroke-opacity="0.95" stroke-width="3.000" stroke-linecap="round"/>
+<line x1="25.174" y1="57.750" x2="17.813" y2="53.500" stroke="#ffffff" stroke-opacity="0.45" stroke-width="1.800" stroke-linecap="round"/>
+<line x1="57.750" y1="25.174" x2="53.500" y2="17.813" stroke="#ffffff" stroke-opacity="0.45" stroke-width="1.800" stroke-linecap="round"/>
+<path d="M 137.605,66.895 L 110.594,86.552 L 102.250,102.250 Z" fill="#ffffff" fill-opacity="0.72"/><path d="M 137.605,66.895 L 117.948,93.906 L 102.250,102.250 Z" fill="#ffffff" fill-opacity="0.42"/>
+<path d="M 137.605,137.605 L 117.948,110.594 L 102.250,102.250 Z" fill="#ffffff" fill-opacity="0.72"/><path d="M 137.605,137.605 L 110.594,117.948 L 102.250,102.250 Z" fill="#ffffff" fill-opacity="0.42"/>
+<path d="M 66.895,137.605 L 93.906,117.948 L 102.250,102.250 Z" fill="#ffffff" fill-opacity="0.72"/><path d="M 66.895,137.605 L 86.552,110.594 L 102.250,102.250 Z" fill="#ffffff" fill-opacity="0.42"/>
+<path d="M 66.895,66.895 L 86.552,93.906 L 102.250,102.250 Z" fill="#ffffff" fill-opacity="0.72"/><path d="M 66.895,66.895 L 93.906,86.552 L 102.250,102.250 Z" fill="#ffffff" fill-opacity="0.42"/>
+<path d="M 182.250,102.250 L 132.250,91.750 L 102.250,102.250 Z" fill="#ffffff"/><path d="M 182.250,102.250 L 132.250,112.750 L 102.250,102.250 Z" fill="#ffffff" fill-opacity="0.55"/>
+<path d="M 102.250,182.250 L 112.750,132.250 L 102.250,102.250 Z" fill="#ffffff"/><path d="M 102.250,182.250 L 91.750,132.250 L 102.250,102.250 Z" fill="#ffffff" fill-opacity="0.55"/>
+<path d="M 22.250,102.250 L 72.250,112.750 L 102.250,102.250 Z" fill="#ffffff"/><path d="M 22.250,102.250 L 72.250,91.750 L 102.250,102.250 Z" fill="#ffffff" fill-opacity="0.55"/>
+<path d="M 102.250,22.250 L 91.750,72.250 L 102.250,102.250 Z" fill="#eafaf7"/><path d="M 102.250,22.250 L 112.750,72.250 L 102.250,102.250 Z" fill="#5cc4b8"/>
+<circle cx="102.25" cy="102.25" r="9.000" fill="#5cc4b8"/>
+<circle cx="102.25" cy="102.25" r="9.000" fill="none" stroke="#ffffff" stroke-width="1.800"/>
+<circle cx="102.25" cy="102.25" r="2.200" fill="#ffffff"/>
+</svg>

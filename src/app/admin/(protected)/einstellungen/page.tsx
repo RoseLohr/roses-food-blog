@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { requireAdmin } from "@/lib/auth";
-import { getAllSettings } from "@/lib/settings";
+import { getAllSettings, SITE_BRAND_DEFAULT } from "@/lib/settings";
+import { listImageChoices } from "@/lib/media";
+import { ImagePicker } from "@/components/admin/image-picker";
 import { t } from "@/i18n/de";
 import { saveSettingsAction, sendTestEmailAction } from "./actions";
 
@@ -21,6 +23,10 @@ export default async function SettingsPage(props: {
     typeof searchParams.meldung === "string" ? searchParams.meldung : null;
 
   const s = getAllSettings();
+  const imageChoices = await listImageChoices();
+  const logoSelectedIds = s.site_logo_image_id
+    ? [Number(s.site_logo_image_id)].filter((n) => Number.isInteger(n) && n > 0)
+    : [];
   // Effektiver Anzeigewert: DB-Wert, sonst .env-Vorgabe (nur zur Anzeige).
   const eff = (dbKey: string, envKey: string) => s[dbKey] || process.env[envKey] || "";
   const passIsSet = Boolean(s.smtp_pass || process.env.SMTP_PASS);
@@ -42,6 +48,49 @@ export default async function SettingsPage(props: {
       )}
 
       <form action={saveSettingsAction} className="flex max-w-2xl flex-col gap-6">
+        <section className="bg-white p-5 shadow-sm">
+          <h2 className="text-lg font-semibold">{d.brandTitle}</h2>
+          <p className="mb-4 text-sm text-ink-soft">{d.brandIntro}</p>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className={labelCls} htmlFor="site_title_accent">
+                {d.brandAccentLabel}
+              </label>
+              <input
+                id="site_title_accent"
+                name="site_title_accent"
+                defaultValue={s.site_title_accent ?? ""}
+                placeholder={SITE_BRAND_DEFAULT.accent}
+                className={inputCls}
+              />
+              <p className="mt-1 text-xs text-ink-soft">{d.brandAccentHint}</p>
+            </div>
+            <div>
+              <label className={labelCls} htmlFor="site_title_word">
+                {d.brandWordLabel}
+              </label>
+              <input
+                id="site_title_word"
+                name="site_title_word"
+                defaultValue={s.site_title_word ?? ""}
+                placeholder={SITE_BRAND_DEFAULT.word}
+                className={inputCls}
+              />
+              <p className="mt-1 text-xs text-ink-soft">{d.brandWordHint}</p>
+            </div>
+            <div className="sm:col-span-2">
+              <ImagePicker
+                name="site_logo_image_id"
+                legend={d.brandLogoLabel}
+                options={imageChoices}
+                selectedIds={logoSelectedIds}
+                multiple={false}
+              />
+              <p className="mt-1 text-xs text-ink-soft">{d.brandLogoHint}</p>
+            </div>
+          </div>
+        </section>
+
         <section className="bg-white p-5 shadow-sm">
           <h2 className="text-lg font-semibold">{d.smtpTitle}</h2>
           <p className="mb-4 text-sm text-ink-soft">{d.smtpIntro}</p>

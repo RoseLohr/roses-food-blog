@@ -14,6 +14,7 @@ import { publishedRecipeCards } from "@/lib/recipe-list";
 import { taxonomyBySlug } from "@/lib/taxonomies";
 import { PageTracker } from "@/components/page-tracker";
 import { JsonLd, breadcrumbJsonLd } from "@/lib/jsonld";
+import { getSiteName } from "@/lib/settings";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -72,7 +73,7 @@ export default async function CategoryPage(props: {
       />
       <JsonLd
         data={breadcrumbJsonLd([
-          [dict.site.name, "/"],
+          [getSiteName(), "/"],
           [dict.recipeList.title, "/rezepte"],
           [cat.name, `/rezepte/kategorie/${cat.slug}`],
         ])}

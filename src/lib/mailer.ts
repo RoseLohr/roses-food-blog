@@ -6,7 +6,7 @@
 import nodemailer, { type Transporter } from "nodemailer";
 import { renderMarkdown } from "./markdown";
 import { getBaseUrl } from "./base-url";
-import { getSmtpConfig } from "./settings";
+import { getSiteName, getSmtpConfig } from "./settings";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -61,7 +61,7 @@ export function renderEmail(options: {
   const footerHtml = `
     <hr style="border:none;border-top:1px solid #e5ddd1;margin:24px 0;">
     <p style="font-size:12px;color:#8a8378;line-height:1.6;">
-      ${dict.email.footerSender}: ${dict.site.name} · <a href="${getBaseUrl()}" style="color:#b0413e;">${getBaseUrl()}</a><br>
+      ${dict.email.footerSender}: ${getSiteName()} · <a href="${getBaseUrl()}" style="color:#b0413e;">${getBaseUrl()}</a><br>
       ${getSmtpConfig().from}<br>
       <a href="${options.unsubscribeUrl}" style="color:#8a8378;">${dict.email.unsubscribe}</a>
     </p>`;
@@ -79,7 +79,7 @@ export function renderEmail(options: {
 </body>
 </html>`;
 
-  const text = `${filled}\n\n--\n${dict.site.name} · ${getBaseUrl()}\n${dict.email.unsubscribe}: ${options.unsubscribeUrl}`;
+  const text = `${filled}\n\n--\n${getSiteName()} · ${getBaseUrl()}\n${dict.email.unsubscribe}: ${options.unsubscribeUrl}`;
 
   return { html, text };
 }
