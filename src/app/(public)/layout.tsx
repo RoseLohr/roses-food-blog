@@ -59,19 +59,13 @@ export default async function PublicLayout({
         {/* Dunkle Fußleiste im Tiny-Salt-Stil */}
         <div className="bg-ink text-white">
           <div className="mx-auto flex max-w-6xl flex-col items-center gap-1 px-4 py-6 text-center text-sm">
-            {/* Negativ-Logo (weiß) auf dem dunklen Band, statisches Vektor-SVG aus /public. */}
-            <img
-              src="/brand/logo-horizontal-white.svg"
-              alt={dict.site.name}
-              width={150}
-              height={40}
-              className="mb-3 h-8 w-auto"
-            />
+            {/* Marken-Schriftzug (weiß) auf dem dunklen Band — kein Logo. */}
+            <span className="mb-3 font-display text-lg font-extrabold tracking-tight text-white">
+              {dict.site.name}
+            </span>
             <p className="flex items-center gap-1.5 text-white/90">
-              Cook &amp; Write with
-              <span className="text-red-500" aria-hidden>
-                ♥
-              </span>
+              Travel, Cook &amp; Write with
+              <span aria-hidden>❤️</span>
             </p>
             <p className="text-white/60">
               © {new Date().getFullYear()} {dict.site.name}. {dict.footer.rights}

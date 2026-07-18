@@ -7,7 +7,7 @@
  *   je 1 gemeinsame Kategorie, 1 gemeinsame Art der Küche UND 1 gemeinsame
  *   Zutat hat (⇒ mindestens 3 Überschneidungen). Keine schwächeren Treffer.
  * - Rangfolge nach Gesamtzahl der Überschneidungen; die Ernährungsform
- *   zählt dabei mit, Schlagwörter/Zubereitung bewusst nicht.
+ *   zählt dabei mit, Schlagwörter bewusst nicht.
  * - Gleichstand: neuere Rezepte zuerst.
  */
 import { eq, inArray } from "drizzle-orm";

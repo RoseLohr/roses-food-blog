@@ -94,6 +94,32 @@ describe("Rezept-CRUD", () => {
     expect(full!.adminNotes).toHaveLength(1);
   });
 
+  it("Entwurf speichern → Editor-Seite (Redirect-Ziel) lädt das Rezept [Regression: page-can-not-load]", async () => {
+    const { saveRecipeFromForm } = await import("@/lib/recipe-save");
+    const { buildEditorProps } = await import(
+      "@/app/admin/(protected)/rezepte/editor-data"
+    );
+
+    // „Entwurf speichern": neues Rezept mit Status „entwurf" (Formular-Standard).
+    const result = await saveRecipeFromForm(
+      recipeForm({ titel: "Entwurf-Regression", status: "entwurf" }),
+      adminId,
+    );
+    expect("recipeId" in result).toBe(true);
+    const id = (result as { recipeId: number }).recipeId;
+
+    // Der Save-Redirect zeigt auf /admin/rezepte/{id}; diese Seite baut ihre
+    // Daten über buildEditorProps(id). Für einen ENTWURF darf das NICHT null
+    // sein — sonst löst die Seite notFound() aus und der Nutzer sieht „page can
+    // not load". getFullRecipe filtert bewusst NICHT nach Status, daher lädt
+    // auch der Entwurf. Genau dieser Vertrag wird hier festgenagelt.
+    const props = await buildEditorProps(id);
+    expect(props).not.toBeNull();
+    expect(props!.initial.id).toBe(id);
+    expect(props!.initial.status).toBe("entwurf");
+    expect(props!.initial.title).toBe("Entwurf-Regression");
+  });
+
   it("veröffentlicht beim Statuswechsel und setzt publishedAt genau einmal", async () => {
     const { saveRecipeFromForm } = await import("@/lib/recipe-save");
     const { getFullRecipe } = await import("@/lib/recipes");

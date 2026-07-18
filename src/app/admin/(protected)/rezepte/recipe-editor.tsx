@@ -318,7 +318,9 @@ export function RecipeEditor({
 
   return (
     <div className="flex max-w-4xl flex-col gap-6">
-      <RecipeAiAssistant onApply={applyDraft} />
+      {/* KI-Assistent nur beim ANLEGEN neuer Rezepte (initial.id === null).
+          Bei bestehenden Rezepten ausgeblendet — dort wird nicht neu importiert. */}
+      {initial.id === null && <RecipeAiAssistant onApply={applyDraft} />}
       <form key={formKey} action={formAction} className="flex flex-col gap-6">
       {form.id !== null && <input type="hidden" name="id" value={form.id} />}
       <input type="hidden" name="abschnitte" value={JSON.stringify(sections)} />

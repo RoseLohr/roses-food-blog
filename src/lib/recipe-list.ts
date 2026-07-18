@@ -2,7 +2,7 @@
  * Kartendaten veröffentlichter Rezepte für Übersichten
  * (Rezeptliste, Startseite, Suchergebnisse).
  */
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { variantWidthsByImage } from "@/lib/media";
 import type { RecipeCardData } from "@/components/recipe-card";
@@ -46,14 +46,16 @@ export async function publishedRecipeCards(options?: {
   const rows = await query;
   const ids = rows.map((r) => r.id);
 
-  // Primär-Kategorie je Rezept (is_primary; Fallback: erste Kategorie) für
-  // das grüne Kategorie-Label in der Kachel — in EINER Abfrage.
+  // Primär-Kategorie (is_primary; Fallback: erste) UND erste Ernährungsform je
+  // Rezept für das Kachel-Label „Kategorie / Ernährungsform" — in EINER Abfrage.
   const catByRecipe = new Map<number, string>();
+  const dietByRecipe = new Map<number, string>();
   if (ids.length > 0) {
     const cats = await db
       .select({
         recipeId: schema.recipeTaxonomy.recipeId,
         name: schema.taxonomy.name,
+        type: schema.taxonomy.type,
         isPrimary: schema.recipeTaxonomy.isPrimary,
       })
       .from(schema.recipeTaxonomy)
@@ -64,12 +66,17 @@ export async function publishedRecipeCards(options?: {
       .where(
         and(
           inArray(schema.recipeTaxonomy.recipeId, ids),
-          eq(schema.taxonomy.type, "kategorie"),
+          inArray(schema.taxonomy.type, ["kategorie", "ernaehrungsform"]),
         ),
       )
-      .orderBy(desc(schema.recipeTaxonomy.isPrimary));
+      // Primär zuerst, dann alphabetisch → deterministische Auswahl je Rezept.
+      .orderBy(desc(schema.recipeTaxonomy.isPrimary), asc(schema.taxonomy.name));
     for (const c of cats) {
-      if (!catByRecipe.has(c.recipeId)) catByRecipe.set(c.recipeId, c.name);
+      if (c.type === "kategorie") {
+        if (!catByRecipe.has(c.recipeId)) catByRecipe.set(c.recipeId, c.name);
+      } else if (!dietByRecipe.has(c.recipeId)) {
+        dietByRecipe.set(c.recipeId, c.name);
+      }
     }
   }
 
@@ -85,6 +92,7 @@ export async function publishedRecipeCards(options?: {
     totalMinutes: r.totalMinutes,
     likeCount: r.likeCount,
     category: catByRecipe.get(r.id) ?? null,
+    dietType: dietByRecipe.get(r.id) ?? null,
     image: r.imageId
       ? {
           fileKey: r.fileKey!,

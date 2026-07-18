@@ -5,6 +5,7 @@ import { db, schema } from "@/db";
 import { RecipeCard } from "@/components/recipe-card";
 import { ResponsiveImg } from "@/components/responsive-img";
 import { IngredientFilter } from "@/components/ingredient-filter";
+import { SearchFiltersCollapsible } from "@/components/search-filters-collapsible";
 import { taxonomiesByType } from "@/lib/taxonomies";
 import {
   CALORIE_BANDS,
@@ -144,8 +145,10 @@ export default async function SearchPage(props: {
       <p className="mt-2 text-ink-soft">{dict.search.intro}</p>
 
       <div className="mt-6 grid gap-8 lg:grid-cols-[16rem_1fr]">
-        {/* Filter-Formular */}
-        <form method="get" className="flex flex-col gap-5 self-start bg-white p-5 shadow-sm">
+        {/* Filter-Formular — auf Mobil einklappbar, sobald Ergebnisse angezeigt
+            werden (hasQuery). Ab lg immer sichtbar (siehe Komponente). */}
+        <SearchFiltersCollapsible defaultOpen={!hasQuery} className="self-start">
+          <form method="get" className="flex flex-col gap-5 bg-white p-5 shadow-sm">
           <div>
             <label htmlFor="such-q" className="mb-1 block text-sm font-semibold">
               {dict.search.freeTextLabel}
@@ -251,7 +254,8 @@ export default async function SearchPage(props: {
               {dict.search.reset}
             </Link>
           </div>
-        </form>
+          </form>
+        </SearchFiltersCollapsible>
 
         {/* Ergebnisse */}
         <div>
