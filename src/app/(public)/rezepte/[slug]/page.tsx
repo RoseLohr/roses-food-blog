@@ -56,7 +56,9 @@ export default async function RecipePage(props: {
   if (!full) notFound();
 
   return (
-    <main>
+    // -mt-4 zieht den Detail-Inhalt 16 px hoch, damit der Abstand ÜBER dem Bild
+    // genauso groß ist wie links/rechts (Layout-Rahmen: px-4 = 16 px, py-8 = 32 px).
+    <main className="-mt-4">
       <PageTracker
         contentType="rezept"
         contentId={full.recipe.id}
