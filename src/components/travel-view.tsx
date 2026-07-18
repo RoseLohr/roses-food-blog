@@ -99,7 +99,9 @@ function SimilarRecipeTiles({ recipes }: { recipes: RecipeCardData[] }) {
       <h5 className="mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-leaf">
         {dict.travelList.similarTitle}
       </h5>
-      <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+      {/* Kompakt: schon auf Mobil 2-spaltig (mind. zwei Vorschläge sichtbar),
+          ab lg drei Spalten. Etwas kleineres Gap auf Mobil. */}
+      <div className="grid grid-cols-2 gap-3 sm:gap-5 lg:grid-cols-3">
         {recipes.map((rec) => (
           <RecipeCard key={rec.slug} recipe={rec} />
         ))}
