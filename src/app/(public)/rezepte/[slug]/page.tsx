@@ -6,6 +6,7 @@ import { imageUrl } from "@/lib/media";
 import { JsonLd, breadcrumbJsonLd, recipeJsonLd } from "@/lib/jsonld";
 import { RecipeView } from "@/components/recipe-view";
 import { PageTracker } from "@/components/page-tracker";
+import { getSiteName } from "@/lib/settings";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -42,7 +43,7 @@ export async function generateMetadata(props: {
       url: `${getBaseUrl()}/rezepte/${recipe.slug}`,
       images: ogImage ? [{ url: ogImage }] : undefined,
       locale: "de_DE",
-      siteName: dict.site.name,
+      siteName: getSiteName(),
     },
   };
 }
@@ -55,7 +56,9 @@ export default async function RecipePage(props: {
   if (!full) notFound();
 
   return (
-    <main>
+    // -mt-4 zieht den Detail-Inhalt 16 px hoch, damit der Abstand ÜBER dem Bild
+    // genauso groß ist wie links/rechts (Layout-Rahmen: px-4 = 16 px, py-8 = 32 px).
+    <main className="-mt-4">
       <PageTracker
         contentType="rezept"
         contentId={full.recipe.id}
@@ -64,7 +67,7 @@ export default async function RecipePage(props: {
       <JsonLd data={recipeJsonLd(full)} />
       <JsonLd
         data={breadcrumbJsonLd([
-          [dict.site.name, "/"],
+          [getSiteName(), "/"],
           [dict.nav.recipes, "/rezepte"],
           [full.recipe.title, `/rezepte/${full.recipe.slug}`],
         ])}

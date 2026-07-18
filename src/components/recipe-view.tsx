@@ -135,7 +135,9 @@ export function RecipeView({
             image={full.heroImage}
             sizes="(max-width: 820px) 100vw, 768px"
             priority
-            className="aspect-[2/1] w-full object-cover"
+            // 4:3 wie die Kacheln; auf großen Screens die Höhe deckeln, damit der
+            // Hero nicht überproportional groß wird (object-cover beschneidet).
+            className="aspect-[4/3] max-h-[28rem] w-full object-cover"
           />
           {interactive && (
             <HeroActions

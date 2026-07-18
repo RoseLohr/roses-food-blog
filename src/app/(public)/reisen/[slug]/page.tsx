@@ -6,6 +6,7 @@ import { imageUrl } from "@/lib/media";
 import { JsonLd, breadcrumbJsonLd } from "@/lib/jsonld";
 import { TravelView } from "@/components/travel-view";
 import { PageTracker } from "@/components/page-tracker";
+import { getSiteName } from "@/lib/settings";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -42,7 +43,7 @@ export async function generateMetadata(props: {
       url: `${getBaseUrl()}/reisen/${post.slug}`,
       images: ogImage ? [{ url: ogImage }] : undefined,
       locale: "de_DE",
-      siteName: dict.site.name,
+      siteName: getSiteName(),
     },
   };
 }
@@ -67,7 +68,7 @@ function articleJsonLd(full: NonNullable<Awaited<ReturnType<typeof loadPublished
           )}`,
         ]
       : undefined,
-    publisher: { "@type": "Organization", name: dict.site.name, url: base },
+    publisher: { "@type": "Organization", name: getSiteName(), url: base },
     about:
       [post.country, post.region, post.city].filter(Boolean).join(", ") ||
       undefined,
@@ -91,7 +92,7 @@ export default async function TravelPostPage(props: {
       <JsonLd data={articleJsonLd(full)} />
       <JsonLd
         data={breadcrumbJsonLd([
-          [dict.site.name, "/"],
+          [getSiteName(), "/"],
           [dict.nav.travel, "/reisen"],
           [full.post.title, `/reisen/${full.post.slug}`],
         ])}

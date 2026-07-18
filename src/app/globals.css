@@ -19,12 +19,24 @@
   font-display: swap;
   src: url("/fonts/nunito-sans.woff2") format("woff2");
 }
+/* Jost (indestructible type*, SIL Open Font License 1.1) — ausschließlich für
+   das Marken-Lockup „Rose’s Gourmet Compass". Variable Datei, latin-Subset,
+   selbst gehostet (kein Google-CDN zur Laufzeit → DSGVO-konform, Annahme B19). */
+@font-face {
+  font-family: "Jost";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/jost.woff2") format("woff2");
+}
 
 @theme {
   --font-sans: "Nunito Sans", ui-sans-serif, system-ui, -apple-system,
     "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-display: "Raleway", ui-sans-serif, system-ui, -apple-system,
     "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  /* Marken-Schrift des Logo-Lockups (immer Jost, s. Logo-Spezifikation). */
+  --font-brand: "Jost", "Helvetica Neue", Arial, sans-serif;
 
   /* Tiny-Salt-Palette: grüner Akzent (#4FD675 → Teal #4FD6C8),
      tiefes Tinten­schwarz, weicher Grau-Fließtext, weißer Grund.
@@ -877,4 +889,86 @@ html {
   :root {
     --sk-name-w: 148px;
   }
+}
+
+/* ============================================================
+   Marken-Lockup „Rose’s Gourmet Compass" (Logo, Option A)
+   Aufbau: [Kompass-SVG]  Rose’s  GOURMET COMPASS
+   Schrift: immer Jost. Eine Variable (--rgc-size) skaliert alles.
+   ============================================================ */
+.rgc-logo {
+  --rgc-size: 26px;
+  display: inline-flex;
+  align-items: center; /* trifft die Versalmitte (s. Logo-Spezifikation) */
+  font-family: var(--font-brand);
+  font-size: var(--rgc-size);
+  line-height: 1;
+  white-space: nowrap;
+  text-decoration: none;
+  font-synthesis: none; /* keine gefälschten Schnitte */
+}
+.rgc-logo__mark {
+  width: 1.646em; /* Ringdurchmesser 1.61em + Konturüberstand */
+  height: 1.646em;
+  flex: 0 0 auto;
+  display: block;
+}
+/* „Rose’s" — leicht, grün */
+.rgc-logo__rose {
+  margin-left: 0.367em;
+  font-weight: 400;
+  font-size: 1em;
+  letter-spacing: 0;
+  color: var(--color-rose-primary);
+  text-transform: none;
+}
+/* „GOURMET COMPASS" — Versalien, gesperrt */
+.rgc-logo__word {
+  margin-left: 0.294em;
+  font-weight: 500;
+  font-size: 1em;
+  letter-spacing: 0.24em;
+  margin-right: -0.24em; /* hebt die Sperrung hinter dem letzten Zeichen auf */
+  text-transform: uppercase;
+  color: var(--color-ink);
+}
+/* Negativ-Version auf teal Flächen */
+.rgc-logo--light .rgc-logo__rose {
+  color: var(--color-leaf-soft);
+}
+.rgc-logo--light .rgc-logo__word {
+  color: #ffffff;
+}
+/* Als Link: dezenter Hover auf dem grünen Wortteil */
+a.rgc-logo:hover .rgc-logo__rose {
+  color: var(--color-rose-primary-dark);
+}
+/* Responsive: Größe pro Breakpoint (nicht einzelne Werte) */
+@media (max-width: 640px) {
+  .rgc-logo {
+    --rgc-size: 20px;
+  }
+  .rgc-logo__word {
+    letter-spacing: 0.18em;
+    margin-right: -0.18em;
+  }
+}
+/* Sehr schmale Telefone (z. B. iPhone SE, 375 px): kleiner sperren, damit die
+   Wortmarke nicht mit dem Hamburger kollidiert. */
+@media (max-width: 420px) {
+  .rgc-logo {
+    --rgc-size: 17px;
+  }
+  .rgc-logo__word {
+    letter-spacing: 0.12em;
+    margin-right: -0.12em;
+  }
+}
+/* Optionales Bild-Logo (falls im Admin hochgeladen): ersetzt das Lockup */
+.rgc-logo__img {
+  display: block;
+  height: calc(var(--rgc-size) * 1.85);
+  width: auto;
+  max-width: min(60vw, 320px);
+  object-fit: contain;
 }

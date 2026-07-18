@@ -26,6 +26,11 @@ export async function saveSettingsAction(formData: FormData): Promise<void> {
     email_rate: str("email_rate"),
     deploy_repo: str("deploy_repo"),
     deploy_branch: str("deploy_branch"),
+    // Marke: leere Namensteile fallen im Frontend auf den Standard zurück;
+    // leeres Logo-Feld (Auswahl entfernt) löscht das Bild-Logo.
+    site_title_accent: str("site_title_accent"),
+    site_title_word: str("site_title_word"),
+    site_logo_image_id: str("site_logo_image_id"),
   };
   // Passwort / API-Schlüssel / Token nur überschreiben, wenn ein neuer Wert eingegeben wurde.
   const pass = str("smtp_pass");

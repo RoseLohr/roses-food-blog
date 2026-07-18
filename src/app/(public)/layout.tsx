@@ -1,7 +1,10 @@
 import Link from "next/link";
 import { NewsletterSection } from "@/components/newsletter-section";
 import { SiteHeader } from "@/components/site-header";
+import { SiteLogo } from "@/components/site-logo";
+import { getHeaderBrand } from "@/lib/branding";
 import { getNavMenus } from "@/lib/nav-data";
+import { getSiteName } from "@/lib/settings";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -10,6 +13,8 @@ export default async function PublicLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   const { recipeChildren, travelChildren } = await getNavMenus();
+  const brand = await getHeaderBrand();
+  const siteName = getSiteName();
   return (
     <>
       <a
@@ -20,6 +25,7 @@ export default async function PublicLayout({
       </a>
 
       <SiteHeader
+        brand={brand}
         recipeChildren={recipeChildren}
         travelChildren={travelChildren}
       />
@@ -59,16 +65,14 @@ export default async function PublicLayout({
         {/* Dunkle Fußleiste im Tiny-Salt-Stil */}
         <div className="bg-ink text-white">
           <div className="mx-auto flex max-w-6xl flex-col items-center gap-1 px-4 py-6 text-center text-sm">
-            {/* Marken-Schriftzug (weiß) auf dem dunklen Band — kein Logo. */}
-            <span className="mb-3 font-display text-lg font-extrabold tracking-tight text-white">
-              {dict.site.name}
-            </span>
+            {/* Marken-Lockup in der Negativ-Variante auf dem dunklen Band. */}
+            <SiteLogo brand={brand} light className="mb-3" />
             <p className="flex items-center gap-1.5 text-white/90">
               Travel, Cook &amp; Write with
               <span aria-hidden>❤️</span>
             </p>
             <p className="text-white/60">
-              © {new Date().getFullYear()} {dict.site.name}. {dict.footer.rights}
+              © {new Date().getFullYear()} {siteName}. {dict.footer.rights}
             </p>
           </div>
         </div>

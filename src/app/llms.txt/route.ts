@@ -4,6 +4,7 @@
 import { eq } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { getBaseUrl } from "@/lib/base-url";
+import { getSiteName } from "@/lib/settings";
 import { t } from "@/i18n/de";
 
 export const dynamic = "force-dynamic";
@@ -24,7 +25,7 @@ export async function GET() {
   ]);
 
   const lines = [
-    `# ${dict.site.name}`,
+    `# ${getSiteName()}`,
     "",
     `> ${dict.site.tagline}. Deutschsprachiger Food-Blog mit gesunden Rezepten (30–90 Minuten Zubereitungszeit) und Reiseberichten über Essen im Ausland.`,
     "",

@@ -1,23 +1,29 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { getBaseUrl } from "@/lib/base-url";
+import { getSiteName } from "@/lib/settings";
 import { t } from "@/i18n/de";
 
 const dict = t();
 
-export const metadata: Metadata = {
-  metadataBase: new URL(getBaseUrl()),
-  title: {
-    default: dict.site.name,
-    template: `%s – ${dict.site.name}`,
-  },
-  description: dict.site.tagline,
-  openGraph: {
-    siteName: dict.site.name,
-    locale: "de_DE",
-    type: "website",
-  },
-};
+// generateMetadata (statt statischem Objekt), damit der im Admin gesetzte
+// Blogname für Tab-Titel, Titel-Template und OpenGraph pro Anfrage greift.
+export function generateMetadata(): Metadata {
+  const siteName = getSiteName();
+  return {
+    metadataBase: new URL(getBaseUrl()),
+    title: {
+      default: siteName,
+      template: `%s – ${siteName}`,
+    },
+    description: dict.site.tagline,
+    openGraph: {
+      siteName,
+      locale: "de_DE",
+      type: "website",
+    },
+  };
+}
 
 export default function RootLayout({
   children,

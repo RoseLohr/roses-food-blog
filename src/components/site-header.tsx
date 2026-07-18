@@ -14,6 +14,8 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
+import { SiteLogo } from "@/components/site-logo";
+import type { HeaderBrand } from "@/lib/branding";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -87,9 +89,11 @@ function SearchField({
 }
 
 export function SiteHeader({
+  brand,
   recipeChildren = [],
   travelChildren = [],
 }: {
+  brand: HeaderBrand;
   recipeChildren?: NavChild[];
   travelChildren?: NavChild[];
 }) {
@@ -144,15 +148,9 @@ export function SiteHeader({
       className="sticky top-0 z-40 border-b border-ink/10 bg-white print:hidden"
     >
       <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-4 sm:gap-6">
-        {/* Marken-Lockup: Text-Schriftzug (kein Logo) + Slogan */}
-        <Link href="/" className="mr-auto flex shrink-0 flex-col leading-none">
-          <span className="font-display text-xl font-extrabold tracking-tight text-ink sm:text-2xl">
-            {dict.site.name}
-          </span>
-          <span className="mt-1 block text-[0.58rem] font-semibold uppercase tracking-[0.16em] text-ink-soft">
-            {dict.site.tagline}
-          </span>
-        </Link>
+        {/* Marken-Lockup „Rose’s Gourmet Compass" (Kompass + Jost-Schrift),
+            im Admin über Name/Logo konfigurierbar. */}
+        <SiteLogo brand={brand} className="mr-auto shrink-0" />
 
         {/* Permanentes horizontales Menü ab md */}
         <nav className="hidden md:block" aria-label={dict.nav.menu}>

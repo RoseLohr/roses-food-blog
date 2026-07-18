@@ -84,4 +84,44 @@ describe("Einstellungen", () => {
       token: "ghp_test123",
     });
   });
+
+  it("liefert Standard-Wortmarke, wenn nichts gesetzt ist", async () => {
+    const { getSiteBranding, getSiteName, SITE_BRAND_DEFAULT, setSettings } =
+      await import("@/lib/settings");
+    // Leere Werte -> Standard
+    setSettings({
+      site_title_accent: "",
+      site_title_word: "",
+      site_logo_image_id: "",
+    });
+    const b = getSiteBranding();
+    expect(b.accent).toBe(SITE_BRAND_DEFAULT.accent);
+    expect(b.word).toBe(SITE_BRAND_DEFAULT.word);
+    expect(b.logoImageId).toBeNull();
+    expect(getSiteName()).toBe(
+      `${SITE_BRAND_DEFAULT.accent} ${SITE_BRAND_DEFAULT.word}`,
+    );
+  });
+
+  it("übernimmt gesetzten Namen und Logo aus der DB", async () => {
+    const { getSiteBranding, getSiteName, setSettings } = await import(
+      "@/lib/settings"
+    );
+    setSettings({
+      site_title_accent: "Marias",
+      site_title_word: "Küchenkompass",
+      site_logo_image_id: "42",
+    });
+    const b = getSiteBranding();
+    expect(b.accent).toBe("Marias");
+    expect(b.word).toBe("Küchenkompass");
+    expect(b.logoImageId).toBe(42);
+    expect(getSiteName()).toBe("Marias Küchenkompass");
+
+    // Ungültige Logo-ID -> null (kein Absturz)
+    setSettings({ site_logo_image_id: "0" });
+    expect(getSiteBranding().logoImageId).toBeNull();
+    setSettings({ site_logo_image_id: "abc" });
+    expect(getSiteBranding().logoImageId).toBeNull();
+  });
 });

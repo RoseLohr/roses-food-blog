@@ -500,6 +500,16 @@ export const de = {
       title: "Einstellungen",
       intro:
         "Hier hinterlegte Werte haben Vorrang vor der .env-Datei. Leer lassen, um die .env-Vorgabe zu nutzen.",
+      brandTitle: "Marke (Blogname & Logo)",
+      brandIntro:
+        "Der Name erscheint als Logo-Schriftzug im Kopfbereich sowie in Titel, Footer und SEO. Er besteht aus zwei Teilen: einem grünen Namen und einer gesperrten Wortmarke in Versalien. Optional lässt sich stattdessen ein Bild-Logo hochladen.",
+      brandAccentLabel: "Name – grüner Teil",
+      brandAccentHint: 'Erscheint in Markengrün, z. B. „Rose’s“.',
+      brandWordLabel: "Name – Wortmarke (Versalien)",
+      brandWordHint: 'Wird in Versalien & gesperrt gesetzt, z. B. „Gourmet Compass“.',
+      brandLogoLabel: "Bild-Logo (optional)",
+      brandLogoHint:
+        "Wenn gesetzt, ersetzt das Bild den Text-Schriftzug im Kopfbereich. Leer lassen, um den Kompass + Schriftzug zu verwenden.",
       smtpTitle: "E-Mail-Versand (SMTP)",
       smtpIntro:
         "Zugangsdaten des Postausgangsservers für Double-Opt-in, Kampagnen und Sequenzen.",

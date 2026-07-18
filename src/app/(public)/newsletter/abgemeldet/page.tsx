@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { getSiteName } from "@/lib/settings";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -39,7 +40,7 @@ export default async function UnsubscribedPage(props: {
         href="/"
         className="mt-6 inline-block font-semibold text-rose-primary underline-offset-2 hover:underline"
       >
-        {dict.site.name} →
+        {getSiteName()} →
       </Link>
     </main>
   );

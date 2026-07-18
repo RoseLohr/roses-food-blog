@@ -4,6 +4,7 @@ import { confirmContact, getOfferedInterests } from "@/lib/newsletter";
 import { NewsletterWelcome } from "@/components/newsletter-welcome";
 import { rateLimit } from "@/lib/ratelimit";
 import { getClientIp } from "@/lib/request";
+import { getSiteName } from "@/lib/settings";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -37,6 +38,7 @@ export default async function ConfirmPage(props: {
           firstName={result.profile.firstName}
           lastName={result.profile.lastName}
           selectedInterestIds={result.profile.interestIds}
+          siteName={getSiteName()}
         />
       </main>
     );
@@ -70,7 +72,7 @@ export default async function ConfirmPage(props: {
         href="/"
         className="mt-6 inline-block font-semibold text-rose-primary underline-offset-2 hover:underline"
       >
-        {dict.site.name} →
+        {getSiteName()} →
       </Link>
     </main>
   );

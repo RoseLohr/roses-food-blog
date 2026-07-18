@@ -23,8 +23,20 @@ export const SETTING_KEYS = [
   "anthropic_api_key",
   "newsletter_visible",
   "ai_enabled",
+  "site_title_accent",
+  "site_title_word",
+  "site_logo_image_id",
 ] as const;
 export type SettingKey = (typeof SETTING_KEYS)[number];
+
+/**
+ * Standard-Wortmarke (falls im Admin nichts gesetzt ist). Zweiteilig, weil das
+ * Logo-Lockup „Rose’s" (grün) und „GOURMET COMPASS" (Versalien) unterschiedlich
+ * setzt. Apostroph ist bewusst U+2019 (’), nicht das gerade '. */
+export const SITE_BRAND_DEFAULT = {
+  accent: "Rose’s",
+  word: "Gourmet Compass",
+} as const;
 
 export function getSetting(key: SettingKey): string | null {
   const row = db
@@ -120,4 +132,54 @@ export function getAnthropicApiKey(): string {
  */
 export function getNewsletterVisible(): boolean {
   return getSetting("newsletter_visible") !== "0";
+}
+
+// --- Marke (Blogname & Logo) ----------------------------------------------
+
+export interface SiteBranding {
+  /** Erster, grüner Wortteil (z. B. „Rose’s"). */
+  accent: string;
+  /** Zweiter, gesperrter Versal-Wortteil (z. B. „Gourmet Compass"). */
+  word: string;
+  /** Optionales Bild-Logo (Medien-ID); ersetzt im Frontend das Text-Lockup. */
+  logoImageId: number | null;
+}
+
+/**
+ * Effektive Wortmarke & Logo (DB > Standard). Synchron (better-sqlite3).
+ *
+ * Muss auch ohne bereite DB funktionieren: Der Blogname fließt via
+ * `generateMetadata` in den Root-Layout-Titel, der beim STATISCHEN Prerender
+ * (z. B. /_not-found) noch keine migrierte DB hat. Ein DB-Fehler darf dort den
+ * Build nicht abbrechen — wir fallen bewusst auf den Standard zurück (kein
+ * Workaround, sondern definiertes Verhalten für den Build-/Fallback-Fall).
+ */
+export function getSiteBranding(): SiteBranding {
+  try {
+    const accent = (getSetting("site_title_accent") || "").trim();
+    const word = (getSetting("site_title_word") || "").trim();
+    const rawId = getSetting("site_logo_image_id");
+    const id = rawId ? Number(rawId) : NaN;
+    return {
+      accent: accent || SITE_BRAND_DEFAULT.accent,
+      word: word || SITE_BRAND_DEFAULT.word,
+      logoImageId: Number.isInteger(id) && id > 0 ? id : null,
+    };
+  } catch {
+    return {
+      accent: SITE_BRAND_DEFAULT.accent,
+      word: SITE_BRAND_DEFAULT.word,
+      logoImageId: null,
+    };
+  }
+}
+
+/**
+ * Vollständiger Blogname für Titel, SEO, Footer & strukturierte Daten:
+ * „<accent> <word>" (DB > Standard). Ein einziger Ort, an dem der Name
+ * zusammengesetzt wird — so wirkt eine Admin-Änderung überall.
+ */
+export function getSiteName(): string {
+  const b = getSiteBranding();
+  return `${b.accent} ${b.word}`.trim();
 }

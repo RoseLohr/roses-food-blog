@@ -10,7 +10,7 @@ import type { FullDish, FullRestaurant, FullTravelPost } from "@/lib/travel";
 import { extractHeadings, renderMarkdown } from "@/lib/markdown";
 import { getBaseUrl } from "@/lib/base-url";
 import { getSimilarRecipesByDish } from "@/lib/similar-recipes";
-import type { RecipeCardData } from "@/components/recipe-card";
+import { RecipeCard, type RecipeCardData } from "@/components/recipe-card";
 import { t } from "@/i18n/de";
 import { ResponsiveImg } from "./responsive-img";
 import { HeroActions } from "./hero-actions";
@@ -89,65 +89,24 @@ function MetaChip({
   );
 }
 
-/** Platzhalter, wenn ein Vorschlags-Rezept (noch) kein Bild hat — dezentes
- *  Symbol statt einer leeren Fläche. */
-function TilePlaceholder() {
-  return (
-    <span
-      aria-hidden
-      className="flex aspect-[4/3] w-full items-center justify-center bg-cream-deep text-ink-soft/40"
-    >
-      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M4 3v7a3 3 0 0 0 3 3v8M7 3v6M10 3v6M18 3c-1.5 0-2.5 2-2.5 5s1 4 2.5 4v9" />
-      </svg>
-    </span>
-  );
-}
-
-/** „Ähnliche Rezepte selbst machen" — bis zu 3 kompakte Kacheln, unterhalb
- *  (nicht innerhalb) der grauen Gericht-Box. Feste, kleine Kachelbreite. */
+/** „Ähnliche Rezepte selbst machen" — als vollwertige Rezept-Kacheln (dieselbe
+ *  RecipeCard wie auf der Startseite) im gleichen Raster (bis zu 3 Vorschläge). */
 function SimilarRecipeTiles({ recipes }: { recipes: RecipeCardData[] }) {
   if (recipes.length === 0) return null;
   return (
-    <div className="border-t border-ink/10 pt-3">
-      <h5 className="mb-2.5 text-xs font-bold uppercase tracking-wider text-ink-soft">
+    <section className="border-t border-ink/10 pt-4">
+      {/* Abschnittstitel als Eyebrow im Marken-Grün (wie die Kachel-Eyebrows). */}
+      <h5 className="mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-leaf">
         {dict.travelList.similarTitle}
       </h5>
-      <div className="flex flex-wrap gap-3">
+      {/* Kompakt: schon auf Mobil 2-spaltig (mind. zwei Vorschläge sichtbar),
+          ab lg drei Spalten. Etwas kleineres Gap auf Mobil. */}
+      <div className="grid grid-cols-2 gap-3 sm:gap-5 lg:grid-cols-3">
         {recipes.map((rec) => (
-          <div
-            key={rec.slug}
-            className="w-36 max-w-full overflow-hidden bg-white shadow-sm"
-          >
-            {/* Bild als Link zum Rezept */}
-            <Link href={`/rezepte/${rec.slug}`} aria-label={rec.title}>
-              {rec.image ? (
-                <ResponsiveImg
-                  image={rec.image}
-                  sizes="144px"
-                  className="aspect-[4/3] w-full object-cover"
-                />
-              ) : (
-                <TilePlaceholder />
-              )}
-            </Link>
-            <div className="p-2.5">
-              <Link
-                href={`/rezepte/${rec.slug}`}
-                className="line-clamp-2 text-[0.8rem] font-semibold leading-snug hover:text-leaf"
-              >
-                {rec.title}
-              </Link>
-              {rec.teaser && (
-                <p className="mt-1 line-clamp-2 text-[0.7rem] leading-snug text-ink-soft">
-                  {rec.teaser}
-                </p>
-              )}
-            </div>
-          </div>
+          <RecipeCard key={rec.slug} recipe={rec} />
         ))}
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -172,27 +131,16 @@ function DishItem({
           </div>
         )}
         <div className="min-w-0 grow">
-          <h4 className="font-semibold">{dish.name}</h4>
           {(dish.categories.length > 0 || dish.dietTypes.length > 0) && (
-            <p className="mt-1.5 flex flex-wrap gap-1.5">
-              {dish.categories.map((c) => (
-                <span
-                  key={`k-${c.id}`}
-                  className="border border-leaf px-2 py-0.5 text-[0.68rem] font-semibold uppercase tracking-wide text-leaf"
-                >
-                  {c.name}
-                </span>
-              ))}
-              {dish.dietTypes.map((dt) => (
-                <span
-                  key={`e-${dt.id}`}
-                  className="border border-leaf px-2 py-0.5 text-[0.68rem] font-semibold uppercase tracking-wide text-leaf"
-                >
-                  {dt.name}
-                </span>
-              ))}
+            // Kategorie · Ernährungsform als Eyebrow — identisch zu den
+            // Rezept-Kacheln (Leaf-Grün, gesperrt, „·"-getrennt).
+            <p className="mb-1 text-xs font-semibold uppercase tracking-[0.14em] text-leaf">
+              {[...dish.categories, ...dish.dietTypes]
+                .map((x) => x.name)
+                .join(" · ")}
             </p>
           )}
+          <h4 className="font-display font-bold">{dish.name}</h4>
           {dish.description && (
             <div
               className="prose-content mt-1 text-sm text-ink-soft"
