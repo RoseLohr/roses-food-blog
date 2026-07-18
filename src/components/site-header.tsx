@@ -144,17 +144,11 @@ export function SiteHeader({
       className="sticky top-0 z-40 border-b border-ink/10 bg-white print:hidden"
     >
       <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-4 sm:gap-6">
-        {/* Logo-Lockup: horizontales Marken-Logo + Slogan */}
+        {/* Marken-Lockup: Text-Schriftzug (kein Logo) + Slogan */}
         <Link href="/" className="mr-auto flex shrink-0 flex-col leading-none">
-          {/* Horizontales Marken-Logo als statisches Vektor-SVG aus /public
-              (next/image bringt für reine Vektorgrafik keinen Mehrwert). */}
-          <img
-            src="/brand/logo-horizontal.svg"
-            alt={dict.site.name}
-            width={160}
-            height={42}
-            className="h-9 w-auto sm:h-10"
-          />
+          <span className="font-display text-xl font-extrabold tracking-tight text-ink sm:text-2xl">
+            {dict.site.name}
+          </span>
           <span className="mt-1 block text-[0.58rem] font-semibold uppercase tracking-[0.16em] text-ink-soft">
             {dict.site.tagline}
           </span>

@@ -110,7 +110,7 @@ export function recipeJsonLd(full: FullRecipe) {
     tool: full.equipment.length
       ? full.equipment.map((e) => e.name)
       : undefined,
-    // SEO-Keywords: nur Ernährungsform (Tags „Zubereitung" bewusst NICHT).
+    // SEO-Keywords: nur Ernährungsform (Schlagwörter bewusst NICHT).
     keywords: full.dietTypes.map((d) => d.name).join(", ") || undefined,
     nutrition: recipe.kcal
       ? { "@type": "NutritionInformation", calories: `${recipe.kcal} kcal` }

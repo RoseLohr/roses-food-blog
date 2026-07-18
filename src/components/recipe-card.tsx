@@ -17,6 +17,8 @@ export interface RecipeCardData {
   totalMinutes: number;
   likeCount: number;
   category?: string | null;
+  /** Ernährungsform (wird hinter der Kategorie mit „/“ getrennt gezeigt). */
+  dietType?: string | null;
   image: MediaImageLike | null;
 }
 
@@ -34,15 +36,16 @@ export function RecipeCard({ recipe }: { recipe: RecipeCardData }) {
         <ResponsiveImg
           image={recipe.image}
           sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 384px"
-          className="aspect-[3/2] w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+          className="aspect-[4/3] w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
         />
       ) : (
-        <div aria-hidden className="aspect-[3/2] w-full bg-cream" />
+        <div aria-hidden className="aspect-[4/3] w-full bg-cream" />
       )}
       <div className="p-5">
-        {recipe.category && (
+        {(recipe.category || recipe.dietType) && (
           <p className="mb-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-leaf">
-            {recipe.category}
+            {/* Kategorie und – falls vorhanden – Ernährungsform, „/“-getrennt. */}
+            {[recipe.category, recipe.dietType].filter(Boolean).join(" / ")}
           </p>
         )}
         <h3 className="font-display text-lg font-bold tracking-tight group-hover:text-leaf">
@@ -53,6 +56,12 @@ export function RecipeCard({ recipe }: { recipe: RecipeCardData }) {
             {recipe.teaser}
           </p>
         )}
+        {/* „Weiterlesen“ als sichtbarer Hinweis (die ganze Kachel ist bereits
+            verlinkt, daher bewusst KEIN zweiter Link → kein Nesting/A11y-Konflikt). */}
+        <span className="mt-2 inline-flex items-center gap-1 text-sm font-semibold text-leaf">
+          {dict.recipe.readMore}
+          <span aria-hidden>→</span>
+        </span>
         <p className="mt-3 flex items-center gap-4 text-xs text-ink-soft">
           <span className="flex items-center gap-1.5">
             <IconClock className="h-3.5 w-3.5" />
