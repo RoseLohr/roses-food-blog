@@ -400,8 +400,12 @@ export default async function HomePage() {
           )}
 
           {/* Über mich — nur auf Mobil (< lg), VOR den neuesten Rezepten.
-              Auf Desktop steht es weiterhin in der rechten Seitenleiste. */}
-          {aboutTeaser && <div className="mt-10 lg:hidden">{aboutTeaser}</div>}
+              Auf Desktop steht es weiterhin in der rechten Seitenleiste.
+              print:hidden wie die Desktop-Seitenleiste (aside): der Teaser gehört
+              nicht in den Ausdruck (bei Druckbreite < lg würde er sonst mitdrucken). */}
+          {aboutTeaser && (
+            <div className="mt-10 lg:hidden print:hidden">{aboutTeaser}</div>
+          )}
 
           {/* Neueste Rezepte */}
           {latest.length > 0 && (
