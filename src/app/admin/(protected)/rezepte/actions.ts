@@ -16,8 +16,18 @@ export async function saveRecipeAction(
   formData: FormData,
 ): Promise<RecipeFormState> {
   const admin = await requireAdmin();
-  const result = await saveRecipeFromForm(formData, admin.id);
+  let result: Awaited<ReturnType<typeof saveRecipeFromForm>>;
+  try {
+    result = await saveRecipeFromForm(formData, admin.id);
+  } catch (err) {
+    // Ein unerwarteter Laufzeitfehler (z. B. schreibgeschützte/gesperrte DB) darf
+    // NIEMALS still verschluckt werden — sonst wirkt es für den Nutzer, als würde
+    // „nichts gespeichert", ohne jeden Hinweis. Sichtbar melden statt werfen.
+    console.error("[saveRecipeAction] Speichern fehlgeschlagen:", err);
+    return { error: dict.admin.recipes.saveFailed };
+  }
   if ("error" in result) return { error: result.error };
+  // redirect() wirft NEXT_REDIRECT — daher bewusst AUSSERHALB des try/catch.
   redirect(
     `/admin/rezepte/${result.recipeId}?meldung=${encodeURIComponent(dict.admin.recipes.saved)}`,
   );

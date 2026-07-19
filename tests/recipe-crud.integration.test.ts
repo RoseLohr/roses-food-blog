@@ -246,4 +246,91 @@ describe("Rezept-CRUD", () => {
     );
     expect("error" in badJson).toBe(true);
   });
+
+  it("Bearbeiten persistiert geänderte Zutaten, Beschreibung und SEO [Regression: Speichern kaputt]", async () => {
+    // Deckt die zuvor UNGETESTETE Lücke: der Update-Pfad muss geänderte
+    // skalare Felder (teaser/SEO) UND ersetzte Abschnitte/Zutaten dauerhaft
+    // schreiben — nachgelesen über denselben Ladepfad wie der Editor.
+    const { saveRecipeFromForm } = await import("@/lib/recipe-save");
+    const { buildEditorProps } = await import(
+      "@/app/admin/(protected)/rezepte/editor-data"
+    );
+
+    const created = await saveRecipeFromForm(
+      recipeForm({
+        titel: "Update-Ziel",
+        teaser: "ALT Beschreibung.",
+        seoTitel: "ALT SEO-Titel",
+        seoBeschreibung: "ALT SEO-Beschreibung",
+      }),
+      adminId,
+    );
+    const id = (created as { recipeId: number }).recipeId;
+
+    const upd = await saveRecipeFromForm(
+      recipeForm({
+        titel: "Update-Ziel",
+        id: String(id),
+        teaser: "NEU Beschreibung.",
+        seoTitel: "NEU SEO-Titel",
+        seoBeschreibung: "NEU SEO-Beschreibung",
+        abschnitte: JSON.stringify([
+          {
+            name: "",
+            ingredients: [
+              { name: "Roggenmehl", amount: "333", unit: "g", note: "frisch gemahlen" },
+            ],
+            steps: ["Teig kneten."],
+          },
+        ]),
+      }),
+      adminId,
+    );
+    expect("recipeId" in upd).toBe(true);
+
+    const props = await buildEditorProps(id);
+    expect(props).not.toBeNull();
+    expect(props!.initial.teaser).toBe("NEU Beschreibung.");
+    expect(props!.initial.seoTitle).toBe("NEU SEO-Titel");
+    expect(props!.initial.seoDescription).toBe("NEU SEO-Beschreibung");
+    expect(props!.initial.sections).toHaveLength(1);
+    const ings = props!.initial.sections[0].ingredients;
+    expect(ings.map((i) => i.name)).toEqual(["Roggenmehl"]);
+    expect(ings[0].amount).toBe("333");
+    expect(ings[0].note).toBe("frisch gemahlen");
+  });
+
+  it("Schreibfehler (schreibgeschützte DB) → sichtbarer Fehler statt stillem Throw [Regression]", async () => {
+    // Wurzel des „wird alles nicht gespeichert"-Symptoms: schlägt der Schreibvorgang
+    // fehl (z. B. schreibgeschützte/gesperrte DB), darf saveRecipeFromForm NICHT
+    // werfen (Server-Action verschluckt das sonst still), sondern muss einen
+    // sichtbaren Fehler zurückgeben. Simuliert via PRAGMA query_only.
+    const { saveRecipeFromForm } = await import("@/lib/recipe-save");
+    const { db } = await import("@/db");
+    const client = (
+      db as unknown as { $client: { pragma: (s: string) => unknown } }
+    ).$client;
+
+    // Anlegen (schafft auch die Zutaten, damit der Update-Pfad NICHT neu einfügt).
+    const created = await saveRecipeFromForm(recipeForm({ titel: "Readonly-Ziel" }), adminId);
+    const id = (created as { recipeId: number }).recipeId;
+
+    client.pragma("query_only = ON");
+    try {
+      const res = await saveRecipeFromForm(
+        recipeForm({ titel: "Geändert", id: String(id) }),
+        adminId,
+      );
+      expect("error" in res).toBe(true); // kein Throw, sichtbarer Fehler
+    } finally {
+      client.pragma("query_only = OFF");
+    }
+
+    // Nach dem Aufheben speichert es wieder normal.
+    const ok = await saveRecipeFromForm(
+      recipeForm({ titel: "Wieder-OK", id: String(id) }),
+      adminId,
+    );
+    expect("recipeId" in ok).toBe(true);
+  });
 });

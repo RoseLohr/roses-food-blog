@@ -258,7 +258,12 @@ export async function saveRecipeFromForm(
   };
 
   // Kompletter Schreib-Satz atomar (sync-Transaktion, better-sqlite3).
-  const recipeId = db.transaction((tx): number | null => {
+  // Ein Schreibfehler (z. B. schreibgeschützte/gesperrte DB) wird als sichtbarer
+  // Fehler zurückgegeben — nie als stiller Throw, der oben „nichts gespeichert"
+  // erscheinen ließe. Die Transaktion rollt bei jedem Fehler vollständig zurück.
+  let recipeId: number | null;
+  try {
+    recipeId = db.transaction((tx): number | null => {
     let rid: number;
     if (id !== null && Number.isInteger(id)) {
       const current = tx
@@ -359,7 +364,11 @@ export async function saveRecipeFromForm(
     }
 
     return rid;
-  });
+    });
+  } catch (err) {
+    console.error("[saveRecipeFromForm] Schreib-Transaktion fehlgeschlagen:", err);
+    return { error: dict.admin.recipes.saveFailed };
+  }
 
   if (recipeId === null) return { error: dict.common.error };
   return { recipeId };

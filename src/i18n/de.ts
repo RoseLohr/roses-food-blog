@@ -759,6 +759,8 @@ export const de = {
       deleted: "Rezept gelöscht.",
       saved: "Rezept gespeichert.",
       invalid: "Bitte alle Pflichtfelder korrekt ausfüllen.",
+      saveFailed:
+        "Das Rezept konnte nicht gespeichert werden (unerwarteter Fehler). Bitte erneut versuchen; besteht das Problem weiter, ist womöglich die Datenbank schreibgeschützt.",
       noImage: "Kein Bild",
       updatedAt: "Zuletzt bearbeitet",
       categories: "Kategorien",
