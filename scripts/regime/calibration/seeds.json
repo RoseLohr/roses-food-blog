@@ -112,6 +112,15 @@
       "control_cmd": "node scripts/regime/independent-verify.mjs --selftest",
       "beispiel": "Sol refutiert/fehlt/liefert Fehler, aber die Aenderung wird trotzdem als gruen durchgewinkt; oder nur Sol stimmt zu ohne einen weiteren Approver",
       "hinweis": "requireApprovals() verlangt fuer Gruen, dass der Pflicht-Approver (Default gpt-5.6-sol) im Panel aufgeloest ist, eine gueltige Stimme liefert und ZUSTIMMT (Veto bei Refutat/Fehlen/Fehler/Fallback), plus mindestens ein weiterer Approver (fail-closed). Der Selbsttest uebt alle Faelle aus; inject.mjs --strict friert eine Regression ein."
+    },
+    {
+      "id": "S14-font-cache-stale-immutable",
+      "klasse": "Stale-Font-Risiko: immutable-Jahrescache auf nicht versionierter Font-URL (Panel-Befund gpt-5.6-sol)",
+      "aktiv": true,
+      "kontrolle": "font-cache.mjs Integritaets-Gate (?v == Inhalts-Hash, sonst kein immutable)",
+      "control_cmd": "node scripts/regime/font-cache.mjs --selftest",
+      "beispiel": "Font-Datei unter /public/fonts wird getauscht, aber der ?v-Hash in globals.css/layout.tsx nicht gebumpt → Bestandsclients erhalten bis zu 1 Jahr die alte Datei",
+      "hinweis": "font-cache.mjs berechnet den Inhalts-Hash jeder woff2 neu und verlangt, dass die in globals.css UND layout.tsx referenzierte ?v-Version exakt passt (plus immutable-Header in next.config). Ein Tausch ohne Version-Bump bricht CI. Der Selbsttest uebt die Vergleichslogik; inject.mjs --strict friert eine Regression ein."
     }
   ]
 }

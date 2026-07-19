@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import { checkImgTag } from "../scripts/regime/responsive-images.mjs";
+import { fontHash, collectRefs } from "../scripts/regime/font-cache.mjs";
 
 /**
  * Performance-Guardrails (aus dem PageSpeed-/Lighthouse-Bericht 07/2026).
@@ -81,6 +82,20 @@ describe("Schriften: Langzeit-Cache + Preload (kritische Kette)", () => {
     expect(layout).toContain('crossOrigin="anonymous"');
     for (const f of ["raleway.woff2", "nunito-sans.woff2", "jost.woff2"]) {
       expect(layout).toContain(f);
+    }
+  });
+
+  it("Font-URLs sind per ?v=<Inhalts-Hash> versioniert — immutable ist sicher (Panel-Befund)", () => {
+    const dir = path.join(root, "public/fonts");
+    const globalsRefs = collectRefs(read("src/app/globals.css"));
+    const layoutRefs = collectRefs(read("src/app/layout.tsx"));
+    const fonts = fs.readdirSync(dir).filter((f) => f.endsWith(".woff2"));
+    expect(fonts.length).toBeGreaterThan(0);
+    for (const file of fonts) {
+      const name = file.replace(/\.woff2$/, "");
+      const h = fontHash(fs.readFileSync(path.join(dir, file)));
+      expect(globalsRefs.get(name)).toBe(h); // @font-face-URL trägt aktuellen Hash
+      expect(layoutRefs.get(name)).toBe(h); // Preload-URL identisch (kein Doppel-Load)
     }
   });
 });
