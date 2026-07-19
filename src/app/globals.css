@@ -1,17 +1,12 @@
 @import "tailwindcss";
 
-/* Selbst gehostete Webfonts: Raleway (serifenlos) für Überschriften,
-   Nunito Sans für Fließtext. Variable Fonts, latin-Subset (deckt deutsche
-   Umlaute ab). Ausgeliefert vom eigenen Origin unter /fonts — keine externen
-   CDNs, kein Font-Download zur Laufzeit (Annahme B19). font-display: swap hält
-   den Text sofort sichtbar. Raleway steht unter der SIL Open Font License. */
-@font-face {
-  font-family: "Raleway";
-  font-style: normal;
-  font-weight: 400 900;
-  font-display: swap;
-  src: url("/fonts/raleway.woff2") format("woff2");
-}
+/* Selbst gehostete Webfonts: Jost (geometrisch serifenlos) für Überschriften —
+   dieselbe Schrift wie der Blogname-Schriftzug, nur mit normaler Laufweite und
+   der Groß-/Kleinschreibung der jeweiligen Überschrift. Nunito Sans für den
+   Fließtext. Variable Fonts, latin-Subset (deckt deutsche Umlaute ab), vom
+   eigenen Origin unter /fonts — keine externen CDNs, kein Font-Download zur
+   Laufzeit (Annahme B19). font-display: swap hält den Text sofort sichtbar.
+   Beide unter der SIL Open Font License. */
 @font-face {
   font-family: "Nunito Sans";
   font-style: normal;
@@ -33,7 +28,8 @@
 @theme {
   --font-sans: "Nunito Sans", ui-sans-serif, system-ui, -apple-system,
     "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-display: "Raleway", ui-sans-serif, system-ui, -apple-system,
+  /* Überschriften in Jost (wie der Blogname), aber mit normaler Laufweite. */
+  --font-display: "Jost", ui-sans-serif, system-ui, -apple-system,
     "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   /* Marken-Schrift des Logo-Lockups (immer Jost, s. Logo-Spezifikation). */
   --font-brand: "Jost", "Helvetica Neue", Arial, sans-serif;

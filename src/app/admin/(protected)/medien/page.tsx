@@ -146,6 +146,7 @@ export default async function MediaPage(props: {
                   className="mt-1.5 flex max-w-md gap-1"
                 >
                   <input type="hidden" name="id" value={img.id} />
+                  <input type="hidden" name="ansicht" value={view} />
                   <input
                     name="altText"
                     defaultValue={img.altText}

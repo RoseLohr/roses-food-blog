@@ -61,7 +61,7 @@ function CheckItem({ children }: { children: React.ReactNode }) {
 
 function SerifHeading({ children }: { children: React.ReactNode }) {
   return (
-    <h2 className="font-display text-2xl font-bold tracking-tight md:text-3xl">
+    <h2 className="font-display text-2xl font-bold md:text-3xl">
       {children}
     </h2>
   );
@@ -151,7 +151,7 @@ export function RecipeView({
 
       <div className="p-6 md:p-10">
         <header>
-          <h1 className="font-display text-3xl font-bold tracking-tight md:text-[2.6rem] md:leading-tight">
+          <h1 className="font-display text-3xl font-bold md:text-[2.6rem] md:leading-tight">
             {recipe.title}
           </h1>
           {recipe.teaser && (
@@ -311,7 +311,7 @@ export function RecipeView({
         {/* Notizen / Tipps */}
         {(recipe.tips || full.publicNotes.length > 0) && (
           <section className="mt-10 bg-cream-deep/60 p-6 md:p-8">
-            <h2 className="font-display text-2xl font-bold tracking-tight">
+            <h2 className="font-display text-2xl font-bold">
               {r.notes}
             </h2>
             {recipe.tips && (
