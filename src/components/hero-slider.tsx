@@ -103,10 +103,13 @@ export function HeroSlider({
       }}
       onKeyDown={onKeyDown}
     >
-      {/* Hauptbühne */}
+      {/* Hauptbühne — bewusst hoch, damit mehr vom Rezeptbild im Hintergrund
+          sichtbar ist. Die Thumbnail-Leiste unten ist an die Unterkante dieser
+          Bühne gekoppelt (bottom-0 + translate-y-1/2) und bleibt daher auf jeder
+          Höhe automatisch am großen Bild ausgerichtet (Mobil wie Desktop). */}
       <div
         id={baseId}
-        className="relative min-h-[22rem] overflow-hidden bg-ink sm:min-h-[28rem] lg:min-h-[32rem]"
+        className="relative min-h-[26rem] overflow-hidden bg-ink sm:min-h-[34rem] lg:min-h-[40rem]"
       >
         {/* Hintergrundbild + Overlay */}
         <img
