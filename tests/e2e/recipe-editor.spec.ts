@@ -42,12 +42,19 @@ test("Kurzbeschreibung: Inhalt ohne input/blur-Events wird beim Absenden gerette
   page,
 }) => {
   await page.goto(editorUrl);
+  // Erst mit dem Editor interagieren (klicken) — das wartet auf Attach/Hydration,
+  // sodass der MutationObserver garantiert aktiv ist, bevor wir Inhalt setzen.
+  await page.locator(editable).first().click();
   // Editor-Inhalt setzen, OHNE input/blur auszulösen — simuliert das iOS/Safari-
   // Verhalten, bei dem der alte Code den ursprünglichen Wert abschickte.
   await page.evaluate((sel) => {
     const ce = document.querySelector(sel);
     if (ce) (ce as HTMLElement).innerHTML = "<p>Ohne Events</p>";
   }, editable);
+  // Deterministisch auf die Spiegelung durch den MutationObserver warten (auf dem
+  // alten, State-gebundenen Code bliebe das Hidden-Feld leer → dieser expect
+  // schlägt fehl = Regression gefangen; kein input/blur wurde gefeuert).
+  await expect(page.locator(teaserHidden)).toHaveValue("Ohne Events");
   await page.getByRole("button", { name: /Speichern/i }).click();
   await page.waitForURL(/meldung=/);
   await page.goto(editorUrl);
