@@ -695,7 +695,7 @@ export function RecipeEditor({
               <textarea
                 aria-label={`${d.notes} ${ni + 1}`}
                 value={note.text}
-                rows={2}
+                rows={6}
                 onChange={(e) =>
                   setNotes((prev) =>
                     prev.map((x, idx) =>
@@ -703,7 +703,9 @@ export function RecipeEditor({
                     ),
                   )
                 }
-                className={inputCls}
+                // Deutlich größeres Notizfeld (6 Zeilen) + vertikal frei
+                // vergrößerbar, damit längere Notizen bequem sichtbar sind.
+                className={`${inputCls} min-h-36 resize-y leading-relaxed`}
               />
               <label className="mt-1 flex shrink-0 items-center gap-1 text-sm">
                 <input
