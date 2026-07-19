@@ -22,7 +22,24 @@ export interface RecipeCardData {
   image: MediaImageLike | null;
 }
 
-export function RecipeCard({ recipe }: { recipe: RecipeCardData }) {
+/**
+ * Standard-`sizes` für die volle 6xl-Breite mit 3-spaltigem Raster (Listen-
+ * seiten /rezepte, /suche): je Kachel ~360 px ab lg, 50vw bei 2 Spalten,
+ * 100vw mobil. Kontexte mit Seitenleiste (Startseite: nur ~256 px je Kachel)
+ * übergeben ein engeres `imageSizes`, damit der Browser nicht unnötig w640
+ * statt w320 lädt (Lighthouse „Bildübermittlung verbessern").
+ */
+const DEFAULT_CARD_SIZES =
+  "(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 360px";
+
+export function RecipeCard({
+  recipe,
+  imageSizes = DEFAULT_CARD_SIZES,
+}: {
+  recipe: RecipeCardData;
+  /** Überschreibt `sizes` je Layout-Kontext (Spaltenbreite). */
+  imageSizes?: string;
+}) {
   return (
     // relative: der über die ganze Kachel gespannte Link (z-0) macht sie
     // klickbar; der Like-Button liegt darüber (z-10) und bleibt eigenständig.
@@ -35,7 +52,7 @@ export function RecipeCard({ recipe }: { recipe: RecipeCardData }) {
       {recipe.image ? (
         <ResponsiveImg
           image={recipe.image}
-          sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 384px"
+          sizes={imageSizes}
           className="aspect-[4/3] w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
         />
       ) : (

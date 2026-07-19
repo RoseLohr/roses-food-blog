@@ -23,7 +23,7 @@ export interface SlideData {
   recipeId: number | null;
   imgSrc: string;
   imgSrcSet: string;
-  /** Kleine Fallback-Quelle für die Thumbnail-Leiste (nie das 1920er Bild). */
+  /** Einzige (kleine) Quelle der Thumbnail-Leiste — w320, ohne srcSet. */
   thumbSrc: string;
   alt: string;
   caption: string;
@@ -211,15 +211,24 @@ export function HeroSlider({
                       active ? "border-white" : "border-white/70"
                     }`}
                   >
-                    {/* Thumbnails werden nur ~150–210 px breit angezeigt. Mit
-                        srcSet + sizes wählt der Browser eine kleine Variante
-                        (statt des 1920er Bilds); thumbSrc ist der kleine
-                        Fallback. width/height halten das 3:2-Raster (kein CLS). */}
+                    {/* Thumbnails sind eine dekorative Navi-Leiste (aria-hidden),
+                        nur ~130–210 px breit. BEWUSST nur die kleinste Variante
+                        (w320, = thumbSrc) OHNE srcSet — ein abgewogener Kompromiss:
+                        mit srcSet lädt der Browser auf High-DPR-Geräten die nächst-
+                        größere Variante (w640) für eine ~150-px-Anzeige (Lighthouse
+                        07/2026: ~370 KiB je Mobil-Aufruf verschenkt).
+                        EHRLICH: bei DPR ≥ 2 liegt w320 damit UNTER der nativen Dichte
+                        (208 CSS-px · 2 = 416 Geräte-px → ~0,77×), das AKTIVE Thumbnail
+                        (ohne Overlay) wird also leicht weicher. Das ist gewollt — ein
+                        größeres Bild ließe sich nicht ausliefern, ohne genau die
+                        Mobil-Übergröße zurückzuholen (High-DPR-Handys brauchen für die
+                        ~150-px-Kachel real ~390 px, also wieder w640). Für eine kleine,
+                        meist abgedunkelte Navi-Kachel ist der Byte-/LCP-Gewinn den
+                        milden Schärfeverlust wert. width/height halten das 3:2-Raster
+                        (kein CLS). */}
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={s.thumbSrc}
-                      srcSet={s.imgSrcSet}
-                      sizes="(min-width: 640px) 13rem, 45vw"
                       width={208}
                       height={139}
                       alt=""

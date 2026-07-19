@@ -29,7 +29,7 @@ test.describe("Startseiten-Hero-Slider (slider-style-2)", () => {
     await expect(hero(page).locator("p").first()).toBeVisible();
   });
 
-  test("Thumbnails laden eine kleine Bildvariante (nie w1280/w1920) [Perf-Regression]", async ({
+  test("Thumbnails laden NUR die kleine Variante (w320, kein srcSet) [Perf-Regression]", async ({
     page,
   }) => {
     await page.goto("/");
@@ -38,14 +38,17 @@ test.describe("Startseiten-Hero-Slider (slider-style-2)", () => {
     expect(n).toBeGreaterThan(0);
     for (let i = 0; i < n; i++) {
       const img = imgs.nth(i);
-      // srcSet + sizes müssen gesetzt sein, sonst lädt der Browser 100vw.
-      await expect(img).toHaveAttribute("sizes", /.+/);
-      await expect(img).toHaveAttribute("srcset", /w\d+\.webp/);
-      // Der tatsächlich gewählte Treffer darf keine Großvariante sein.
+      // Dekorative Mini-Thumbnails: BEWUSST ohne srcSet — sonst wählt der Browser
+      // auf High-DPR-Geräten w640 für eine ~150-px-Anzeige (Lighthouse 07/2026,
+      // ~370 KiB). Die Quelle IST die kleinste Variante (w320).
+      expect(await img.getAttribute("srcset")).toBeNull();
+      await expect(img).toHaveAttribute("src", /w320\.webp/);
       const current = await img.evaluate(
         (el) => (el as HTMLImageElement).currentSrc,
       );
-      expect(current).not.toMatch(/w(1280|1920)\.webp/);
+      // Tatsächlich geladen wird w320 — niemals eine Großvariante.
+      expect(current).toMatch(/w320\.webp/);
+      expect(current).not.toMatch(/w(640|960|1280|1920)\.webp/);
     }
   });
 

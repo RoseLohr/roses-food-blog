@@ -37,9 +37,9 @@ jobs:
         run: node scripts/regime/responsive-images.mjs
       - name: Responsive-Images-Selbsttest (A-36)
         run: node scripts/regime/responsive-images.mjs --selftest
-      - name: Font-Cache-Gate (immutable nur auf ?v-versionierten Font-URLs)
+      - name: Cache-Integritäts-Gate (immutable nur auf ?v-versionierten Font-/Brand-URLs)
         run: node scripts/regime/font-cache.mjs
-      - name: Font-Cache-Selbsttest (A-36)
+      - name: Cache-Integritäts-Selbsttest (A-36, Fonts + Brand)
         run: node scripts/regime/font-cache.mjs --selftest
       - name: Klon-Tripwire (A-07, Schwelle 5,5 %)
         run: npx jscpd --config .jscpd.json --silent
