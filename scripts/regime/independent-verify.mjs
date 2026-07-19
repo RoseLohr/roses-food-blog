@@ -201,7 +201,7 @@ export function modelMatches(modelId, want) {
  * `minOthers` wird gegen NaN/Unfug abgesichert (Default 1). `votes`: Array aus
  * { ok, v?:{refuted,confidence,reason} }.
  */
-export function requireApprovals(votes, models, requiredApprover, minOthers = 1) {
+export function requireApprovals(votes, models, requiredApprover, minOthers = 1, challenge = null) {
   // NaN/negativ/Unfug → 1 (sonst würde `need = NaN` jeden Vergleich fail-open machen).
   const need = Number.isFinite(minOthers) && minOthers >= 1 ? Math.floor(minOthers) : 1;
   const isValid = (x) => !!(x && x.ok && x.v && typeof x.v.refuted === "boolean");
@@ -217,6 +217,14 @@ export function requireApprovals(votes, models, requiredApprover, minOthers = 1)
       return { block: true, reason: `Pflicht-Approver „${requiredApprover}" ohne gültige Stimme (Fehler/unparsbar) → fail-closed` };
     if (x.v.refuted !== false)
       return { block: true, reason: `Pflicht-Approver „${requiredApprover}" stimmt NICHT zu (refuted, confidence=${x.v.confidence ?? "?"}) → Veto, fail-closed` };
+    // Panel-Befund: Sols Zustimmung muss NACHGEWIESEN sein — eigene substantielle
+    // Begründung UND (falls Challenge gesetzt) gültiger Proof-of-Check. Sonst könnte
+    // eine leere/kanned Sol-Zustimmung auf der panelweiten Attestierung der ANDEREN
+    // Stimmen mitschwimmen (Schein-Grün des Pflicht-Approvers).
+    if (!hasSubstantiveReason(x.v))
+      return { block: true, reason: `Pflicht-Approver „${requiredApprover}" ohne substantielle eigene Begründung → Schein-Grün-Verdacht, fail-closed` };
+    if (challenge && !hasValidProof(x.v, challenge))
+      return { block: true, reason: `Pflicht-Approver „${requiredApprover}" ohne gültigen eigenen Proof-of-Check (Challenge-Echo) → fail-closed` };
   }
   // Unabhängige Korroboration: DISTINCT Nicht-Pflicht-Modelle mit Zustimmung.
   const independent = new Set();
@@ -231,6 +239,21 @@ export function requireApprovals(votes, models, requiredApprover, minOthers = 1)
 // Mindestlänge einer „echten" Begründung. Kürzest-Tokens wie „ok"/„1"/„n/a" sind
 // keine nachvollziehbare Analyse und dürfen Grün nicht attestieren.
 const MIN_REASON_LEN = 8;
+
+/** Normalisiert eine Begründung (Whitespace kollabiert, getrimmt, lowercased). */
+export function normReason(r) {
+  return typeof r === "string" ? r.replace(/\s+/g, " ").trim().toLowerCase() : "";
+}
+/** Eine Begründung mit echter Substanz (≥ MIN_REASON_LEN nach Normalisierung). */
+export function hasSubstantiveReason(v) {
+  return normReason(v?.reason).length >= MIN_REASON_LEN;
+}
+/** Gültiger Proof-of-Check: „<challenge>-<tier 1–9999>" (kein 0/Leading-Zero/≥10000). */
+export function hasValidProof(v, challenge) {
+  if (typeof v?.proof !== "string" || !challenge) return false;
+  const pre = challenge + "-";
+  return v.proof.startsWith(pre) && /^[1-9]\d{0,3}$/.test(v.proof.slice(pre.length));
+}
 
 /**
  * Integritäts-Gate gegen SCHEIN-GRÜN (A-01/A-39). Grün darf nur passieren, wenn
@@ -257,7 +280,7 @@ export function attestReasons(votes, panelSize) {
   // sonst täuscht Whitespace-Padding ("a      b") eine Mindestlänge vor, obwohl nur
   // wenige echte Zeichen vorliegen. Derselbe normalisierte Wert dient der
   // Eindeutigkeit, damit whitespace-/case-nur-Varianten nicht als „verschieden" zählen.
-  const norm = (r) => (typeof r === "string" ? r.replace(/\s+/g, " ").trim().toLowerCase() : "");
+  const norm = normReason;
   // Nur GRÜN tragende Stimmen (gültig, geparst, decide()-durchgelassen), Begründung
   // mit echter Substanz nach Normalisierung.
   const green = votes.filter((x) => x.ok && x.v && typeof x.v.refuted === "boolean" && !decide(x.v).block);
@@ -288,15 +311,8 @@ export function attestReasons(votes, panelSize) {
  */
 export function attestProof(votes, challenge, panelSize) {
   const need = Math.floor(panelSize / 2) + 1; // Mehrheit
-  const validProof = (v) => {
-    if (typeof v?.proof !== "string" || !challenge) return false;
-    const pre = challenge + "-";
-    // Tier STRENG 1–9999 (kein 0, kein Leading-Zero, kein ≥10000) — genau wie im
-    // Prompt vorgegeben; eine zu weite Regex ließe malformte Proofs als gültig durch.
-    return v.proof.startsWith(pre) && /^[1-9]\d{0,3}$/.test(v.proof.slice(pre.length));
-  };
   const green = votes.filter((x) => x.ok && x.v && typeof x.v.refuted === "boolean" && !decide(x.v).block);
-  const proven = green.filter((x) => validProof(x.v));
+  const proven = green.filter((x) => hasValidProof(x.v, challenge));
   if (proven.length < need)
     return { block: true, reason: `nur ${proven.length}/${panelSize} Grün-Stimmen mit gültigem Proof-of-Check (Challenge-Echo) (< Mehrheit ${need}) → Verdacht auf hartcodiertes Grün, fail-closed` };
   return { block: false, reason: `${proven.length} Proof-of-Check (Challenge-Echo) bestätigt` };
@@ -386,6 +402,16 @@ if (process.argv.includes("--selftest")) {
   // Panel-Befund: NaN-minOthers darf NICHT fail-open werden (need→1).
   expect(requireApprovals([RF, A2, RF], MDL, "gpt-5.6-sol", NaN).block === true, "minOthers=NaN → need 1; keine unabhängige Zustimmung → block.");
   expect(requireApprovals([A, A2, RF], MDL, "gpt-5.6-sol", NaN).block === false, "minOthers=NaN → need 1; 1 unabhängige Zustimmung (codex) → grün.");
+  // Panel-Befund: Sols eigene Zustimmung muss NACHGEWIESEN sein (Begründung + Proof),
+  // darf nicht auf der panelweiten Attestierung der anderen Stimmen mitschwimmen.
+  const CH2 = "abc123def456";
+  const solEmpty = { ok: true, v: { refuted: false, reason: "", proof: `${CH2}-7` } };
+  const solNoProof = { ok: true, v: { refuted: false, reason: "grund lang genug sol" } };
+  const solGood = { ok: true, v: { refuted: false, reason: "grund lang genug sol", proof: `${CH2}-7` } };
+  expect(requireApprovals([A, solEmpty, A], MDL, "gpt-5.6-sol", 1, CH2).block === true, "Sol ohne substantielle eigene Begründung → block.");
+  expect(requireApprovals([A, solNoProof, A], MDL, "gpt-5.6-sol", 1, CH2).block === true, "Sol ohne gültigen eigenen Proof (Challenge gesetzt) → block.");
+  expect(requireApprovals([A, solGood, A], MDL, "gpt-5.6-sol", 1, CH2).block === false, "Sol mit eigener Begründung + gültigem Proof + Korroboration → grün.");
+  expect(requireApprovals([A, solNoProof, A], MDL, "gpt-5.6-sol", 1).block === false, "ohne Challenge wird kein Proof verlangt; substantielle Begründung reicht → grün.");
   // attestReasons() (Schein-Grün-Gate: echte, eindeutige Begründungen erzwingen)
   const R = (reason, refuted = false) => ({ ok: true, v: { refuted, reason } });
   const g1 = "grund eins aaaa", g2 = "grund zwei bbbb", g3 = "grund drei cccc";
@@ -614,7 +640,7 @@ votes.forEach((x, i) => {
 // PFLICHT-APPROVER-GATE: Sol MUSS zustimmen (Veto bei Refutat/Fehlen/Fehler) und
 // mindestens MIN_OTHERS weitere Stimmen müssen zustimmen. Ersetzt die frühere
 // bloße Mehrheits-Aggregation und ist strenger (fail-closed).
-const verdict = requireApprovals(votes, MODELS, REQUIRED_APPROVER, MIN_OTHERS);
+const verdict = requireApprovals(votes, MODELS, REQUIRED_APPROVER, MIN_OTHERS, CHALLENGE);
 if (verdict.block) {
   console.error(`⛔ Pflicht-Approver-Gate blockiert die Änderung: ${verdict.reason}`);
   process.exit(1);

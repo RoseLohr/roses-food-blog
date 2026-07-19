@@ -42,6 +42,20 @@ export function collectRefs(text) {
   return map;
 }
 
+/**
+ * UNVERSIONIERTE Font-Referenzen: „…/<name>.woff2" OHNE folgendes „?v=". Solche
+ * URLs erhielten den immutable-Jahrescache trotzdem (der Header matcht den Pfad,
+ * die Query ist egal) und würden bei einem Font-Tausch stale — deshalb verboten
+ * (Panel-Befund gpt-5.6-sol: eine zusätzliche unversionierte url() genügte).
+ */
+export function collectUnversioned(text) {
+  const out = [];
+  const re = /\/fonts\/([a-z0-9-]+)\.woff2(?!\?v=)/g;
+  let m;
+  while ((m = re.exec(text)) !== null) out.push(m[1]);
+  return out;
+}
+
 function check() {
   const problems = [];
   const cfg = fs.readFileSync(NEXT_CONFIG, "utf8");
@@ -60,8 +74,10 @@ function check() {
     hashes.set(name, fontHash(fs.readFileSync(path.join(FONT_DIR, f))));
   }
 
-  const globalsRefs = collectRefs(fs.readFileSync(GLOBALS, "utf8"));
-  const layoutRefs = collectRefs(fs.readFileSync(LAYOUT, "utf8"));
+  const globalsText = fs.readFileSync(GLOBALS, "utf8");
+  const layoutText = fs.readFileSync(LAYOUT, "utf8");
+  const globalsRefs = collectRefs(globalsText);
+  const layoutRefs = collectRefs(layoutText);
 
   for (const [name, hash] of hashes) {
     for (const [label, refs] of [[GLOBALS, globalsRefs], [LAYOUT, layoutRefs]]) {
@@ -71,6 +87,13 @@ function check() {
       else if (ref !== hash)
         problems.push(`${label}: Font „${name}" ?v=${ref} ≠ aktueller Datei-Hash ${hash} — Datei getauscht ohne Version-Bump (stale-Gefahr).`);
     }
+  }
+
+  // KEINE unversionierten Zusatz-Referenzen: auch eine einzelne url("/fonts/x.woff2")
+  // ohne ?v bekäme den immutable-Cache und würde beim Tausch stale.
+  for (const [label, text] of [[GLOBALS, globalsText], [LAYOUT, layoutText]]) {
+    for (const name of collectUnversioned(text))
+      problems.push(`${label}: unversionierte Font-URL „/fonts/${name}.woff2" (ohne ?v) — mit immutable-Cache stale-Gefahr. „?v=<Hash>" anhängen.`);
   }
   return problems;
 }
@@ -85,8 +108,13 @@ if (isMain) {
     const ok =
       typeof h === "string" && h.length === HASH_LEN &&
       refs.get("x") === h && refs.get("y") === "deadbeef00" &&
-      collectRefs('url("/fonts/z.woff2")').size === 0; // ohne ?v → keine Referenz
-    console.log(`[font-cache] Selbsttest: ${ok ? "Hash + Referenz-Parsing korrekt ✓" : "FEHLER"}`);
+      collectRefs('url("/fonts/z.woff2")').size === 0 && // ohne ?v → keine versionierte Referenz
+      // Panel-Befund: unversionierte Zusatz-Referenzen werden erkannt …
+      collectUnversioned('url("/fonts/z.woff2")').length === 1 &&
+      collectUnversioned('url("/fonts/z.woff2") und url("/fonts/q.woff2")').length === 2 &&
+      // … und eine versionierte URL gilt NICHT als unversioniert.
+      collectUnversioned(`url("/fonts/x.woff2?v=${h}")`).length === 0;
+    console.log(`[font-cache] Selbsttest: ${ok ? "Hash + versioniert/unversioniert-Parsing korrekt ✓" : "FEHLER"}`);
     process.exit(ok ? 0 : 1);
   }
 
