@@ -60,12 +60,6 @@ export function RecipeCard({ recipe }: { recipe: RecipeCardData }) {
             {recipe.teaser}
           </p>
         )}
-        {/* „Weiterlesen“ als sichtbarer Hinweis (die ganze Kachel ist bereits
-            verlinkt, daher bewusst KEIN zweiter Link → kein Nesting/A11y-Konflikt). */}
-        <span className="mt-2 inline-flex items-center gap-1 text-sm font-semibold text-leaf">
-          {dict.recipe.readMore}
-          <span aria-hidden>→</span>
-        </span>
         <p className="mt-3 flex items-center gap-4 text-xs text-ink-soft">
           <span className="flex items-center gap-1.5">
             <IconClock className="h-3.5 w-3.5" />

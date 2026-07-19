@@ -276,7 +276,6 @@ export const de = {
     decreaseServings: "Portionen verringern",
     publishedOn: "Veröffentlicht am",
     backToOverview: "Alle Rezepte",
-    readMore: "Weiterlesen",
     metaServings: "Portionen",
     metaPrep: "Vorbereitung",
     metaCook: "Kochzeit",
