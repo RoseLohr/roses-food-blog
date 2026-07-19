@@ -140,7 +140,8 @@ function DishItem({
                 .join(" · ")}
             </p>
           )}
-          <h4 className="font-display font-bold">{dish.name}</h4>
+          {/* Gleiche Größe wie der Titel der Rezept-Kacheln darunter (text-lg). */}
+          <h4 className="font-display text-lg font-bold">{dish.name}</h4>
           {dish.description && (
             <div
               className="prose-content mt-1 text-sm text-ink-soft"
@@ -330,7 +331,7 @@ export async function TravelView({
 
       <div className="p-6 md:p-10">
         <header>
-          <h1 className="font-display text-3xl font-bold tracking-tight md:text-[2.6rem] md:leading-tight">
+          <h1 className="font-display text-3xl font-bold md:text-[2.6rem] md:leading-tight">
             {post.title}
           </h1>
           {post.teaser && (
@@ -449,7 +450,7 @@ export async function TravelView({
           <>
             <hr className="my-8 border-ink/10" />
             <section id="restaurants">
-              <h2 className="font-display text-2xl font-bold tracking-tight md:text-3xl">
+              <h2 className="font-display text-2xl font-bold md:text-3xl">
                 {dict.travelList.restaurantsTitle}
               </h2>
               <div className="mt-6 flex flex-col gap-8">
