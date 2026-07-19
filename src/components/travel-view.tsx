@@ -140,7 +140,8 @@ function DishItem({
                 .join(" · ")}
             </p>
           )}
-          <h4 className="font-display font-bold">{dish.name}</h4>
+          {/* Gleiche Größe wie der Titel der Rezept-Kacheln darunter (text-lg). */}
+          <h4 className="font-display text-lg font-bold">{dish.name}</h4>
           {dish.description && (
             <div
               className="prose-content mt-1 text-sm text-ink-soft"
