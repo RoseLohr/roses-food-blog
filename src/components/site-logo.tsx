@@ -37,6 +37,9 @@ export function SiteLogo({
           className="rgc-logo__img"
           src={brand.logo.src}
           srcSet={brand.logo.srcSet}
+          // Deckt sich mit der CSS-Deckelung (max-width: min(60vw, 320px)),
+          // damit der Browser mit srcSet nicht die 100vw-Variante lädt.
+          sizes="(max-width: 640px) 60vw, 320px"
           width={brand.logo.width}
           height={brand.logo.height}
           alt={brand.logo.alt}

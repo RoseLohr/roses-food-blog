@@ -23,6 +23,8 @@ export interface SlideData {
   recipeId: number | null;
   imgSrc: string;
   imgSrcSet: string;
+  /** Kleine Fallback-Quelle für die Thumbnail-Leiste (nie das 1920er Bild). */
+  thumbSrc: string;
   alt: string;
   caption: string;
   href: string | null;
@@ -209,9 +211,17 @@ export function HeroSlider({
                       active ? "border-white" : "border-white/70"
                     }`}
                   >
+                    {/* Thumbnails werden nur ~150–210 px breit angezeigt. Mit
+                        srcSet + sizes wählt der Browser eine kleine Variante
+                        (statt des 1920er Bilds); thumbSrc ist der kleine
+                        Fallback. width/height halten das 3:2-Raster (kein CLS). */}
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
-                      src={s.imgSrc}
+                      src={s.thumbSrc}
+                      srcSet={s.imgSrcSet}
+                      sizes="(min-width: 640px) 13rem, 45vw"
+                      width={208}
+                      height={139}
                       alt=""
                       aria-hidden
                       loading="lazy"

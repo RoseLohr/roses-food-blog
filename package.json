@@ -21,8 +21,17 @@
     "typecheck": "tsc --noEmit",
     "mutation": "stryker run",
     "test:a11y": "playwright test tests/e2e/a11y.spec.ts",
-    "clones": "jscpd --config .jscpd.json"
+    "clones": "jscpd --config .jscpd.json",
+    "gate:images": "node scripts/regime/responsive-images.mjs"
   },
+  "//browserslist": "Moderne Baseline (~2023): entfernt Polyfills/Transpile für Baseline-Features (Array.at/flat/flatMap, Object.fromEntries/hasOwn, String.trimStart/End) — siehe Lighthouse „Veraltetes JavaScript\". Ein Zurückdrehen auf Alt-Browser bläht das JS wieder auf; der Gate-Test tests/unit/browserslist.test.ts wacht darüber.",
+  "browserslist": [
+    "chrome >= 111",
+    "edge >= 111",
+    "firefox >= 111",
+    "safari >= 16.4",
+    "ios_saf >= 16.4"
+  ],
   "dependencies": {
     "@anthropic-ai/sdk": "^0.112.1",
     "@types/leaflet.markercluster": "^1.5.6",
