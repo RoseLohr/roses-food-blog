@@ -22,6 +22,15 @@ import { PageTracker } from "@/components/page-tracker";
 
 const dict = t();
 
+// Startseiten-Kacheln stehen ab lg im 3-spaltigen Raster INNERHALB der linken
+// Hauptspalte (max-w-6xl minus 17rem Seitenleiste minus gap) → je Kachel nur
+// ~256 px. Ein enger `sizes`-Wert lässt den Browser dort w320 statt w640 laden
+// (Lighthouse „Bildübermittlung verbessern"); darunter 2-spaltig (50vw) bzw.
+// einspaltig (100vw). Listenseiten ohne Seitenleiste nutzen den breiteren
+// Default der Kachel (~360 px).
+const HOME_CARD_SIZES =
+  "(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 256px";
+
 export const dynamic = "force-dynamic";
 
 async function loadHomepage() {
@@ -90,8 +99,9 @@ async function loadHomepage() {
       recipeId: linked,
       imgSrc: imageUrl(s.img.fileKey, widths.at(-1) ?? 1280),
       imgSrcSet: srcset(s.img.fileKey, widths),
-      // Kleinste Variante als Fallback-Quelle für die Mini-Thumbnails: sie werden
-      // nur ~150–210 px breit angezeigt, dürfen also niemals das große Bild laden.
+      // Kleinste Variante (w320) als EINZIGE Quelle der Mini-Thumbnails: sie werden
+      // nur ~130–210 px breit angezeigt und tragen bewusst kein srcSet (sonst lädt
+      // High-DPR w640 statt w320 — Lighthouse „Bildübermittlung verbessern").
       thumbSrc: imageUrl(s.img.fileKey, widths[0] ?? 320),
       alt: s.img.altText,
       caption: s.caption,
@@ -396,7 +406,7 @@ export default async function HomePage() {
               </h2>
               <div className="mt-4 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
                 {popular.map((r) => (
-                  <RecipeCard key={r.slug} recipe={r} />
+                  <RecipeCard key={r.slug} recipe={r} imageSizes={HOME_CARD_SIZES} />
                 ))}
               </div>
             </section>
@@ -418,7 +428,7 @@ export default async function HomePage() {
               </h2>
               <div className="mt-4 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
                 {latest.map((r) => (
-                  <RecipeCard key={r.slug} recipe={r} />
+                  <RecipeCard key={r.slug} recipe={r} imageSizes={HOME_CARD_SIZES} />
                 ))}
               </div>
               <p className="mt-4">

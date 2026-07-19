@@ -17,19 +17,84 @@ describe("Bildübermittlung: Slider-Thumbnails laden keine Großbilder", () => {
   const slider = read("src/components/hero-slider.tsx");
   const page = read("src/app/(public)/page.tsx");
 
-  it("Thumbnail-<img> nutzt srcSet + sizes + kleine Fallback-Quelle (thumbSrc)", () => {
+  it("Thumbnail-<img> lädt NUR die kleine Quelle (thumbSrc) — ohne srcSet/sizes", () => {
     // Aus allen <img>-Blöcken den Thumbnail-Block (nutzt thumbSrc) herausgreifen.
     const tags = slider.match(/<img\b[\s\S]*?\/>/g) ?? [];
     const tag = tags.find((t) => t.includes("s.thumbSrc")) ?? "";
-    expect(tag).toContain("srcSet={s.imgSrcSet}");
-    expect(tag).toContain("sizes=");
     expect(tag).toContain("src={s.thumbSrc}");
-    // Regression-Riegel: NICHT wieder das große imgSrc als Thumbnail-Quelle.
-    expect(tag).not.toContain("src={s.imgSrc}");
+    // BEWUSST kein srcSet/sizes: sonst wählt High-DPR w640 statt w320.
+    expect(tag).not.toContain("srcSet");
+    expect(tag).not.toContain("sizes=");
+    // Regression-Riegel: weder imgSrc noch imgSrcSet als Thumbnail-Quelle.
+    expect(tag).not.toContain("s.imgSrc");
   });
 
   it("thumbSrc wird aus der KLEINSTEN Variante gebaut (widths[0])", () => {
     expect(page).toMatch(/thumbSrc:\s*imageUrl\(s\.img\.fileKey,\s*widths\[0\]/);
+  });
+});
+
+describe("Bildübermittlung: Rezept-Kacheln fordern kontextgerechte Größen an", () => {
+  const card = read("src/components/recipe-card.tsx");
+  const page = read("src/app/(public)/page.tsx");
+
+  it("RecipeCard reicht ein überschreibbares sizes durch (Default für volle Breite)", () => {
+    // sizes ist NICHT hartcodiert, sondern kommt aus imageSizes (Kontext-abhängig).
+    expect(card).toMatch(/imageSizes\s*=\s*DEFAULT_CARD_SIZES/);
+    expect(card).toContain("sizes={imageSizes}");
+    // Default nennt eine feste Desktop-Obergrenze (kein „100vw" ab Desktop). Der
+    // Anker auf das LETZTE Token (…, <NNN>px") gibt dem Riegel Zähne: ein Revert des
+    // Desktop-Werts auf „…, 100vw" schlägt fehl (die Breakpoints 640px/1024px im
+    // String dürfen nicht fälschlich als Obergrenze durchgehen).
+    expect(card).toMatch(/DEFAULT_CARD_SIZES\s*=\s*["'][^"']*,\s*\d{3}px["']/);
+  });
+
+  it("Startseite gibt den Kacheln die engere Spaltenbreite (~256px, → w320 statt w640)", () => {
+    expect(page).toMatch(/HOME_CARD_SIZES\s*=\s*["'][^"']*256px/);
+    // Beide Kachel-Raster (popular + latest) nutzen den engen Wert.
+    const uses = page.match(/imageSizes=\{HOME_CARD_SIZES\}/g) ?? [];
+    expect(uses.length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe("Bildübermittlung: WebP-Qualität bleibt im sinnvollen Band", () => {
+  const media = read("src/lib/media.ts");
+
+  it("WEBP_QUALITY ist zentral definiert und liegt in [70,82]", () => {
+    const m = media.match(/WEBP_QUALITY\s*=\s*(\d+)/);
+    expect(m).not.toBeNull();
+    const q = Number(m![1]);
+    expect(q).toBeGreaterThanOrEqual(70); // nicht aggressiv wegkomprimieren
+    expect(q).toBeLessThanOrEqual(82); // nicht versehentlich aufblähen
+  });
+
+  it("beide Backends (sharp + vips) nutzen die Konstante, keinen Literal-Wert", () => {
+    expect(media).toContain("quality: WEBP_QUALITY");
+    expect(media).toContain("Q=${WEBP_QUALITY}");
+    // Kein hartcodiertes quality:80 / Q=80 mehr.
+    expect(media).not.toMatch(/quality:\s*\d/);
+    expect(media).not.toMatch(/Q=\d/);
+  });
+});
+
+describe("Cache: Marken-SVGs sind versioniert + langzeit-immutable (Panel-Disziplin)", () => {
+  it("next.config cached /brand unveränderlich für ein Jahr", () => {
+    const cfg = read("next.config.ts");
+    expect(cfg).toMatch(/source:\s*["'`]\/brand\/:file\*/);
+    // /brand UND /fonts tragen je einen immutable-Jahrescache.
+    expect((cfg.match(/max-age=31536000,\s*immutable/g) ?? []).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("Brand-SVG-URLs tragen ?v=<Inhalts-Hash> == Datei (immutable ist sicher)", () => {
+    const dir = path.join(root, "public/brand");
+    const refs = collectRefs(read("src/components/site-logo.tsx"), "brand", "svg");
+    const svgs = fs.readdirSync(dir).filter((f) => f.endsWith(".svg"));
+    expect(svgs.length).toBeGreaterThan(0);
+    for (const file of svgs) {
+      const name = file.replace(/\.svg$/, "");
+      const h = fontHash(fs.readFileSync(path.join(dir, file)));
+      expect(refs.get(name)).toBe(h);
+    }
   });
 });
 

@@ -68,6 +68,20 @@ const nextConfig: NextConfig = {
           },
         ],
       },
+      {
+        // Marken-SVGs (/public/brand) liefert Next.js sonst nur mit kurzem Cache
+        // aus (Lighthouse: „Effiziente Cache-Verweildauer", 4 h). immutable + 1
+        // Jahr ist NUR sicher, weil die URLs per „?v=<Inhalts-Hash>" versioniert
+        // sind (site-logo.tsx): ein Icon-Tausch erzeugt eine neue URL → kein
+        // Stale bei Bestandsclients. Erzwungen durch scripts/regime/font-cache.mjs.
+        source: "/brand/:file*",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=31536000, immutable",
+          },
+        ],
+      },
     ];
   },
 };

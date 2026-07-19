@@ -121,6 +121,15 @@
       "control_cmd": "node scripts/regime/font-cache.mjs --selftest",
       "beispiel": "Font-Datei unter /public/fonts wird getauscht, aber der ?v-Hash in globals.css/layout.tsx nicht gebumpt → Bestandsclients erhalten bis zu 1 Jahr die alte Datei",
       "hinweis": "font-cache.mjs berechnet den Inhalts-Hash jeder woff2 neu und verlangt, dass die in globals.css UND layout.tsx referenzierte ?v-Version exakt passt (plus immutable-Header in next.config). Ein Tausch ohne Version-Bump bricht CI. Der Selbsttest uebt die Vergleichslogik; inject.mjs --strict friert eine Regression ein."
+    },
+    {
+      "id": "S15-brand-cache-stale-immutable",
+      "klasse": "Stale-Brand-Risiko: immutable-Jahrescache auf nicht versionierter /brand-SVG-URL (Lighthouse 07/2026: effiziente Cache-Verweildauer)",
+      "aktiv": true,
+      "kontrolle": "font-cache.mjs Integritaets-Gate, Asset-Klasse Brand-SVG (?v == Inhalts-Hash, sonst kein immutable)",
+      "control_cmd": "node scripts/regime/font-cache.mjs --selftest",
+      "beispiel": "compass-icon.svg unter /public/brand wird getauscht, aber der ?v-Hash in site-logo.tsx nicht gebumpt → Bestandsclients erhalten bis zu 1 Jahr das alte Icon",
+      "hinweis": "Dasselbe Gate deckt zwei Asset-Klassen mit identischer Invariante ab (Fonts + Brand-SVGs). Fuer /brand berechnet es den Inhalts-Hash jeder SVG neu und verlangt, dass die in site-logo.tsx referenzierte ?v-Version exakt passt (plus immutable-Header /brand in next.config). Ein Tausch ohne Version-Bump bricht CI. Der Selbsttest uebt die parametrisierte Vergleichslogik auch fuer die Brand-Klasse; inject.mjs --strict friert eine Regression ein."
     }
   ]
 }

@@ -48,7 +48,16 @@ export function SiteLogo({
         <>
           <img
             className="rgc-logo__mark"
-            src={light ? "/brand/compass-icon-light.svg" : "/brand/compass-icon.svg"}
+            // ?v=<Inhalts-Hash>: die /brand-SVGs tragen (wie die Fonts) einen
+            // immutable-Jahrescache (next.config). Der Hash macht das sicher —
+            // ein Icon-Tausch erzeugt eine neue URL, kein Stale bei Bestands-
+            // clients. Erzwungen durch scripts/regime/font-cache.mjs (Hash ==
+            // Datei-Inhalt); bei einem Tausch ohne Bump schlägt CI fehl.
+            src={
+              light
+                ? "/brand/compass-icon-light.svg?v=6f11821bfc"
+                : "/brand/compass-icon.svg?v=8bc0109dd4"
+            }
             alt=""
             aria-hidden
           />

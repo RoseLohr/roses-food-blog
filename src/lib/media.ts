@@ -25,6 +25,17 @@ export const VARIANT_WIDTHS = [320, 640, 960, 1280, 1920] as const;
 export const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
 export const ALLOWED_MIME = ["image/jpeg", "image/png", "image/webp"];
 
+/**
+ * WebP-Qualität für ALLE erzeugten Varianten (beide Backends). 76 ist für
+ * Foto-Inhalte visuell praktisch nicht von 80 zu unterscheiden, spart aber
+ * ~10 % Bytes (Lighthouse „Bildübermittlung verbessern → höhere Kompression").
+ * Der Guardrail-Test tests/perf-guardrails.test.ts hält den Wert im sinnvollen
+ * Band [70,82]: kein versehentliches Hochdrehen (aufgeblähte Bilder), aber auch
+ * kein aggressives Wegkomprimieren der Produkt-Fotos. Betrifft nur NEUE Uploads;
+ * bereits abgelegte Varianten bleiben unverändert.
+ */
+export const WEBP_QUALITY = 76;
+
 export function uploadsDir(): string {
   return path.join(process.env.DATA_DIR ?? "./data", "uploads");
 }
@@ -146,7 +157,7 @@ const sharpBackend: ImageBackend = {
     await sharp(buffer)
       .rotate() // EXIF-Orientierung anwenden, bevor Metadaten wegfallen
       .resize({ width: targetWidth, withoutEnlargement: true })
-      .webp({ quality: 80 })
+      .webp({ quality: WEBP_QUALITY })
       .toFile(outFile);
   },
 };
@@ -180,7 +191,7 @@ const vipsBackend: ImageBackend = {
       "-s",
       `${targetWidth}x100000`,
       "-o",
-      `${outFile}[Q=80,strip]`,
+      `${outFile}[Q=${WEBP_QUALITY},strip]`,
     ]);
   },
 };
