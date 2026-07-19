@@ -23,10 +23,13 @@
  * `data-sizes` und Kommentare zählen nicht, und der `src`-Wert wird nur als Literal
  * gewertet, wenn er statisch eine Zeichenkette ist.
  *
- * SPREAD (`{...props}`): Trägt ein `<img>` einen Spread, sind seine Attribute
- * statisch nicht vollständig bekannt — solche Tags werden ÜBERSPRUNGEN und die
- * Zahl sichtbar geloggt (kein stilles Durchwinken). Die Laufzeit-/Quelltext-
- * Guardrails (slider.spec.ts, perf-guardrails.test.ts) decken den dynamischen Fall.
+ * SPREAD (`{...props}`): Trägt ein `<img>` einen Spread, könnten `srcSet`/`sizes`/
+ * `src` von dort kommen — statisch nicht auflösbar. FAIL-CLOSED (auf Panel-Befund
+ * gpt-5.6-sol): ein Spread wird NICHT vertraut, `sizes` bzw. `srcSet` bereitzu-
+ * stellen. Ein Spread-`<img>` muss `sizes` EXPLIZIT setzen (sonst R1), und ein
+ * großes literales `src` ohne EXPLIZITES `srcSet` bleibt R2. So kann ein Spread
+ * einen bekannten Verstoß nicht mehr verdecken. (Im aktuellen Code nutzt kein
+ * `<img>` einen Spread — die Regel härtet nur den künftigen Fall ab.)
  *
  * REICHWEITE (ehrlich): Das Gate prüft LITERALE im `src`. Eine dynamische Quelle
  * (`src={bigVar}`) ist statisch nicht auflösbar — dafür greifen der Laufzeit-
@@ -71,10 +74,14 @@ function checkOpeningElement(opening, sf) {
     else if (name === "sizes") hasSizes = true;
     else if (name === "src") srcLiteral = literalValue(p.initializer, sf);
   }
-  if (hasSpread) return { reasons: [], skipped: true };
   const reasons = [];
-  if (hasSrcset && !hasSizes)
-    reasons.push("srcSet ohne sizes → Browser lädt 100vw-Variante (R1)");
+  // R1: srcSet ODER ein (nicht vertrauenswürdiger) Spread ohne EXPLIZITES sizes →
+  //     der Browser könnte 100vw laden. Fail-closed: sizes muss explizit sein.
+  if ((hasSrcset || hasSpread) && !hasSizes)
+    reasons.push(hasSpread && !hasSrcset
+      ? "Spread ohne explizites sizes → srcSet aus Spread könnte 100vw laden (R1)"
+      : "srcSet ohne sizes → Browser lädt 100vw-Variante (R1)");
+  // R2: großes literales src ohne EXPLIZITES srcSet (ein Spread zählt NICHT als srcSet).
   if (!hasSrcset && srcLiteral && LARGE_LITERAL.test(srcLiteral))
     reasons.push("große Bildvariante im src-Wert ohne srcSet (R2)");
   return { reasons, skipped: false };
@@ -109,13 +116,11 @@ function scan() {
     .split("\n")
     .filter((f) => /\.(tsx|jsx)$/.test(f));
   let violations = 0;
-  let skipped = 0;
   for (const file of files) {
     const text = fs.readFileSync(file, "utf8");
     const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
     for (const opening of collectImgOpenings(sf)) {
-      const { reasons, skipped: sk } = checkOpeningElement(opening, sf);
-      if (sk) skipped++;
+      const { reasons } = checkOpeningElement(opening, sf);
       for (const reason of reasons) {
         const { line } = sf.getLineAndCharacterOfPosition(opening.getStart(sf));
         console.error(`❌ ${file}:${line + 1}: ${reason}`);
@@ -123,7 +128,7 @@ function scan() {
       }
     }
   }
-  return { files: files.length, violations, skipped };
+  return { files: files.length, violations };
 }
 
 // CLI-Logik nur bei Direktaufruf — nicht, wenn checkImgTag aus einem Test
@@ -160,9 +165,13 @@ if (isMain) {
         "w1920.webp nur in alt → kein Fehlalarm"],
       [good('<img data-note="w1280.webp" src="/x/w320.webp" />'),
         "w1280.webp nur in data-* → kein Fehlalarm"],
-      // Spread: undecidbar → übersprungen (kein Fehlalarm, kein harter Block).
-      [good('<img {...props} srcSet="a 1w" src="/uploads/x/w1920.webp" />'),
-        "Spread → übersprungen (kein Fehlalarm)"],
+      // Panel-Befund: ein Spread darf einen Verstoß NICHT verdecken (fail-closed).
+      [bad('<img {...props} srcSet="a 1w" src="/uploads/x/w1920.webp" />'),
+        "Spread + srcSet ohne explizites sizes → R1 (Spread nicht vertraut)"],
+      [bad('<img {...props} src="/uploads/x/w1920.webp" />'),
+        "Spread ohne explizites sizes → R1 (srcSet könnte aus Spread kommen)"],
+      [good('<img {...props} srcSet="a 1w" sizes="10vw" src="/uploads/x/w1920.webp" />'),
+        "Spread MIT explizitem srcSet+sizes → ok"],
       // Dynamische Quelle: kein Literal → kein R2.
       [good('<img src={s.thumbSrc} srcSet={s.imgSrcSet} sizes="10vw" />'),
         "dynamische responsive Quelle → ok"],
@@ -181,11 +190,10 @@ if (isMain) {
     process.exit(ok ? 0 : 1);
   }
 
-  const { files, violations, skipped } = scan();
+  const { files, violations } = scan();
   if (violations) {
     console.error(`\n⛔ ${violations} Responsive-Images-Verstoß/Verstöße. Build gestoppt.`);
     process.exit(1);
   }
-  const skipNote = skipped ? ` (${skipped} <img> mit Spread übersprungen — statisch nicht auflösbar)` : "";
-  console.log(`[responsive-images] ${files} JSX-Dateien geprüft: srcSet⇒sizes, keine überdimensionierten Bilder. Grün.${skipNote}`);
+  console.log(`[responsive-images] ${files} JSX-Dateien geprüft: srcSet⇒sizes, keine überdimensionierten Bilder. Grün.`);
 }

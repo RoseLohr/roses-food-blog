@@ -142,14 +142,20 @@ async function resolvePanelModels(panelSize) {
 
 // Panel-Größe: im Diversitäts-Modus = Anzahl der Panelisten-Modelle; bei Einzel-Pin
 // (VERIFIER_MODEL) über VERIFIER_PANEL steuerbar.
+// Einzel-Pin-Stimmenzahl NaN-sicher + gedeckelt (kein Array.from({length:NaN})=[]
+// → Dauerblock, und kein Runaway bei „1e9"). Diversitäts-Modus: Modellanzahl.
+const _panelEnv = Number(process.env.VERIFIER_PANEL);
 const PANEL = process.env.VERIFIER_MODEL
-  ? Math.max(1, Number(process.env.VERIFIER_PANEL || 3))
+  ? (Number.isFinite(_panelEnv) && _panelEnv >= 1 ? Math.min(64, Math.floor(_panelEnv)) : 3)
   : Math.max(1, PANEL_MODELS_RAW.length);
 
 // Pflicht-Approver: dieses Modell (Präfix) MUSS zustimmen (Veto bei Refutat/
 // Fehlen), plus mindestens MIN_OTHERS weitere Zustimmungen. Angeordnet 2026-07-19.
 const REQUIRED_APPROVER = (process.env.VERIFIER_REQUIRED_APPROVER || "gpt-5.6-sol").trim();
-const MIN_OTHERS = Math.max(1, Number(process.env.VERIFIER_MIN_OTHER_APPROVERS || 1));
+// NaN/negativ/Unfug (z. B. VERIFIER_MIN_OTHER_APPROVERS="x") → 1. Ohne diese
+// Absicherung würde ein NaN in requireApprovals jeden Vergleich fail-open machen.
+const _minOthersEnv = Number(process.env.VERIFIER_MIN_OTHER_APPROVERS);
+const MIN_OTHERS = Number.isFinite(_minOthersEnv) && _minOthersEnv >= 1 ? Math.floor(_minOthersEnv) : 1;
 
 /**
  * Reine Entscheidungsfunktion PRO Stimme. Fail-CLOSED: eine Antwort ohne
@@ -186,22 +192,24 @@ export function modelMatches(modelId, want) {
  *      zustimmt (refuted === false). Ein Refutat JEDER Konfidenz — auch „low" —
  *      ist ein Sol-Veto und blockt (Sol soll wirklich ZUSTIMMEN, nicht bloß
  *      „nicht hart widerlegen"), UND
- *   3) insgesamt mindestens `1 + minOthers` Stimmen ausdrücklich zustimmen
- *      (refuted === false) — also neben dem Pflicht-Approver noch `minOthers`
- *      weitere Zustimmungen (Korroboration). Das zählt Zustimmungen statt
- *      „Nicht-Pflicht-Slots" und funktioniert daher auch im Einzel-Pin-Modus
- *      (VERIFIER_MODEL), wo alle Slots dasselbe Modell tragen.
+ *   3) mindestens `minOthers` UNABHÄNGIGE Modelle zustimmen (refuted === false):
+ *      DISTINCT Modell-IDs, die NICHT der Pflicht-Approver sind. Mehrfachstimmen
+ *      DESSELBEN Modells (insb. weitere Pflicht-Approver-Stimmen im Einzel-Pin-
+ *      Modus VERIFIER_MODEL=<Sol>) zählen NICHT als Korroboration — sonst genügte
+ *      Sol dreimal ohne unabhängige Zweitmeinung (Panel-Befund gpt-5.6-sol).
  * Jede Verletzung ist fail-CLOSED (block). `votes[i]` gehört zu `models[i]`.
- * `votes`: Array aus { ok, v?:{refuted,confidence,reason} }.
+ * `minOthers` wird gegen NaN/Unfug abgesichert (Default 1). `votes`: Array aus
+ * { ok, v?:{refuted,confidence,reason} }.
  */
 export function requireApprovals(votes, models, requiredApprover, minOthers = 1) {
+  // NaN/negativ/Unfug → 1 (sonst würde `need = NaN` jeden Vergleich fail-open machen).
+  const need = Number.isFinite(minOthers) && minOthers >= 1 ? Math.floor(minOthers) : 1;
   const isValid = (x) => !!(x && x.ok && x.v && typeof x.v.refuted === "boolean");
-  const approves = (x) => isValid(x) && x.v.refuted === false; // ausdrückliche Zustimmung
-  const reqIdx = [];
+  const reqIdx = new Set();
   for (let i = 0; i < votes.length; i++) {
-    if (modelMatches(models[i], requiredApprover)) reqIdx.push(i);
+    if (modelMatches(models[i], requiredApprover)) reqIdx.add(i);
   }
-  if (reqIdx.length === 0)
+  if (reqIdx.size === 0)
     return { block: true, reason: `Pflicht-Approver „${requiredApprover}" nicht im Panel aufgelöst (nicht freigeschaltet oder durch Fallback ersetzt) → fail-closed` };
   for (const i of reqIdx) {
     const x = votes[i];
@@ -210,11 +218,14 @@ export function requireApprovals(votes, models, requiredApprover, minOthers = 1)
     if (x.v.refuted !== false)
       return { block: true, reason: `Pflicht-Approver „${requiredApprover}" stimmt NICHT zu (refuted, confidence=${x.v.confidence ?? "?"}) → Veto, fail-closed` };
   }
-  const approvals = votes.filter(approves).length;
-  const need = 1 + minOthers;
-  if (approvals < need)
-    return { block: true, reason: `nur ${approvals} ausdrückliche Zustimmung(en) (< ${need}: Pflicht-Approver + ${minOthers} weitere) → fail-closed` };
-  return { block: false, reason: `„${requiredApprover}" stimmt zu + ${approvals - 1} weitere Zustimmung(en) (Ziel ${minOthers})` };
+  // Unabhängige Korroboration: DISTINCT Nicht-Pflicht-Modelle mit Zustimmung.
+  const independent = new Set();
+  votes.forEach((x, i) => {
+    if (!reqIdx.has(i) && isValid(x) && x.v.refuted === false && models[i]) independent.add(models[i]);
+  });
+  if (independent.size < need)
+    return { block: true, reason: `nur ${independent.size} unabhängige(s) zustimmende(s) Modell(e) neben „${requiredApprover}" (< ${need}) → keine unabhängige Korroboration, fail-closed` };
+  return { block: false, reason: `„${requiredApprover}" stimmt zu + ${independent.size} unabhängige Modell-Zustimmung(en) (≥ ${need})` };
 }
 
 // Mindestlänge einer „echten" Begründung. Kürzest-Tokens wie „ok"/„1"/„n/a" sind
@@ -356,7 +367,7 @@ if (process.argv.includes("--selftest")) {
   expect(requireApprovals([A, RF, A], MDL, "gpt-5.6-sol", 1).block === true, "Sol REFUTIERT → Veto, block.");
   expect(requireApprovals([A, E, A], MDL, "gpt-5.6-sol", 1).block === true, "Sol-Stimme Fehler → fail-closed block.");
   expect(requireApprovals([A, { ok: true, v: null }, A], MDL, "gpt-5.6-sol", 1).block === true, "Sol unparsbar → fail-closed block.");
-  expect(requireApprovals([RF, A, RF], MDL, "gpt-5.6-sol", 1).block === true, "Sol stimmt zu, aber KEIN weiterer Approver → block.");
+  expect(requireApprovals([RF, A, RF], MDL, "gpt-5.6-sol", 1).block === true, "Sol stimmt zu, aber KEINE unabhängige Zustimmung → block.");
   expect(requireApprovals([A, A2, A], ["gpt-5.3-codex", "gpt-5.6", "gpt-4.1-mini"], "gpt-5.6-sol", 1).block === true, "Sol nicht im Panel (Fallback gpt-5.6) → fail-closed block.");
   expect(requireApprovals([A, A2, A], ["gpt-5.3-codex", "gpt-5.6-sol-2026-07-01", "gpt-4.1-mini"], "gpt-5.6-sol", 1).block === false, "Sol als datierter Snapshot zählt → grün.");
   expect(requireApprovals([A, A2, RF], MDL, "gpt-5.6-sol", 2).block === true, "MIN_OTHERS=2, aber nur 1 weiterer Approver → block.");
@@ -364,11 +375,17 @@ if (process.argv.includes("--selftest")) {
   // Panel-Befund: Sol-Refutat JEDER Konfidenz (auch low) ist ein Veto.
   const RFLOW = { ok: true, v: { refuted: true, confidence: "low", reason: "kleiner zweifel" } };
   expect(requireApprovals([A, RFLOW, A], MDL, "gpt-5.6-sol", 1).block === true, "Sol low-confidence-Refutat → Veto (block).");
-  // Panel-Befund: Einzel-Pin-Modus (alle Slots = Sol) ist passierbar (zählt Zustimmungen).
+  // Panel-Befund: Einzel-Pin (alle Slots = Sol) hat KEINE unabhängige Zweitmeinung → block.
   const SOLO = ["gpt-5.6-sol", "gpt-5.6-sol", "gpt-5.6-sol"];
-  expect(requireApprovals([A, A2, A], SOLO, "gpt-5.6-sol", 1).block === false, "Einzel-Pin: 3× Sol-Zustimmung → grün.");
+  expect(requireApprovals([A, A2, A], SOLO, "gpt-5.6-sol", 1).block === true, "Einzel-Pin (alle Sol): keine unabhängige Korroboration → block.");
   expect(requireApprovals([A, RF, A], SOLO, "gpt-5.6-sol", 1).block === true, "Einzel-Pin: eine Sol-Stimme refutiert → Veto (block).");
-  expect(requireApprovals([A, A2, RF], SOLO, "gpt-5.6-sol", 1).block === true, "Einzel-Pin: dritte Sol-Stimme refutiert → Veto (block, jede Pflicht-Stimme muss zustimmen).");
+  // Panel-Befund: Mehrfachstimmen DESSELBEN Nicht-Sol-Modells zählen nur EINMAL.
+  const DUP = ["gpt-4.1-mini", "gpt-5.6-sol", "gpt-4.1-mini"];
+  expect(requireApprovals([A, A2, A], DUP, "gpt-5.6-sol", 1).block === false, "1 unabhängiges Modell (mini) genügt bei MIN_OTHERS=1.");
+  expect(requireApprovals([A, A2, A], DUP, "gpt-5.6-sol", 2).block === true, "2× dasselbe Modell (mini) zählt als 1 distinct → < 2 → block.");
+  // Panel-Befund: NaN-minOthers darf NICHT fail-open werden (need→1).
+  expect(requireApprovals([RF, A2, RF], MDL, "gpt-5.6-sol", NaN).block === true, "minOthers=NaN → need 1; keine unabhängige Zustimmung → block.");
+  expect(requireApprovals([A, A2, RF], MDL, "gpt-5.6-sol", NaN).block === false, "minOthers=NaN → need 1; 1 unabhängige Zustimmung (codex) → grün.");
   // attestReasons() (Schein-Grün-Gate: echte, eindeutige Begründungen erzwingen)
   const R = (reason, refuted = false) => ({ ok: true, v: { refuted, reason } });
   const g1 = "grund eins aaaa", g2 = "grund zwei bbbb", g3 = "grund drei cccc";
