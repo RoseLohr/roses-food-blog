@@ -139,7 +139,7 @@ export function HeroSlider({
             Verlinkung erreicht; nur der Titel-Link bleibt separat klickbar. */}
         <div
           aria-live={autoplay ? "off" : "polite"}
-          className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-5 px-14 pb-16 text-center text-white sm:px-20"
+          className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-5 px-14 py-16 text-center text-white sm:px-20"
         >
           {slide.category && (
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-leaf-soft">
