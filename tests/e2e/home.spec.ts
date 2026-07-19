@@ -109,4 +109,28 @@ test.describe("Öffentliche Startseite — Tiny-Salt-Optik", () => {
     await page.goto("/");
     await expect(page.getByText("Travel, Cook & Write with")).toBeVisible();
   });
+
+  // Regression: Das horizontale Desktop-Menü erscheint erst ab lg (1024px), weil
+  // Logo-Lockup + einzeilige Navigation unter md keinen Platz haben. Auf echten
+  // Desktop-Breiten liegen alle Menüpunkte (u. a. „Über mich") auf EINER Zeile
+  // und der Kopf verursacht keinen horizontalen Überlauf.
+  for (const width of [1024, 1280]) {
+    test(`Desktop ${width}px: Menü einzeilig, „Über mich" bricht nicht um, kein Overflow`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto("/");
+      const header = page.locator("header");
+      const about = header.getByRole("link", { name: dict.nav.about, exact: true });
+      await expect(about).toBeVisible();
+      // Einzeilig: Link-Höhe bleibt im Bereich einer einzelnen Textzeile.
+      const box = await about.boundingBox();
+      expect(box!.height).toBeLessThan(40);
+      // Kein horizontaler Überlauf trotz sichtbaren Menüs.
+      const overflow = await page.evaluate(
+        () => document.documentElement.scrollWidth > window.innerWidth + 1,
+      );
+      expect(overflow).toBeFalsy();
+    });
+  }
 });

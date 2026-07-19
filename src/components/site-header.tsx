@@ -156,8 +156,10 @@ export function SiteHeader({
             im Admin über Name/Logo konfigurierbar. */}
         <SiteLogo brand={brand} className="mr-auto shrink-0" />
 
-        {/* Permanentes horizontales Menü ab md */}
-        <nav className="hidden md:block" aria-label={dict.nav.menu}>
+        {/* Permanentes horizontales Menü erst ab lg: Logo-Lockup + einzeilige
+            Navigation brauchen mehr Breite, als md (768px) bietet. Unterhalb lg
+            liegt alles (inkl. „Suche") im Hamburger-Panel — nichts bricht um. */}
+        <nav className="hidden lg:block" aria-label={dict.nav.menu}>
           <ul className="flex items-center gap-1">
             {desktopNav.map((item) => {
               const active =
@@ -176,7 +178,7 @@ export function SiteHeader({
                   <span className="flex items-center">
                     <Link
                       href={item.href}
-                      className={`block py-2 pl-3 text-sm font-semibold transition-colors hover:text-leaf ${
+                      className={`block whitespace-nowrap py-2 pl-3 text-sm font-semibold transition-colors hover:text-leaf ${
                         hasChildren ? "pr-1" : "pr-3"
                       } ${active ? "text-leaf" : "text-ink"}`}
                     >
@@ -228,7 +230,7 @@ export function SiteHeader({
           aria-expanded={open}
           aria-controls={menuId}
           aria-label={open ? dict.nav.closeMenu : dict.nav.openMenu}
-          className="flex h-11 w-11 shrink-0 items-center justify-center text-ink transition-colors hover:text-leaf md:hidden"
+          className="flex h-11 w-11 shrink-0 items-center justify-center text-ink transition-colors hover:text-leaf lg:hidden"
         >
           {open ? (
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -244,7 +246,7 @@ export function SiteHeader({
 
       {/* Menü-Panel (nur mobil) */}
       {open && (
-        <div id={menuId} className="border-t border-ink/10 bg-white md:hidden">
+        <div id={menuId} className="border-t border-ink/10 bg-white lg:hidden">
           <div className="mx-auto max-w-6xl px-4 py-4">
             {/* Suche auf kleinen Screens im Panel */}
             <div className="mb-4 sm:hidden">
