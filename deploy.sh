@@ -274,11 +274,13 @@ $COMPOSE up -d --force-recreate app
 
 # --- 6. Healthcheck -----------------------------------------------------------
 log "Warte auf Healthcheck (http://127.0.0.1:$PORT/health)"
-for i in $(seq 1 30); do
+# 1-s-Takt statt 2 s: gleiche Obergrenze (~60 s), aber die App wird bis zu eine
+# Sekunde früher als bereit erkannt → kürzeres Umschaltfenster (weniger Downtime).
+for i in $(seq 1 60); do
   if curl -fsS "http://127.0.0.1:$PORT/health" >/dev/null 2>&1; then
     HEALTH_OK=1; break
   fi
-  sleep 2
+  sleep 1
 done
 if [[ "${HEALTH_OK:-0}" != "1" ]]; then
   echo
