@@ -335,6 +335,37 @@ export default async function HomePage() {
     },
   ].filter((g) => filterGroups.includes(g.key) && g.links.length > 0);
 
+  // Über-mich-Teaser: auf Desktop in der rechten Seitenleiste, auf Mobil VOR den
+  // neuesten Rezepten (Wunsch). Einmal definiert, an beiden Stellen mit
+  // gegensätzlicher Sichtbarkeit gerendert (lg:hidden bzw. hidden lg:block).
+  const aboutTeaser =
+    config && (config.aboutTeaserText || aboutImage) ? (
+      <section className="bg-white p-5 text-center shadow-sm">
+        <h2 className="font-display text-lg font-bold">{dict.home.aboutTitle}</h2>
+        {aboutImage && (
+          <div className="mt-4 flex justify-center">
+            {/* Ovales Bild mit gestricheltem Rahmen (wie Referenz) */}
+            <div className="rounded-[50%] border-2 border-dashed border-leaf/60 p-2">
+              <ResponsiveImg
+                image={aboutImage}
+                sizes="160px"
+                className="h-44 w-36 rounded-[50%] object-cover"
+              />
+            </div>
+          </div>
+        )}
+        {config.aboutTeaserText && (
+          <p className="mt-4 text-sm text-ink-soft">{config.aboutTeaserText}</p>
+        )}
+        <Link
+          href={config.aboutTeaserLink || "/ueber-mich"}
+          className="mt-5 inline-block rounded-lg bg-rose-primary px-7 py-2.5 text-xs font-semibold uppercase tracking-[0.15em] text-white transition-colors hover:bg-rose-primary-dark"
+        >
+          {dict.home.aboutMore}
+        </Link>
+      </section>
+    ) : null;
+
   return (
     <main>
       <JsonLd data={websiteJsonLd()} />
@@ -367,6 +398,10 @@ export default async function HomePage() {
               </div>
             </section>
           )}
+
+          {/* Über mich — nur auf Mobil (< lg), VOR den neuesten Rezepten.
+              Auf Desktop steht es weiterhin in der rechten Seitenleiste. */}
+          {aboutTeaser && <div className="mt-10 lg:hidden">{aboutTeaser}</div>}
 
           {/* Neueste Rezepte */}
           {latest.length > 0 && (
@@ -414,35 +449,9 @@ export default async function HomePage() {
 
         {/* Rechte Sidebar */}
         <aside className="flex flex-col gap-6 print:hidden">
-          {/* Über-mich-Teaser */}
-          {config && (config.aboutTeaserText || aboutImage) && (
-            <section className="bg-white p-5 text-center shadow-sm">
-              <h2 className="font-display text-lg font-bold">
-                {dict.home.aboutTitle}
-              </h2>
-              {aboutImage && (
-                <div className="mt-4 flex justify-center">
-                  {/* Ovales Bild mit gestricheltem Rahmen (wie Referenz) */}
-                  <div className="rounded-[50%] border-2 border-dashed border-leaf/60 p-2">
-                    <ResponsiveImg
-                      image={aboutImage}
-                      sizes="160px"
-                      className="h-44 w-36 rounded-[50%] object-cover"
-                    />
-                  </div>
-                </div>
-              )}
-              {config.aboutTeaserText && (
-                <p className="mt-4 text-sm text-ink-soft">{config.aboutTeaserText}</p>
-              )}
-              <Link
-                href={config.aboutTeaserLink || "/ueber-mich"}
-                className="mt-5 inline-block rounded-lg bg-rose-primary px-7 py-2.5 text-xs font-semibold uppercase tracking-[0.15em] text-white transition-colors hover:bg-rose-primary-dark"
-              >
-                {dict.home.aboutMore}
-              </Link>
-            </section>
-          )}
+          {/* Über-mich-Teaser — nur auf Desktop (ab lg); auf Mobil steht er oben
+              in der Hauptspalte (vor den neuesten Rezepten). */}
+          {aboutTeaser && <div className="hidden lg:block">{aboutTeaser}</div>}
 
           {/* „Saisonale Rezepte" (aktuelle Kalenderwoche) — erscheint nur,
               wenn gerade Rezepte in Saison sind */}
