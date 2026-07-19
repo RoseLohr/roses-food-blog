@@ -9,7 +9,7 @@
  * Whitelist abgebildet wird und der gespeicherte Markdown beim Anzeigen erneut
  * sicher gerendert wird, kann man das Layout nicht „aufbrechen“.
  */
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { renderMarkdown } from "@/lib/markdown";
 import { htmlToMarkdown } from "@/lib/rich-text";
 import { t } from "@/i18n/de";
@@ -34,7 +34,23 @@ export function RichTextEditor({
   onChange?: (markdown: string) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const [markdown, setMarkdown] = useState(initialMarkdown);
+  // Der Formularwert lebt bewusst DIREKT (unkontrolliert) im Hidden-Feld und wird
+  // bei JEDER Inhaltsänderung imperativ geschrieben — NICHT über React-State.
+  // Damit hängt der abgeschickte Wert nicht am React-Render-/Flush- oder
+  // Event-Timing (auf iOS/Safari sonst die Ursache für „Kurzbeschreibung wird
+  // nicht gespeichert"), sondern steht immer aktuell im DOM.
+  const hiddenRef = useRef<HTMLTextAreaElement>(null);
+  // onChange stabil halten, damit der Beobachter unten [] als Deps nutzen kann.
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+
+  // Editor-Inhalt → Markdown → Hidden-Feld (+ onChange). Rein imperativ.
+  const sync = useCallback(() => {
+    if (!ref.current) return;
+    const md = htmlToMarkdown(ref.current);
+    if (hiddenRef.current) hiddenRef.current.value = md;
+    onChangeRef.current?.(md);
+  }, []);
 
   // Editor aus dem Markdown befüllen — aber NICHT, während der Nutzer darin
   // tippt (sonst springt der Cursor bei kontrollierter Nutzung, z. B.
@@ -45,15 +61,30 @@ export function RichTextEditor({
       return;
     const html = renderMarkdown(initialMarkdown).trim();
     ref.current.innerHTML = html || "<p><br></p>";
+    if (hiddenRef.current) hiddenRef.current.value = initialMarkdown;
   }, [initialMarkdown]);
 
-  const sync = () => {
-    if (ref.current) {
-      const md = htmlToMarkdown(ref.current);
-      setMarkdown(md);
-      onChange?.(md);
-    }
-  };
+  // Kern des Fixes: ein MutationObserver spiegelt JEDE Inhaltsänderung des Editors
+  // (Tippen, Formatieren, Einfügen, auch programmatisch) sofort ins Hidden-Feld —
+  // unabhängig davon, ob input/blur feuern oder React neu rendert. Das macht den
+  // abgeschickten Wert robust gegen das Event-/Flush-Timing (u. a. iOS/Safari).
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof MutationObserver === "undefined") return;
+    const obs = new MutationObserver(() => sync());
+    obs.observe(el, { childList: true, subtree: true, characterData: true });
+    return () => obs.disconnect();
+  }, [sync]);
+
+  // Zusätzliches Sicherheitsnetz: unmittelbar vor dem Absenden erneut
+  // synchronisieren (Capture-Phase), falls eine Änderung noch nicht gespiegelt war.
+  useEffect(() => {
+    const form = hiddenRef.current?.form;
+    if (!form || !name) return;
+    const onSubmit = () => sync();
+    form.addEventListener("submit", onSubmit, true);
+    return () => form.removeEventListener("submit", onSubmit, true);
+  }, [name, sync]);
 
   const exec = (command: string, value?: string) => {
     ref.current?.focus();
@@ -98,8 +129,18 @@ export function RichTextEditor({
   return (
     <div>
       {label && <span className="mb-1 block text-sm font-medium">{label}</span>}
-      {/* Markdown wird versteckt mitgesendet; ohne JS bleibt der Ausgangswert erhalten. */}
-      {name && <textarea name={name} value={markdown} readOnly hidden />}
+      {/* Markdown wird versteckt mitgesendet; ohne JS bleibt der Ausgangswert
+          erhalten. Unkontrolliert (defaultValue) + imperativer .value-Schreib in
+          sync()/onSubmit — s. Kommentar oben. */}
+      {name && (
+        <textarea
+          ref={hiddenRef}
+          name={name}
+          defaultValue={initialMarkdown}
+          readOnly
+          hidden
+        />
+      )}
       {!readOnly && (
         <div className="flex flex-wrap gap-1 border border-b-0 border-ink-soft/30 bg-cream/60 p-1">
           {buttons.map((b) => (

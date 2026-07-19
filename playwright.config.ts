@@ -37,9 +37,13 @@ export default defineConfig({
     trace: "retain-on-failure",
   },
   webServer: {
-    command: `npx next dev -p ${PORT}`,
+    // Bewusst gegen einen PRODUKTIONS-Build testen (build + start), nicht gegen
+    // `next dev`: der Dev-Server (StrictMode, HMR, Hydration-Overlay) verhält sich
+    // anders als die ausgelieferte App — u. a. beim WYSIWYG-Editor. So testen wir
+    // das, was der Nutzer tatsächlich bekommt.
+    command: `npm run build && npx next start -p ${PORT}`,
     url: `http://localhost:${PORT}/health`,
-    timeout: 180_000,
+    timeout: 240_000,
     reuseExistingServer: !process.env.CI,
     env: {
       DATA_DIR,

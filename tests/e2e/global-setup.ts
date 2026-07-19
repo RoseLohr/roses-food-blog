@@ -22,4 +22,6 @@ export default async function globalSetup() {
   // Migrationen (reines Node-Skript) und Seed (tsx) als isolierte Prozesse.
   execFileSync("node", ["scripts/migrate.mjs"], { stdio: "inherit", env });
   execFileSync("npx", ["tsx", "scripts/seed.ts"], { stdio: "inherit", env });
+  // Admin + Session + Editier-Rezept (Entwurf) für die Editor-E2E-Tests.
+  execFileSync("npx", ["tsx", "scripts/e2e-admin.ts"], { stdio: "inherit", env });
 }
