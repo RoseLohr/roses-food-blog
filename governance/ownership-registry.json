@@ -67,7 +67,8 @@
       "src/app/robots",
       "src/app/sitemap",
       "src/lib/jsonld",
-      "src/lib/nav-data"
+      "src/lib/nav-data",
+      "src/lib/branding"
     ],
     "platform-ops": [
       "src/server",
