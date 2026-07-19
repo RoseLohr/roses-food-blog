@@ -29,6 +29,26 @@ test.describe("Startseiten-Hero-Slider (slider-style-2)", () => {
     await expect(hero(page).locator("p").first()).toBeVisible();
   });
 
+  test("Thumbnails laden eine kleine Bildvariante (nie w1280/w1920) [Perf-Regression]", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    const imgs = thumbs(page).locator("img");
+    const n = await imgs.count();
+    expect(n).toBeGreaterThan(0);
+    for (let i = 0; i < n; i++) {
+      const img = imgs.nth(i);
+      // srcSet + sizes müssen gesetzt sein, sonst lädt der Browser 100vw.
+      await expect(img).toHaveAttribute("sizes", /.+/);
+      await expect(img).toHaveAttribute("srcset", /w\d+\.webp/);
+      // Der tatsächlich gewählte Treffer darf keine Großvariante sein.
+      const current = await img.evaluate(
+        (el) => (el as HTMLImageElement).currentSrc,
+      );
+      expect(current).not.toMatch(/w(1280|1920)\.webp/);
+    }
+  });
+
   test("Weiter-Pfeil wechselt den aktiven Slide", async ({ page }) => {
     await page.goto("/");
     const before = await text(title(page));

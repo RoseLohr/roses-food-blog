@@ -90,6 +90,9 @@ async function loadHomepage() {
       recipeId: linked,
       imgSrc: imageUrl(s.img.fileKey, widths.at(-1) ?? 1280),
       imgSrcSet: srcset(s.img.fileKey, widths),
+      // Kleinste Variante als Fallback-Quelle für die Mini-Thumbnails: sie werden
+      // nur ~150–210 px breit angezeigt, dürfen also niemals das große Bild laden.
+      thumbSrc: imageUrl(s.img.fileKey, widths[0] ?? 320),
       alt: s.img.altText,
       caption: s.caption,
       href: linked ? `/rezepte/${s.recipeSlug}` : null,

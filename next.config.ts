@@ -53,6 +53,19 @@ const nextConfig: NextConfig = {
           },
         ],
       },
+      {
+        // Self-hosted Schriften unter /public/fonts liefert Next.js ohne
+        // Langzeit-Cache aus (Lighthouse: „Effiziente Cache-Verweildauer").
+        // Sie sind faktisch unveränderlich — ein Font-Tausch bekommt einen
+        // neuen Dateinamen; deshalb ein Jahr + immutable.
+        source: "/fonts/:file*",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=31536000, immutable",
+          },
+        ],
+      },
     ];
   },
 };
