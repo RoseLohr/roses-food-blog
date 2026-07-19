@@ -41,14 +41,17 @@ export function RecipeCard({ recipe }: { recipe: RecipeCardData }) {
       ) : (
         <div aria-hidden className="aspect-[4/3] w-full bg-cream" />
       )}
-      <div className="p-5">
+      {/* Weniger Innenabstand auf schmalen (2-spaltigen) Kacheln; ab sm p-5. */}
+      <div className="p-4 sm:p-5">
         {(recipe.category || recipe.dietType) && (
           <p className="mb-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-leaf">
             {/* Kategorie und – falls vorhanden – Ernährungsform, „/“-getrennt. */}
             {[recipe.category, recipe.dietType].filter(Boolean).join(" · ")}
           </p>
         )}
-        <h3 className="font-display text-lg font-bold group-hover:text-leaf">
+        {/* break-words + hyphens-auto: lange Wörter (z. B. „Schmorgemüse")
+            brechen um statt über die Kachelkante zu laufen (html lang=de). */}
+        <h3 className="font-display text-lg font-bold hyphens-auto break-words group-hover:text-leaf">
           {recipe.title}
         </h3>
         {recipe.teaser && (
