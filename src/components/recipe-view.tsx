@@ -5,6 +5,7 @@
  * und Tag-Zeile. Mengen werden serverseitig für die Originalportionen
  * gerendert; der Portionsrechner (Client) skaliert über data-Attribute.
  */
+import Link from "next/link";
 import type { FullRecipe } from "@/lib/recipes";
 import { formatAmount } from "@/lib/servings";
 import { renderMarkdown } from "@/lib/markdown";
@@ -91,37 +92,35 @@ export function RecipeView({
     return rest === 0 ? `${h} Std.` : `${h} Std. ${rest} ${r.minutes}`;
   };
 
-  // kcal wird oben im Kennzahlen-Block gezeigt (nicht mehr in der Tag-Zeile).
-  const tagRows: Array<[React.ReactNode, string, string] | null> = [
-    full.categories.length
-      ? [
-          <IconTag key="c" className="h-4 w-4" />,
-          r.course,
-          full.categories.map((c) => c.name).join(", "),
-        ]
-      : null,
-    full.cuisines.length
-      ? [
-          <IconTag key="cu" className="h-4 w-4" />,
-          r.cuisineShort,
-          full.cuisines.map((c) => c.name).join(", "),
-        ]
-      : null,
-    full.dietTypes.length
-      ? [
-          <IconTag key="d" className="h-4 w-4" />,
-          r.dietShort,
-          full.dietTypes.map((d) => d.name).join(", "),
-        ]
-      : null,
-    full.tags.length
-      ? [
-          <IconTag key="t" className="h-4 w-4" />,
-          r.keywords,
-          full.tags.map((tg) => tg.name).join(", "),
-        ]
-      : null,
-  ];
+  // Tag-Zeile: Kategorie, Küche, Ernährungsform und Schlagwörter — jeweils als
+  // Link zur gefilterten Suche (kcal steht oben im Kennzahlen-Block).
+  type TagRow = {
+    key: string;
+    label: string;
+    items: Array<{ name: string; href: string }>;
+  };
+  const filterRow = (
+    items: Array<{ name: string; slug: string }>,
+    label: string,
+    param: string,
+    key: string,
+  ): TagRow | null =>
+    items.length
+      ? {
+          key,
+          label,
+          items: items.map((it) => ({
+            name: it.name,
+            href: `/suche?${param}=${encodeURIComponent(it.slug)}`,
+          })),
+        }
+      : null;
+  const tagRows: TagRow[] = [
+    filterRow(full.categories, r.course, "kategorie", "c"),
+    filterRow(full.cuisines, r.cuisineShort, "kueche", "cu"),
+    filterRow(full.dietTypes, r.dietShort, "ernaehrung", "d"),
+    filterRow(full.tags, r.keywords, "schlagwort", "t"),
+  ].filter((row): row is TagRow => row !== null);
 
   return (
     <article
@@ -332,21 +331,31 @@ export function RecipeView({
           </section>
         )}
 
-        {/* Tag-Zeile */}
-        {tagRows.some(Boolean) && (
+        {/* Tag-Zeile: Kategorie · Küche · Ernährungsform · Schlagwörter — jeder
+            Eintrag als Link zur gefilterten Suche. */}
+        {tagRows.length > 0 && (
           <footer className="mt-8 flex flex-wrap gap-x-8 gap-y-3 border-t border-ink/10 pt-6 text-sm">
-            {tagRows.filter(Boolean).map((row) => {
-              const [icon, label, value] = row!;
-              return (
-                <p key={label} className="flex items-center gap-2">
-                  <span aria-hidden className="text-ink-soft">
-                    {icon}
+            {tagRows.map((row) => (
+              <p key={row.key} className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span aria-hidden className="text-ink-soft">
+                  <IconTag className="h-4 w-4" />
+                </span>
+                <strong className="font-semibold">{row.label}:</strong>
+                {row.items.map((it, i) => (
+                  <span key={it.href}>
+                    <Link
+                      href={it.href}
+                      className="font-medium text-leaf underline-offset-2 hover:underline"
+                    >
+                      {it.name}
+                    </Link>
+                    {i < row.items.length - 1 && (
+                      <span className="text-ink-soft">,</span>
+                    )}
                   </span>
-                  <strong className="font-semibold">{label}:</strong>
-                  <span className="text-ink-soft">{value}</span>
-                </p>
-              );
-            })}
+                ))}
+              </p>
+            ))}
           </footer>
         )}
       </div>
