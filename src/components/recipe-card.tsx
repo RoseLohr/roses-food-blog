@@ -41,8 +41,9 @@ export function RecipeCard({ recipe }: { recipe: RecipeCardData }) {
       ) : (
         <div aria-hidden className="aspect-[4/3] w-full bg-cream" />
       )}
-      {/* Weniger Innenabstand auf schmalen (2-spaltigen) Kacheln; ab sm p-5. */}
-      <div className="p-4 sm:p-5">
+      {/* Innerer Abstand: auf schmalen (2-spaltigen) Kacheln links/rechts knapper
+          (px-3), damit mehr Platz für Titel/Text bleibt; ab sm wieder p-5. */}
+      <div className="px-3 py-4 sm:p-5">
         {(recipe.category || recipe.dietType) && (
           <p className="mb-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-leaf">
             {/* Kategorie und – falls vorhanden – Ernährungsform, „/“-getrennt. */}
