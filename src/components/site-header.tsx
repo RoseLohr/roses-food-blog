@@ -112,6 +112,10 @@ export function SiteHeader({
     { href: "/ueber-mich", label: dict.nav.about, children: [] },
     { href: "/suche", label: dict.nav.search, children: [] },
   ];
+  // Desktop-Menü OHNE „Suche": direkt daneben steht die Suchpille, der Menüpunkt
+  // wäre redundant und nimmt Platz (mehr Raum fürs restliche Menü). Im mobilen
+  // Panel bleibt „Suche" erhalten (dort ist die Pille nur ganz oben im Panel).
+  const desktopNav = NAV.filter((item) => item.href !== "/suche");
 
   // Route-Wechsel schließt Menü und Dropdowns.
   useEffect(() => {
@@ -155,7 +159,7 @@ export function SiteHeader({
         {/* Permanentes horizontales Menü ab md */}
         <nav className="hidden md:block" aria-label={dict.nav.menu}>
           <ul className="flex items-center gap-1">
-            {NAV.map((item) => {
+            {desktopNav.map((item) => {
               const active =
                 pathname === item.href || pathname.startsWith(item.href + "/");
               const hasChildren = item.children.length > 0;
