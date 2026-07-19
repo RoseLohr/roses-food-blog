@@ -44,6 +44,27 @@ describe("responsive-images-Gate erkennt die Anti-Muster", () => {
       checkImgTag('<img src="/uploads/x/w320.webp" srcSet="a 1w" sizes="10vw" />').length,
     ).toBe(0);
   });
+
+  // Vom Fremd-Vendor-Panel (gpt-5.6-sol) gemeldete Fail-open-Umgehungen — hier
+  // in CI festgenagelt (nicht nur im mjs-Selbsttest).
+  it("Pfeilfunktion (=>) vor srcSet schneidet das Tag nicht ab (R1 greift)", () => {
+    expect(
+      checkImgTag('<img onError={(e) => (e.currentTarget.hidden = true)} srcSet="a 1w" src="/x/w320.webp" />').length,
+    ).toBeGreaterThan(0);
+  });
+  it("data-sizes zählt nicht als sizes (R1 greift)", () => {
+    expect(
+      checkImgTag('<img src="/x/w320.webp" srcSet="a 1w" data-sizes="10vw" />').length,
+    ).toBeGreaterThan(0);
+  });
+  it("src mit Leerzeichen um = wird geprüft (R2 greift)", () => {
+    expect(checkImgTag('<img src = "/uploads/x/w1920.webp" />').length).toBeGreaterThan(0);
+  });
+  it("Großbild-Literal nur in alt/data ist kein Fehlalarm", () => {
+    expect(
+      checkImgTag('<img alt="siehe w1920.webp" src="/x/w320.webp" srcSet="a 1w" sizes="10vw" />').length,
+    ).toBe(0);
+  });
 });
 
 describe("Schriften: Langzeit-Cache + Preload (kritische Kette)", () => {

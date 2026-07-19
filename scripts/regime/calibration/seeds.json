@@ -103,6 +103,15 @@
       "control_cmd": "node scripts/regime/independent-verify.mjs --selftest",
       "beispiel": "Verifier durch pauschales 'return {block:false}' ersetzt → Grün-Stimmen ohne gültiges Challenge-Echo im proof-Feld",
       "hinweis": "Der Harness erzeugt pro Lauf eine zufällige Challenge und verlangt sie im proof-Feld jeder Grün-Stimme ('<challenge>-<tier>'). attestProof() blockt fail-closed, wenn keine Mehrheit der Grün-Stimmen die Challenge zurückspiegelt — ein statisches/hartcodiertes Grün kennt sie nicht. Der Selbsttest übt das Gate aus; inject.mjs --strict friert eine Regression ein."
+    },
+    {
+      "id": "S13-verifier-required-approver",
+      "klasse": "Pflicht-Approver umgangen (A-39): Freigabe ohne Zustimmung von Sol oder ohne Korroboration",
+      "aktiv": true,
+      "kontrolle": "independent-verify requireApprovals() Pflicht-Approver-Gate (A-01/A-39)",
+      "control_cmd": "node scripts/regime/independent-verify.mjs --selftest",
+      "beispiel": "Sol refutiert/fehlt/liefert Fehler, aber die Aenderung wird trotzdem als gruen durchgewinkt; oder nur Sol stimmt zu ohne einen weiteren Approver",
+      "hinweis": "requireApprovals() verlangt fuer Gruen, dass der Pflicht-Approver (Default gpt-5.6-sol) im Panel aufgeloest ist, eine gueltige Stimme liefert und ZUSTIMMT (Veto bei Refutat/Fehlen/Fehler/Fallback), plus mindestens ein weiterer Approver (fail-closed). Der Selbsttest uebt alle Faelle aus; inject.mjs --strict friert eine Regression ein."
     }
   ]
 }

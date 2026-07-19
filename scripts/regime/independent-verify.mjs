@@ -24,6 +24,10 @@
  *                           auf das neueste verfügbare Modell (kein harter 404-Block).
  *   VERIFIER_PANEL          Stimmenzahl NUR im Einzel-Pin-Modus (VERIFIER_MODEL); im
  *                           Diversitäts-Modus ergibt sie sich aus der Modell-Liste.
+ *   VERIFIER_REQUIRED_APPROVER  Pflicht-Approver (Modell-Präfix, Default gpt-5.6-sol):
+ *                           MUSS zustimmen, sonst BLOCK (Veto). Siehe requireApprovals.
+ *   VERIFIER_MIN_OTHER_APPROVERS  Mindestzahl WEITERER Zustimmungen neben dem
+ *                           Pflicht-Approver (Default 1).
  *
  * ROBUST (2026-07-17, Root-Cause statt Workaround):
  *  - Kontext statt blinder Byte-Kappung: der Prompt bekommt den VOLLEN Datei-
@@ -31,14 +35,24 @@
  *    ausgeschlossen). Früher wurde der Diff hart auf die ersten 60k Zeichen
  *    gekappt — bei großem Diff sah das Modell nur einen alphabetischen Anfang
  *    (.dockerignore/.gitignore) und halluzinierte daraus „Befunde".
- *  - Panel statt Einzelurteil: N unabhängige Stimmen (Temperatur > 0), blockiert
- *    wird nur bei MEHRHEIT — ein einzelnes Fehlurteil kippt nichts mehr.
- *    Fail-CLOSED bleibt: zu wenige gültige Stimmen (API-Fehler) → block.
- *  - `decide()` (pro Stimme) und `aggregate()` (Panel) sind reine, testbare
- *    Funktionen; der --selftest übt beide aus (via seeds.json in inject.mjs --strict).
+ *  - Panel statt Einzelurteil: N unabhängige Stimmen (je 1 Modell), ein einzelnes
+ *    Fehlurteil kippt nichts mehr. Fail-CLOSED: zu wenige gültige Stimmen → block.
  *
- *   (Standard)   verifiziert den Diff (origin/HEAD-Basis); Exit≠0 bei Mehrheits-Refutat.
- *   --selftest   übt decide()+aggregate() aus (fail-closed, medium-blockt, Mehrheit).
+ * PFLICHT-APPROVER (2026-07-19, auf Anordnung): Grün verlangt jetzt, dass ein
+ * BENANNTER Panelist (Default `gpt-5.6-sol` = „Sol") ausdrücklich ZUSTIMMT UND
+ * mindestens EIN weiterer Panelist zustimmt (`requireApprovals`). Sol hat damit
+ * ein Veto: refutiert Sol, fehlt Sol im Panel (nicht freigeschaltet/als Fallback
+ * ersetzt) oder liefert Sol keine gültige Stimme (API-Fehler/unparsbar) → BLOCK
+ * (fail-closed). Das ersetzt die frühere bloße Mehrheits-Aggregation (`aggregate`),
+ * ist strenger (ein Pflicht-Approver + Korroboration statt anonymer Mehrheit) und
+ * kann nie fake-grün werden. Konfigurierbar: VERIFIER_REQUIRED_APPROVER (Modell-
+ * Präfix des Pflicht-Approvers), VERIFIER_MIN_OTHER_APPROVERS (Default 1).
+ *  - `decide()`/`requireApprovals()`/`attestReasons()`/`attestProof()` sind reine,
+ *    testbare Funktionen; der --selftest übt alle aus (via inject.mjs --strict).
+ *
+ *   (Standard)   verifiziert den Diff (origin/HEAD-Basis); Exit≠0, wenn Sol nicht
+ *                zustimmt oder kein weiterer Approver bestätigt.
+ *   --selftest   übt decide()+requireApprovals()+attestReasons()+attestProof() aus.
  */
 import { execSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
@@ -132,6 +146,11 @@ const PANEL = process.env.VERIFIER_MODEL
   ? Math.max(1, Number(process.env.VERIFIER_PANEL || 3))
   : Math.max(1, PANEL_MODELS_RAW.length);
 
+// Pflicht-Approver: dieses Modell (Präfix) MUSS zustimmen (Veto bei Refutat/
+// Fehlen), plus mindestens MIN_OTHERS weitere Zustimmungen. Angeordnet 2026-07-19.
+const REQUIRED_APPROVER = (process.env.VERIFIER_REQUIRED_APPROVER || "gpt-5.6-sol").trim();
+const MIN_OTHERS = Math.max(1, Number(process.env.VERIFIER_MIN_OTHER_APPROVERS || 1));
+
 /**
  * Reine Entscheidungsfunktion PRO Stimme. Fail-CLOSED: eine Antwort ohne
  * boolesches `refuted` (Feld fehlt / unparsbar) blockiert. Ein Refutat mit
@@ -144,22 +163,58 @@ export function decide(v) {
 }
 
 /**
- * Reine Panel-Aggregation. Blockiert nur, wenn eine MEHRHEIT der Stimmen
- * blockiert — gegen Einzel-Halluzinationen. Fail-CLOSED: kommen (wegen
- * API-Fehlern) nicht genug gültige Stimmen für eine Mehrheit zusammen, wird
- * blockiert. `votes`: Array aus { ok:boolean, decision?:{block,reason} }.
+ * Prüft, ob eine (aufgelöste) Modell-ID dem Pflicht-Approver entspricht: exakte
+ * ID oder ein DATIERTER Snapshot `<want>-YYYY-MM-DD`. Bewusst NUR das Datum-
+ * Suffix — ein Varianten-Suffix (`<want>-mini`/`-codex`/`-preview`) wäre ein
+ * ANDERES, ggf. schwächeres Modell und darf NICHT als Pflicht-Approver zählen
+ * (sonst könnte eine Downgrade-Variante Sols Zustimmung vortäuschen). Ein bloßes
+ * Namenspräfix ohne Trenner (`gpt-5.6-solaris`) zählt ebenfalls nicht.
  */
-export function aggregate(votes, panelSize) {
-  const need = Math.floor(panelSize / 2) + 1; // Mehrheit
-  const valid = votes.filter((x) => x.ok);
-  if (valid.length < need)
-    return { block: true, reason: `nur ${valid.length}/${panelSize} gültige Verifier-Stimmen (Rest Fehler) → fail-closed` };
-  const refutes = valid.filter((x) => x.decision.block);
-  if (refutes.length >= need) {
-    const reasons = refutes.map((r) => r.decision.reason).filter(Boolean).join(" | ").slice(0, 900);
-    return { block: true, reason: `${refutes.length}/${valid.length} Verifier widerlegen: ${reasons}` };
+export function modelMatches(modelId, want) {
+  if (!modelId || !want) return false;
+  if (modelId === want) return true;
+  const esc = want.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`^${esc}-\\d{4}-\\d{2}-\\d{2}$`).test(modelId);
+}
+
+/**
+ * PFLICHT-APPROVER-GATE (reine, testbare Funktion). Grün NUR, wenn ALLE gelten:
+ *   1) der Pflicht-Approver (`requiredApprover`, z. B. „gpt-5.6-sol") im Panel
+ *      AUFGELÖST ist (mind. eine Stimme läuft tatsächlich auf diesem Modell —
+ *      ein Fallback auf ein anderes Modell zählt NICHT), UND
+ *   2) JEDE Pflicht-Approver-Stimme gültig ist (ok, parsebar) und AUSDRÜCKLICH
+ *      zustimmt (refuted === false). Ein Refutat JEDER Konfidenz — auch „low" —
+ *      ist ein Sol-Veto und blockt (Sol soll wirklich ZUSTIMMEN, nicht bloß
+ *      „nicht hart widerlegen"), UND
+ *   3) insgesamt mindestens `1 + minOthers` Stimmen ausdrücklich zustimmen
+ *      (refuted === false) — also neben dem Pflicht-Approver noch `minOthers`
+ *      weitere Zustimmungen (Korroboration). Das zählt Zustimmungen statt
+ *      „Nicht-Pflicht-Slots" und funktioniert daher auch im Einzel-Pin-Modus
+ *      (VERIFIER_MODEL), wo alle Slots dasselbe Modell tragen.
+ * Jede Verletzung ist fail-CLOSED (block). `votes[i]` gehört zu `models[i]`.
+ * `votes`: Array aus { ok, v?:{refuted,confidence,reason} }.
+ */
+export function requireApprovals(votes, models, requiredApprover, minOthers = 1) {
+  const isValid = (x) => !!(x && x.ok && x.v && typeof x.v.refuted === "boolean");
+  const approves = (x) => isValid(x) && x.v.refuted === false; // ausdrückliche Zustimmung
+  const reqIdx = [];
+  for (let i = 0; i < votes.length; i++) {
+    if (modelMatches(models[i], requiredApprover)) reqIdx.push(i);
   }
-  return { block: false, reason: `${refutes.length}/${valid.length} Refutate (< Mehrheit ${need})` };
+  if (reqIdx.length === 0)
+    return { block: true, reason: `Pflicht-Approver „${requiredApprover}" nicht im Panel aufgelöst (nicht freigeschaltet oder durch Fallback ersetzt) → fail-closed` };
+  for (const i of reqIdx) {
+    const x = votes[i];
+    if (!isValid(x))
+      return { block: true, reason: `Pflicht-Approver „${requiredApprover}" ohne gültige Stimme (Fehler/unparsbar) → fail-closed` };
+    if (x.v.refuted !== false)
+      return { block: true, reason: `Pflicht-Approver „${requiredApprover}" stimmt NICHT zu (refuted, confidence=${x.v.confidence ?? "?"}) → Veto, fail-closed` };
+  }
+  const approvals = votes.filter(approves).length;
+  const need = 1 + minOthers;
+  if (approvals < need)
+    return { block: true, reason: `nur ${approvals} ausdrückliche Zustimmung(en) (< ${need}: Pflicht-Approver + ${minOthers} weitere) → fail-closed` };
+  return { block: false, reason: `„${requiredApprover}" stimmt zu + ${approvals - 1} weitere Zustimmung(en) (Ziel ${minOthers})` };
 }
 
 // Mindestlänge einer „echten" Begründung. Kürzest-Tokens wie „ok"/„1"/„n/a" sind
@@ -279,15 +334,41 @@ if (process.argv.includes("--selftest")) {
   expect(decide(null).block === true, "null/unparsbar muss fail-closed blocken.");
   expect(decide({ refuted: false }).block === false, "kein Refutat muss durchlassen.");
   expect(decide({ refuted: true, confidence: "low" }).block === false, "low-Konfidenz-Refutat passiert.");
-  // aggregate() (Panel, Mehrheit + fail-closed)
-  const B = { ok: true, decision: { block: true, reason: "x" } };
-  const P = { ok: true, decision: { block: false } };
+  // modelMatches() (Pflicht-Approver-Identität)
+  expect(modelMatches("gpt-5.6-sol", "gpt-5.6-sol") === true, "exakte ID matcht.");
+  expect(modelMatches("gpt-5.6-sol-2026-07-01", "gpt-5.6-sol") === true, "datierter Snapshot matcht.");
+  expect(modelMatches("gpt-5.6", "gpt-5.6-sol") === false, "kürzeres Modell matcht NICHT.");
+  expect(modelMatches("gpt-5.6-solaris", "gpt-5.6-sol") === false, "Präfix ohne Trenner matcht NICHT.");
+  expect(modelMatches(undefined, "gpt-5.6-sol") === false, "fehlendes Modell matcht NICHT.");
+  // Panel-Befund: Varianten-Suffixe sind ANDERE (ggf. schwächere) Modelle.
+  expect(modelMatches("gpt-5.6-sol-mini", "gpt-5.6-sol") === false, "Variante -mini matcht NICHT (Downgrade-Vortäuschung).");
+  expect(modelMatches("gpt-5.6-sol-codex", "gpt-5.6-sol") === false, "Variante -codex matcht NICHT.");
+  expect(modelMatches("gpt-5.6-sol-preview", "gpt-5.6-sol") === false, "Variante -preview matcht NICHT.");
+  // requireApprovals() (Pflicht-Approver Sol + ≥1 weiterer, fail-closed).
+  // votes[i] gehört zu MDL[i]; Sol steht auf Index 1.
+  const MDL = ["gpt-5.3-codex", "gpt-5.6-sol", "gpt-4.1-mini"];
+  const A = { ok: true, v: { refuted: false, reason: "grund lang genug a" } };
+  const A2 = { ok: true, v: { refuted: false, reason: "grund lang genug b" } };
+  const RF = { ok: true, v: { refuted: true, confidence: "high", reason: "echter bug" } };
   const E = { ok: false, reason: "API 500" };
-  expect(aggregate([B, B, B], 3).block === true, "3/3 Refutate müssen blocken.");
-  expect(aggregate([B, B, P], 3).block === true, "Mehrheit 2/3 Refutate muss blocken.");
-  expect(aggregate([B, P, P], 3).block === false, "Minderheit 1/3 darf NICHT blocken.");
-  expect(aggregate([P, P, P], 3).block === false, "0 Refutate müssen durchlassen.");
-  expect(aggregate([P, E, E], 3).block === true, "zu wenige gültige Stimmen → fail-closed block.");
+  expect(requireApprovals([A, A2, A], MDL, "gpt-5.6-sol", 1).block === false, "Sol + 2 weitere zustimmend → grün.");
+  expect(requireApprovals([RF, A2, A], MDL, "gpt-5.6-sol", 1).block === false, "Sol stimmt zu, 1 anderer refutiert, 1 stimmt zu → grün (Korroboration da).");
+  expect(requireApprovals([A, RF, A], MDL, "gpt-5.6-sol", 1).block === true, "Sol REFUTIERT → Veto, block.");
+  expect(requireApprovals([A, E, A], MDL, "gpt-5.6-sol", 1).block === true, "Sol-Stimme Fehler → fail-closed block.");
+  expect(requireApprovals([A, { ok: true, v: null }, A], MDL, "gpt-5.6-sol", 1).block === true, "Sol unparsbar → fail-closed block.");
+  expect(requireApprovals([RF, A, RF], MDL, "gpt-5.6-sol", 1).block === true, "Sol stimmt zu, aber KEIN weiterer Approver → block.");
+  expect(requireApprovals([A, A2, A], ["gpt-5.3-codex", "gpt-5.6", "gpt-4.1-mini"], "gpt-5.6-sol", 1).block === true, "Sol nicht im Panel (Fallback gpt-5.6) → fail-closed block.");
+  expect(requireApprovals([A, A2, A], ["gpt-5.3-codex", "gpt-5.6-sol-2026-07-01", "gpt-4.1-mini"], "gpt-5.6-sol", 1).block === false, "Sol als datierter Snapshot zählt → grün.");
+  expect(requireApprovals([A, A2, RF], MDL, "gpt-5.6-sol", 2).block === true, "MIN_OTHERS=2, aber nur 1 weiterer Approver → block.");
+  expect(requireApprovals([A, A2, A], MDL, "gpt-5.6-sol", 2).block === false, "MIN_OTHERS=2, 2 weitere Approver → grün.");
+  // Panel-Befund: Sol-Refutat JEDER Konfidenz (auch low) ist ein Veto.
+  const RFLOW = { ok: true, v: { refuted: true, confidence: "low", reason: "kleiner zweifel" } };
+  expect(requireApprovals([A, RFLOW, A], MDL, "gpt-5.6-sol", 1).block === true, "Sol low-confidence-Refutat → Veto (block).");
+  // Panel-Befund: Einzel-Pin-Modus (alle Slots = Sol) ist passierbar (zählt Zustimmungen).
+  const SOLO = ["gpt-5.6-sol", "gpt-5.6-sol", "gpt-5.6-sol"];
+  expect(requireApprovals([A, A2, A], SOLO, "gpt-5.6-sol", 1).block === false, "Einzel-Pin: 3× Sol-Zustimmung → grün.");
+  expect(requireApprovals([A, RF, A], SOLO, "gpt-5.6-sol", 1).block === true, "Einzel-Pin: eine Sol-Stimme refutiert → Veto (block).");
+  expect(requireApprovals([A, A2, RF], SOLO, "gpt-5.6-sol", 1).block === true, "Einzel-Pin: dritte Sol-Stimme refutiert → Veto (block, jede Pflicht-Stimme muss zustimmen).");
   // attestReasons() (Schein-Grün-Gate: echte, eindeutige Begründungen erzwingen)
   const R = (reason, refuted = false) => ({ ok: true, v: { refuted, reason } });
   const g1 = "grund eins aaaa", g2 = "grund zwei bbbb", g3 = "grund drei cccc";
@@ -325,7 +406,7 @@ if (process.argv.includes("--selftest")) {
   expect(attestProof([PR(`${CH}-7`), PR(`${CH}-8`), PR("nope-1", true)], CH, 3).block === false, "Refutat-Stimme ohne Proof egal, solange Grün-Mehrheit gültige Proofs hat.");
   expect(attestProof([PR(`${CH}-7`)], CH, 1).block === false, "Panel=1 mit gültigem Proof passiert.");
   expect(attestProof([PR(`${CH}-7`), PR(`${CH}-8`), PR(`${CH}-9`)], "", 3).block === true, "leere Challenge → kein Proof gültig → fail-closed.");
-  console.log("   ✓ Selbsttest: decide() + aggregate() + attestReasons() + attestProof() (Schein-Grün- + Proof-of-Check-Gate) korrekt.");
+  console.log("   ✓ Selbsttest: decide() + modelMatches() + requireApprovals() (Pflicht-Approver Sol + Korroboration) + attestReasons() + attestProof() korrekt.");
   process.exit(0);
 }
 
@@ -344,6 +425,7 @@ if (!d.trim()) { console.log("[independent-verify] Kein Diff zu prüfen. Grün."
 // Ein Modell pro Panelist (Modell-Diversität). MODELS[i] ist das Modell der i-ten Stimme.
 const MODELS = await resolvePanelModels(PANEL);
 console.log(`[independent-verify] Panel (${MODELS.length} Stimmen, je 1 Modell): ${MODELS.join(", ")}${process.env.VERIFIER_MODEL ? " (VERIFIER_MODEL gesetzt)" : ""}`);
+console.log(`[independent-verify] Pflicht-Approver: „${REQUIRED_APPROVER}" muss zustimmen + ≥ ${MIN_OTHERS} weitere.`);
 
 // Proof-of-Check: pro Lauf eine ZUFÄLLIGE, vorab nicht bekannte Challenge. Jede
 // GRÜN tragende Stimme muss sie als proof „<challenge>-<tier>" zurückspiegeln (siehe
@@ -512,9 +594,12 @@ votes.forEach((x, i) => {
   const reason = raw ? JSON.stringify(raw).slice(0, 1000) : '"(keine Begründung geliefert)"';
   console.log(`  Verifier ${i + 1}/${PANEL} (${MODELS[i]}): refuted=${x.v?.refuted} confidence=${x.v?.confidence} — Begründung: ${reason}`);
 });
-const verdict = aggregate(votes, PANEL);
+// PFLICHT-APPROVER-GATE: Sol MUSS zustimmen (Veto bei Refutat/Fehlen/Fehler) und
+// mindestens MIN_OTHERS weitere Stimmen müssen zustimmen. Ersetzt die frühere
+// bloße Mehrheits-Aggregation und ist strenger (fail-closed).
+const verdict = requireApprovals(votes, MODELS, REQUIRED_APPROVER, MIN_OTHERS);
 if (verdict.block) {
-  console.error(`⛔ Fremd-Vendor-Panel blockiert die Änderung: ${verdict.reason}`);
+  console.error(`⛔ Pflicht-Approver-Gate blockiert die Änderung: ${verdict.reason}`);
   process.exit(1);
 }
 // SCHEIN-GRÜN-GATE: Grün nur, wenn nachweislich echt gearbeitet wurde — eine
@@ -531,5 +616,5 @@ if (proof.block) {
   console.error(`⛔ Proof-of-Check-Gate: ${proof.reason}`);
   process.exit(1);
 }
-console.log(`[independent-verify] Fremd-Vendor-Panel bestätigt (${verdict.reason}; ${attest.reason}; ${proof.reason}). Grün.`);
+console.log(`[independent-verify] Fremd-Vendor-Panel bestätigt (Pflicht-Approver: ${verdict.reason}; ${attest.reason}; ${proof.reason}). Grün.`);
 process.exit(0);
