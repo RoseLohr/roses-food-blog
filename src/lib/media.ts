@@ -42,8 +42,8 @@ export function uploadsDir(): string {
 
 // Reine URL-Helfer aus dem Node-freien Modul: hier server-intern nutzbar und
 // zugleich für Client-Komponenten importierbar (ohne den Bild-Stack). Siehe
-// image-url.ts.
-import { imageUrl, srcset, thumbUrl } from "./image-url";
+// media-url.ts.
+import { imageUrl, srcset, thumbUrl } from "./media-url";
 export { imageUrl, srcset, thumbUrl };
 
 /**

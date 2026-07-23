@@ -21,7 +21,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { imageUrl, srcset } from "@/lib/image-url";
+import { imageUrl, srcset } from "@/lib/media-url";
 import { t } from "@/i18n/de";
 
 const dict = t();
