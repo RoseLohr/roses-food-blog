@@ -383,6 +383,8 @@ async function main() {
       country: "Italien",
       region: "Sizilien",
       city: "Palermo & Catania",
+      travelMonth: 9,
+      travelYear: 2025,
       heroImageId: travelHero,
       seoTitle: "Sizilien kulinarisch: Streetfood & Trattorien",
       seoDescription:
