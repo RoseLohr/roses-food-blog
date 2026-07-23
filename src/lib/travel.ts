@@ -69,6 +69,23 @@ export function matchesCommaToken(field: string, value: string): boolean {
 }
 
 /**
+ * Dekodiert einen Filter-Routenparameter (Land/Region/Stadt) sicher. Next reicht
+ * Sonderzeichen — vor allem das Leerzeichen (`%20`) und `&` (`%26`) — teils
+ * prozent-kodiert an die Seite durch. Ohne Dekodierung matcht z. B.
+ * „Western%20Australia" nie „Western Australia", die Ergebnisseite bleibt leer
+ * und läuft in `notFound()` (404). Bereits dekodierte Werte bleiben unverändert
+ * (kein `%` → No-op); eine kaputte `%`-Sequenz fällt auf den Rohwert zurück
+ * (decodeURIComponent würfe sonst).
+ */
+export function decodeFilterValue(raw: string): string {
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
+/**
  * Kartendaten veröffentlichter Reiseberichte (Übersicht /reisen und die
  * Land-/Region-/Stadt-Ergebnisseiten), neueste zuerst. Optional auf einen
  * Spaltenwert (Land/Region/Stadt) gefiltert — komma-token-genau (s. o.).

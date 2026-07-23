@@ -12,6 +12,7 @@ import { beforeAll, afterAll, describe, expect, it } from "vitest";
 // DATA_DIR dynamisch importiert — sonst bände der db-Singleton an ./data.
 type MatchFn = (field: string, value: string) => boolean;
 let matchesCommaToken: MatchFn;
+let decodeFilterValue: (raw: string) => string;
 
 let tmp: string;
 let adminId: number;
@@ -20,7 +21,7 @@ beforeAll(async () => {
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), "roses-travel-ry-"));
   process.env.DATA_DIR = tmp;
   execSync("node scripts/migrate.mjs", { env: { ...process.env, DATA_DIR: tmp } });
-  ({ matchesCommaToken } = await import("@/lib/travel"));
+  ({ matchesCommaToken, decodeFilterValue } = await import("@/lib/travel"));
   const { db, schema } = await import("@/db");
   const [admin] = await db
     .insert(schema.adminUser)
@@ -51,6 +52,24 @@ describe("matchesCommaToken (reine Logik)", () => {
   it("leerer Wert matcht nie", () => {
     expect(matchesCommaToken("Sizilien", "")).toBe(false);
     expect(matchesCommaToken("Sizilien", "   ")).toBe(false);
+  });
+});
+
+describe("decodeFilterValue (Filter-Routenparameter)", () => {
+  it("dekodiert Leerzeichen (%20) und & (%26)", () => {
+    expect(decodeFilterValue("Western%20Australia")).toBe("Western Australia");
+    expect(decodeFilterValue("Palermo%20%26%20Catania")).toBe("Palermo & Catania");
+  });
+  it("lässt bereits dekodierte Werte unverändert", () => {
+    expect(decodeFilterValue("Western Australia")).toBe("Western Australia");
+    expect(decodeFilterValue("Sizilien")).toBe("Sizilien");
+  });
+  it("fällt bei kaputter %-Sequenz auf den Rohwert zurück (kein Absturz)", () => {
+    expect(decodeFilterValue("100% Bio")).toBe("100% Bio");
+  });
+  it("dekodierter Parameter matcht wieder die Region (der eigentliche Fix)", () => {
+    // Vorher lief „Western%20Australia" ungetrimmt in notFound() (404).
+    expect(matchesCommaToken("Western Australia", decodeFilterValue("Western%20Australia"))).toBe(true);
   });
 });
 
