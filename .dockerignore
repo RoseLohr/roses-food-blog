@@ -25,3 +25,17 @@ Containerfile
 .dockerignore
 .gitignore
 *.log
+# Governance-/Audit-/CI-Artefakte: KEIN Build-Input (kein src/-Import, nicht ins
+# Runtime-Image kopiert — der Build kopiert aus scripts/ nur migrate.mjs +
+# entry.sh). Ausschließen, damit Änderungen daran den `COPY . .`-Layer NICHT
+# invalidieren: governance-/audit-lastige Commits (in diesem Repo häufig) werden
+# so zum Layer-Cache-Treffer → `next build` entfällt, das Deployment baut nur die
+# Runtime-Schicht neu. Betrifft nur den Podman-Build-Kontext; der CI-Build läuft
+# außerhalb von Docker mit vollem Checkout und ist unberührt.
+audit
+governance
+scripts/regime
+.github
+stryker.config.json
+.jscpd.json
+.stryker-tmp
