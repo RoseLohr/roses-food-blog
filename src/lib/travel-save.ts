@@ -85,6 +85,14 @@ function idList(formData: FormData, field: string): number[] {
     .filter((n) => Number.isInteger(n) && n > 0);
 }
 
+/** Reisejahr aus dem Formular: ganze Zahl 1900–2100, sonst null (leer/ungültig). */
+function parseTravelYear(v: FormDataEntryValue | null): number | null {
+  const raw = String(v ?? "").trim();
+  if (!raw) return null;
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= 1900 && n <= 2100 ? n : null;
+}
+
 export type SaveTravelResult = { travelId: number } | { error: string };
 
 export async function saveTravelFromForm(
@@ -217,6 +225,7 @@ export async function saveTravelFromForm(
     country: String(formData.get("land") ?? "").trim(),
     region: String(formData.get("region") ?? "").trim(),
     city: String(formData.get("stadt") ?? "").trim(),
+    travelYear: parseTravelYear(formData.get("reisejahr")),
     heroImageId: Number.isInteger(heroImageId) ? heroImageId : null,
     seoTitle: String(formData.get("seoTitel") ?? "").trim(),
     seoDescription: String(formData.get("seoBeschreibung") ?? "").trim(),

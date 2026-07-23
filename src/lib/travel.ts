@@ -2,7 +2,7 @@
  * Datenzugriff für Reiseberichte inkl. Restaurants, Gerichten,
  * Gericht-Bildern, Zutaten-Referenzen und Inhalts-Blöcken (travel_block).
  */
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { asc, desc, eq, inArray } from "drizzle-orm";
 import { db, schema } from "@/db";
 import type { MediaImage } from "@/lib/recipes";
 import { variantWidthsByImage } from "@/lib/media";
@@ -54,9 +54,24 @@ export interface FullTravelPost {
 }
 
 /**
+ * Trifft `value` einen der KOMMAGETRENNTEN Tokens in `field`? Getrimmt und
+ * case-insensitiv. So findet der Filter „Queensland" auch einen Bericht, dessen
+ * Region „Queensland, New South Wales, Victoria" lautet (Einzel-Ort-Filter statt
+ * nur exakter Ganz-String-Vergleich). Ein einzelner Wert matcht weiterhin exakt.
+ */
+export function matchesCommaToken(field: string, value: string): boolean {
+  const want = value.trim().toLowerCase();
+  if (!want) return false;
+  return field
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .includes(want);
+}
+
+/**
  * Kartendaten veröffentlichter Reiseberichte (Übersicht /reisen und die
  * Land-/Region-/Stadt-Ergebnisseiten), neueste zuerst. Optional auf einen
- * Spaltenwert (Land/Region/Stadt) gefiltert.
+ * Spaltenwert (Land/Region/Stadt) gefiltert — komma-token-genau (s. o.).
  */
 export async function publishedTravelCards(filter?: {
   column: "country" | "region" | "city";
@@ -76,11 +91,7 @@ export async function publishedTravelCards(filter?: {
     variantWidths: number[] | null;
   }>
 > {
-  const conditions = [eq(schema.travelPost.status, "veroeffentlicht")];
-  if (filter) {
-    conditions.push(eq(schema.travelPost[filter.column], filter.value));
-  }
-  const rows = await db
+  const allRows = await db
     .select({
       slug: schema.travelPost.slug,
       title: schema.travelPost.title,
@@ -99,8 +110,13 @@ export async function publishedTravelCards(filter?: {
       schema.mediaImage,
       eq(schema.travelPost.heroImageId, schema.mediaImage.id),
     )
-    .where(and(...conditions))
+    .where(eq(schema.travelPost.status, "veroeffentlicht"))
     .orderBy(desc(schema.travelPost.publishedAt));
+  // Filterung komma-token-genau in JS (nicht in SQL): so matcht „Queensland"
+  // auch einen kommagetrennten Region-/Stadt-Wert, nicht nur die exakte Kette.
+  const rows = filter
+    ? allRows.filter((r) => matchesCommaToken(r[filter.column], filter.value))
+    : allRows;
   const widthsById = await variantWidthsByImage(
     rows.flatMap((r) => (r.imageId ? [r.imageId] : [])),
   );

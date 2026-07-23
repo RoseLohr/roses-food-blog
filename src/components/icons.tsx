@@ -108,6 +108,16 @@ export function IconCity({ className }: { className?: string }) {
   );
 }
 
+/** Reisejahr — Kalenderblatt. */
+export function IconCalendar({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} {...base}>
+      <path d="M4 5h16v15H4z" />
+      <path d="M4 9h16M8 3v4M16 3v4" />
+    </svg>
+  );
+}
+
 export function IconHeart({
   className,
   filled = false,

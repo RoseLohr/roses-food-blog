@@ -61,6 +61,7 @@ export interface TravelEditorProps {
     country: string;
     region: string;
     city: string;
+    travelYear: number | null;
     heroImageId: number | null;
     imageIds: number[];
     seoTitle: string;
@@ -287,6 +288,22 @@ export function TravelEditor({
               {d.fieldCity}
             </label>
             <input id="t-stadt" name="stadt" defaultValue={initial.city} className={inputCls} />
+          </div>
+          <div>
+            <label className={labelCls} htmlFor="t-reisejahr">
+              {d.fieldTravelYear}
+            </label>
+            <input
+              id="t-reisejahr"
+              name="reisejahr"
+              type="number"
+              inputMode="numeric"
+              min={1900}
+              max={2100}
+              step={1}
+              defaultValue={initial.travelYear ?? ""}
+              className={inputCls}
+            />
           </div>
           <div className="md:col-span-2">
             <RichTextEditor

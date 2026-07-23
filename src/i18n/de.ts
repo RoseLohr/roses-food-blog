@@ -790,6 +790,7 @@ export const de = {
       fieldCountry: "Land",
       fieldRegion: "Region",
       fieldCity: "Stadt",
+      fieldTravelYear: "Reisejahr",
       fieldHeroImage: "Titelbild",
       fieldImages: "Zusätzliche Bilder",
       restaurants: "Restaurants",
