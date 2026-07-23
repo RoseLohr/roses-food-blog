@@ -172,13 +172,29 @@ function DishItem({
     <li id={`dish-${dish.id}`} className="flex flex-col gap-4">
       {/* Graue Box: nur das Gericht selbst (Bild, Name, Chips, Zutaten) */}
       <div className="flex flex-col gap-4 bg-cream/60 p-4 sm:flex-row">
-        {dish.images[0] && (
+        {dish.images.length > 0 && (
           <div className="sm:w-44 sm:shrink-0">
-            <ResponsiveImg
-              image={dish.images[0]}
-              sizes="(max-width: 640px) 100vw, 176px"
-              className="aspect-[4/3] w-full object-cover"
-            />
+            {dish.images.length === 1 ? (
+              <ResponsiveImg
+                image={dish.images[0]}
+                sizes="(max-width: 640px) 100vw, 176px"
+                className="aspect-[4/3] w-full object-cover"
+              />
+            ) : (
+              // Mehrere ausgewählte Fotos werden ALLE gezeigt (nicht nur das
+              // erste): mobil als 3er-Reihe, ab Tablet in der schmalen
+              // Seitenspalte untereinander.
+              <div className="grid grid-cols-3 gap-2 sm:grid-cols-1">
+                {dish.images.map((img) => (
+                  <ResponsiveImg
+                    key={img.id}
+                    image={img}
+                    sizes="(max-width: 640px) 33vw, 176px"
+                    className="aspect-[4/3] w-full object-cover"
+                  />
+                ))}
+              </div>
+            )}
           </div>
         )}
         <div className="min-w-0 grow">
