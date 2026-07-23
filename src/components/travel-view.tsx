@@ -414,7 +414,9 @@ export async function TravelView({
               dangerouslySetInnerHTML={{ __html: renderMarkdown(post.teaser) }}
             />
           )}
-          <div className="mt-6 flex flex-wrap gap-x-8 gap-y-4">
+          {/* Mobil festes 2er-Raster (Land|Region, Stadt|Reisezeit) statt
+              unregelmäßigem Umbruch; ab Tablet wieder Fließzeile. */}
+          <div className="mt-6 grid grid-cols-2 gap-x-6 gap-y-5 sm:flex sm:flex-wrap sm:gap-x-8 sm:gap-y-4">
             <MetaFilterLinks
               label={dict.admin.travel.fieldCountry}
               icon={<IconCountry className="h-5 w-5" />}
