@@ -71,6 +71,15 @@ describe("decodeFilterValue (Filter-Routenparameter)", () => {
     // Vorher lief „Western%20Australia" ungetrimmt in notFound() (404).
     expect(matchesCommaToken("Western Australia", decodeFilterValue("Western%20Australia"))).toBe(true);
   });
+  it("ist idempotent und verfälscht literale %HH-Namen NICHT (Sol-Befund)", () => {
+    // Zweite Anwendung ändert nichts mehr (keine Doppel-Dekodierung).
+    const once = decodeFilterValue("Western%20Australia");
+    expect(decodeFilterValue(once)).toBe(once);
+    // „A%2542C" ist die Kodierung von „A%42C" → genau EINMAL dekodieren.
+    expect(decodeFilterValue("A%2542C")).toBe("A%42C");
+    // Bereits dekodiertes „A%42C" bleibt „A%42C" — wird NICHT zu „ABC".
+    expect(decodeFilterValue("A%42C")).toBe("A%42C");
+  });
 });
 
 describe("Reise: Region/Stadt-Filter + Reisejahr", () => {

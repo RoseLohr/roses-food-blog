@@ -69,17 +69,22 @@ export function matchesCommaToken(field: string, value: string): boolean {
 }
 
 /**
- * Dekodiert einen Filter-Routenparameter (Land/Region/Stadt) sicher. Next reicht
- * Sonderzeichen — vor allem das Leerzeichen (`%20`) und `&` (`%26`) — teils
- * prozent-kodiert an die Seite durch. Ohne Dekodierung matcht z. B.
- * „Western%20Australia" nie „Western Australia", die Ergebnisseite bleibt leer
- * und läuft in `notFound()` (404). Bereits dekodierte Werte bleiben unverändert
- * (kein `%` → No-op); eine kaputte `%`-Sequenz fällt auf den Rohwert zurück
- * (decodeURIComponent würfe sonst).
+ * Dekodiert einen Filter-Routenparameter (Land/Region/Stadt) sicher UND
+ * IDEMPOTENT. Der Server reicht Sonderzeichen — vor allem Leerzeichen (`%20`)
+ * und `&` (`%26`) — prozent-kodiert an die Seite durch; ohne Dekodierung matcht
+ * z. B. „Western%20Australia" nie „Western Australia" → `notFound()` (404).
+ *
+ * Es wird NUR dann dekodiert, wenn der Rohwert wirklich eine gültige Kodierung
+ * ist (Round-Trip `encodeURIComponent(decode(raw)) === raw`). So wird ein bereits
+ * dekodierter Wert NICHT ein zweites Mal dekodiert — ein literaler Name mit
+ * „%HH" (z. B. „A%42C") bliebe sonst fälschlich „ABC". Damit ist die Funktion
+ * unabhängig davon korrekt, ob die Laufzeit die Params schon dekodiert hat.
+ * Eine kaputte `%`-Sequenz (decodeURIComponent würfe) fällt auf den Rohwert.
  */
 export function decodeFilterValue(raw: string): string {
   try {
-    return decodeURIComponent(raw);
+    const decoded = decodeURIComponent(raw);
+    return encodeURIComponent(decoded) === raw ? decoded : raw;
   } catch {
     return raw;
   }
