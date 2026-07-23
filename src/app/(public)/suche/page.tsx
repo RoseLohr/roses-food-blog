@@ -374,26 +374,13 @@ export default async function SearchPage(props: {
                       />
                     )}
                     <span className="min-w-0">
-                    {/* Kein „Aus Reisebericht"-Badge — steht schon in der Überschrift */}
+                    {/* Kein „Aus Reisebericht"-Badge — steht schon in der Überschrift.
+                        Gerichtart · Ernährungsform als schlichtes Eyebrow OHNE Kästchen
+                        (wie im Reisebericht: leaf-grün, gesperrt, „·"-getrennt). */}
                     {(x.categories.length > 0 || x.dietTypes.length > 0) && (
-                    <p className="mb-1 flex flex-wrap items-center gap-1.5">
-                      {x.categories.map((c) => (
-                        <span
-                          key={`k-${c}`}
-                          className="border border-leaf px-2 py-0.5 text-[0.68rem] font-semibold uppercase tracking-wide text-leaf"
-                        >
-                          {c}
-                        </span>
-                      ))}
-                      {x.dietTypes.map((dt) => (
-                        <span
-                          key={`e-${dt}`}
-                          className="border border-leaf px-2 py-0.5 text-[0.68rem] font-semibold uppercase tracking-wide text-leaf"
-                        >
-                          {dt}
-                        </span>
-                      ))}
-                    </p>
+                      <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-leaf">
+                        {[...x.categories, ...x.dietTypes].join(" · ")}
+                      </p>
                     )}
                     <p className="text-sm">
                       <strong>{x.dishName}</strong> {dict.search.inRestaurant}{" "}
