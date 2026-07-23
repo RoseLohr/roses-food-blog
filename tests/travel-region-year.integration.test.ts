@@ -71,14 +71,57 @@ describe("decodeFilterValue (Filter-Routenparameter)", () => {
     // Vorher lief „Western%20Australia" ungetrimmt in notFound() (404).
     expect(matchesCommaToken("Western Australia", decodeFilterValue("Western%20Australia"))).toBe(true);
   });
-  it("ist idempotent und verfälscht literale %HH-Namen NICHT (Sol-Befund)", () => {
-    // Zweite Anwendung ändert nichts mehr (keine Doppel-Dekodierung).
-    const once = decodeFilterValue("Western%20Australia");
-    expect(decodeFilterValue(once)).toBe(once);
-    // „A%2542C" ist die Kodierung von „A%42C" → genau EINMAL dekodieren.
-    expect(decodeFilterValue("A%2542C")).toBe("A%42C");
-    // Bereits dekodiertes „A%42C" bleibt „A%42C" — wird NICHT zu „ABC".
-    expect(decodeFilterValue("A%42C")).toBe("A%42C");
+  it("dekodiert auch nicht-kanonische, aber gültige Kodierungen (Sol-Befund)", () => {
+    // Kleinbuchstaben-Escapes und redundante Escapes unreservierter Zeichen
+    // müssen ebenfalls dekodieren (sonst 404 trotz gültiger URL).
+    expect(decodeFilterValue("M%c3%bcnchen")).toBe("München");
+    expect(decodeFilterValue("Western%20Australi%61")).toBe("Western Australia");
+  });
+});
+
+describe("resolveTravelFilter (Routen-Matching, robust gegen Kodierung)", () => {
+  async function saveRegion(title: string, region: string) {
+    const { saveTravelFromForm } = await import("@/lib/travel-save");
+    const fd = new FormData();
+    fd.set("titel", title);
+    fd.set("status", "veroeffentlicht");
+    fd.set("region", region);
+    fd.set("restaurants", "[]");
+    await saveTravelFromForm(fd, adminId);
+  }
+
+  it("findet den Bericht über den dekodierten Wert und liefert den Anzeigewert", async () => {
+    const { resolveTravelFilter } = await import("@/lib/travel");
+    await saveRegion("Perth-Trip", "Western Australia");
+
+    // Normalfall: Param kommt kodiert an → dekodiert matcht (der eigentliche Fix).
+    const r1 = await resolveTravelFilter("region", "Western%20Australia");
+    expect(r1.posts.some((p) => p.title === "Perth-Trip")).toBe(true);
+    expect(r1.value).toBe("Western Australia");
+
+    // Nicht-kanonische Kodierung (Sol): redundantes %61 matcht trotzdem.
+    const r2 = await resolveTravelFilter("region", "Western%20Australi%61");
+    expect(r2.posts.some((p) => p.title === "Perth-Trip")).toBe(true);
+
+    // Kein Treffer → leere Liste (Route läuft dann in notFound()).
+    const r3 = await resolveTravelFilter("region", "Nir%67endwo");
+    expect(r3.posts).toHaveLength(0);
+  });
+
+  it("literal-%HH-Region: Roh-Fallback trifft, ohne doppelt zu dekodieren (Sol-Befund)", async () => {
+    const { resolveTravelFilter } = await import("@/lib/travel");
+    await saveRegion("Prozent-Region", "A%42C"); // Name enthält literal „%42"
+
+    // Laufzeit hat NICHT dekodiert → Param „A%2542C" → dekodiert „A%42C" trifft.
+    const enc = await resolveTravelFilter("region", "A%2542C");
+    expect(enc.posts.some((p) => p.title === "Prozent-Region")).toBe(true);
+    expect(enc.value).toBe("A%42C");
+
+    // Laufzeit HÄTTE dekodiert → Param „A%42C" → dekodiert „ABC" trifft NICHT,
+    // Roh-Fallback „A%42C" trifft → kein 404 und NICHT fälschlich „ABC".
+    const dec = await resolveTravelFilter("region", "A%42C");
+    expect(dec.posts.some((p) => p.title === "Prozent-Region")).toBe(true);
+    expect(dec.value).toBe("A%42C");
   });
 });
 

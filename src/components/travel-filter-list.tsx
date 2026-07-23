@@ -7,8 +7,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageTracker } from "./page-tracker";
-import { TravelPostCard, type TravelCardData } from "./travel-post-card";
-import { publishedTravelCards } from "@/lib/travel";
+import { TravelPostCard } from "./travel-post-card";
+import { resolveTravelFilter } from "@/lib/travel";
 import { JsonLd, breadcrumbJsonLd } from "@/lib/jsonld";
 import { getSiteName } from "@/lib/settings";
 import { t } from "@/i18n/de";
@@ -30,25 +30,20 @@ const LABEL: Record<TravelDimension, string> = {
   stadt: dict.admin.travel.fieldCity,
 };
 
-/** Veröffentlichte Reiseberichte mit passendem Land/Region/Stadt. */
-export async function loadTravelFilter(
-  dimension: TravelDimension,
-  value: string,
-): Promise<TravelCardData[]> {
-  return publishedTravelCards({ column: COLUMN[dimension], value });
-}
-
 export async function TravelFilterList({
   dimension,
   value,
 }: {
   dimension: TravelDimension;
+  /** ROHER Routenparameter — die Dekodierung/Matching übernimmt resolveTravelFilter. */
   value: string;
 }) {
-  const posts = await loadTravelFilter(dimension, value);
+  // `shown` ist die Form (dekodiert oder roh), die tatsächlich Berichte trifft —
+  // korrekt für Überschrift, Canonical und Tracking-Pfad.
+  const { posts, value: shown } = await resolveTravelFilter(COLUMN[dimension], value);
   if (posts.length === 0) notFound();
 
-  const path = `/reisen/${dimension}/${encodeURIComponent(value)}`;
+  const path = `/reisen/${dimension}/${encodeURIComponent(shown)}`;
 
   return (
     <main>
@@ -57,7 +52,7 @@ export async function TravelFilterList({
         data={breadcrumbJsonLd([
           [getSiteName(), "/"],
           [d.title, "/reisen"],
-          [value, path],
+          [shown, path],
         ])}
       />
 
@@ -71,7 +66,7 @@ export async function TravelFilterList({
         {LABEL[dimension]}
       </p>
       <h1 className="mt-0.5 font-display text-3xl font-bold md:text-4xl">
-        {value}
+        {shown}
       </h1>
       <p className="mt-2 text-ink-soft">{d.filterCount(posts.length)}</p>
 

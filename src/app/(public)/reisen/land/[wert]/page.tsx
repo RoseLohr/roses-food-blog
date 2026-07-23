@@ -22,5 +22,5 @@ export default async function TravelByCountryPage(props: {
   params: Promise<{ wert: string }>;
 }) {
   const { wert } = await props.params;
-  return <TravelFilterList dimension="land" value={decodeFilterValue(wert)} />;
+  return <TravelFilterList dimension="land" value={wert} />;
 }
