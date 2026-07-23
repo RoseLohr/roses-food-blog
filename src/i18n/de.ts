@@ -174,6 +174,16 @@ export const de = {
     filterCount: (n: number) =>
       n === 1 ? "1 Reisebericht" : `${n} Reiseberichte`,
   },
+  /** Bild-Galerie/Lightbox (öffentlich): Klick aufs Foto → großes Pop-up mit
+   *  Vor/Zurück-Navigation bei mehreren Bildern. */
+  gallery: {
+    zoom: "vergrößern",
+    dialogLabel: "Bildergalerie",
+    close: "Schließen",
+    prev: "Vorheriges Bild",
+    next: "Nächstes Bild",
+    counter: (i: number, n: number) => `${i} von ${n}`,
+  },
   search: {
     title: "Suche",
     freeTextLabel: "Suche per Freitext",
