@@ -44,13 +44,13 @@
     "leaflet.markercluster": "^1.5.3",
     "marked": "^18.0.6",
     "mmdb-lib": "^3.0.2",
-    "next": "16.2.10",
+    "next": "16.2.11",
     "node-cron": "4.6.0",
     "nodemailer": "9.0.3",
     "react": "19.2.7",
     "react-dom": "19.2.7",
     "server-only": "^0.0.1",
-    "sharp": "0.34.5",
+    "sharp": "0.35.3",
     "zod": "4.4.3"
   },
   "devDependencies": {
@@ -79,6 +79,7 @@
     "vitest": "^3.2.0"
   },
   "overrides": {
-    "sharp": "$sharp"
+    "sharp": "$sharp",
+    "fast-uri": "3.1.4"
   }
 }
