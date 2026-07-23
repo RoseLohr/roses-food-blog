@@ -22,5 +22,5 @@ export default async function TravelByRegionPage(props: {
   params: Promise<{ wert: string }>;
 }) {
   const { wert } = await props.params;
-  return <TravelFilterList dimension="region" value={wert} />;
+  return <TravelFilterList dimension="region" value={decodeFilterValue(wert)} />;
 }

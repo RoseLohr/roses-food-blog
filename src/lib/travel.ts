@@ -69,18 +69,22 @@ export function matchesCommaToken(field: string, value: string): boolean {
 }
 
 /**
- * Dekodiert einen Filter-Routenparameter (Land/Region/Stadt) sicher. Der Server
- * reicht Sonderzeichen — vor allem Leerzeichen (`%20`) und `&` (`%26`) —
- * prozent-kodiert an die Seite durch; ohne Dekodierung matcht z. B.
- * „Western%20Australia" nie „Western Australia" → `notFound()` (404).
+ * Dekodiert einen Filter-Routenparameter (Land/Region/Stadt) — GENAU EINMAL.
  *
- * Bewusst ein SCHLICHTES `decodeURIComponent` (kein Round-Trip-/Kanonik-Filter):
- * so werden auch nicht-kanonische, aber gültige Kodierungen korrekt dekodiert
- * (z. B. Kleinbuchstaben-Escapes „M%c3%bcnchen" → „München", redundante Escapes
- * „…Australi%61" → „…Australia"). Die Absicherung gegen eine mögliche Doppel-
- * Dekodierung (falls die Laufzeit bereits dekodiert) liegt bewusst NICHT hier,
- * sondern im Roh-Wert-Fallback von `resolveTravelFilter`. Eine kaputte
- * `%`-Sequenz (decodeURIComponent würfe) fällt auf den Rohwert zurück.
+ * INVARIANTE (empirisch verifiziert): Die Laufzeit dieses Projekts (Next 16
+ * standalone, `node .next/standalone/server.js`, wie in Produktion) reicht den
+ * dynamischen Segment-Parameter ROH/prozent-kodiert an die Seite durch — sie
+ * dekodiert ihn NICHT vor. Nachweis: `/reisen/region/Sizil%2569en` liefert 404
+ * (die Seite erhält „Sizil%2569en", nicht „Sizilien"); ebenso lief der reale
+ * 404 auf „Western%20Australia". Deshalb ist genau EIN `decodeURIComponent`
+ * korrekt UND sicher: Es gibt keine Vorab-Dekodierung, also auch keine Doppel-
+ * Dekodierung (ein literaler „%HH"-Name kann hier nicht zu Unrecht auf ein
+ * anderes Ziel dekodiert werden — der Rohparameter ist per Definition kodiert).
+ *
+ * Schlicht (kein Round-Trip-/Kanonik-Filter), damit auch nicht-kanonische, aber
+ * gültige Kodierungen korrekt dekodieren (Kleinbuchstaben-Escapes
+ * „M%c3%bcnchen" → „München", redundante Escapes „…Australi%61" → „…Australia").
+ * Eine kaputte `%`-Sequenz (decodeURIComponent würfe) fällt auf den Rohwert.
  */
 export function decodeFilterValue(raw: string): string {
   try {
@@ -148,33 +152,6 @@ export async function publishedTravelCards(filter?: {
   }));
 }
 
-/**
- * Ermittelt für einen (roh aus der Route kommenden) Filterwert die passenden
- * Reiseberichte UND den anzuzeigenden Wert. Match-Strategie robust gegen die
- * Frage, ob die Laufzeit den Routenparameter schon dekodiert hat:
- *   1. zunächst gegen den DEKODIERTEN Wert (Normalfall: der Param kommt
- *      prozent-kodiert an — „Western%20Australia" → „Western Australia"),
- *   2. findet das nichts UND unterscheidet sich der Rohwert, ersatzweise gegen
- *      den ROHWERT — so trifft auch ein bereits dekodierter, literal „%HH"-
- *      haltiger Name (z. B. „A%42C"), OHNE ihn ein zweites Mal zu dekodieren.
- * Der zurückgegebene `value` ist die Form, die tatsächlich getroffen hat
- * (für Titel/Überschrift/Canonical korrekt).
- */
-export async function resolveTravelFilter(
-  column: "country" | "region" | "city",
-  rawValue: string,
-): Promise<{
-  posts: Awaited<ReturnType<typeof publishedTravelCards>>;
-  value: string;
-}> {
-  const decoded = decodeFilterValue(rawValue);
-  const byDecoded = await publishedTravelCards({ column, value: decoded });
-  if (byDecoded.length || decoded === rawValue) {
-    return { posts: byDecoded, value: decoded };
-  }
-  const byRaw = await publishedTravelCards({ column, value: rawValue });
-  return byRaw.length ? { posts: byRaw, value: rawValue } : { posts: [], value: decoded };
-}
 
 export async function getFullTravelPost(
   where: { id: number } | { slug: string },

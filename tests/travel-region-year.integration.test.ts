@@ -79,49 +79,31 @@ describe("decodeFilterValue (Filter-Routenparameter)", () => {
   });
 });
 
-describe("resolveTravelFilter (Routen-Matching, robust gegen Kodierung)", () => {
-  async function saveRegion(title: string, region: string) {
+describe("Filter-Werte mit Sonderzeichen finden den Bericht (dekodiert)", () => {
+  it("dekodierter Region-Wert matcht den veröffentlichten Bericht (der eigentliche Fix)", async () => {
     const { saveTravelFromForm } = await import("@/lib/travel-save");
+    const { publishedTravelCards } = await import("@/lib/travel");
     const fd = new FormData();
-    fd.set("titel", title);
+    fd.set("titel", "Perth-Trip");
     fd.set("status", "veroeffentlicht");
-    fd.set("region", region);
+    fd.set("region", "Western Australia");
     fd.set("restaurants", "[]");
     await saveTravelFromForm(fd, adminId);
-  }
 
-  it("findet den Bericht über den dekodierten Wert und liefert den Anzeigewert", async () => {
-    const { resolveTravelFilter } = await import("@/lib/travel");
-    await saveRegion("Perth-Trip", "Western Australia");
+    // So läuft es in der Route: der ROHe Param „Western%20Australia" wird EINMAL
+    // dekodiert und findet dann den Bericht (vorher: 0 Treffer → 404).
+    const cards = await publishedTravelCards({
+      column: "region",
+      value: decodeFilterValue("Western%20Australia"),
+    });
+    expect(cards.some((c) => c.title === "Perth-Trip")).toBe(true);
 
-    // Normalfall: Param kommt kodiert an → dekodiert matcht (der eigentliche Fix).
-    const r1 = await resolveTravelFilter("region", "Western%20Australia");
-    expect(r1.posts.some((p) => p.title === "Perth-Trip")).toBe(true);
-    expect(r1.value).toBe("Western Australia");
-
-    // Nicht-kanonische Kodierung (Sol): redundantes %61 matcht trotzdem.
-    const r2 = await resolveTravelFilter("region", "Western%20Australi%61");
-    expect(r2.posts.some((p) => p.title === "Perth-Trip")).toBe(true);
-
-    // Kein Treffer → leere Liste (Route läuft dann in notFound()).
-    const r3 = await resolveTravelFilter("region", "Nir%67endwo");
-    expect(r3.posts).toHaveLength(0);
-  });
-
-  it("literal-%HH-Region: Roh-Fallback trifft, ohne doppelt zu dekodieren (Sol-Befund)", async () => {
-    const { resolveTravelFilter } = await import("@/lib/travel");
-    await saveRegion("Prozent-Region", "A%42C"); // Name enthält literal „%42"
-
-    // Laufzeit hat NICHT dekodiert → Param „A%2542C" → dekodiert „A%42C" trifft.
-    const enc = await resolveTravelFilter("region", "A%2542C");
-    expect(enc.posts.some((p) => p.title === "Prozent-Region")).toBe(true);
-    expect(enc.value).toBe("A%42C");
-
-    // Laufzeit HÄTTE dekodiert → Param „A%42C" → dekodiert „ABC" trifft NICHT,
-    // Roh-Fallback „A%42C" trifft → kein 404 und NICHT fälschlich „ABC".
-    const dec = await resolveTravelFilter("region", "A%42C");
-    expect(dec.posts.some((p) => p.title === "Prozent-Region")).toBe(true);
-    expect(dec.value).toBe("A%42C");
+    // Auch nicht-kanonische, aber gültige Kodierungen dekodieren korrekt.
+    const cards2 = await publishedTravelCards({
+      column: "region",
+      value: decodeFilterValue("Western%20Australi%61"),
+    });
+    expect(cards2.some((c) => c.title === "Perth-Trip")).toBe(true);
   });
 });
 

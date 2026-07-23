@@ -8,7 +8,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageTracker } from "./page-tracker";
 import { TravelPostCard } from "./travel-post-card";
-import { resolveTravelFilter } from "@/lib/travel";
+import { publishedTravelCards } from "@/lib/travel";
 import { JsonLd, breadcrumbJsonLd } from "@/lib/jsonld";
 import { getSiteName } from "@/lib/settings";
 import { t } from "@/i18n/de";
@@ -35,15 +35,13 @@ export async function TravelFilterList({
   value,
 }: {
   dimension: TravelDimension;
-  /** ROHER Routenparameter — die Dekodierung/Matching übernimmt resolveTravelFilter. */
+  /** Bereits dekodierter Filterwert (die Route dekodiert den Routenparameter). */
   value: string;
 }) {
-  // `shown` ist die Form (dekodiert oder roh), die tatsächlich Berichte trifft —
-  // korrekt für Überschrift, Canonical und Tracking-Pfad.
-  const { posts, value: shown } = await resolveTravelFilter(COLUMN[dimension], value);
+  const posts = await publishedTravelCards({ column: COLUMN[dimension], value });
   if (posts.length === 0) notFound();
 
-  const path = `/reisen/${dimension}/${encodeURIComponent(shown)}`;
+  const path = `/reisen/${dimension}/${encodeURIComponent(value)}`;
 
   return (
     <main>
@@ -52,7 +50,7 @@ export async function TravelFilterList({
         data={breadcrumbJsonLd([
           [getSiteName(), "/"],
           [d.title, "/reisen"],
-          [shown, path],
+          [value, path],
         ])}
       />
 
@@ -66,7 +64,7 @@ export async function TravelFilterList({
         {LABEL[dimension]}
       </p>
       <h1 className="mt-0.5 font-display text-3xl font-bold md:text-4xl">
-        {shown}
+        {value}
       </h1>
       <p className="mt-2 text-ink-soft">{d.filterCount(posts.length)}</p>
 
