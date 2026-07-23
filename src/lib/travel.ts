@@ -69,6 +69,32 @@ export function matchesCommaToken(field: string, value: string): boolean {
 }
 
 /**
+ * Dekodiert einen Filter-Routenparameter (Land/Region/Stadt) — GENAU EINMAL.
+ *
+ * INVARIANTE (empirisch verifiziert): Die Laufzeit dieses Projekts (Next 16
+ * standalone, `node .next/standalone/server.js`, wie in Produktion) reicht den
+ * dynamischen Segment-Parameter ROH/prozent-kodiert an die Seite durch — sie
+ * dekodiert ihn NICHT vor. Nachweis: `/reisen/region/Sizil%2569en` liefert 404
+ * (die Seite erhält „Sizil%2569en", nicht „Sizilien"); ebenso lief der reale
+ * 404 auf „Western%20Australia". Deshalb ist genau EIN `decodeURIComponent`
+ * korrekt UND sicher: Es gibt keine Vorab-Dekodierung, also auch keine Doppel-
+ * Dekodierung (ein literaler „%HH"-Name kann hier nicht zu Unrecht auf ein
+ * anderes Ziel dekodiert werden — der Rohparameter ist per Definition kodiert).
+ *
+ * Schlicht (kein Round-Trip-/Kanonik-Filter), damit auch nicht-kanonische, aber
+ * gültige Kodierungen korrekt dekodieren (Kleinbuchstaben-Escapes
+ * „M%c3%bcnchen" → „München", redundante Escapes „…Australi%61" → „…Australia").
+ * Eine kaputte `%`-Sequenz (decodeURIComponent würfe) fällt auf den Rohwert.
+ */
+export function decodeFilterValue(raw: string): string {
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
+/**
  * Kartendaten veröffentlichter Reiseberichte (Übersicht /reisen und die
  * Land-/Region-/Stadt-Ergebnisseiten), neueste zuerst. Optional auf einen
  * Spaltenwert (Land/Region/Stadt) gefiltert — komma-token-genau (s. o.).
@@ -125,6 +151,7 @@ export async function publishedTravelCards(filter?: {
     variantWidths: imageId ? (widthsById.get(imageId) ?? []) : null,
   }));
 }
+
 
 export async function getFullTravelPost(
   where: { id: number } | { slug: string },
