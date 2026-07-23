@@ -105,6 +105,10 @@ describe("Reisebericht-Frontend: Gericht-Fotos", () => {
     // Genau drei <img> für dieses Gericht (je ein `src`-Attribut pro Bild;
     // `srcset` zählt nicht mit).
     expect(markup.match(/src="\/uploads\/dishfoto-/g)?.length).toBe(3);
+    // Galerie-Lightbox: jedes Foto ist ein klickbarer Zoom-Button (öffnet das
+    // Pop-up). Das Overlay selbst rendert erst nach Klick (Client-State).
+    expect(markup.match(/cursor-zoom-in/g)?.length).toBe(3);
+    expect(markup).toContain("vergrößern");
   });
 
   it("zeigt ein einzelnes Gericht-Foto unverändert (Regression der Single-Ansicht)", async () => {

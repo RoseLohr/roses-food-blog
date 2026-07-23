@@ -13,6 +13,7 @@ import { getSimilarRecipesByDish } from "@/lib/similar-recipes";
 import { RecipeCard, type RecipeCardData } from "@/components/recipe-card";
 import { t } from "@/i18n/de";
 import { ResponsiveImg } from "./responsive-img";
+import { GalleryLightbox } from "./gallery-lightbox";
 import { HeroActions } from "./hero-actions";
 import { TravelToc, type TocEntry } from "./travel-toc";
 import { IconCalendar, IconCity, IconCountry, IconRegion, IconTag } from "./icons";
@@ -173,28 +174,26 @@ function DishItem({
       {/* Graue Box: nur das Gericht selbst (Bild, Name, Chips, Zutaten) */}
       <div className="flex flex-col gap-4 bg-cream/60 p-4 sm:flex-row">
         {dish.images.length > 0 && (
+          // Alle ausgewählten Fotos als klickbare Galerie: ein Klick öffnet das
+          // Bild groß im Pop-up, bei mehreren Fotos mit Vor/Zurück-Navigation.
+          // Einzelbild → volle Breite; mehrere → mobil 3er-Reihe, ab Tablet in
+          // der schmalen Seitenspalte untereinander.
           <div className="sm:w-44 sm:shrink-0">
-            {dish.images.length === 1 ? (
-              <ResponsiveImg
-                image={dish.images[0]}
-                sizes="(max-width: 640px) 100vw, 176px"
-                className="aspect-[4/3] w-full object-cover"
-              />
-            ) : (
-              // Mehrere ausgewählte Fotos werden ALLE gezeigt (nicht nur das
-              // erste): mobil als 3er-Reihe, ab Tablet in der schmalen
-              // Seitenspalte untereinander.
-              <div className="grid grid-cols-3 gap-2 sm:grid-cols-1">
-                {dish.images.map((img) => (
-                  <ResponsiveImg
-                    key={img.id}
-                    image={img}
-                    sizes="(max-width: 640px) 33vw, 176px"
-                    className="aspect-[4/3] w-full object-cover"
-                  />
-                ))}
-              </div>
-            )}
+            <GalleryLightbox
+              images={dish.images}
+              label={dish.name}
+              thumbSizes={
+                dish.images.length === 1
+                  ? "(max-width: 640px) 100vw, 176px"
+                  : "(max-width: 640px) 33vw, 176px"
+              }
+              thumbClassName="aspect-[4/3] w-full object-cover"
+              groupClassName={
+                dish.images.length === 1
+                  ? undefined
+                  : "grid grid-cols-3 gap-2 sm:grid-cols-1"
+              }
+            />
           </div>
         )}
         <div className="min-w-0 grow">
@@ -274,11 +273,13 @@ function RestaurantCard({
       {(r.image || r.description) && (
         <div className="mt-3 flex flex-col gap-4 sm:flex-row sm:items-start">
           {r.image && (
+            // Restaurant-Foto klickbar: öffnet sich groß im Pop-up.
             <div className="sm:w-72 sm:shrink-0 md:w-96">
-              <ResponsiveImg
-                image={r.image}
-                sizes="(max-width: 640px) 100vw, 384px"
-                className="aspect-[3/2] w-full object-cover"
+              <GalleryLightbox
+                images={[r.image]}
+                label={`${dict.travelList.restaurantWord} ${r.name}`}
+                thumbSizes="(max-width: 640px) 100vw, 384px"
+                thumbClassName="aspect-[3/2] w-full object-cover"
               />
             </div>
           )}

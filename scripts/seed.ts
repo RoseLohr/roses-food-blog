@@ -408,6 +408,8 @@ async function main() {
       city: "Palermo",
       lat: 38.1157,
       lng: 13.3615,
+      // Restaurant-Foto (klickbar → groß im Pop-up).
+      imageColor: "#1e5631",
       description:
         "Familiengeführte Trattoria nahe dem Ballarò-Markt, drei Tische, keine Speisekarte.",
       dishes: [
@@ -416,12 +418,15 @@ async function main() {
           description:
             "Hausgemachte Pasta mit gebratenen Auberginen, Tomatensugo und gesalzenem Ricotta.",
           color: "#922b21",
+          // Mehrere Fotos → Galerie mit Vor/Zurück im Pop-up.
+          extraColors: ["#7b241c", "#a04000"],
           ingredients: ["Tomate", "Knoblauch", "Olivenöl"],
         },
         {
           name: "Caponata",
           description: "Süß-saures Gemüse mit Auberginen, Sellerie und Kapern.",
           color: "#6e2c00",
+          extraColors: [],
           ingredients: ["Tomate", "Zwiebel", "Olivenöl"],
         },
       ],
@@ -431,6 +436,7 @@ async function main() {
       city: "Catania",
       lat: 37.5079,
       lng: 15.083,
+      imageColor: null,
       description:
         "Direkt am Fischmarkt — was morgens ankommt, liegt mittags auf dem Teller.",
       dishes: [
@@ -438,6 +444,7 @@ async function main() {
           name: "Risotto al Limone",
           description: "Cremiges Zitronenrisotto mit frischem Fang des Tages.",
           color: "#b7950b",
+          extraColors: [],
           ingredients: ["Reis", "Zitrone", "Olivenöl"],
         },
       ],
@@ -445,6 +452,9 @@ async function main() {
   ];
 
   for (const [i, r] of restaurants.entries()) {
+    const restImageId = r.imageColor
+      ? await placeholder(r.name.split(" ")[0], r.imageColor, 960, 640)
+      : null;
     const [rest] = await db
       .insert(schema.restaurant)
       .values({
@@ -452,6 +462,7 @@ async function main() {
         name: r.name,
         city: r.city,
         description: r.description,
+        imageId: restImageId,
         // Koordinaten-Override — die Platzhalterbilder tragen kein EXIF-GPS
         lat: r.lat,
         lng: r.lng,
@@ -468,10 +479,19 @@ async function main() {
           sortOrder: j,
         })
         .returning();
-      const dishImg = await placeholder(d.name.split(" ")[0], d.color, 960, 720);
-      await db
-        .insert(schema.dishImage)
-        .values({ dishId: dishRow.id, imageId: dishImg, sortOrder: 0 });
+      // Erstes Foto + optionale weitere Fotos (Galerie-Demo mit Vor/Zurück).
+      const dishColors = [d.color, ...d.extraColors];
+      for (const [k, color] of dishColors.entries()) {
+        const dishImg = await placeholder(
+          `${d.name.split(" ")[0]} ${k + 1}`,
+          color,
+          960,
+          720,
+        );
+        await db
+          .insert(schema.dishImage)
+          .values({ dishId: dishRow.id, imageId: dishImg, sortOrder: k });
+      }
       await db.insert(schema.dishIngredient).values(
         d.ingredients.map((n) => ({ dishId: dishRow.id, ingredientId: ing[n] })),
       );

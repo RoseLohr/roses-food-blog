@@ -40,22 +40,11 @@ export function uploadsDir(): string {
   return path.join(process.env.DATA_DIR ?? "./data", "uploads");
 }
 
-export function imageUrl(fileKey: string, width: number): string {
-  return `/uploads/${fileKey}/w${width}.webp`;
-}
-
-/** srcset-String für ein Bild aus seinen verfügbaren Breiten */
-export function srcset(fileKey: string, widths: number[]): string {
-  return widths.map((w) => `${imageUrl(fileKey, w)} ${w}w`).join(", ");
-}
-
-/**
- * URL der kleinsten verfügbaren Variante — als Thumbnail für
- * Auswahl-Vorschauen (ImagePicker, Suchtreffer).
- */
-export function thumbUrl(fileKey: string, widths: number[]): string {
-  return imageUrl(fileKey, widths[0] ?? 320);
-}
+// Reine URL-Helfer aus dem Node-freien Modul: hier server-intern nutzbar und
+// zugleich für Client-Komponenten importierbar (ohne den Bild-Stack). Siehe
+// media-url.ts.
+import { imageUrl, srcset, thumbUrl } from "./media-url";
+export { imageUrl, srcset, thumbUrl };
 
 /**
  * Verfügbare Varianten-Breiten je Bild (aufsteigend) für eine ID-Menge —
