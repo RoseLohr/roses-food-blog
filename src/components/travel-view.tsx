@@ -133,9 +133,9 @@ function SimilarRecipeTiles({ recipes }: { recipes: RecipeCardData[] }) {
   return (
     <section className="border-t border-ink/10 pt-4">
       {/* Abschnittstitel als Eyebrow im Marken-Grün (wie die Kachel-Eyebrows). */}
-      <h5 className="mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-leaf">
+      <h6 className="mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-leaf">
         {dict.travelList.similarTitle}
-      </h5>
+      </h6>
       {/* Kompakt: schon auf Mobil 2-spaltig (mind. zwei Vorschläge sichtbar),
           ab lg drei Spalten. Etwas kleineres Gap auf Mobil. */}
       <div className="grid grid-cols-2 gap-3 sm:gap-5 lg:grid-cols-3">
@@ -177,8 +177,9 @@ function DishItem({
                 .join(" · ")}
             </p>
           )}
-          {/* Gleiche Größe wie der Titel der Rezept-Kacheln darunter (text-lg). */}
-          <h4 className="font-display text-lg font-bold">{dish.name}</h4>
+          {/* Gleiche Größe wie der Titel der Rezept-Kacheln darunter (text-lg).
+              h5: unter dem „Gerichte / Getränke"-Zwischentitel (h4). */}
+          <h5 className="font-display text-lg font-bold">{dish.name}</h5>
           {dish.description && (
             <div
               className="prose-content mt-1 text-sm text-ink-soft"
@@ -260,6 +261,11 @@ function RestaurantCard({
             />
           )}
         </div>
+      )}
+      {r.dishes.length > 0 && (
+        <h4 className="mt-5 font-display text-base font-bold text-ink">
+          {dict.travelList.dishesTitle}
+        </h4>
       )}
       <ul className="mt-4 flex flex-col gap-5">
         {r.dishes.map((dish) => (

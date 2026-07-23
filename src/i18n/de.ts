@@ -154,7 +154,9 @@ export const de = {
     mapPrevDish: "Vorheriges Gericht",
     mapNextDish: "Nächstes Gericht",
     mapDishCount: (i: number, n: number) => `${i} von ${n}`,
-    restaurantsTitle: "Restaurants & Gerichte",
+    restaurantsTitle: "Restaurants",
+    /** Zwischentitel über der Gericht-/Getränkeliste eines Restaurants. */
+    dishesTitle: "Gerichte / Getränke",
     restaurantWord: "Restaurant",
     dishIngredients: "Zutaten",
     tocTitle: "Inhalt",
