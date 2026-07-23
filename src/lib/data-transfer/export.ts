@@ -360,6 +360,8 @@ async function collectTravel(
       country: p.country,
       region: p.region,
       city: p.city,
+      travelYear: p.travelYear,
+      travelMonth: p.travelMonth,
       heroImage: images.ref(p.heroImageId),
       seoTitle: p.seoTitle,
       seoDescription: p.seoDescription,

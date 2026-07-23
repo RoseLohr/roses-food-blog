@@ -154,7 +154,16 @@ export const de = {
     mapPrevDish: "Vorheriges Gericht",
     mapNextDish: "Nächstes Gericht",
     mapDishCount: (i: number, n: number) => `${i} von ${n}`,
-    restaurantsTitle: "Restaurants & Gerichte",
+    restaurantsTitle: "Restaurants",
+    /** Zwischentitel über der Gericht-/Getränkeliste eines Restaurants. */
+    dishesTitle: "Gerichte / Getränke",
+    /** Meta-Chip-Label für den Reisezeitpunkt (Monat + Jahr). */
+    travelTime: "Reisezeit",
+    /** Deutsche Monatsnamen (Index 0 = Januar) für „September 2026". */
+    months: [
+      "Januar", "Februar", "März", "April", "Mai", "Juni",
+      "Juli", "August", "September", "Oktober", "November", "Dezember",
+    ],
     restaurantWord: "Restaurant",
     dishIngredients: "Zutaten",
     tocTitle: "Inhalt",
@@ -790,6 +799,9 @@ export const de = {
       fieldCountry: "Land",
       fieldRegion: "Region",
       fieldCity: "Stadt",
+      fieldTravelYear: "Reisejahr",
+      fieldTravelMonth: "Reisemonat",
+      travelMonthNone: "— (kein Monat) —",
       fieldHeroImage: "Titelbild",
       fieldImages: "Zusätzliche Bilder",
       restaurants: "Restaurants",

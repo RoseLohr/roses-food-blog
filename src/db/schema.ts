@@ -391,10 +391,14 @@ export const travelPost = sqliteTable(
      *  Wird ausschließlich in lib/travel-save.ts regeneriert. */
     searchText: text("search_text").notNull().default(""),
     country: text("country").notNull().default(""),
-    /** Region/Gebiet (z. B. „Sizilien") */
+    /** Region/Gebiet (z. B. „Sizilien"); mehrere komma-getrennt möglich. */
     region: text("region").notNull().default(""),
-    /** Stadt/Ort */
+    /** Stadt/Ort; mehrere komma-getrennt möglich. */
     city: text("city").notNull().default(""),
+    /** Reisejahr (optional), z. B. 2024 — im Frontend-Kopf angezeigt. */
+    travelYear: integer("travel_year"),
+    /** Reisemonat (optional, 1–12) — mit dem Jahr als „September 2026" gezeigt. */
+    travelMonth: integer("travel_month"),
     heroImageId: integer("hero_image_id").references(() => mediaImage.id, {
       onDelete: "set null",
     }),

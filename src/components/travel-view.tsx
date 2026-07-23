@@ -15,7 +15,7 @@ import { t } from "@/i18n/de";
 import { ResponsiveImg } from "./responsive-img";
 import { HeroActions } from "./hero-actions";
 import { TravelToc, type TocEntry } from "./travel-toc";
-import { IconCity, IconCountry, IconRegion, IconTag } from "./icons";
+import { IconCalendar, IconCity, IconCountry, IconRegion, IconTag } from "./icons";
 
 const dict = t();
 
@@ -46,20 +46,39 @@ function restaurantCoords(
   return null;
 }
 
+/** Kommagetrennte Angabe → getrimmte Einzel-Tokens (leere verworfen). */
+function metaTokens(value: string): string[] {
+  return value
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
 /**
- * Meta-Angabe (Land/Region/Stadt). Mit `href` wird der Wert zum Filter-Link
- * auf die Reisen-Übersicht (z. B. /reisen?land=Italien) — so lässt sich vom
- * Bericht aus direkt nach Land oder Stadt filtern.
+ * Reisezeitpunkt als „September 2026" (Monat optional). Ohne Jahr → null (kein
+ * Chip); mit Jahr, aber ohne gültigen Monat → nur das Jahr.
  */
+function formatTravelTime(
+  month: number | null,
+  year: number | null,
+): string | null {
+  if (year == null) return null;
+  return month != null && month >= 1 && month <= 12
+    ? `${dict.travelList.months[month - 1]} ${year}`
+    : String(year);
+}
+
+const metaLinkCls =
+  "text-leaf underline underline-offset-2 hover:text-rose-primary-dark";
+
+/** Karten-Hülle einer Meta-Angabe (Icon + Label + Inhalt). */
 function MetaChip({
   label,
   icon,
-  href,
   children,
 }: {
   label: string;
   icon: React.ReactNode;
-  href?: string;
   children: React.ReactNode;
 }) {
   return (
@@ -74,18 +93,50 @@ function MetaChip({
         <p className="text-xs font-bold uppercase tracking-wider text-ink">
           {label}
         </p>
-        {href ? (
-          <Link
-            href={href}
-            className="text-sm text-leaf underline underline-offset-2 hover:text-rose-primary-dark"
-          >
-            {children}
-          </Link>
-        ) : (
-          <p className="text-sm text-ink-soft">{children}</p>
-        )}
+        <p className="text-sm text-ink-soft">{children}</p>
       </div>
     </div>
+  );
+}
+
+/**
+ * Meta-Angabe Land/Region/Stadt als Filter: JEDER kommagetrennte Wert wird ein
+ * EIGENER Link auf die passende Reisen-Ergebnisseite (z. B. „Queensland" und
+ * „New South Wales" getrennt → /reisen/region/Queensland bzw. …). So lässt sich
+ * gezielt nach einem einzelnen Ort filtern, nicht nur nach der ganzen Kette.
+ * Ohne `interactive` (z. B. Druckansicht) bleibt es reiner Text.
+ */
+function MetaFilterLinks({
+  label,
+  icon,
+  value,
+  base,
+  interactive,
+}: {
+  label: string;
+  icon: React.ReactNode;
+  value: string;
+  /** Routen-Präfix, z. B. „/reisen/region". */
+  base: string;
+  interactive: boolean;
+}) {
+  const tokens = metaTokens(value);
+  if (tokens.length === 0) return null;
+  return (
+    <MetaChip label={label} icon={icon}>
+      {tokens.map((tok, i) => (
+        <span key={`${tok}-${i}`}>
+          {i > 0 && ", "}
+          {interactive ? (
+            <Link href={`${base}/${encodeURIComponent(tok)}`} className={metaLinkCls}>
+              {tok}
+            </Link>
+          ) : (
+            tok
+          )}
+        </span>
+      ))}
+    </MetaChip>
   );
 }
 
@@ -96,9 +147,9 @@ function SimilarRecipeTiles({ recipes }: { recipes: RecipeCardData[] }) {
   return (
     <section className="border-t border-ink/10 pt-4">
       {/* Abschnittstitel als Eyebrow im Marken-Grün (wie die Kachel-Eyebrows). */}
-      <h5 className="mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-leaf">
+      <h6 className="mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-leaf">
         {dict.travelList.similarTitle}
-      </h5>
+      </h6>
       {/* Kompakt: schon auf Mobil 2-spaltig (mind. zwei Vorschläge sichtbar),
           ab lg drei Spalten. Etwas kleineres Gap auf Mobil. */}
       <div className="grid grid-cols-2 gap-3 sm:gap-5 lg:grid-cols-3">
@@ -140,8 +191,9 @@ function DishItem({
                 .join(" · ")}
             </p>
           )}
-          {/* Gleiche Größe wie der Titel der Rezept-Kacheln darunter (text-lg). */}
-          <h4 className="font-display text-lg font-bold">{dish.name}</h4>
+          {/* Gleiche Größe wie der Titel der Rezept-Kacheln darunter (text-lg).
+              h5: unter dem „Gerichte / Getränke"-Zwischentitel (h4). */}
+          <h5 className="font-display text-lg font-bold">{dish.name}</h5>
           {dish.description && (
             <div
               className="prose-content mt-1 text-sm text-ink-soft"
@@ -223,6 +275,11 @@ function RestaurantCard({
             />
           )}
         </div>
+      )}
+      {r.dishes.length > 0 && (
+        <h4 className="mt-5 font-display text-base font-bold text-ink">
+          {dict.travelList.dishesTitle}
+        </h4>
       )}
       <ul className="mt-4 flex flex-col gap-5">
         {r.dishes.map((dish) => (
@@ -341,43 +398,33 @@ export async function TravelView({
             />
           )}
           <div className="mt-6 flex flex-wrap gap-x-8 gap-y-4">
-            {post.country && (
+            <MetaFilterLinks
+              label={dict.admin.travel.fieldCountry}
+              icon={<IconCountry className="h-5 w-5" />}
+              value={post.country}
+              base="/reisen/land"
+              interactive={interactive}
+            />
+            <MetaFilterLinks
+              label={dict.admin.travel.fieldRegion}
+              icon={<IconRegion className="h-5 w-5" />}
+              value={post.region}
+              base="/reisen/region"
+              interactive={interactive}
+            />
+            <MetaFilterLinks
+              label={dict.admin.travel.fieldCity}
+              icon={<IconCity className="h-5 w-5" />}
+              value={post.city}
+              base="/reisen/stadt"
+              interactive={interactive}
+            />
+            {post.travelYear != null && (
               <MetaChip
-                label={dict.admin.travel.fieldCountry}
-                icon={<IconCountry className="h-5 w-5" />}
-                href={
-                  interactive
-                    ? `/reisen/land/${encodeURIComponent(post.country)}`
-                    : undefined
-                }
+                label={dict.travelList.travelTime}
+                icon={<IconCalendar className="h-5 w-5" />}
               >
-                {post.country}
-              </MetaChip>
-            )}
-            {post.region && (
-              <MetaChip
-                label={dict.admin.travel.fieldRegion}
-                icon={<IconRegion className="h-5 w-5" />}
-                href={
-                  interactive
-                    ? `/reisen/region/${encodeURIComponent(post.region)}`
-                    : undefined
-                }
-              >
-                {post.region}
-              </MetaChip>
-            )}
-            {post.city && (
-              <MetaChip
-                label={dict.admin.travel.fieldCity}
-                icon={<IconCity className="h-5 w-5" />}
-                href={
-                  interactive
-                    ? `/reisen/stadt/${encodeURIComponent(post.city)}`
-                    : undefined
-                }
-              >
-                {post.city}
+                {formatTravelTime(post.travelMonth, post.travelYear)}
               </MetaChip>
             )}
           </div>
