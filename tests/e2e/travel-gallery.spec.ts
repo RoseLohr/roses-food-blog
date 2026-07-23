@@ -33,6 +33,14 @@ test.describe("Reisebericht: Foto-Galerie / Lightbox", () => {
     await expect(dialog).toBeVisible();
     await expect(page.getByText(G.counter(1, 3))).toBeVisible();
 
+    // A11y: Fokus wird IN den Dialog geholt (Schließen-Button)…
+    await expect(page.getByRole("button", { name: G.close })).toBeFocused();
+    // …und die Fokusfalle hält Tab im Dialog (nie am Hintergrund).
+    await page.keyboard.press("Tab");
+    expect(
+      await dialog.evaluate((d) => d.contains(document.activeElement)),
+    ).toBe(true);
+
     const bigImg = dialog.locator("img");
     const first = await bigImg.getAttribute("src");
 
@@ -51,9 +59,10 @@ test.describe("Reisebericht: Foto-Galerie / Lightbox", () => {
     await page.getByRole("button", { name: G.prev }).click();
     await expect(page.getByText(G.counter(3, 3))).toBeVisible();
 
-    // Escape schließt.
+    // Escape schließt; Fokus kehrt auf das öffnende Thumbnail zurück.
     await page.keyboard.press("Escape");
     await expect(dialog).toBeHidden();
+    await expect(thumbs.first()).toBeFocused();
   });
 
   test("Restaurant mit einem Foto: öffnet groß, keine Blätter-Pfeile", async ({

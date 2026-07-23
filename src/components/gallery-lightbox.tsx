@@ -12,8 +12,14 @@
  * Genutzt für Restaurant-Fotos (Einzelbild → nur Zoom) und Gericht-Fotos
  * (mehrere Bilder → durchblätterbar). Die Thumbnail-Anordnung bleibt beim
  * Aufrufer (className/Grid), damit das bestehende Layout unverändert bleibt.
+ *
+ * A11y: Solange das Overlay offen ist, wird der Fokus IN den Dialog geholt und
+ * dort gefangen (Fokusfalle) — Hintergrund-Bedienelemente sind per Tab nicht
+ * erreichbar (aria-modal). Beim Schließen kehrt der Fokus auf das öffnende
+ * Thumbnail zurück. Die Body-Scroll-Sperre stellt den VORHERIGEN overflow-Wert
+ * wieder her (kein Überschreiben einer fremden Sperre).
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { imageUrl, srcset } from "@/lib/image-url";
 import { t } from "@/i18n/de";
@@ -51,6 +57,11 @@ export function GalleryLightbox({
   const shown = images.filter((im) => im.variantWidths.length > 0);
   const count = shown.length;
   const [openIndex, setOpenIndex] = useState<number | null>(null);
+  const isOpen = openIndex !== null;
+
+  const dialogRef = useRef<HTMLDivElement>(null);
+  // Element, das den Dialog geöffnet hat — dorthin kehrt der Fokus zurück.
+  const openerRef = useRef<HTMLButtonElement | null>(null);
 
   const close = useCallback(() => setOpenIndex(null), []);
   const prev = useCallback(
@@ -62,21 +73,66 @@ export function GalleryLightbox({
     [count],
   );
 
+  // Effekt an `isOpen` (nicht an `openIndex`) gekoppelt: Blättern re-initialisiert
+  // Fokus/Sperre NICHT, nur Öffnen/Schließen.
   useEffect(() => {
-    if (openIndex === null) return;
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") close();
-      else if (e.key === "ArrowLeft") prev();
-      else if (e.key === "ArrowRight") next();
-    }
-    document.addEventListener("keydown", onKey);
-    // Hintergrund nicht scrollen, solange das Overlay offen ist.
+    if (!isOpen) return;
+    const opener = openerRef.current;
+    const dialog = dialogRef.current;
+
+    // Body-Scroll sperren, aber den vorherigen Inline-Wert merken + zurückgeben.
+    const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
+
+    const focusables = (): HTMLElement[] =>
+      dialog ? Array.from(dialog.querySelectorAll<HTMLElement>("button")) : [];
+    // Fokus in den Dialog holen (erster Button = Schließen).
+    focusables()[0]?.focus();
+
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        close();
+        return;
+      }
+      if (e.key === "ArrowLeft") {
+        prev();
+        return;
+      }
+      if (e.key === "ArrowRight") {
+        next();
+        return;
+      }
+      if (e.key === "Tab") {
+        // Fokusfalle: Tab zirkuliert nur innerhalb des Dialogs.
+        const els = focusables();
+        if (els.length === 0) {
+          e.preventDefault();
+          return;
+        }
+        const first = els[0];
+        const last = els[els.length - 1];
+        const active = document.activeElement;
+        const inside = dialog?.contains(active as Node) ?? false;
+        if (e.shiftKey) {
+          if (!inside || active === first) {
+            e.preventDefault();
+            last.focus();
+          }
+        } else if (!inside || active === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    }
+
+    document.addEventListener("keydown", onKey);
     return () => {
       document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = "";
+      document.body.style.overflow = prevOverflow;
+      // Fokus zurück auf das öffnende Thumbnail.
+      opener?.focus();
     };
-  }, [openIndex, close, prev, next]);
+  }, [isOpen, close, prev, next]);
 
   if (count === 0) return null;
 
@@ -88,7 +144,10 @@ export function GalleryLightbox({
       <button
         key={im.fileKey}
         type="button"
-        onClick={() => setOpenIndex(i)}
+        onClick={(e) => {
+          openerRef.current = e.currentTarget;
+          setOpenIndex(i);
+        }}
         className="block w-full cursor-zoom-in"
         aria-label={`${label ? `${label}: ` : ""}${im.altText || ""} – ${dict.gallery.zoom}`
           .replace(/\s+–/, " –")
@@ -120,9 +179,10 @@ export function GalleryLightbox({
         createPortal(
           // a11y-Ausnahme (begründet): Der Klick auf den Hintergrund schließt nur
           // ZUSÄTZLICH; die Tastaturpfade sind der Schließen-Button und Escape
-          // (globaler keydown). Pfeiltasten blättern.
+          // (globaler keydown). Pfeiltasten blättern, Tab bleibt im Dialog.
           // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/click-events-have-key-events
           <div
+            ref={dialogRef}
             role="dialog"
             aria-modal="true"
             aria-label={dict.gallery.dialogLabel}

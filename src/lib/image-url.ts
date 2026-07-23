@@ -2,11 +2,12 @@
  * Reine Bild-URL-Helfer — CLIENT-SICHER, ohne jede Node-Abhängigkeit.
  *
  * Bewusst getrennt von `media.ts`: Jenes Modul lädt den serverseitigen Bild-
- * Stack (node:fs, node:child_process, sharp, exifr). Importierte eine Client-
- * Komponente eine dieser Funktionen aus `media.ts`, zöge der Bundler `node:fs`
- * in den Browser-Bundle (Turbopack/Webpack brechen dann ab). Diese Datei enthält
- * nur String-Logik und darf von Server- UND Client-Code importiert werden.
- * `media.ts` re-exportiert sie, damit bestehende Importe unverändert bleiben.
+ * Stack (Node-Dateisystem und -Kindprozesse, sharp, exifr). Importierte eine
+ * Client-Komponente eine dieser Funktionen aus `media.ts`, zöge der Bundler
+ * diese Node-Kernmodule in den Browser-Bundle (Turbopack/Webpack brechen dann
+ * ab). Diese Datei enthält nur String-Logik und darf von Server- UND Client-
+ * Code importiert werden. `media.ts` re-exportiert sie, damit bestehende
+ * Importe unverändert bleiben.
  */
 export function imageUrl(fileKey: string, width: number): string {
   return `/uploads/${fileKey}/w${width}.webp`;
