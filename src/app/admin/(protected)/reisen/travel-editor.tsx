@@ -62,6 +62,7 @@ export interface TravelEditorProps {
     region: string;
     city: string;
     travelYear: number | null;
+    travelMonth: number | null;
     heroImageId: number | null;
     imageIds: number[];
     seoTitle: string;
@@ -288,6 +289,24 @@ export function TravelEditor({
               {d.fieldCity}
             </label>
             <input id="t-stadt" name="stadt" defaultValue={initial.city} className={inputCls} />
+          </div>
+          <div>
+            <label className={labelCls} htmlFor="t-reisemonat">
+              {d.fieldTravelMonth}
+            </label>
+            <select
+              id="t-reisemonat"
+              name="reisemonat"
+              defaultValue={initial.travelMonth ?? ""}
+              className={inputCls}
+            >
+              <option value="">{d.travelMonthNone}</option>
+              {dict.travelList.months.map((name, i) => (
+                <option key={i} value={i + 1}>
+                  {name}
+                </option>
+              ))}
+            </select>
           </div>
           <div>
             <label className={labelCls} htmlFor="t-reisejahr">

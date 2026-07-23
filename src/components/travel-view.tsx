@@ -54,6 +54,20 @@ function metaTokens(value: string): string[] {
     .filter(Boolean);
 }
 
+/**
+ * Reisezeitpunkt als „September 2026" (Monat optional). Ohne Jahr → null (kein
+ * Chip); mit Jahr, aber ohne gültigen Monat → nur das Jahr.
+ */
+function formatTravelTime(
+  month: number | null,
+  year: number | null,
+): string | null {
+  if (year == null) return null;
+  return month != null && month >= 1 && month <= 12
+    ? `${dict.travelList.months[month - 1]} ${year}`
+    : String(year);
+}
+
 const metaLinkCls =
   "text-leaf underline underline-offset-2 hover:text-rose-primary-dark";
 
@@ -407,10 +421,10 @@ export async function TravelView({
             />
             {post.travelYear != null && (
               <MetaChip
-                label={dict.admin.travel.fieldTravelYear}
+                label={dict.travelList.travelTime}
                 icon={<IconCalendar className="h-5 w-5" />}
               >
-                {post.travelYear}
+                {formatTravelTime(post.travelMonth, post.travelYear)}
               </MetaChip>
             )}
           </div>

@@ -144,6 +144,7 @@ export const travelSchema = z.object({
   region: z.string().default(""),
   city: z.string().default(""),
   travelYear: z.number().int().nullable().default(null),
+  travelMonth: z.number().int().nullable().default(null),
   heroImage: z.string().nullable().default(null),
   seoTitle: z.string().default(""),
   seoDescription: z.string().default(""),

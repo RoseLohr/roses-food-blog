@@ -93,6 +93,14 @@ function parseTravelYear(v: FormDataEntryValue | null): number | null {
   return Number.isInteger(n) && n >= 1900 && n <= 2100 ? n : null;
 }
 
+/** Reisemonat aus dem Formular: ganze Zahl 1–12, sonst null (leer/ungültig). */
+function parseTravelMonth(v: FormDataEntryValue | null): number | null {
+  const raw = String(v ?? "").trim();
+  if (!raw) return null;
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= 1 && n <= 12 ? n : null;
+}
+
 export type SaveTravelResult = { travelId: number } | { error: string };
 
 export async function saveTravelFromForm(
@@ -226,6 +234,7 @@ export async function saveTravelFromForm(
     region: String(formData.get("region") ?? "").trim(),
     city: String(formData.get("stadt") ?? "").trim(),
     travelYear: parseTravelYear(formData.get("reisejahr")),
+    travelMonth: parseTravelMonth(formData.get("reisemonat")),
     heroImageId: Number.isInteger(heroImageId) ? heroImageId : null,
     seoTitle: String(formData.get("seoTitel") ?? "").trim(),
     seoDescription: String(formData.get("seoBeschreibung") ?? "").trim(),

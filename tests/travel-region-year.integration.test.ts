@@ -63,18 +63,20 @@ describe("Reise: Region/Stadt-Filter + Reisejahr", () => {
     fd.set("region", "Queensland, New South Wales, Victoria, Western Australia");
     fd.set("stadt", "Cairns, Sydney, Melbourne, Perth");
     fd.set("reisejahr", "2024");
+    fd.set("reisemonat", "9");
     fd.set("restaurants", "[]");
     for (const [k, v] of Object.entries(overrides)) fd.set(k, v);
     return fd;
   }
 
-  it("speichert das Reisejahr und liest es zurück", async () => {
+  it("speichert Reisejahr + Reisemonat und liest sie zurück", async () => {
     const { saveTravelFromForm } = await import("@/lib/travel-save");
     const { getFullTravelPost } = await import("@/lib/travel");
     const res = await saveTravelFromForm(form(), adminId);
     const id = (res as { travelId: number }).travelId;
     const full = await getFullTravelPost({ id });
     expect(full!.post.travelYear).toBe(2024);
+    expect(full!.post.travelMonth).toBe(9); // → Frontend „September 2024"
     expect(full!.post.region).toContain("Queensland");
   });
 
@@ -90,6 +92,29 @@ describe("Reise: Region/Stadt-Filter + Reisejahr", () => {
       const full = await getFullTravelPost({ id });
       expect(full!.post.travelYear).toBeNull();
     }
+  });
+
+  it("verwirft einen ungültigen/leeren Reisemonat (→ null), 1–12 sind gültig", async () => {
+    const { saveTravelFromForm } = await import("@/lib/travel-save");
+    const { getFullTravelPost } = await import("@/lib/travel");
+    for (const bad of ["", "0", "13", "abc"]) {
+      const res = await saveTravelFromForm(
+        form({ titel: `Monat ${bad || "leer"}`, reisemonat: bad }),
+        adminId,
+      );
+      const full = await getFullTravelPost({
+        id: (res as { travelId: number }).travelId,
+      });
+      expect(full!.post.travelMonth).toBeNull();
+    }
+    const ok = await saveTravelFromForm(
+      form({ titel: "Monat 12", reisemonat: "12" }),
+      adminId,
+    );
+    const full = await getFullTravelPost({
+      id: (ok as { travelId: number }).travelId,
+    });
+    expect(full!.post.travelMonth).toBe(12);
   });
 
   it("findet den Bericht über JEDEN einzelnen Region-/Stadt-Wert", async () => {

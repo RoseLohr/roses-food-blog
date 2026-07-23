@@ -432,6 +432,7 @@ export async function importBundle(
         region: tv.region,
         city: tv.city,
         travelYear: tv.travelYear,
+        travelMonth: tv.travelMonth,
         heroImageId,
         seoTitle: tv.seoTitle,
         seoDescription: tv.seoDescription,
