@@ -33,7 +33,7 @@
     "ios_saf >= 16.4"
   ],
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.112.1",
+    "@anthropic-ai/sdk": "^0.114.0",
     "@types/leaflet.markercluster": "^1.5.6",
     "better-sqlite3": "12.11.1",
     "drizzle-orm": "0.45.2",
@@ -42,13 +42,13 @@
     "hash-wasm": "^4.12.0",
     "leaflet": "^1.9.4",
     "leaflet.markercluster": "^1.5.3",
-    "marked": "^18.0.6",
+    "marked": "^18.0.7",
     "mmdb-lib": "^3.0.2",
     "next": "16.2.11",
     "node-cron": "4.6.0",
     "nodemailer": "9.0.3",
-    "react": "19.2.7",
-    "react-dom": "19.2.7",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
     "server-only": "^0.0.1",
     "sharp": "0.35.3",
     "zod": "4.4.3"
@@ -56,7 +56,7 @@
   "devDependencies": {
     "@axe-core/playwright": "^4.12.1",
     "@eslint/js": "^9.39.5",
-    "@next/eslint-plugin-next": "^16.2.10",
+    "@next/eslint-plugin-next": "^16.2.11",
     "@playwright/test": "^1.61.1",
     "@stryker-mutator/core": "^9.6.1",
     "@stryker-mutator/vitest-runner": "^9.6.1",
@@ -75,7 +75,7 @@
     "tailwindcss": "4.3.3",
     "tsx": "^4.23.1",
     "typescript": "^5.9.0",
-    "typescript-eslint": "^8.64.0",
+    "typescript-eslint": "^8.65.0",
     "vitest": "^3.2.0"
   },
   "overrides": {
