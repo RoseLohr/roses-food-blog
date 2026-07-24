@@ -7,7 +7,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageTracker } from "./page-tracker";
-import { TravelPostCard, type TravelCardData } from "./travel-post-card";
+import { TravelPostCard } from "./travel-post-card";
 import { publishedTravelCards } from "@/lib/travel";
 import { JsonLd, breadcrumbJsonLd } from "@/lib/jsonld";
 import { getSiteName } from "@/lib/settings";
@@ -30,22 +30,15 @@ const LABEL: Record<TravelDimension, string> = {
   stadt: dict.admin.travel.fieldCity,
 };
 
-/** Veröffentlichte Reiseberichte mit passendem Land/Region/Stadt. */
-export async function loadTravelFilter(
-  dimension: TravelDimension,
-  value: string,
-): Promise<TravelCardData[]> {
-  return publishedTravelCards({ column: COLUMN[dimension], value });
-}
-
 export async function TravelFilterList({
   dimension,
   value,
 }: {
   dimension: TravelDimension;
+  /** Bereits dekodierter Filterwert (die Route dekodiert den Routenparameter). */
   value: string;
 }) {
-  const posts = await loadTravelFilter(dimension, value);
+  const posts = await publishedTravelCards({ column: COLUMN[dimension], value });
   if (posts.length === 0) notFound();
 
   const path = `/reisen/${dimension}/${encodeURIComponent(value)}`;
