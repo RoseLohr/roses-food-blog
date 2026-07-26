@@ -66,38 +66,48 @@ function escapeRawHtml(md: string): string {
  * (kosmetisch), wird aber nie fälschlich „repariert". Der Editor erzeugt
  * für redaktionelle Texte genau die code-freien Dokumente, die geheilt
  * werden. Innerhalb dieser gilt weiter: gültige Betonung bleibt
- * byte-identisch, escapte Sternchen (`\*`) bleiben wörtlich, `* `/`- `/
- * `1. ` (auch hinter `>`) bleiben Listen-Marker, und einfache Sterne mit
- * BEIDSEITIGEM Innen-Whitespace („2 * 3 * 4") bleiben wörtlich.
+ * byte-identisch, escapte Sternchen (`\*`, mit Backslash-PARITÄT geprüft)
+ * bleiben wörtlich, `* `/`- `/`1. ` (auch hinter `>`) bleiben Listen-Marker,
+ * und Sterne mit BEIDSEITIGEM Innen-Whitespace („2 * 3 * 4", „2 ** 3 ** 4")
+ * bleiben wörtlich — geheilt werden nur die EINSEITIGEN Editor-Fälle.
  */
 function repairEmphasisWhitespace(md: string): string {
+  // Ungerade Zahl von Backslashes unmittelbar vor Position i = escaped
+  // („\*" wörtlich); gerade Zahl = aktiver Marker („\\**" nach escaptem
+  // Backslash). Ein Lookbehind kann nicht zählen — deshalb Callback.
+  const escapedAt = (s: string, i: number): boolean => {
+    let n = 0;
+    while (i - 1 - n >= 0 && s[i - 1 - n] === "\\") n++;
+    return n % 2 === 1;
+  };
   const fix =
-    (marker: string, beidseitigErlaubt: boolean) =>
-    (all: string, lead: string, core: string, trail: string): string => {
+    (marker: string) =>
+    (
+      all: string,
+      lead: string,
+      core: string,
+      trail: string,
+      offset: number,
+      str: string,
+    ): string => {
       if (!lead && !trail) return all; // bereits gültig — unverändert
-      // Wörtliche Sterne wie in „2 * 3 * 4": beidseitiger Innen-Whitespace ist
-      // bei EINFACHEN Sternen fast nie eine kaputte Betonung (der Editor-Bug
-      // erzeugt nur einseitige Fälle) — nicht anfassen. Bei `**` ist die
-      // beidseitige Form dagegen ein plausibler Editor-Altbestand.
-      if (!beidseitigErlaubt && lead && trail) return all;
+      // Wörtliche Sterne wie in „2 * 3 * 4" / „2 ** 3 ** 4": beidseitiger
+      // Innen-Whitespace ist keine kaputte Betonung (der Editor-Bug erzeugt
+      // nur einseitige Fälle) — nicht anfassen.
+      if (lead && trail) return all;
       const c = core.trim();
       if (!c) return all; // nur Whitespace zwischen den Markern — nicht anfassen
+      if (escapedAt(str, offset)) return all; // öffnender Marker escaped
+      if (escapedAt(str, offset + all.length - marker.length)) return all; // schließender escaped
       return `${lead}${marker}${c}${marker}${trail}`;
     };
   const fixSegment = (seg: string): string =>
     seg
       // Fett: **…** mit Leerzeichen/Tabs direkt hinter dem öffnenden oder vor
-      // dem schließenden Marker. Kern ohne `*`, Marker nicht escaped.
-      .replace(
-        /(?<![\\*])\*\*([ \t]*)([^*\n]+?)([ \t]*)(?<!\\)\*\*(?!\*)/g,
-        fix("**", true),
-      )
-      // Kursiv: einzelner Stern, nicht Teil von `**`, nicht escaped —
-      // repariert nur EINSEITIG fehlplatzierten Whitespace (s. o.).
-      .replace(
-        /(?<![\\*])\*(?!\*)([ \t]*)([^*\n]+?)([ \t]*)(?<![\\*])\*(?!\*)/g,
-        fix("*", false),
-      );
+      // dem schließenden Marker. Kern ohne `*`; Escapes prüft der Callback.
+      .replace(/(?<!\*)\*\*([ \t]*)([^*\n]+?)([ \t]*)\*\*(?!\*)/g, fix("**"))
+      // Kursiv: einzelner Stern, nicht Teil von `**`.
+      .replace(/(?<!\*)\*(?!\*)([ \t]*)([^*\n]+?)([ \t]*)\*(?!\*)/g, fix("*"));
   // Code-Konstrukt irgendwo im Dokument? Dann NICHT reparieren (s. Kommentar).
   // Bewusst POSITIONSUNABHÄNGIG (Fences und eingerückter Code können auch
   // hinter Blockquote-/Listen-Präfixen beginnen): ein Backtick, drei Tilden,

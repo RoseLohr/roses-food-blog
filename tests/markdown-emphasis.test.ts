@@ -18,11 +18,25 @@ describe("renderMarkdown — Reparatur fehlplatzierter Betonungs-Whitespace", ()
     expect(html).not.toContain("**");
   });
 
-  it("repariert '** Text**' und beidseitige Leerzeichen", () => {
-    const html = renderMarkdown("Maps. ** Diese** ist ** ein Segen **.");
+  it("repariert '** Text**' (führendes Leerzeichen innen)", () => {
+    const html = renderMarkdown("Maps. ** Diese** ist gut.");
     expect(html).toContain("<strong>Diese</strong>");
-    expect(html).toContain("<strong>ein Segen</strong>");
     expect(html).not.toContain("**");
+  });
+
+  it("wörtliche Doppelsterne wie in „2 ** 3 ** 4“ bleiben Text (Sol-Befund)", () => {
+    // Beidseitiger Innen-Whitespace = wörtliche Sterne (z. B. Potenz-Operator
+    // in Prosa) — nur die einseitigen Editor-Fälle werden geheilt.
+    const html = renderMarkdown("Rechnung: 2 ** 3 ** 4");
+    expect(html).not.toContain("<strong>");
+    expect(html).toContain("2 ** 3 ** 4");
+  });
+
+  it("gerade Backslash-Zahl escaped den Marker NICHT — wird geheilt (Sol-Befund)", () => {
+    // "\\" ist ein escapter Backslash; das folgende "**fett **" ist ein
+    // aktiver (kaputter) Marker und muss repariert werden.
+    const html = renderMarkdown("Pfad C:\\\\**fett **danach");
+    expect(html).toContain("<strong>fett</strong>");
   });
 
   it("repariert Kursiv mit Leerzeichen vor dem schließenden Stern", () => {
