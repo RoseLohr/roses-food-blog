@@ -51,22 +51,34 @@ describe("optimalVariant: kleinste Variante, die den Bedarf deckt", () => {
   });
 });
 
-describe("uploadCacheControl: immutable nur mit bestätigter Revision (Panel-Befund gpt-5.6-sol)", () => {
-  it("Marker == aktuelle rev → immutable-Jahrescache ist sicher", () => {
-    expect(uploadCacheControl(String(encoder.rev))).toBe(
+describe("uploadCacheControl: immutable nur mit doppelt bestätigter Revision (gpt-5.6-sol R1+R3)", () => {
+  const rev = String(encoder.rev);
+
+  it("Marker UND angefragtes ?v == aktuelle rev → immutable-Jahrescache ist sicher", () => {
+    expect(uploadCacheControl(rev, rev)).toBe(
       "public, max-age=31536000, immutable",
     );
     // Whitespace aus fs.readFileSync stört nicht.
-    expect(uploadCacheControl(` ${encoder.rev}\n`)).toContain("immutable");
+    expect(uploadCacheControl(` ${rev}\n`, rev)).toContain("immutable");
   });
 
   it("fehlender/fremder/kaputter Marker → NUR kurzlebig (kein Stale-Pinning)", () => {
     // Während des Nachzugs verweisen Seiten schon auf ?v=<neue rev>, die
     // Datei trägt aber noch alte Bytes — immutable würde sie 1 Jahr festnageln.
     for (const marker of [null, "0", String(encoder.rev + 1), "unsinn", ""]) {
-      const wert = uploadCacheControl(marker);
+      const wert = uploadCacheControl(marker, rev);
       expect(wert, String(marker)).not.toContain("immutable");
       expect(wert, String(marker)).toContain("max-age=300");
+    }
+  });
+
+  it("fremdes/fehlendes angefragtes ?v → NUR kurzlebig (kein Vorgriff-Poisoning, R3)", () => {
+    // Ein Vorabruf von ?v=<rev+1> vor dem echten Rev-Bump bekäme sonst
+    // heutige Bytes mit immutable — nach dem Bump 1 Jahr stale im Cache.
+    for (const v of [null, "", String(encoder.rev + 1), "0", "unsinn"]) {
+      const wert = uploadCacheControl(rev, v);
+      expect(wert, String(v)).not.toContain("immutable");
+      expect(wert, String(v)).toContain("max-age=300");
     }
   });
 });

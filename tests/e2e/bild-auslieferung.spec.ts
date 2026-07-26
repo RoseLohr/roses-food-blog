@@ -69,6 +69,8 @@ interface Messung {
   current: string;
   srcset: string;
   breite: number;
+  /** 0 = Ladefehler (z. B. 404 einer srcset-Breite) — wird hart gemeldet. */
+  naturalWidth: number;
 }
 
 function verfuegbareBreiten(m: Messung): number[] {
@@ -100,26 +102,26 @@ async function messeSeite(
   const page = await context.newPage();
   await page.goto(seite, { waitUntil: "networkidle" });
 
-  // Lazy-Bilder anstoßen: schrittweise bis ganz nach unten scrollen.
-  await page.evaluate(async () => {
-    for (let y = 0; y <= document.body.scrollHeight; y += window.innerHeight) {
-      window.scrollTo(0, y);
-      await new Promise((r) => setTimeout(r, 120));
-    }
-    window.scrollTo(0, document.body.scrollHeight);
+  // Lazy-Timing raus aus der Messung: alle Bilder explizit eager laden.
+  // Ob/wann ein Browser-Build Lazy-Loads anstößt, hängt von Build, Viewport
+  // und Scroll-Margins ab (CI-Flake auf der Startseite) — die VARIANTENWAHL
+  // (srcset/sizes/DPR) ist davon unabhängig, nur die messen wir.
+  await page.evaluate(() => {
+    for (const img of document.querySelectorAll("img")) img.loading = "eager";
   });
-  // Alle Upload-Bilder müssen fertig geladen sein, bevor gemessen wird.
+  // Alle Upload-Bilder müssen fertig geladen sein, bevor gemessen wird —
+  // bei Timeout nennt die Assertion die hängenden Quellen (Diagnose).
   await expect
     .poll(
       () =>
         page.evaluate(() =>
           Array.from(document.querySelectorAll("img"))
-            .filter((i) => i.currentSrc.includes("/uploads/"))
-            .every((i) => i.complete),
+            .filter((i) => i.currentSrc.includes("/uploads/") && !i.complete)
+            .map((i) => i.currentSrc),
         ),
-      { timeout: 15_000 },
+      { timeout: 30_000 },
     )
-    .toBe(true);
+    .toEqual([]);
 
   const daten = await page.evaluate(() =>
     Array.from(document.querySelectorAll("img"))
@@ -127,6 +129,7 @@ async function messeSeite(
         current: img.currentSrc,
         srcset: img.getAttribute("srcset") ?? "",
         breite: img.getBoundingClientRect().width,
+        naturalWidth: img.naturalWidth,
       }))
       .filter((d) => d.current.includes("/uploads/") && d.breite > 0),
   );
@@ -175,6 +178,10 @@ test.describe("Bild-Auslieferung: gewählte Variante passt zur Rendergröße", (
           )}px × DPR ${dpr} = Bedarf ${e.bedarf}px · Leiter [${e.leiter.join(
             ", ",
           )}]`;
+          // Ladefehler (z. B. eine srcset-Breite, die die Route 404t) dürfen
+          // nie als „klein genug" durchrutschen — kaputt ist kaputt.
+          expect(e.naturalWidth, `LÄDT NICHT (404/defekt?): ${info}`)
+            .toBeGreaterThan(0);
           // Obergrenze: keine Variante größer als der größte legitime Bedarf
           // dieser Datei (+ Toleranz) — fängt jede künftige sizes-Lüge.
           expect(e.gewaehlt, `ZU GROSS: ${info}`).toBeLessThanOrEqual(erlaubt);

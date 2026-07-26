@@ -68,19 +68,32 @@ export function isVariantFile(name: string): boolean {
 }
 
 /**
- * Cache-Header für eine ausgelieferte Variante — abhängig vom Regenerier-
- * Marker (.encoder-rev) ihres Bild-Verzeichnisses (Fremd-Vendor-Befund
- * gpt-5.6-sol): Während der Nachzug läuft, verweisen die Seiten bereits auf
- * ?v=<neue rev>, die Dateien tragen aber noch alte Bytes. Ein `immutable`-
- * Jahrescache würde diese alten Bytes unter der NEUEN URL für ein Jahr
- * festnageln (dauerhaft stale). Deshalb gilt `immutable` NUR, wenn der
- * Marker die aktuelle Revision bestätigt — sonst kurzlebig (5 min), bis der
- * Nachzug das Bild abgeschlossen hat. Gleiches Prinzip wie die ?v-Hash-
- * Disziplin bei /fonts und /brand: unveränderlich nur, was verifiziert ist.
+ * Cache-Header für eine ausgelieferte Variante (Fremd-Vendor-Befunde
+ * gpt-5.6-sol, Runden 1+3): `immutable` (1 Jahr) darf NUR raus, wenn beides
+ * die aktuelle Encoder-Revision bestätigt —
+ *
+ * 1. der Regenerier-Marker (.encoder-rev) des Bild-Verzeichnisses: während
+ *    der Nachzug läuft, verweisen Seiten bereits auf ?v=<neue rev>, die
+ *    Dateien tragen aber noch alte Bytes — immutable würde sie ein Jahr
+ *    unter der neuen URL festnageln; UND
+ * 2. die vom Client ANGEFRAGTE ?v-Kennung: ein Vorabruf einer künftigen
+ *    Revision (?v=rev+1, bevor sie existiert) bekäme sonst heutige Bytes
+ *    mit immutable — ein Cache auf dem Weg lieferte sie nach dem echten
+ *    Rev-Bump dauerhaft stale aus (Poisoning per Vorgriff).
+ *
+ * Alles andere (alte/fremde/fehlende ?v, fehlender Marker) bleibt kurzlebig
+ * (5 min) und heilt von selbst. Gleiches Prinzip wie die ?v-Hash-Disziplin
+ * bei /fonts und /brand: unveränderlich nur, was verifiziert ist.
  */
-export function uploadCacheControl(markerInhalt: string | null): string {
+export function uploadCacheControl(
+  markerInhalt: string | null,
+  angefragteRev: string | null,
+): string {
   const aktuell =
-    markerInhalt !== null && Number(markerInhalt.trim()) === encoder.rev;
+    markerInhalt !== null &&
+    Number(markerInhalt.trim()) === encoder.rev &&
+    angefragteRev !== null &&
+    Number(angefragteRev.trim()) === encoder.rev;
   return aktuell
     ? "public, max-age=31536000, immutable"
     : "public, max-age=300";
