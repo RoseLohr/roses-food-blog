@@ -65,6 +65,39 @@ test.describe("Reisebericht: Foto-Galerie / Lightbox", () => {
     await expect(thumbs.first()).toBeFocused();
   });
 
+  test("Blätter-Pfeile und Schließen setzen sich vom Bild ab (dunkler Kreis + heller Ring)", async ({
+    page,
+  }) => {
+    await page.goto(REPORT);
+    const dish = page
+      .locator("li")
+      .filter({ has: page.getByRole("heading", { name: "Pasta alla Norma" }) });
+    await dish.getByRole("button").first().click();
+    await expect(
+      page.getByRole("dialog", { name: G.dialogLabel }),
+    ).toBeVisible();
+
+    // Kontrast-Kontrakt: dunkler Kreis (bg-black/60) + heller Ring
+    // (ring-white/70, als box-shadow gerendert) — vorher bg-white/15, das über
+    // hellen Fotos kaum sichtbar war.
+    for (const name of [G.prev, G.next, G.close]) {
+      const styles = await page
+        .getByRole("button", { name })
+        .evaluate((el) => {
+          const s = getComputedStyle(el);
+          return { bg: s.backgroundColor, shadow: s.boxShadow };
+        });
+      // Tailwind v4 rechnet Farben in oklab um — beide Schreibweisen zulassen.
+      expect(styles.bg, name).toMatch(
+        /^(rgba\(0, 0, 0, 0\.6\)|oklab\(0 0 0 \/ 0\.6\))$/,
+      );
+      // Ring = 1px-Spread-Schatten in Weiß (oklab-Helligkeit ≈ 1) mit Alpha 0.7.
+      expect(styles.shadow, name).toMatch(
+        /(?:rgba\(255, 255, 255, 0\.7\)|oklab\((?:1|0\.99\d*)[^)]*\/ 0\.7\)) 0px 0px 0px 1px/,
+      );
+    }
+  });
+
   test("Restaurant mit einem Foto: öffnet groß, keine Blätter-Pfeile", async ({
     page,
   }) => {
