@@ -91,46 +91,78 @@ function repairEmphasisWhitespace(md: string): string {
         /(?<![\\*])\*(?!\*)([ \t]*)([^*\n]+?)([ \t]*)(?<![\\*])\*(?!\*)/g,
         fix("*", false),
       );
-  // Inline-Code aussparen: nur Text AUSSERHALB von `…`-Spans reparieren.
-  const fixLine = (line: string): string =>
-    line
-      .split(/(`+[^`\n]*`+)/)
-      .map((part, i) => (i % 2 === 1 ? part : fixSegment(part)))
-      .join("");
+  // Inline-Code aussparen: Code-Spans nach CommonMark-Regel — geöffnet von
+  // n Backticks, geschlossen von der NÄCHSTEN Backtick-Folge EXAKT gleicher
+  // Länge (``a` x`` ist EIN Span mit innerem Backtick). Nur Text außerhalb
+  // der Spans wird repariert.
+  const fixLine = (line: string): string => {
+    let out = "";
+    let i = 0;
+    while (i < line.length) {
+      const open = line.indexOf("`", i);
+      if (open === -1) {
+        out += fixSegment(line.slice(i));
+        break;
+      }
+      let n = 1;
+      while (line[open + n] === "`") n++;
+      const rest = line.slice(open + n);
+      const closer = new RegExp(`(?<!\`)\`{${n}}(?!\`)`).exec(rest);
+      if (!closer) {
+        // Kein Schließer → kein Code-Span; Backticks bleiben wörtlich.
+        out += fixSegment(line.slice(i, open + n));
+        i = open + n;
+        continue;
+      }
+      out += fixSegment(line.slice(i, open));
+      const end = open + n + closer.index + n;
+      out += line.slice(open, end); // Span wörtlich
+      i = end;
+    }
+    return out;
+  };
 
-  // Offener Code-Fence: Zeichenart und Mindestlänge (CommonMark: geschlossen
-  // wird nur durch einen Fence GLEICHER Art mit mindestens gleicher Länge).
-  let fence: { ch: string; len: number } | null = null;
+  // Offener Code-Fence: Zeichenart, Mindestlänge UND Blockquote-Tiefe
+  // (CommonMark: geschlossen nur durch einen Fence gleicher Art mit
+  // mindestens gleicher Länge; endet das Zitat, endet auch der Fence).
+  let fence: { ch: string; len: number; depth: number } | null = null;
   return md
     .split("\n")
     .map((line) => {
-      // Fence-Erkennung (auch hinter Blockquote-Präfix) VOR allem anderen.
-      const quoted = /^((?:[ \t]*>)*[ \t]*)([\s\S]*)$/.exec(line)!;
-      const fm = /^(`{3,}|~{3,})(.*)$/.exec(quoted[2]);
+      // Zeile zerlegen: Blockquote-Präfix, Innen-Einrückung, Rumpf.
+      const q = /^((?:[ \t]*>)*)([ \t]*)([\s\S]*)$/.exec(line)!;
+      const [, quotePart, innerIndent, body] = q;
+      const depth = (quotePart.match(/>/g) ?? []).length;
+      // Fences dürfen höchstens 3 Leerzeichen eingerückt sein (kein Tab) —
+      // tiefer eingerückt ist es Code-INHALT, kein Fence.
+      const fenceIndentOk = !innerIndent.includes("\t") && innerIndent.length <= 3;
+      const fm = fenceIndentOk ? /^(`{3,}|~{3,})(.*)$/.exec(body) : null;
       if (fence) {
-        if (
-          fm &&
-          fm[1][0] === fence.ch &&
-          fm[1].length >= fence.len &&
-          fm[2].trim() === ""
-        )
+        if (depth < fence.depth) {
+          // Zitat zu Ende → Fence implizit geschlossen; Zeile normal verarbeiten.
           fence = null;
-        return line; // Fence-Inhalt (und der Fence selbst) bleibt wörtlich
+        } else {
+          if (
+            fm &&
+            depth === fence.depth &&
+            fm[1][0] === fence.ch &&
+            fm[1].length >= fence.len &&
+            fm[2].trim() === ""
+          )
+            fence = null;
+          return line; // Fence-Inhalt (und der Fence selbst) bleibt wörtlich
+        }
       }
       if (fm && !(fm[1][0] === "`" && fm[2].includes("`"))) {
-        fence = { ch: fm[1][0], len: fm[1].length };
+        fence = { ch: fm[1][0], len: fm[1].length, depth };
         return line;
       }
-      // Eingerückter Code (≥ 4 Leerzeichen/Tab): konservativ ganz
-      // überspringen — auch wenn der Inhalt wie ein Listen-Marker aussieht.
-      if (/^(?: {4,}|\t)/.test(line)) return line;
-      // Blockquote-/Listen-Präfix abtrennen — der Rest ist der reparierbare
-      // Inline-Text. `* `/`- `/`1. ` (auch hinter `>`) sind Marker.
-      const m =
-        /^((?:[ \t]*>)*[ \t]*(?:[*+-][ \t]+|\d+\.[ \t]+)?)([\s\S]*)$/.exec(
-          line,
-        )!;
-      return m[1] + fixLine(m[2]);
+      // Eingerückter Code (≥ 4 Leerzeichen/Tab nach dem Zitat-Präfix):
+      // konservativ überspringen — auch bei Listen-Optik im Inhalt.
+      if (/^(?: {4,}|\t)/.test(innerIndent + body)) return line;
+      // Listen-Marker vom Rumpf abtrennen — `* `/`- `/`1. ` sind Marker.
+      const m = /^([*+-][ \t]+|\d+\.[ \t]+)?([\s\S]*)$/.exec(body)!;
+      return quotePart + innerIndent + (m[1] ?? "") + fixLine(m[2]);
     })
     .join("\n");
 }

@@ -86,4 +86,23 @@ describe("renderMarkdown — Reparatur fehlplatzierter Betonungs-Whitespace", ()
     expect(html).toContain("* **x **");
     expect(html).not.toContain("<strong>");
   });
+
+  it("Doppel-Backtick-Span mit innerem Backtick bleibt wörtlich (Sol-Befund)", () => {
+    const html = renderMarkdown("Code: ``a` **x **`` bleibt");
+    expect(html).toContain("a` **x **");
+    expect(html).not.toContain("<strong>");
+  });
+
+  it("Fence in Blockquote leckt nicht heraus — äußerer Fence bleibt Code (Sol-Befund)", () => {
+    // Zeile 3 (```) steht AUSSERHALB des Zitats: das Zitat endet, die Zeile
+    // öffnet einen NEUEN Fence — "**x **" ist dessen Code-Inhalt.
+    const html = renderMarkdown("> ```\n> q\n```\n**x **\n```");
+    expect(html).toContain("**x **");
+    expect(html).not.toContain("<strong>");
+  });
+
+  it("≥4 Leerzeichen vor ``` ist Code, kein Fence — Folgetext wird repariert (Sol-Befund)", () => {
+    const html = renderMarkdown("Text davor.\n\n    ```\n\nDanach **fett **weiter.");
+    expect(html).toContain("<strong>fett</strong>");
+  });
 });
