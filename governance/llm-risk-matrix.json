@@ -1,10 +1,10 @@
 {
   "_comment": "C-05 — LLM-Application-Risk-Taxonomie (10 Kategorien). Jede Zelle MUSS eine Kontrolle UND einen Test tragen; eine leere Zelle ist ein Befund, eine Kontrolle ohne Test ein Befund im Kostüm. Erzwungen durch scripts/regime/llm-matrix-check.mjs. N/A braucht eine schriftliche Begründung.",
   "version": "1.0",
-  "feature": "KI-Rezeptassistent (admin-only, Text→JSON, Modell claude-opus-4-8, kein Tool-Use)",
+  "feature": "KI-Rezeptassistent (admin-only, Text und/oder Rezeptfotos→JSON, Modell claude-opus-4-8, kein Tool-Use)",
   "categories": {
     "prompt_injection": {
-      "control": "Architektonisches Containment: Ausgabe schema-gebunden (zodOutputFormat), kein Tool/Egress im KI-Pfad, Entwurf wird in-command geprüft.",
+      "control": "Architektonisches Containment: Ausgabe schema-gebunden (zodOutputFormat), kein Tool/Egress im KI-Pfad, Entwurf wird in-command geprüft. Gilt auch für den Bild-Kanal: Text in hochgeladenen Fotos ist per System-Prompt-Regel (recipe-draft@2) ausschließlich Daten, nie Anweisung — und kann architektonisch ohnehin nur schema-gebundenes JSON erzeugen.",
       "test": "tests/injection.containment.test.ts + scripts/regime/ai-capability-guard.mjs"
     },
     "sensitive_information_disclosure": {
@@ -42,8 +42,8 @@
       "test": "tests/season.test.ts (deterministischer Match) + Fabrikations-Position (C-38)"
     },
     "unbounded_consumption": {
-      "control": "max_tokens 8000, Timeout 90s, maxRetries 1, admin-only-Aufruf.",
-      "test": "scripts/regime/ai-budget-check.mjs (Caps im KI-Pfad vorhanden)"
+      "control": "max_tokens 8000, Timeout 120s, maxRetries 1, admin-only-Aufruf. Foto-Eingang gedeckelt: max. 5 Fotos à 8 MB (19 MB gesamt, unter dem Proxy-Limit), serverseitig auf 1568 px Langkante verkleinert und als JPEG neu kodiert.",
+      "test": "scripts/regime/ai-budget-check.mjs (Caps im KI-Pfad vorhanden) + tests/ai-recipe.integration.test.ts (Foto-Limits + Verkleinerung)"
     }
   }
 }

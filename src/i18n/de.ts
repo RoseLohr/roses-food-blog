@@ -684,14 +684,25 @@ export const de = {
     aiRecipe: {
       title: "KI-Assistent",
       intro:
-        "Füge Notizen oder einen Rohtext ein — die KI erstellt daraus einen vollständigen Rezeptentwurf (Felder, Abschnitte, Zutaten, Schritte, Kategorien). Vorschau prüfen und übernehmen.",
+        "Füge Notizen oder einen Rohtext ein und/oder lade Fotos der Rezeptseiten hoch — die KI liest den Text aus und erstellt daraus einen vollständigen Rezeptentwurf (Felder, Abschnitte, Zutaten, Schritte, Kategorien). Vorschau prüfen und übernehmen.",
       placeholder:
         "Text hier einfügen … z. B. Zutatenliste und grobe Zubereitung, oder ein Rezept von einer anderen Seite.",
+      photosLabel: "Fotos der Rezeptseiten (optional)",
+      photosHint: (max: number, mb: number) =>
+        `Bis zu ${max} Fotos (JPEG, PNG oder WebP, je max. ${mb} MB) — z. B. abfotografierte Kochbuchseiten oder Notizzettel. Die KI liest den Text aus allen Fotos zusammen aus. Die Fotos werden nicht gespeichert.`,
+      photoRemove: (name: string) => `Foto „${name}" entfernen`,
+      photosTooMany: (max: number) => `Maximal ${max} Fotos möglich.`,
+      photoTooLarge: (name: string, mb: number) =>
+        `„${name}" ist zu groß (max. ${mb} MB pro Foto).`,
+      photosTotalTooLarge: (mb: number) =>
+        `Die Fotos sind zusammen zu groß (max. ${mb} MB insgesamt).`,
+      photoBadType: (name: string) =>
+        `„${name}" hat ein nicht unterstütztes Format (nur JPEG, PNG oder WebP).`,
       generate: "Mit KI erzeugen",
       testConnection: "Verbindung testen",
       testing: "Teste …",
       generating: "KI arbeitet …",
-      generatingHint: "Das kann bis zu einer Minute dauern.",
+      generatingHint: "Das kann — besonders mit Fotos — bis zu zwei Minuten dauern.",
       failed: "Erzeugung fehlgeschlagen. Bitte erneut versuchen.",
       timeout:
         "Die KI hat zu lange gebraucht. Bitte erneut versuchen — ggf. mit weniger Text.",

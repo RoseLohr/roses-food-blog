@@ -1,14 +1,24 @@
 "use client";
 
 /**
- * KI-Rezeptassistent im Rezept-Editor: Text einfügen → an Claude schicken →
- * Vorschau des aufbereiteten Rezepts → per Klick ins Formular übernehmen.
- * Übernimmt selbst nichts in die DB; das Speichern bleibt beim Editor.
+ * KI-Rezeptassistent im Rezept-Editor: Text einfügen und/oder mehrere Fotos
+ * der Rezeptseiten hochladen → an Claude schicken (liest den Text aus allen
+ * Fotos) → Vorschau des aufbereiteten Rezepts → per Klick ins Formular
+ * übernehmen. Übernimmt selbst nichts in die DB; das Speichern bleibt beim
+ * Editor. Die Fotos sind Wegwerf-Input und landen nicht in der Medienbibliothek.
  */
 import { useState } from "react";
 import { renderMarkdown } from "@/lib/markdown";
 import { t } from "@/i18n/de";
 import type { RecipeDraft } from "@/lib/ai-recipe";
+import {
+  AI_IMAGE_ACCEPT,
+  AI_IMAGE_MB,
+  AI_TOTAL_MB,
+  MAX_AI_IMAGES,
+  checkAiImageSelection,
+  type AiImageIssue,
+} from "@/lib/ai-recipe-images";
 
 const dict = t();
 const a = dict.admin.aiRecipe;
@@ -20,12 +30,47 @@ export function RecipeAiAssistant({
   onApply: (draft: RecipeDraft) => void | Promise<void>;
 }) {
   const [text, setText] = useState("");
+  const [photos, setPhotos] = useState<File[]>([]);
+  const [photoError, setPhotoError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<RecipeDraft | null>(null);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+  function issueMessage(issue: AiImageIssue): string {
+    switch (issue.code) {
+      case "zu_viele":
+        return a.photosTooMany(MAX_AI_IMAGES);
+      case "zu_gross":
+        return a.photoTooLarge(issue.name, AI_IMAGE_MB);
+      case "gesamt":
+        return a.photosTotalTooLarge(AI_TOTAL_MB);
+      case "format":
+        return a.photoBadType(issue.name);
+    }
+  }
+
+  /** Auswahl ergänzen; bei Limit-Verstoß bleibt die alte Auswahl unverändert. */
+  function addPhotos(list: FileList | null) {
+    if (!list || list.length === 0) return;
+    const next = [...photos, ...Array.from(list)];
+    const issue = checkAiImageSelection(
+      next.map((f) => ({ name: f.name, size: f.size, type: f.type })),
+    );
+    if (issue) {
+      setPhotoError(issueMessage(issue));
+      return;
+    }
+    setPhotoError(null);
+    setPhotos(next);
+  }
+
+  function removePhoto(index: number) {
+    setPhotos((prev) => prev.filter((_, i) => i !== index));
+    setPhotoError(null);
+  }
 
   async function testConnection() {
     if (testing) return;
@@ -49,16 +94,19 @@ export function RecipeAiAssistant({
   }
 
   async function generate() {
-    if (!text.trim() || busy) return;
+    if ((!text.trim() && photos.length === 0) || busy) return;
     setBusy(true);
     setError(null);
     setDraft(null);
     try {
-      // 1) Job starten — antwortet sofort (kein Proxy-Timeout).
+      // 1) Job starten — antwortet sofort (kein Proxy-Timeout). Text + Fotos
+      // gehen als multipart/form-data (Fotos unter dem Feldnamen "fotos").
+      const fd = new FormData();
+      fd.set("text", text.trim());
+      for (const p of photos) fd.append("fotos", p);
       const startRes = await fetch("/api/admin/recipes/ai", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: text.trim() }),
+        body: fd,
       });
       if (!startRes.ok) {
         const data = (await startRes.json().catch(() => ({}))) as {
@@ -112,6 +160,8 @@ export function RecipeAiAssistant({
       await onApply(draft);
       setDraft(null);
       setText("");
+      setPhotos([]);
+      setPhotoError(null);
     } finally {
       setApplying(false);
     }
@@ -128,11 +178,64 @@ export function RecipeAiAssistant({
         placeholder={a.placeholder}
         className="w-full border border-ink-soft/30 bg-white px-3 py-2 text-sm"
       />
-      <div className="mt-2 flex flex-wrap items-center gap-3">
+
+      {/* Mehrere Fotos der Rezeptseiten — die KI liest den Text aus allen aus. */}
+      <div className="mt-3">
+        <label htmlFor="ki-rezept-fotos" className="block text-sm font-medium">
+          {a.photosLabel}
+        </label>
+        <p className="mb-1.5 mt-0.5 text-xs text-ink-soft">
+          {a.photosHint(MAX_AI_IMAGES, AI_IMAGE_MB)}
+        </p>
+        <input
+          id="ki-rezept-fotos"
+          type="file"
+          multiple
+          accept={AI_IMAGE_ACCEPT}
+          disabled={busy}
+          onChange={(e) => {
+            addPhotos(e.target.files);
+            // Zurücksetzen, damit dieselbe Datei erneut wählbar ist.
+            e.target.value = "";
+          }}
+          className="block w-full text-sm text-ink-soft file:mr-3 file:border file:border-ink/20 file:bg-white file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-ink hover:file:bg-cream"
+        />
+        {photos.length > 0 && (
+          <ul className="mt-2 flex flex-col gap-1">
+            {photos.map((p, i) => (
+              <li
+                key={`${p.name}-${i}`}
+                className="flex items-center gap-2 bg-white px-2 py-1 text-sm"
+              >
+                <span className="min-w-0 truncate">{p.name}</span>
+                <span className="shrink-0 text-xs text-ink-soft">
+                  {(p.size / (1024 * 1024)).toFixed(1).replace(".", ",")} MB
+                </span>
+                <button
+                  type="button"
+                  onClick={() => removePhoto(i)}
+                  disabled={busy}
+                  aria-label={a.photoRemove(p.name)}
+                  className="ml-auto shrink-0 border border-ink/20 px-2 text-sm leading-6 hover:bg-cream disabled:opacity-60"
+                >
+                  ×
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        {photoError && (
+          <p role="alert" className="mt-2 bg-red-50 p-2 text-sm text-red-800">
+            {photoError}
+          </p>
+        )}
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-3">
         <button
           type="button"
           onClick={generate}
-          disabled={busy || text.trim() === ""}
+          disabled={busy || (text.trim() === "" && photos.length === 0)}
           className="rounded-lg bg-rose-primary px-4 py-2 text-sm font-semibold text-white hover:bg-rose-primary-dark disabled:opacity-60"
         >
           {busy ? a.generating : a.generate}

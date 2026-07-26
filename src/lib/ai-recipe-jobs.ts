@@ -12,6 +12,7 @@ import crypto from "node:crypto";
 import {
   AiRecipeError,
   generateRecipeDraft,
+  type AiDraftImage,
   type RecipeDraft,
 } from "./ai-recipe";
 
@@ -37,7 +38,14 @@ function cleanup(): void {
   }
 }
 
-export function startRecipeJob(text: string): string {
+export interface RecipeJobInput {
+  text: string;
+  /** Vorverkleinerte Rezeptfotos. Leben NUR im Closure des Laufs — nie im
+   *  Job-Record der Map (RAM-Schonung; B-07: keine Inhalte persistieren). */
+  images: AiDraftImage[];
+}
+
+export function startRecipeJob(input: RecipeJobInput): string {
   cleanup();
   const id = crypto.randomBytes(12).toString("hex");
   jobs.set(id, { status: "running", updatedAt: Date.now() });
@@ -45,7 +53,7 @@ export function startRecipeJob(text: string): string {
   // festgehalten und niemals nach außen geworfen (kein unhandled rejection).
   void (async () => {
     try {
-      const draft = await generateRecipeDraft(text);
+      const draft = await generateRecipeDraft(input.text, input.images);
       jobs.set(id, { status: "done", draft, updatedAt: Date.now() });
     } catch (err) {
       const code = err instanceof AiRecipeError ? err.code : "unknown";

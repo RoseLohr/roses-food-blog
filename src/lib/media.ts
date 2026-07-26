@@ -14,6 +14,7 @@
 import crypto from "node:crypto";
 import { execFile } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { asc, eq, inArray } from "drizzle-orm";
@@ -35,6 +36,15 @@ export const ALLOWED_MIME = ["image/jpeg", "image/png", "image/webp"];
  * bereits abgelegte Varianten bleiben unverändert.
  */
 export const WEBP_QUALITY = 76;
+
+/**
+ * JPEG-Qualität für KI-Rezeptfotos (prepareAiImage, beide Backends): 80 ist
+ * für abfotografierten TEXT die sichere Wahl — Kompressionsartefakte kosten
+ * bei Schrift direkt Lesegenauigkeit, deshalb bewusst etwas höher als die
+ * WebP-Qualität der Galerie-Bilder. Zentral definiert wie WEBP_QUALITY
+ * (Guardrail: tests/perf-guardrails.test.ts, keine Literal-Qualitäten).
+ */
+export const AI_JPEG_QUALITY = 80;
 
 export function uploadsDir(): string {
   return path.join(process.env.DATA_DIR ?? "./data", "uploads");
@@ -130,6 +140,13 @@ interface ImageBackend {
     outFile: string,
     targetWidth: number,
   ): Promise<void>;
+  /** Auf maximale LANGKANTE begrenzen und als JPEG schreiben (EXIF entfernt). */
+  resizeToJpeg(
+    file: string,
+    buffer: Buffer,
+    outFile: string,
+    maxEdge: number,
+  ): Promise<void>;
 }
 
 const sharpBackend: ImageBackend = {
@@ -147,6 +164,19 @@ const sharpBackend: ImageBackend = {
       .rotate() // EXIF-Orientierung anwenden, bevor Metadaten wegfallen
       .resize({ width: targetWidth, withoutEnlargement: true })
       .webp({ quality: WEBP_QUALITY })
+      .toFile(outFile);
+  },
+  async resizeToJpeg(_file, buffer, outFile, maxEdge) {
+    const sharp = (await import("sharp")).default;
+    await sharp(buffer)
+      .rotate() // EXIF-Orientierung anwenden, bevor Metadaten wegfallen
+      .resize({
+        width: maxEdge,
+        height: maxEdge,
+        fit: "inside",
+        withoutEnlargement: true,
+      })
+      .jpeg({ quality: AI_JPEG_QUALITY })
       .toFile(outFile);
   },
 };
@@ -181,6 +211,16 @@ const vipsBackend: ImageBackend = {
       `${targetWidth}x100000`,
       "-o",
       `${outFile}[Q=${WEBP_QUALITY},strip]`,
+    ]);
+  },
+  async resizeToJpeg(file, _buffer, outFile, maxEdge) {
+    // Beide Kanten begrenzen (Langkante ≤ maxEdge), Ausgabe als JPEG.
+    await execFileAsync("vipsthumbnail", [
+      file,
+      "-s",
+      `${maxEdge}x${maxEdge}`,
+      "-o",
+      `${outFile}[Q=${AI_JPEG_QUALITY},strip]`,
     ]);
   },
 };
@@ -296,6 +336,54 @@ export async function storeImage(
     throw err;
   } finally {
     fs.rmSync(tmpFile, { force: true });
+  }
+}
+
+/**
+ * Ziel-Langkante für KI-Rezeptfotos: 1568 px ist die token-optimale Obergrenze
+ * der Vision-Verarbeitung — größere Fotos kosten nur mehr Tokens, nicht mehr
+ * Lesbarkeit. Fotos werden für den KI-Aufruf IMMER neu kodiert (JPEG): das
+ * entfernt zugleich sämtliche EXIF-Metadaten (Ort/Gerät) vor dem API-Versand.
+ */
+const AI_IMAGE_MAX_EDGE = 1568;
+
+/**
+ * Bereitet ein hochgeladenes Rezeptfoto für den KI-Assistenten vor: echte
+ * Format-Prüfung per Bildprobe (Magic Bytes, nie der Client-MIME-Typ), auf
+ * die Langkante verkleinern, als JPEG (Qualität 80) neu kodieren und base64
+ * zurückgeben. Läuft über dieselbe Backend-Abstraktion wie die Medien-Uploads
+ * (sharp bzw. vips — der Server kann per IMAGE_BACKEND=vips laufen). Das Foto
+ * wird NICHT in der Medienbibliothek gespeichert — es ist Wegwerf-Input für
+ * die Texterkennung und landet nirgends auf Platte (nur ein Temp-Verzeichnis
+ * während der Konvertierung, das sofort wieder gelöscht wird).
+ */
+export async function prepareAiImage(
+  buffer: Buffer,
+): Promise<{ data: string; mediaType: "image/jpeg" }> {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "roses-ki-foto-"));
+  const inFile = path.join(dir, "eingang");
+  const outFile = path.join(dir, "klein.jpg");
+  try {
+    fs.writeFileSync(inFile, buffer);
+    const be = backend();
+    // Probe-Fehler (kein Bild) in eine deutsche, anzeigbare Meldung übersetzen —
+    // sharp/vips werfen hier sonst englische Interna bis in die Fehleranzeige.
+    let meta: Probe;
+    try {
+      meta = await be.probe(inFile, buffer);
+    } catch {
+      throw new Error("Datei ist kein gültiges Bild.");
+    }
+    if (!["jpeg", "png", "webp"].includes(meta.format)) {
+      throw new Error("Nur JPEG, PNG oder WebP werden unterstützt.");
+    }
+    await be.resizeToJpeg(inFile, buffer, outFile, AI_IMAGE_MAX_EDGE);
+    return {
+      data: fs.readFileSync(outFile).toString("base64"),
+      mediaType: "image/jpeg",
+    };
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
   }
 }
 
