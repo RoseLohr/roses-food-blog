@@ -95,6 +95,66 @@ describe("htmlToMarkdown", () => {
     expect(md).not.toContain("style");
   });
 
+  it("zieht Leerzeichen aus Fett-Markern heraus (contentEditable nimmt sie mit in den Tag)", () => {
+    // Ohne den Fix entstünde "**wichtiger Hinweis **zur" — kein gültiges
+    // Markdown-Fett; die Sternchen blieben im Editor UND im Frontend sichtbar.
+    const md = htmlToMarkdown(
+      root([
+        el("P", [
+          txt("Vorab ein "),
+          el("STRONG", [txt("wichtiger Hinweis ")]),
+          txt("zur Navigation"),
+        ]),
+      ]),
+    );
+    expect(md).toBe("Vorab ein **wichtiger Hinweis** zur Navigation");
+  });
+
+  it("zieht führende Leerzeichen aus Kursiv-Markern heraus", () => {
+    const md = htmlToMarkdown(
+      root([el("P", [txt("ein"), el("EM", [txt(" Segen")]), txt(" und")])]),
+    );
+    expect(md).toBe("ein *Segen* und");
+  });
+
+  it("verschachtelt Fett+Kursiv mit Leerzeichen am Ende bleibt gültig", () => {
+    const md = htmlToMarkdown(
+      root([
+        el("P", [el("STRONG", [el("EM", [txt("beides ")])]), txt("danach")]),
+      ]),
+    );
+    expect(md).toBe("***beides*** danach");
+  });
+
+  it("führender Einzug im Fett am Absatzanfang erzeugt KEINEN Codeblock (Sol-Befund, widerlegt)", () => {
+    // 4 Leerzeichen im <strong> am Blockanfang: der Block-Trim entfernt sie —
+    // die Zeile beginnt mit den Markern, nie mit Einzug.
+    const md = htmlToMarkdown(
+      root([el("P", [el("STRONG", [txt("    viel Einzug ")]), txt("danach")])]),
+    );
+    expect(md).toBe("**viel Einzug** danach");
+  });
+
+  it("Einzug nach <br> bleibt Absatz-Fortsetzung, kein Codeblock (Sol-Befund, widerlegt)", async () => {
+    const { renderMarkdown } = await import("@/lib/markdown");
+    const md = htmlToMarkdown(
+      root([el("P", [txt("a"), el("BR"), el("STRONG", [txt("    b ")])])]),
+    );
+    expect(md).toBe("a\n    **b**");
+    // CommonMark: eingerückter Code kann einen Absatz nicht unterbrechen.
+    const html = renderMarkdown(md);
+    expect(html).not.toContain("<pre>");
+    expect(html).toContain("<strong>b</strong>");
+  });
+
+  it("nur Whitespace in Fett erzeugt keine Marker", () => {
+    const md = htmlToMarkdown(
+      root([el("P", [txt("a"), el("STRONG", [txt("  ")]), txt("b")])]),
+    );
+    expect(md).not.toContain("*");
+    expect(md).toBe("a  b");
+  });
+
   it("trennt mehrere Absätze mit Leerzeile", () => {
     const md = htmlToMarkdown(
       root([el("P", [txt("eins")]), el("P", [txt("zwei")])]),

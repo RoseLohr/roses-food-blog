@@ -44,6 +44,29 @@ function escapeInline(text: string): string {
   return text.replace(/([\\`*_[\]])/g, "\\$1");
 }
 
+/**
+ * Text mit Betonungs-Markern umschließen, ohne dass führender/abschließender
+ * Whitespace INNERHALB der Marker landet: `**Hinweis **` ist KEIN gültiges
+ * Markdown-Fett (der schließende Marker darf nicht auf Whitespace folgen) und
+ * bliebe im Editor wie im Frontend als sichtbare Sternchen stehen.
+ * contentEditable nimmt beim Formatieren gern ein Leerzeichen mit in den Tag —
+ * der Whitespace wandert deshalb VOR bzw. HINTER die Marker.
+ *
+ * Herausgeschobener FÜHRENDER Whitespace kann keinen eingerückten
+ * Markdown-Codeblock erzeugen: am Blockanfang wird er von inlineChildren()/
+ * flush() (`.trim()`) entfernt, und mitten im Absatz (nach einem <br>) kann
+ * eine eingerückte Zeile per CommonMark keinen Codeblock beginnen
+ * („indented code cannot interrupt a paragraph"). Beides ist in
+ * tests/rich-text.test.ts als Regressionstest verankert.
+ */
+function emphasize(kids: string, marker: string): string {
+  const m = /^(\s*)([\s\S]*?)(\s*)$/.exec(kids);
+  if (!m) return kids;
+  const [, lead, core, trail] = m;
+  if (!core) return kids; // nur Whitespace → keine Marker
+  return `${lead}${marker}${core}${marker}${trail}`;
+}
+
 function inline(node: MinimalNode): string {
   if (node.nodeType === 3) return escapeInline(node.textContent ?? "");
   if (node.nodeType !== 1) return "";
@@ -54,10 +77,10 @@ function inline(node: MinimalNode): string {
       return "\n";
     case "STRONG":
     case "B":
-      return kids.trim() ? `**${kids}**` : kids;
+      return emphasize(kids, "**");
     case "EM":
     case "I":
-      return kids.trim() ? `*${kids}*` : kids;
+      return emphasize(kids, "*");
     case "CODE":
       return kids.trim() ? "`" + (node.textContent ?? "") + "`" : "";
     case "A": {

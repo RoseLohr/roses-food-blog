@@ -193,7 +193,7 @@ export function GalleryLightbox({
               type="button"
               onClick={close}
               aria-label={dict.gallery.close}
-              className="absolute right-4 top-4 flex h-11 w-11 items-center justify-center rounded-full bg-white/15 text-2xl leading-none text-white hover:bg-white/30"
+              className="absolute right-4 top-4 flex h-11 w-11 items-center justify-center rounded-full bg-black/60 text-2xl leading-none text-white shadow-lg ring-1 ring-white/70 hover:bg-black/80"
             >
               ×
             </button>
@@ -207,7 +207,7 @@ export function GalleryLightbox({
                     prev();
                   }}
                   aria-label={dict.gallery.prev}
-                  className="absolute left-3 top-1/2 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-white/15 text-3xl leading-none text-white hover:bg-white/30 sm:left-6"
+                  className="absolute left-3 top-1/2 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-black/60 text-3xl leading-none text-white shadow-lg ring-1 ring-white/70 hover:bg-black/80 sm:left-6"
                 >
                   ‹
                 </button>
@@ -218,7 +218,7 @@ export function GalleryLightbox({
                     next();
                   }}
                   aria-label={dict.gallery.next}
-                  className="absolute right-3 top-1/2 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-white/15 text-3xl leading-none text-white hover:bg-white/30 sm:right-6"
+                  className="absolute right-3 top-1/2 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-black/60 text-3xl leading-none text-white shadow-lg ring-1 ring-white/70 hover:bg-black/80 sm:right-6"
                 >
                   ›
                 </button>
