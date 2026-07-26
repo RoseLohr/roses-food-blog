@@ -24,17 +24,18 @@
  *   halb geschriebene Datei ausliefern. Der Temp-Name MUSS auf .webp enden
  *   (vipsthumbnail leitet das Ausgabeformat aus der Endung ab); ausgeliefert
  *   wird er nie (die Route akzeptiert ausschließlich w<N>.webp).
- * - PID im Temp-Namen statt Prozess-Lock (Panel-Befund gpt-5.6-sol R5):
+ * - PID im Temp-Namen statt Prozess-Lock (Panel-Befunde gpt-5.6-sol R5/R7):
  *   Laufen zwei Nachzüge parallel (Container-Hintergrundlauf + manueller
  *   npm-Aufruf), publiziert jeder nur Dateien, die er SELBST vollständig
  *   geschrieben hat — ein geteilter Temp-Name hätte halb geschriebene
  *   Bytes des anderen Prozesses per Rename veröffentlichen können. Der
- *   Temp-Sweep je Bild räumt zugleich Waisen ab (SIGKILL mitten im Lauf);
- *   bricht er einem LEBENDEN Parallel-Lauf die Temp-Datei weg, schlägt
- *   dessen Rename sauber fehl (Fehlerpfad, Wiederholung beim nächsten
- *   Start) — Korruption ist in keiner Verzahnung möglich. Ein Lockfile
- *   wäre nach SIGKILL selbst ein Stale-Risiko (Heuristik nötig) und
- *   schützte nicht besser.
+ *   Temp-Sweep je Bild räumt eigene Temps immer und fremde nur ab, wenn
+ *   sie nachweislich verwaist sind (SIGKILL-Reste; ein lebender Lauf hält
+ *   seine Temp-Datei nur Sekunden) — so können sich parallele Läufe nicht
+ *   gegenseitig zum Scheitern bringen. Korruption ist unabhängig davon in
+ *   keiner Verzahnung möglich: immutable gibt die Route nur für Dateien,
+ *   deren Byte-Größe das Abschluss-Manifest bestätigt. Ein Lockfile wäre
+ *   nach SIGKILL selbst ein Stale-Risiko und schützte nicht besser.
  *
  * Cache: /uploads liefert mit immutable-Jahrescache. Das Busting übernehmen
  * die Bild-URLs selbst (?v=rev aus derselben Konfiguration, media-url.ts) —
@@ -76,10 +77,30 @@ function markerAktuell(file) {
   }
 }
 
-/** Alle Temp-Dateien (neu-…) eines Bild-Verzeichnisses entfernen. */
+/** Ein lebender Lauf hält seine Temp-Datei nur Sekunden (ein Encode);
+ *  deutlich ältere fremde Temps sind SIGKILL-Waisen. */
+const TEMP_VERWAIST_MS = 15 * 60 * 1000;
+
+/** Temp-Dateien (neu-…) entfernen: EIGENE immer, FREMDE nur wenn nachweislich
+ *  verwaist (Panel-Befund gpt-5.6-sol R7: das Wegbrechen der frischen
+ *  Temp-Datei eines lebenden Parallel-Laufs konnte beide Läufe scheitern
+ *  lassen — der Nachzug bliebe dann bis zum Neustart liegen). Die Cache-
+ *  Korrektheit hängt NICHT am Sweep, sondern an der Manifest-Verifikation
+ *  der Route; hier geht es nur um Waisen-Hygiene und Liveness. */
 function raeumeTemps(dir) {
+  const jetzt = Date.now();
   for (const f of fs.readdirSync(dir).filter((f) => f.startsWith("neu-"))) {
-    fs.rmSync(path.join(dir, f), { force: true });
+    const eigen = f.startsWith(`neu-${process.pid}-`);
+    let verwaist = false;
+    if (!eigen) {
+      try {
+        verwaist =
+          jetzt - fs.statSync(path.join(dir, f)).mtimeMs > TEMP_VERWAIST_MS;
+      } catch {
+        continue; // gerade verschwunden (fremdes Rename) — nichts zu tun
+      }
+    }
+    if (eigen || verwaist) fs.rmSync(path.join(dir, f), { force: true });
   }
 }
 

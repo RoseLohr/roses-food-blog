@@ -76,6 +76,16 @@ describe("Regenerierung bestehender Uploads (Encoder-Revision)", () => {
       ).toBe(fs.statSync(path.join(dir, `w${w}.webp`)).size);
     }
 
+    // Parallel-Lauf-Kontrakt (gpt-5.6-sol R7): eine FRISCHE fremde Temp-Datei
+    // (lebender zweiter Lauf) darf der Sweep nicht anfassen, eine VERWAISTE
+    // (SIGKILL-Rest, alte mtime) muss er abräumen.
+    const frischeTemp = path.join(dir, "neu-99999-w320.webp");
+    const verwaisteTemp = path.join(dir, "neu-88888-w480.webp");
+    fs.writeFileSync(frischeTemp, "lebender-parallel-lauf");
+    fs.writeFileSync(verwaisteTemp, "sigkill-waise");
+    const alt = new Date(Date.now() - 60 * 60 * 1000);
+    fs.utimesSync(verwaisteTemp, alt, alt);
+
     // Alt-Bestand simulieren (Zustand VOR dieser Revision): kleine Stufen
     // existieren nicht, Marker fehlt, die vorhandenen Varianten sind „alt".
     for (const w of [160, 480, 768]) {
@@ -95,6 +105,11 @@ describe("Regenerierung bestehender Uploads (Encoder-Revision)", () => {
       });
     const ausgabe = lauf();
     expect(ausgabe).toContain("1 Bild(er) regeneriert");
+
+    // Sweep-Kontrakt: frische fremde Temp lebt noch, Waise ist weg.
+    expect(fs.existsSync(frischeTemp), "frische fremde Temp-Datei").toBe(true);
+    expect(fs.existsSync(verwaisteTemp), "verwaiste Temp-Datei").toBe(false);
+    fs.rmSync(frischeTemp, { force: true });
 
     // Fehlende Stufen wurden erzeugt UND in media_variant registriert.
     for (const w of [160, 480, 768]) {
