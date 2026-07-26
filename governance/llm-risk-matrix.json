@@ -42,7 +42,7 @@
       "test": "tests/season.test.ts (deterministischer Match) + Fabrikations-Position (C-38)"
     },
     "unbounded_consumption": {
-      "control": "max_tokens 8000, Timeout 120s, maxRetries 1, admin-only-Aufruf. Foto-Eingang gedeckelt: max. 5 Fotos à 8 MB (19 MB gesamt, unter dem Proxy-Limit), serverseitig auf 1568 px Langkante verkleinert und als JPEG neu kodiert.",
+      "control": "max_tokens 8000, Timeout 120s, maxRetries 1, admin-only-Aufruf. Foto-Eingang gedeckelt: max. 5 Fotos à 8 MB (19 MB gesamt, unter dem Proxy-Limit) UND Pixel-Deckel 60 MP vor dem Dekodieren (Dekompressions-Bomben), serverseitig auf 1568 px Langkante verkleinert und als JPEG neu kodiert.",
       "test": "scripts/regime/ai-budget-check.mjs (Caps im KI-Pfad vorhanden) + tests/ai-recipe.integration.test.ts (Foto-Limits + Verkleinerung)"
     }
   }

@@ -46,6 +46,25 @@ export const WEBP_QUALITY = 76;
  */
 export const AI_JPEG_QUALITY = 80;
 
+/**
+ * Pixel-Deckel gegen Dekompressions-Bomben (Cross-Vendor-Befund): Byte-Limits
+ * begrenzen die PIXELZAHL nicht — ein stark komprimiertes PNG/WebP unter dem
+ * Byte-Cap kann hunderte Megapixel deklarieren und beim Dekodieren CPU/RAM
+ * des kleinen Servers sprengen. Die Prüfung läuft direkt nach der Header-Probe
+ * (liest NUR Metadaten, dekodiert nichts) und gilt für Medien-Uploads UND
+ * KI-Rezeptfotos. 60 MP liegt komfortabel über jedem Smartphone-Foto (12–48 MP).
+ */
+export const MAX_IMAGE_PIXELS = 60_000_000;
+
+/** Wirft die deutsche Pixel-Deckel-Meldung, wenn width×height das Limit reißt. */
+function assertPixelCap(width: number, height: number): void {
+  if (width * height > MAX_IMAGE_PIXELS) {
+    throw new Error(
+      `Bild hat zu viele Pixel (max. ${MAX_IMAGE_PIXELS / 1_000_000} Megapixel).`,
+    );
+  }
+}
+
 export function uploadsDir(): string {
   return path.join(process.env.DATA_DIR ?? "./data", "uploads");
 }
@@ -294,6 +313,7 @@ export async function storeImage(
     if (!["jpeg", "png", "webp"].includes(meta.format)) {
       throw new Error("Nur JPEG, PNG oder WebP werden unterstützt.");
     }
+    assertPixelCap(meta.width, meta.height);
 
     const widths: number[] = VARIANT_WIDTHS.filter((w) => w <= meta.width);
     // Sehr kleine Bilder: eine Variante; Hochskalieren wird vermieden,
@@ -386,6 +406,9 @@ export async function prepareAiImage(
     if (!["jpeg", "png", "webp"].includes(meta.format)) {
       throw new Error("Nur JPEG, PNG oder WebP werden unterstützt.");
     }
+    // Pixel-Deckel VOR dem Dekodieren (Dekompressions-Bomben-Schutz) — die
+    // Probe oben liest nur den Header, erst resizeToJpeg würde dekodieren.
+    assertPixelCap(meta.width, meta.height);
     await be.resizeToJpeg(inFile, buffer, outFile, AI_IMAGE_MAX_EDGE);
     return {
       data: fs.readFileSync(outFile).toString("base64"),

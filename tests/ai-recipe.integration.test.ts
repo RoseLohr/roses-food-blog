@@ -259,6 +259,38 @@ describe("prepareAiImage (Verkleinerung + echte Format-Prüfung)", () => {
     expect(mean).toBeGreaterThan(240);
   });
 
+  it("blockt Dekompressions-Bomben: riesige Pixelmaße fallen VOR dem Dekodieren (Sol-Befund)", async () => {
+    const zlib = await import("node:zlib");
+    const { prepareAiImage, storeImage } = await import("@/lib/media");
+    // Mini-PNG (wenige hundert Bytes), dessen Header 12000×12000 = 144 MP
+    // deklariert — ein Byte-Cap fängt das nicht, der Pixel-Deckel muss greifen.
+    // (144 MP liegt bewusst UNTER sharps eingebauter ~268-MP-Dekodiergrenze,
+    // damit hier nachweislich UNSER 60-MP-Deckel feuert, nicht der sharp-Fehler;
+    // noch größere Bomben blockt zusätzlich die sharp-Grenze selbst.)
+    const chunk = (type: string, data: Buffer) => {
+      const len = Buffer.alloc(4);
+      len.writeUInt32BE(data.length, 0);
+      const typeBuf = Buffer.from(type, "ascii");
+      const crc = Buffer.alloc(4);
+      crc.writeUInt32BE(zlib.crc32(Buffer.concat([typeBuf, data])) >>> 0, 0);
+      return Buffer.concat([len, typeBuf, data, crc]);
+    };
+    const ihdr = Buffer.alloc(13);
+    ihdr.writeUInt32BE(12000, 0);
+    ihdr.writeUInt32BE(12000, 4);
+    ihdr[8] = 8; // Bittiefe
+    ihdr[9] = 6; // RGBA
+    const bombe = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      chunk("IHDR", ihdr),
+      chunk("IDAT", zlib.deflateSync(Buffer.alloc(0))),
+      chunk("IEND", Buffer.alloc(0)),
+    ]);
+    await expect(prepareAiImage(bombe)).rejects.toThrow(/Megapixel/);
+    // Derselbe Deckel schützt auch den Medienbibliotheks-Upload.
+    await expect(storeImage(bombe, "bombe.png")).rejects.toThrow(/Megapixel/);
+  });
+
   it("wendet die EXIF-Orientierung an (Hochkant-Foto wird gedreht, nicht seitwärts)", async () => {
     const sharp = (await import("sharp")).default;
     const { prepareAiImage } = await import("@/lib/media");
