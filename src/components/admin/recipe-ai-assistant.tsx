@@ -127,7 +127,11 @@ export function RecipeAiAssistant({
   }
 
   async function pollJob(jobId: string): Promise<RecipeDraft> {
-    const deadline = Date.now() + 5 * 60 * 1000; // 5 Minuten Obergrenze
+    // Obergrenze MUSS über dem Server-Worst-Case liegen: 2 Versuche
+    // (maxRetries 1) × 180 s Timeout + Backoff/Overhead ≈ 6:05 min — sonst
+    // gäbe die UI auf, während der Retry noch erfolgreich enden kann, und der
+    // fertige Entwurf würde nie abgeholt. Job-Aufbewahrung serverseitig: 10 min.
+    const deadline = Date.now() + 7 * 60 * 1000; // 7 Minuten Obergrenze
     while (Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, 2500));
       let res: Response;
