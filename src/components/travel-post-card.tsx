@@ -46,7 +46,7 @@ export function TravelPostCard({ post }: { post: TravelCardData }) {
             {post.title}
           </h2>
           {post.teaser && (
-            <p className="mt-1 line-clamp-2 text-sm text-ink-soft">
+            <p className="mt-1 line-clamp-3 text-sm text-ink-soft">
               {post.teaser}
             </p>
           )}
