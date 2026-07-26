@@ -51,13 +51,20 @@ export function optimalVariant(widths: number[], neededPx: number): number {
 }
 
 /**
- * Prüft einen Varianten-Dateinamen (wNNN.webp) gegen die konfigurierte
- * Breiten-Leiter — Auslieferungs-Route und Tests nutzen dieselbe Wahrheit,
- * damit Leiter-Änderungen nicht an drei Stellen auseinanderlaufen.
+ * Prüft, ob ein Dateiname formal eine Bild-Variante ist (w<3-4 Ziffern>.webp).
+ *
+ * BEWUSST NUR Format, NICHT Leiter-Mitgliedschaft (Fremd-Vendor-Befund
+ * gpt-5.6-sol, Runde 2): Die Leiter in config/bild-encoder.json regelt die
+ * ERZEUGUNG neuer Varianten — der Altbestand kann aber Breiten außerhalb der
+ * heutigen Leiter enthalten (z. B. Original-Reencodes früherer Pipeline-
+ * Stände oder importierte Exporte), die in media_variant stehen und damit in
+ * srcset/optimalVariant landen. Eine Leiter-strikte Auslieferung würde genau
+ * diese existierenden Bilder auf 404 drehen. Traversal-Sicherheit kommt
+ * vollständig aus dem strikten Format (keine Punkte/Schrägstriche/Präfixe);
+ * ob die Datei existiert, entscheidet ohnehin die Route per Dateisystem.
  */
 export function isVariantFile(name: string): boolean {
-  const m = /^w(\d{3,4})\.webp$/.exec(name);
-  return m !== null && encoder.variantWidths.includes(Number(m[1]));
+  return /^w\d{3,4}\.webp$/.test(name);
 }
 
 /**

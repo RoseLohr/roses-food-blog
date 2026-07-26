@@ -71,19 +71,28 @@ describe("uploadCacheControl: immutable nur mit bestätigter Revision (Panel-Bef
   });
 });
 
-describe("isVariantFile: Auslieferungs-Route akzeptiert genau die Leiter", () => {
-  it("akzeptiert JEDE konfigurierte Breite (Leiter-Änderung zieht die Route mit)", () => {
+describe("isVariantFile: Auslieferung akzeptiert das Varianten-FORMAT, nicht nur die Leiter", () => {
+  it("akzeptiert jede konfigurierte Breite", () => {
     for (const w of encoder.variantWidths) {
       expect(isVariantFile(`w${w}.webp`), `w${w}.webp`).toBe(true);
     }
   });
 
-  it("weist alles außerhalb der Leiter ab (fail-closed)", () => {
-    expect(isVariantFile("w96.webp")).toBe(false);
-    expect(isVariantFile("w9999.webp")).toBe(false);
+  it("akzeptiert Altbestands-Breiten außerhalb der heutigen Leiter (Panel-Befund gpt-5.6-sol R2)", () => {
+    // Frühere Pipeline-Stände legten z. B. Original-Reencodes ab (w1500);
+    // diese Zeilen stehen in media_variant und damit im srcset — eine
+    // Leiter-strikte Route würde existierende Bilder auf 404 drehen.
+    expect(isVariantFile("w1500.webp")).toBe(true);
+    expect(isVariantFile("w800.webp")).toBe(true);
+  });
+
+  it("weist alles ab, was formal keine Variante ist (Traversal-/Namensschutz)", () => {
+    expect(isVariantFile("w96.webp")).toBe(false); // < 3 Ziffern
+    expect(isVariantFile("w12345.webp")).toBe(false); // > 4 Ziffern
     expect(isVariantFile("w320.png")).toBe(false);
     expect(isVariantFile("original.webp")).toBe(false);
     expect(isVariantFile("w320.webp.neu")).toBe(false);
+    expect(isVariantFile("neu-w320.webp")).toBe(false);
     expect(isVariantFile("../w320.webp")).toBe(false);
   });
 });

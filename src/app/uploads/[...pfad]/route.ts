@@ -1,8 +1,10 @@
 /**
  * Liefert verarbeitete Bilder aus DATA_DIR/uploads aus.
- * Pfadschema: /uploads/<fileKey>/w<breite>.webp — strikt validiert
- * (nur Breiten der konfigurierten Leiter, config/bild-encoder.json),
- * kein Directory Traversal möglich.
+ * Pfadschema: /uploads/<fileKey>/w<breite>.webp — Format strikt validiert
+ * (isVariantFile: exakt w<3-4 Ziffern>.webp), kein Directory Traversal
+ * möglich. Bewusst NICHT auf die heutige Erzeugungs-Leiter beschränkt:
+ * Altbestands-Breiten (z. B. Original-Reencodes früherer Pipeline-Stände)
+ * stehen in media_variant/srcset und müssen weiter ausliefern.
  *
  * Cache: `immutable` (1 Jahr) NUR, wenn der Regenerier-Marker des Bildes
  * (.encoder-rev) die aktuelle Encoder-Revision bestätigt — sonst kurzlebig,
