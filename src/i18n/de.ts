@@ -702,7 +702,7 @@ export const de = {
       testConnection: "Verbindung testen",
       testing: "Teste …",
       generating: "KI arbeitet …",
-      generatingHint: "Das kann — besonders mit Fotos — bis zu zwei Minuten dauern.",
+      generatingHint: "Das kann — besonders mit Fotos — bis zu drei Minuten dauern.",
       failed: "Erzeugung fehlgeschlagen. Bitte erneut versuchen.",
       timeout:
         "Die KI hat zu lange gebraucht. Bitte erneut versuchen — ggf. mit weniger Text.",
