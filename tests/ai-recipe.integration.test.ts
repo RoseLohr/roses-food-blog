@@ -242,4 +242,36 @@ describe("prepareAiImage (Verkleinerung + echte Format-Prüfung)", () => {
       prepareAiImage(Buffer.from("das ist kein bild, egal wie es heißt")),
     ).rejects.toThrow(/Bild|JPEG|PNG|WebP/);
   });
+
+  it("flattet Transparenz auf WEISS — dunkle Schrift bleibt lesbar (Sol-Befund)", async () => {
+    const sharp = (await import("sharp")).default;
+    const { prepareAiImage } = await import("@/lib/media");
+    // Volltransparentes PNG: ohne Flattening würde JPEG es SCHWARZ rendern.
+    const transparent = await sharp({
+      create: { width: 200, height: 100, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } },
+    })
+      .png()
+      .toBuffer();
+    const out = await prepareAiImage(transparent);
+    const stats = await sharp(Buffer.from(out.data, "base64")).stats();
+    // Mittelwert aller Kanäle nahe Weiß (255), NICHT nahe Schwarz (0).
+    const mean = stats.channels.reduce((s, c) => s + c.mean, 0) / stats.channels.length;
+    expect(mean).toBeGreaterThan(240);
+  });
+
+  it("wendet die EXIF-Orientierung an (Hochkant-Foto wird gedreht, nicht seitwärts)", async () => {
+    const sharp = (await import("sharp")).default;
+    const { prepareAiImage } = await import("@/lib/media");
+    // Querformat-Pixel + EXIF Orientation 6 (= 90° drehen → effektiv Hochformat).
+    const exifRotated = await sharp({
+      create: { width: 800, height: 400, channels: 3, background: { r: 120, g: 60, b: 30 } },
+    })
+      .jpeg()
+      .withMetadata({ orientation: 6 })
+      .toBuffer();
+    const out = await prepareAiImage(exifRotated);
+    const meta = await sharp(Buffer.from(out.data, "base64")).metadata();
+    // Nach Anwendung der Orientierung ist die Höhe die lange Kante.
+    expect(meta.height).toBeGreaterThan(meta.width ?? 0);
+  });
 });

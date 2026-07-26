@@ -176,6 +176,10 @@ const sharpBackend: ImageBackend = {
         fit: "inside",
         withoutEnlargement: true,
       })
+      // JPEG kennt kein Alpha: Transparenz explizit auf WEISS flatten —
+      // sonst landete ein transparentes PNG (dunkle Schrift) auf schwarzem
+      // Grund und wäre für die Texterkennung unlesbar (Cross-Vendor-Befund).
+      .flatten({ background: "#ffffff" })
       .jpeg({ quality: AI_JPEG_QUALITY })
       .toFile(outFile);
   },
@@ -215,12 +219,17 @@ const vipsBackend: ImageBackend = {
   },
   async resizeToJpeg(file, _buffer, outFile, maxEdge) {
     // Beide Kanten begrenzen (Langkante ≤ maxEdge), Ausgabe als JPEG.
+    // vipsthumbnail rotiert nach EXIF (Default seit libvips 8.9 — dasselbe
+    // dokumentierte Verhalten, auf das resizeToWebp oben produktiv baut;
+    // ein --rotate-Flag existiert in modernen Versionen nicht mehr) und
+    // entfernt Metadaten (strip). background=255 flattet Transparenz auf
+    // WEISS — JPEG kennt kein Alpha, Standard wäre unlesbares Schwarz.
     await execFileAsync("vipsthumbnail", [
       file,
       "-s",
       `${maxEdge}x${maxEdge}`,
       "-o",
-      `${outFile}[Q=${AI_JPEG_QUALITY},strip]`,
+      `${outFile}[Q=${AI_JPEG_QUALITY},strip,background=255]`,
     ]);
   },
 };
