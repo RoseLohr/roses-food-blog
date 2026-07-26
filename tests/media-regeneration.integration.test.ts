@@ -51,12 +51,22 @@ async function fotoBuffer(w: number, h: number): Promise<Buffer> {
     .toBuffer();
 }
 
+// Encode-lastige Langläufer (8 Breiten × effort 6 + Skript-Kindprozess):
+// auf dem 2-Kern-CI-Runner deutlich über dem 5-s-Default von vitest.
+const LANGLAEUFER = 180_000;
+
 describe("Regenerierung bestehender Uploads (Encoder-Revision)", () => {
-  it("zieht Alt-Bestand nach: fehlende Stufen, neue Kompression, Quelle unangetastet", async () => {
+  it("zieht Alt-Bestand nach: fehlende Stufen, neue Kompression, Quelle unangetastet", { timeout: LANGLAEUFER }, async () => {
     const { storeImage, uploadsDir } = await import("@/lib/media");
     const stored = await storeImage(await fotoBuffer(2000, 1500), "foto.jpg");
     const dir = path.join(uploadsDir(), stored.fileKey);
     const db = new Database(path.join(tmp, "app.db"));
+
+    // Frischer Upload trägt den Revisions-Marker sofort (storeImage) — die
+    // Auslieferungs-Route darf ihn ohne Nachzug immutable cachen.
+    expect(fs.readFileSync(path.join(dir, ".encoder-rev"), "utf8")).toBe(
+      String(encoder.rev),
+    );
 
     // Alt-Bestand simulieren (Zustand VOR dieser Revision): kleine Stufen
     // existieren nicht, Marker fehlt, die vorhandenen Varianten sind „alt".
@@ -108,7 +118,7 @@ describe("Regenerierung bestehender Uploads (Encoder-Revision)", () => {
     db.close();
   });
 
-  it("Kompressions-Budget: Pipeline schlägt die alte Kodierung deutlich (effort/smart-subsample wirken)", async () => {
+  it("Kompressions-Budget: Pipeline schlägt die alte Kodierung deutlich (effort/smart-subsample wirken)", { timeout: LANGLAEUFER }, async () => {
     const quelle = await fotoBuffer(1200, 900);
     const { storeImage, uploadsDir } = await import("@/lib/media");
     const stored = await storeImage(quelle, "budget.jpg");

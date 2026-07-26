@@ -87,10 +87,15 @@ async function messeSeite(
 ): Promise<Messung[]> {
   // Frischer Kontext je Seite: sonst bedient Chrome kleinere Slots aus dem
   // Cache einer VORHERIGEN Seite mit deren größerer Variante (falsch rot).
+  // reducedMotion pausiert den Slider-Autowechsel (designgemäß): der tauscht
+  // sonst alle ~6 s das Hero-<img> aus — auf langsamen CI-Runnern wird die
+  // „alle Bilder fertig geladen"-Wartebedingung dann nie stabil wahr.
+  // Gemessen wird die Variantenwahl, nicht die Bewegung.
   const context = await browser.newContext({
     viewport: kontext.viewport,
     deviceScaleFactor: kontext.deviceScaleFactor,
     isMobile: kontext.isMobile,
+    reducedMotion: "reduce",
   });
   const page = await context.newPage();
   await page.goto(seite, { waitUntil: "networkidle" });

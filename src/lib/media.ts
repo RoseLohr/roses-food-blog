@@ -354,6 +354,10 @@ export async function storeImage(
       );
       usedWidths.push(w);
     }
+    // Regenerier-Marker: dieses Bild entspricht der aktuellen Encoder-
+    // Revision. Der Nachzug (scripts/regenerate-variants.mjs) überspringt es,
+    // und die Auslieferungs-Route darf sofort `immutable` cachen.
+    fs.writeFileSync(path.join(dir, ".encoder-rev"), String(encoder.rev));
 
     // Bild + Varianten-Zeilen atomar (sync-Transaktion, better-sqlite3).
     const row = db.transaction((tx) => {

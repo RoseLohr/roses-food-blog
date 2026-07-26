@@ -10,6 +10,7 @@ import {
   optimalVariant,
   srcset,
   thumbUrl,
+  uploadCacheControl,
 } from "@/lib/media-url";
 import encoder from "../config/bild-encoder.json";
 
@@ -47,6 +48,26 @@ describe("optimalVariant: kleinste Variante, die den Bedarf deckt", () => {
 
   it("leere Breitenliste fällt auf die kleinste Leiter-Stufe zurück", () => {
     expect(optimalVariant([], 500)).toBe(encoder.variantWidths[0]);
+  });
+});
+
+describe("uploadCacheControl: immutable nur mit bestätigter Revision (Panel-Befund gpt-5.6-sol)", () => {
+  it("Marker == aktuelle rev → immutable-Jahrescache ist sicher", () => {
+    expect(uploadCacheControl(String(encoder.rev))).toBe(
+      "public, max-age=31536000, immutable",
+    );
+    // Whitespace aus fs.readFileSync stört nicht.
+    expect(uploadCacheControl(` ${encoder.rev}\n`)).toContain("immutable");
+  });
+
+  it("fehlender/fremder/kaputter Marker → NUR kurzlebig (kein Stale-Pinning)", () => {
+    // Während des Nachzugs verweisen Seiten schon auf ?v=<neue rev>, die
+    // Datei trägt aber noch alte Bytes — immutable würde sie 1 Jahr festnageln.
+    for (const marker of [null, "0", String(encoder.rev + 1), "unsinn", ""]) {
+      const wert = uploadCacheControl(marker);
+      expect(wert, String(marker)).not.toContain("immutable");
+      expect(wert, String(marker)).toContain("max-age=300");
+    }
   });
 });
 

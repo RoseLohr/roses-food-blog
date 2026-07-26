@@ -59,3 +59,22 @@ export function isVariantFile(name: string): boolean {
   const m = /^w(\d{3,4})\.webp$/.exec(name);
   return m !== null && encoder.variantWidths.includes(Number(m[1]));
 }
+
+/**
+ * Cache-Header für eine ausgelieferte Variante — abhängig vom Regenerier-
+ * Marker (.encoder-rev) ihres Bild-Verzeichnisses (Fremd-Vendor-Befund
+ * gpt-5.6-sol): Während der Nachzug läuft, verweisen die Seiten bereits auf
+ * ?v=<neue rev>, die Dateien tragen aber noch alte Bytes. Ein `immutable`-
+ * Jahrescache würde diese alten Bytes unter der NEUEN URL für ein Jahr
+ * festnageln (dauerhaft stale). Deshalb gilt `immutable` NUR, wenn der
+ * Marker die aktuelle Revision bestätigt — sonst kurzlebig (5 min), bis der
+ * Nachzug das Bild abgeschlossen hat. Gleiches Prinzip wie die ?v-Hash-
+ * Disziplin bei /fonts und /brand: unveränderlich nur, was verifiziert ist.
+ */
+export function uploadCacheControl(markerInhalt: string | null): string {
+  const aktuell =
+    markerInhalt !== null && Number(markerInhalt.trim()) === encoder.rev;
+  return aktuell
+    ? "public, max-age=31536000, immutable"
+    : "public, max-age=300";
+}

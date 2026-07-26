@@ -39,7 +39,11 @@ Annahmen, die während der Umsetzung getroffen wurden:
   Quelle = größte Variante, die selbst nie re-kodiert wird — das Original
   wird aus Datenschutzgründen nicht aufbewahrt, der einmalige
   Generationsverlust beim Nachziehen kleinerer Breiten ist abgewogen) und
-  die Bild-URLs busten den immutable-Jahrescache über `?v=rev`. AVIF ist
+  die Bild-URLs busten den immutable-Jahrescache über `?v=rev`. Da der
+  Nachzug im Hintergrund läuft, gibt die Auslieferungs-Route `immutable`
+  nur marker-bestätigt aus (`.encoder-rev` je Bild == aktuelle rev, sonst
+  `max-age=300`) — sonst würden alte Bytes unter der neuen ?v-URL für ein
+  Jahr festgenagelt (Panel-Befund gpt-5.6-sol). AVIF ist
   bewusst deaktiviert (Encode-Zeit auf kleinem Server); WebP + `srcset`
   erfüllt das Performance-Ziel.
 - **B11 — Tracking-Rohdaten:** TrackingEvents werden 90 Tage vorgehalten und

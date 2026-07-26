@@ -148,6 +148,20 @@ describe("Bildübermittlung: Encoder-Konfiguration (config/bild-encoder.json)", 
     expect(media).not.toMatch(/Q=\d/);
   });
 
+  it("Uploads-Route: immutable NUR marker-bestätigt, Upload schreibt den Marker", () => {
+    // Panel-Befund gpt-5.6-sol: Hintergrund-Nachzug + ?v-URLs + bedingungs-
+    // loses immutable = alte Bytes ein Jahr unter neuer URL festgenagelt.
+    // Kontrakt: die Route entscheidet ausschließlich über uploadCacheControl
+    // (marker-abhängig, Unit-Tests in tests/media-url.test.ts) und trägt
+    // selbst KEIN eigenes Langzeit-Cache-Literal mehr.
+    const route = read("src/app/uploads/[...pfad]/route.ts");
+    expect(route).toContain("uploadCacheControl(");
+    expect(route).not.toContain("max-age=31536000");
+    // Neue Uploads sind sofort revisionsbestätigt (Marker aus storeImage) —
+    // sonst blieben sie dauerhaft im Kurzzeit-Cache.
+    expect(media).toContain('".encoder-rev"');
+  });
+
   it("Regenerier-Skript nutzt DIESELBE Konfiguration (kein zweiter Wahrheitsort)", () => {
     expect(regen).toContain("config/bild-encoder.json");
     expect(regen).not.toMatch(/quality:\s*\d/);
