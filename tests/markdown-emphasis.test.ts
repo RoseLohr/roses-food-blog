@@ -68,4 +68,22 @@ describe("renderMarkdown — Reparatur fehlplatzierter Betonungs-Whitespace", ()
     const html = renderMarkdown("```\n**x **\n* y *\n```");
     expect(html).toMatch(/<pre><code>\*\*x \*\*\n\* y \*/);
   });
+
+  it("wörtliche Sterne wie in „2 * 3 * 4“ werden NICHT zu Kursiv (Sol-Befund)", () => {
+    const html = renderMarkdown("Rechnung: 2 * 3 * 4 = 24");
+    expect(html).not.toContain("<em>");
+    expect(html).toContain("2 * 3 * 4");
+  });
+
+  it("Tilde-Fence: eine ```-Zeile darin schaltet den Fence NICHT um (Sol-Befund)", () => {
+    const html = renderMarkdown("~~~~\n```\n**x **\n~~~~");
+    expect(html).toContain("**x **");
+    expect(html).not.toContain("<strong>");
+  });
+
+  it("eingerückter Code mit Listen-Optik bleibt wörtlich (Sol-Befund)", () => {
+    const html = renderMarkdown("Text davor.\n\n    * **x **");
+    expect(html).toContain("* **x **");
+    expect(html).not.toContain("<strong>");
+  });
 });

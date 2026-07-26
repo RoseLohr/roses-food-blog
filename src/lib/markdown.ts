@@ -65,9 +65,14 @@ function escapeRawHtml(md: string): string {
  */
 function repairEmphasisWhitespace(md: string): string {
   const fix =
-    (marker: string) =>
+    (marker: string, beidseitigErlaubt: boolean) =>
     (all: string, lead: string, core: string, trail: string): string => {
       if (!lead && !trail) return all; // bereits gültig — unverändert
+      // Wörtliche Sterne wie in „2 * 3 * 4": beidseitiger Innen-Whitespace ist
+      // bei EINFACHEN Sternen fast nie eine kaputte Betonung (der Editor-Bug
+      // erzeugt nur einseitige Fälle) — nicht anfassen. Bei `**` ist die
+      // beidseitige Form dagegen ein plausibler Editor-Altbestand.
+      if (!beidseitigErlaubt && lead && trail) return all;
       const c = core.trim();
       if (!c) return all; // nur Whitespace zwischen den Markern — nicht anfassen
       return `${lead}${marker}${c}${marker}${trail}`;
@@ -78,12 +83,13 @@ function repairEmphasisWhitespace(md: string): string {
       // dem schließenden Marker. Kern ohne `*`, Marker nicht escaped.
       .replace(
         /(?<![\\*])\*\*([ \t]*)([^*\n]+?)([ \t]*)(?<!\\)\*\*(?!\*)/g,
-        fix("**"),
+        fix("**", true),
       )
-      // Kursiv: einzelner Stern, nicht Teil von `**`, nicht escaped.
+      // Kursiv: einzelner Stern, nicht Teil von `**`, nicht escaped —
+      // repariert nur EINSEITIG fehlplatzierten Whitespace (s. o.).
       .replace(
         /(?<![\\*])\*(?!\*)([ \t]*)([^*\n]+?)([ \t]*)(?<![\\*])\*(?!\*)/g,
-        fix("*"),
+        fix("*", false),
       );
   // Inline-Code aussparen: nur Text AUSSERHALB von `…`-Spans reparieren.
   const fixLine = (line: string): string =>
@@ -92,28 +98,39 @@ function repairEmphasisWhitespace(md: string): string {
       .map((part, i) => (i % 2 === 1 ? part : fixSegment(part)))
       .join("");
 
-  let inFence = false;
+  // Offener Code-Fence: Zeichenart und Mindestlänge (CommonMark: geschlossen
+  // wird nur durch einen Fence GLEICHER Art mit mindestens gleicher Länge).
+  let fence: { ch: string; len: number } | null = null;
   return md
     .split("\n")
     .map((line) => {
-      // Blockquote-/Listen-/Einrückungs-Präfix abtrennen — der Rest ist der
-      // reparierbare Inline-Text. `* `/`- `/`1. ` (auch hinter `>`) sind
-      // Marker, keine Betonung.
+      // Fence-Erkennung (auch hinter Blockquote-Präfix) VOR allem anderen.
+      const quoted = /^((?:[ \t]*>)*[ \t]*)([\s\S]*)$/.exec(line)!;
+      const fm = /^(`{3,}|~{3,})(.*)$/.exec(quoted[2]);
+      if (fence) {
+        if (
+          fm &&
+          fm[1][0] === fence.ch &&
+          fm[1].length >= fence.len &&
+          fm[2].trim() === ""
+        )
+          fence = null;
+        return line; // Fence-Inhalt (und der Fence selbst) bleibt wörtlich
+      }
+      if (fm && !(fm[1][0] === "`" && fm[2].includes("`"))) {
+        fence = { ch: fm[1][0], len: fm[1].length };
+        return line;
+      }
+      // Eingerückter Code (≥ 4 Leerzeichen/Tab): konservativ ganz
+      // überspringen — auch wenn der Inhalt wie ein Listen-Marker aussieht.
+      if (/^(?: {4,}|\t)/.test(line)) return line;
+      // Blockquote-/Listen-Präfix abtrennen — der Rest ist der reparierbare
+      // Inline-Text. `* `/`- `/`1. ` (auch hinter `>`) sind Marker.
       const m =
         /^((?:[ \t]*>)*[ \t]*(?:[*+-][ \t]+|\d+\.[ \t]+)?)([\s\S]*)$/.exec(
           line,
         )!;
-      const [, prefix, rest] = m;
-      // Fence-Zustand verfolgen (auch innerhalb von Blockquotes).
-      if (/^(```|~~~)/.test(rest)) {
-        inFence = !inFence;
-        return line;
-      }
-      if (inFence) return line;
-      // Eingerückter Code (≥ 4 Leerzeichen/Tab, ohne Blockquote-/Listen-Marker):
-      // konservativ unangetastet lassen.
-      if (!/[>*+\-\d]/.test(prefix) && /^(?: {4,}|\t)/.test(line)) return line;
-      return prefix + fixLine(rest);
+      return m[1] + fixLine(m[2]);
     })
     .join("\n");
 }
