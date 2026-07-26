@@ -5,7 +5,7 @@
   "boundaries": {
     "src/lib/ai-recipe.ts": {
       "kind": "network-egress",
-      "target": "api.anthropic.com (KI-Modell, gepinnt claude-opus-4-8)",
+      "target": "api.anthropic.com (KI-Modell, gepinnt claude-opus-5)",
       "trust": "untrusted output; admin-only Auslöser; Ausgangstext nicht persistiert",
       "threats": "Injection (C-07, schema-gebunden), Datenabfluss (kein PII im Prompt, C-24), Kosten (Caps, C-05)",
       "stride": "Tampering/Info-Disclosure — gemindert durch Schema-Bindung + kein Tool/Egress"

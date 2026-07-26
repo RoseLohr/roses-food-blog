@@ -82,10 +82,10 @@ describe("KI-Rezeptassistent", () => {
     expect(draft.difficulty).toBe("leicht");
     expect(draft.sections[0].ingredients[0].unit).toBe("Stück");
 
-    // Modell mit Opus 4.8 und JSON-Schema-Format aufgerufen
+    // Modell mit Claude Opus 5 und JSON-Schema-Format aufgerufen
     expect(parseMock).toHaveBeenCalledTimes(1);
     const args = parseMock.mock.calls[0][0];
-    expect(args.model).toBe("claude-opus-4-8");
+    expect(args.model).toBe("claude-opus-5");
     const outputConfig = args.output_config as { effort: string; format: unknown };
     expect(outputConfig.effort).toBe("high");
     expect(outputConfig.format).toBeTruthy(); // zodOutputFormat(recipeDraftSchema)

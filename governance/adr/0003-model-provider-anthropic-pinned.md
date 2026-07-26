@@ -3,7 +3,7 @@
 **Kontext.** Ein einziges KI-Feature: aus eingefügtem Rohtext einen strukturierten
 Rezeptentwurf erzeugen. Ausgabe wird vom Admin vor Übernahme geprüft.
 
-**Entscheidung.** Anthropic Messages API, **gepinntes** Modell `claude-opus-4-8`
+**Entscheidung.** Anthropic Messages API, **gepinntes** Modell `claude-opus-5`
 (kein „latest"-Alias — B-13-Gate erzwingt das), structured output via Zod-Schema,
 **kein Tool-Use** (das Modell schreibt/sendet/löscht nichts).
 
@@ -15,3 +15,10 @@ Registry (A-20). Tripwire: erster `tools:`-Aufruf reaktiviert die Tool-Checks.
 
 **Verworfen.** Floating-Alias (unerklärliche Verhaltensänderungen); Multi-Agent-
 Orchestrierung (unnötige Angriffsfläche); lokales Modell (Betriebsaufwand).
+
+**Nachtrag (2026-07-26, in-command angeordnet).** Pin von `claude-opus-4-8` auf
+`claude-opus-5` gehoben (gleiches Schema: feste ID ohne Datums-Suffix, kein
+Alias). Die Kernentscheidung (Anthropic, gepinnt, kein Tool-Use) bleibt
+unverändert — deshalb Nachtrag statt neuer ADR. API-relevante Folgeanpassung:
+Auf Opus 5 ist adaptives Thinking Standard; `max_tokens` deckelt Thinking und
+Antwort zusammen → 16000 statt 8000, Client-Timeout 180 s statt 120 s.

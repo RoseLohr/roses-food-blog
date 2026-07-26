@@ -5,8 +5,9 @@
  * strukturiertes Rezept auf Deutsch — inklusive Abschnitten, getrennten
  * Mengen/Einheiten, Schritten, Taxonomie-Vorschlägen und SEO.
  *
- * Modell: Opus 4.8 (bestes Modell) mit adaptivem Thinking und strukturierter
- * Ausgabe (JSON-Schema). Der API-Schlüssel kommt aus den Einstellungen.
+ * Modell: Claude Opus 5 (gepinnt) mit adaptivem Thinking (auf Opus 5
+ * Standard) und strukturierter Ausgabe (JSON-Schema). Der API-Schlüssel
+ * kommt aus den Einstellungen.
  *
  * Haupttext (Feld "tips"): folgt einem festen internen Template im Stil gängiger
  * Foodblogs — es sei denn, es gibt bereits Rezepte mit längeren Texten; dann
@@ -209,18 +210,19 @@ export async function generateRecipeDraft(
   // Timeout, damit ein hängender Aufruf (z. B. blockierter Egress) nicht ewig
   // offen bleibt, sondern als klarer Fehler endet. Der Aufruf läuft als
   // Hintergrund-Job (siehe ai-recipe-jobs.ts), daher stört die Dauer die
-  // HTTP-Antwort nicht. 120 s statt 90 s: mit mehreren Fotos dauert die
-  // Verarbeitung spürbar länger (die Poll-Obergrenze im Editor liegt bei 5 min).
-  const client = new Anthropic({ apiKey, maxRetries: 1, timeout: 120_000 });
+  // HTTP-Antwort nicht. 180 s: auf Opus 5 ist adaptives Thinking standardmäßig
+  // aktiv und mehrere Fotos verlängern die Verarbeitung zusätzlich (die
+  // Poll-Obergrenze im Editor liegt bei 5 min).
+  const client = new Anthropic({ apiKey, maxRetries: 1, timeout: 180_000 });
   let res;
   try {
-    // Bestes Modell (Opus 4.8), hohe Effort-Stufe. Thinking bewusst NICHT
-    // aktiviert: die Ausgabe ist ohnehin per JSON-Schema strikt gebunden, und
-    // ohne Thinking ist die Antwort schnell genug, um nicht in ein Proxy-Timeout
-    // zu laufen (die Anfrage läuft synchron über den Reverse-Proxy).
+    // Claude Opus 5 (gepinnt), hohe Effort-Stufe. Adaptives Thinking ist auf
+    // Opus 5 der Standard (Parameter weggelassen = an) und verbessert das
+    // Auslesen der Fotos; max_tokens deckelt Thinking UND Antwort zusammen,
+    // daher 16000 statt 8000, damit die JSON-Antwort nie abgeschnitten wird.
     res = await client.messages.parse({
-      model: "claude-opus-4-8",
-      max_tokens: 8000,
+      model: "claude-opus-5",
+      max_tokens: 16000,
       output_config: {
         effort: "high",
         format: zodOutputFormat(recipeDraftSchema),
@@ -274,7 +276,7 @@ export async function testConnection(): Promise<{
   const client = new Anthropic({ apiKey, maxRetries: 0, timeout: 15_000 });
   const start = Date.now();
   try {
-    const model = await client.models.retrieve("claude-opus-4-8");
+    const model = await client.models.retrieve("claude-opus-5");
     return {
       ok: true,
       message: `Verbindung ok (${Date.now() - start} ms). Schlüssel gültig, Modell „${model.display_name ?? model.id}“ verfügbar.`,
