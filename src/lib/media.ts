@@ -22,20 +22,39 @@ import { db, schema } from "@/db";
 
 const execFileAsync = promisify(execFile);
 
-export const VARIANT_WIDTHS = [320, 640, 960, 1280, 1920] as const;
+/**
+ * Encoder-Einstellungen kommen zentral aus config/bild-encoder.json — EINE
+ * Quelle der Wahrheit für App UND Regenerier-Skript (scripts/
+ * regenerate-variants.mjs). Wer dort Qualität/Breiten ändert, muss `rev`
+ * erhöhen: Dann regeneriert der nächste Serverstart alle BESTEHENDEN Uploads
+ * mit den neuen Einstellungen (Root-Fix der PageSpeed-Regression 07/2026 —
+ * vorher galten Kompressions-Verbesserungen nur für neue Uploads) und die
+ * Bild-URLs wechseln auf ?v=rev (Busting des immutable-Jahrescaches).
+ */
+import encoder from "../../config/bild-encoder.json";
+
+export const VARIANT_WIDTHS: readonly number[] = encoder.variantWidths;
 export const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
 export const ALLOWED_MIME = ["image/jpeg", "image/png", "image/webp"];
 
 /**
- * WebP-Qualität für ALLE erzeugten Varianten (beide Backends). 76 ist für
- * Foto-Inhalte visuell praktisch nicht von 80 zu unterscheiden, spart aber
- * ~10 % Bytes (Lighthouse „Bildübermittlung verbessern → höhere Kompression").
- * Der Guardrail-Test tests/perf-guardrails.test.ts hält den Wert im sinnvollen
- * Band [70,82]: kein versehentliches Hochdrehen (aufgeblähte Bilder), aber auch
- * kein aggressives Wegkomprimieren der Produkt-Fotos. Betrifft nur NEUE Uploads;
- * bereits abgelegte Varianten bleiben unverändert.
+ * WebP-Qualität für ALLE erzeugten Varianten (beide Backends). 68 mit
+ * effort 6 + smart-subsample spart gegenüber der alten 76/effort-4-Kodierung
+ * gemessen ~36 % Bytes (Lighthouse „Bildübermittlung verbessern → höhere
+ * Kompression", Befund 07/2026) und bleibt für Foto-Inhalte visuell sauber —
+ * smart-subsample schaltet die Chroma-Unterabtastung dort ab, wo sie sichtbar
+ * würde (kräftige Rottöne bei Food-Fotos). Der Guardrail-Test
+ * tests/perf-guardrails.test.ts hält den Wert im Band [62,74] und erzwingt
+ * die rev-Erhöhung bei jeder Einstellungs-Änderung.
  */
-export const WEBP_QUALITY = 76;
+export const WEBP_QUALITY: number = encoder.webpQuality;
+
+/** CPU-Aufwand des WebP-Encoders (0–6): 6 = kleinste Dateien; die längere
+ *  Kodierzeit fällt nur einmal pro Upload/Regenerierung an, nie beim Leser. */
+export const WEBP_EFFORT: number = encoder.webpEffort;
+
+/** Selektive Chroma-Unterabtastung (s. o.) — beide Backends. */
+export const WEBP_SMART_SUBSAMPLE: boolean = encoder.webpSmartSubsample;
 
 /**
  * JPEG-Qualität für KI-Rezeptfotos (prepareAiImage, beide Backends): 80 ist
@@ -72,8 +91,8 @@ export function uploadsDir(): string {
 // Reine URL-Helfer aus dem Node-freien Modul: hier server-intern nutzbar und
 // zugleich für Client-Komponenten importierbar (ohne den Bild-Stack). Siehe
 // media-url.ts.
-import { imageUrl, srcset, thumbUrl } from "./media-url";
-export { imageUrl, srcset, thumbUrl };
+import { imageUrl, optimalVariant, srcset, thumbUrl } from "./media-url";
+export { imageUrl, optimalVariant, srcset, thumbUrl };
 
 /**
  * Verfügbare Varianten-Breiten je Bild (aufsteigend) für eine ID-Menge —
@@ -182,7 +201,11 @@ const sharpBackend: ImageBackend = {
     await sharp(buffer)
       .rotate() // EXIF-Orientierung anwenden, bevor Metadaten wegfallen
       .resize({ width: targetWidth, withoutEnlargement: true })
-      .webp({ quality: WEBP_QUALITY })
+      .webp({
+        quality: WEBP_QUALITY,
+        effort: WEBP_EFFORT,
+        smartSubsample: WEBP_SMART_SUBSAMPLE,
+      })
       .toFile(outFile);
   },
   async resizeToJpeg(_file, buffer, outFile, maxEdge) {
@@ -227,13 +250,15 @@ const vipsBackend: ImageBackend = {
     }
   },
   async resizeToWebp(file, _buffer, outFile, targetWidth) {
-    // vipsthumbnail: rotiert nach EXIF (Default) und entfernt Metadaten (strip)
+    // vipsthumbnail: rotiert nach EXIF (Default) und entfernt Metadaten
+    // (strip). effort/smart-subsample: identische Encoder-Disziplin wie das
+    // sharp-Backend (libvips ≥ 8.12; Produktions-Image nutzt 8.15).
     await execFileAsync("vipsthumbnail", [
       file,
       "-s",
       `${targetWidth}x100000`,
       "-o",
-      `${outFile}[Q=${WEBP_QUALITY},strip]`,
+      `${outFile}[Q=${WEBP_QUALITY},effort=${WEBP_EFFORT}${WEBP_SMART_SUBSAMPLE ? ",smart-subsample=true" : ""},strip]`,
     ]);
   },
   async resizeToJpeg(file, _buffer, outFile, maxEdge) {
@@ -318,7 +343,7 @@ export async function storeImage(
     const widths: number[] = VARIANT_WIDTHS.filter((w) => w <= meta.width);
     // Sehr kleine Bilder: eine Variante; Hochskalieren wird vermieden,
     // indem die Zielbreite auf die Originalbreite begrenzt wird.
-    if (widths.length === 0) widths.push(320);
+    if (widths.length === 0) widths.push(VARIANT_WIDTHS[0]);
     const usedWidths: number[] = [];
     for (const w of widths) {
       await be.resizeToWebp(
@@ -329,6 +354,19 @@ export async function storeImage(
       );
       usedWidths.push(w);
     }
+    // Abschluss-Marker: dieses Bild entspricht der aktuellen Encoder-
+    // Revision. Der Nachzug (scripts/regenerate-variants.mjs) überspringt es,
+    // und die Auslieferungs-Route darf `immutable` cachen — aber nur für
+    // Dateien, deren Byte-Größe im Manifest protokolliert ist (Verifikation
+    // statt Prozess-Lock, s. uploadCacheControl in media-url.ts).
+    const dateien: Record<string, number> = {};
+    for (const w of usedWidths) {
+      dateien[`w${w}.webp`] = fs.statSync(path.join(dir, `w${w}.webp`)).size;
+    }
+    fs.writeFileSync(
+      path.join(dir, ".encoder-rev"),
+      JSON.stringify({ rev: encoder.rev, dateien }),
+    );
 
     // Bild + Varianten-Zeilen atomar (sync-Transaktion, better-sqlite3).
     const row = db.transaction((tx) => {

@@ -1,0 +1,8 @@
+{
+  "_hinweis": "Zentrale Encoder-Einstellungen der Bildpipeline — EINE Quelle der Wahrheit für die App (src/lib/media.ts, beide Backends sharp+vips) UND das Regenerier-Skript (scripts/regenerate-variants.mjs). WICHTIG: Wer webpQuality/webpEffort/webpSmartSubsample/variantWidths ändert, MUSS rev erhöhen — nur dann werden bestehende Uploads beim nächsten Serverstart regeneriert und die immutable gecachten Bild-URLs (?v=rev) gebustet. Der Guardrail-Test tests/perf-guardrails.test.ts erzwingt das.",
+  "rev": 2,
+  "webpQuality": 68,
+  "webpEffort": 6,
+  "webpSmartSubsample": true,
+  "variantWidths": [160, 320, 480, 640, 768, 960, 1280, 1920]
+}

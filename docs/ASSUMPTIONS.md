@@ -30,10 +30,22 @@ Annahmen, die während der Umsetzung getroffen wurden:
   `Origin`/`Sec-Fetch-Site`-Header. Session-Cookie ist `SameSite=Lax`.
 - **B9 — Likes-Dedup:** Anonyme Client-ID (UUID in `localStorage`) + serverseitig
   gespeicherter Hash (Client-ID + Rezept). Best effort, wie im Auftrag erlaubt.
-- **B10 — Bildformate:** Uploads (JPEG/PNG/WebP, max. 15 MB) werden mit sharp
-  neu verarbeitet (EXIF entfernt) zu WebP in den Breiten 320/640/960/1280/1920 px
-  plus Original-Reencode. AVIF ist bewusst deaktiviert (Encode-Zeit auf kleinem
-  Server); WebP + `srcset` erfüllt das Performance-Ziel. Erweiterbar per Option.
+- **B10 — Bildformate:** Uploads (JPEG/PNG/WebP, max. 15 MB) werden mit
+  sharp bzw. libvips neu verarbeitet (EXIF entfernt) zu WebP; Breiten-Leiter
+  und Encoder-Einstellungen (Qualität/effort/smart-subsample) kommen zentral
+  aus `config/bild-encoder.json` (Stand rev 2: 160–1920 px, Q68/effort 6).
+  Ändert sich dort etwas, MUSS `rev` steigen: der Container-Start zieht dann
+  alle Bestands-Uploads nach (`scripts/regenerate-variants.mjs`, idempotent,
+  Quelle = größte Variante, die selbst nie re-kodiert wird — das Original
+  wird aus Datenschutzgründen nicht aufbewahrt, der einmalige
+  Generationsverlust beim Nachziehen kleinerer Breiten ist abgewogen) und
+  die Bild-URLs busten den immutable-Jahrescache über `?v=rev`. Da der
+  Nachzug im Hintergrund läuft, gibt die Auslieferungs-Route `immutable`
+  nur marker-bestätigt aus (`.encoder-rev` je Bild == aktuelle rev, sonst
+  `max-age=300`) — sonst würden alte Bytes unter der neuen ?v-URL für ein
+  Jahr festgenagelt (Panel-Befund gpt-5.6-sol). AVIF ist
+  bewusst deaktiviert (Encode-Zeit auf kleinem Server); WebP + `srcset`
+  erfüllt das Performance-Ziel.
 - **B11 — Tracking-Rohdaten:** TrackingEvents werden 90 Tage vorgehalten und
   nachts zu Tagesaggregaten verdichtet; ältere Events löscht der Cron. Es wird
   zu keinem Zeitpunkt eine IP gespeichert (Country-Lookup im Request-Speicher).

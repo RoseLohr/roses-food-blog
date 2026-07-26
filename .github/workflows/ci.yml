@@ -86,6 +86,37 @@ jobs:
       - name: Verfassung geladen & gehasht (Session-Steuer, §9.10.5)
         run: node scripts/regime/constitution-hash.mjs --verify
 
+  # ---- E2E-Gate: Laufzeit-Guardrails im echten Browser ----------------------
+  # Root-Fix eines Audit-Befunds (07/2026): bis hierher führte KEIN Workflow
+  # Playwright aus — die dynamische Bild-Auslieferungs-Guardrail
+  # (tests/e2e/bild-auslieferung.spec.ts), die axe-A11y-Prüfung und die
+  # Laufzeit-Regressionstests, auf die die Regime-Skripte ausdrücklich
+  # verweisen, waren nur lokale Disziplin. Jetzt blockierend in CI.
+  e2e:
+    runs-on: ubuntu-latest
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+        env:
+          # Browser kommt gezielt im nächsten Schritt, nicht via postinstall.
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+      - name: Chromium installieren (inkl. System-Abhängigkeiten)
+        run: npx playwright install --with-deps chromium
+      - name: E2E (Playwright gegen Produktions-Build — Bild-Auslieferung, Slider, Galerie, axe-A11y)
+        run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-traces
+          path: test-results/
+          if-no-files-found: ignore
+
   # ---- Sicherheits-Gate: Abhängigkeiten, Existenz, SBOM ---------------------
   security:
     runs-on: ubuntu-latest

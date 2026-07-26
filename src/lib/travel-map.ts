@@ -10,7 +10,7 @@
  */
 import { asc, eq, inArray } from "drizzle-orm";
 import { db, schema } from "@/db";
-import { thumbUrl, variantWidthsByImage } from "@/lib/media";
+import { imageUrl, optimalVariant, variantWidthsByImage } from "@/lib/media";
 
 export interface TravelMapDish {
   dishId: number;
@@ -139,8 +139,13 @@ export async function getTravelMapPins(): Promise<TravelMapPin[]> {
         return {
           dishId: d.id,
           name: d.name,
+          // Popup ist ~280 px breit und kann kein srcset (DOM-gebaut):
+          // bewusst >=320 statt der Kleinst-Variante (High-DPR bliebe sonst weich).
           thumbUrl: img
-            ? thumbUrl(img.fileKey, widthsById.get(img.imageId) ?? [])
+            ? imageUrl(
+                img.fileKey,
+                optimalVariant(widthsById.get(img.imageId) ?? [], 320),
+              )
             : null,
           imageAlt: img?.altText ?? "",
         };

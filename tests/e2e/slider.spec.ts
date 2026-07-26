@@ -29,26 +29,38 @@ test.describe("Startseiten-Hero-Slider (slider-style-2)", () => {
     await expect(hero(page).locator("p").first()).toBeVisible();
   });
 
-  test("Thumbnails laden NUR die kleine Variante (w320, kein srcSet) [Perf-Regression]", async ({
+  test("Thumbnails laden nur kleine Varianten (responsives srcset) [Perf-Regression]", async ({
     page,
   }) => {
     await page.goto("/");
+    // Großbild der Bühne (sizes=100vw): teilt sich die Bilddatei mit dem
+    // Thumbnail des aktiven Slides (Seed: Slider nutzt Rezept-Heros).
+    const heroSrc = await hero(page)
+      .locator('img[sizes="100vw"]')
+      .evaluate((el) => (el as HTMLImageElement).currentSrc);
     const imgs = thumbs(page).locator("img");
     const n = await imgs.count();
     expect(n).toBeGreaterThan(0);
     for (let i = 0; i < n; i++) {
       const img = imgs.nth(i);
-      // Dekorative Mini-Thumbnails: BEWUSST ohne srcSet — sonst wählt der Browser
-      // auf High-DPR-Geräten w640 für eine ~150-px-Anzeige (Lighthouse 07/2026,
-      // ~370 KiB). Die Quelle IST die kleinste Variante (w320).
-      expect(await img.getAttribute("srcset")).toBeNull();
-      await expect(img).toHaveAttribute("src", /w320\.webp/);
+      // Mini-Thumbnails sind regulär responsiv (srcset + enges sizes) — die
+      // w160-Stufe der Leiter macht das byte-optimal.
+      expect(await img.getAttribute("srcset")).not.toBeNull();
+      expect(await img.getAttribute("sizes")).not.toBeNull();
       const current = await img.evaluate(
         (el) => (el as HTMLImageElement).currentSrc,
       );
-      // Tatsächlich geladen wird w320 — niemals eine Großvariante.
-      expect(current).toMatch(/w320\.webp/);
-      expect(current).not.toMatch(/w(640|960|1280|1920)\.webp/);
+      // Erlaubt sind: eine kleine Variante (Normalfall) ODER exakt die vom
+      // Hero bereits geladene Datei — Chrome verwendet eine größere, schon
+      // im Cache liegende Variante DERSELBEN Datei wieder (null Extra-Bytes,
+      // sogar optimal: kein zweiter Request). Die byte-genaue Deckelung je
+      // Datei über alle Viewports sichert tests/e2e/bild-auslieferung.spec.ts.
+      const klein = /w(160|320)\.webp/.test(current);
+      const heroWiederverwendet = current === heroSrc;
+      expect(
+        klein || heroWiederverwendet,
+        `Thumbnail ${i}: ${current} ist weder klein noch die Hero-Wiederverwendung (${heroSrc})`,
+      ).toBe(true);
     }
   });
 

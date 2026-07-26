@@ -23,8 +23,11 @@ export interface SlideData {
   recipeId: number | null;
   imgSrc: string;
   imgSrcSet: string;
-  /** Einzige (kleine) Quelle der Thumbnail-Leiste — w320, ohne srcSet. */
+  /** src-Fallback der Thumbnail-Leiste (kleinste Variante). */
   thumbSrc: string;
+  /** srcset der Thumbnail-Leiste — der Browser wählt je DPR die passende
+   *  Variante (seit es die w160-Stufe gibt, ist das byte-optimal). */
+  thumbSrcSet: string;
   alt: string;
   caption: string;
   href: string | null;
@@ -118,7 +121,10 @@ export function HeroSlider({
           key={slide.id}
           src={slide.imgSrc}
           srcSet={slide.imgSrcSet}
-          sizes="(max-width: 1024px) 100vw, 1024px"
+          // Die Bühne ist full-bleed (echte 100vw auf JEDER Breite) — der alte
+          // 1024px-Deckel lieferte auf großen Screens ein zu kleines, weiches
+          // Bild (Unterversorgung ist genauso ein sizes-Lügen wie Übergröße).
+          sizes="100vw"
           alt={slide.alt}
           width={1280}
           height={720}
@@ -212,23 +218,17 @@ export function HeroSlider({
                     }`}
                   >
                     {/* Thumbnails sind eine dekorative Navi-Leiste (aria-hidden),
-                        nur ~130–210 px breit. BEWUSST nur die kleinste Variante
-                        (w320, = thumbSrc) OHNE srcSet — ein abgewogener Kompromiss:
-                        mit srcSet lädt der Browser auf High-DPR-Geräten die nächst-
-                        größere Variante (w640) für eine ~150-px-Anzeige (Lighthouse
-                        07/2026: ~370 KiB je Mobil-Aufruf verschenkt).
-                        EHRLICH: bei DPR ≥ 2 liegt w320 damit UNTER der nativen Dichte
-                        (208 CSS-px · 2 = 416 Geräte-px → ~0,77×), das AKTIVE Thumbnail
-                        (ohne Overlay) wird also leicht weicher. Das ist gewollt — ein
-                        größeres Bild ließe sich nicht ausliefern, ohne genau die
-                        Mobil-Übergröße zurückzuholen (High-DPR-Handys brauchen für die
-                        ~150-px-Kachel real ~390 px, also wieder w640). Für eine kleine,
-                        meist abgedunkelte Navi-Kachel ist der Byte-/LCP-Gewinn den
-                        milden Schärfeverlust wert. width/height halten das 3:2-Raster
-                        (kein CLS). */}
+                        nur ~85–208 px breit. Reguläres srcset + ehrliches sizes:
+                        seit die Pipeline eine w160-Stufe erzeugt, wählt der
+                        Browser selbst byte-optimal (Mobil/DPR1 → w160, High-DPR
+                        → w320) — der frühere „fix w320 ohne srcSet"-Kompromiss
+                        war nur ein Workaround um die fehlende kleine Variante.
+                        width/height halten das 3:2-Raster (kein CLS). */}
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={s.thumbSrc}
+                      srcSet={s.thumbSrcSet}
+                      sizes="(max-width: 640px) 22vw, 208px"
                       width={208}
                       height={139}
                       alt=""

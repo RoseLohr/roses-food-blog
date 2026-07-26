@@ -21,7 +21,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { imageUrl, srcset } from "@/lib/media-url";
+import { imageUrl, optimalVariant, srcset } from "@/lib/media-url";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -138,8 +138,6 @@ export function GalleryLightbox({
 
   const thumbs = shown.map((im, i) => {
     const widths = im.variantWidths;
-    const largest = widths[widths.length - 1];
-    const displayHeight = Math.round((largest / im.width) * im.height);
     return (
       <button
         key={im.fileKey}
@@ -155,12 +153,15 @@ export function GalleryLightbox({
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src={imageUrl(im.fileKey, largest)}
+          // src-Fallback: Mittelvariante (nur für Konsumenten ohne srcset) —
+          // nie die größte Datei für ein Thumbnail. width/height = echte
+          // Originalmaße (Seitenverhältnis fürs Layout, CSS steuert die Größe).
+          src={imageUrl(im.fileKey, optimalVariant(widths, 640))}
           srcSet={srcset(im.fileKey, widths)}
           sizes={thumbSizes}
           alt={im.altText}
-          width={largest}
-          height={displayHeight}
+          width={im.width}
+          height={im.height}
           loading="lazy"
           decoding="async"
           className={thumbClassName}
@@ -238,11 +239,19 @@ export function GalleryLightbox({
               <img
                 src={imageUrl(
                   current.fileKey,
-                  current.variantWidths[current.variantWidths.length - 1],
+                  optimalVariant(current.variantWidths, 1280),
                 )}
                 srcSet={srcset(current.fileKey, current.variantWidths)}
-                sizes="100vw"
+                // Reale Anzeigebreite statt pauschal 100vw: object-contain in
+                // max-h-[88vh] deckelt die Breite über das Seitenverhältnis —
+                // ein Hochformat-Foto füllt nie den ganzen Schirm. Spart auf
+                // Desktop typischerweise eine bis zwei Variantenstufen.
+                sizes={`min(calc(100vw - 2rem), calc(88vh * ${(
+                  current.width / current.height
+                ).toFixed(4)}))`}
                 alt={current.altText}
+                width={current.width}
+                height={current.height}
                 className="mx-auto max-h-[88vh] max-w-full object-contain shadow-2xl"
               />
               {current.altText && (
