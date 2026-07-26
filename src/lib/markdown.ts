@@ -50,10 +50,47 @@ function escapeRawHtml(md: string): string {
   return md.replaceAll("<", "&lt;");
 }
 
+/**
+ * Repariert Whitespace DIREKT innerhalb von Betonungs-Markern (`**Text **`,
+ * `* Text*`): ältere Editor-Stände haben so serialisiert; das ist kein
+ * gültiges Markdown (der schließende Marker darf nicht auf Whitespace folgen)
+ * und bliebe als sichtbare Sternchen stehen. Der Whitespace wird vor dem
+ * Parsen vor/hinter die Marker gezogen. Konservativ: gültige Betonung bleibt
+ * byte-identisch, escapte Sternchen (`\*`) und Listen-Marker am Zeilenanfang
+ * werden nicht angefasst.
+ */
+function repairEmphasisWhitespace(md: string): string {
+  const fix =
+    (marker: string) =>
+    (all: string, lead: string, core: string, trail: string): string => {
+      if (!lead && !trail) return all; // bereits gültig — unverändert
+      const c = core.trim();
+      if (!c) return all; // nur Whitespace zwischen den Markern — nicht anfassen
+      return `${lead}${marker}${c}${marker}${trail}`;
+    };
+  return (
+    md
+      // Fett: **…** mit Leerzeichen/Tabs direkt hinter dem öffnenden oder vor
+      // dem schließenden Marker. Kern ohne `*`/Zeilenumbruch, Marker nicht escaped.
+      .replace(
+        /(?<![\\*])\*\*([ \t]*)([^*\n]+?)([ \t]*)(?<!\\)\*\*(?!\*)/g,
+        fix("**"),
+      )
+      // Kursiv: einzelner Stern, nicht Teil von `**`, nicht escaped und nicht
+      // als Listen-Marker am Zeilenanfang (dort ist `* ` eine Aufzählung).
+      .replace(
+        /(?<![\\*])(?<!^[ \t]*)(?<!\n[ \t]*)\*(?!\*)([ \t]*)([^*\n]+?)([ \t]*)(?<![\\*])\*(?!\*)/g,
+        fix("*"),
+      )
+  );
+}
+
 export function renderMarkdown(md: string): string {
   anchorCounts = new Map();
   try {
-    return marked.parse(escapeRawHtml(md), { async: false }) as string;
+    return marked.parse(repairEmphasisWhitespace(escapeRawHtml(md)), {
+      async: false,
+    }) as string;
   } finally {
     anchorCounts = null;
   }
@@ -71,7 +108,7 @@ export interface MarkdownHeading {
 export function extractHeadings(md: string): MarkdownHeading[] {
   const counts = new Map<string, number>();
   const headings: MarkdownHeading[] = [];
-  for (const token of marked.lexer(escapeRawHtml(md))) {
+  for (const token of marked.lexer(repairEmphasisWhitespace(escapeRawHtml(md)))) {
     if (token.type === "heading") {
       const raw = (token as Tokens.Heading).text;
       // Anzeigetext ohne Inline-Markdown (Links → Linktext, *,_,`,~ entfernen)
