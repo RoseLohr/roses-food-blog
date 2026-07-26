@@ -51,6 +51,13 @@ function escapeInline(text: string): string {
  * bliebe im Editor wie im Frontend als sichtbare Sternchen stehen.
  * contentEditable nimmt beim Formatieren gern ein Leerzeichen mit in den Tag —
  * der Whitespace wandert deshalb VOR bzw. HINTER die Marker.
+ *
+ * Herausgeschobener FÜHRENDER Whitespace kann keinen eingerückten
+ * Markdown-Codeblock erzeugen: am Blockanfang wird er von inlineChildren()/
+ * flush() (`.trim()`) entfernt, und mitten im Absatz (nach einem <br>) kann
+ * eine eingerückte Zeile per CommonMark keinen Codeblock beginnen
+ * („indented code cannot interrupt a paragraph"). Beides ist in
+ * tests/rich-text.test.ts als Regressionstest verankert.
  */
 function emphasize(kids: string, marker: string): string {
   const m = /^(\s*)([\s\S]*?)(\s*)$/.exec(kids);

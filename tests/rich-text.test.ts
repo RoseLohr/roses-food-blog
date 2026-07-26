@@ -126,6 +126,27 @@ describe("htmlToMarkdown", () => {
     expect(md).toBe("***beides*** danach");
   });
 
+  it("führender Einzug im Fett am Absatzanfang erzeugt KEINEN Codeblock (Sol-Befund, widerlegt)", () => {
+    // 4 Leerzeichen im <strong> am Blockanfang: der Block-Trim entfernt sie —
+    // die Zeile beginnt mit den Markern, nie mit Einzug.
+    const md = htmlToMarkdown(
+      root([el("P", [el("STRONG", [txt("    viel Einzug ")]), txt("danach")])]),
+    );
+    expect(md).toBe("**viel Einzug** danach");
+  });
+
+  it("Einzug nach <br> bleibt Absatz-Fortsetzung, kein Codeblock (Sol-Befund, widerlegt)", async () => {
+    const { renderMarkdown } = await import("@/lib/markdown");
+    const md = htmlToMarkdown(
+      root([el("P", [txt("a"), el("BR"), el("STRONG", [txt("    b ")])])]),
+    );
+    expect(md).toBe("a\n    **b**");
+    // CommonMark: eingerückter Code kann einen Absatz nicht unterbrechen.
+    const html = renderMarkdown(md);
+    expect(html).not.toContain("<pre>");
+    expect(html).toContain("<strong>b</strong>");
+  });
+
   it("nur Whitespace in Fett erzeugt keine Marker", () => {
     const md = htmlToMarkdown(
       root([el("P", [txt("a"), el("STRONG", [txt("  ")]), txt("b")])]),
