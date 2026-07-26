@@ -29,12 +29,23 @@ export async function GET(
   }
   const dir = path.join(uploadsDir(), pfad[0]);
   const file = path.join(dir, pfad[1]);
-  // EIN Datei-Handle für Größe UND Inhalt (Panel-Befund gpt-5.6-sol R3):
-  // getrenntes stat + createReadStream wäre eine Lücke, in der das atomare
-  // Rename des Nachzugs die Datei tauscht — Content-Length der alten,
-  // Bytes der neuen Datei (abgeschnittene/kaputte Antwort). fstat auf dem
-  // offenen fd und Stream vom selben fd sind dagegen konsistent: ein
-  // Rename ersetzt nur den Verzeichniseintrag, nie die offene Inode.
+  // Reihenfolge ist tragend (Panel-Befunde gpt-5.6-sol R3+R4):
+  // 1. ZUERST den Revisionsmarker lesen, DANN die Datei öffnen. Der Nachzug
+  //    schreibt den Marker erst NACH allen Renames eines Bildes — ist der
+  //    Marker hier schon aktuell, ist jede danach geöffnete Datei zwingend
+  //    die neue Inode. Umgekehrt (erst öffnen) könnte der Nachzug zwischen
+  //    open und Marker-Lesen fertig werden: alte Inode im fd, „aktueller"
+  //    Marker → alte Bytes ein Jahr immutable unter aktuellem ?v (R4).
+  // 2. EIN Datei-Handle für Größe UND Inhalt: fstat + Stream vom selben fd —
+  //    ein paralleles Rename ersetzt nur den Verzeichniseintrag, nie die
+  //    offene Inode; getrenntes stat/createReadStream lieferte sonst die
+  //    Content-Length der alten zu den Bytes der neuen Datei (R3).
+  let marker: string | null = null;
+  try {
+    marker = fs.readFileSync(path.join(dir, ".encoder-rev"), "utf8");
+  } catch {
+    marker = null; // kein Marker → Bild (noch) nicht auf aktueller Revision
+  }
   let fd: number;
   try {
     fd = fs.openSync(file, "r");
@@ -42,12 +53,6 @@ export async function GET(
     return new Response("Nicht gefunden", { status: 404 });
   }
   const stat = fs.fstatSync(fd);
-  let marker: string | null = null;
-  try {
-    marker = fs.readFileSync(path.join(dir, ".encoder-rev"), "utf8");
-  } catch {
-    marker = null; // kein Marker → Bild (noch) nicht auf aktueller Revision
-  }
   const angefragteRev = new URL(req.url).searchParams.get("v");
   // autoClose schließt den fd am Stream-Ende/-Abbruch.
   const stream = fs.createReadStream("", { fd, autoClose: true });
