@@ -50,4 +50,22 @@ describe("renderMarkdown — Reparatur fehlplatzierter Betonungs-Whitespace", ()
     expect(html).toContain("<em>zwei</em>");
     expect(html).toContain("<li>drei</li>");
   });
+
+  it("Listen-Marker hinter Blockquote-Präfix bleiben Listen (Sol-Befund)", () => {
+    const html = renderMarkdown("> * one *two*\n> * three");
+    expect(html).toContain("<blockquote>");
+    expect(html).toContain("<em>two</em>");
+    expect(html).toContain("three");
+    expect(html).not.toContain("two*");
+  });
+
+  it("Inline-Code bleibt wörtlich — keine Reparatur in `…` (Sol-Befund)", () => {
+    const html = renderMarkdown("Code: `**x **` bleibt wörtlich");
+    expect(html).toContain("<code>**x **</code>");
+  });
+
+  it("Code-Fences bleiben wörtlich — keine Reparatur in ``` (Sol-Befund)", () => {
+    const html = renderMarkdown("```\n**x **\n* y *\n```");
+    expect(html).toMatch(/<pre><code>\*\*x \*\*\n\* y \*/);
+  });
 });

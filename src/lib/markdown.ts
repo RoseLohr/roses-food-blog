@@ -55,9 +55,13 @@ function escapeRawHtml(md: string): string {
  * `* Text*`): ältere Editor-Stände haben so serialisiert; das ist kein
  * gültiges Markdown (der schließende Marker darf nicht auf Whitespace folgen)
  * und bliebe als sichtbare Sternchen stehen. Der Whitespace wird vor dem
- * Parsen vor/hinter die Marker gezogen. Konservativ: gültige Betonung bleibt
- * byte-identisch, escapte Sternchen (`\*`) und Listen-Marker am Zeilenanfang
- * werden nicht angefasst.
+ * Parsen vor/hinter die Marker gezogen.
+ *
+ * Kontextbewusst und konservativ: gültige Betonung bleibt byte-identisch;
+ * escapte Sternchen (`\*`) bleiben wörtlich; Code-Fences (```/~~~), Inline-
+ * Code (`…`) und eingerückte Code-Zeilen werden NICHT angefasst (dort sind
+ * Sternchen Inhalt); Blockquote- und Listen-Präfixe am Zeilenanfang werden
+ * explizit abgetrennt, damit `* ` bzw. `> * ` Aufzählungen bleiben.
  */
 function repairEmphasisWhitespace(md: string): string {
   const fix =
@@ -68,21 +72,50 @@ function repairEmphasisWhitespace(md: string): string {
       if (!c) return all; // nur Whitespace zwischen den Markern — nicht anfassen
       return `${lead}${marker}${c}${marker}${trail}`;
     };
-  return (
-    md
+  const fixSegment = (seg: string): string =>
+    seg
       // Fett: **…** mit Leerzeichen/Tabs direkt hinter dem öffnenden oder vor
-      // dem schließenden Marker. Kern ohne `*`/Zeilenumbruch, Marker nicht escaped.
+      // dem schließenden Marker. Kern ohne `*`, Marker nicht escaped.
       .replace(
         /(?<![\\*])\*\*([ \t]*)([^*\n]+?)([ \t]*)(?<!\\)\*\*(?!\*)/g,
         fix("**"),
       )
-      // Kursiv: einzelner Stern, nicht Teil von `**`, nicht escaped und nicht
-      // als Listen-Marker am Zeilenanfang (dort ist `* ` eine Aufzählung).
+      // Kursiv: einzelner Stern, nicht Teil von `**`, nicht escaped.
       .replace(
-        /(?<![\\*])(?<!^[ \t]*)(?<!\n[ \t]*)\*(?!\*)([ \t]*)([^*\n]+?)([ \t]*)(?<![\\*])\*(?!\*)/g,
+        /(?<![\\*])\*(?!\*)([ \t]*)([^*\n]+?)([ \t]*)(?<![\\*])\*(?!\*)/g,
         fix("*"),
-      )
-  );
+      );
+  // Inline-Code aussparen: nur Text AUSSERHALB von `…`-Spans reparieren.
+  const fixLine = (line: string): string =>
+    line
+      .split(/(`+[^`\n]*`+)/)
+      .map((part, i) => (i % 2 === 1 ? part : fixSegment(part)))
+      .join("");
+
+  let inFence = false;
+  return md
+    .split("\n")
+    .map((line) => {
+      // Blockquote-/Listen-/Einrückungs-Präfix abtrennen — der Rest ist der
+      // reparierbare Inline-Text. `* `/`- `/`1. ` (auch hinter `>`) sind
+      // Marker, keine Betonung.
+      const m =
+        /^((?:[ \t]*>)*[ \t]*(?:[*+-][ \t]+|\d+\.[ \t]+)?)([\s\S]*)$/.exec(
+          line,
+        )!;
+      const [, prefix, rest] = m;
+      // Fence-Zustand verfolgen (auch innerhalb von Blockquotes).
+      if (/^(```|~~~)/.test(rest)) {
+        inFence = !inFence;
+        return line;
+      }
+      if (inFence) return line;
+      // Eingerückter Code (≥ 4 Leerzeichen/Tab, ohne Blockquote-/Listen-Marker):
+      // konservativ unangetastet lassen.
+      if (!/[>*+\-\d]/.test(prefix) && /^(?: {4,}|\t)/.test(line)) return line;
+      return prefix + fixLine(rest);
+    })
+    .join("\n");
 }
 
 export function renderMarkdown(md: string): string {
