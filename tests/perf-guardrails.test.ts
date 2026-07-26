@@ -68,9 +68,19 @@ describe("Bildübermittlung: WebP-Qualität bleibt im sinnvollen Band", () => {
     expect(q).toBeLessThanOrEqual(82); // nicht versehentlich aufblähen
   });
 
-  it("beide Backends (sharp + vips) nutzen die Konstante, keinen Literal-Wert", () => {
+  it("AI_JPEG_QUALITY (KI-Rezeptfotos) ist zentral definiert und liegt in [70,85]", () => {
+    const m = media.match(/AI_JPEG_QUALITY\s*=\s*(\d+)/);
+    expect(m).not.toBeNull();
+    const q = Number(m![1]);
+    expect(q).toBeGreaterThanOrEqual(70); // Text auf Fotos bleibt lesbar
+    expect(q).toBeLessThanOrEqual(85); // keine unnötig großen API-Payloads
+  });
+
+  it("beide Backends (sharp + vips) nutzen die Konstanten, keinen Literal-Wert", () => {
     expect(media).toContain("quality: WEBP_QUALITY");
     expect(media).toContain("Q=${WEBP_QUALITY}");
+    expect(media).toContain("quality: AI_JPEG_QUALITY");
+    expect(media).toContain("Q=${AI_JPEG_QUALITY}");
     // Kein hartcodiertes quality:80 / Q=80 mehr.
     expect(media).not.toMatch(/quality:\s*\d/);
     expect(media).not.toMatch(/Q=\d/);

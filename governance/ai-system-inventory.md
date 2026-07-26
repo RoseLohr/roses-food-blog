@@ -1,6 +1,6 @@
 # KI-System-Inventar & EU-AI-Act-Klassifizierung (C-09/C-36)
 
-**Version:** 1.0 · **Stand:** 2026-07-17 · **Owner:** legal + ai-platform (in-command)
+**Version:** 1.1 · **Stand:** 2026-07-26 · **Owner:** legal + ai-platform (in-command)
 **Aktuell gehalten:** aus der Konfiguration ableitbar (ein Aufrufpfad,
 `src/lib/ai-recipe.ts`); ein neuer Modell-Aufruf ohne Inventar-Eintrag würde vom
 KI-Fähigkeits-Guard/Boundary-Detektor sichtbar. Rechtsdaten-Watch: kalendarisch,
@@ -10,12 +10,12 @@ in-command (nichts in der Pipeline liest das Amtsblatt).
 
 | Feld | Wert |
 |---|---|
-| Zweck | Redaktioneller Entwurf eines Rezepts aus vom Admin eingefügtem Ausgangstext |
+| Zweck | Redaktioneller Entwurf eines Rezepts aus vom Admin eingefügtem Ausgangstext und/oder hochgeladenen Rezeptfotos (abfotografierte Rezeptseiten, Texterkennung durch das Modell) |
 | Nutzer | **Nur Admin** (in-command). Kein nutzerseitiger KI-Endpunkt. |
 | Modell | `claude-opus-4-8` (Anthropic, gepinnt, gehostet) |
-| Ein-/Ausgabe | Text → JSON (schema-gebunden). Kein Tool-Use, kein Egress, kein RAG. |
+| Ein-/Ausgabe | Text und/oder Fotos (max. 5, serverseitig verkleinert) → JSON (schema-gebunden). Kein Tool-Use, kein Egress, kein RAG. |
 | Entscheidungen über Personen | **keine** (kein Profiling, keine automatisierte Einzelentscheidung mit Rechtswirkung, Art. 22 DSGVO n/a) |
-| Personendaten im Aufruf | keine Abonnenten-PII; nur der eingefügte Rezept-Ausgangstext (nicht persistiert) |
+| Personendaten im Aufruf | keine Abonnenten-PII; eingefügter Rezept-Ausgangstext + hochgeladene Rezeptfotos (beides nicht persistiert — Fotos nur transient im Aufruf; Neukodierung als JPEG entfernt EXIF-Metadaten wie Ort/Gerät vor dem API-Versand) |
 
 ### Risikoklassifizierung (EU AI Act)
 - **Nicht verboten** (Art. 5): keine der verbotenen Praktiken.

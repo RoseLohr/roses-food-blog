@@ -1,8 +1,9 @@
 /**
  * KI-Rezeptassistent: nimmt einen eingefügten Ausgangstext (Notizen, Rohtext,
- * fremdes Rezept) und erzeugt daraus per Claude ein vollständiges, strukturiertes
- * Rezept auf Deutsch — inklusive Abschnitten, getrennten Mengen/Einheiten,
- * Schritten, Taxonomie-Vorschlägen und SEO.
+ * fremdes Rezept) und/oder abfotografierte Rezeptseiten (mehrere Fotos, als
+ * vorverkleinerte JPEG-Bilder) und erzeugt daraus per Claude ein vollständiges,
+ * strukturiertes Rezept auf Deutsch — inklusive Abschnitten, getrennten
+ * Mengen/Einheiten, Schritten, Taxonomie-Vorschlägen und SEO.
  *
  * Modell: Opus 4.8 (bestes Modell) mit adaptivem Thinking und strukturierter
  * Ausgabe (JSON-Schema). Der API-Schlüssel kommt aus den Einstellungen.
@@ -144,8 +145,18 @@ async function styleReferences(): Promise<string[]> {
     .slice(0, 2);
 }
 
+/**
+ * Vorverkleinertes Rezeptfoto für den Modellaufruf (siehe lib/media.ts,
+ * prepareAiImage): base64-Daten ohne Zeilenumbrüche + verifizierter MIME-Typ.
+ */
+export interface AiDraftImage {
+  mediaType: "image/jpeg" | "image/png" | "image/webp";
+  data: string;
+}
+
 export async function generateRecipeDraft(
   sourceText: string,
+  images: AiDraftImage[] = [],
 ): Promise<RecipeDraft> {
   // A-34 Kill-Switch: ist das Feature (manuell oder per Auto-Halt) abgeschaltet,
   // endet der Aufruf sofort — vor jedem Netz-/Schlüsselzugriff.
@@ -169,13 +180,38 @@ export async function generateRecipeDraft(
         .join("\n\n")}`
     : `Für den Haupttext (Feld "tips"): Nutze exakt diese Struktur (internes Template), wie sie bei gängigen Foodblogs üblich ist:\n\n${INTERNAL_TEMPLATE}`;
 
-  const userText = `Erstelle aus dem folgenden Ausgangstext ein vollständiges, redaktionell aufbereitetes Rezept auf Deutsch und fülle ALLE Felder aus.\n\n${styleInstruction}\n\n=== Ausgangstext ===\n${sourceText}`;
+  const sourceLabel = images.length
+    ? sourceText.trim()
+      ? "dem folgenden Ausgangstext UND den angehängten Fotos (abfotografierte Rezeptseiten)"
+      : "den angehängten Fotos (abfotografierte Rezeptseiten; es gibt keinen eingefügten Text)"
+    : "dem folgenden Ausgangstext";
+  const userText = `Erstelle aus ${sourceLabel} ein vollständiges, redaktionell aufbereitetes Rezept auf Deutsch und fülle ALLE Felder aus.\n\n${styleInstruction}\n\n=== Ausgangstext ===\n${sourceText}`;
+
+  // Fotos gehen als Bild-Blöcke VOR dem Text in DIESELBE user-Nachricht
+  // (dokumentierte Best Practice für Vision); ohne Fotos bleibt der Content
+  // wie bisher ein reiner String. Der System-Prompt kommt unverändert aus der
+  // Registry — Bildinhalte können ihn nicht beeinflussen (A-10-Containment).
+  const userContent =
+    images.length === 0
+      ? userText
+      : [
+          ...images.map((img) => ({
+            type: "image" as const,
+            source: {
+              type: "base64" as const,
+              media_type: img.mediaType,
+              data: img.data,
+            },
+          })),
+          { type: "text" as const, text: userText },
+        ];
 
   // Timeout, damit ein hängender Aufruf (z. B. blockierter Egress) nicht ewig
   // offen bleibt, sondern als klarer Fehler endet. Der Aufruf läuft als
   // Hintergrund-Job (siehe ai-recipe-jobs.ts), daher stört die Dauer die
-  // HTTP-Antwort nicht.
-  const client = new Anthropic({ apiKey, maxRetries: 1, timeout: 90_000 });
+  // HTTP-Antwort nicht. 120 s statt 90 s: mit mehreren Fotos dauert die
+  // Verarbeitung spürbar länger (die Poll-Obergrenze im Editor liegt bei 5 min).
+  const client = new Anthropic({ apiKey, maxRetries: 1, timeout: 120_000 });
   let res;
   try {
     // Bestes Modell (Opus 4.8), hohe Effort-Stufe. Thinking bewusst NICHT
@@ -190,7 +226,7 @@ export async function generateRecipeDraft(
         format: zodOutputFormat(recipeDraftSchema),
       },
       system: SYSTEM,
-      messages: [{ role: "user", content: userText }],
+      messages: [{ role: "user", content: userContent }],
     });
   } catch (err) {
     const aiErr = toAiError(err);
