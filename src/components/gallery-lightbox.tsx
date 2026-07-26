@@ -232,19 +232,30 @@ export function GalleryLightbox({
             )}
 
             {/* a11y-Ausnahme (begründet): onClick verhindert nur das Schließen beim
-                Klick aufs Bild selbst — keine eigenständige Interaktion. */}
+                Klick auf Bild/Unterschrift — keine eigenständige Interaktion. */}
             {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/click-events-have-key-events */}
-            <img
-              src={imageUrl(
-                current.fileKey,
-                current.variantWidths[current.variantWidths.length - 1],
+            <figure onClick={(e) => e.stopPropagation()} className="max-w-full">
+              <img
+                src={imageUrl(
+                  current.fileKey,
+                  current.variantWidths[current.variantWidths.length - 1],
+                )}
+                srcSet={srcset(current.fileKey, current.variantWidths)}
+                sizes="100vw"
+                alt={current.altText}
+                className="mx-auto max-h-[88vh] max-w-full object-contain shadow-2xl"
+              />
+              {current.altText && (
+                // Bildunterschrift = Alt-Text. aria-hidden, weil derselbe Text
+                // bereits als alt am Bild hängt (keine Doppel-Vorlesung).
+                <figcaption
+                  aria-hidden
+                  className="mx-auto mt-2 max-w-[85vw] text-center text-sm text-white/90"
+                >
+                  {current.altText}
+                </figcaption>
               )}
-              srcSet={srcset(current.fileKey, current.variantWidths)}
-              sizes="100vw"
-              alt={current.altText}
-              onClick={(e) => e.stopPropagation()}
-              className="max-h-[92vh] max-w-full object-contain shadow-2xl"
-            />
+            </figure>
           </div>,
           document.body,
         )}

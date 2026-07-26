@@ -98,6 +98,30 @@ test.describe("Reisebericht: Foto-Galerie / Lightbox", () => {
     }
   });
 
+  test("Alt-Text erscheint als Bildunterschrift und wechselt beim Blättern mit", async ({
+    page,
+  }) => {
+    await page.goto(REPORT);
+    const dish = page
+      .locator("li")
+      .filter({ has: page.getByRole("heading", { name: "Pasta alla Norma" }) });
+    await dish.getByRole("button").first().click();
+    const dialog = page.getByRole("dialog", { name: G.dialogLabel });
+    await expect(dialog).toBeVisible();
+
+    // Unterschrift = Alt-Text des großen Bildes (geseedet: „Pasta 1" … „Pasta 3").
+    const caption = dialog.locator("figcaption");
+    await expect(caption).toBeVisible();
+    const alt1 = await dialog.locator("img").getAttribute("alt");
+    await expect(caption).toHaveText(alt1 ?? "");
+
+    // Blättern → Unterschrift folgt dem neuen Bild.
+    await page.getByRole("button", { name: G.next }).click();
+    const alt2 = await dialog.locator("img").getAttribute("alt");
+    expect(alt2).not.toBe(alt1);
+    await expect(caption).toHaveText(alt2 ?? "");
+  });
+
   test("Restaurant mit einem Foto: öffnet groß, keine Blätter-Pfeile", async ({
     page,
   }) => {
