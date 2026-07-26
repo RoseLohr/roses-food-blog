@@ -44,3 +44,29 @@ gegen die Struktur.
 | `media-thumb.tsx` (Backdrop) | `no-noninteractive…`, `click-events-have-key-events` | Backdrop-Klick schließt nur zusätzlich; Escape + Schließen-Button |
 | `media-thumb.tsx` (Bild) | `no-noninteractive…`, `click-events-have-key-events` | onClick verhindert nur Schließen beim Bildklick; keine eigenständige Interaktion |
 | `site-header.tsx` | `no-autofocus` | Fokus nur, weil der Nutzer das Suchpanel bewusst öffnete — erwartet |
+
+## F5 — Dev-only npm-audit-Findings ohne Upstream-Fix (ratifiziert 2026-07-26)
+
+**Entscheidung (in-command):** Der CI-Job `security` blockiert fail-closed auf dem
+**Produktions**-Audit (`npm audit --omit=dev --audit-level=high`). Der volle Audit
+inkl. Dev-Abhängigkeiten läuft als sichtbarer, nicht-blockierender Schritt weiter.
+
+**Begründung:** Die verbleibenden HIGH-Findings betreffen ausschließlich
+Werkzeugketten, die nur auf Entwickler-/CI-Maschinen laufen, nie in Produktion:
+
+| Kette | Finding | Warum kein Root-Fix möglich |
+|---|---|---|
+| `eslint-plugin-jsx-a11y` → `minimatch@3` → `brace-expansion ≤5.0.7` | ReDoS (HIGH) | ALLE brace-expansion-Releases ≤5.0.7 betroffen; Override auf 5.0.8 bricht ESLint (5.x ist Named-Export-Dual-Modul, `expand is not a function`); Override minimatch@10 bricht jsx-a11y (`__esModule`-CJS ohne default); jsx-a11y 6.10.2 (neuestes Release) pinnt minimatch ^3; eslint@10 wird von jsx-a11y-Peers (^3–^9) blockiert. Empirisch verifiziert, nicht vermutet. |
+| `drizzle-kit` → `@esbuild-kit/*` → `esbuild` | Dev-Server-Request-Smuggling (moderate/high) | esbuild-kit ist archiviert; drizzle-kit-Downgrade auf 0.18 wäre ein Breaking Change des Migrationswerkzeugs. |
+
+**Kompensation:** Prod-Audit bleibt unverändert scharf und fail-closed; die
+Dev-Findings bleiben durch den Sichtbarkeits-Schritt in jedem CI-Lauf im Log
+präsent (kein Aus-den-Augen-Verlieren); Dependabot (B-12) meldet Upstream-Releases.
+
+**Tripwire (macht den vollen Audit wieder blockierend):** Sobald
+`eslint-plugin-jsx-a11y` eine Version mit `minimatch ≥9` ausliefert ODER
+`brace-expansion` einen 1.x/2.x-Backport-Fix veröffentlicht ODER `drizzle-kit`
+die `@esbuild-kit`-Kette ersetzt, wird der jeweilige Override/Bestand
+aktualisiert und — sobald der volle Audit grün ist — der Schritt „npm audit voll"
+in `.github/workflows/ci.yml` wieder blockierend gestellt. F5 wird dann
+gestrichen; ein Stehenlassen darüber hinaus ist selbst ein Finding.

@@ -96,7 +96,18 @@ jobs:
           node-version: "22"
           cache: npm
       - run: npm ci --no-audit --no-fund
-      - name: npm audit (blockiert ab „high")
+      # Gate-Bedingung: der PRODUKTIONS-Audit (Runtime-Abhängigkeiten) blockiert
+      # fail-closed ab „high". Der volle Audit inkl. Dev-Werkzeugketten läuft
+      # darunter SICHTBAR weiter, blockiert aber nicht — ratifizierte Ausnahme F5
+      # (audit/10-exceptions-ledger.md): die verbleibenden Dev-Findings
+      # (eslint-plugin-jsx-a11y→minimatch@3→brace-expansion, drizzle-kit→esbuild)
+      # sind upstream ohne Bruch der Werkzeuge nicht fixbar und laufen nie in
+      # Produktion. Tripwire: liefern die Upstream-Pakete Fixes, fällt F5 und
+      # dieser Schritt wird wieder blockierend.
+      - name: npm audit Produktion (blockiert ab „high", fail-closed)
+        run: npm audit --omit=dev --audit-level=high
+      - name: npm audit voll inkl. Dev (Sichtbarkeit, Ausnahme F5 — blockiert nicht)
+        continue-on-error: true
         run: npm audit --audit-level=high
       - name: Dependency-Existenzprüfung (Anti-Slopsquatting, B-04)
         run: node scripts/regime/deps-existence.mjs
