@@ -20,6 +20,17 @@ export const AI_TOTAL_MB = 19;
 export const AI_IMAGE_ACCEPT = "image/jpeg,image/png,image/webp";
 const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
+/**
+ * Liest das Textfeld eines multipart-Formulars TYPSICHER: FormData.get()
+ * liefert string ODER File. Ein als „text" hochgeladenes File würde über
+ * String(...) zu "[object File]" — ein nicht-leerer Müll-String, der das
+ * Pflichteingabe-Gate passierte und einen kostenpflichtigen KI-Lauf startete
+ * (Cross-Vendor-Befund). Nur echte Strings zählen; alles andere ist leer.
+ */
+export function formTextValue(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
 export type AiImageIssue =
   | { code: "zu_viele" }
   | { code: "zu_gross"; name: string }

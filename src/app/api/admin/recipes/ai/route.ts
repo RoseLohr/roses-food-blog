@@ -19,6 +19,7 @@ import {
   AI_TOTAL_MB,
   MAX_AI_IMAGES,
   checkAiImageSelection,
+  formTextValue,
   type AiImageIssue,
 } from "@/lib/ai-recipe-images";
 import { t } from "@/i18n/de";
@@ -52,7 +53,9 @@ export async function POST(req: Request) {
   if (!form) {
     return NextResponse.json({ error: "Ungültige Eingabe." }, { status: 400 });
   }
-  const text = String(form.get("text") ?? "").trim();
+  // Typsicher: ein als „text" hochgeladenes File zählt NICHT als Text
+  // (String(file) wäre "[object File]" und passierte das Pflichtinput-Gate).
+  const text = formTextValue(form.get("text"));
   const files = form
     .getAll("fotos")
     .filter((f): f is File => f instanceof File && f.size > 0);

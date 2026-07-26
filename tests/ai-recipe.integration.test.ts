@@ -187,6 +187,17 @@ describe("Foto-Limits (checkAiImageSelection — Editor UND Route)", () => {
     });
   });
 
+  it("Textfeld: nur echte Strings zählen — ein File unter „text\" wird nie \"[object File]\" (Sol-Befund)", async () => {
+    const { formTextValue } = await import("@/lib/ai-recipe-images");
+    expect(formTextValue("  Rührei mit Schnittlauch ")).toBe("Rührei mit Schnittlauch");
+    expect(formTextValue(null)).toBe("");
+    expect(formTextValue(undefined)).toBe("");
+    // Ein als „text" hochgeladenes File darf NICHT als Text durchgehen —
+    // String(file) wäre "[object File]" und startete einen Müll-KI-Lauf.
+    const datei = new File(["inhalt"], "notizen.txt", { type: "text/plain" });
+    expect(formTextValue(datei)).toBe("");
+  });
+
   it("prüft den MIME-Typ nur, wenn ihm vertraut wird (Client ja, Server nein)", async () => {
     const { checkAiImageSelection } = await import("@/lib/ai-recipe-images");
     const pdf = [f(10, "application/pdf", "speise.pdf")];
