@@ -130,6 +130,23 @@
       "control_cmd": "node scripts/regime/font-cache.mjs --selftest",
       "beispiel": "compass-icon.svg unter /public/brand wird getauscht, aber der ?v-Hash in site-logo.tsx nicht gebumpt → Bestandsclients erhalten bis zu 1 Jahr das alte Icon",
       "hinweis": "Dasselbe Gate deckt zwei Asset-Klassen mit identischer Invariante ab (Fonts + Brand-SVGs). Fuer /brand berechnet es den Inhalts-Hash jeder SVG neu und verlangt, dass die in site-logo.tsx referenzierte ?v-Version exakt passt (plus immutable-Header /brand in next.config). Ein Tausch ohne Version-Bump bricht CI. Der Selbsttest uebt die parametrisierte Vergleichslogik auch fuer die Brand-Klasse; inject.mjs --strict friert eine Regression ein."
+    },
+    {
+      "id": "S16-image-oversized-delivery",
+      "klasse": "Bild größer als nötig ausgeliefert (sizes-Lüge / fixe Großvariante ohne srcset)",
+      "aktiv": true,
+      "kontrolle": "responsive-images-Gate (statisch) + tests/e2e/bild-auslieferung.spec.ts (dynamisch, CI-Job e2e)",
+      "control_cmd": "node scripts/regime/responsive-images.mjs --selftest",
+      "beispiel": "<img src=\"/uploads/x/w960.webp\"> für eine 85-px-Kachel bzw. sizes=\"50vw\" für eine 548-px-Karte",
+      "hinweis": "Der dynamische Teil (gewählte Variante vs. gemessene Renderbreite × DPR) läuft blockierend im CI-Job e2e — hier kalibriert der statische Selbsttest."
+    },
+    {
+      "id": "S17-encoder-change-stale",
+      "klasse": "Encoder-Änderung ohne rev-Erhöhung (Bestands-Uploads bleiben alt, immutable-Cache bleibt stale)",
+      "aktiv": true,
+      "kontrolle": "perf-guardrails Rev-Ratifizierung + ?v=rev-Cache-Busting (media-url)",
+      "control_cmd": "npx vitest run tests/perf-guardrails.test.ts tests/media-url.test.ts",
+      "beispiel": "webpQuality in config/bild-encoder.json gesenkt, rev unverändert → Fingerprint-Abgleich schlägt fehl"
     }
   ]
 }

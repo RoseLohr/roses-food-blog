@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getFullRecipe } from "@/lib/recipes";
 import { getBaseUrl } from "@/lib/base-url";
-import { imageUrl } from "@/lib/media";
+import { imageUrl, optimalVariant } from "@/lib/media";
 import { JsonLd, breadcrumbJsonLd, recipeJsonLd } from "@/lib/jsonld";
 import { RecipeView } from "@/components/recipe-view";
 import { PageTracker } from "@/components/page-tracker";
@@ -29,7 +29,7 @@ export async function generateMetadata(props: {
   const ogImage = full.heroImage
     ? `${getBaseUrl()}${imageUrl(
         full.heroImage.fileKey,
-        full.heroImage.variantWidths.at(-1) ?? 1280,
+        optimalVariant(full.heroImage.variantWidths, 1280),
       )}`
     : undefined;
   return {

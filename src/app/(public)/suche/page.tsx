@@ -29,6 +29,16 @@ export const dynamic = "force-dynamic";
 
 const TIME_OPTIONS = [30, 45, 60, 90];
 
+// Die Ergebnis-Spalte liegt neben der 16rem-Filterleiste (Grid
+// [16rem_1fr] + gap-8 im 1120-px-Container): 3 Kacheln mit gap-6 sind
+// dort nur ~261 px breit — bzw. ~248 px im Zutaten-Kasten (p-5). Der
+// Karten-Default (~360 px, Listenseiten OHNE Seitenleiste) ließe den
+// Browser hier eine Variantenstufe zu groß laden.
+const SEARCH_CARD_SIZES =
+  "(max-width: 640px) calc(100vw - 2rem), (max-width: 1024px) 50vw, 261px";
+const SEARCH_BOX_CARD_SIZES =
+  "(max-width: 640px) calc(100vw - 4.5rem), (max-width: 1024px) 50vw, 248px";
+
 function FilterGroup({
   legend,
   name,
@@ -290,7 +300,11 @@ export default async function SearchPage(props: {
                   </h3>
                   <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
                     {hit.recipes.map((r) => (
-                      <RecipeCard key={r.slug} recipe={r} />
+                      <RecipeCard
+                        key={r.slug}
+                        recipe={r}
+                        imageSizes={SEARCH_BOX_CARD_SIZES}
+                      />
                     ))}
                   </div>
                 </>
@@ -310,6 +324,8 @@ export default async function SearchPage(props: {
                           // eslint-disable-next-line @next/next/no-img-element
                           <img
                             src={d.thumbUrl}
+                            srcSet={d.thumbSrcSet ?? undefined}
+                            sizes="64px"
                             alt=""
                             width={64}
                             height={64}
@@ -344,7 +360,11 @@ export default async function SearchPage(props: {
               </h2>
               <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
                 {uniqueRecipes.map((r) => (
-                  <RecipeCard key={r.slug} recipe={r} />
+                  <RecipeCard
+                    key={r.slug}
+                    recipe={r}
+                    imageSizes={SEARCH_CARD_SIZES}
+                  />
                 ))}
               </div>
             </section>
@@ -366,6 +386,8 @@ export default async function SearchPage(props: {
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
                         src={x.thumbUrl}
+                        srcSet={x.thumbSrcSet ?? undefined}
+                        sizes="64px"
                         alt=""
                         width={64}
                         height={64}

@@ -46,7 +46,8 @@ describe.skipIf(!hasVips())("Bildpipeline mit IMAGE_BACKEND=vips", () => {
     const stored = await storeImage(jpeg, "test.jpg", "Testbild");
     expect(stored.width).toBe(1000);
     expect(stored.height).toBe(700);
-    expect(stored.variantWidths).toEqual([320, 640, 960]);
+    // Alle Leiter-Stufen ≤ Originalbreite (config/bild-encoder.json).
+    expect(stored.variantWidths).toEqual([160, 320, 480, 640, 768, 960]);
 
     for (const w of stored.variantWidths) {
       const file = path.join(uploadsDir(), stored.fileKey, `w${w}.webp`);

@@ -10,6 +10,7 @@ import { CALORIE_BANDS } from "@/lib/search";
 import {
   imageUrl,
   mediaImageWithWidths,
+  optimalVariant,
   srcset,
   thumbUrl,
   variantWidthsByImage,
@@ -29,7 +30,7 @@ const dict = t();
 // einspaltig (100vw). Listenseiten ohne Seitenleiste nutzen den breiteren
 // Default der Kachel (~360 px).
 const HOME_CARD_SIZES =
-  "(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 256px";
+  "(max-width: 640px) calc(100vw - 2rem), (max-width: 1024px) 50vw, 256px";
 
 export const dynamic = "force-dynamic";
 
@@ -97,12 +98,14 @@ async function loadHomepage() {
     return {
       id: s.id,
       recipeId: linked,
-      imgSrc: imageUrl(s.img.fileKey, widths.at(-1) ?? 1280),
+      // src-Fallback nur für Konsumenten ohne srcset (Crawler/Reader): eine
+      // Hero-taugliche Mittelvariante statt pauschal der größten Datei.
+      imgSrc: imageUrl(s.img.fileKey, optimalVariant(widths, 1280)),
       imgSrcSet: srcset(s.img.fileKey, widths),
-      // Kleinste Variante (w320) als EINZIGE Quelle der Mini-Thumbnails: sie werden
-      // nur ~130–210 px breit angezeigt und tragen bewusst kein srcSet (sonst lädt
-      // High-DPR w640 statt w320 — Lighthouse „Bildübermittlung verbessern").
-      thumbSrc: imageUrl(s.img.fileKey, widths[0] ?? 320),
+      // Mini-Thumbnails: kleinste Variante als Fallback + volles srcset —
+      // die Breitenwahl trifft der Browser über das sizes der Leiste.
+      thumbSrc: thumbUrl(s.img.fileKey, widths),
+      thumbSrcSet: srcset(s.img.fileKey, widths),
       alt: s.img.altText,
       caption: s.caption,
       href: linked ? `/rezepte/${s.recipeSlug}` : null,
@@ -278,10 +281,14 @@ async function boxItemsForRecipes(
     // Unterzeile: nur die Kategorien — die Ernährungsform steht schon im
     // Titelkasten der Box (auf Wunsch entfernt).
     const subtitle = (catBy.get(r.id) ?? []).join(" / ");
+    const widths = img ? (widthsById.get(img.id) ?? []) : [];
     return {
       slug: r.slug,
       title: r.title,
-      thumbUrl: img ? thumbUrl(img.fileKey, widthsById.get(img.id) ?? []) : null,
+      thumbUrl: img ? thumbUrl(img.fileKey, widths) : null,
+      // srcset dazu: der Browser wählt für die 56-px-Rundbilder je DPR selbst
+      // (w160 statt fix w320 — Lighthouse „Bilder in angemessener Größe").
+      thumbSrcSet: img ? srcset(img.fileKey, widths) : null,
       subtitle,
     };
   });

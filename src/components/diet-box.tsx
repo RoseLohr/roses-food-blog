@@ -12,6 +12,8 @@ export interface DietBoxItem {
   slug: string;
   title: string;
   thumbUrl: string | null;
+  /** srcset der Vorschau — Browser wählt je DPR die passende Variante. */
+  thumbSrcSet: string | null;
   subtitle: string;
 }
 
@@ -47,6 +49,8 @@ export function DietBox({
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={it.thumbUrl}
+                  srcSet={it.thumbSrcSet ?? undefined}
+                  sizes="56px"
                   alt=""
                   width={56}
                   height={56}

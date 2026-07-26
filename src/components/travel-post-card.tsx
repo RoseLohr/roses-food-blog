@@ -32,7 +32,10 @@ export function TravelPostCard({ post }: { post: TravelCardData }) {
               height: post.height!,
               variantWidths: post.variantWidths ?? [],
             }}
-            sizes="(max-width: 640px) 100vw, 50vw"
+            // Reale Kartenbreite: Layout-Container max-w-6xl (1120 px Inhalt),
+            // 2 Spalten mit gap-6 → max. ~548 px je Karte. Das frühere „50vw"
+            // ohne Desktop-Deckel ließ 1920er-Screens w960 laden.
+            sizes="(max-width: 640px) calc(100vw - 2rem), (max-width: 1184px) 50vw, 548px"
             className="aspect-[2/1] w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
           />
         ) : (

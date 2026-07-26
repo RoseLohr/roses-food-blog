@@ -6,14 +6,21 @@
 import { and, asc, desc, eq, gt, inArray, isNotNull, lte, or, sql } from "drizzle-orm";
 import { db, schema } from "@/db";
 import type { RecipeCardData } from "@/components/recipe-card";
-import { thumbUrl, variantWidthsByImage } from "@/lib/media";
+import { srcset, thumbUrl, variantWidthsByImage } from "@/lib/media";
 import { publishedRecipeCards } from "@/lib/recipe-list";
 import type { MediaImage } from "@/lib/recipes";
 import { dishTaxonomiesByDish, type TaxonomyType } from "@/lib/taxonomies";
 
-/** Erstes Foto je Gericht als kleines Vorschaubild (für Suchtreffer). */
-async function dishThumbById(dishIds: number[]): Promise<Map<number, string>> {
-  const map = new Map<number, string>();
+/** Erstes Foto je Gericht als kleines Vorschaubild (für Suchtreffer):
+ *  kleinste Variante als src + volles srcset, damit der Browser für die
+ *  64-px-Thumbs je DPR selbst wählt (w160/w320). */
+export interface DishThumb {
+  url: string;
+  srcSet: string;
+}
+
+async function dishThumbById(dishIds: number[]): Promise<Map<number, DishThumb>> {
+  const map = new Map<number, DishThumb>();
   if (dishIds.length === 0) return map;
   const rows = await db
     .select({
@@ -28,7 +35,11 @@ async function dishThumbById(dishIds: number[]): Promise<Map<number, string>> {
   const widthsById = await variantWidthsByImage(rows.map((r) => r.imageId));
   for (const r of rows) {
     if (!map.has(r.dishId)) {
-      map.set(r.dishId, thumbUrl(r.fileKey, widthsById.get(r.imageId) ?? []));
+      const widths = widthsById.get(r.imageId) ?? [];
+      map.set(r.dishId, {
+        url: thumbUrl(r.fileKey, widths),
+        srcSet: srcset(r.fileKey, widths),
+      });
     }
   }
   return map;
@@ -259,6 +270,7 @@ export interface DishHit {
   dietTypes: string[];
   /** Erstes Foto des Gerichts (Vorschaubild), falls vorhanden */
   thumbUrl: string | null;
+  thumbSrcSet: string | null;
 }
 
 /** Gericht-IDs mit mindestens einer Taxonomie der Art aus der Slug-Liste. */
@@ -381,7 +393,8 @@ export async function searchDishes(filters: SearchFilters): Promise<DishHit[]> {
       travelTitle: r.travelTitle,
       categories: (grouped?.kategorie ?? []).map((c) => c.name),
       dietTypes: (grouped?.ernaehrungsform ?? []).map((c) => c.name),
-      thumbUrl: thumbs.get(r.dishId) ?? null,
+      thumbUrl: thumbs.get(r.dishId)?.url ?? null,
+      thumbSrcSet: thumbs.get(r.dishId)?.srcSet ?? null,
     };
   });
 }
@@ -399,6 +412,7 @@ export interface IngredientHit {
     travelTitle: string;
     /** Erstes Foto des Gerichts (Vorschaubild), falls vorhanden */
     thumbUrl: string | null;
+    thumbSrcSet: string | null;
   }>;
 }
 
@@ -481,7 +495,8 @@ export async function searchIngredients(
     const dishThumbs = await dishThumbById(dishRows.map((d) => d.dishId));
     const dishes = dishRows.map(({ dishId, ...d }) => ({
       ...d,
-      thumbUrl: dishThumbs.get(dishId) ?? null,
+      thumbUrl: dishThumbs.get(dishId)?.url ?? null,
+      thumbSrcSet: dishThumbs.get(dishId)?.srcSet ?? null,
     }));
 
     if (recipes.length || dishes.length) {

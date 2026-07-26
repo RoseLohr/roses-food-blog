@@ -3,7 +3,7 @@
  */
 import type { FullRecipe } from "@/lib/recipes";
 import { formatAmount } from "@/lib/servings";
-import { imageUrl } from "@/lib/media";
+import { imageUrl, optimalVariant } from "@/lib/media";
 import { getBaseUrl } from "@/lib/base-url";
 import { getSiteName } from "@/lib/settings";
 import { t } from "@/i18n/de";
@@ -51,10 +51,11 @@ export function recipeJsonLd(full: FullRecipe) {
       return [amount, i.name].filter(Boolean).join(" ");
     }),
   );
-  // Absolute URL der größten Bildvariante.
+  // Absolute Bild-URL für Crawler: kleinste Variante >= 1280 (OG-Empfehlung
+  // ~1200 px) — die größte Datei (bis w1920) wäre reiner Egress ohne Nutzen.
   const imageAbs = (img: FullRecipe["heroImage"]): string | undefined => {
     if (!img) return undefined;
-    return `${base}${imageUrl(img.fileKey, img.variantWidths.at(-1) ?? 1280)}`;
+    return `${base}${imageUrl(img.fileKey, optimalVariant(img.variantWidths, 1280))}`;
   };
 
   // Ein Zubereitungsschritt (mit optionalem Schritt-Bild).

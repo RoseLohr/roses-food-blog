@@ -74,6 +74,8 @@ COPY --from=build /app/.next/static ./.next/static
 COPY --from=build /app/public ./public
 COPY --from=build /app/drizzle ./drizzle
 COPY --from=build /app/scripts/migrate.mjs ./scripts/migrate.mjs
+COPY --from=build /app/scripts/regenerate-variants.mjs ./scripts/regenerate-variants.mjs
+COPY --from=build /app/config ./config
 COPY --from=build /app/scripts/entry.sh ./scripts/entry.sh
 RUN chmod +x ./scripts/entry.sh && mkdir -p /data
 # LOW_CPU-Fail-Safe: natives sharp aus dem Image entfernen. So kann selbst ein

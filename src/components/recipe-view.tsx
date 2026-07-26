@@ -132,7 +132,10 @@ export function RecipeView({
         <div className="relative">
           <ResponsiveImg
             image={full.heroImage}
-            sizes="(max-width: 820px) 100vw, 768px"
+            // Der Hero füllt die Artikelbreite (Layout max-w-6xl → 1120 px
+            // Inhalt) — der alte 768px-Deckel lieferte auf Desktop ein zu
+            // kleines, hochskaliert-weiches Bild.
+            sizes="(max-width: 1184px) calc(100vw - 2rem), 1120px"
             priority
             // 4:3 wie die Kacheln; auf großen Screens die Höhe deckeln, damit der
             // Hero nicht überproportional groß wird (object-cover beschneidet).
@@ -292,7 +295,9 @@ export function RecipeView({
                             {st.image && (
                               <ResponsiveImg
                                 image={st.image}
-                                sizes="(max-width: 640px) 100vw, 400px"
+                                // max-w-sm (384 px); mobil abzüglich Layout-,
+                                // Artikel-Padding und Schritt-Einrückung.
+                                sizes="(max-width: 640px) calc(100vw - 8rem), 384px"
                                 className="mt-3 w-full max-w-sm object-cover"
                               />
                             )}

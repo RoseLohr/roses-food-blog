@@ -2,7 +2,7 @@
  * Responsives Bild aus der Medienbibliothek: WebP-Varianten mit srcset,
  * Lazy Loading, festen Dimensionen gegen Layout-Shift.
  */
-import { imageUrl, srcset } from "@/lib/media";
+import { imageUrl, optimalVariant, srcset } from "@/lib/media";
 
 export interface MediaImageLike {
   fileKey: string;
@@ -12,6 +12,11 @@ export interface MediaImageLike {
   /** Verfügbare Varianten-Breiten, aufsteigend (aus media_variant) */
   variantWidths: number[];
 }
+
+/** Zielbreite des src-Fallbacks: nur Konsumenten OHNE srcset-Auswertung
+ *  (alte Crawler, Reader-Modi) laden src — eine Mittelvariante genügt dort,
+ *  die größte (bis w1920) wäre reine Verschwendung. */
+const FALLBACK_TARGET_PX = 640;
 
 export function ResponsiveImg({
   image,
@@ -28,18 +33,18 @@ export function ResponsiveImg({
 }) {
   const widths = image.variantWidths;
   if (widths.length === 0) return null;
-  const largest = widths[widths.length - 1];
-  const displayHeight = Math.round((largest / image.width) * image.height);
 
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      src={imageUrl(image.fileKey, largest)}
+      src={imageUrl(image.fileKey, optimalVariant(widths, FALLBACK_TARGET_PX))}
       srcSet={srcset(image.fileKey, widths)}
       sizes={sizes}
       alt={alt ?? image.altText}
-      width={largest}
-      height={displayHeight}
+      // Echte Originalmaße: liefern dem Browser das Seitenverhältnis
+      // (CLS-Schutz); die Anzeige-Größe bestimmt weiterhin das CSS.
+      width={image.width}
+      height={image.height}
       loading={priority ? "eager" : "lazy"}
       fetchPriority={priority ? "high" : undefined}
       decoding="async"

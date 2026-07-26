@@ -182,10 +182,14 @@ function DishItem({
             <GalleryLightbox
               images={dish.images}
               label={dish.name}
+              // Reale Breite mobil: 100vw − Layout-px-4 (2rem) − Artikel-p-6
+              // (3rem) − Box-p-4 (2rem) = calc(100vw - 7rem); im 3er-Raster
+              // entsprechend gedrittelt (~25vw). Das frühere „100vw" ließ
+              // Mobil-Browser w960 für ~300 px Anzeige laden.
               thumbSizes={
                 dish.images.length === 1
-                  ? "(max-width: 640px) 100vw, 176px"
-                  : "(max-width: 640px) 33vw, 176px"
+                  ? "(max-width: 640px) calc(100vw - 7rem), 176px"
+                  : "(max-width: 640px) 25vw, 176px"
               }
               thumbClassName="aspect-[4/3] w-full object-cover"
               groupClassName={
@@ -278,7 +282,9 @@ function RestaurantCard({
               <GalleryLightbox
                 images={[r.image]}
                 label={`${dict.travelList.restaurantWord} ${r.name}`}
-                thumbSizes="(max-width: 640px) 100vw, 384px"
+                // Mobil: 100vw − Layout-px-4 − Artikel-p-6 = calc(100vw - 5rem);
+                // 640–767 px: Container sm:w-72 (288 px), ab md: w-96 (384 px).
+                thumbSizes="(max-width: 640px) calc(100vw - 5rem), (max-width: 767px) 288px, 384px"
                 thumbClassName="aspect-[3/2] w-full object-cover"
               />
             </div>
@@ -395,7 +401,10 @@ export async function TravelView({
         <div className="relative">
           <ResponsiveImg
             image={full.heroImage}
-            sizes="(max-width: 820px) 100vw, 768px"
+            // Der Hero füllt die Artikelbreite (Layout max-w-6xl → 1120 px
+            // Inhalt) — der alte 768px-Deckel lieferte auf Desktop ein zu
+            // kleines, hochskaliert-weiches Bild.
+            sizes="(max-width: 1184px) calc(100vw - 2rem), 1120px"
             priority
             className="aspect-[2/1] w-full object-cover"
           />
@@ -485,7 +494,9 @@ export async function TravelView({
                     <ResponsiveImg
                       key={i}
                       image={img}
-                      sizes="(max-width: 820px) 100vw, 688px"
+                      // Blockbreite: Layout-px-4 + Artikel-p-6 (mobil, 5rem)
+                      // bzw. md:p-10 (7rem); Deckel = 1120 − 80 = 1040 px.
+                      sizes="(max-width: 767px) calc(100vw - 5rem), (max-width: 1184px) calc(100vw - 7rem), 1040px"
                       className="w-full object-cover"
                     />
                   ) : null;
@@ -505,7 +516,9 @@ export async function TravelView({
               <ResponsiveImg
                 key={img.id}
                 image={img}
-                sizes="(max-width: 640px) 100vw, 384px"
+                // 2er-Raster in der Artikel-Innenbreite: max. (1040 − 16)/2
+                // = 512 px je Bild; mobil einspaltig in calc(100vw - 5rem).
+                sizes="(max-width: 640px) calc(100vw - 5rem), (max-width: 1184px) calc(50vw - 4rem), 512px"
                 className="w-full object-cover"
               />
             ))}

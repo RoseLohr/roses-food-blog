@@ -30,7 +30,7 @@ export interface RecipeCardData {
  * statt w320 lädt (Lighthouse „Bildübermittlung verbessern").
  */
 const DEFAULT_CARD_SIZES =
-  "(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 360px";
+  "(max-width: 640px) calc(100vw - 2rem), (max-width: 1024px) 50vw, 360px";
 
 export function RecipeCard({
   recipe,

@@ -29,7 +29,7 @@ test.describe("Startseiten-Hero-Slider (slider-style-2)", () => {
     await expect(hero(page).locator("p").first()).toBeVisible();
   });
 
-  test("Thumbnails laden NUR die kleine Variante (w320, kein srcSet) [Perf-Regression]", async ({
+  test("Thumbnails laden nur kleine Varianten (responsives srcset) [Perf-Regression]", async ({
     page,
   }) => {
     await page.goto("/");
@@ -38,17 +38,18 @@ test.describe("Startseiten-Hero-Slider (slider-style-2)", () => {
     expect(n).toBeGreaterThan(0);
     for (let i = 0; i < n; i++) {
       const img = imgs.nth(i);
-      // Dekorative Mini-Thumbnails: BEWUSST ohne srcSet — sonst wählt der Browser
-      // auf High-DPR-Geräten w640 für eine ~150-px-Anzeige (Lighthouse 07/2026,
-      // ~370 KiB). Die Quelle IST die kleinste Variante (w320).
-      expect(await img.getAttribute("srcset")).toBeNull();
-      await expect(img).toHaveAttribute("src", /w320\.webp/);
+      // Mini-Thumbnails sind regulär responsiv (srcset + enges sizes) — die
+      // w160-Stufe der Leiter macht das byte-optimal. Im Default-Kontext
+      // (Desktop, DPR 1, Kachel ≤ 208 px) darf real nie mehr als w320 laden;
+      // die viewport-/DPR-übergreifende Optimalität sichert
+      // tests/e2e/bild-auslieferung.spec.ts ab.
+      expect(await img.getAttribute("srcset")).not.toBeNull();
+      expect(await img.getAttribute("sizes")).not.toBeNull();
       const current = await img.evaluate(
         (el) => (el as HTMLImageElement).currentSrc,
       );
-      // Tatsächlich geladen wird w320 — niemals eine Großvariante.
-      expect(current).toMatch(/w320\.webp/);
-      expect(current).not.toMatch(/w(640|960|1280|1920)\.webp/);
+      expect(current).toMatch(/w(160|320)\.webp/);
+      expect(current).not.toMatch(/w(480|640|768|960|1280|1920)\.webp/);
     }
   });
 

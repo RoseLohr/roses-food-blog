@@ -7,7 +7,12 @@
  * REINE, serialisierbare Props auf und reicht sie als Prop hinein.
  */
 import { getSiteBranding } from "@/lib/settings";
-import { imageUrl, mediaImageWithWidths, srcset } from "@/lib/media";
+import {
+  imageUrl,
+  mediaImageWithWidths,
+  optimalVariant,
+  srcset,
+} from "@/lib/media";
 
 export interface HeaderLogoImage {
   src: string;
@@ -35,7 +40,10 @@ export async function getHeaderBrand(): Promise<HeaderBrand> {
     const largest = img.variantWidths[img.variantWidths.length - 1];
     const height = Math.round((largest / img.width) * img.height);
     logo = {
-      src: imageUrl(img.fileKey, largest),
+      // src-Fallback: Mittelvariante (Logo ist max. ~320 px breit) — die
+      // größte Datei laden nur Konsumenten ohne srcset, und die brauchen
+      // erst recht kein w1920.
+      src: imageUrl(img.fileKey, optimalVariant(img.variantWidths, 640)),
       srcSet: srcset(img.fileKey, img.variantWidths),
       width: largest,
       height,

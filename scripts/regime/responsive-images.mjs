@@ -44,7 +44,18 @@ import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 
-const LARGE_LITERAL = /w(?:960|1280|1920)\.webp/;
+// „Groß" wird aus der konfigurierten Breiten-Leiter abgeleitet (eine Quelle
+// der Wahrheit, config/bild-encoder.json) — vorher war die Liste hier hart
+// kodiert und driftete bei Leiter-Änderungen stumm auseinander.
+const encoder = JSON.parse(
+  fs.readFileSync(
+    new URL("../../config/bild-encoder.json", import.meta.url),
+    "utf8",
+  ),
+);
+const LARGE_LITERAL = new RegExp(
+  `w(?:${encoder.variantWidths.filter((w) => w >= 960).join("|")})\\.webp`,
+);
 
 /** Statischer String-Wert eines Attribut-Initializers, sonst null (dynamisch). */
 function literalValue(init, sf) {
