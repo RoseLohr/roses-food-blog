@@ -67,6 +67,15 @@ if (!fs.existsSync(dbFile) || !fs.existsSync(uploads)) {
 
 const useVips = process.env.IMAGE_BACKEND === "vips";
 
+/** Marker lesen und prüfen, ob er die aktuelle Revision bestätigt (JSON). */
+function markerAktuell(file) {
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf8")).rev === encoder.rev;
+  } catch {
+    return false; // fehlt/kaputt/Altformat → regenerieren
+  }
+}
+
 /** Alle Temp-Dateien (neu-…) eines Bild-Verzeichnisses entfernen. */
 function raeumeTemps(dir) {
   for (const f of fs.readdirSync(dir).filter((f) => f.startsWith("neu-"))) {
@@ -126,10 +135,7 @@ for (const img of images) {
   const dir = path.join(uploads, img.fileKey);
   const markerFile = path.join(dir, MARKER);
   try {
-    if (
-      fs.existsSync(markerFile) &&
-      Number(fs.readFileSync(markerFile, "utf8").trim()) === encoder.rev
-    ) {
+    if (markerAktuell(markerFile)) {
       aktuell++;
       continue;
     }
@@ -160,16 +166,25 @@ for (const img of images) {
       .filter((w) => w < largest)
       .sort((a, b) => a - b);
 
+    // Manifest: je Datei die Byte-Größe der SELBST geschriebenen Bytes —
+    // die Route gibt immutable nur bei exakt passender Größe (Verifikation
+    // statt Prozess-Lock; ein verzahnter fremder Schreiber matcht nie).
+    const dateien = { [`w${largest}.webp`]: fs.statSync(srcFile).size };
     for (const w of ziele) {
       const outFile = path.join(dir, `w${w}.webp`);
       const tmpFile = path.join(dir, `neu-${process.pid}-w${w}.webp`);
       if (fs.existsSync(outFile)) bytesVorher += fs.statSync(outFile).size;
       await encodeWidth(srcFile, tmpFile, w);
+      const groesse = fs.statSync(tmpFile).size;
       fs.renameSync(tmpFile, outFile);
-      bytesNachher += fs.statSync(outFile).size;
+      dateien[`w${w}.webp`] = groesse;
+      bytesNachher += groesse;
       insertVariant.run(img.id, w);
     }
-    fs.writeFileSync(markerFile, String(encoder.rev));
+    fs.writeFileSync(
+      markerFile,
+      JSON.stringify({ rev: encoder.rev, dateien }),
+    );
     regeneriert++;
   } catch (err) {
     fehler++;

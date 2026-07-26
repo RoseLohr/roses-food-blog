@@ -62,11 +62,19 @@ describe("Regenerierung bestehender Uploads (Encoder-Revision)", () => {
     const dir = path.join(uploadsDir(), stored.fileKey);
     const db = new Database(path.join(tmp, "app.db"));
 
-    // Frischer Upload trägt den Revisions-Marker sofort (storeImage) — die
-    // Auslieferungs-Route darf ihn ohne Nachzug immutable cachen.
-    expect(fs.readFileSync(path.join(dir, ".encoder-rev"), "utf8")).toBe(
-      String(encoder.rev),
-    );
+    // Frischer Upload trägt das Abschluss-Manifest sofort (storeImage):
+    // aktuelle Revision + Byte-Größe JEDER Variante — die Auslieferungs-
+    // Route darf nur damit immutable cachen (Verifikation statt Lock).
+    const uploadManifest = JSON.parse(
+      fs.readFileSync(path.join(dir, ".encoder-rev"), "utf8"),
+    ) as { rev: number; dateien: Record<string, number> };
+    expect(uploadManifest.rev).toBe(encoder.rev);
+    for (const w of encoder.variantWidths.filter((x) => x <= 2000)) {
+      expect(
+        uploadManifest.dateien[`w${w}.webp`],
+        `Manifest-Größe w${w}`,
+      ).toBe(fs.statSync(path.join(dir, `w${w}.webp`)).size);
+    }
 
     // Alt-Bestand simulieren (Zustand VOR dieser Revision): kleine Stufen
     // existieren nicht, Marker fehlt, die vorhandenen Varianten sind „alt".
@@ -110,9 +118,17 @@ describe("Regenerierung bestehender Uploads (Encoder-Revision)", () => {
       fs.readFileSync(path.join(dir, "w1920.webp")).equals(quelleBytes),
     ).toBe(true);
 
-    // Marker geschrieben → zweiter Lauf ist ein No-op (idempotent).
-    expect(fs.readFileSync(path.join(dir, ".encoder-rev"), "utf8")).toBe(
-      String(encoder.rev),
+    // Abschluss-Manifest geschrieben (Revision + Byte-Größen inkl. der
+    // unangetasteten Quelle) → zweiter Lauf ist ein No-op (idempotent).
+    const manifest = JSON.parse(
+      fs.readFileSync(path.join(dir, ".encoder-rev"), "utf8"),
+    ) as { rev: number; dateien: Record<string, number> };
+    expect(manifest.rev).toBe(encoder.rev);
+    expect(manifest.dateien["w1920.webp"]).toBe(
+      fs.statSync(path.join(dir, "w1920.webp")).size,
+    );
+    expect(manifest.dateien["w160.webp"]).toBe(
+      fs.statSync(path.join(dir, "w160.webp")).size,
     );
     expect(lauf()).toContain("0 Bild(er) regeneriert");
     db.close();

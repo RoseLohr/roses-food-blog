@@ -354,10 +354,19 @@ export async function storeImage(
       );
       usedWidths.push(w);
     }
-    // Regenerier-Marker: dieses Bild entspricht der aktuellen Encoder-
+    // Abschluss-Marker: dieses Bild entspricht der aktuellen Encoder-
     // Revision. Der Nachzug (scripts/regenerate-variants.mjs) überspringt es,
-    // und die Auslieferungs-Route darf sofort `immutable` cachen.
-    fs.writeFileSync(path.join(dir, ".encoder-rev"), String(encoder.rev));
+    // und die Auslieferungs-Route darf `immutable` cachen — aber nur für
+    // Dateien, deren Byte-Größe im Manifest protokolliert ist (Verifikation
+    // statt Prozess-Lock, s. uploadCacheControl in media-url.ts).
+    const dateien: Record<string, number> = {};
+    for (const w of usedWidths) {
+      dateien[`w${w}.webp`] = fs.statSync(path.join(dir, `w${w}.webp`)).size;
+    }
+    fs.writeFileSync(
+      path.join(dir, ".encoder-rev"),
+      JSON.stringify({ rev: encoder.rev, dateien }),
+    );
 
     // Bild + Varianten-Zeilen atomar (sync-Transaktion, better-sqlite3).
     const row = db.transaction((tx) => {

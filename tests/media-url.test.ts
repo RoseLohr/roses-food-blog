@@ -51,22 +51,27 @@ describe("optimalVariant: kleinste Variante, die den Bedarf deckt", () => {
   });
 });
 
-describe("uploadCacheControl: immutable nur mit doppelt bestätigter Revision (gpt-5.6-sol R1+R3)", () => {
+describe("uploadCacheControl: immutable nur dreifach verifiziert (gpt-5.6-sol R1/R3/R6)", () => {
   const rev = String(encoder.rev);
-
-  it("Marker UND angefragtes ?v == aktuelle rev → immutable-Jahrescache ist sicher", () => {
-    expect(uploadCacheControl(rev, rev)).toBe(
-      "public, max-age=31536000, immutable",
-    );
-    // Whitespace aus fs.readFileSync stört nicht.
-    expect(uploadCacheControl(` ${rev}\n`, rev)).toContain("immutable");
+  const manifest = JSON.stringify({
+    rev: encoder.rev,
+    dateien: { "w320.webp": 12345, "w960.webp": 54321 },
   });
 
-  it("fehlender/fremder/kaputter Marker → NUR kurzlebig (kein Stale-Pinning)", () => {
+  it("Manifest-Revision + angefragtes ?v + Byte-Größe passen → immutable ist sicher", () => {
+    expect(uploadCacheControl(manifest, "w320.webp", 12345, rev)).toBe(
+      "public, max-age=31536000, immutable",
+    );
+    expect(uploadCacheControl(manifest, "w960.webp", 54321, rev)).toContain(
+      "immutable",
+    );
+  });
+
+  it("fehlender/kaputter/Altformat-Marker → NUR kurzlebig (kein Stale-Pinning, R1)", () => {
     // Während des Nachzugs verweisen Seiten schon auf ?v=<neue rev>, die
     // Datei trägt aber noch alte Bytes — immutable würde sie 1 Jahr festnageln.
-    for (const marker of [null, "0", String(encoder.rev + 1), "unsinn", ""]) {
-      const wert = uploadCacheControl(marker, rev);
+    for (const marker of [null, "", "unsinn", "2", "{kaputt", JSON.stringify({ rev: encoder.rev + 1, dateien: { "w320.webp": 12345 } })]) {
+      const wert = uploadCacheControl(marker, "w320.webp", 12345, rev);
       expect(wert, String(marker)).not.toContain("immutable");
       expect(wert, String(marker)).toContain("max-age=300");
     }
@@ -76,10 +81,23 @@ describe("uploadCacheControl: immutable nur mit doppelt bestätigter Revision (g
     // Ein Vorabruf von ?v=<rev+1> vor dem echten Rev-Bump bekäme sonst
     // heutige Bytes mit immutable — nach dem Bump 1 Jahr stale im Cache.
     for (const v of [null, "", String(encoder.rev + 1), "0", "unsinn"]) {
-      const wert = uploadCacheControl(rev, v);
+      const wert = uploadCacheControl(manifest, "w320.webp", 12345, v);
       expect(wert, String(v)).not.toContain("immutable");
       expect(wert, String(v)).toContain("max-age=300");
     }
+  });
+
+  it("Byte-Größe weicht vom Manifest ab → NUR kurzlebig (kein Lock nötig, R6)", () => {
+    // Ein verzahnter Parallel-Schreiber (zweiter Nachzugs-Lauf, ggf. anderer
+    // Code-Stand) kann fremde Bytes unterschieben — die matchen das beim
+    // Abschluss protokollierte Manifest nicht und bleiben kurzlebig.
+    expect(uploadCacheControl(manifest, "w320.webp", 12346, rev)).toContain(
+      "max-age=300",
+    );
+    // Nicht protokollierte Datei (z. B. Altbestands-Breite w1500) ebenso.
+    expect(uploadCacheControl(manifest, "w1500.webp", 777, rev)).toContain(
+      "max-age=300",
+    );
   });
 });
 

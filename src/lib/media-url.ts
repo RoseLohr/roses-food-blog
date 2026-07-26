@@ -69,31 +69,48 @@ export function isVariantFile(name: string): boolean {
 
 /**
  * Cache-Header für eine ausgelieferte Variante (Fremd-Vendor-Befunde
- * gpt-5.6-sol, Runden 1+3): `immutable` (1 Jahr) darf NUR raus, wenn beides
- * die aktuelle Encoder-Revision bestätigt —
+ * gpt-5.6-sol, Runden 1/3/4/6): `immutable` (1 Jahr) darf NUR raus, wenn
+ * DREI Bestätigungen zusammenkommen — Verifikation statt Prozess-Lock:
  *
- * 1. der Regenerier-Marker (.encoder-rev) des Bild-Verzeichnisses: während
- *    der Nachzug läuft, verweisen Seiten bereits auf ?v=<neue rev>, die
- *    Dateien tragen aber noch alte Bytes — immutable würde sie ein Jahr
- *    unter der neuen URL festnageln; UND
- * 2. die vom Client ANGEFRAGTE ?v-Kennung: ein Vorabruf einer künftigen
- *    Revision (?v=rev+1, bevor sie existiert) bekäme sonst heutige Bytes
- *    mit immutable — ein Cache auf dem Weg lieferte sie nach dem echten
- *    Rev-Bump dauerhaft stale aus (Poisoning per Vorgriff).
+ * 1. Der Abschluss-Marker (.encoder-rev, JSON) des Bild-Verzeichnisses
+ *    trägt die aktuelle Revision — während des Nachzugs verweisen Seiten
+ *    bereits auf ?v=<neue rev>, die Dateien tragen aber noch alte Bytes.
+ * 2. Die vom Client ANGEFRAGTE ?v-Kennung ist die aktuelle Revision —
+ *    ein Vorgriff auf ?v=rev+1 bekäme sonst heutige Bytes festgenagelt.
+ * 3. Die BYTE-GRÖSSE der tatsächlich geöffneten Datei stimmt mit dem im
+ *    Marker beim Abschluss protokollierten Wert überein — damit kann auch
+ *    ein verzahnter Parallel-Schreiber (zweiter Nachzugs-Lauf, ggf. mit
+ *    anderem Code-Stand) nie fremde Bytes unter einem gültigen Marker
+ *    immutable machen: eine nicht protokollierte Datei matcht nicht und
+ *    fällt auf den Kurzzeit-Cache zurück. Ein Prozess-Lock wäre nach
+ *    SIGKILL selbst ein Stale-Risiko; die Größen-Verifikation ist
+ *    zustandslos und heilt von selbst.
  *
- * Alles andere (alte/fremde/fehlende ?v, fehlender Marker) bleibt kurzlebig
- * (5 min) und heilt von selbst. Gleiches Prinzip wie die ?v-Hash-Disziplin
- * bei /fonts und /brand: unveränderlich nur, was verifiziert ist.
+ * Alles andere bleibt kurzlebig (5 min). Gleiches Prinzip wie die
+ * ?v-Hash-Disziplin bei /fonts und /brand: unveränderlich nur, was
+ * inhaltlich verifiziert ist.
  */
 export function uploadCacheControl(
   markerInhalt: string | null,
+  dateiname: string,
+  dateiGroesse: number,
   angefragteRev: string | null,
 ): string {
-  const aktuell =
-    markerInhalt !== null &&
-    Number(markerInhalt.trim()) === encoder.rev &&
-    angefragteRev !== null &&
-    Number(angefragteRev.trim()) === encoder.rev;
+  let aktuell = false;
+  if (markerInhalt !== null && angefragteRev !== null) {
+    try {
+      const m = JSON.parse(markerInhalt) as {
+        rev?: number;
+        dateien?: Record<string, number>;
+      };
+      aktuell =
+        m.rev === encoder.rev &&
+        m.dateien?.[dateiname] === dateiGroesse &&
+        Number(angefragteRev.trim()) === encoder.rev;
+    } catch {
+      aktuell = false; // kein/kaputtes JSON → nicht verifiziert
+    }
+  }
   return aktuell
     ? "public, max-age=31536000, immutable"
     : "public, max-age=300";

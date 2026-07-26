@@ -60,7 +60,14 @@ export async function GET(
     headers: {
       "Content-Type": "image/webp",
       "Content-Length": String(stat.size),
-      "Cache-Control": uploadCacheControl(marker, angefragteRev),
+      // immutable nur, wenn Manifest-Revision, angefragtes ?v UND die
+      // Byte-Größe des offenen fd zusammenpassen (Verifikation statt Lock).
+      "Cache-Control": uploadCacheControl(
+        marker,
+        pfad[1],
+        stat.size,
+        angefragteRev,
+      ),
     },
   });
 }
