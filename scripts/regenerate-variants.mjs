@@ -20,10 +20,21 @@
  * - Alle kleineren Breiten werden aus der Quelle neu kodiert: die vorhandenen
  *   UND die inzwischen konfigurierten (z. B. neue Mini-Stufe 160) — fehlende
  *   media_variant-Zeilen werden ergänzt, damit srcset sie anbietet.
- * - Schreiben atomar: erst neu-w<N>.webp, dann Umbenennen — nie eine halb
- *   geschriebene Datei ausliefern. Der Temp-Name MUSS auf .webp enden
+ * - Schreiben atomar: erst neu-<pid>-w<N>.webp, dann Umbenennen — nie eine
+ *   halb geschriebene Datei ausliefern. Der Temp-Name MUSS auf .webp enden
  *   (vipsthumbnail leitet das Ausgabeformat aus der Endung ab); ausgeliefert
  *   wird er nie (die Route akzeptiert ausschließlich w<N>.webp).
+ * - PID im Temp-Namen statt Prozess-Lock (Panel-Befund gpt-5.6-sol R5):
+ *   Laufen zwei Nachzüge parallel (Container-Hintergrundlauf + manueller
+ *   npm-Aufruf), publiziert jeder nur Dateien, die er SELBST vollständig
+ *   geschrieben hat — ein geteilter Temp-Name hätte halb geschriebene
+ *   Bytes des anderen Prozesses per Rename veröffentlichen können. Der
+ *   Temp-Sweep je Bild räumt zugleich Waisen ab (SIGKILL mitten im Lauf);
+ *   bricht er einem LEBENDEN Parallel-Lauf die Temp-Datei weg, schlägt
+ *   dessen Rename sauber fehl (Fehlerpfad, Wiederholung beim nächsten
+ *   Start) — Korruption ist in keiner Verzahnung möglich. Ein Lockfile
+ *   wäre nach SIGKILL selbst ein Stale-Risiko (Heuristik nötig) und
+ *   schützte nicht besser.
  *
  * Cache: /uploads liefert mit immutable-Jahrescache. Das Busting übernehmen
  * die Bild-URLs selbst (?v=rev aus derselben Konfiguration, media-url.ts) —
@@ -55,6 +66,13 @@ if (!fs.existsSync(dbFile) || !fs.existsSync(uploads)) {
 }
 
 const useVips = process.env.IMAGE_BACKEND === "vips";
+
+/** Alle Temp-Dateien (neu-…) eines Bild-Verzeichnisses entfernen. */
+function raeumeTemps(dir) {
+  for (const f of fs.readdirSync(dir).filter((f) => f.startsWith("neu-"))) {
+    fs.rmSync(path.join(dir, f), { force: true });
+  }
+}
 
 /** Eine Zielbreite aus der Quelldatei kodieren (gleiche Parameter wie media.ts). */
 async function encodeWidth(srcFile, outFile, width) {
@@ -128,6 +146,8 @@ for (const img of images) {
       fehler++;
       continue;
     }
+    // Waisen früherer (abgebrochener) Läufe entfernen, bevor neu kodiert wird.
+    raeumeTemps(dir);
 
     // Ziele: alle kleineren vorhandenen Breiten + neu konfigurierte Breiten
     // unterhalb der Quelle (nie hochskalieren, nie die Quelle selbst).
@@ -142,7 +162,7 @@ for (const img of images) {
 
     for (const w of ziele) {
       const outFile = path.join(dir, `w${w}.webp`);
-      const tmpFile = path.join(dir, `neu-w${w}.webp`);
+      const tmpFile = path.join(dir, `neu-${process.pid}-w${w}.webp`);
       if (fs.existsSync(outFile)) bytesVorher += fs.statSync(outFile).size;
       await encodeWidth(srcFile, tmpFile, w);
       fs.renameSync(tmpFile, outFile);
@@ -156,11 +176,7 @@ for (const img of images) {
     console.error(`[bilder] ${img.fileKey}: ${err.message}`);
     // Temp-Reste entfernen; KEIN Marker — nächster Lauf versucht es erneut.
     // (Verzeichnis kann bei DB-Leichen fehlen — dann gibt es nichts zu putzen.)
-    if (fs.existsSync(dir)) {
-      for (const f of fs.readdirSync(dir).filter((f) => f.startsWith("neu-"))) {
-        fs.rmSync(path.join(dir, f), { force: true });
-      }
-    }
+    if (fs.existsSync(dir)) raeumeTemps(dir);
   }
 }
 
