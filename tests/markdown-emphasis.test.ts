@@ -121,4 +121,22 @@ describe("renderMarkdown — Reparatur fehlplatzierter Betonungs-Whitespace", ()
     expect(html).toContain("**x **");
     expect(html).not.toContain("<strong>");
   });
+
+  it("Tilde-Fence im Blockquote bleibt unangetastet (Sol-Befund)", () => {
+    const html = renderMarkdown("> ~~~\n> **x **\n> ~~~");
+    expect(html).toContain("**x **");
+    expect(html).not.toContain("<strong>");
+  });
+
+  it("Tilde-Fence im Listen-Container bleibt unangetastet (Sol-Befund)", () => {
+    const html = renderMarkdown("- ~~~\n  **x **\n  ~~~\n\n**a **b");
+    expect(html).toContain("**x **");
+    expect(html).not.toContain("<strong>");
+  });
+
+  it("eingerückter Code im Blockquote bleibt unangetastet (Sol-Befund)", () => {
+    const html = renderMarkdown(">     **x **");
+    expect(html).toContain("**x **");
+    expect(html).not.toContain("<strong>");
+  });
 });

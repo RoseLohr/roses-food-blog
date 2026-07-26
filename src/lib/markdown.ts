@@ -98,10 +98,12 @@ function repairEmphasisWhitespace(md: string): string {
         /(?<![\\*])\*(?!\*)([ \t]*)([^*\n]+?)([ \t]*)(?<![\\*])\*(?!\*)/g,
         fix("*", false),
       );
-  // Code-Konstrukt irgendwo im Dokument? Dann NICHT reparieren (s. Kommentar):
-  // Backticks (Inline-Code, auch mehrzeilig, und ```-Fences), Tilde-Fences
-  // oder eingerückte Code-Zeilen (≥ 4 Leerzeichen/Tab am Zeilenanfang).
-  if (/`|^ {0,3}~{3,}|^(?: {4,}|\t)/m.test(md)) return md;
+  // Code-Konstrukt irgendwo im Dokument? Dann NICHT reparieren (s. Kommentar).
+  // Bewusst POSITIONSUNABHÄNGIG (Fences und eingerückter Code können auch
+  // hinter Blockquote-/Listen-Präfixen beginnen): ein Backtick, drei Tilden,
+  // ein Tab oder vier Leerzeichen am Stück — egal wo — schalten die Heilung
+  // ab. Über-Approximation ist hier sicher: sie unterlässt nur die Heilung.
+  if (/`|~~~|\t| {4}/.test(md)) return md;
 
   return md
     .split("\n")
