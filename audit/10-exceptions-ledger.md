@@ -48,25 +48,33 @@ gegen die Struktur.
 ## F5 — Dev-only npm-audit-Findings ohne Upstream-Fix (ratifiziert 2026-07-26)
 
 **Entscheidung (in-command):** Der CI-Job `security` blockiert fail-closed auf dem
-**Produktions**-Audit (`npm audit --omit=dev --audit-level=high`). Der volle Audit
-inkl. Dev-Abhängigkeiten läuft als sichtbarer, nicht-blockierender Schritt weiter.
+**Produktions**-Audit (`npm audit --omit=dev --audit-level=high`, ohne Allowlist).
+Der volle Audit inkl. Dev-Abhängigkeiten bleibt EBENFALLS blockierend
+(`scripts/regime/dev-audit-gate.mjs`): erlaubt sind ausschließlich die hier
+ratifizierten, einzeln benannten Advisories in
+`governance/dev-audit-exceptions.json` — jedes andere HIGH/CRITICAL-Advisory
+(auch künftige Dev-Findings) blockiert weiterhin. Kein fail-open.
 
 **Begründung:** Die verbleibenden HIGH-Findings betreffen ausschließlich
 Werkzeugketten, die nur auf Entwickler-/CI-Maschinen laufen, nie in Produktion:
 
-| Kette | Finding | Warum kein Root-Fix möglich |
+| Advisory (allowgelistet) | Kette | Warum kein Root-Fix möglich |
 |---|---|---|
-| `eslint-plugin-jsx-a11y` → `minimatch@3` → `brace-expansion ≤5.0.7` | ReDoS (HIGH) | ALLE brace-expansion-Releases ≤5.0.7 betroffen; Override auf 5.0.8 bricht ESLint (5.x ist Named-Export-Dual-Modul, `expand is not a function`); Override minimatch@10 bricht jsx-a11y (`__esModule`-CJS ohne default); jsx-a11y 6.10.2 (neuestes Release) pinnt minimatch ^3; eslint@10 wird von jsx-a11y-Peers (^3–^9) blockiert. Empirisch verifiziert, nicht vermutet. |
-| `drizzle-kit` → `@esbuild-kit/*` → `esbuild` | Dev-Server-Request-Smuggling (moderate/high) | esbuild-kit ist archiviert; drizzle-kit-Downgrade auf 0.18 wäre ein Breaking Change des Migrationswerkzeugs. |
+| `GHSA-mh99-v99m-4gvg` — `brace-expansion ≤5.0.7`, ReDoS (HIGH) | `eslint`/`eslint-plugin-jsx-a11y` → `minimatch@3` (nur devDependencies) | ALLE brace-expansion-Releases ≤5.0.7 betroffen; Override auf 5.0.8 bricht ESLint (5.x ist Named-Export-Dual-Modul, `expand is not a function`); Override minimatch@10 bricht jsx-a11y (`__esModule`-CJS ohne default); jsx-a11y 6.10.2 (neuestes Release) pinnt minimatch ^3; eslint@10 wird von jsx-a11y-Peers (^3–^9) blockiert. Empirisch verifiziert, nicht vermutet. |
 
-**Kompensation:** Prod-Audit bleibt unverändert scharf und fail-closed; die
-Dev-Findings bleiben durch den Sichtbarkeits-Schritt in jedem CI-Lauf im Log
-präsent (kein Aus-den-Augen-Verlieren); Dependabot (B-12) meldet Upstream-Releases.
+Nachrichtlich (NICHT allowgelistet, da unterhalb der Blockier-Schwelle „high"):
+die moderate-Kette `drizzle-kit` → `@esbuild-kit/*` → `esbuild`
+(Dev-Server-Request-Smuggling); esbuild-kit ist archiviert, ein
+drizzle-kit-Downgrade wäre ein Breaking Change des Migrationswerkzeugs.
 
-**Tripwire (macht den vollen Audit wieder blockierend):** Sobald
-`eslint-plugin-jsx-a11y` eine Version mit `minimatch ≥9` ausliefert ODER
-`brace-expansion` einen 1.x/2.x-Backport-Fix veröffentlicht ODER `drizzle-kit`
-die `@esbuild-kit`-Kette ersetzt, wird der jeweilige Override/Bestand
-aktualisiert und — sobald der volle Audit grün ist — der Schritt „npm audit voll"
-in `.github/workflows/ci.yml` wieder blockierend gestellt. F5 wird dann
-gestrichen; ein Stehenlassen darüber hinaus ist selbst ein Finding.
+**Kompensation:** Prod-Audit bleibt unverändert scharf, fail-closed und OHNE
+Allowlist; der Dev-Gate blockiert jedes nicht einzeln ratifizierte
+HIGH/CRITICAL-Advisory (kein pauschales Paket-Whitelisting, kein fail-open);
+Dependabot (B-12) meldet Upstream-Releases.
+
+**Tripwire (automatisch, maschinell erzwungen):** `dev-audit-gate.mjs` schlägt
+fehl, sobald ein allowgelistetes Advisory im Audit nicht mehr auftaucht
+(Upstream hat gefixt) — die obsolete Ausnahme MUSS dann aus
+`governance/dev-audit-exceptions.json` und diesem Ledger entfernt werden, sonst
+bleibt CI rot. Ein stillschweigendes Weiterleben von F5 ist damit unmöglich;
+ein manuelles Stehenlassen darüber hinaus ist selbst ein Finding.

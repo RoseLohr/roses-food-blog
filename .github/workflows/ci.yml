@@ -96,19 +96,21 @@ jobs:
           node-version: "22"
           cache: npm
       - run: npm ci --no-audit --no-fund
-      # Gate-Bedingung: der PRODUKTIONS-Audit (Runtime-Abhängigkeiten) blockiert
-      # fail-closed ab „high". Der volle Audit inkl. Dev-Werkzeugketten läuft
-      # darunter SICHTBAR weiter, blockiert aber nicht — ratifizierte Ausnahme F5
-      # (audit/10-exceptions-ledger.md): die verbleibenden Dev-Findings
-      # (eslint-plugin-jsx-a11y→minimatch@3→brace-expansion, drizzle-kit→esbuild)
-      # sind upstream ohne Bruch der Werkzeuge nicht fixbar und laufen nie in
-      # Produktion. Tripwire: liefern die Upstream-Pakete Fixes, fällt F5 und
-      # dieser Schritt wird wieder blockierend.
-      - name: npm audit Produktion (blockiert ab „high", fail-closed)
+      # Zwei blockierende Audit-Gates (Ausnahme F5, audit/10-exceptions-ledger.md):
+      # 1. PRODUKTIONS-Audit (Runtime-Abhängigkeiten): fail-closed ab „high",
+      #    KEINE Allowlist — nichts Verwundbares wird ausgeliefert.
+      # 2. Voller Audit inkl. Dev-Ketten: ebenfalls BLOCKIEREND via
+      #    dev-audit-gate.mjs. Erlaubt sind ausschließlich die ratifizierten
+      #    F5-Advisories (governance/dev-audit-exceptions.json, je konkretes
+      #    GHSA); jedes andere HIGH/CRITICAL blockiert. Auto-Tripwire: liefert
+      #    Upstream den Fix, wird der Gate rot, bis die obsolete Ausnahme
+      #    entfernt ist — F5 kann nicht stillschweigend weiterleben.
+      - name: npm audit Produktion (blockiert ab „high", fail-closed, ohne Allowlist)
         run: npm audit --omit=dev --audit-level=high
-      - name: npm audit voll inkl. Dev (Sichtbarkeit, Ausnahme F5 — blockiert nicht)
-        continue-on-error: true
-        run: npm audit --audit-level=high
+      - name: Dev-Audit-Gate (blockierend; nur ratifizierte F5-Advisories, Auto-Tripwire)
+        run: node scripts/regime/dev-audit-gate.mjs
+      - name: Dev-Audit-Gate-Selbsttest (A-36)
+        run: node scripts/regime/dev-audit-gate.mjs --selftest
       - name: Dependency-Existenzprüfung (Anti-Slopsquatting, B-04)
         run: node scripts/regime/deps-existence.mjs
       - name: SBOM erzeugen (CycloneDX, A-38/B-09)

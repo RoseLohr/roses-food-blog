@@ -1,0 +1,14 @@
+{
+  "_comment": "Ratifizierte Dev-Audit-Ausnahmen (Ledger F5, audit/10-exceptions-ledger.md). Jeder Eintrag ist EIN konkretes Advisory (GHSA), nie ein Paket pauschal. scripts/regime/dev-audit-gate.mjs blockiert jedes nicht gelistete HIGH/CRITICAL-Advisory fail-closed UND schlägt fehl, sobald ein gelistetes Advisory aus dem Audit verschwindet (Auto-Tripwire: Ausnahme obsolet → F5 bereinigen, Gate wieder ohne Ausnahme).",
+  "exceptions": [
+    {
+      "ghsa": "GHSA-mh99-v99m-4gvg",
+      "paket": "brace-expansion",
+      "severity": "high",
+      "kette": "eslint / eslint-plugin-jsx-a11y → minimatch@3 → brace-expansion ≤5.0.7 (nur devDependencies)",
+      "ledger": "F5",
+      "ratifiziert": "2026-07-26",
+      "begruendung": "Upstream ohne Bruch der Werkzeuge nicht fixbar: alle brace-expansion-Releases ≤5.0.7 betroffen; Override 5.0.8 bricht ESLint (Named-Export-Dual-Modul); Override minimatch@10 bricht jsx-a11y (CJS __esModule ohne Default); jsx-a11y 6.10.2 (letztes Release) pinnt minimatch ^3. Läuft nie in Produktion — der Prod-Audit-Schritt bleibt davon unberührt scharf."
+    }
+  ]
+}
