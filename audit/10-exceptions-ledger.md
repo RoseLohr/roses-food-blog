@@ -45,7 +45,17 @@ gegen die Struktur.
 | `media-thumb.tsx` (Bild) | `no-noninteractive…`, `click-events-have-key-events` | onClick verhindert nur Schließen beim Bildklick; keine eigenständige Interaktion |
 | `site-header.tsx` | `no-autofocus` | Fokus nur, weil der Nutzer das Suchpanel bewusst öffnete — erwartet |
 
-## F5 — Dev-only npm-audit-Findings ohne Upstream-Fix (ratifiziert 2026-07-26)
+## F5 — Dev-only npm-audit-Findings ohne Upstream-Fix (ratifiziert 2026-07-26; GESCHLOSSEN 2026-08-06)
+
+**Status: geschlossen.** Der Auto-Tripwire hat am 2026-08-06 ausgelöst:
+Upstream hat `brace-expansion` gefixt (1.1.18 bzw. 5.0.9, via `npm audit fix`
+eingespielt — ESLint/jsx-a11y laufen damit nachweislich grün, die frühere
+Bruch-Begründung ist durch die Patch-Releases hinfällig). Die Allowlist in
+`governance/dev-audit-exceptions.json` ist wieder LEER; der Dev-Gate läuft
+ohne jede Ausnahme. Das neue HIGH-Advisory `GHSA-7p8r-x3mc-p8w7` (`fast-uri`
+3.0.0–3.1.4 via ajv/stryker) wurde an der Wurzel gefixt (Override auf die
+gepatchte 3.1.5), NICHT allowgelistet. Der ursprüngliche Eintrag bleibt unten
+nachrichtlich dokumentiert.
 
 **Entscheidung (in-command):** Der CI-Job `security` blockiert fail-closed auf dem
 **Produktions**-Audit (`npm audit --omit=dev --audit-level=high`, ohne Allowlist).
