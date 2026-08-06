@@ -77,6 +77,10 @@ export const mediaImage = sqliteTable(
     width: integer("width").notNull(),
     height: integer("height").notNull(),
     sizeBytes: integer("size_bytes").notNull(),
+    /** Fokuspunkt (Prozent 0–100): welcher Ausschnitt bei beschnittener
+     *  Anzeige (object-cover) sichtbar bleibt. 50/50 = Bildmitte. */
+    focusX: integer("focus_x").notNull().default(50),
+    focusY: integer("focus_y").notNull().default(50),
     /** Geo-Position aus den EXIF-Daten (falls vorhanden) — Karten-Pins */
     lat: real("lat"),
     lng: real("lng"),

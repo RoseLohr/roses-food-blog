@@ -1,8 +1,10 @@
 /**
  * Responsives Bild aus der Medienbibliothek: WebP-Varianten mit srcset,
- * Lazy Loading, festen Dimensionen gegen Layout-Shift.
+ * Lazy Loading, festen Dimensionen gegen Layout-Shift. Der gespeicherte
+ * Fokuspunkt steuert bei beschnittener Anzeige (object-cover), welcher
+ * Ausschnitt sichtbar bleibt.
  */
-import { imageUrl, optimalVariant, srcset } from "@/lib/media";
+import { focusPosition, imageUrl, optimalVariant, srcset } from "@/lib/media";
 
 export interface MediaImageLike {
   fileKey: string;
@@ -11,6 +13,9 @@ export interface MediaImageLike {
   height: number;
   /** Verfügbare Varianten-Breiten, aufsteigend (aus media_variant) */
   variantWidths: number[];
+  /** Fokuspunkt in Prozent (0–100), Standard Bildmitte. */
+  focusX?: number | null;
+  focusY?: number | null;
 }
 
 /** Zielbreite des src-Fallbacks: nur Konsumenten OHNE srcset-Auswertung
@@ -33,6 +38,7 @@ export function ResponsiveImg({
 }) {
   const widths = image.variantWidths;
   if (widths.length === 0) return null;
+  const objectPosition = focusPosition(image.focusX, image.focusY);
 
   return (
     // eslint-disable-next-line @next/next/no-img-element
@@ -49,6 +55,7 @@ export function ResponsiveImg({
       fetchPriority={priority ? "high" : undefined}
       decoding="async"
       className={className}
+      style={objectPosition ? { objectPosition } : undefined}
     />
   );
 }

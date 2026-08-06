@@ -8,6 +8,7 @@ import { DietBox, type DietBoxItem } from "@/components/diet-box";
 import { publishedRecipeCards } from "@/lib/recipe-list";
 import { CALORIE_BANDS } from "@/lib/search";
 import {
+  focusPosition,
   imageUrl,
   mediaImageWithWidths,
   optimalVariant,
@@ -106,6 +107,7 @@ async function loadHomepage() {
       // die Breitenwahl trifft der Browser über das sizes der Leiste.
       thumbSrc: thumbUrl(s.img.fileKey, widths),
       thumbSrcSet: srcset(s.img.fileKey, widths),
+      imgFocus: focusPosition(s.img.focusX, s.img.focusY),
       alt: s.img.altText,
       caption: s.caption,
       href: linked ? `/rezepte/${s.recipeSlug}` : null,

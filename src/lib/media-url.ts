@@ -38,6 +38,22 @@ export function thumbUrl(fileKey: string, widths: number[]): string {
 }
 
 /**
+ * CSS-`object-position` für den gespeicherten Bild-Fokuspunkt (Prozent
+ * 0–100 je Achse). Bei Bildmitte (50/50, Standard) wird `undefined`
+ * geliefert — dann bleibt das Browser-Default-Verhalten ohne Inline-Style.
+ * Werte werden defensiv auf 0–100 geklemmt (alte Exporte, Handeingaben).
+ */
+export function focusPosition(
+  focusX?: number | null,
+  focusY?: number | null,
+): string | undefined {
+  const x = Math.min(100, Math.max(0, Math.round(focusX ?? 50)));
+  const y = Math.min(100, Math.max(0, Math.round(focusY ?? 50)));
+  if (x === 50 && y === 50) return undefined;
+  return `${x}% ${y}%`;
+}
+
+/**
  * Optimale Variante für einen Pixel-Bedarf: die KLEINSTE verfügbare Breite,
  * die den Bedarf deckt — sonst die größte (mehr gibt es nicht). Exakt die
  * Auswahlregel des Browsers bei `srcset`/`sizes`; zentral, damit src-Fallbacks

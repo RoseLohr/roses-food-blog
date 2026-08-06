@@ -91,8 +91,14 @@ export function uploadsDir(): string {
 // Reine URL-Helfer aus dem Node-freien Modul: hier server-intern nutzbar und
 // zugleich für Client-Komponenten importierbar (ohne den Bild-Stack). Siehe
 // media-url.ts.
-import { imageUrl, optimalVariant, srcset, thumbUrl } from "./media-url";
-export { imageUrl, optimalVariant, srcset, thumbUrl };
+import {
+  focusPosition,
+  imageUrl,
+  optimalVariant,
+  srcset,
+  thumbUrl,
+} from "./media-url";
+export { focusPosition, imageUrl, optimalVariant, srcset, thumbUrl };
 
 /**
  * Verfügbare Varianten-Breiten je Bild (aufsteigend) für eine ID-Menge —
@@ -116,9 +122,17 @@ export async function variantWidthsByImage(
   return map;
 }
 
-/** Auswahlliste für den ImagePicker (Label + Thumbnail), alphabetisch. */
+/** Auswahlliste für den ImagePicker (Label + Thumbnail + Fokus-Editor-Daten),
+ *  alphabetisch. fullUrl = größte Variante (fürs Fokuspunkt-Modal). */
 export async function listImageChoices(): Promise<
-  Array<{ id: number; label: string; thumbUrl: string }>
+  Array<{
+    id: number;
+    label: string;
+    thumbUrl: string;
+    fullUrl: string;
+    focusX: number;
+    focusY: number;
+  }>
 > {
   const rows = await db
     .select({
@@ -126,15 +140,23 @@ export async function listImageChoices(): Promise<
       originalName: schema.mediaImage.originalName,
       altText: schema.mediaImage.altText,
       fileKey: schema.mediaImage.fileKey,
+      focusX: schema.mediaImage.focusX,
+      focusY: schema.mediaImage.focusY,
     })
     .from(schema.mediaImage)
     .orderBy(asc(schema.mediaImage.originalName));
   const widthsById = await variantWidthsByImage(rows.map((r) => r.id));
-  return rows.map((r) => ({
-    id: r.id,
-    label: r.altText || r.originalName,
-    thumbUrl: thumbUrl(r.fileKey, widthsById.get(r.id) ?? []),
-  }));
+  return rows.map((r) => {
+    const widths = widthsById.get(r.id) ?? [];
+    return {
+      id: r.id,
+      label: r.altText || r.originalName,
+      thumbUrl: thumbUrl(r.fileKey, widths),
+      fullUrl: imageUrl(r.fileKey, widths.at(-1) ?? 320),
+      focusX: r.focusX,
+      focusY: r.focusY,
+    };
+  });
 }
 
 /** Ein Bild inkl. Varianten-Breiten laden (null, wenn nicht vorhanden). */

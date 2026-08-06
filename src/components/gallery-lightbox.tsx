@@ -21,7 +21,12 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { imageUrl, optimalVariant, srcset } from "@/lib/media-url";
+import {
+  focusPosition,
+  imageUrl,
+  optimalVariant,
+  srcset,
+} from "@/lib/media-url";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -33,6 +38,9 @@ export interface GalleryImage {
   height: number;
   /** Verfügbare Varianten-Breiten, aufsteigend (aus media_variant). */
   variantWidths: number[];
+  /** Fokuspunkt in Prozent (0–100) für beschnittene Thumbnails. */
+  focusX?: number | null;
+  focusY?: number | null;
 }
 
 export function GalleryLightbox({
@@ -138,6 +146,7 @@ export function GalleryLightbox({
 
   const thumbs = shown.map((im, i) => {
     const widths = im.variantWidths;
+    const objectPosition = focusPosition(im.focusX, im.focusY);
     return (
       <button
         key={im.fileKey}
@@ -165,6 +174,7 @@ export function GalleryLightbox({
           loading="lazy"
           decoding="async"
           className={thumbClassName}
+          style={objectPosition ? { objectPosition } : undefined}
         />
       </button>
     );

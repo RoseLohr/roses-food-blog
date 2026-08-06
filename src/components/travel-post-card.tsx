@@ -17,6 +17,8 @@ export type TravelCardData = {
   width: number | null;
   height: number | null;
   variantWidths: number[] | null;
+  focusX?: number | null;
+  focusY?: number | null;
 };
 
 export function TravelPostCard({ post }: { post: TravelCardData }) {
@@ -31,6 +33,8 @@ export function TravelPostCard({ post }: { post: TravelCardData }) {
               width: post.width!,
               height: post.height!,
               variantWidths: post.variantWidths ?? [],
+              focusX: post.focusX,
+              focusY: post.focusY,
             }}
             // Reale Kartenbreite: Layout-Container max-w-6xl (1120 px Inhalt),
             // 2 Spalten mit gap-6 → max. ~548 px je Karte. Das frühere „50vw"
