@@ -73,15 +73,23 @@ const allowlist = JSON.parse(
 ).exceptions;
 
 if (process.argv.includes("--selftest")) {
+  // Der Selbsttest prüft die MECHANIK von evaluate() und muss deshalb mit
+  // einer SYNTHETISCHEN Allowlist arbeiten — nicht mit der echten. Sonst
+  // hinge er vom Repo-Zustand ab und bräche genau dann, wenn die echte
+  // Allowlist (erwünscht!) leer ist.
   const vuln = (name, ghsa, severity) => ({ via: [{ name, severity, url: `https://github.com/advisories/${ghsa}` }] });
-  const listed = { vulnerabilities: { "brace-expansion": vuln("brace-expansion", allowlist[0].ghsa, "high") } };
+  const testAllow = [{ ghsa: "GHSA-self-test-0001", paket: "testpaket" }];
+  const listed = { vulnerabilities: { testpaket: vuln("testpaket", testAllow[0].ghsa, "high") } };
   const unlisted = { vulnerabilities: { ...listed.vulnerabilities, evil: vuln("evil", "GHSA-neu1-neu2-neu3", "critical") } };
   const fixedUpstream = { vulnerabilities: {} };
   const fails = [];
-  if (!evaluate(unlisted, allowlist).violations.length) fails.push("ungelistetes CRITICAL nicht gefangen");
-  const ok = evaluate(listed, allowlist);
+  if (!evaluate(unlisted, testAllow).violations.length) fails.push("ungelistetes CRITICAL nicht gefangen");
+  const ok = evaluate(listed, testAllow);
   if (ok.violations.length || ok.obsolete.length) fails.push("rein ratifizierter Bestand fälschlich rot");
-  if (!evaluate(fixedUpstream, allowlist).obsolete.length) fails.push("Auto-Tripwire (Upstream-Fix) nicht gefangen");
+  if (!evaluate(fixedUpstream, testAllow).obsolete.length) fails.push("Auto-Tripwire (Upstream-Fix) nicht gefangen");
+  // Leere Allowlist (Normalzustand ohne F5-Ausnahmen) muss sauber grün sein.
+  const leer = evaluate(fixedUpstream, []);
+  if (leer.violations.length || leer.obsolete.length) fails.push("leere Allowlist fälschlich rot");
   if (fails.length) {
     for (const f of fails) console.error(`⛔ Selbsttest FEHLGESCHLAGEN: ${f}.`);
     process.exit(1);
