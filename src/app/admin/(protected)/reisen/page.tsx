@@ -3,8 +3,9 @@ import Link from "next/link";
 import { desc } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { requireAdmin } from "@/lib/auth";
+import { getReisenTexte } from "@/lib/settings";
 import { t } from "@/i18n/de";
-import { deleteTravelAction } from "./actions";
+import { deleteTravelAction, saveReisenTexteAction } from "./actions";
 
 const dict = t();
 
@@ -21,6 +22,7 @@ export default async function TravelAdminPage(props: {
     .select()
     .from(schema.travelPost)
     .orderBy(desc(schema.travelPost.updatedAt));
+  const texte = getReisenTexte();
 
   return (
     <>
@@ -38,6 +40,42 @@ export default async function TravelAdminPage(props: {
           {message}
         </p>
       )}
+
+      {/* Texte der öffentlichen Reisen-Seite (vor/nach der Weltkarte) */}
+      <form
+        action={saveReisenTexteAction}
+        className="mb-8 flex flex-col gap-3 bg-white p-5 shadow-sm"
+      >
+        <h2 className="text-lg font-semibold">{dict.admin.travel.pageTexts}</h2>
+        <p className="text-sm text-ink-soft">{dict.admin.travel.pageTextsHint}</p>
+        <label className="text-sm font-medium" htmlFor="reisen-text-oben">
+          {dict.admin.travel.textAbove}
+        </label>
+        <textarea
+          id="reisen-text-oben"
+          name="textOben"
+          rows={4}
+          defaultValue={texte.oben}
+          className="border border-ink-soft/30 px-3 py-2 text-sm"
+        />
+        <label className="text-sm font-medium" htmlFor="reisen-text-unten">
+          {dict.admin.travel.textBelow}
+        </label>
+        <textarea
+          id="reisen-text-unten"
+          name="textUnten"
+          rows={4}
+          defaultValue={texte.unten}
+          className="border border-ink-soft/30 px-3 py-2 text-sm"
+        />
+        <button
+          type="submit"
+          className="self-start rounded-lg bg-rose-primary px-4 py-2 font-semibold text-white hover:bg-rose-primary-dark"
+        >
+          {dict.common.save}
+        </button>
+      </form>
+
       <div className="overflow-x-auto bg-white shadow-sm">
         <table className="w-full text-left text-sm">
           <thead>
