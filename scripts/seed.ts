@@ -547,8 +547,12 @@ async function main() {
         "> **PLATZHALTER — RECHTSTEXT ERFORDERLICH**\n>\n> Angaben gemäß § 5 DDG bitte ergänzen: Name, Anschrift, Kontakt, Verantwortliche/r i. S. d. § 18 Abs. 2 MStV.",
     },
   ];
-  await db.insert(schema.page).values(
-    pages.map((p, i) => ({
+  // Upsert je Slug: migrate.mjs legt die Kernseite „ueber-mich" bereits als
+  // leeren Entwurf an — der Seed bringt sie (und die anderen Kernseiten) auf
+  // den vollständigen Beispiel-Stand, statt an der UNIQUE-Constraint zu
+  // scheitern.
+  for (const p of pages) {
+    const werte = {
       ...p,
       seoTitle: p.title,
       seoDescription: "",
@@ -560,8 +564,12 @@ async function main() {
       isProtected: true,
       createdAt: NOW,
       updatedAt: NOW,
-    })),
-  );
+    };
+    await db
+      .insert(schema.page)
+      .values(werte)
+      .onConflictDoUpdate({ target: schema.page.slug, set: werte });
+  }
 
   // Genau die beiden inhaltlichen Säulen des Blogs — beide öffentlich
   // (im Newsletter-Willkommensschritt anwählbar).
