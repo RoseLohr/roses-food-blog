@@ -125,17 +125,16 @@ export function RecipeView({
   return (
     <article
       id={containerId}
-      className="overflow-hidden bg-white shadow-sm print:shadow-none"
+      className="mx-auto max-w-4xl overflow-hidden bg-white shadow-sm print:shadow-none"
     >
       {/* Hero mit Aktions-Buttons */}
       {full.heroImage && (
         <div className="relative">
           <ResponsiveImg
             image={full.heroImage}
-            // Der Hero füllt die Artikelbreite (Layout max-w-6xl → 1120 px
-            // Inhalt) — der alte 768px-Deckel lieferte auf Desktop ein zu
-            // kleines, hochskaliert-weiches Bild.
-            sizes="(max-width: 1184px) calc(100vw - 2rem), 1120px"
+            // Der Hero füllt die Artikelbreite — der Artikel ist auf Desktop
+            // bewusst schmaler als das Layout (max-w-4xl → 896 px Lesebreite).
+            sizes="(max-width: 928px) calc(100vw - 2rem), 896px"
             priority
             // 4:3 wie die Kacheln; auf großen Screens die Höhe deckeln, damit der
             // Hero nicht überproportional groß wird (object-cover beschneidet).
