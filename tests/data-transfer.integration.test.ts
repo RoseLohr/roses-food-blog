@@ -116,8 +116,8 @@ beforeAll(async () => {
     .returning();
   adminId = admin.id;
 
-  // --- Bilder ---
-  imgA = await media("aaaa1111", [320, 640], T.imgA);
+  // --- Bilder --- (A mit gesetztem Fokuspunkt → Round-Trip-Beleg)
+  imgA = await media("aaaa1111", [320, 640], T.imgA, { focusX: 20, focusY: 80 });
   imgB = await media("bbbb2222", [320, 640, 960], T.imgB);
   imgC = await media("cccc3333", [320], T.imgC); // bleibt unreferenziert
 
@@ -270,15 +270,19 @@ beforeAll(async () => {
     createdAt: T.recipeCreated,
     updatedAt: T.recipeUpdated,
   });
-  await db.insert(schema.page).values({
-    title: "Über mich",
-    slug: "ueber-mich",
-    content: "Hallo, ich bin Rose.",
-    status: "veroeffentlicht",
-    isProtected: true,
-    createdAt: T.recipeCreated,
-    updatedAt: T.recipeUpdated,
-  });
+  // migrate.mjs legt die Kernseite „ueber-mich" inzwischen selbst an
+  // (Entwurf) — hier auf den Test-Stand bringen statt neu einzufügen.
+  await db
+    .update(schema.page)
+    .set({
+      title: "Über mich",
+      content: "Hallo, ich bin Rose.",
+      status: "veroeffentlicht",
+      isProtected: true,
+      createdAt: T.recipeCreated,
+      updatedAt: T.recipeUpdated,
+    })
+    .where(eq(schema.page.slug, "ueber-mich"));
 
   // Referenzen für spätere Prüfungen frisch halten
   void iBasilikum;
@@ -439,6 +443,9 @@ describe("Import (Round-Trip)", () => {
     const [hero] = await db.select().from(schema.mediaImage).where(eq(schema.mediaImage.id, r.heroImageId!));
     expect(hero.fileKey).not.toBe("aaaa1111");
     expect(hero.altText).toBe("Alt aaaa1111");
+    // Fokuspunkt überlebt den Round-Trip (Export → Import).
+    expect(hero.focusX).toBe(20);
+    expect(hero.focusY).toBe(80);
     expect(hero.createdAt.getTime()).toBe(T.imgA.getTime());
     const heroVariants = await db
       .select()

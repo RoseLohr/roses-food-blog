@@ -159,6 +159,8 @@ export async function importBundle(
         width: meta?.width ?? 0,
         height: meta?.height ?? 0,
         sizeBytes: meta?.sizeBytes ?? 0,
+        focusX: meta?.focusX ?? 50,
+        focusY: meta?.focusY ?? 50,
         lat: meta?.lat ?? null,
         lng: meta?.lng ?? null,
         createdAt: fromMs(meta?.createdAt) ?? new Date(),
