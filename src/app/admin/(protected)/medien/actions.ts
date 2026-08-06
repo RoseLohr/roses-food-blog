@@ -46,6 +46,30 @@ export async function updateAltTextAction(formData: FormData): Promise<void> {
   back(dict.common.saved, view);
 }
 
+/**
+ * Speichert den Fokuspunkt (Prozent 0–100) eines Bildes. Wird aus dem
+ * Fokus-Editor (Client-Modal) aufgerufen — daher Rückgabewert statt Redirect,
+ * damit das Modal offen bleiben bzw. selbst schließen kann.
+ */
+export async function saveFocusPointAction(
+  id: number,
+  focusX: number,
+  focusY: number,
+): Promise<{ ok: boolean }> {
+  await requireAdmin();
+  if (!Number.isInteger(id)) return { ok: false };
+  const clamp = (n: number) =>
+    Math.min(100, Math.max(0, Math.round(Number(n) || 0)));
+  await db
+    .update(schema.mediaImage)
+    .set({ focusX: clamp(focusX), focusY: clamp(focusY) })
+    .where(eq(schema.mediaImage.id, id));
+  // Öffentliche Seiten cachen nicht (force-dynamic) — nur die Medienseite
+  // selbst muss den neuen Wert nach dem Modal-Schließen zeigen.
+  revalidatePath("/admin/medien");
+  return { ok: true };
+}
+
 export async function deleteImageAction(formData: FormData): Promise<void> {
   await requireAdmin();
   const view = String(formData.get("ansicht") ?? "");

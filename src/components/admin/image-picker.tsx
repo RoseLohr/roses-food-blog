@@ -13,6 +13,7 @@
  */
 import { useEffect, useId, useState } from "react";
 import { createPortal } from "react-dom";
+import { FocusPointEditor } from "@/components/admin/focus-point-editor";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -22,6 +23,11 @@ export interface ImageChoice {
   id: number;
   label: string;
   thumbUrl: string;
+  /** Große Variante fürs Fokuspunkt-Modal (optional — ohne sie kein Editor). */
+  fullUrl?: string;
+  /** Fokuspunkt in Prozent (0–100), Standard Bildmitte. */
+  focusX?: number;
+  focusY?: number;
 }
 
 export function ImagePicker({
@@ -86,27 +92,45 @@ export function ImagePicker({
       {selectedChoices.length > 0 ? (
         <div className="mb-2 flex flex-wrap gap-2">
           {selectedChoices.map((c) => (
-            <div
-              key={c.id}
-              className="group relative h-24 w-32 overflow-hidden border border-ink-soft/20 bg-cream"
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={c.thumbUrl}
-                alt={c.label}
-                loading="lazy"
-                decoding="async"
-                className="h-full w-full object-cover"
-              />
-              <button
-                type="button"
-                onClick={() => setSelection(selected.filter((x) => x !== c.id))}
-                aria-label={ip.remove}
-                title={ip.remove}
-                className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-sm text-white opacity-0 transition group-hover:opacity-100"
-              >
-                ×
-              </button>
+            <div key={c.id} className="flex flex-col gap-1">
+              <div className="group relative h-24 w-32 overflow-hidden border border-ink-soft/20 bg-cream">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={c.thumbUrl}
+                  alt={c.label}
+                  loading="lazy"
+                  decoding="async"
+                  className="h-full w-full object-cover"
+                />
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSelection(selected.filter((x) => x !== c.id))
+                  }
+                  aria-label={ip.remove}
+                  title={ip.remove}
+                  className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-sm text-white opacity-0 transition group-hover:opacity-100"
+                >
+                  ×
+                </button>
+              </div>
+              {/* Bildausschnitt (Fokuspunkt) direkt am gewählten Bild anpassbar */}
+              {c.fullUrl && (
+                <FocusPointEditor
+                  imageId={c.id}
+                  imageSrc={c.fullUrl}
+                  alt={c.label}
+                  initialX={c.focusX ?? 50}
+                  initialY={c.focusY ?? 50}
+                  onSaved={(fx, fy) =>
+                    setOptions((prev) =>
+                      prev.map((o) =>
+                        o.id === c.id ? { ...o, focusX: fx, focusY: fy } : o,
+                      ),
+                    )
+                  }
+                />
+              )}
             </div>
           ))}
         </div>
@@ -205,6 +229,9 @@ function LibraryModal({
         id?: number;
         label?: string;
         thumbUrl?: string;
+        fullUrl?: string;
+        focusX?: number;
+        focusY?: number;
         error?: string;
       };
       if (!res.ok) {
@@ -216,6 +243,9 @@ function LibraryModal({
           id: data.id,
           label: data.label ?? "",
           thumbUrl: data.thumbUrl,
+          fullUrl: data.fullUrl,
+          focusX: data.focusX,
+          focusY: data.focusY,
         });
         setDesc("");
       }

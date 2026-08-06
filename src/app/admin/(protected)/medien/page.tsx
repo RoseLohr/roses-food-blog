@@ -5,6 +5,7 @@ import { db, schema } from "@/db";
 import { requireAdmin } from "@/lib/auth";
 import { imageUrl, variantWidthsByImage } from "@/lib/media";
 import { MediaThumb } from "@/components/admin/media-thumb";
+import { FocusPointEditor } from "@/components/admin/focus-point-editor";
 import { t } from "@/i18n/de";
 import {
   deleteImageAction,
@@ -161,15 +162,24 @@ export default async function MediaPage(props: {
                   </button>
                 </form>
               </div>
-              <form action={deleteImageAction} className="shrink-0">
-                <input type="hidden" name="id" value={img.id} />
-                <button
-                  type="submit"
-                  className="text-xs text-red-700 underline-offset-2 hover:underline"
-                >
-                  {dict.common.delete}
-                </button>
-              </form>
+              <div className="flex shrink-0 flex-col items-end gap-1.5">
+                <FocusPointEditor
+                  imageId={img.id}
+                  imageSrc={full(img)}
+                  alt={img.altText}
+                  initialX={img.focusX}
+                  initialY={img.focusY}
+                />
+                <form action={deleteImageAction}>
+                  <input type="hidden" name="id" value={img.id} />
+                  <button
+                    type="submit"
+                    className="text-xs text-red-700 underline-offset-2 hover:underline"
+                  >
+                    {dict.common.delete}
+                  </button>
+                </form>
+              </div>
             </li>
           ))}
         </ul>
@@ -211,15 +221,24 @@ export default async function MediaPage(props: {
                   {dict.common.save}
                 </button>
               </form>
-              <form action={deleteImageAction} className="mt-1">
-                <input type="hidden" name="id" value={img.id} />
-                <button
-                  type="submit"
-                  className="text-xs text-red-700 underline-offset-2 hover:underline"
-                >
-                  {dict.common.delete}
-                </button>
-              </form>
+              <div className="mt-1 flex items-center justify-between gap-2">
+                <FocusPointEditor
+                  imageId={img.id}
+                  imageSrc={full(img)}
+                  alt={img.altText}
+                  initialX={img.focusX}
+                  initialY={img.focusY}
+                />
+                <form action={deleteImageAction}>
+                  <input type="hidden" name="id" value={img.id} />
+                  <button
+                    type="submit"
+                    className="text-xs text-red-700 underline-offset-2 hover:underline"
+                  >
+                    {dict.common.delete}
+                  </button>
+                </form>
+              </div>
             </li>
           ))}
         </ul>

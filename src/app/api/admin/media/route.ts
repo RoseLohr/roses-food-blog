@@ -35,6 +35,7 @@ export async function POST(req: Request) {
     const buffer = Buffer.from(await file.arrayBuffer());
     const img = await storeImage(buffer, file.name, altText);
     const smallest = img.variantWidths[0] ?? 320;
+    const largest = img.variantWidths.at(-1) ?? 320;
     return NextResponse.json({
       id: img.id,
       label: altText || file.name,
@@ -43,6 +44,10 @@ export async function POST(req: Request) {
       height: img.height,
       variantWidths: img.variantWidths,
       thumbUrl: imageUrl(img.fileKey, smallest),
+      // Fürs sofortige Festlegen des Bildausschnitts nach dem Upload.
+      fullUrl: imageUrl(img.fileKey, largest),
+      focusX: 50,
+      focusY: 50,
     });
   } catch (err) {
     return NextResponse.json(
