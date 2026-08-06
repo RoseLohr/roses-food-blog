@@ -453,7 +453,9 @@ function ProductRow({
             <ExpandCaret />
             <span>
               {item.product.name}
-              {item.footnote !== undefined && (
+              {/* Referenznummer nur am AUFGEklappten Produkt — zugeklappt
+                  bleibt die Zeile ruhig, die Quellen stehen an den Details. */}
+              {open && item.footnote !== undefined && (
                 <FootnoteMarks marks={[item.footnote]} />
               )}
             </span>
