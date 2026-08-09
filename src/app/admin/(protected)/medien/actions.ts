@@ -60,10 +60,13 @@ export async function saveFocusPointAction(
   if (!Number.isInteger(id)) return { ok: false };
   const clamp = (n: number) =>
     Math.min(100, Math.max(0, Math.round(Number(n) || 0)));
-  await db
+  const ergebnis = await db
     .update(schema.mediaImage)
     .set({ focusX: clamp(focusX), focusY: clamp(focusY) })
     .where(eq(schema.mediaImage.id, id));
+  // 0 geänderte Zeilen = Bild existiert nicht (mehr) — kein falsches „ok"
+  // (Sol-Befund PR #55 R1).
+  if (ergebnis.changes === 0) return { ok: false };
   // Öffentliche Seiten cachen nicht (force-dynamic) — nur die Medienseite
   // selbst muss den neuen Wert nach dem Modal-Schließen zeigen.
   revalidatePath("/admin/medien");

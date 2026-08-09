@@ -22,6 +22,9 @@ export default tseslint.config(
       "next-env.d.ts",
       "scripts/**", // reine Node-Skripte (.mjs), kein App-Code
       ".gate-selftest-*/**",
+      // Stryker-Sandbox: wird normal aufgeräumt, kann aber nach einem harten
+      // Abbruch (z. B. Container-Neustart) liegen bleiben — darf Lint nie röten.
+      ".stryker-tmp/**",
     ],
   },
   js.configs.recommended,

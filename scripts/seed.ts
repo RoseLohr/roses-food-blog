@@ -7,6 +7,7 @@
  * Aufruf: npm run db:seed   (vorher npm run db:migrate)
  */
 import sharp from "sharp";
+import { and, eq } from "drizzle-orm";
 import { db, schema } from "../src/db";
 import type { TaxonomyType } from "../src/db/schema";
 import { slugify } from "../src/lib/slug";
@@ -547,10 +548,11 @@ async function main() {
         "> **PLATZHALTER — RECHTSTEXT ERFORDERLICH**\n>\n> Angaben gemäß § 5 DDG bitte ergänzen: Name, Anschrift, Kontakt, Verantwortliche/r i. S. d. § 18 Abs. 2 MStV.",
     },
   ];
-  // Upsert je Slug: migrate.mjs legt die Kernseite „ueber-mich" bereits als
-  // leeren Entwurf an — der Seed bringt sie (und die anderen Kernseiten) auf
-  // den vollständigen Beispiel-Stand, statt an der UNIQUE-Constraint zu
-  // scheitern.
+  // migrate.mjs legt die Kernseite „ueber-mich" bereits als LEEREN Entwurf an.
+  // Der Seed darf bestehende Inhalte NIE überschreiben (Sol-Befund PR #55 R1:
+  // ein blinder Upsert würde echte Titel/Inhalte/Status bei jedem Seed-Lauf
+  // zerstören): vorhandene Slugs bleiben unangetastet; einzig der unbefüllte
+  // migrate-Stub (content leer + Entwurf) wird auf den Beispiel-Stand gehoben.
   for (const p of pages) {
     const werte = {
       ...p,
@@ -568,7 +570,17 @@ async function main() {
     await db
       .insert(schema.page)
       .values(werte)
-      .onConflictDoUpdate({ target: schema.page.slug, set: werte });
+      .onConflictDoNothing({ target: schema.page.slug });
+    await db
+      .update(schema.page)
+      .set(werte)
+      .where(
+        and(
+          eq(schema.page.slug, p.slug),
+          eq(schema.page.content, ""),
+          eq(schema.page.status, "entwurf"),
+        ),
+      );
   }
 
   // Genau die beiden inhaltlichen Säulen des Blogs — beide öffentlich
