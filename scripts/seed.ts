@@ -7,7 +7,6 @@
  * Aufruf: npm run db:seed   (vorher npm run db:migrate)
  */
 import sharp from "sharp";
-import { and, eq } from "drizzle-orm";
 import { db, schema } from "../src/db";
 import type { TaxonomyType } from "../src/db/schema";
 import { slugify } from "../src/lib/slug";
@@ -528,13 +527,14 @@ async function main() {
       });
   }
 
+  // Kernseiten — EIN Schreiber pro Zeile (Sol-Befunde PR #55 R1+R2): die Seite
+  // „ueber-mich" gehört migrate.mjs (legt sie auf jedem System als leeren,
+  // geschützten Entwurf an) und wird hier bewusst NICHT angefasst — weder
+  // Upsert noch „Stub-Upgrade"-Heuristik, denn jede Heuristik kann einen
+  // legitimen, vom Admin geleerten Entwurf nicht von einem frischen Stub
+  // unterscheiden. Der Seed ergänzt nur die übrigen Kernseiten und lässt
+  // bestehende Zeilen grundsätzlich unverändert (onConflictDoNothing).
   const pages = [
-    {
-      title: "Über mich",
-      slug: "ueber-mich",
-      content:
-        "Hallo, ich bin Rose! *(Platzhaltertext — bitte ersetzen.)*\n\nIch koche und backe seit meiner Kindheit und teile hier meine liebsten gesunden Rezepte sowie Reiseberichte übers Essen in aller Welt.",
-    },
     {
       title: "Datenschutzerklärung",
       slug: "datenschutz",
@@ -548,39 +548,23 @@ async function main() {
         "> **PLATZHALTER — RECHTSTEXT ERFORDERLICH**\n>\n> Angaben gemäß § 5 DDG bitte ergänzen: Name, Anschrift, Kontakt, Verantwortliche/r i. S. d. § 18 Abs. 2 MStV.",
     },
   ];
-  // migrate.mjs legt die Kernseite „ueber-mich" bereits als LEEREN Entwurf an.
-  // Der Seed darf bestehende Inhalte NIE überschreiben (Sol-Befund PR #55 R1:
-  // ein blinder Upsert würde echte Titel/Inhalte/Status bei jedem Seed-Lauf
-  // zerstören): vorhandene Slugs bleiben unangetastet; einzig der unbefüllte
-  // migrate-Stub (content leer + Entwurf) wird auf den Beispiel-Stand gehoben.
   for (const p of pages) {
-    const werte = {
-      ...p,
-      seoTitle: p.title,
-      seoDescription: "",
-      // Datenschutz bewusst als Entwurf: die generierte Erklärung greift,
-      // bis ein eigener geprüfter Text veröffentlicht wird.
-      status: (p.slug === "datenschutz" ? "entwurf" : "veroeffentlicht") as
-        | "entwurf"
-        | "veroeffentlicht",
-      isProtected: true,
-      createdAt: NOW,
-      updatedAt: NOW,
-    };
     await db
       .insert(schema.page)
-      .values(werte)
+      .values({
+        ...p,
+        seoTitle: p.title,
+        seoDescription: "",
+        // Datenschutz bewusst als Entwurf: die generierte Erklärung greift,
+        // bis ein eigener geprüfter Text veröffentlicht wird.
+        status: (p.slug === "datenschutz" ? "entwurf" : "veroeffentlicht") as
+          | "entwurf"
+          | "veroeffentlicht",
+        isProtected: true,
+        createdAt: NOW,
+        updatedAt: NOW,
+      })
       .onConflictDoNothing({ target: schema.page.slug });
-    await db
-      .update(schema.page)
-      .set(werte)
-      .where(
-        and(
-          eq(schema.page.slug, p.slug),
-          eq(schema.page.content, ""),
-          eq(schema.page.status, "entwurf"),
-        ),
-      );
   }
 
   // Genau die beiden inhaltlichen Säulen des Blogs — beide öffentlich
