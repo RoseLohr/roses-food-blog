@@ -3,7 +3,7 @@ import Link from "next/link";
 import { desc } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { requireAdmin } from "@/lib/auth";
-import { imageUrl, variantWidthsByImage } from "@/lib/media";
+import { focusPosition, imageUrl, variantWidthsByImage } from "@/lib/media";
 import { MediaThumb } from "@/components/admin/media-thumb";
 import { FocusPointEditor } from "@/components/admin/focus-point-editor";
 import { t } from "@/i18n/de";
@@ -132,6 +132,7 @@ export default async function MediaPage(props: {
                   fullUrl={full(img)}
                   alt={img.altText}
                   className="h-16 w-16 object-cover"
+                  objectPosition={focusPosition(img.focusX, img.focusY)}
                 />
               </div>
               <div className="min-w-0 flex-1">
@@ -194,6 +195,7 @@ export default async function MediaPage(props: {
                   fullUrl={full(img)}
                   alt={img.altText}
                   className="aspect-square w-full object-cover"
+                  objectPosition={focusPosition(img.focusX, img.focusY)}
                 />
               </div>
               <p className="truncate text-xs text-ink-soft" title={img.originalName}>

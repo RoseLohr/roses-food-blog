@@ -14,6 +14,7 @@
 import { useEffect, useId, useState } from "react";
 import { createPortal } from "react-dom";
 import { FocusPointEditor } from "@/components/admin/focus-point-editor";
+import { focusPosition } from "@/lib/media-url";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -94,6 +95,8 @@ export function ImagePicker({
           {selectedChoices.map((c) => (
             <div key={c.id} className="flex flex-col gap-1">
               <div className="group relative h-24 w-32 overflow-hidden border border-ink-soft/20 bg-cream">
+                {/* Fokuspunkt auch in der beschnittenen Vorschau anwenden —
+                    sonst zeigt sie stets die Bildmitte (Sol-Befund R3). */}
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={c.thumbUrl}
@@ -101,6 +104,10 @@ export function ImagePicker({
                   loading="lazy"
                   decoding="async"
                   className="h-full w-full object-cover"
+                  style={(() => {
+                    const objectPosition = focusPosition(c.focusX, c.focusY);
+                    return objectPosition ? { objectPosition } : undefined;
+                  })()}
                 />
                 <button
                   type="button"
@@ -352,6 +359,10 @@ function LibraryModal({
                       loading="lazy"
                       decoding="async"
                       className="h-full w-full object-cover"
+                      style={(() => {
+                        const objectPosition = focusPosition(o.focusX, o.focusY);
+                        return objectPosition ? { objectPosition } : undefined;
+                      })()}
                     />
                     {active && (
                       <span className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-leaf text-xs font-bold text-white">
