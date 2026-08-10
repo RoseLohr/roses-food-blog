@@ -155,30 +155,51 @@ done
 # der Wächter den KillMode der falschen Unit und ließe den Lauf durch, während
 # die echte, umschließende Unit mit dem Default control-group den Container nach
 # ExecStart erschießt. Die eigene Unit steht in der cgroup-Zeile des Prozesses.
+# Die cgroup-Zeile trägt die Unit — in BEIDEN Hierarchien:
+#   cgroup v2: "0::/user.slice/…/foo.service"
+#   cgroup v1: "1:name=systemd:/user.slice/…/foo.service" (plus weitere Zeilen)
+# Der Ausdruck schneidet in beiden Fällen das Präfix ab; danach zählt der letzte
+# Pfadbestandteil, sofern er wie eine Unit bzw. Scope aussieht. Nur v2 zu lesen
+# ließ auf v1 die gesamte Prüfung aus (Befund gpt-5.6-sol, PR #57, Runde 4).
 EIGENE_UNIT=""
 if [[ -r /proc/self/cgroup ]]; then
-  EIGENE_UNIT="$(sed -n 's#^0::##p' /proc/self/cgroup 2>/dev/null | head -1)" \
+  EIGENE_UNIT="$(sed -n 's#^[0-9]\+:[^:]*:##p' /proc/self/cgroup 2>/dev/null \
+    | awk -F/ '{print $NF}' | grep -E '\.(service|scope)$' | head -1)" \
     || EIGENE_UNIT=""
-  EIGENE_UNIT="${EIGENE_UNIT##*/}"   # letzter Pfadbestandteil = Unit bzw. Scope
 fi
 
-# systemd-Kontext erkannt (INVOCATION_ID), aber die Unit NICHT bestimmbar (z. B.
-# cgroup v1, unlesbare cgroup-Datei): unbekannt gilt als unsicher.
-if [[ -n "${INVOCATION_ID:-}" && "$EIGENE_UNIT" != *.service ]]; then
-  fail "Abbruch VOR jedem Eingriff: Dieser Lauf läuft in einer systemd-Unit
-  (INVOCATION_ID gesetzt), aber die umschließende Unit ist nicht bestimmbar
-  (cgroup ergab '${EIGENE_UNIT:-nichts}'). Ohne sie lässt sich nicht prüfen, ob
-  der Container das Ende dieses Laufs überlebt — unbekannt gilt als unsicher.
+# Welche Unit wird geprüft? Normalfall: die eigene.
+PRUEF_UNIT="$EIGENE_UNIT"
+
+if [[ -z "$PRUEF_UNIT" ]]; then
+  # Unit nicht bestimmbar. Zwei Fälle, streng getrennt:
+  UNIT_ZUSTAND="$(systemctl --user is-active roses-blog-deploy.service 2>/dev/null)" \
+    || UNIT_ZUSTAND=""
+  if [[ -n "${INVOCATION_ID:-}" ]]; then
+    # (a) Irgendeine FREMDE Unit umschließt uns (nur die reparierte Panel-Unit
+    #     entfernt INVOCATION_ID). Welche, wissen wir nicht → unsicher.
+    fail "Abbruch VOR jedem Eingriff: Dieser Lauf läuft in einer systemd-Unit
+  (INVOCATION_ID gesetzt), aber die umschließende Unit ist nicht bestimmbar.
+  Ohne sie lässt sich nicht prüfen, ob der Container das Ende dieses Laufs
+  überlebt — unbekannt gilt als unsicher.
   Deploy stattdessen IM TERMINAL ausführen:
     cd $SCRIPT_DIR && git pull && FORCE_DEPLOY=1 ./deploy.sh"
+  fi
+  if [[ "$UNIT_ZUSTAND" == "activating" || "$UNIT_ZUSTAND" == "active" ]]; then
+    # (b) INVOCATION_ID fehlt UND die Panel-Unit läuft gerade: Genau das ist die
+    #     reparierte Unit, die die Variable selbst entfernt — wir sind also mit
+    #     hoher Wahrscheinlichkeit sie. Statt blind durchzuwinken (das war die
+    #     Lücke auf cgroup v1) wird ihr Zustand geprüft.
+    PRUEF_UNIT="roses-blog-deploy.service"
+  fi
 fi
 
 # Eine .scope ist eine interaktive Sitzung (SSH/Login) — dort räumt niemand
 # nach dem Skriptende auf. Nur echte .service-Units sind gefährlich.
-if [[ "$EIGENE_UNIT" == *.service ]]; then
-  KILLMODE_EFFEKTIV="$(systemctl --user show "$EIGENE_UNIT" \
+if [[ "$PRUEF_UNIT" == *.service ]]; then
+  KILLMODE_EFFEKTIV="$(systemctl --user show "$PRUEF_UNIT" \
     --property=KillMode --value 2>/dev/null)" || KILLMODE_EFFEKTIV=""
-  RELOAD_NOETIG="$(systemctl --user show "$EIGENE_UNIT" \
+  RELOAD_NOETIG="$(systemctl --user show "$PRUEF_UNIT" \
     --property=NeedDaemonReload --value 2>/dev/null)" || RELOAD_NOETIG=""
   # BEIDE Hälften fail-closed: nur die ausdrücklichen Gutwerte („process" bzw.
   # „no") lassen den Lauf durch. Ein Abfragefehler oder eine leere Antwort ist
@@ -187,7 +208,7 @@ if [[ "$EIGENE_UNIT" == *.service ]]; then
   # (Befund gpt-5.6-sol, PR #57, Runde 2).
   if [[ "$KILLMODE_EFFEKTIV" != "process" || "$RELOAD_NOETIG" != "no" ]]; then
     fail "Abbruch VOR jedem Eingriff: Dieser Lauf läuft im systemd-Dienst
-  '$EIGENE_UNIT', der den Container beim Beenden töten würde.
+  '$PRUEF_UNIT', der den Container beim Beenden töten würde.
   Effektives KillMode: '${KILLMODE_EFFEKTIV:-unbekannt}' (nötig: genau 'process');
   NeedDaemonReload: '${RELOAD_NOETIG:-unbekannt}' (nötig: genau 'no').
   Unbekannt bedeutet: nicht abfragbar — das gilt als unsicher, nicht als in Ordnung.

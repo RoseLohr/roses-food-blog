@@ -151,20 +151,40 @@ describe("Selbstschutz: kein Deploy unter einer tötenden Unit", () => {
     // KillMode der falschen Unit und ließe den Lauf durch.
     expect(deploySh).toMatch(/EIGENE_UNIT=/);
     expect(deploySh).toMatch(/\/proc\/self\/cgroup/);
-    expect(deploySh).toMatch(/EIGENE_UNIT##\*\//);
-    expect(deploySh).toMatch(/systemctl --user show "\$EIGENE_UNIT"/);
-    // Kein pauschaler Bezug mehr auf die eine bekannte Unit.
+    expect(deploySh).toMatch(/systemctl --user show "\$PRUEF_UNIT"/);
+    // Kein fest verdrahteter Unit-Name in der Abfrage.
     expect(deploySh).not.toMatch(/show roses-blog-deploy\.service --property/);
   });
 
+  it("liest die cgroup in BEIDEN Hierarchien (v1 und v2)", () => {
+    // Nur die v2-Zeile zu lesen liess auf cgroup v1 die gesamte Pruefung aus:
+    // EIGENE_UNIT blieb leer, und weil die reparierte Unit INVOCATION_ID
+    // bewusst entfernt, griff auch der Unbestimmbar-Zweig nicht.
+    const stelle = deploySh.indexOf("EIGENE_UNIT=");
+    const block = deploySh.slice(stelle, stelle + 700);
+    expect(block).toMatch(/\^\[0-9\]\\\+:\[\^:\]\*:/);
+    expect(block).toMatch(/service\|scope/);
+  });
+
   it("blockiert, wenn ein systemd-Kontext da ist, die Unit aber unbestimmbar", () => {
-    expect(deploySh).toMatch(/INVOCATION_ID:-\}" && "\$EIGENE_UNIT" != \*\.service/);
     expect(deploySh).toMatch(/nicht bestimmbar/);
+    const stelle = deploySh.indexOf('if [[ -z "$PRUEF_UNIT" ]]');
+    expect(stelle).toBeGreaterThan(-1);
+    const block = deploySh.slice(stelle, stelle + 1400);
+    expect(block).toMatch(/INVOCATION_ID/);
+    expect(block).toMatch(/fail "/);
+  });
+
+  it("prüft die Panel-Unit, wenn nur sie es sein kann (cgroup v1, INVOCATION_ID entfernt)", () => {
+    const stelle = deploySh.indexOf('if [[ -z "$PRUEF_UNIT" ]]');
+    const block = deploySh.slice(stelle, stelle + 1400);
+    expect(block).toMatch(/is-active roses-blog-deploy\.service/);
+    expect(block).toMatch(/PRUEF_UNIT="roses-blog-deploy\.service"/);
   });
 
   it("lässt interaktive Sitzungen (.scope) in Ruhe", () => {
     // Dort räumt nach dem Skriptende niemand die Prozessgruppe ab.
-    expect(deploySh).toMatch(/EIGENE_UNIT" == \*\.service/);
+    expect(deploySh).toMatch(/PRUEF_UNIT" == \*\.service/);
   });
 
   it("prüft das EFFEKTIVE KillMode von systemd, nicht den Text der Unit-Datei", () => {
@@ -174,7 +194,7 @@ describe("Selbstschutz: kein Deploy unter einer tötenden Unit", () => {
     // ändern. Maßgeblich ist allein der geladene Stand.
     const stelle = deploySh.indexOf("EIGENE_UNIT=");
     const block = deploySh.slice(stelle, stelle + 2600);
-    expect(block).toMatch(/systemctl --user show "\$EIGENE_UNIT"/);
+    expect(block).toMatch(/systemctl --user show "\$PRUEF_UNIT"/);
     expect(block).toMatch(/--property=KillMode --value/);
     expect(block).toMatch(/--property=NeedDaemonReload --value/);
     expect(block).toMatch(/KILLMODE_EFFEKTIV" != "process"/);
@@ -189,6 +209,7 @@ describe("Selbstschutz: kein Deploy unter einer tötenden Unit", () => {
     expect(block).toMatch(/\|\| KILLMODE_EFFEKTIV=""/);
     expect(block).toMatch(/\|\| RELOAD_NOETIG=""/);
     expect(block).toMatch(/\|\| EIGENE_UNIT=""/);
+    expect(block).toMatch(/\|\| UNIT_ZUSTAND=""/);
   });
 
   it("lässt NUR ausdrückliche Gutwerte durch — Unbekanntes blockiert", () => {
