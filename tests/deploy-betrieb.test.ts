@@ -142,11 +142,28 @@ describe("Selbstschutz: kein Deploy unter einer tötenden Unit", () => {
     expect(deploySh).toMatch(/IN_DEPLOY_UNIT/);
   });
 
-  it("bricht fail-closed ab, wenn die installierte Unit KillMode=process fehlt", () => {
-    const stelle = deploySh.indexOf("IN_DEPLOY_UNIT");
-    const block = deploySh.slice(stelle, stelle + 1400);
-    expect(block).toMatch(/KillMode=process/);
+  it("prüft das EFFEKTIVE KillMode von systemd, nicht den Text der Unit-Datei", () => {
+    // Eine korrigierte Datei ohne daemon-reload ist wirkungslos — systemd
+    // benutzt weiter die alte Konfiguration und tötet den Container trotzdem.
+    // Ein Drop-in könnte KillMode zudem überschreiben, ohne die Datei zu
+    // ändern. Maßgeblich ist allein der geladene Stand.
+    const stelle = deploySh.indexOf("IN_DEPLOY_UNIT=0");
+    const block = deploySh.slice(stelle, stelle + 2000);
+    expect(block).toMatch(/systemctl --user show roses-blog-deploy\.service/);
+    expect(block).toMatch(/--property=KillMode --value/);
+    expect(block).toMatch(/--property=NeedDaemonReload --value/);
+    expect(block).toMatch(/KILLMODE_EFFEKTIV" != "process"/);
+    expect(block).toMatch(/RELOAD_NOETIG" == "yes"/);
     expect(block).toMatch(/fail "/);
+    // Der Dateitext allein darf NICHT mehr als Nachweis dienen.
+    expect(block).not.toMatch(/grep -qs '\^KillMode=process'/);
+  });
+
+  it("liest die Kommandosubstitutionen fail-safe (set -e darf nicht zuschlagen)", () => {
+    const stelle = deploySh.indexOf("IN_DEPLOY_UNIT=0");
+    const block = deploySh.slice(stelle, stelle + 2000);
+    expect(block).toMatch(/\|\| KILLMODE_EFFEKTIV=""/);
+    expect(block).toMatch(/\|\| RELOAD_NOETIG=""/);
   });
 
   it("bricht ab, BEVOR gebaut oder der Container angefasst wird", () => {

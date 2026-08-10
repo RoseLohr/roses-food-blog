@@ -133,19 +133,40 @@ done
 # cgroup ab und erschießt conmon + rootlessport — exakt der Ausfall vom
 # 2026-08-10, bei dem der Deploy „erfolgreich" meldete und die Seite 90 s
 # später elf Stunden lang tot war.
-# Fail-closed: lieber gar nicht deployen als die Seite umbringen. Die Erkennung
-# liest die cgroup des eigenen Prozesses (verlässlich, auch wenn INVOCATION_ID
-# in der reparierten Unit bewusst entfernt wird).
-UNIT_DATEI="$HOME/.config/systemd/user/roses-blog-deploy.service"
+# Fail-closed: lieber gar nicht deployen als die Seite umbringen.
+#
+# Erkennung des eigenen Kontexts über die cgroup UND INVOCATION_ID: die
+# reparierte Unit entfernt INVOCATION_ID bewusst, die alte (gefährliche) setzt
+# sie — beide Wege zusammen decken jeden Fall ab.
+#
+# Geprüft wird das EFFEKTIVE, von systemd GELADENE KillMode, nicht der Text der
+# Unit-Datei (Befund gpt-5.6-sol, PR #57): Eine korrigierte Datei, für die noch
+# kein `daemon-reload` lief, wäre wirkungslos — systemd benutzt dann weiterhin
+# die alte Konfiguration und tötet den Container trotzdem. Ebenso könnte ein
+# Drop-in (…service.d/*.conf) KillMode wieder auf control-group setzen, ohne die
+# Datei anzufassen. `systemctl show` liefert genau den Wert, der beim Stoppen
+# wirklich zählt; `NeedDaemonReload=yes` bedeutet „Datei und geladener Stand
+# weichen ab" und ist deshalb ebenfalls ein Abbruchgrund. Leere Antwort (kein
+# systemctl erreichbar) ist ungleich „process" und blockiert damit auch.
 IN_DEPLOY_UNIT=0
-if grep -qs 'roses-blog-deploy\.service' /proc/self/cgroup; then IN_DEPLOY_UNIT=1; fi
-if [[ "$IN_DEPLOY_UNIT" == "1" ]] && ! grep -qs '^KillMode=process' "$UNIT_DATEI"; then
-  fail "Abbruch VOR jedem Eingriff: Dieser Lauf läuft im systemd-Dienst
-  roses-blog-deploy.service, dessen Unit den Container beim Beenden töten würde
-  ($UNIT_DATEI enthält kein KillMode=process). Ein Deploy von hier aus würde die
-  Seite ~90 s nach der Erfolgsmeldung abschalten.
+if grep -qs 'roses-blog-deploy\.service' /proc/self/cgroup \
+   || [[ -n "${INVOCATION_ID:-}" ]]; then
+  IN_DEPLOY_UNIT=1
+fi
+if [[ "$IN_DEPLOY_UNIT" == "1" ]]; then
+  KILLMODE_EFFEKTIV="$(systemctl --user show roses-blog-deploy.service \
+    --property=KillMode --value 2>/dev/null)" || KILLMODE_EFFEKTIV=""
+  RELOAD_NOETIG="$(systemctl --user show roses-blog-deploy.service \
+    --property=NeedDaemonReload --value 2>/dev/null)" || RELOAD_NOETIG=""
+  if [[ "$KILLMODE_EFFEKTIV" != "process" || "$RELOAD_NOETIG" == "yes" ]]; then
+    fail "Abbruch VOR jedem Eingriff: Dieser Lauf läuft im systemd-Dienst
+  roses-blog-deploy.service, der den Container beim Beenden töten würde.
+  Effektives KillMode: '${KILLMODE_EFFEKTIV:-unbekannt}' (nötig: process);
+  NeedDaemonReload: '${RELOAD_NOETIG:-unbekannt}' (nötig: no).
+  Ein Deploy von hier aus schaltete die Seite ~90 s nach der Erfolgsmeldung ab.
   Einmalig IM TERMINAL ausführen, dann ist die Panel-Aktualisierung wieder sicher:
     cd $SCRIPT_DIR && git pull && FORCE_DEPLOY=1 ./deploy.sh && systemctl --user daemon-reload"
+  fi
 fi
 
 # --- 1. Git pull ------------------------------------------------------------
