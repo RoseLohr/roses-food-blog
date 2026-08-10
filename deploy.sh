@@ -43,6 +43,33 @@ deploy_log() {
   _status_ready && printf '[%s] %s\n' "$(date '+%H:%M:%S')" "$*" \
     >> "$DATA_DIR/deploy.log" 2>/dev/null || true
 }
+# Protokoll ROTIEREN statt überschreiben. Früher begann jeder Lauf mit
+# `: > deploy.log` — nach dem nächsten Deploy war jede Spur des vorigen weg.
+# Beim Ausfall 2026-08-10 fehlte deshalb genau das Protokoll des auslösenden
+# Deploys. Die letzten zehn Läufe bleiben datiert erhalten; das Panel liest
+# unverändert deploy.log (den laufenden).
+rotate_deploy_log() {
+  _status_ready || return 0
+  # Nach einem Selbst-exec NICHT erneut rotieren: das ist derselbe logische
+  # Deploy, und der zweite Lauf würde das Protokoll der Vorprüfung (inkl.
+  # git-Ausgabe) wegrotieren — im selben Sekundentakt sogar über das eben
+  # angelegte Archiv des VORIGEN Laufs. Genau die Forensik, die hier bewahrt
+  # werden soll, ginge verloren (Befund gpt-5.6-sol, PR #57, Runde 5).
+  if [[ "${DEPLOY_SELBSTUPDATE:-0}" == "1" ]]; then return 0; fi
+  if [[ -s "$DATA_DIR/deploy.log" ]]; then
+    # Kollisionsfreier Archivname: zwei Läufe in derselben Sekunde dürfen sich
+    # nicht gegenseitig überschreiben. mv -n statt -f als zweite Sicherung.
+    local ziel="$DATA_DIR/deploy-$(date +%Y%m%d-%H%M%S).log"
+    local lauf=1
+    while [[ -e "$ziel" ]]; do
+      ziel="$DATA_DIR/deploy-$(date +%Y%m%d-%H%M%S)-$lauf.log"
+      lauf=$((lauf + 1))
+    done
+    mv -n "$DATA_DIR/deploy.log" "$ziel" 2>/dev/null || true
+    ls -1t "$DATA_DIR"/deploy-*.log 2>/dev/null | tail -n +11 | xargs -r rm -f || true
+  fi
+  : > "$DATA_DIR/deploy.log" 2>/dev/null || true
+}
 # EXIT-Trap: Ergebnis festhalten (leer = wir haben das Ende nie erreicht).
 write_deploy_status() {
   DEPLOY_RUNNING=0
@@ -87,7 +114,7 @@ mkdir -p "$DATA_DIR" 2>/dev/null || true
 # würde ein Abbruch VOR Abschnitt 0 (z. B. podman nicht im PATH des systemd-
 # Dienstes) gar keinen Status schreiben — das Panel meldete dann fälschlich
 # „Watcher läuft nicht“, obwohl er sehr wohl lief.
-: > "$DATA_DIR/deploy.log" 2>/dev/null || true
+rotate_deploy_log
 DEPLOY_RUNNING=1; DEPLOY_STATUS_RESULT=""
 log "Deployment angenommen — Umgebung wird geprüft"
 
@@ -112,12 +139,118 @@ for var in BASE_URL SESSION_SECRET ADMIN_EMAIL ADMIN_PASSWORD; do
   [[ -n "${!var:-}" ]] || fail ".env unvollständig: $var ist nicht gesetzt."
 done
 
+# --- 0b. Selbstschutz: nicht unter einer Unit deployen, die den Container tötet ---
+# Läuft dieser Deploy INNERHALB des systemd-Dienstes (Panel-Auslösung), dann
+# entscheidet dessen KillMode darüber, ob der frisch gestartete Container das
+# Ende dieses Laufs überlebt. Beim Default control-group räumt systemd die
+# cgroup ab und erschießt conmon + rootlessport — exakt der Ausfall vom
+# 2026-08-10, bei dem der Deploy „erfolgreich" meldete und die Seite 90 s
+# später elf Stunden lang tot war.
+# Fail-closed: lieber gar nicht deployen als die Seite umbringen.
+#
+# Erkennung des eigenen Kontexts über die cgroup UND INVOCATION_ID: die
+# reparierte Unit entfernt INVOCATION_ID bewusst, die alte (gefährliche) setzt
+# sie — beide Wege zusammen decken jeden Fall ab.
+#
+# Geprüft wird das EFFEKTIVE, von systemd GELADENE KillMode, nicht der Text der
+# Unit-Datei (Befund gpt-5.6-sol, PR #57): Eine korrigierte Datei, für die noch
+# kein `daemon-reload` lief, wäre wirkungslos — systemd benutzt dann weiterhin
+# die alte Konfiguration und tötet den Container trotzdem. Ebenso könnte ein
+# Drop-in (…service.d/*.conf) KillMode wieder auf control-group setzen, ohne die
+# Datei anzufassen. `systemctl show` liefert genau den Wert, der beim Stoppen
+# wirklich zählt; `NeedDaemonReload=yes` bedeutet „Datei und geladener Stand
+# weichen ab" und ist deshalb ebenfalls ein Abbruchgrund. Leere Antwort (kein
+# systemctl erreichbar) ist ungleich „process" und blockiert damit auch.
+# Geprüft wird die Unit, die DIESEN Prozess tatsächlich umschließt — nicht
+# pauschal roses-blog-deploy.service (Befund gpt-5.6-sol, PR #57, Runde 3):
+# INVOCATION_ID setzt JEDE systemd-Unit. Würde deploy.sh aus einer anderen Unit
+# heraus gestartet (eigener Dienst, Timer, systemd-run, Automatisierung), prüfte
+# der Wächter den KillMode der falschen Unit und ließe den Lauf durch, während
+# die echte, umschließende Unit mit dem Default control-group den Container nach
+# ExecStart erschießt. Die eigene Unit steht in der cgroup-Zeile des Prozesses.
+# Die cgroup-Zeile trägt die Unit — in BEIDEN Hierarchien:
+#   cgroup v2: "0::/user.slice/…/foo.service"
+#   cgroup v1: "1:name=systemd:/user.slice/…/foo.service" (plus weitere Zeilen)
+# Der Ausdruck schneidet in beiden Fällen das Präfix ab; danach zählt der letzte
+# Pfadbestandteil, sofern er wie eine Unit bzw. Scope aussieht. Nur v2 zu lesen
+# ließ auf v1 die gesamte Prüfung aus (Befund gpt-5.6-sol, PR #57, Runde 4).
+EIGENE_UNIT=""
+if [[ -r /proc/self/cgroup ]]; then
+  EIGENE_UNIT="$(sed -n 's#^[0-9]\+:[^:]*:##p' /proc/self/cgroup 2>/dev/null \
+    | awk -F/ '{print $NF}' | grep -E '\.(service|scope)$' | head -1)" \
+    || EIGENE_UNIT=""
+fi
+
+# Welche Unit wird geprüft? Normalfall: die eigene.
+PRUEF_UNIT="$EIGENE_UNIT"
+
+if [[ -z "$PRUEF_UNIT" ]]; then
+  # Unit nicht bestimmbar. Zwei Fälle, streng getrennt:
+  UNIT_ZUSTAND="$(systemctl --user is-active roses-blog-deploy.service 2>/dev/null)" \
+    || UNIT_ZUSTAND=""
+  if [[ -n "${INVOCATION_ID:-}" ]]; then
+    # (a) Irgendeine FREMDE Unit umschließt uns (nur die reparierte Panel-Unit
+    #     entfernt INVOCATION_ID). Welche, wissen wir nicht → unsicher.
+    fail "Abbruch VOR jedem Eingriff: Dieser Lauf läuft in einer systemd-Unit
+  (INVOCATION_ID gesetzt), aber die umschließende Unit ist nicht bestimmbar.
+  Ohne sie lässt sich nicht prüfen, ob der Container das Ende dieses Laufs
+  überlebt — unbekannt gilt als unsicher.
+  Deploy stattdessen IM TERMINAL ausführen:
+    cd $SCRIPT_DIR && git pull && FORCE_DEPLOY=1 ./deploy.sh"
+  fi
+  if [[ "$UNIT_ZUSTAND" == "activating" || "$UNIT_ZUSTAND" == "active" ]]; then
+    # (b) INVOCATION_ID fehlt UND die Panel-Unit läuft gerade: Genau das ist die
+    #     reparierte Unit, die die Variable selbst entfernt — wir sind also mit
+    #     hoher Wahrscheinlichkeit sie. Statt blind durchzuwinken (das war die
+    #     Lücke auf cgroup v1) wird ihr Zustand geprüft.
+    PRUEF_UNIT="roses-blog-deploy.service"
+  fi
+fi
+
+# Eine .scope ist eine interaktive Sitzung (SSH/Login) — dort räumt niemand
+# nach dem Skriptende auf. Nur echte .service-Units sind gefährlich.
+if [[ "$PRUEF_UNIT" == *.service ]]; then
+  KILLMODE_EFFEKTIV="$(systemctl --user show "$PRUEF_UNIT" \
+    --property=KillMode --value 2>/dev/null)" || KILLMODE_EFFEKTIV=""
+  RELOAD_NOETIG="$(systemctl --user show "$PRUEF_UNIT" \
+    --property=NeedDaemonReload --value 2>/dev/null)" || RELOAD_NOETIG=""
+  # BEIDE Hälften fail-closed: nur die ausdrücklichen Gutwerte („process" bzw.
+  # „no") lassen den Lauf durch. Ein Abfragefehler oder eine leere Antwort ist
+  # ein UNBEKANNTER Zustand und blockiert — vorher wurde NeedDaemonReload nur
+  # gegen „yes" geprüft, wodurch ein fehlgeschlagener Aufruf still durchlief
+  # (Befund gpt-5.6-sol, PR #57, Runde 2).
+  if [[ "$KILLMODE_EFFEKTIV" != "process" || "$RELOAD_NOETIG" != "no" ]]; then
+    fail "Abbruch VOR jedem Eingriff: Dieser Lauf läuft im systemd-Dienst
+  '$PRUEF_UNIT', der den Container beim Beenden töten würde.
+  Effektives KillMode: '${KILLMODE_EFFEKTIV:-unbekannt}' (nötig: genau 'process');
+  NeedDaemonReload: '${RELOAD_NOETIG:-unbekannt}' (nötig: genau 'no').
+  Unbekannt bedeutet: nicht abfragbar — das gilt als unsicher, nicht als in Ordnung.
+  Ein Deploy von hier aus schaltete die Seite ~90 s nach der Erfolgsmeldung ab.
+  Einmalig IM TERMINAL ausführen, dann ist die Panel-Aktualisierung wieder sicher:
+    cd $SCRIPT_DIR && git pull && FORCE_DEPLOY=1 ./deploy.sh && systemctl --user daemon-reload"
+  fi
+fi
+
 # --- 1. Git pull ------------------------------------------------------------
 if [[ "${SKIP_PULL:-0}" != "1" ]]; then
   log "Hole aktuellen Stand (Branch: $BRANCH)"
+  SELBST_VORHER="$(sha256sum "$SCRIPT_DIR/deploy.sh" | cut -d' ' -f1)"
   git fetch origin "$BRANCH"
   git checkout -q "$BRANCH"
   git pull --ff-only origin "$BRANCH"
+  # SELBST-AKTUALISIERUNG: main() umschließt das ganze Skript, damit bash es
+  # VOLLSTÄNDIG liest, bevor der Pull es überschreibt — sonst führte bash eine
+  # halb alte, halb neue Datei aus. Die Kehrseite: der restliche Lauf ist immer
+  # noch der ALTE Code. Er würde u. a. in Abschnitt 7c die ALTE systemd-Unit
+  # zurückschreiben, also ausgerechnet eine Korrektur an der Unit sofort wieder
+  # zunichtemachen. Hat der Pull dieses Skript geändert, übernimmt daher der
+  # neue Stand per exec (einmalig, gegen Endlosschleife abgesichert).
+  if [[ "$(sha256sum "$SCRIPT_DIR/deploy.sh" | cut -d' ' -f1)" != "$SELBST_VORHER" \
+        && "${DEPLOY_SELBSTUPDATE:-0}" != "1" ]]; then
+    log "deploy.sh hat sich selbst aktualisiert — starte mit dem neuen Stand neu"
+    export DEPLOY_SELBSTUPDATE=1 SKIP_PULL=1
+    exec /usr/bin/env bash "$SCRIPT_DIR/deploy.sh" "$@"
+  fi
 fi
 COMMIT="$(git rev-parse --short HEAD)"
 
@@ -129,13 +262,28 @@ COMMIT="$(git rev-parse --short HEAD)"
 # erzwingt den vollen Lauf, SKIP_PULL=1 (lokale Änderungen) deaktiviert ihn.
 ENV_HASH="$(sha256sum .env | cut -d' ' -f1)"
 STATE_FILE="$DATA_DIR/deploy-state"
+# Welcher Stand läuft WIRKLICH? /health liefert den APP_COMMIT des Images
+# (src/app/health/route.ts). Früher wurde die Antwort nach /dev/null geworfen
+# und nur „irgendein Container läuft" geprüft — nach einem Rollback zeigte
+# deploy-state aber weiterhin den NEUEN Commit, während das ALTE Image lief.
+# deploy.sh meldete dann „Bereits aktuell", und der Server blieb ohne Warnung
+# dauerhaft auf dem alten Stand (Vorfall 2026-08-10). Leere Antwort oder
+# fehlendes Feld ⇒ Ungleichheit ⇒ voller Lauf (fail-closed).
+# Das abschließende `|| LAUFENDER_COMMIT=""` ist ZWINGEND: unter `set -euo
+# pipefail` ist der Status einer Zuweisung der der Kommandosubstitution, und
+# pipefail reicht curls Exit 7 (Verbindung verweigert) durch — das Skript wäre
+# sonst genau dann kommentarlos gestorben, wenn die App NICHT läuft, also im
+# Wiederherstellungsfall. Empirisch nachgestellt, nicht vermutet.
+LAUFENDER_COMMIT="$(curl -fsS "http://127.0.0.1:$PORT/health" 2>/dev/null \
+  | sed -n 's/.*"commit"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')" \
+  || LAUFENDER_COMMIT=""
 if [[ "${FORCE_DEPLOY:-0}" != "1" && "${SKIP_PULL:-0}" != "1" \
       && -z "$(git status --porcelain 2>/dev/null)" \
       && -f "$STATE_FILE" \
-      && "$(cat "$STATE_FILE" 2>/dev/null)" == "$COMMIT $ENV_HASH" ]] \
+      && "$(cat "$STATE_FILE" 2>/dev/null)" == "$COMMIT $ENV_HASH" \
+      && "$LAUFENDER_COMMIT" == "$COMMIT" ]] \
    && podman image exists localhost/roses-blog:latest 2>/dev/null \
-   && [[ "$(podman inspect -f '{{.State.Running}}' roses-blog 2>/dev/null)" == "true" ]] \
-   && curl -fsS "http://127.0.0.1:$PORT/health" >/dev/null 2>&1; then
+   && [[ "$(podman inspect -f '{{.State.Running}}' roses-blog 2>/dev/null)" == "true" ]]; then
   rm -f "$DATA_DIR/deploy-request" 2>/dev/null || true
   DEPLOY_STATUS_RESULT="erfolgreich"
   log "Bereits aktuell (Commit $COMMIT) — Container läuft, kein Neustart nötig (${SECONDS}s)"
@@ -158,8 +306,8 @@ mkdir -p "$DATA_DIR"/{uploads,geoip,backups}
 # (der Watcher-Dienst entfernt sie ebenfalls; hier für manuelle Läufe).
 rm -f "$DATA_DIR/deploy-request" 2>/dev/null || true
 
-# Live-Log/Status fürs Panel zurücksetzen und Start markieren.
-: > "$DATA_DIR/deploy.log" 2>/dev/null || true
+# Start markieren. Das Protokoll wurde oben bereits rotiert und enthält seither
+# die Vorprüfung samt git-Ausgabe — die gehört zum Lauf und wird NICHT verworfen.
 DEPLOY_RUNNING=1; DEPLOY_STATUS_RESULT=""
 log "Deployment gestartet (Commit $(git rev-parse --short HEAD 2>/dev/null || echo '?'))"
 
@@ -337,9 +485,37 @@ WorkingDirectory=$SCRIPT_DIR
 # den der installierende Aufruf hatte.
 Environment=HOME=$HOME
 Environment=PATH=$HOME/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH
+#
+# LEBENSDAUER DES CONTAINERS VON DER DES DIENSTES ENTKOPPELN
+# (Produktionsausfall 2026-08-10, ~11 h Totalausfall — Root Cause):
+# Ein oneshot-Dienst gilt nach ExecStart als beendet; systemd räumt dann seine
+# Control-Group ab. Der frisch gestartete Container lag mit conmon und
+# rootlessport GENAU IN DIESER cgroup und wurde mitgerissen:
+#     roses-blog-deploy.service: State 'stop-sigterm' timed out. Killing.
+#     Killing process … (rootlessport) with signal SIGKILL.
+#     Killing process … (conmon)      with signal SIGKILL.
+# 90 s nach der Erfolgsmeldung war die Seite tot, und `restart: always` konnte
+# nicht greifen, weil der Supervisor (conmon) selbst erschossen war.
+# Zwei Maßnahmen, absichtlich beide — die TRAGENDE ist die erste:
+#  1. `KillMode=process`. Der rekursive cgroup-Kill hängt in systemd an
+#     KillMode=control-group (Default) bzw. mixed; bei `process` signalisiert
+#     systemd ausschließlich den Hauptprozess — conmon und rootlessport werden
+#     nie angefasst. Wer diese Zeile wegräumt, stellt den Ausfall wieder her.
+#     (`mixed` wäre SCHLIMMER als der Default: die SIGTERM-Phase fände nichts,
+#     systemd eskalierte sofort zu SIGKILL, und der Container stürbe in
+#     Millisekunden statt nach 90 s. `none` ist seit systemd v249 abgekündigt.)
+#  2. `env -u INVOCATION_ID` ergänzt das strukturell: an dieser Variablen
+#     erkennt podman eine umgebende Unit und überspringt dann das Verschieben
+#     von conmon in eine eigene transiente Scope (libpod-conmon-<id>.scope).
+#     Ohne sie verhält sich podman wie beim interaktiven Start. Das ist
+#     allerdings undokumentiertes podman-Innenleben, setzt cgroup_manager=systemd
+#     und einen erreichbaren Benutzer-D-Bus voraus und kann still ausbleiben —
+#     deshalb Ergänzung, nicht Fundament.
+# tests/deploy-betrieb.test.ts hält beide Zeilen fest.
+KillMode=process
 # Anfrage vor dem Lauf entfernen, damit der Path-Unit erneut auslösen kann.
 ExecStartPre=-/usr/bin/rm -f $DATA_DIR/deploy-request
-ExecStart=/usr/bin/env bash $SCRIPT_DIR/deploy.sh
+ExecStart=/usr/bin/env -u INVOCATION_ID bash $SCRIPT_DIR/deploy.sh
 EOF
   cat > "$UNIT_DIR/roses-blog-deploy.path" <<EOF
 [Unit]
@@ -357,6 +533,29 @@ EOF
     echo "Panel-Deploy: Watcher aktiv (roses-blog-deploy.path)."
   else
     echo "HINWEIS: Deploy-Watcher nicht aktivierbar — Panel-Aktualisierung inaktiv."
+  fi
+
+  # --- 7d. Freigabe-Marke für die Panel-Aktualisierung ------------------------
+  # Der Container kann systemd nicht befragen — er sieht nur das Datenverzeichnis.
+  # Deshalb hinterlegt der Host hier eine Marke, und zwar NUR nach echter
+  # Verifikation des geladenen Zustands. Fehlt sie, verweigert das Panel (und der
+  # GitHub-Webhook) das Auslösen. Das schließt die Lücke beim allerersten
+  # Ausrollen dieser Reparatur: dort läuft auf dem Host noch die alte, tötende
+  # Unit, die diese Marke nie geschrieben hat — ein Panel-Klick kann die Seite
+  # also gar nicht mehr abschalten (Befund gpt-5.6-sol, PR #57, Runde 6).
+  UNIT_KILLMODE="$(systemctl --user show roses-blog-deploy.service \
+    --property=KillMode --value 2>/dev/null)" || UNIT_KILLMODE=""
+  UNIT_RELOAD="$(systemctl --user show roses-blog-deploy.service \
+    --property=NeedDaemonReload --value 2>/dev/null)" || UNIT_RELOAD=""
+  if [[ "$UNIT_KILLMODE" == "process" && "$UNIT_RELOAD" == "no" ]]; then
+    printf 'KillMode=%s NeedDaemonReload=%s geprueft am %s\n' \
+      "$UNIT_KILLMODE" "$UNIT_RELOAD" "$(date -Is)" \
+      > "$DATA_DIR/deploy-unit-ok" 2>/dev/null || true
+    echo "Panel-Deploy: freigegeben (Unit verifiziert: KillMode=process)."
+  else
+    rm -f "$DATA_DIR/deploy-unit-ok" 2>/dev/null || true
+    echo "HINWEIS: Panel-Aktualisierung bleibt GESPERRT (KillMode='${UNIT_KILLMODE:-unbekannt}',"
+    echo "         NeedDaemonReload='${UNIT_RELOAD:-unbekannt}'). Deploys nur aus dem Terminal."
   fi
 fi
 
@@ -385,6 +584,30 @@ if [[ "$FINAL_HEALTH_OK" != "1" ]]; then
   podman logs --tail 30 roses-blog 2>&1 | sed 's/^/  /' || true
   fail "App nach Neustart auf Port $PORT nicht erreichbar (finaler Health-Gate gescheitert) — NICHT als erfolgreich quittiert."
 fi
+
+# --- 9b. Stabilitätsfenster: der Container muss den Start ÜBERLEBEN ----------
+# „Erfolgreich" hieß bisher nur „ist hochgekommen", nicht „läuft noch". Dieses
+# Fenster fängt frühe Absturzschleifen, Speicherprobleme und Startfehler ab, die
+# erst nach dem ersten grünen /health auftreten.
+#
+# EHRLICHE GRENZE (nicht wegdiskutieren): Den systemd-Kill vom 2026-08-10 kann
+# dieses Fenster PRINZIPIELL NICHT sehen. Der 90-Sekunden-Stop-Timeout beginnt
+# erst, wenn ExecStart endet — dieser Abschnitt läuft aber INNERHALB von
+# ExecStart und verschiebt die Stop-Uhr nur nach hinten. Gegen diese Klasse
+# wirken KillMode=process in der Unit und der Selbstschutz in Abschnitt 0b,
+# nicht dieses Fenster. Die Länge ist deshalb nach dem bemessen, was sie
+# wirklich leistet, und nicht an den 90 s ausgerichtet.
+STABIL_SEK=30
+log "Prüfe Stabilität (${STABIL_SEK}s Fenster — der Container muss den Start überleben)"
+for _ in $(seq 1 $((STABIL_SEK / 10))); do
+  sleep 10
+  if ! curl -fsS "http://127.0.0.1:$PORT/health" >/dev/null 2>&1; then
+    echo "Letzte Container-Logs:"
+    podman logs --tail 40 roses-blog 2>&1 | sed 's/^/  /' || true
+    podman ps -a --filter name=roses-blog --format '  Status: {{.Status}}' || true
+    fail "App war erreichbar, ist aber im Stabilitätsfenster wieder ausgefallen — Deployment NICHT erfolgreich. Logs oben prüfen."
+  fi
+done
 # Erst NACH bestandenem Health-Gate: Schnellpfad-State festhalten + Erfolg markieren.
 printf '%s %s\n' "$COMMIT" "$ENV_HASH" > "$STATE_FILE" 2>/dev/null || true
 DEPLOY_STATUS_RESULT="erfolgreich"   # EXIT-Trap schreibt deploy-status.json

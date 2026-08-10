@@ -23,7 +23,11 @@
  */
 import crypto from "node:crypto";
 import { NextResponse } from "next/server";
-import { recordWebhook, requestDeploy } from "@/lib/deploy";
+import {
+  panelDeployFreigegeben,
+  recordWebhook,
+  requestDeploy,
+} from "@/lib/deploy";
 import { rateLimit } from "@/lib/ratelimit";
 
 /** Timing-safe HMAC-Vergleich. false, wenn Header fehlt oder Länge abweicht. */
@@ -109,6 +113,21 @@ export async function POST(req: Request) {
         : `erwartet refs/heads/${deployBranch} · erhalten ${receivedRef}`,
     });
     return NextResponse.json({ ok: true, ignored: "not-deploy-branch" });
+  }
+
+  // Fail-closed wie im Panel: ohne verifizierte Host-Freigabe kein Auslösen.
+  if (!panelDeployFreigegeben()) {
+    recordWebhook({
+      at: Date.now(),
+      event,
+      outcome: "deploy_gesperrt",
+      detail:
+        "Host-Freigabe fehlt (deploy-unit-ok) — einmalig im Terminal deployen",
+    });
+    return NextResponse.json(
+      { ok: false, deploy: "gesperrt", grund: "unit_ungeprueft" },
+      { status: 503 },
+    );
   }
 
   try {

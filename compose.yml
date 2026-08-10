@@ -30,8 +30,14 @@ services:
     # `podman ps`. Ein Neustart bei "unhealthy" ist mit dem docker-compose-
     # Provider nicht ausdrückbar; restart:always deckt Prozess-Crash + Reboot
     # ab. deploy.sh prüft die Gesundheit zusätzlich per eigenem /health-Poll.
+    #
+    # Der Test ruft eine SKRIPTDATEI auf, kein Inline-JavaScript: podman führt
+    # das Kommando über `/bin/sh -c` aus, wodurch der frühere Einzeiler an
+    # seinen eigenen Klammern scheiterte („Syntax error: \"(\" unexpected") und
+    # die Kontrolle dauerhaft nicht feuerte. Argumente ohne Shell-Metazeichen
+    # schließen diese Klasse aus; tests/deploy-betrieb.test.ts erzwingt das.
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      test: ["CMD", "node", "/app/scripts/healthcheck.mjs"]
       interval: 30s
       timeout: 5s
       retries: 3

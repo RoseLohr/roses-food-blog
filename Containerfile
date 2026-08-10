@@ -77,6 +77,9 @@ COPY --from=build /app/scripts/migrate.mjs ./scripts/migrate.mjs
 COPY --from=build /app/scripts/regenerate-variants.mjs ./scripts/regenerate-variants.mjs
 COPY --from=build /app/config ./config
 COPY --from=build /app/scripts/entry.sh ./scripts/entry.sh
+# Healthcheck als Datei (compose.yml ruft /app/scripts/healthcheck.mjs auf) —
+# Inline-JavaScript scheiterte an der /bin/sh-Auswertung von podman.
+COPY --from=build /app/scripts/healthcheck.mjs ./scripts/healthcheck.mjs
 RUN chmod +x ./scripts/entry.sh && mkdir -p /data
 # LOW_CPU-Fail-Safe: natives sharp aus dem Image entfernen. So kann selbst ein
 # versehentlicher sharp-Ladepfad nur noch einen abfangbaren MODULE_NOT_FOUND
