@@ -148,22 +148,37 @@ done
 # wirklich zählt; `NeedDaemonReload=yes` bedeutet „Datei und geladener Stand
 # weichen ab" und ist deshalb ebenfalls ein Abbruchgrund. Leere Antwort (kein
 # systemctl erreichbar) ist ungleich „process" und blockiert damit auch.
-# Drei unabhängige Erkennungswege, damit kein Kontext durchrutscht: die cgroup
-# (verlässlich auf cgroup v2), INVOCATION_ID (setzt nur die ALTE, gefährliche
-# Unit) und der Aktivzustand der Unit selbst (bei Type=oneshot „activating",
-# solange ExecStart läuft). Erkennt einer davon den Dienst, greift die Prüfung.
-IN_DEPLOY_UNIT=0
-UNIT_ZUSTAND="$(systemctl --user is-active roses-blog-deploy.service 2>/dev/null)" \
-  || UNIT_ZUSTAND=""
-if grep -qs 'roses-blog-deploy\.service' /proc/self/cgroup \
-   || [[ -n "${INVOCATION_ID:-}" ]] \
-   || [[ "$UNIT_ZUSTAND" == "activating" || "$UNIT_ZUSTAND" == "active" ]]; then
-  IN_DEPLOY_UNIT=1
+# Geprüft wird die Unit, die DIESEN Prozess tatsächlich umschließt — nicht
+# pauschal roses-blog-deploy.service (Befund gpt-5.6-sol, PR #57, Runde 3):
+# INVOCATION_ID setzt JEDE systemd-Unit. Würde deploy.sh aus einer anderen Unit
+# heraus gestartet (eigener Dienst, Timer, systemd-run, Automatisierung), prüfte
+# der Wächter den KillMode der falschen Unit und ließe den Lauf durch, während
+# die echte, umschließende Unit mit dem Default control-group den Container nach
+# ExecStart erschießt. Die eigene Unit steht in der cgroup-Zeile des Prozesses.
+EIGENE_UNIT=""
+if [[ -r /proc/self/cgroup ]]; then
+  EIGENE_UNIT="$(sed -n 's#^0::##p' /proc/self/cgroup 2>/dev/null | head -1)" \
+    || EIGENE_UNIT=""
+  EIGENE_UNIT="${EIGENE_UNIT##*/}"   # letzter Pfadbestandteil = Unit bzw. Scope
 fi
-if [[ "$IN_DEPLOY_UNIT" == "1" ]]; then
-  KILLMODE_EFFEKTIV="$(systemctl --user show roses-blog-deploy.service \
+
+# systemd-Kontext erkannt (INVOCATION_ID), aber die Unit NICHT bestimmbar (z. B.
+# cgroup v1, unlesbare cgroup-Datei): unbekannt gilt als unsicher.
+if [[ -n "${INVOCATION_ID:-}" && "$EIGENE_UNIT" != *.service ]]; then
+  fail "Abbruch VOR jedem Eingriff: Dieser Lauf läuft in einer systemd-Unit
+  (INVOCATION_ID gesetzt), aber die umschließende Unit ist nicht bestimmbar
+  (cgroup ergab '${EIGENE_UNIT:-nichts}'). Ohne sie lässt sich nicht prüfen, ob
+  der Container das Ende dieses Laufs überlebt — unbekannt gilt als unsicher.
+  Deploy stattdessen IM TERMINAL ausführen:
+    cd $SCRIPT_DIR && git pull && FORCE_DEPLOY=1 ./deploy.sh"
+fi
+
+# Eine .scope ist eine interaktive Sitzung (SSH/Login) — dort räumt niemand
+# nach dem Skriptende auf. Nur echte .service-Units sind gefährlich.
+if [[ "$EIGENE_UNIT" == *.service ]]; then
+  KILLMODE_EFFEKTIV="$(systemctl --user show "$EIGENE_UNIT" \
     --property=KillMode --value 2>/dev/null)" || KILLMODE_EFFEKTIV=""
-  RELOAD_NOETIG="$(systemctl --user show roses-blog-deploy.service \
+  RELOAD_NOETIG="$(systemctl --user show "$EIGENE_UNIT" \
     --property=NeedDaemonReload --value 2>/dev/null)" || RELOAD_NOETIG=""
   # BEIDE Hälften fail-closed: nur die ausdrücklichen Gutwerte („process" bzw.
   # „no") lassen den Lauf durch. Ein Abfragefehler oder eine leere Antwort ist
@@ -172,7 +187,7 @@ if [[ "$IN_DEPLOY_UNIT" == "1" ]]; then
   # (Befund gpt-5.6-sol, PR #57, Runde 2).
   if [[ "$KILLMODE_EFFEKTIV" != "process" || "$RELOAD_NOETIG" != "no" ]]; then
     fail "Abbruch VOR jedem Eingriff: Dieser Lauf läuft im systemd-Dienst
-  roses-blog-deploy.service, der den Container beim Beenden töten würde.
+  '$EIGENE_UNIT', der den Container beim Beenden töten würde.
   Effektives KillMode: '${KILLMODE_EFFEKTIV:-unbekannt}' (nötig: genau 'process');
   NeedDaemonReload: '${RELOAD_NOETIG:-unbekannt}' (nötig: genau 'no').
   Unbekannt bedeutet: nicht abfragbar — das gilt als unsicher, nicht als in Ordnung.

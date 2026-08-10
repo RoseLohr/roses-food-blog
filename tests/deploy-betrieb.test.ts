@@ -16,15 +16,25 @@
  * `restart: always` konnte nicht greifen, weil der Supervisor (conmon) selbst
  * erschossen war. Die Seite lieferte 502, bis jemand von Hand neu startete.
  *
- * Diese Tests halten die beiden Kontrollen fest, die das verhindern bzw.
- * sichtbar machen — beide sind reine Textprüfungen an den Betriebsdateien,
- * laufen also ohne Server:
+ * Diese Tests halten die Kontrollen fest, die das verhindern bzw. sichtbar
+ * machen. Es sind reine Textprüfungen an den Betriebsdateien (deploy.sh,
+ * deploy/rollback.sh, compose.yml, Containerfile), laufen also ohne Server —
+ * systemd und podman gibt es im Testlauf nicht:
  *  1. Die vom Deploy erzeugte systemd-Unit koppelt die Lebensdauer des
- *     Containers von der des Dienstes ab.
- *  2. Der Container-Healthcheck ist shell-sicher (er lief zuvor NIE: das
+ *     Containers von der des Dienstes ab (KillMode=process trägt, das
+ *     Entfernen von INVOCATION_ID ergänzt strukturell).
+ *  2. Selbstschutz: deploy.sh verweigert den Dienst, wenn die Unit, die den
+ *     LAUFENDEN PROZESS umschließt, den Container beim Beenden töten würde —
+ *     geprüft wird der von systemd geladene Zustand, nicht der Dateitext, und
+ *     nur ausdrückliche Gutwerte lassen durch.
+ *  3. Der Container-Healthcheck ist shell-sicher (er lief zuvor NIE: das
  *     Inline-JavaScript scheiterte an `/bin/sh: Syntax error: "(" unexpected`,
  *     eine Kontrolle, die dauerhaft nicht feuerte).
- *  3. Das Deploy-Protokoll wird rotiert statt überschrieben — sonst ist nach
+ *  4. Der Schnellpfad erkennt den wirklich laufenden Stand; ein
+ *     Stabilitätsfenster prüft, dass der Container den Start überlebt.
+ *  5. deploy/rollback.sh nutzt dieselbe Konfigurationsquelle und behandelt
+ *     unbekannte Zustände als unsicher statt als in Ordnung.
+ *  6. Das Deploy-Protokoll wird rotiert statt überschrieben — sonst ist nach
  *     dem nächsten Lauf jede Forensik verloren (genau das passierte hier).
  */
 import fs from "node:fs";
@@ -135,11 +145,26 @@ describe("Deploy-Gate: der Container muss den Start ÜBERLEBEN", () => {
 });
 
 describe("Selbstschutz: kein Deploy unter einer tötenden Unit", () => {
-  it("erkennt den eigenen systemd-Kontext über die cgroup", () => {
-    // INVOCATION_ID wird in der reparierten Unit bewusst entfernt und taugt
-    // deshalb nicht als Erkennungsmerkmal.
+  it("bestimmt die Unit, die DIESEN Prozess umschließt", () => {
+    // INVOCATION_ID setzt JEDE Unit. Würde deploy.sh aus einer fremden Unit
+    // gestartet, prüfte ein fest verdrahtetes roses-blog-deploy.service den
+    // KillMode der falschen Unit und ließe den Lauf durch.
+    expect(deploySh).toMatch(/EIGENE_UNIT=/);
     expect(deploySh).toMatch(/\/proc\/self\/cgroup/);
-    expect(deploySh).toMatch(/IN_DEPLOY_UNIT/);
+    expect(deploySh).toMatch(/EIGENE_UNIT##\*\//);
+    expect(deploySh).toMatch(/systemctl --user show "\$EIGENE_UNIT"/);
+    // Kein pauschaler Bezug mehr auf die eine bekannte Unit.
+    expect(deploySh).not.toMatch(/show roses-blog-deploy\.service --property/);
+  });
+
+  it("blockiert, wenn ein systemd-Kontext da ist, die Unit aber unbestimmbar", () => {
+    expect(deploySh).toMatch(/INVOCATION_ID:-\}" && "\$EIGENE_UNIT" != \*\.service/);
+    expect(deploySh).toMatch(/nicht bestimmbar/);
+  });
+
+  it("lässt interaktive Sitzungen (.scope) in Ruhe", () => {
+    // Dort räumt nach dem Skriptende niemand die Prozessgruppe ab.
+    expect(deploySh).toMatch(/EIGENE_UNIT" == \*\.service/);
   });
 
   it("prüft das EFFEKTIVE KillMode von systemd, nicht den Text der Unit-Datei", () => {
@@ -147,9 +172,9 @@ describe("Selbstschutz: kein Deploy unter einer tötenden Unit", () => {
     // benutzt weiter die alte Konfiguration und tötet den Container trotzdem.
     // Ein Drop-in könnte KillMode zudem überschreiben, ohne die Datei zu
     // ändern. Maßgeblich ist allein der geladene Stand.
-    const stelle = deploySh.indexOf("IN_DEPLOY_UNIT=0");
-    const block = deploySh.slice(stelle, stelle + 2000);
-    expect(block).toMatch(/systemctl --user show roses-blog-deploy\.service/);
+    const stelle = deploySh.indexOf("EIGENE_UNIT=");
+    const block = deploySh.slice(stelle, stelle + 2600);
+    expect(block).toMatch(/systemctl --user show "\$EIGENE_UNIT"/);
     expect(block).toMatch(/--property=KillMode --value/);
     expect(block).toMatch(/--property=NeedDaemonReload --value/);
     expect(block).toMatch(/KILLMODE_EFFEKTIV" != "process"/);
@@ -159,19 +184,19 @@ describe("Selbstschutz: kein Deploy unter einer tötenden Unit", () => {
   });
 
   it("liest die Kommandosubstitutionen fail-safe (set -e darf nicht zuschlagen)", () => {
-    const stelle = deploySh.indexOf("IN_DEPLOY_UNIT=0");
-    const block = deploySh.slice(stelle, stelle + 2000);
+    const stelle = deploySh.indexOf("EIGENE_UNIT=");
+    const block = deploySh.slice(stelle, stelle + 2600);
     expect(block).toMatch(/\|\| KILLMODE_EFFEKTIV=""/);
     expect(block).toMatch(/\|\| RELOAD_NOETIG=""/);
-    expect(block).toMatch(/\|\| UNIT_ZUSTAND=""/);
+    expect(block).toMatch(/\|\| EIGENE_UNIT=""/);
   });
 
   it("lässt NUR ausdrückliche Gutwerte durch — Unbekanntes blockiert", () => {
     // Beide Hälften müssen gegen den GUTWERT prüfen. Ein Vergleich gegen den
     // Schlechtwert („== yes") liefe bei leerer Antwort still durch — genau
     // dieses Fail-open hatte die erste Fassung in der Reload-Hälfte.
-    const stelle = deploySh.indexOf("IN_DEPLOY_UNIT=0");
-    const block = deploySh.slice(stelle, stelle + 2000);
+    const stelle = deploySh.indexOf("EIGENE_UNIT=");
+    const block = deploySh.slice(stelle, stelle + 2600);
     expect(block).toMatch(/RELOAD_NOETIG" != "no"/);
     expect(block).not.toMatch(/RELOAD_NOETIG" == "yes"/);
   });
@@ -190,10 +215,10 @@ describe("rollback.sh: unbekannte Image-IDs gelten als unsicher", () => {
   });
 
   it("bricht ab, BEVOR gebaut oder der Container angefasst wird", () => {
-    expect(deploySh.indexOf("IN_DEPLOY_UNIT")).toBeLessThan(
+    expect(deploySh.indexOf("EIGENE_UNIT=")).toBeLessThan(
       deploySh.indexOf("Baue Container-Image"),
     );
-    expect(deploySh.indexOf("IN_DEPLOY_UNIT")).toBeLessThan(
+    expect(deploySh.indexOf("EIGENE_UNIT=")).toBeLessThan(
       deploySh.indexOf("Stoppe alten Container"),
     );
   });
