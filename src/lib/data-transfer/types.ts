@@ -33,6 +33,9 @@ export const imageSchema = z.object({
   height: z.number().int().nonnegative().default(0),
   sizeBytes: z.number().int().nonnegative().default(0),
   variantWidths: z.array(z.number().int().positive()).default([]),
+  /** Fokuspunkt (Prozent 0–100) für beschnittene Darstellungen. */
+  focusX: z.number().int().min(0).max(100).catch(50).default(50),
+  focusY: z.number().int().min(0).max(100).catch(50).default(50),
   lat: z.number().nullable().default(null),
   lng: z.number().nullable().default(null),
   createdAt: z.number().nullable().default(null),

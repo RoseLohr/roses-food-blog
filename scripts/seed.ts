@@ -527,13 +527,14 @@ async function main() {
       });
   }
 
+  // Kernseiten — EIN Schreiber pro Zeile (Sol-Befunde PR #55 R1+R2): die Seite
+  // „ueber-mich" gehört migrate.mjs (legt sie auf jedem System als leeren,
+  // geschützten Entwurf an) und wird hier bewusst NICHT angefasst — weder
+  // Upsert noch „Stub-Upgrade"-Heuristik, denn jede Heuristik kann einen
+  // legitimen, vom Admin geleerten Entwurf nicht von einem frischen Stub
+  // unterscheiden. Der Seed ergänzt nur die übrigen Kernseiten und lässt
+  // bestehende Zeilen grundsätzlich unverändert (onConflictDoNothing).
   const pages = [
-    {
-      title: "Über mich",
-      slug: "ueber-mich",
-      content:
-        "Hallo, ich bin Rose! *(Platzhaltertext — bitte ersetzen.)*\n\nIch koche und backe seit meiner Kindheit und teile hier meine liebsten gesunden Rezepte sowie Reiseberichte übers Essen in aller Welt.",
-    },
     {
       title: "Datenschutzerklärung",
       slug: "datenschutz",
@@ -547,21 +548,24 @@ async function main() {
         "> **PLATZHALTER — RECHTSTEXT ERFORDERLICH**\n>\n> Angaben gemäß § 5 DDG bitte ergänzen: Name, Anschrift, Kontakt, Verantwortliche/r i. S. d. § 18 Abs. 2 MStV.",
     },
   ];
-  await db.insert(schema.page).values(
-    pages.map((p, i) => ({
-      ...p,
-      seoTitle: p.title,
-      seoDescription: "",
-      // Datenschutz bewusst als Entwurf: die generierte Erklärung greift,
-      // bis ein eigener geprüfter Text veröffentlicht wird.
-      status: (p.slug === "datenschutz" ? "entwurf" : "veroeffentlicht") as
-        | "entwurf"
-        | "veroeffentlicht",
-      isProtected: true,
-      createdAt: NOW,
-      updatedAt: NOW,
-    })),
-  );
+  for (const p of pages) {
+    await db
+      .insert(schema.page)
+      .values({
+        ...p,
+        seoTitle: p.title,
+        seoDescription: "",
+        // Datenschutz bewusst als Entwurf: die generierte Erklärung greift,
+        // bis ein eigener geprüfter Text veröffentlicht wird.
+        status: (p.slug === "datenschutz" ? "entwurf" : "veroeffentlicht") as
+          | "entwurf"
+          | "veroeffentlicht",
+        isProtected: true,
+        createdAt: NOW,
+        updatedAt: NOW,
+      })
+      .onConflictDoNothing({ target: schema.page.slug });
+  }
 
   // Genau die beiden inhaltlichen Säulen des Blogs — beide öffentlich
   // (im Newsletter-Willkommensschritt anwählbar).

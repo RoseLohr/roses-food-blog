@@ -59,10 +59,11 @@ export default async function CmsPage(props: {
       />
       <h1 className="font-display text-3xl font-bold md:text-4xl">{page.title}</h1>
       {heroImage && (
-        <div className="mt-6 overflow-hidden">
+        // Halbe Inhaltsbreite (Wunsch: Bild halb so groß), zentriert.
+        <div className="mx-auto mt-6 w-1/2 overflow-hidden">
           <ResponsiveImg
             image={heroImage}
-            sizes="(max-width: 768px) 100vw, 768px"
+            sizes="(max-width: 768px) 50vw, 384px"
             priority
             className="w-full object-cover"
           />

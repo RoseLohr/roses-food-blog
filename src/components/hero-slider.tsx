@@ -28,6 +28,8 @@ export interface SlideData {
   /** srcset der Thumbnail-Leiste — der Browser wählt je DPR die passende
    *  Variante (seit es die w160-Stufe gibt, ist das byte-optimal). */
   thumbSrcSet: string;
+  /** object-position aus dem Bild-Fokuspunkt (undefined = Bildmitte). */
+  imgFocus?: string;
   alt: string;
   caption: string;
   href: string | null;
@@ -131,6 +133,7 @@ export function HeroSlider({
           decoding="async"
           fetchPriority="high"
           className="absolute inset-0 h-full w-full object-cover"
+          style={slide.imgFocus ? { objectPosition: slide.imgFocus } : undefined}
         />
         <div aria-hidden className="absolute inset-0 bg-black/50" />
 
@@ -236,6 +239,9 @@ export function HeroSlider({
                       loading="lazy"
                       decoding="async"
                       className="h-full w-full object-cover"
+                      style={
+                        s.imgFocus ? { objectPosition: s.imgFocus } : undefined
+                      }
                     />
                     <span
                       aria-hidden

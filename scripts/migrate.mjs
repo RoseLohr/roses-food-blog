@@ -160,4 +160,41 @@ try {
   process.exit(1);
 }
 
+// --- Kernseite „Über mich" sicherstellen ------------------------------------
+// Green-Field-Datenbanken (ohne Seed) haben keinen page-Datensatz — dann wäre
+// die Über-mich-Seite im Admin unter „Seiten" nicht bearbeitbar. Idempotent:
+// nur anlegen, wenn der Slug fehlt; als Entwurf, damit kein Platzhaltertext
+// ungewollt öffentlich erscheint.
+try {
+  const hasPageTable = sqlite
+    .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='page'")
+    .get();
+  if (hasPageTable) {
+    const exists = sqlite
+      .prepare("SELECT id FROM page WHERE slug = ?")
+      .get("ueber-mich");
+    if (!exists) {
+      sqlite
+        .prepare(
+          "INSERT INTO page (title, slug, content, seo_title, seo_description, status, is_protected, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .run(
+          "Über mich",
+          "ueber-mich",
+          "",
+          "Über mich",
+          "",
+          "entwurf",
+          1,
+          Date.now(),
+          Date.now(),
+        );
+      console.log("[migrate] Kernseite „ueber-mich“ (Entwurf) angelegt.");
+    }
+  }
+} catch (err) {
+  console.error("[migrate] Kernseiten-Anlage fehlgeschlagen:", err.message);
+  process.exit(1);
+}
+
 sqlite.close();

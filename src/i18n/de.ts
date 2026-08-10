@@ -846,6 +846,12 @@ export const de = {
       saved: "Reisebericht gespeichert.",
       deleted: "Reisebericht gelöscht.",
       invalid: "Bitte alle Pflichtfelder korrekt ausfüllen.",
+      pageTexts: "Texte der Reisen-Seite",
+      pageTextsHint:
+        "Diese Texte (Markdown) erscheinen auf der öffentlichen Reisen-Seite: der obere vor der Weltkarte, der untere zwischen Weltkarte und Reiseliste. Leerer oberer Text = Standard-Einleitung.",
+      textAbove: "Text vor der Weltkarte",
+      textBelow: "Text nach der Weltkarte",
+      pageTextsSaved: "Texte der Reisen-Seite gespeichert.",
       previewBanner:
         "Vorschau — dieser Stand ist für Besucher erst nach Veröffentlichung sichtbar.",
     },
@@ -1091,6 +1097,15 @@ export const de = {
       viewList: "Liste",
       viewLarge: "Groß anzeigen",
       empty: "Noch keine Bilder vorhanden.",
+      focusButton: "Ausschnitt",
+      focusTitle: "Bildausschnitt festlegen",
+      focusHint:
+        "Klicke in das Bild, um den wichtigsten Punkt zu markieren. Zugeschnittene Ansichten (z. B. Slider oder Rezeptkarten) halten diesen Punkt im sichtbaren Ausschnitt.",
+      focusXLabel: "Fokus horizontal (%)",
+      focusYLabel: "Fokus vertikal (%)",
+      focusPreview: "Vorschau der Zuschnitte",
+      focusReset: "Auf Mitte zurücksetzen",
+      focusSaved: "Bildausschnitt gespeichert.",
     },
   },
 } as const;

@@ -5,6 +5,7 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  focusPosition,
   imageUrl,
   isVariantFile,
   optimalVariant,
@@ -28,6 +29,31 @@ describe("imageUrl/srcset: Cache-Busting über die Encoder-Revision", () => {
   it("thumbUrl nimmt die kleinste verfügbare Breite (Fallback: kleinste der Leiter)", () => {
     expect(thumbUrl("abc", [320, 960])).toContain("/w320.webp");
     expect(thumbUrl("abc", [])).toContain(`/w${encoder.variantWidths[0]}.webp`);
+  });
+});
+
+describe("focusPosition: Fokuspunkt → CSS object-position", () => {
+  it("Bildmitte (Standard) liefert undefined — kein Inline-Style nötig", () => {
+    expect(focusPosition(50, 50)).toBeUndefined();
+    expect(focusPosition(undefined, undefined)).toBeUndefined();
+    expect(focusPosition(null, null)).toBeUndefined();
+  });
+
+  it("abweichender Fokus liefert Prozent-Paar", () => {
+    expect(focusPosition(0, 100)).toBe("0% 100%");
+    expect(focusPosition(30, 70)).toBe("30% 70%");
+    // Eine Achse Mitte, die andere nicht → Style trotzdem gesetzt.
+    expect(focusPosition(50, 10)).toBe("50% 10%");
+  });
+
+  it("klemmt auf 0–100 und rundet (defensiv gegen kaputte Werte)", () => {
+    expect(focusPosition(-20, 140)).toBe("0% 100%");
+    expect(focusPosition(33.4, 66.6)).toBe("33% 67%");
+  });
+
+  it("fehlende Einzelwerte fallen auf die Mitte zurück", () => {
+    expect(focusPosition(10, undefined)).toBe("10% 50%");
+    expect(focusPosition(null, 90)).toBe("50% 90%");
   });
 });
 

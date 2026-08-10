@@ -115,6 +115,8 @@ export async function publishedTravelCards(filter?: {
     width: number | null;
     height: number | null;
     variantWidths: number[] | null;
+    focusX: number | null;
+    focusY: number | null;
   }>
 > {
   const allRows = await db
@@ -130,6 +132,8 @@ export async function publishedTravelCards(filter?: {
       altText: schema.mediaImage.altText,
       width: schema.mediaImage.width,
       height: schema.mediaImage.height,
+      focusX: schema.mediaImage.focusX,
+      focusY: schema.mediaImage.focusY,
     })
     .from(schema.travelPost)
     .leftJoin(

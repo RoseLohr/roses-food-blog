@@ -29,6 +29,8 @@ export async function publishedRecipeCards(options?: {
       fileKey: schema.mediaImage.fileKey,
       altText: schema.mediaImage.altText,
       width: schema.mediaImage.width,
+      focusX: schema.mediaImage.focusX,
+      focusY: schema.mediaImage.focusY,
       height: schema.mediaImage.height,
     })
     .from(schema.recipe)
@@ -98,6 +100,8 @@ export async function publishedRecipeCards(options?: {
           fileKey: r.fileKey!,
           altText: r.altText ?? "",
           width: r.width!,
+          focusX: r.focusX,
+          focusY: r.focusY,
           height: r.height!,
           variantWidths: widthsById.get(r.imageId) ?? [],
         }

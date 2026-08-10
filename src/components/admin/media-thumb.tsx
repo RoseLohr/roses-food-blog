@@ -15,11 +15,14 @@ export function MediaThumb({
   fullUrl,
   alt,
   className,
+  objectPosition,
 }: {
   thumbUrl: string;
   fullUrl: string;
   alt: string;
   className?: string;
+  /** Fokuspunkt fürs beschnittene Thumbnail (die Lightbox zeigt das volle Bild). */
+  objectPosition?: string;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -51,6 +54,7 @@ export function MediaThumb({
           loading="lazy"
           decoding="async"
           className={className}
+          style={objectPosition ? { objectPosition } : undefined}
         />
       </button>
 

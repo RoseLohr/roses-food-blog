@@ -26,6 +26,8 @@ export const SETTING_KEYS = [
   "site_title_accent",
   "site_title_word",
   "site_logo_image_id",
+  "reisen_text_oben",
+  "reisen_text_unten",
 ] as const;
 export type SettingKey = (typeof SETTING_KEYS)[number];
 
@@ -132,6 +134,18 @@ export function getAnthropicApiKey(): string {
  */
 export function getNewsletterVisible(): boolean {
   return getSetting("newsletter_visible") !== "0";
+}
+
+/**
+ * Bearbeitbare Texte der öffentlichen Reisen-Seite (Markdown): `oben` steht
+ * vor der Weltkarte (leer = Standard-Einleitung aus i18n), `unten` zwischen
+ * Weltkarte und Reiseliste (leer = kein Text).
+ */
+export function getReisenTexte(): { oben: string; unten: string } {
+  return {
+    oben: (getSetting("reisen_text_oben") || "").trim(),
+    unten: (getSetting("reisen_text_unten") || "").trim(),
+  };
 }
 
 // --- Marke (Blogname & Logo) ----------------------------------------------

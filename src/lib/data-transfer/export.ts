@@ -66,6 +66,8 @@ class ImageCollector {
         height: r.height,
         sizeBytes: r.sizeBytes,
         variantWidths: this.widthsById.get(id) ?? [],
+        focusX: r.focusX,
+        focusY: r.focusY,
         lat: r.lat ?? null,
         lng: r.lng ?? null,
         createdAt: toMs(r.createdAt),
