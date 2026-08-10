@@ -20,21 +20,34 @@ fail(){ echo "[rollback] FEHLER: $*" >&2; exit 1; }
 # einen toten Port und konnte NIE grün werden (beobachtet 2026-08-10: der
 # Rollback lief durch, sein Gate hing 60 s und musste abgebrochen werden), und
 # `--with-db` hätte im falschen Verzeichnis nach Backups gesucht.
+# Rangfolge: ausdrücklich vom AUFRUFER gesetzte Werte > .env > Standard.
+# Ein blindes `source` würde die Umgebung des Aufrufers überschreiben und damit
+# die dokumentierte Override-Möglichkeit still aushebeln — auch das wäre eine
+# Verschlechterung (Befund gpt-5.6-sol, PR #57, Runde 5).
+AUFRUFER_DATA_DIR="${DATA_DIR:-}"
+AUFRUFER_PORT="${PORT:-}"
+AUFRUFER_HEALTH_URL="${HEALTH_URL:-}"
+AUFRUFER_COMPOSE="${COMPOSE:-}"
 if [[ -f .env ]]; then
   set -a; source <(grep -E '^[A-Z_]+=' .env); set +a
 fi
-DATA_DIR="${DATA_DIR:-/srv/roses-blog/data}"
-PORT="${PORT:-3000}"
+DATA_DIR="${AUFRUFER_DATA_DIR:-${DATA_DIR:-/srv/roses-blog/data}}"
+PORT="${AUFRUFER_PORT:-${PORT:-3000}}"
 # 127.0.0.1 statt localhost: der Container veröffentlicht ausdrücklich auf
 # 127.0.0.1; ein localhost, das zuerst auf ::1 auflöst, läuft ins Leere.
-HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:$PORT/health}"
-# Provider-Ermittlung wie in deploy.sh — ein hart verdrahtetes podman-compose
-# scheitert auf Anlagen, die nur `podman compose` haben.
-COMPOSE="podman compose"
-podman compose version >/dev/null 2>&1 || {
-  command -v podman-compose >/dev/null && COMPOSE="podman-compose" \
-    || fail "Weder 'podman compose' noch 'podman-compose' im PATH."
-}
+HEALTH_URL="${AUFRUFER_HEALTH_URL:-http://127.0.0.1:$PORT/health}"
+# Provider: ausdrückliche Vorgabe des Aufrufers gilt unverändert; sonst wie in
+# deploy.sh ermitteln — ein hart verdrahtetes podman-compose scheitert auf
+# Anlagen, die nur `podman compose` haben.
+if [[ -n "$AUFRUFER_COMPOSE" ]]; then
+  COMPOSE="$AUFRUFER_COMPOSE"
+else
+  COMPOSE="podman compose"
+  podman compose version >/dev/null 2>&1 || {
+    command -v podman-compose >/dev/null && COMPOSE="podman-compose" \
+      || fail "Weder 'podman compose' noch 'podman-compose' im PATH."
+  }
+fi
 WITH_DB=0; DRY=0
 for a in "$@"; do case "$a" in --with-db) WITH_DB=1;; --dry-run) DRY=1;; esac; done
 

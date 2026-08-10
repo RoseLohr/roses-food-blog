@@ -272,6 +272,19 @@ describe("rollback.sh: gleiche Konfigurationsquelle wie deploy.sh", () => {
     expect(rollback).toMatch(/podman compose version/);
   });
 
+  it("lässt ausdrückliche Vorgaben des Aufrufers Vorrang vor der .env haben", () => {
+    // Ein blindes `source` überschreibt die Umgebung des Aufrufers und hebelt
+    // damit die dokumentierten Overrides still aus.
+    for (const v of ["DATA_DIR", "PORT", "HEALTH_URL", "COMPOSE"]) {
+      expect(rollback, `Aufrufer-Vorrang für ${v} fehlt`).toMatch(
+        new RegExp(`AUFRUFER_${v}=`),
+      );
+    }
+    expect(rollback).toMatch(/\$\{AUFRUFER_DATA_DIR:-\$\{DATA_DIR:-/);
+    expect(rollback).toMatch(/\$\{AUFRUFER_PORT:-\$\{PORT:-/);
+    expect(rollback).toMatch(/-n "\$AUFRUFER_COMPOSE"/);
+  });
+
   it("bricht ab, wenn :previous und :latest dasselbe Image sind", () => {
     // Sonst meldet ein Rollback, der nichts zurückrollt, „erfolgreich".
     expect(rollback).toMatch(/previous.*latest|latest.*previous/s);
@@ -301,6 +314,17 @@ describe("Deploy-Protokoll: rotieren statt überschreiben", () => {
     expect(rumpf.indexOf("mv -f")).toBeLessThan(
       rumpf.search(/:\s*>\s*"\$DATA_DIR\/deploy\.log"/),
     );
+  });
+
+  it("rotiert beim Selbst-exec NICHT erneut und überschreibt kein Archiv", () => {
+    // Zweimal rotieren in derselben Sekunde zerstörte sonst genau das Archiv,
+    // das der erste Lauf gerade angelegt hatte.
+    const stelle = deploySh.indexOf("rotate_deploy_log() {");
+    const rumpf = deploySh.slice(stelle, deploySh.indexOf("\n}", stelle));
+    expect(rumpf).toMatch(/DEPLOY_SELBSTUPDATE.*==\s*"1".*return 0/s);
+    expect(rumpf).toMatch(/while \[\[ -e "\$ziel" \]\]/);
+    expect(rumpf).toMatch(/mv -n /);
+    expect(rumpf).not.toMatch(/mv -f /);
   });
 
   it("hebt die letzten Läufe datiert auf", () => {

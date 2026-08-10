@@ -50,9 +50,22 @@ deploy_log() {
 # unverändert deploy.log (den laufenden).
 rotate_deploy_log() {
   _status_ready || return 0
+  # Nach einem Selbst-exec NICHT erneut rotieren: das ist derselbe logische
+  # Deploy, und der zweite Lauf würde das Protokoll der Vorprüfung (inkl.
+  # git-Ausgabe) wegrotieren — im selben Sekundentakt sogar über das eben
+  # angelegte Archiv des VORIGEN Laufs. Genau die Forensik, die hier bewahrt
+  # werden soll, ginge verloren (Befund gpt-5.6-sol, PR #57, Runde 5).
+  if [[ "${DEPLOY_SELBSTUPDATE:-0}" == "1" ]]; then return 0; fi
   if [[ -s "$DATA_DIR/deploy.log" ]]; then
-    mv -f "$DATA_DIR/deploy.log" \
-       "$DATA_DIR/deploy-$(date +%Y%m%d-%H%M%S).log" 2>/dev/null || true
+    # Kollisionsfreier Archivname: zwei Läufe in derselben Sekunde dürfen sich
+    # nicht gegenseitig überschreiben. mv -n statt -f als zweite Sicherung.
+    local ziel="$DATA_DIR/deploy-$(date +%Y%m%d-%H%M%S).log"
+    local lauf=1
+    while [[ -e "$ziel" ]]; do
+      ziel="$DATA_DIR/deploy-$(date +%Y%m%d-%H%M%S)-$lauf.log"
+      lauf=$((lauf + 1))
+    done
+    mv -n "$DATA_DIR/deploy.log" "$ziel" 2>/dev/null || true
     ls -1t "$DATA_DIR"/deploy-*.log 2>/dev/null | tail -n +11 | xargs -r rm -f || true
   fi
   : > "$DATA_DIR/deploy.log" 2>/dev/null || true
