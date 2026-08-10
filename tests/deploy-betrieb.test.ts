@@ -103,6 +103,57 @@ describe("Container-Healthcheck: shell-sicher und im Image vorhanden", () => {
   });
 });
 
+describe("Schnellpfad erkennt den WIRKLICH laufenden Stand", () => {
+  it("liest den Commit aus /health, statt die Antwort zu verwerfen", () => {
+    // Vorher prüfte der Schnellpfad nur „irgendein Container läuft und
+    // antwortet". Nach einem Rollback zeigte deploy-state weiterhin den neuen
+    // Commit, während das ALTE Image lief — deploy.sh meldete „Bereits
+    // aktuell" und der Server blieb dauerhaft auf dem alten Stand. Die nötige
+    // Information liefert /health längst im Feld "commit".
+    expect(deploySh).toMatch(/LAUFENDER_COMMIT=/);
+    expect(deploySh).toMatch(/"commit"/);
+    expect(deploySh).toMatch(/\$LAUFENDER_COMMIT" == "\$COMMIT"/);
+  });
+});
+
+describe("Deploy-Gate: der Container muss den Start ÜBERLEBEN", () => {
+  it("prüft die Gesundheit erneut nach einem Stabilitätsfenster", () => {
+    // Beim Ausfall 2026-08-10 starb der Container ~90 s NACH der
+    // Erfolgsmeldung. Ein Gate, das nur den ersten erfolgreichen /health-Aufruf
+    // sieht, kann so etwas grundsätzlich nicht bemerken.
+    expect(deploySh).toMatch(/STABIL_SEK=/);
+    const fenster = Number(/STABIL_SEK=(\d+)/.exec(deploySh)?.[1] ?? "0");
+    expect(fenster, "Fenster muss über dem 90-s-Stop-Timeout von systemd liegen")
+      .toBeGreaterThan(90);
+  });
+});
+
+describe("rollback.sh: gleiche Konfigurationsquelle wie deploy.sh", () => {
+  const rollback = fs.readFileSync(path.join(ROOT, "deploy/rollback.sh"), "utf8");
+
+  it("lädt die .env, statt Port und Datenverzeichnis zu raten", () => {
+    // Ohne .env pollte das Health-Gate http://localhost:3000 — dort lauscht
+    // nichts (echter Port 3011), und DATA_DIR zeigte auf ein fremdes
+    // Verzeichnis. Das Gate konnte deshalb NIE grün werden.
+    expect(rollback).toMatch(/source <\(grep/);
+    expect(rollback).toMatch(/127\.0\.0\.1/);
+  });
+
+  it("ermittelt den Compose-Provider wie deploy.sh, statt ihn festzunageln", () => {
+    expect(rollback).toMatch(/podman compose version/);
+  });
+
+  it("bricht ab, wenn :previous und :latest dasselbe Image sind", () => {
+    // Sonst meldet ein Rollback, der nichts zurückrollt, „erfolgreich".
+    expect(rollback).toMatch(/previous.*latest|latest.*previous/s);
+    expect(rollback).toMatch(/identisch/i);
+  });
+
+  it("entwertet deploy-state, damit der Rollback für deploy.sh sichtbar ist", () => {
+    expect(rollback).toMatch(/deploy-state/);
+  });
+});
+
 describe("Deploy-Protokoll: rotieren statt überschreiben", () => {
   it("leert das Protokoll ausschließlich innerhalb der Rotation", () => {
     // `: > …/deploy.log` löschte bei JEDEM Lauf die Spuren des vorigen —

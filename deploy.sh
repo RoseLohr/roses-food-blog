@@ -143,13 +143,22 @@ COMMIT="$(git rev-parse --short HEAD)"
 # erzwingt den vollen Lauf, SKIP_PULL=1 (lokale Änderungen) deaktiviert ihn.
 ENV_HASH="$(sha256sum .env | cut -d' ' -f1)"
 STATE_FILE="$DATA_DIR/deploy-state"
+# Welcher Stand läuft WIRKLICH? /health liefert den APP_COMMIT des Images
+# (src/app/health/route.ts). Früher wurde die Antwort nach /dev/null geworfen
+# und nur „irgendein Container läuft" geprüft — nach einem Rollback zeigte
+# deploy-state aber weiterhin den NEUEN Commit, während das ALTE Image lief.
+# deploy.sh meldete dann „Bereits aktuell", und der Server blieb ohne Warnung
+# dauerhaft auf dem alten Stand (Vorfall 2026-08-10). Leere Antwort oder
+# fehlendes Feld ⇒ Ungleichheit ⇒ voller Lauf (fail-closed).
+LAUFENDER_COMMIT="$(curl -fsS "http://127.0.0.1:$PORT/health" 2>/dev/null \
+  | sed -n 's/.*"commit"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
 if [[ "${FORCE_DEPLOY:-0}" != "1" && "${SKIP_PULL:-0}" != "1" \
       && -z "$(git status --porcelain 2>/dev/null)" \
       && -f "$STATE_FILE" \
-      && "$(cat "$STATE_FILE" 2>/dev/null)" == "$COMMIT $ENV_HASH" ]] \
+      && "$(cat "$STATE_FILE" 2>/dev/null)" == "$COMMIT $ENV_HASH" \
+      && "$LAUFENDER_COMMIT" == "$COMMIT" ]] \
    && podman image exists localhost/roses-blog:latest 2>/dev/null \
-   && [[ "$(podman inspect -f '{{.State.Running}}' roses-blog 2>/dev/null)" == "true" ]] \
-   && curl -fsS "http://127.0.0.1:$PORT/health" >/dev/null 2>&1; then
+   && [[ "$(podman inspect -f '{{.State.Running}}' roses-blog 2>/dev/null)" == "true" ]]; then
   rm -f "$DATA_DIR/deploy-request" 2>/dev/null || true
   DEPLOY_STATUS_RESULT="erfolgreich"
   log "Bereits aktuell (Commit $COMMIT) — Container läuft, kein Neustart nötig (${SECONDS}s)"
@@ -422,6 +431,27 @@ if [[ "$FINAL_HEALTH_OK" != "1" ]]; then
   podman logs --tail 30 roses-blog 2>&1 | sed 's/^/  /' || true
   fail "App nach Neustart auf Port $PORT nicht erreichbar (finaler Health-Gate gescheitert) — NICHT als erfolgreich quittiert."
 fi
+
+# --- 9b. Stabilitätsfenster: der Container muss den Start ÜBERLEBEN ----------
+# Beim Ausfall 2026-08-10 war die App zum Zeitpunkt der Erfolgsmeldung
+# nachweislich gesund — und rund 90 s SPÄTER tot (systemd räumte die cgroup des
+# Deploy-Dienstes ab und erschoss conmon + rootlessport). Ein Gate, das nur den
+# ersten erfolgreichen /health-Aufruf sieht, kann so etwas grundsätzlich nicht
+# bemerken; „erfolgreich" bedeutete nur „ist hochgekommen", nicht „läuft noch".
+# Das Fenster liegt bewusst ÜBER dem 90-Sekunden-Stop-Timeout von systemd, damit
+# genau diese Klasse (verzögerter Fremd-Kill, später Absturz, Speicherproblem)
+# den Deploy rot macht statt still zu bleiben.
+STABIL_SEK=100
+log "Prüfe Stabilität (${STABIL_SEK}s Fenster — der Container muss den Start überleben)"
+for _ in $(seq 1 $((STABIL_SEK / 10))); do
+  sleep 10
+  if ! curl -fsS "http://127.0.0.1:$PORT/health" >/dev/null 2>&1; then
+    echo "Letzte Container-Logs:"
+    podman logs --tail 40 roses-blog 2>&1 | sed 's/^/  /' || true
+    podman ps -a --filter name=roses-blog --format '  Status: {{.Status}}' || true
+    fail "App war erreichbar, ist aber im Stabilitätsfenster wieder ausgefallen — Deployment NICHT erfolgreich. Prüfen: journalctl --user -u roses-blog-deploy.service | grep -i killing"
+  fi
+done
 # Erst NACH bestandenem Health-Gate: Schnellpfad-State festhalten + Erfolg markieren.
 printf '%s %s\n' "$COMMIT" "$ENV_HASH" > "$STATE_FILE" 2>/dev/null || true
 DEPLOY_STATUS_RESULT="erfolgreich"   # EXIT-Trap schreibt deploy-status.json
