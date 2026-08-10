@@ -1,0 +1,132 @@
+/**
+ * Betriebs-Kontrollen rund um das Deployment (Vorfall 2026-08-10).
+ *
+ * HINTERGRUND (echter Produktionsausfall, ~11 h):
+ * Der aus dem Admin-Panel angestoßene Deploy läuft als systemd-User-Dienst
+ * `roses-blog-deploy.service` (Type=oneshot). Der Dienst startete den
+ * Container — und weil dessen Prozesse (conmon, rootlessport) in der
+ * Control-Group DES DIENSTES lagen, räumte systemd sie nach dem Ende von
+ * ExecStart mit ab:
+ *
+ *   roses-blog-deploy.service: State 'stop-sigterm' timed out. Killing.
+ *   Killing process … (rootlessport) with signal SIGKILL.
+ *   Killing process … (conmon)      with signal SIGKILL.
+ *
+ * Folge: 90 s NACH der Erfolgsmeldung war der Container tot, und
+ * `restart: always` konnte nicht greifen, weil der Supervisor (conmon) selbst
+ * erschossen war. Die Seite lieferte 502, bis jemand von Hand neu startete.
+ *
+ * Diese Tests halten die beiden Kontrollen fest, die das verhindern bzw.
+ * sichtbar machen — beide sind reine Textprüfungen an den Betriebsdateien,
+ * laufen also ohne Server:
+ *  1. Die vom Deploy erzeugte systemd-Unit koppelt die Lebensdauer des
+ *     Containers von der des Dienstes ab.
+ *  2. Der Container-Healthcheck ist shell-sicher (er lief zuvor NIE: das
+ *     Inline-JavaScript scheiterte an `/bin/sh: Syntax error: "(" unexpected`,
+ *     eine Kontrolle, die dauerhaft nicht feuerte).
+ *  3. Das Deploy-Protokoll wird rotiert statt überschrieben — sonst ist nach
+ *     dem nächsten Lauf jede Forensik verloren (genau das passierte hier).
+ */
+import fs from "node:fs";
+import path from "node:path";
+import { describe, expect, it } from "vitest";
+
+const ROOT = process.cwd();
+const deploySh = fs.readFileSync(path.join(ROOT, "deploy.sh"), "utf8");
+const compose = fs.readFileSync(path.join(ROOT, "compose.yml"), "utf8");
+const containerfile = fs.readFileSync(path.join(ROOT, "Containerfile"), "utf8");
+
+/** Der Heredoc-Block, mit dem deploy.sh die Panel-Deploy-Unit schreibt. */
+function unitTemplate(): string {
+  const start = deploySh.indexOf('cat > "$UNIT_DIR/roses-blog-deploy.service"');
+  expect(start, "Unit-Vorlage in deploy.sh nicht gefunden").toBeGreaterThan(-1);
+  const end = deploySh.indexOf("\nEOF", start);
+  expect(end, "Ende der Unit-Vorlage nicht gefunden").toBeGreaterThan(start);
+  return deploySh.slice(start, end);
+}
+
+describe("Panel-Deploy-Unit: Container überlebt das Dienstende", () => {
+  const unit = unitTemplate();
+
+  it("räumt beim Dienstende NICHT die ganze Control-Group ab (KillMode=process)", () => {
+    // Ohne diese Zeile schickt systemd SIGTERM/SIGKILL an ALLE Prozesse der
+    // Unit-cgroup — inklusive conmon und rootlessport des frisch gestarteten
+    // Containers. Genau daran starb die Produktion am 2026-08-10.
+    expect(unit).toMatch(/^KillMode=process$/m);
+  });
+
+  it("startet deploy.sh ohne INVOCATION_ID, damit podman eine eigene Scope anlegt", () => {
+    // Setzt systemd INVOCATION_ID, erkennt podman eine umgebende Unit und legt
+    // conmon NICHT in eine eigene transiente Scope (libpod-conmon-<id>.scope),
+    // sondern belässt ihn in der cgroup des Dienstes. Ohne die Variable
+    // verhält sich podman wie beim interaktiven Start: eigene Scope, eigene
+    // Lebensdauer. Das ist die strukturelle Entkopplung; KillMode ist das Netz.
+    expect(unit).toMatch(/ExecStart=\S*env -u INVOCATION_ID /);
+  });
+
+  it("die Unit-Vorlage begründet beide Zeilen im Klartext", () => {
+    // Regressionsschutz gegen „Aufräumen": wer die Zeilen entfernt, muss den
+    // Kommentar mitlesen.
+    expect(unit).toMatch(/conmon/);
+    expect(unit).toMatch(/rootlessport/);
+  });
+});
+
+describe("Container-Healthcheck: shell-sicher und im Image vorhanden", () => {
+  it("ruft eine Skriptdatei auf statt Inline-JavaScript", () => {
+    const zeile = compose
+      .split("\n")
+      .find((l) => l.trimStart().startsWith("test:"));
+    expect(zeile, "healthcheck.test in compose.yml nicht gefunden").toBeTruthy();
+    expect(zeile).toContain("healthcheck.mjs");
+  });
+
+  it("enthält keine Shell-Metazeichen (podman führt den Test über /bin/sh aus)", () => {
+    const zeile = (compose.split("\n").find((l) => l.trimStart().startsWith("test:")) ?? "")
+      // Die YAML-Liste selbst nutzt Anführungszeichen — nur die ARGUMENTE zählen.
+      .replace(/^\s*test:\s*/, "");
+    const argumente: string[] = JSON.parse(zeile);
+    for (const arg of argumente) {
+      expect(arg, `Argument „${arg}" enthält Shell-Metazeichen`).not.toMatch(/[()'"$`;&|<>*?]/);
+    }
+  });
+
+  it("das Healthcheck-Skript liegt im Laufzeit-Image", () => {
+    expect(containerfile).toContain("scripts/healthcheck.mjs");
+    expect(fs.existsSync(path.join(ROOT, "scripts/healthcheck.mjs"))).toBe(true);
+  });
+
+  it("das Skript beendet sich fail-closed (Fehler ⇒ Exit ≠ 0)", () => {
+    const src = fs.readFileSync(path.join(ROOT, "scripts/healthcheck.mjs"), "utf8");
+    expect(src).toMatch(/catch\s*\(/);
+    expect(src).toMatch(/process\.exit\(1\)/);
+  });
+});
+
+describe("Deploy-Protokoll: rotieren statt überschreiben", () => {
+  it("leert das Protokoll ausschließlich innerhalb der Rotation", () => {
+    // `: > …/deploy.log` löschte bei JEDEM Lauf die Spuren des vorigen —
+    // nach dem Ausfall war das Protokoll des auslösenden Deploys weg. Erlaubt
+    // ist das Leeren nur noch als LETZTER Schritt der Rotation, also nachdem
+    // die alte Datei datiert beiseitegelegt wurde.
+    const treffer = deploySh.match(/:\s*>\s*"\$DATA_DIR\/deploy\.log"/g) ?? [];
+    expect(treffer).toHaveLength(1);
+
+    const start = deploySh.indexOf("rotate_deploy_log() {");
+    expect(start, "rotate_deploy_log() nicht gefunden").toBeGreaterThan(-1);
+    const ende = deploySh.indexOf("\n}", start);
+    const rumpf = deploySh.slice(start, ende);
+    expect(rumpf).toMatch(/:\s*>\s*"\$DATA_DIR\/deploy\.log"/);
+    // Und die Sicherung muss VOR dem Leeren stehen.
+    expect(rumpf.indexOf("mv -f")).toBeLessThan(
+      rumpf.search(/:\s*>\s*"\$DATA_DIR\/deploy\.log"/),
+    );
+  });
+
+  it("hebt die letzten Läufe datiert auf", () => {
+    expect(deploySh).toMatch(/rotate_deploy_log\(\)/);
+    expect(deploySh).toMatch(/deploy-\$\(date/);
+    // Begrenzt, damit das Datenverzeichnis nicht unbegrenzt wächst.
+    expect(deploySh).toMatch(/deploy-\*\.log[\s\S]{0,80}tail -n \+11/);
+  });
+});

@@ -43,6 +43,20 @@ deploy_log() {
   _status_ready && printf '[%s] %s\n' "$(date '+%H:%M:%S')" "$*" \
     >> "$DATA_DIR/deploy.log" 2>/dev/null || true
 }
+# Protokoll ROTIEREN statt überschreiben. Früher begann jeder Lauf mit
+# `: > deploy.log` — nach dem nächsten Deploy war jede Spur des vorigen weg.
+# Beim Ausfall 2026-08-10 fehlte deshalb genau das Protokoll des auslösenden
+# Deploys. Die letzten zehn Läufe bleiben datiert erhalten; das Panel liest
+# unverändert deploy.log (den laufenden).
+rotate_deploy_log() {
+  _status_ready || return 0
+  if [[ -s "$DATA_DIR/deploy.log" ]]; then
+    mv -f "$DATA_DIR/deploy.log" \
+       "$DATA_DIR/deploy-$(date +%Y%m%d-%H%M%S).log" 2>/dev/null || true
+    ls -1t "$DATA_DIR"/deploy-*.log 2>/dev/null | tail -n +11 | xargs -r rm -f || true
+  fi
+  : > "$DATA_DIR/deploy.log" 2>/dev/null || true
+}
 # EXIT-Trap: Ergebnis festhalten (leer = wir haben das Ende nie erreicht).
 write_deploy_status() {
   DEPLOY_RUNNING=0
@@ -87,7 +101,7 @@ mkdir -p "$DATA_DIR" 2>/dev/null || true
 # würde ein Abbruch VOR Abschnitt 0 (z. B. podman nicht im PATH des systemd-
 # Dienstes) gar keinen Status schreiben — das Panel meldete dann fälschlich
 # „Watcher läuft nicht“, obwohl er sehr wohl lief.
-: > "$DATA_DIR/deploy.log" 2>/dev/null || true
+rotate_deploy_log
 DEPLOY_RUNNING=1; DEPLOY_STATUS_RESULT=""
 log "Deployment angenommen — Umgebung wird geprüft"
 
@@ -158,8 +172,8 @@ mkdir -p "$DATA_DIR"/{uploads,geoip,backups}
 # (der Watcher-Dienst entfernt sie ebenfalls; hier für manuelle Läufe).
 rm -f "$DATA_DIR/deploy-request" 2>/dev/null || true
 
-# Live-Log/Status fürs Panel zurücksetzen und Start markieren.
-: > "$DATA_DIR/deploy.log" 2>/dev/null || true
+# Start markieren. Das Protokoll wurde oben bereits rotiert und enthält seither
+# die Vorprüfung samt git-Ausgabe — die gehört zum Lauf und wird NICHT verworfen.
 DEPLOY_RUNNING=1; DEPLOY_STATUS_RESULT=""
 log "Deployment gestartet (Commit $(git rev-parse --short HEAD 2>/dev/null || echo '?'))"
 
@@ -337,9 +351,32 @@ WorkingDirectory=$SCRIPT_DIR
 # den der installierende Aufruf hatte.
 Environment=HOME=$HOME
 Environment=PATH=$HOME/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH
+#
+# LEBENSDAUER DES CONTAINERS VON DER DES DIENSTES ENTKOPPELN
+# (Produktionsausfall 2026-08-10, ~11 h Totalausfall — Root Cause):
+# Ein oneshot-Dienst gilt nach ExecStart als beendet; systemd räumt dann seine
+# Control-Group ab. Der frisch gestartete Container lag mit conmon und
+# rootlessport GENAU IN DIESER cgroup und wurde mitgerissen:
+#     roses-blog-deploy.service: State 'stop-sigterm' timed out. Killing.
+#     Killing process … (rootlessport) with signal SIGKILL.
+#     Killing process … (conmon)      with signal SIGKILL.
+# 90 s nach der Erfolgsmeldung war die Seite tot, und `restart: always` konnte
+# nicht greifen, weil der Supervisor (conmon) selbst erschossen war.
+# Zwei Maßnahmen, absichtlich beide:
+#  1. `env -u INVOCATION_ID`: Ohne diese von systemd gesetzte Variable erkennt
+#     podman KEINE umgebende Unit und legt conmon — wie beim interaktiven
+#     Start — in eine eigene transiente Scope (libpod-conmon-<id>.scope). Das
+#     ist die strukturelle Entkopplung: der Container gehört dann niemandem
+#     außer sich selbst.
+#  2. `KillMode=process`: Selbst wenn 1. nicht greifen kann (kein erreichbarer
+#     D-Bus des Benutzer-Managers → podman fällt auf cgroupfs zurück), signalisiert
+#     systemd beim Beenden ausschließlich den Hauptprozess und nicht die ganze
+#     cgroup. Das Netz unter der strukturellen Lösung.
+# tests/deploy-betrieb.test.ts hält beide Zeilen fest.
+KillMode=process
 # Anfrage vor dem Lauf entfernen, damit der Path-Unit erneut auslösen kann.
 ExecStartPre=-/usr/bin/rm -f $DATA_DIR/deploy-request
-ExecStart=/usr/bin/env bash $SCRIPT_DIR/deploy.sh
+ExecStart=/usr/bin/env -u INVOCATION_ID bash $SCRIPT_DIR/deploy.sh
 EOF
   cat > "$UNIT_DIR/roses-blog-deploy.path" <<EOF
 [Unit]
