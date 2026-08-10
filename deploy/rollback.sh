@@ -45,8 +45,16 @@ podman image exists localhost/roses-blog:previous 2>/dev/null \
 # 1b. …und es ist ein ANDERES als das laufende. Sind beide Tags identisch,
 # rollt der Lauf nichts zurück und dürfte sich nicht „erfolgreich" nennen
 # (stiller No-op statt ehrlicher Befund).
-VORIG_ID="$(podman image inspect -f '{{.Id}}' localhost/roses-blog:previous 2>/dev/null || echo previous)"
-AKTUELL_ID="$(podman image inspect -f '{{.Id}}' localhost/roses-blog:latest 2>/dev/null || echo latest)"
+# Die IDs müssen WIRKLICH ermittelt werden. Frühere Platzhalter-Fallbacks
+# ("previous"/"latest") hätten sich bei einem Abfragefehler zwangsläufig
+# unterschieden und die Prüfung damit wirkungslos gemacht — unbekannt ist
+# unsicher, nicht in Ordnung (gleiche Klasse wie der Befund zu NeedDaemonReload).
+VORIG_ID="$(podman image inspect -f '{{.Id}}' localhost/roses-blog:previous 2>/dev/null)" \
+  || VORIG_ID=""
+AKTUELL_ID="$(podman image inspect -f '{{.Id}}' localhost/roses-blog:latest 2>/dev/null)" \
+  || AKTUELL_ID=""
+[[ -n "$VORIG_ID" && -n "$AKTUELL_ID" ]] \
+  || fail "Image-IDs von :previous/:latest nicht ermittelbar — Abbruch statt Blindflug."
 [[ "$VORIG_ID" != "$AKTUELL_ID" ]] \
   || fail ":previous und :latest sind identisch — es gibt nichts zurückzurollen (kein stiller No-op)."
 

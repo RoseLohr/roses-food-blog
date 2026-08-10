@@ -148,9 +148,16 @@ done
 # wirklich zählt; `NeedDaemonReload=yes` bedeutet „Datei und geladener Stand
 # weichen ab" und ist deshalb ebenfalls ein Abbruchgrund. Leere Antwort (kein
 # systemctl erreichbar) ist ungleich „process" und blockiert damit auch.
+# Drei unabhängige Erkennungswege, damit kein Kontext durchrutscht: die cgroup
+# (verlässlich auf cgroup v2), INVOCATION_ID (setzt nur die ALTE, gefährliche
+# Unit) und der Aktivzustand der Unit selbst (bei Type=oneshot „activating",
+# solange ExecStart läuft). Erkennt einer davon den Dienst, greift die Prüfung.
 IN_DEPLOY_UNIT=0
+UNIT_ZUSTAND="$(systemctl --user is-active roses-blog-deploy.service 2>/dev/null)" \
+  || UNIT_ZUSTAND=""
 if grep -qs 'roses-blog-deploy\.service' /proc/self/cgroup \
-   || [[ -n "${INVOCATION_ID:-}" ]]; then
+   || [[ -n "${INVOCATION_ID:-}" ]] \
+   || [[ "$UNIT_ZUSTAND" == "activating" || "$UNIT_ZUSTAND" == "active" ]]; then
   IN_DEPLOY_UNIT=1
 fi
 if [[ "$IN_DEPLOY_UNIT" == "1" ]]; then
@@ -158,11 +165,17 @@ if [[ "$IN_DEPLOY_UNIT" == "1" ]]; then
     --property=KillMode --value 2>/dev/null)" || KILLMODE_EFFEKTIV=""
   RELOAD_NOETIG="$(systemctl --user show roses-blog-deploy.service \
     --property=NeedDaemonReload --value 2>/dev/null)" || RELOAD_NOETIG=""
-  if [[ "$KILLMODE_EFFEKTIV" != "process" || "$RELOAD_NOETIG" == "yes" ]]; then
+  # BEIDE Hälften fail-closed: nur die ausdrücklichen Gutwerte („process" bzw.
+  # „no") lassen den Lauf durch. Ein Abfragefehler oder eine leere Antwort ist
+  # ein UNBEKANNTER Zustand und blockiert — vorher wurde NeedDaemonReload nur
+  # gegen „yes" geprüft, wodurch ein fehlgeschlagener Aufruf still durchlief
+  # (Befund gpt-5.6-sol, PR #57, Runde 2).
+  if [[ "$KILLMODE_EFFEKTIV" != "process" || "$RELOAD_NOETIG" != "no" ]]; then
     fail "Abbruch VOR jedem Eingriff: Dieser Lauf läuft im systemd-Dienst
   roses-blog-deploy.service, der den Container beim Beenden töten würde.
-  Effektives KillMode: '${KILLMODE_EFFEKTIV:-unbekannt}' (nötig: process);
-  NeedDaemonReload: '${RELOAD_NOETIG:-unbekannt}' (nötig: no).
+  Effektives KillMode: '${KILLMODE_EFFEKTIV:-unbekannt}' (nötig: genau 'process');
+  NeedDaemonReload: '${RELOAD_NOETIG:-unbekannt}' (nötig: genau 'no').
+  Unbekannt bedeutet: nicht abfragbar — das gilt als unsicher, nicht als in Ordnung.
   Ein Deploy von hier aus schaltete die Seite ~90 s nach der Erfolgsmeldung ab.
   Einmalig IM TERMINAL ausführen, dann ist die Panel-Aktualisierung wieder sicher:
     cd $SCRIPT_DIR && git pull && FORCE_DEPLOY=1 ./deploy.sh && systemctl --user daemon-reload"

@@ -153,7 +153,6 @@ describe("Selbstschutz: kein Deploy unter einer tötenden Unit", () => {
     expect(block).toMatch(/--property=KillMode --value/);
     expect(block).toMatch(/--property=NeedDaemonReload --value/);
     expect(block).toMatch(/KILLMODE_EFFEKTIV" != "process"/);
-    expect(block).toMatch(/RELOAD_NOETIG" == "yes"/);
     expect(block).toMatch(/fail "/);
     // Der Dateitext allein darf NICHT mehr als Nachweis dienen.
     expect(block).not.toMatch(/grep -qs '\^KillMode=process'/);
@@ -164,6 +163,30 @@ describe("Selbstschutz: kein Deploy unter einer tötenden Unit", () => {
     const block = deploySh.slice(stelle, stelle + 2000);
     expect(block).toMatch(/\|\| KILLMODE_EFFEKTIV=""/);
     expect(block).toMatch(/\|\| RELOAD_NOETIG=""/);
+    expect(block).toMatch(/\|\| UNIT_ZUSTAND=""/);
+  });
+
+  it("lässt NUR ausdrückliche Gutwerte durch — Unbekanntes blockiert", () => {
+    // Beide Hälften müssen gegen den GUTWERT prüfen. Ein Vergleich gegen den
+    // Schlechtwert („== yes") liefe bei leerer Antwort still durch — genau
+    // dieses Fail-open hatte die erste Fassung in der Reload-Hälfte.
+    const stelle = deploySh.indexOf("IN_DEPLOY_UNIT=0");
+    const block = deploySh.slice(stelle, stelle + 2000);
+    expect(block).toMatch(/RELOAD_NOETIG" != "no"/);
+    expect(block).not.toMatch(/RELOAD_NOETIG" == "yes"/);
+  });
+});
+
+describe("rollback.sh: unbekannte Image-IDs gelten als unsicher", () => {
+  const rollback = fs.readFileSync(path.join(ROOT, "deploy/rollback.sh"), "utf8");
+
+  it("bricht ab, statt mit Platzhalter-IDs weiterzulaufen", () => {
+    // `|| echo previous` / `|| echo latest` hätten sich bei einem
+    // Abfragefehler immer unterschieden und die No-op-Prüfung entwertet.
+    expect(rollback).not.toMatch(/\|\| echo previous/);
+    expect(rollback).not.toMatch(/\|\| echo latest/);
+    expect(rollback).toMatch(/-n "\$VORIG_ID" && -n "\$AKTUELL_ID"/);
+    expect(rollback).toMatch(/nicht ermittelbar/);
   });
 
   it("bricht ab, BEVOR gebaut oder der Container angefasst wird", () => {
