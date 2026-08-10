@@ -534,6 +534,29 @@ EOF
   else
     echo "HINWEIS: Deploy-Watcher nicht aktivierbar — Panel-Aktualisierung inaktiv."
   fi
+
+  # --- 7d. Freigabe-Marke für die Panel-Aktualisierung ------------------------
+  # Der Container kann systemd nicht befragen — er sieht nur das Datenverzeichnis.
+  # Deshalb hinterlegt der Host hier eine Marke, und zwar NUR nach echter
+  # Verifikation des geladenen Zustands. Fehlt sie, verweigert das Panel (und der
+  # GitHub-Webhook) das Auslösen. Das schließt die Lücke beim allerersten
+  # Ausrollen dieser Reparatur: dort läuft auf dem Host noch die alte, tötende
+  # Unit, die diese Marke nie geschrieben hat — ein Panel-Klick kann die Seite
+  # also gar nicht mehr abschalten (Befund gpt-5.6-sol, PR #57, Runde 6).
+  UNIT_KILLMODE="$(systemctl --user show roses-blog-deploy.service \
+    --property=KillMode --value 2>/dev/null)" || UNIT_KILLMODE=""
+  UNIT_RELOAD="$(systemctl --user show roses-blog-deploy.service \
+    --property=NeedDaemonReload --value 2>/dev/null)" || UNIT_RELOAD=""
+  if [[ "$UNIT_KILLMODE" == "process" && "$UNIT_RELOAD" == "no" ]]; then
+    printf 'KillMode=%s NeedDaemonReload=%s geprueft am %s\n' \
+      "$UNIT_KILLMODE" "$UNIT_RELOAD" "$(date -Is)" \
+      > "$DATA_DIR/deploy-unit-ok" 2>/dev/null || true
+    echo "Panel-Deploy: freigegeben (Unit verifiziert: KillMode=process)."
+  else
+    rm -f "$DATA_DIR/deploy-unit-ok" 2>/dev/null || true
+    echo "HINWEIS: Panel-Aktualisierung bleibt GESPERRT (KillMode='${UNIT_KILLMODE:-unbekannt}',"
+    echo "         NeedDaemonReload='${UNIT_RELOAD:-unbekannt}'). Deploys nur aus dem Terminal."
+  fi
 fi
 
 # --- 8. Aufräumen: alte, nun unbenutzte Images entfernen ---------------------

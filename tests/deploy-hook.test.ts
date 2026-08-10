@@ -43,6 +43,11 @@ function webhookFile(): string {
   return path.join(tmp, "deploy-webhook-last.json");
 }
 
+/** Host-Freigabe für Panel/Webhook-Deploys (siehe unitOkFile-Beschreibung). */
+function unitOkFile(): string {
+  return path.join(tmp, "deploy-unit-ok");
+}
+
 beforeAll(() => {
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), "roses-hook-"));
   process.env.DATA_DIR = tmp;
@@ -56,10 +61,15 @@ beforeEach(() => {
   process.env.GITHUB_WEBHOOK_SECRET = KEY;
   fs.rmSync(requestFile(), { force: true });
   fs.rmSync(webhookFile(), { force: true });
+  // Regelfall: der Host hat die Panel-Deploys freigegeben (deploy.sh legt die
+  // Marke nur nach verifizierter systemd-Unit an). Ohne sie ist Auslösen
+  // gesperrt — dafür gibt es einen eigenen Test weiter unten.
+  fs.writeFileSync(unitOkFile(), "KillMode=process\n", "utf8");
 });
 afterEach(() => {
   fs.rmSync(requestFile(), { force: true });
   fs.rmSync(webhookFile(), { force: true });
+  fs.rmSync(unitOkFile(), { force: true });
 });
 
 describe("GitHub-Deploy-Webhook", () => {
@@ -153,6 +163,22 @@ describe("GitHub-Deploy-Webhook", () => {
     );
     expect(res.status).toBe(200);
     expect(fs.existsSync(requestFile())).toBe(false);
+  });
+
+  it("ohne Host-Freigabe → 503, KEIN Deploy (Ausfall-Schutz 2026-08-10)", async () => {
+    // deploy.sh legt „deploy-unit-ok" nur an, wenn systemd für den Panel-Dienst
+    // effektiv KillMode=process geladen hat. Fehlt die Marke, würde ein
+    // ausgelöster Deploy den Container beim Dienstende mitreißen — also gar
+    // nicht erst auslösen (fail-closed).
+    fs.rmSync(unitOkFile(), { force: true });
+    const { POST } = await import("@/app/api/deploy-hook/route");
+    const body = pushBody(`refs/heads/${DEPLOY_BRANCH}`);
+    const res = await POST(
+      request(body, { "x-github-event": "push", "x-hub-signature-256": sign(KEY, body) }),
+    );
+    expect(res.status).toBe(503);
+    expect(fs.existsSync(requestFile())).toBe(false);
+    expect(readWebhookLast()?.outcome).toBe("deploy_gesperrt");
   });
 
   it("ohne konfiguriertes Secret → 503 (Auto-Deploy aus), KEIN Deploy", async () => {

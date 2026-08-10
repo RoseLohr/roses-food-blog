@@ -245,6 +245,22 @@ describe("rollback.sh: unbekannte Image-IDs gelten als unsicher", () => {
   });
 });
 
+describe("Panel-Freigabe: der Host verbürgt sich, der Container prüft", () => {
+  it("deploy.sh legt die Marke NUR nach verifizierter Unit an", () => {
+    // Der Container kann systemd nicht befragen. Ohne diese vom Host
+    // geschriebene Marke verweigern Panel und Webhook das Auslösen — damit ist
+    // der allererste Panel-Deploy dieser Reparatur unmöglich, solange auf dem
+    // Server noch die alte, tötende Unit steht.
+    const stelle = deploySh.indexOf("7d. Freigabe-Marke");
+    expect(stelle, "Abschnitt 7d fehlt").toBeGreaterThan(-1);
+    const block = deploySh.slice(stelle, stelle + 1600);
+    expect(block).toMatch(/UNIT_KILLMODE" == "process" && "\$UNIT_RELOAD" == "no"/);
+    expect(block).toMatch(/> "\$DATA_DIR\/deploy-unit-ok"/);
+    // Und sie wird wieder ENTFERNT, sobald der Zustand nicht mehr stimmt.
+    expect(block).toMatch(/rm -f "\$DATA_DIR\/deploy-unit-ok"/);
+  });
+});
+
 describe("Selbst-Aktualisierung: der gepullte Stand übernimmt", () => {
   it("startet nach einem Pull, der deploy.sh geändert hat, mit dem neuen Code neu", () => {
     // main() sorgt dafür, dass bash die Datei ganz liest, bevor der Pull sie
@@ -310,10 +326,17 @@ describe("Deploy-Protokoll: rotieren statt überschreiben", () => {
     const ende = deploySh.indexOf("\n}", start);
     const rumpf = deploySh.slice(start, ende);
     expect(rumpf).toMatch(/:\s*>\s*"\$DATA_DIR\/deploy\.log"/);
-    // Und die Sicherung muss VOR dem Leeren stehen.
-    expect(rumpf.indexOf("mv -f")).toBeLessThan(
-      rumpf.search(/:\s*>\s*"\$DATA_DIR\/deploy\.log"/),
-    );
+    // Und die Sicherung muss VOR dem Leeren stehen. Die Position des mv wird
+    // ZUERST als gefunden nachgewiesen: ein indexOf von -1 (weil das gesuchte
+    // Kommando gar nicht mehr so heißt) erfüllt toBeLessThan immer und machte
+    // die Reihenfolgeprüfung wirkungslos — ein Test, der nicht mehr feuert
+    // (Befund gpt-5.6-sol, PR #57, Runde 6: die Implementierung war längst auf
+    // `mv -n` umgestellt, der Test suchte weiter `mv -f`).
+    const mvPos = rumpf.search(/\bmv -[nf]\b/);
+    const leerenPos = rumpf.search(/:\s*>\s*"\$DATA_DIR\/deploy\.log"/);
+    expect(mvPos, "kein mv in rotate_deploy_log gefunden").toBeGreaterThanOrEqual(0);
+    expect(leerenPos).toBeGreaterThanOrEqual(0);
+    expect(mvPos).toBeLessThan(leerenPos);
   });
 
   it("rotiert beim Selbst-exec NICHT erneut und überschreibt kein Archiv", () => {

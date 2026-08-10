@@ -19,6 +19,14 @@ const REQUEST_FILE = "deploy-request";
 const STATUS_FILE = "deploy-status.json";
 const LOG_FILE = "deploy.log";
 const WEBHOOK_FILE = "deploy-webhook-last.json";
+/**
+ * Freigabe-Marke des Hosts. `deploy.sh` legt sie NUR an, wenn systemd für den
+ * Panel-Dienst effektiv `KillMode=process` geladen hat und kein daemon-reload
+ * aussteht — also nur, wenn ein vom Panel angestoßener Deploy den Container
+ * überlebt. Fehlt sie, wurde entweder noch nie ein reparierter Deploy gefahren
+ * oder die Unit ist wieder unsicher.
+ */
+const UNIT_OK_FILE = "deploy-unit-ok";
 
 /** Aktuell laufende Version (Kurz-Commit; beim Build ins Image gesetzt). */
 export function currentCommit(): string {
@@ -39,6 +47,25 @@ export function readDeployRequestedAt(): number | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Darf aus dem Panel (bzw. per Webhook) überhaupt ein Deploy ausgelöst werden?
+ *
+ * HINTERGRUND (Produktionsausfall 2026-08-10): Der Panel-Deploy läuft als
+ * systemd-Dienst. Ohne `KillMode=process` räumt systemd nach dem Skriptende die
+ * Control-Group ab und erschießt conmon + rootlessport des frisch gestarteten
+ * Containers — die Seite war danach elf Stunden tot. Ein Auslöser im Container
+ * kann systemd nicht befragen; deshalb hinterlegt `deploy.sh` auf dem Host eine
+ * Freigabe-Marke, sobald es den Zustand VERIFIZIERT hat.
+ *
+ * Fail-closed: Ohne Marke wird nicht ausgelöst. Das schließt genau die Lücke,
+ * die sich sonst beim allerersten Ausrollen dieser Reparatur auftut — dort läuft
+ * auf dem Host noch die alte, tötende Unit, und ein Panel-Klick würde die Seite
+ * abschalten. Die Marke entsteht erst durch einen Deploy aus dem Terminal.
+ */
+export function panelDeployFreigegeben(): boolean {
+  return fs.existsSync(path.join(dataDir(), UNIT_OK_FILE));
 }
 
 /** Schreibt die Auslöse-Datei (idempotent). */
