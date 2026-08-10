@@ -126,12 +126,48 @@ for var in BASE_URL SESSION_SECRET ADMIN_EMAIL ADMIN_PASSWORD; do
   [[ -n "${!var:-}" ]] || fail ".env unvollständig: $var ist nicht gesetzt."
 done
 
+# --- 0b. Selbstschutz: nicht unter einer Unit deployen, die den Container tötet ---
+# Läuft dieser Deploy INNERHALB des systemd-Dienstes (Panel-Auslösung), dann
+# entscheidet dessen KillMode darüber, ob der frisch gestartete Container das
+# Ende dieses Laufs überlebt. Beim Default control-group räumt systemd die
+# cgroup ab und erschießt conmon + rootlessport — exakt der Ausfall vom
+# 2026-08-10, bei dem der Deploy „erfolgreich" meldete und die Seite 90 s
+# später elf Stunden lang tot war.
+# Fail-closed: lieber gar nicht deployen als die Seite umbringen. Die Erkennung
+# liest die cgroup des eigenen Prozesses (verlässlich, auch wenn INVOCATION_ID
+# in der reparierten Unit bewusst entfernt wird).
+UNIT_DATEI="$HOME/.config/systemd/user/roses-blog-deploy.service"
+IN_DEPLOY_UNIT=0
+if grep -qs 'roses-blog-deploy\.service' /proc/self/cgroup; then IN_DEPLOY_UNIT=1; fi
+if [[ "$IN_DEPLOY_UNIT" == "1" ]] && ! grep -qs '^KillMode=process' "$UNIT_DATEI"; then
+  fail "Abbruch VOR jedem Eingriff: Dieser Lauf läuft im systemd-Dienst
+  roses-blog-deploy.service, dessen Unit den Container beim Beenden töten würde
+  ($UNIT_DATEI enthält kein KillMode=process). Ein Deploy von hier aus würde die
+  Seite ~90 s nach der Erfolgsmeldung abschalten.
+  Einmalig IM TERMINAL ausführen, dann ist die Panel-Aktualisierung wieder sicher:
+    cd $SCRIPT_DIR && git pull && FORCE_DEPLOY=1 ./deploy.sh && systemctl --user daemon-reload"
+fi
+
 # --- 1. Git pull ------------------------------------------------------------
 if [[ "${SKIP_PULL:-0}" != "1" ]]; then
   log "Hole aktuellen Stand (Branch: $BRANCH)"
+  SELBST_VORHER="$(sha256sum "$SCRIPT_DIR/deploy.sh" | cut -d' ' -f1)"
   git fetch origin "$BRANCH"
   git checkout -q "$BRANCH"
   git pull --ff-only origin "$BRANCH"
+  # SELBST-AKTUALISIERUNG: main() umschließt das ganze Skript, damit bash es
+  # VOLLSTÄNDIG liest, bevor der Pull es überschreibt — sonst führte bash eine
+  # halb alte, halb neue Datei aus. Die Kehrseite: der restliche Lauf ist immer
+  # noch der ALTE Code. Er würde u. a. in Abschnitt 7c die ALTE systemd-Unit
+  # zurückschreiben, also ausgerechnet eine Korrektur an der Unit sofort wieder
+  # zunichtemachen. Hat der Pull dieses Skript geändert, übernimmt daher der
+  # neue Stand per exec (einmalig, gegen Endlosschleife abgesichert).
+  if [[ "$(sha256sum "$SCRIPT_DIR/deploy.sh" | cut -d' ' -f1)" != "$SELBST_VORHER" \
+        && "${DEPLOY_SELBSTUPDATE:-0}" != "1" ]]; then
+    log "deploy.sh hat sich selbst aktualisiert — starte mit dem neuen Stand neu"
+    export DEPLOY_SELBSTUPDATE=1 SKIP_PULL=1
+    exec /usr/bin/env bash "$SCRIPT_DIR/deploy.sh" "$@"
+  fi
 fi
 COMMIT="$(git rev-parse --short HEAD)"
 
@@ -150,8 +186,14 @@ STATE_FILE="$DATA_DIR/deploy-state"
 # deploy.sh meldete dann „Bereits aktuell", und der Server blieb ohne Warnung
 # dauerhaft auf dem alten Stand (Vorfall 2026-08-10). Leere Antwort oder
 # fehlendes Feld ⇒ Ungleichheit ⇒ voller Lauf (fail-closed).
+# Das abschließende `|| LAUFENDER_COMMIT=""` ist ZWINGEND: unter `set -euo
+# pipefail` ist der Status einer Zuweisung der der Kommandosubstitution, und
+# pipefail reicht curls Exit 7 (Verbindung verweigert) durch — das Skript wäre
+# sonst genau dann kommentarlos gestorben, wenn die App NICHT läuft, also im
+# Wiederherstellungsfall. Empirisch nachgestellt, nicht vermutet.
 LAUFENDER_COMMIT="$(curl -fsS "http://127.0.0.1:$PORT/health" 2>/dev/null \
-  | sed -n 's/.*"commit"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+  | sed -n 's/.*"commit"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')" \
+  || LAUFENDER_COMMIT=""
 if [[ "${FORCE_DEPLOY:-0}" != "1" && "${SKIP_PULL:-0}" != "1" \
       && -z "$(git status --porcelain 2>/dev/null)" \
       && -f "$STATE_FILE" \
@@ -371,16 +413,21 @@ Environment=PATH=$HOME/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/
 #     Killing process … (conmon)      with signal SIGKILL.
 # 90 s nach der Erfolgsmeldung war die Seite tot, und `restart: always` konnte
 # nicht greifen, weil der Supervisor (conmon) selbst erschossen war.
-# Zwei Maßnahmen, absichtlich beide:
-#  1. `env -u INVOCATION_ID`: Ohne diese von systemd gesetzte Variable erkennt
-#     podman KEINE umgebende Unit und legt conmon — wie beim interaktiven
-#     Start — in eine eigene transiente Scope (libpod-conmon-<id>.scope). Das
-#     ist die strukturelle Entkopplung: der Container gehört dann niemandem
-#     außer sich selbst.
-#  2. `KillMode=process`: Selbst wenn 1. nicht greifen kann (kein erreichbarer
-#     D-Bus des Benutzer-Managers → podman fällt auf cgroupfs zurück), signalisiert
-#     systemd beim Beenden ausschließlich den Hauptprozess und nicht die ganze
-#     cgroup. Das Netz unter der strukturellen Lösung.
+# Zwei Maßnahmen, absichtlich beide — die TRAGENDE ist die erste:
+#  1. `KillMode=process`. Der rekursive cgroup-Kill hängt in systemd an
+#     KillMode=control-group (Default) bzw. mixed; bei `process` signalisiert
+#     systemd ausschließlich den Hauptprozess — conmon und rootlessport werden
+#     nie angefasst. Wer diese Zeile wegräumt, stellt den Ausfall wieder her.
+#     (`mixed` wäre SCHLIMMER als der Default: die SIGTERM-Phase fände nichts,
+#     systemd eskalierte sofort zu SIGKILL, und der Container stürbe in
+#     Millisekunden statt nach 90 s. `none` ist seit systemd v249 abgekündigt.)
+#  2. `env -u INVOCATION_ID` ergänzt das strukturell: an dieser Variablen
+#     erkennt podman eine umgebende Unit und überspringt dann das Verschieben
+#     von conmon in eine eigene transiente Scope (libpod-conmon-<id>.scope).
+#     Ohne sie verhält sich podman wie beim interaktiven Start. Das ist
+#     allerdings undokumentiertes podman-Innenleben, setzt cgroup_manager=systemd
+#     und einen erreichbaren Benutzer-D-Bus voraus und kann still ausbleiben —
+#     deshalb Ergänzung, nicht Fundament.
 # tests/deploy-betrieb.test.ts hält beide Zeilen fest.
 KillMode=process
 # Anfrage vor dem Lauf entfernen, damit der Path-Unit erneut auslösen kann.
@@ -433,15 +480,18 @@ if [[ "$FINAL_HEALTH_OK" != "1" ]]; then
 fi
 
 # --- 9b. Stabilitätsfenster: der Container muss den Start ÜBERLEBEN ----------
-# Beim Ausfall 2026-08-10 war die App zum Zeitpunkt der Erfolgsmeldung
-# nachweislich gesund — und rund 90 s SPÄTER tot (systemd räumte die cgroup des
-# Deploy-Dienstes ab und erschoss conmon + rootlessport). Ein Gate, das nur den
-# ersten erfolgreichen /health-Aufruf sieht, kann so etwas grundsätzlich nicht
-# bemerken; „erfolgreich" bedeutete nur „ist hochgekommen", nicht „läuft noch".
-# Das Fenster liegt bewusst ÜBER dem 90-Sekunden-Stop-Timeout von systemd, damit
-# genau diese Klasse (verzögerter Fremd-Kill, später Absturz, Speicherproblem)
-# den Deploy rot macht statt still zu bleiben.
-STABIL_SEK=100
+# „Erfolgreich" hieß bisher nur „ist hochgekommen", nicht „läuft noch". Dieses
+# Fenster fängt frühe Absturzschleifen, Speicherprobleme und Startfehler ab, die
+# erst nach dem ersten grünen /health auftreten.
+#
+# EHRLICHE GRENZE (nicht wegdiskutieren): Den systemd-Kill vom 2026-08-10 kann
+# dieses Fenster PRINZIPIELL NICHT sehen. Der 90-Sekunden-Stop-Timeout beginnt
+# erst, wenn ExecStart endet — dieser Abschnitt läuft aber INNERHALB von
+# ExecStart und verschiebt die Stop-Uhr nur nach hinten. Gegen diese Klasse
+# wirken KillMode=process in der Unit und der Selbstschutz in Abschnitt 0b,
+# nicht dieses Fenster. Die Länge ist deshalb nach dem bemessen, was sie
+# wirklich leistet, und nicht an den 90 s ausgerichtet.
+STABIL_SEK=30
 log "Prüfe Stabilität (${STABIL_SEK}s Fenster — der Container muss den Start überleben)"
 for _ in $(seq 1 $((STABIL_SEK / 10))); do
   sleep 10
@@ -449,7 +499,7 @@ for _ in $(seq 1 $((STABIL_SEK / 10))); do
     echo "Letzte Container-Logs:"
     podman logs --tail 40 roses-blog 2>&1 | sed 's/^/  /' || true
     podman ps -a --filter name=roses-blog --format '  Status: {{.Status}}' || true
-    fail "App war erreichbar, ist aber im Stabilitätsfenster wieder ausgefallen — Deployment NICHT erfolgreich. Prüfen: journalctl --user -u roses-blog-deploy.service | grep -i killing"
+    fail "App war erreichbar, ist aber im Stabilitätsfenster wieder ausgefallen — Deployment NICHT erfolgreich. Logs oben prüfen."
   fi
 done
 # Erst NACH bestandenem Health-Gate: Schnellpfad-State festhalten + Erfolg markieren.

@@ -118,13 +118,56 @@ describe("Schnellpfad erkennt den WIRKLICH laufenden Stand", () => {
 
 describe("Deploy-Gate: der Container muss den Start ÜBERLEBEN", () => {
   it("prüft die Gesundheit erneut nach einem Stabilitätsfenster", () => {
-    // Beim Ausfall 2026-08-10 starb der Container ~90 s NACH der
-    // Erfolgsmeldung. Ein Gate, das nur den ersten erfolgreichen /health-Aufruf
-    // sieht, kann so etwas grundsätzlich nicht bemerken.
+    // Fängt frühe Absturzschleifen und Startfehler ab, die erst NACH dem ersten
+    // gruenen /health auftreten. Bewusst NICHT an den 90 s des systemd-Stop-
+    // Timeouts ausgerichtet: dieser Abschnitt läuft innerhalb von ExecStart,
+    // also bevor die Stop-Uhr überhaupt anläuft — gegen jene Klasse wirken
+    // KillMode=process und der Selbstschutz, nicht dieses Fenster.
     expect(deploySh).toMatch(/STABIL_SEK=/);
     const fenster = Number(/STABIL_SEK=(\d+)/.exec(deploySh)?.[1] ?? "0");
-    expect(fenster, "Fenster muss über dem 90-s-Stop-Timeout von systemd liegen")
-      .toBeGreaterThan(90);
+    expect(fenster).toBeGreaterThanOrEqual(20);
+  });
+
+  it("benennt die Grenze des Fensters ehrlich, statt Schutz vorzutäuschen", () => {
+    const abschnitt = deploySh.slice(deploySh.indexOf("9b. Stabilitätsfenster"));
+    expect(abschnitt.slice(0, 1200)).toMatch(/PRINZIPIELL NICHT sehen|nicht sehen/);
+  });
+});
+
+describe("Selbstschutz: kein Deploy unter einer tötenden Unit", () => {
+  it("erkennt den eigenen systemd-Kontext über die cgroup", () => {
+    // INVOCATION_ID wird in der reparierten Unit bewusst entfernt und taugt
+    // deshalb nicht als Erkennungsmerkmal.
+    expect(deploySh).toMatch(/\/proc\/self\/cgroup/);
+    expect(deploySh).toMatch(/IN_DEPLOY_UNIT/);
+  });
+
+  it("bricht fail-closed ab, wenn die installierte Unit KillMode=process fehlt", () => {
+    const stelle = deploySh.indexOf("IN_DEPLOY_UNIT");
+    const block = deploySh.slice(stelle, stelle + 1400);
+    expect(block).toMatch(/KillMode=process/);
+    expect(block).toMatch(/fail "/);
+  });
+
+  it("bricht ab, BEVOR gebaut oder der Container angefasst wird", () => {
+    expect(deploySh.indexOf("IN_DEPLOY_UNIT")).toBeLessThan(
+      deploySh.indexOf("Baue Container-Image"),
+    );
+    expect(deploySh.indexOf("IN_DEPLOY_UNIT")).toBeLessThan(
+      deploySh.indexOf("Stoppe alten Container"),
+    );
+  });
+});
+
+describe("Selbst-Aktualisierung: der gepullte Stand übernimmt", () => {
+  it("startet nach einem Pull, der deploy.sh geändert hat, mit dem neuen Code neu", () => {
+    // main() sorgt dafür, dass bash die Datei ganz liest, bevor der Pull sie
+    // überschreibt — der Rest des Laufs wäre sonst ALTER Code und würde u. a.
+    // die alte (tötende) systemd-Unit zurückschreiben.
+    expect(deploySh).toMatch(/SELBST_VORHER=/);
+    expect(deploySh).toMatch(/exec \/usr\/bin\/env bash "\$SCRIPT_DIR\/deploy\.sh"/);
+    // Gegen Endlosschleife abgesichert.
+    expect(deploySh).toMatch(/DEPLOY_SELBSTUPDATE/);
   });
 });
 
