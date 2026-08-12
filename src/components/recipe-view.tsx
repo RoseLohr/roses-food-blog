@@ -51,6 +51,22 @@ function MetaChip({
   );
 }
 
+/** Eine Zeitangabe im Zeit-Band: Beschriftung oben, Wert darunter betont. */
+function TimeItem({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <p className="text-sm text-ink-soft">{label}</p>
+      <p className="mt-1 font-display text-xl font-bold">{children}</p>
+    </div>
+  );
+}
+
 function CheckItem({ children }: { children: React.ReactNode }) {
   return (
     <li className="flex gap-3">
@@ -163,9 +179,9 @@ export function RecipeView({
           )}
 
           {/* Meta-Zeile: festes 2-Spalten-Raster, damit die Spalten sauber
-              untereinander fluchten (Paare: Portionen+Kalorien,
-              Vorbereitung+Kochzeit, Gesamtzeit+Schwierigkeit) */}
-          <div className="mt-6 grid grid-cols-2 gap-x-6 gap-y-4">
+              untereinander fluchten. Die ZEITEN stehen bewusst NICHT mehr
+              hier, sondern als eigene Zeile unter dem Uhren-Trenner. */}
+          <div className="mt-6 grid grid-cols-2 gap-x-6 gap-y-4 md:grid-cols-3">
             <MetaChip icon={<IconServings className="h-5 w-5" />} label={r.metaServings}>
               {interactive ? (
                 <ServingsControl
@@ -183,22 +199,29 @@ export function RecipeView({
                 {recipe.kcal} {r.kcalUnit} {r.perServing}
               </MetaChip>
             )}
-            {recipe.prepMinutes > 0 && (
-              <MetaChip icon={<IconClock className="h-5 w-5" />} label={r.metaPrep}>
-                {minutes(recipe.prepMinutes)}
-              </MetaChip>
-            )}
-            {recipe.cookMinutes > 0 && (
-              <MetaChip icon={<IconClock className="h-5 w-5" />} label={r.metaCook}>
-                {minutes(recipe.cookMinutes)}
-              </MetaChip>
-            )}
-            <MetaChip icon={<IconClock className="h-5 w-5" />} label={r.metaTotal}>
-              {minutes(recipe.totalMinutes)}
-            </MetaChip>
             <MetaChip icon={<IconFlame className="h-5 w-5" />} label={r.metaDifficulty}>
               {dict.admin.recipes.difficulties[recipe.difficulty] ?? recipe.difficulty}
             </MetaChip>
+          </div>
+
+          {/* Zeit-Band: dünne Linie, in deren Mitte dieselbe Uhr sitzt, die
+              zuvor in den runden Chips stand. Darunter die drei Zeiten in
+              EINER Reihe (Vorbereitung → Kochzeit → Gesamtzeit). Ab Tablet
+              nebeneinander; auf dem Handy gestapelt, weil drei Spalten dort
+              zu schmal für die Beschriftungen wären. */}
+          <div className="mt-8 flex items-center gap-4" aria-hidden>
+            <span className="h-px flex-1 bg-ink/10" />
+            <IconClock className="h-6 w-6 shrink-0 text-ink-soft" />
+            <span className="h-px flex-1 bg-ink/10" />
+          </div>
+          <div className="mt-5 grid gap-5 text-center md:grid-cols-3">
+            {recipe.prepMinutes > 0 && (
+              <TimeItem label={r.metaPrep}>{minutes(recipe.prepMinutes)}</TimeItem>
+            )}
+            {recipe.cookMinutes > 0 && (
+              <TimeItem label={r.metaCook}>{minutes(recipe.cookMinutes)}</TimeItem>
+            )}
+            <TimeItem label={r.metaTotal}>{minutes(recipe.totalMinutes)}</TimeItem>
           </div>
 
           {extraActions && (
