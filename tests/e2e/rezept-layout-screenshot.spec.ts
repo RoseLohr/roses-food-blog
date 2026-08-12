@@ -106,6 +106,13 @@ test("Struktur: Equipment abgesetzt, Zutaten neben Zubereitung, Notizen zuletzt"
       notizenZuletzt: notizen
         ? !!(zubereitung.compareDocumentPosition(notizen) & Node.DOCUMENT_POSITION_FOLLOWING)
         : null,
+      // Portionen/Kalorien gehören unter „Zutaten", die Schwierigkeit unter
+      // „Zubereitung" — und nirgends sonst (kein doppelter Chip-Block mehr).
+      zutatenSpalte: zutaten.closest("section")!.textContent ?? "",
+      zubereitungSpalte: zubereitung.closest("section")!.textContent ?? "",
+      schwierigkeitGesamt: (artikel.textContent ?? "").split("Schwierigkeit")
+        .length - 1,
+      kcalImArtikel: (artikel.textContent ?? "").includes("kcal"),
     };
   });
 
@@ -120,6 +127,19 @@ test("Struktur: Equipment abgesetzt, Zutaten neben Zubereitung, Notizen zuletzt"
     expect(ergebnis.equipmentGetoent).not.toBe("rgb(255, 255, 255)");
   }
   if (ergebnis.notizenZuletzt !== null) expect(ergebnis.notizenZuletzt).toBe(true);
+
+  // Portionen (mit Rechner) und Kalorien stehen in der Zutaten-Spalte …
+  expect(ergebnis.zutatenSpalte).toContain("Portionen");
+  // Kalorien sind optional (nicht jedes Rezept führt sie) — wenn sie im
+  // Artikel stehen, dann in der Zutaten-Spalte.
+  if (ergebnis.kcalImArtikel) {
+    expect(ergebnis.zutatenSpalte).toMatch(/kcal pro Portion/);
+  }
+  expect(ergebnis.zutatenSpalte).not.toContain("Schwierigkeit");
+  // … die Schwierigkeit in der Zubereitungs-Spalte, und zwar genau einmal
+  // im ganzen Artikel (der frühere Chip-Block darf nicht zurückkehren).
+  expect(ergebnis.zubereitungSpalte).toContain("Schwierigkeit");
+  expect(ergebnis.schwierigkeitGesamt).toBe(1);
 });
 
 test("Mobil bleibt gestapelt (keine gequetschten Spalten)", async ({ page }) => {

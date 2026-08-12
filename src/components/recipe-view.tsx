@@ -180,35 +180,28 @@ export function RecipeView({
             zusammengehören und der Lesefluss Zutaten → Zubereitung frei bleibt.
             Auf mehreren Spalten, weil Gerätenamen kurz sind und eine einzelne
             lange Liste sonst unnötig Höhe frisst. */}
-        {/* Die Schwierigkeit steht in derselben Zeile wie die Equipment-
-            Überschrift: beides sind Angaben zum „Wie", nicht zum „Was". */}
-        <section className="bg-cream-deep/60 p-6 md:p-8">
-          <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
-            {full.equipment.length > 0 && (
-              <SerifHeading>{r.equipmentHeading}</SerifHeading>
-            )}
-            <p className="text-sm text-ink-soft">
-              {r.metaDifficulty}:{" "}
-              <strong className="font-semibold text-ink">
-                {dict.admin.recipes.difficulties[recipe.difficulty] ??
-                  recipe.difficulty}
-              </strong>
-            </p>
-          </div>
-          {full.equipment.length > 0 && (
+        {full.equipment.length > 0 && (
+          <section className="bg-cream-deep/60 p-6 md:p-8">
+            <SerifHeading>{r.equipmentHeading}</SerifHeading>
             <ul className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {full.equipment.map((e) => (
                 <CheckItem key={e.id}>{e.name}</CheckItem>
               ))}
             </ul>
-          )}
-        </section>
+          </section>
+        )}
 
         {/* Zutaten neben der Zubereitung: ab Tablet zweispaltig, damit man die
             Mengen beim Kochen im Blick behält, ohne zu scrollen. Die Zutaten
             bekommen die schmalere Spalte (kurze Zeilen), die Zubereitung die
             breitere (Fließtext + Schrittbilder). Mobil bleibt es gestapelt. */}
-        <div className="mt-10 grid gap-10 md:grid-cols-[2fr_3fr]">
+        {/* Ohne Equipment-Bereich trennt schon das <hr> darüber — dann kein
+            zusätzlicher Abstand, sonst klafft eine Lücke. */}
+        <div
+          className={`grid gap-10 md:grid-cols-[2fr_3fr] ${
+            full.equipment.length > 0 ? "mt-10" : ""
+          }`}
+        >
           <section>
             <SerifHeading>{r.ingredients}</SerifHeading>
             {/* Wofür die Mengen gelten: Portionen (mit Rechner) und Kalorien
@@ -277,6 +270,16 @@ export function RecipeView({
           {/* Zubereitung — zweite Spalte desselben Rasters */}
           <section>
             <SerifHeading>{r.preparation}</SerifHeading>
+            {/* Die Schwierigkeit gehört zum Kochen, nicht zum Einkauf: sie
+                steht unter „Zubereitung" — spiegelbildlich zu Portionen und
+                Kalorien unter „Zutaten". */}
+            <p className="mt-2 text-sm text-ink-soft">
+              {r.metaDifficulty}:{" "}
+              <strong className="font-semibold text-ink">
+                {dict.admin.recipes.difficulties[recipe.difficulty] ??
+                  recipe.difficulty}
+              </strong>
+            </p>
           {(() => {
             let step = 0;
             return full.sections
