@@ -27,6 +27,10 @@ der wichtigste Befund (siehe `A-01`, `A-39`, `B-01`, `B-35`): Die
 - **Bildpipeline:** `sharp` bzw. libvips-CLI-Fallback (LOW_CPU)
 - **Deployment:** `Containerfile` (Multi-Stage) + `compose.yml` (podman);
   Migrationen im Container-Entrypoint (`scripts/entry.sh` → `scripts/migrate.mjs`)
+- **Öffentliche Adresse:** `https://gourmetcompass.de` — in der `.env` des
+  Servers als `BASE_URL` hinterlegt (nirgends im Quelltext). Speist Sitemap,
+  `robots.txt`, Canonical, strukturierte Daten, Druck-Fußzeile und
+  Newsletter-Links; eine Abweichung fällt von außen kaum auf.
 
 ## Modelle & Provider
 - **Ein KI-Feature:** Rezeptentwurf aus eingefügtem Rohtext.
