@@ -27,9 +27,16 @@ function TimeItem({
   children: React.ReactNode;
 }) {
   return (
-    <div>
-      <p className="text-sm text-ink-soft">{label}</p>
-      <p className="mt-1 font-display text-xl font-bold">{children}</p>
+    // flex-1 statt fester Rasterspalte: fehlt eine der drei Zeiten (Rezept
+    // ohne Vorbereitungs- oder Kochzeit), teilen sich die verbliebenen die
+    // Breite gleichmäßig, statt eine leere Spalte stehen zu lassen.
+    <div className="flex-1">
+      {/* Auf dem Handy eine Stufe kleiner: „Vorbereitung" ist das längste
+          Wort und soll auch in einer Drittel-Spalte einzeilig bleiben. */}
+      <p className="text-xs text-ink-soft sm:text-sm">{label}</p>
+      <p className="mt-1 font-display text-lg font-bold sm:text-xl">
+        {children}
+      </p>
     </div>
   );
 }
@@ -147,9 +154,9 @@ export function RecipeView({
 
           {/* Zeit-Band: dünne Linie, in deren Mitte dieselbe Uhr sitzt, die
               zuvor in den runden Chips stand. Darunter die drei Zeiten in
-              EINER Reihe (Vorbereitung → Kochzeit → Gesamtzeit). Ab Tablet
-              nebeneinander; auf dem Handy gestapelt, weil drei Spalten dort
-              zu schmal für die Beschriftungen wären.
+              EINER Reihe (Vorbereitung → Kochzeit → Gesamtzeit) — auf jeder
+              Breite nebeneinander, auf dem Handy mit engerem Abstand und eine
+              Schriftstufe kleiner, damit die drei Spalten dort passen.
               Den früheren Chip-Block über dem Trenner gibt es nicht mehr:
               Portionen und Kalorien stehen jetzt unter „Zutaten" (dort werden
               sie gebraucht), die Schwierigkeit neben dem Equipment. */}
@@ -158,7 +165,7 @@ export function RecipeView({
             <IconClock className="h-6 w-6 shrink-0 text-ink-soft" />
             <span className="h-px flex-1 bg-ink/10" />
           </div>
-          <div className="mt-5 grid gap-5 text-center md:grid-cols-3">
+          <div className="mt-5 flex gap-2 text-center sm:gap-5">
             {recipe.prepMinutes > 0 && (
               <TimeItem label={r.metaPrep}>{minutes(recipe.prepMinutes)}</TimeItem>
             )}

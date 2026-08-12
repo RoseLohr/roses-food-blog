@@ -159,3 +159,36 @@ test("Mobil bleibt gestapelt (keine gequetschten Spalten)", async ({ page }) => 
   });
   expect(gestapelt).toBe(true);
 });
+
+test("Mobil: die drei Zeiten stehen nebeneinander und bleiben einzeilig", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(await rezeptUrl(page));
+
+  const zeiten = await page.evaluate(() => {
+    const artikel = document.querySelector('article[id^="rezept-"]')!;
+    const treffer = Array.from(artikel.querySelectorAll("p")).filter((p) =>
+      /^(Vorbereitung|Kochzeit|Gesamtzeit)$/.test((p.textContent ?? "").trim()),
+    );
+    return treffer.map((p) => {
+      const kasten = p.getBoundingClientRect();
+      const zeilenhoehe = parseFloat(getComputedStyle(p).lineHeight);
+      return {
+        text: (p.textContent ?? "").trim(),
+        oben: kasten.top,
+        // Umbruch erkennen: mehr als eine Zeilenhöhe hoch = zweizeilig.
+        umgebrochen: kasten.height > zeilenhoehe * 1.5,
+      };
+    });
+  });
+
+  expect(zeiten.length, "Zeit-Beschriftungen nicht gefunden").toBeGreaterThan(1);
+  // Alle Beschriftungen auf derselben Höhe → eine Reihe, nicht gestapelt.
+  const obersteKante = zeiten[0].oben;
+  for (const z of zeiten) {
+    expect(Math.abs(z.oben - obersteKante), `${z.text} steht nicht in der Reihe`)
+      .toBeLessThan(2);
+    expect(z.umgebrochen, `${z.text} bricht um`).toBe(false);
+  }
+});
