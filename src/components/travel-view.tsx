@@ -8,7 +8,6 @@
 import Link from "next/link";
 import type { FullDish, FullRestaurant, FullTravelPost } from "@/lib/travel";
 import { extractHeadings, renderMarkdown } from "@/lib/markdown";
-import { getBaseUrl } from "@/lib/base-url";
 import { getSimilarRecipesByDish } from "@/lib/similar-recipes";
 import { RecipeCard, type RecipeCardData } from "@/components/recipe-card";
 import { t } from "@/i18n/de";
@@ -325,7 +324,6 @@ export async function TravelView({
   interactive?: boolean;
 }) {
   const { post } = full;
-  const url = `${getBaseUrl()}/reisen/${post.slug}`;
 
   // „Ähnliche Rezepte selbst machen" für alle Gerichte in einem Rutsch.
   const similarByDish = await getSimilarRecipesByDish(
@@ -408,7 +406,7 @@ export async function TravelView({
             priority
             className="aspect-[2/1] w-full object-cover"
           />
-          {interactive && <HeroActions title={post.title} url={url} />}
+          {interactive && <HeroActions title={post.title} />}
         </div>
       )}
 

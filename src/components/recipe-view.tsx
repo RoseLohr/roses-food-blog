@@ -51,12 +51,10 @@ function SerifHeading({ children }: { children: React.ReactNode }) {
 
 export function RecipeView({
   full,
-  baseUrl,
   interactive = true,
   extraActions,
 }: {
   full: FullRecipe;
-  baseUrl: string;
   /** false in der Druckansicht: keine Client-Buttons */
   interactive?: boolean;
   /** z. B. Like-Button */
@@ -64,7 +62,6 @@ export function RecipeView({
 }) {
   const { recipe } = full;
   const containerId = `rezept-${recipe.id}`;
-  const url = `${baseUrl}/rezepte/${recipe.slug}`;
 
   const minutes = (m: number) => {
     const h = Math.floor(m / 60);
@@ -124,7 +121,6 @@ export function RecipeView({
           {interactive && (
             <HeroActions
               title={recipe.title}
-              url={url}
               printPath={`/drucken/rezepte/${recipe.slug}`}
             />
           )}

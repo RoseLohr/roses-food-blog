@@ -15,28 +15,55 @@ const circle =
 
 export function HeroActions({
   title,
-  url,
   printPath,
 }: {
   title: string;
-  url: string;
   /** ohne Angabe wird kein Druck-Button angezeigt */
   printPath?: string;
 }) {
   const [copied, setCopied] = useState(false);
 
-  async function share() {
-    if (typeof navigator.share === "function") {
-      await navigator.share({ title, url }).catch(() => {});
-      return;
-    }
+  /**
+   * Teilen heißt „diese Seite teilen" — maßgeblich ist also die Adresse, unter
+   * der der Besucher gerade steht.
+   *
+   * Früher kam die URL serverseitig aus der Umgebungsvariable BASE_URL. Die
+   * kann von der tatsächlichen Domain abweichen (Domainwechsel, www/ohne www,
+   * Vorschau-Adresse) — dann verschickte der Teilen-Knopf stumm eine falsche
+   * Adresse. window.location kann das per Definition nicht.
+   *
+   * Ohne Query und Fragment: geteilt wird das Rezept, nicht der Filter- oder
+   * Kampagnen-Anhang, mit dem der Besucher zufällig hergekommen ist.
+   */
+  function seitenUrl() {
+    return window.location.origin + window.location.pathname;
+  }
+
+  async function inZwischenablage(url: string) {
     try {
       await navigator.clipboard.writeText(url);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      /* Clipboard nicht verfügbar */
+      // Zwischenablage nicht verfügbar (kein sicherer Kontext, Rechte
+      // verweigert). Mehr als nichts zu tun bleibt hier nicht — der Nutzer
+      // kann die Adresse weiterhin aus der Adresszeile kopieren.
     }
+  }
+
+  async function share() {
+    const url = seitenUrl();
+    if (typeof navigator.share === "function") {
+      try {
+        await navigator.share({ title, url });
+      } catch (fehler) {
+        // Abbruch durch den Nutzer ist kein Fehlerfall — alles andere schon:
+        // dann greift die Zwischenablage, statt dass gar nichts passiert.
+        if ((fehler as Error)?.name !== "AbortError") await inZwischenablage(url);
+      }
+      return;
+    }
+    await inZwischenablage(url);
   }
 
   return (

@@ -3,7 +3,6 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireAdmin } from "@/lib/auth";
 import { getFullRecipe } from "@/lib/recipes";
-import { getBaseUrl } from "@/lib/base-url";
 import { RecipeView } from "@/components/recipe-view";
 import { t } from "@/i18n/de";
 
@@ -33,7 +32,7 @@ export default async function RecipePreviewPage(props: {
         </Link>
       </div>
       <div className="bg-white p-6 shadow-sm md:p-10">
-        <RecipeView full={full} baseUrl={getBaseUrl()} />
+        <RecipeView full={full} />
       </div>
 
       {full.adminNotes.length > 0 && (

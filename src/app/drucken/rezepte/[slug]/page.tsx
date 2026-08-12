@@ -28,7 +28,7 @@ export default async function RecipePrintPage(props: {
 
   return (
     <main className="mx-auto max-w-3xl bg-white p-8 print:p-0">
-      <RecipeView full={full} baseUrl={getBaseUrl()} interactive={false} />
+      <RecipeView full={full} interactive={false} />
       <p className="mt-8 border-t border-ink/20 pt-3 text-sm text-ink-soft">
         {getSiteName()} — {getBaseUrl()}/rezepte/{full.recipe.slug}
       </p>
