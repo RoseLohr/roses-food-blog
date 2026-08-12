@@ -208,19 +208,32 @@ export function RecipeView({
 
         <hr className="my-8 border-ink/10" />
 
-        {/* Equipment + Zutaten */}
-        <div className="grid gap-10 md:grid-cols-[2fr_3fr]">
-          {full.equipment.length > 0 && (
-            <section>
-              <SerifHeading>{r.equipmentHeading}</SerifHeading>
-              <ul className="mt-5 flex flex-col gap-3">
-                {full.equipment.map((e) => (
-                  <CheckItem key={e.id}>{e.name}</CheckItem>
-                ))}
-              </ul>
-            </section>
-          )}
-          <section className={full.equipment.length === 0 ? "md:col-span-2" : ""}>
+        {/* Equipment — eigener, abgesetzter Bereich über die volle Breite.
+            Getönt wie die Notizen-Box, damit beide „Randinformationen" optisch
+            zusammengehören und der Lesefluss Zutaten → Zubereitung frei bleibt.
+            Auf mehreren Spalten, weil Gerätenamen kurz sind und eine einzelne
+            lange Liste sonst unnötig Höhe frisst. */}
+        {full.equipment.length > 0 && (
+          <section className="bg-cream-deep/60 p-6 md:p-8">
+            <SerifHeading>{r.equipmentHeading}</SerifHeading>
+            <ul className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {full.equipment.map((e) => (
+                <CheckItem key={e.id}>{e.name}</CheckItem>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        {/* Zutaten neben der Zubereitung: ab Tablet zweispaltig, damit man die
+            Mengen beim Kochen im Blick behält, ohne zu scrollen. Die Zutaten
+            bekommen die schmalere Spalte (kurze Zeilen), die Zubereitung die
+            breitere (Fließtext + Schrittbilder). Mobil bleibt es gestapelt. */}
+        <div
+          className={`grid gap-10 md:grid-cols-[2fr_3fr] ${
+            full.equipment.length > 0 ? "mt-10" : ""
+          }`}
+        >
+          <section>
             <SerifHeading>{r.ingredients}</SerifHeading>
             <div className="mt-5 flex flex-col gap-5">
               {full.sections
@@ -255,13 +268,10 @@ export function RecipeView({
                 ))}
             </div>
           </section>
-        </div>
 
-        <hr className="my-8 border-ink/10" />
-
-        {/* Zubereitung */}
-        <section>
-          <SerifHeading>{r.preparation}</SerifHeading>
+          {/* Zubereitung — zweite Spalte desselben Rasters */}
+          <section>
+            <SerifHeading>{r.preparation}</SerifHeading>
           {(() => {
             let step = 0;
             return full.sections
@@ -308,8 +318,8 @@ export function RecipeView({
                 </div>
               ));
           })()}
-
-        </section>
+          </section>
+        </div>
 
         {/* Notizen / Tipps */}
         {(recipe.tips || full.publicNotes.length > 0) && (

@@ -26,6 +26,9 @@ next-env.d.ts
 .pw-data/
 playwright-report/
 test-results/
+# Ansichts-Screenshots zur Abnahme (tests/e2e/rezept-layout-screenshot.spec.ts):
+# jederzeit reproduzierbar, gehören nicht in die Versionsgeschichte.
+tests/e2e/__screenshots__/
 
 # Regime: Temp des Gate-Selbsttests + generierte SBOM
 .gate-selftest-*/
