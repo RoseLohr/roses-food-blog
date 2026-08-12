@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { bilderFertig } from "./bilder-fertig";
 
 /**
  * Ansichts-Screenshots der Rezeptseite (Desktop, iPad, Handy) zur Abnahme des
@@ -67,14 +68,11 @@ for (const [name, breite, hoehe] of [
 
     const artikel = page.locator('article[id^="rezept-"]');
     await expect(artikel).toBeVisible();
-    // Bilder fertig laden lassen, damit der Screenshot nichts Halbes zeigt.
-    await page.evaluate(() =>
-      Promise.all(
-        Array.from(document.images)
-          .filter((i) => !i.complete)
-          .map((i) => new Promise((r) => i.addEventListener("load", r, { once: true }))),
-      ),
-    );
+
+    const { haengen, kaputt } = await bilderFertig(page);
+    expect(kaputt, "Bilder konnten nicht geladen werden").toEqual([]);
+    expect(haengen, "Bilder wurden nicht rechtzeitig fertig").toEqual([]);
+
     await page.screenshot({
       path: `${ZIEL}/rezept-${name}.png`,
       fullPage: true,
