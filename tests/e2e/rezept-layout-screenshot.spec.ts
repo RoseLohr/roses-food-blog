@@ -42,6 +42,7 @@ for (const [name, breite, hoehe] of [
   ["desktop-1280", 1280, 1400],
   ["ipad-quer-1024", 1024, 1366],
   ["ipad-hoch-834", 834, 1194],
+  ["mobil-390", 390, 844],
 ] as const) {
   test(`Rezept-Layout: ${name}`, async ({ page }) => {
     await page.setViewportSize({ width: breite, height: hoehe });
