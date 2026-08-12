@@ -306,7 +306,6 @@ export const de = {
     cuisineShort: "Küche",
     keywords: "Schlagwörter",
     dietShort: "Ernährungsform",
-    equipmentHeading: "Equipment",
     kcalUnit: "kcal",
     perServing: "pro Portion",
   },

@@ -13,7 +13,7 @@ import { t } from "@/i18n/de";
 import { ResponsiveImg } from "./responsive-img";
 import { ServingsControl } from "./servings-control";
 import { HeroActions } from "./hero-actions";
-import { IconCheck, IconClock, IconTag } from "./icons";
+import { IconClock, IconTag } from "./icons";
 
 const dict = t();
 const r = dict.recipe;
@@ -38,15 +38,6 @@ function TimeItem({
         {children}
       </p>
     </div>
-  );
-}
-
-function CheckItem({ children }: { children: React.ReactNode }) {
-  return (
-    <li className="flex gap-3">
-      <IconCheck className="mt-1 h-4 w-4 shrink-0 text-leaf" />
-      <span className="leading-relaxed">{children}</span>
-    </li>
   );
 }
 
@@ -182,33 +173,19 @@ export function RecipeView({
 
         <hr className="my-8 border-ink/10" />
 
-        {/* Equipment — eigener, abgesetzter Bereich über die volle Breite.
-            Getönt wie die Notizen-Box, damit beide „Randinformationen" optisch
-            zusammengehören und der Lesefluss Zutaten → Zubereitung frei bleibt.
-            Auf mehreren Spalten, weil Gerätenamen kurz sind und eine einzelne
-            lange Liste sonst unnötig Höhe frisst. */}
-        {full.equipment.length > 0 && (
-          <section className="bg-cream-deep/60 p-6 md:p-8">
-            <SerifHeading>{r.equipmentHeading}</SerifHeading>
-            <ul className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {full.equipment.map((e) => (
-                <CheckItem key={e.id}>{e.name}</CheckItem>
-              ))}
-            </ul>
-          </section>
-        )}
+        {/* Der Equipment-Bereich ist in der öffentlichen Ansicht bewusst
+            NICHT gerendert (Wunsch 08/2026, vorerst ausgeblendet). Die Daten
+            selbst bleiben unangetastet: im Admin weiter pflegbar, im Export
+            enthalten und in den strukturierten Daten als schema.org "tool"
+            ausgeliefert. Zum Wiedereinblenden reicht ein Revert des Commits,
+            der diesen Block entfernt hat. */}
 
         {/* Zutaten neben der Zubereitung: ab Tablet zweispaltig, damit man die
             Mengen beim Kochen im Blick behält, ohne zu scrollen. Die Zutaten
             bekommen die schmalere Spalte (kurze Zeilen), die Zubereitung die
-            breitere (Fließtext + Schrittbilder). Mobil bleibt es gestapelt. */}
-        {/* Ohne Equipment-Bereich trennt schon das <hr> darüber — dann kein
-            zusätzlicher Abstand, sonst klafft eine Lücke. */}
-        <div
-          className={`grid gap-10 md:grid-cols-[2fr_3fr] ${
-            full.equipment.length > 0 ? "mt-10" : ""
-          }`}
-        >
+            breitere (Fließtext + Schrittbilder). Mobil bleibt es gestapelt.
+            Kein oberer Abstand: das <hr> darüber trennt bereits. */}
+        <div className="grid gap-10 md:grid-cols-[2fr_3fr]">
           <section>
             <SerifHeading>{r.ingredients}</SerifHeading>
             {/* Wofür die Mengen gelten: Portionen (mit Rechner) und Kalorien

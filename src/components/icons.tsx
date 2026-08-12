@@ -19,14 +19,6 @@ export function IconClock({ className }: { className?: string }) {
   );
 }
 
-export function IconCheck({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className} {...base} strokeWidth={2.4}>
-      <path d="M5 13l4 4L19 7" />
-    </svg>
-  );
-}
-
 export function IconTag({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" className={className} {...base}>

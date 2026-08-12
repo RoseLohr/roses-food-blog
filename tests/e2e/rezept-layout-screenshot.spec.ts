@@ -1,9 +1,10 @@
 import { test, expect } from "@playwright/test";
 
 /**
- * Ansichts-Screenshots der Rezeptseite (Desktop und iPad) zur Abnahme des
- * neuen Layouts: Equipment als eigener, getönter Bereich; darunter Zutaten und
- * Zubereitung nebeneinander; Notizen zuletzt.
+ * Ansichts-Screenshots der Rezeptseite (Desktop, iPad, Handy) zur Abnahme des
+ * Layouts: Zutaten und Zubereitung nebeneinander, Notizen zuletzt. Der
+ * Equipment-Bereich ist öffentlich vorerst ausgeblendet — die Daten bleiben
+ * aber erhalten (schema.org "tool").
  *
  * Bewusst KEIN Vergleichstest (kein toHaveScreenshot) — die Bilder dienen der
  * menschlichen Begutachtung vor dem Deployment. Die Struktur selbst wird
@@ -14,9 +15,10 @@ import { test, expect } from "@playwright/test";
 const ZIEL = "tests/e2e/__screenshots__";
 
 /**
- * Bevorzugt ein Rezept MIT Equipment — sonst zeigt der Screenshot genau den
- * neuen Bereich nicht. Fällt auf das erste Rezept zurück, falls keines
- * Equipment führt.
+ * Wählt ein Rezept, das im Datenbestand Equipment führt — erkennbar an
+ * schema.org "tool" in den strukturierten Daten, denn sichtbar ist es nicht
+ * mehr. Nur an so einem Rezept ist die Zusicherung „Equipment wird nicht
+ * angezeigt" überhaupt aussagekräftig; sonst bestünde sie trivial.
  */
 async function rezeptUrl(page: import("@playwright/test").Page) {
   await page.goto("/rezepte");
@@ -26,16 +28,30 @@ async function rezeptUrl(page: import("@playwright/test").Page) {
   expect(hrefs.length, "kein Rezept in der Übersicht gefunden").toBeGreaterThan(0);
   for (const href of hrefs) {
     await page.goto(href);
-    const hatEquipment = await page.evaluate(() => {
-      const artikel = document.querySelector('article[id^="rezept-"]');
-      if (!artikel) return false;
-      return Array.from(artikel.querySelectorAll("h2")).some((h) =>
-        /equipment|gerät/i.test(h.textContent ?? ""),
-      );
-    });
-    if (hatEquipment) return href;
+    if (await hatEquipmentInDaten(page)) return href;
   }
-  return hrefs[0];
+  throw new Error("kein Rezept mit Equipment gefunden — Seed unerwartet");
+}
+
+/** Liest die strukturierten Daten und prüft, ob dort Geräte hinterlegt sind. */
+async function hatEquipmentInDaten(page: import("@playwright/test").Page) {
+  return page.evaluate(() =>
+    Array.from(document.querySelectorAll('script[type="application/ld+json"]')).some(
+      (s) => {
+        try {
+          const daten = JSON.parse(s.textContent ?? "{}");
+          const knoten = Array.isArray(daten) ? daten : [daten];
+          return knoten.some(
+            (k) => Array.isArray(k?.tool) && k.tool.length > 0,
+          );
+        } catch {
+          // Kaputtes JSON-LD ist hier kein Treffer — der eigene JSON-LD-Test
+          // deckt das ab; leer schlucken wäre sonst ein blinder Fleck.
+          return false;
+        }
+      },
+    ),
+  );
 }
 
 for (const [name, breite, hoehe] of [
@@ -66,7 +82,7 @@ for (const [name, breite, hoehe] of [
   });
 }
 
-test("Struktur: Equipment abgesetzt, Zutaten neben Zubereitung, Notizen zuletzt", async ({
+test("Struktur: Zutaten neben Zubereitung, Notizen zuletzt, kein Equipment", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1280, height: 1400 });
@@ -80,7 +96,6 @@ test("Struktur: Equipment abgesetzt, Zutaten neben Zubereitung, Notizen zuletzt"
         (h.textContent ?? "").toLowerCase().includes(text),
       ) ?? null;
 
-    const equip = ueberschrift("equipment") ?? ueberschrift("gerät");
     const zutaten = ueberschrift("zutaten");
     const zubereitung = ueberschrift("zubereitung");
     const notizen = ueberschrift("notiz") ?? ueberschrift("tipp");
@@ -91,19 +106,13 @@ test("Struktur: Equipment abgesetzt, Zutaten neben Zubereitung, Notizen zuletzt"
     const zubereitungBox = kasten(zubereitung)!;
 
     return {
-      equipmentVorhanden: Boolean(equip),
-      // Getönter, eigener Bereich?
-      equipmentGetoent: equip
-        ? getComputedStyle(equip.closest("section")!).backgroundColor
-        : null,
+      // Ausgeblendet heißt: kein Wort davon im sichtbaren Artikel — weder als
+      // Überschrift noch als Listeneintrag irgendwo anders.
+      equipmentImText: /equipment|küchengerät/i.test(artikel.textContent ?? ""),
       // Nebeneinander: gleiche Oberkante, klar getrennte x-Bereiche.
       gleicheOberkante: Math.abs(zutatenBox.top - zubereitungBox.top) < 8,
       zutatenLinks: zutatenBox.left < zubereitungBox.left,
       keineUeberlappung: zutatenBox.right <= zubereitungBox.left + 1,
-      // Dokumentreihenfolge Equipment → Zutaten → Notizen
-      equipmentVorZutaten: equip
-        ? !!(equip.compareDocumentPosition(zutaten) & Node.DOCUMENT_POSITION_FOLLOWING)
-        : null,
       notizenZuletzt: notizen
         ? !!(zubereitung.compareDocumentPosition(notizen) & Node.DOCUMENT_POSITION_FOLLOWING)
         : null,
@@ -121,13 +130,17 @@ test("Struktur: Equipment abgesetzt, Zutaten neben Zubereitung, Notizen zuletzt"
   expect(ergebnis.gleicheOberkante, "Zutaten und Zubereitung stehen nicht nebeneinander").toBe(true);
   expect(ergebnis.zutatenLinks).toBe(true);
   expect(ergebnis.keineUeberlappung).toBe(true);
-  if (ergebnis.equipmentVorhanden) {
-    expect(ergebnis.equipmentVorZutaten).toBe(true);
-    // Getönt = nicht transparent und nicht reines Weiß.
-    expect(ergebnis.equipmentGetoent).not.toBe("rgba(0, 0, 0, 0)");
-    expect(ergebnis.equipmentGetoent).not.toBe("rgb(255, 255, 255)");
-  }
   if (ergebnis.notizenZuletzt !== null) expect(ergebnis.notizenZuletzt).toBe(true);
+
+  // Equipment ist öffentlich ausgeblendet — obwohl dieses Rezept welches führt
+  // (rezeptUrl wählt gezielt so eines aus).
+  expect(
+    ergebnis.equipmentImText,
+    "Equipment ist wieder sichtbar",
+  ).toBe(false);
+  // … die Daten selbst sind aber NICHT verloren: sie stehen weiter in den
+  // strukturierten Daten. Ausblenden darf kein Datenverlust sein.
+  expect(await hatEquipmentInDaten(page)).toBe(true);
 
   // Portionen (mit Rechner) und Kalorien stehen in der Zutaten-Spalte …
   expect(ergebnis.zutatenSpalte).toContain("Portionen");
