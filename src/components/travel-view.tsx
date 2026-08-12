@@ -406,7 +406,9 @@ export async function TravelView({
             priority
             className="aspect-[2/1] w-full object-cover"
           />
-          {interactive && <HeroActions title={post.title} />}
+          {interactive && (
+            <HeroActions title={post.title} publicPath={`/reisen/${post.slug}`} />
+          )}
         </div>
       )}
 

@@ -121,6 +121,7 @@ export function RecipeView({
           {interactive && (
             <HeroActions
               title={recipe.title}
+              publicPath={`/rezepte/${recipe.slug}`}
               printPath={`/drucken/rezepte/${recipe.slug}`}
             />
           )}

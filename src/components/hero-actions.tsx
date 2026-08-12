@@ -15,28 +15,33 @@ const circle =
 
 export function HeroActions({
   title,
+  publicPath,
   printPath,
 }: {
   title: string;
+  /** öffentlicher Pfad des Inhalts, z. B. „/rezepte/mein-rezept" */
+  publicPath: string;
   /** ohne Angabe wird kein Druck-Button angezeigt */
   printPath?: string;
 }) {
   const [copied, setCopied] = useState(false);
 
   /**
-   * Teilen heißt „diese Seite teilen" — maßgeblich ist also die Adresse, unter
-   * der der Besucher gerade steht.
+   * Geteilt wird die ÖFFENTLICHE Adresse des Inhalts auf der Domain, unter der
+   * der Besucher gerade steht. Beide Hälften sind bewusst gewählt:
    *
-   * Früher kam die URL serverseitig aus der Umgebungsvariable BASE_URL. Die
-   * kann von der tatsächlichen Domain abweichen (Domainwechsel, www/ohne www,
-   * Vorschau-Adresse) — dann verschickte der Teilen-Knopf stumm eine falsche
-   * Adresse. window.location kann das per Definition nicht.
-   *
-   * Ohne Query und Fragment: geteilt wird das Rezept, nicht der Filter- oder
-   * Kampagnen-Anhang, mit dem der Besucher zufällig hergekommen ist.
+   * - Herkunft aus window.location: früher kam die ganze URL serverseitig aus
+   *   der Umgebungsvariable BASE_URL. Weicht die von der tatsächlich
+   *   aufgerufenen Domain ab (Domainwechsel, mit/ohne www), verschickte der
+   *   Knopf stumm eine falsche Adresse. Der Browser kann das nicht.
+   * - Pfad vom Aufrufer, NICHT window.location.pathname: die Rezeptansicht
+   *   erscheint auch in der Admin-Vorschau unter einem geschützten Pfad. Der
+   *   aktuelle Pfad wäre dort „/admin/rezepte/<id>/vorschau" — der Empfänger
+   *   landete bei Login/403, und die interne Rezept-ID wäre mit verschickt
+   *   (Befund gpt-5.6-sol, PR #58).
    */
   function seitenUrl() {
-    return window.location.origin + window.location.pathname;
+    return window.location.origin + publicPath;
   }
 
   async function inZwischenablage(url: string) {
