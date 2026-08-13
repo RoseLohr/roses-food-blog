@@ -72,7 +72,7 @@ export default async function RecipePage(props: {
           [full.recipe.title, `/rezepte/${full.recipe.slug}`],
         ])}
       />
-      <RecipeView full={full} baseUrl={getBaseUrl()} />
+      <RecipeView full={full} />
     </main>
   );
 }

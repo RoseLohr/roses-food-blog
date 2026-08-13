@@ -19,37 +19,11 @@ export function IconClock({ className }: { className?: string }) {
   );
 }
 
-export function IconServings({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className} {...base}>
-      <path d="M7 3v7a2 2 0 0 0 2 2v9" />
-      <path d="M5 3v4M9 3v4" />
-      <path d="M16 3c-1.7 0-3 2-3 5 0 2.2 1 3.5 2 4v9" />
-    </svg>
-  );
-}
-
-export function IconCheck({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className} {...base} strokeWidth={2.4}>
-      <path d="M5 13l4 4L19 7" />
-    </svg>
-  );
-}
-
 export function IconTag({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" className={className} {...base}>
       <path d="M3 11V4a1 1 0 0 1 1-1h7l10 10-8 8L3 11Z" />
       <circle cx="8" cy="8" r="1.4" />
-    </svg>
-  );
-}
-
-export function IconFlame({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className} {...base}>
-      <path d="M12 3s5 4.5 5 9.5a5 5 0 0 1-10 0c0-2 1-4 2.5-5.5C9.5 9 11 9.5 11 8c0-1.5-.5-3 1-5Z" />
     </svg>
   );
 }

@@ -13,50 +13,31 @@ import { t } from "@/i18n/de";
 import { ResponsiveImg } from "./responsive-img";
 import { ServingsControl } from "./servings-control";
 import { HeroActions } from "./hero-actions";
-import {
-  IconCheck,
-  IconClock,
-  IconFlame,
-  IconServings,
-  IconTag,
-} from "./icons";
+import { IconClock, IconTag } from "./icons";
 
 const dict = t();
 const r = dict.recipe;
 
-function MetaChip({
-  icon,
+/** Eine Zeitangabe im Zeit-Band: Beschriftung oben, Wert darunter betont. */
+function TimeItem({
   label,
   children,
 }: {
-  icon: React.ReactNode;
   label: string;
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center gap-3">
-      <span
-        aria-hidden
-        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-cream text-ink-soft"
-      >
-        {icon}
-      </span>
-      <div>
-        <p className="text-xs font-bold uppercase tracking-wider text-ink">
-          {label}
-        </p>
-        <p className="text-sm text-ink-soft">{children}</p>
-      </div>
+    // flex-1 statt fester Rasterspalte: fehlt eine der drei Zeiten (Rezept
+    // ohne Vorbereitungs- oder Kochzeit), teilen sich die verbliebenen die
+    // Breite gleichmäßig, statt eine leere Spalte stehen zu lassen.
+    <div className="flex-1">
+      {/* Auf dem Handy eine Stufe kleiner: „Vorbereitung" ist das längste
+          Wort und soll auch in einer Drittel-Spalte einzeilig bleiben. */}
+      <p className="text-xs text-ink-soft sm:text-sm">{label}</p>
+      <p className="mt-1 font-display text-lg font-bold sm:text-xl">
+        {children}
+      </p>
     </div>
-  );
-}
-
-function CheckItem({ children }: { children: React.ReactNode }) {
-  return (
-    <li className="flex gap-3">
-      <IconCheck className="mt-1 h-4 w-4 shrink-0 text-leaf" />
-      <span className="leading-relaxed">{children}</span>
-    </li>
   );
 }
 
@@ -70,12 +51,10 @@ function SerifHeading({ children }: { children: React.ReactNode }) {
 
 export function RecipeView({
   full,
-  baseUrl,
   interactive = true,
   extraActions,
 }: {
   full: FullRecipe;
-  baseUrl: string;
   /** false in der Druckansicht: keine Client-Buttons */
   interactive?: boolean;
   /** z. B. Like-Button */
@@ -83,7 +62,6 @@ export function RecipeView({
 }) {
   const { recipe } = full;
   const containerId = `rezept-${recipe.id}`;
-  const url = `${baseUrl}/rezepte/${recipe.slug}`;
 
   const minutes = (m: number) => {
     const h = Math.floor(m / 60);
@@ -143,7 +121,7 @@ export function RecipeView({
           {interactive && (
             <HeroActions
               title={recipe.title}
-              url={url}
+              publicPath={`/rezepte/${recipe.slug}`}
               printPath={`/drucken/rezepte/${recipe.slug}`}
             />
           )}
@@ -162,43 +140,27 @@ export function RecipeView({
             />
           )}
 
-          {/* Meta-Zeile: festes 2-Spalten-Raster, damit die Spalten sauber
-              untereinander fluchten (Paare: Portionen+Kalorien,
-              Vorbereitung+Kochzeit, Gesamtzeit+Schwierigkeit) */}
-          <div className="mt-6 grid grid-cols-2 gap-x-6 gap-y-4">
-            <MetaChip icon={<IconServings className="h-5 w-5" />} label={r.metaServings}>
-              {interactive ? (
-                <ServingsControl
-                  baseServings={recipe.servings}
-                  containerId={containerId}
-                />
-              ) : (
-                // Nur die Zahl — „Portionen" steht bereits als Chip-Label.
-                <>{recipe.servings}</>
-              )}
-            </MetaChip>
-            {/* Kalorien direkt neben den Portionen (auf Wunsch) */}
-            {recipe.kcal != null && (
-              <MetaChip icon={<IconFlame className="h-5 w-5" />} label={r.calories}>
-                {recipe.kcal} {r.kcalUnit} {r.perServing}
-              </MetaChip>
-            )}
+          {/* Zeit-Band: dünne Linie, in deren Mitte dieselbe Uhr sitzt, die
+              zuvor in den runden Chips stand. Darunter die drei Zeiten in
+              EINER Reihe (Vorbereitung → Kochzeit → Gesamtzeit) — auf jeder
+              Breite nebeneinander, auf dem Handy mit engerem Abstand und eine
+              Schriftstufe kleiner, damit die drei Spalten dort passen.
+              Den früheren Chip-Block über dem Trenner gibt es nicht mehr:
+              Portionen und Kalorien stehen jetzt unter „Zutaten" (dort werden
+              sie gebraucht), die Schwierigkeit neben dem Equipment. */}
+          <div className="mt-8 flex items-center gap-4" aria-hidden>
+            <span className="h-px flex-1 bg-ink/10" />
+            <IconClock className="h-6 w-6 shrink-0 text-ink-soft" />
+            <span className="h-px flex-1 bg-ink/10" />
+          </div>
+          <div className="mt-5 flex gap-2 text-center sm:gap-5">
             {recipe.prepMinutes > 0 && (
-              <MetaChip icon={<IconClock className="h-5 w-5" />} label={r.metaPrep}>
-                {minutes(recipe.prepMinutes)}
-              </MetaChip>
+              <TimeItem label={r.metaPrep}>{minutes(recipe.prepMinutes)}</TimeItem>
             )}
             {recipe.cookMinutes > 0 && (
-              <MetaChip icon={<IconClock className="h-5 w-5" />} label={r.metaCook}>
-                {minutes(recipe.cookMinutes)}
-              </MetaChip>
+              <TimeItem label={r.metaCook}>{minutes(recipe.cookMinutes)}</TimeItem>
             )}
-            <MetaChip icon={<IconClock className="h-5 w-5" />} label={r.metaTotal}>
-              {minutes(recipe.totalMinutes)}
-            </MetaChip>
-            <MetaChip icon={<IconFlame className="h-5 w-5" />} label={r.metaDifficulty}>
-              {dict.admin.recipes.difficulties[recipe.difficulty] ?? recipe.difficulty}
-            </MetaChip>
+            <TimeItem label={r.metaTotal}>{minutes(recipe.totalMinutes)}</TimeItem>
           </div>
 
           {extraActions && (
@@ -208,20 +170,47 @@ export function RecipeView({
 
         <hr className="my-8 border-ink/10" />
 
-        {/* Equipment + Zutaten */}
+        {/* Der Equipment-Bereich ist in der öffentlichen Ansicht bewusst
+            NICHT gerendert (Wunsch 08/2026, vorerst ausgeblendet). Die Daten
+            selbst bleiben unangetastet: im Admin weiter pflegbar, im Export
+            enthalten und in den strukturierten Daten als schema.org "tool"
+            ausgeliefert. Zum Wiedereinblenden reicht ein Revert des Commits,
+            der diesen Block entfernt hat. */}
+
+        {/* Zutaten neben der Zubereitung: ab Tablet zweispaltig, damit man die
+            Mengen beim Kochen im Blick behält, ohne zu scrollen. Die Zutaten
+            bekommen die schmalere Spalte (kurze Zeilen), die Zubereitung die
+            breitere (Fließtext + Schrittbilder). Mobil bleibt es gestapelt.
+            Kein oberer Abstand: das <hr> darüber trennt bereits. */}
         <div className="grid gap-10 md:grid-cols-[2fr_3fr]">
-          {full.equipment.length > 0 && (
-            <section>
-              <SerifHeading>{r.equipmentHeading}</SerifHeading>
-              <ul className="mt-5 flex flex-col gap-3">
-                {full.equipment.map((e) => (
-                  <CheckItem key={e.id}>{e.name}</CheckItem>
-                ))}
-              </ul>
-            </section>
-          )}
-          <section className={full.equipment.length === 0 ? "md:col-span-2" : ""}>
+          <section>
             <SerifHeading>{r.ingredients}</SerifHeading>
+            {/* Wofür die Mengen gelten: Portionen (mit Rechner) und Kalorien
+                direkt unter der Überschrift — dort, wo man sie beim Einkaufen
+                und Abwiegen tatsächlich braucht. */}
+            <div className="mt-2 text-sm text-ink-soft">
+              {/* Zwei eigene Zeilen statt einer mit Trennpunkt: die Spalte ist
+                  schmal, und ein umbrechendes „·" bliebe am Zeilenende hängen. */}
+              <p className="flex flex-wrap items-center gap-2">
+                {r.servingsPrefix}
+                {interactive ? (
+                  <ServingsControl
+                    baseServings={recipe.servings}
+                    containerId={containerId}
+                  />
+                ) : (
+                  <strong className="font-semibold text-ink">
+                    {recipe.servings}
+                  </strong>
+                )}
+                {r.metaServings}
+              </p>
+              {recipe.kcal != null && (
+                <p className="mt-1">
+                  {recipe.kcal} {r.kcalUnit} {r.perServing}
+                </p>
+              )}
+            </div>
             <div className="mt-5 flex flex-col gap-5">
               {full.sections
                 .filter((s) => s.ingredients.length > 0)
@@ -232,9 +221,12 @@ export function RecipeView({
                         {section.name}
                       </h3>
                     )}
+                    {/* Bewusst OHNE Häkchen-Symbol: die Mengen sollen ruhig und
+                        gut abtastbar sein. Die Häkchen bleiben dem Equipment
+                        vorbehalten, wo sie eine Abhak-Liste sind. */}
                     <ul className="flex flex-col gap-3">
                       {section.ingredients.map((ing) => (
-                        <CheckItem key={ing.id}>
+                        <li key={ing.id} className="leading-relaxed">
                           <span data-menge={ing.amount ?? undefined} data-einheit={ing.unit}>
                             {ing.amount !== null
                               ? formatAmount(ing.amount, ing.unit)
@@ -248,20 +240,27 @@ export function RecipeView({
                           {ing.note && (
                             <span className="text-ink-soft"> ({ing.note})</span>
                           )}
-                        </CheckItem>
+                        </li>
                       ))}
                     </ul>
                   </div>
                 ))}
             </div>
           </section>
-        </div>
 
-        <hr className="my-8 border-ink/10" />
-
-        {/* Zubereitung */}
-        <section>
-          <SerifHeading>{r.preparation}</SerifHeading>
+          {/* Zubereitung — zweite Spalte desselben Rasters */}
+          <section>
+            <SerifHeading>{r.preparation}</SerifHeading>
+            {/* Die Schwierigkeit gehört zum Kochen, nicht zum Einkauf: sie
+                steht unter „Zubereitung" — spiegelbildlich zu Portionen und
+                Kalorien unter „Zutaten". */}
+            <p className="mt-2 text-sm text-ink-soft">
+              {r.metaDifficulty}:{" "}
+              <strong className="font-semibold text-ink">
+                {dict.admin.recipes.difficulties[recipe.difficulty] ??
+                  recipe.difficulty}
+              </strong>
+            </p>
           {(() => {
             let step = 0;
             return full.sections
@@ -308,8 +307,8 @@ export function RecipeView({
                 </div>
               ));
           })()}
-
-        </section>
+          </section>
+        </div>
 
         {/* Notizen / Tipps */}
         {(recipe.tips || full.publicNotes.length > 0) && (

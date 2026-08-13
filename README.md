@@ -85,6 +85,16 @@ cp .env.example .env
 nano .env        # alle Werte befüllen; SESSION_SECRET: openssl rand -hex 32
 ```
 
+**`BASE_URL` ist in Produktion `https://gourmetcompass.de`** (ohne
+abschließenden Schrägstrich). Der Wert ist kein Schönheitsfehler, wenn er
+abweicht: aus ihm entstehen Sitemap, `robots.txt`, die Canonical-Links, die
+strukturierten Daten, die Fußzeile der Druckansicht und die Links in
+Newsletter-Mails. Steht dort eine veraltete Domain, meldet die Seite
+Suchmaschinen die falschen Adressen — sichtbar wird das von außen kaum.
+
+Nach einer Änderung **neu deployen, nicht nur neu starten**: `robots.txt` wird
+beim Build erzeugt und trägt die Adresse fest eingebacken.
+
 Das Datenverzeichnis (Standard `/srv/roses-blog/data`) einmalig anlegen und dem
 Deploy-Benutzer geben:
 
