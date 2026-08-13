@@ -1,6 +1,6 @@
 # Roses Food Blog
 
-[![AI Audit Mandate: Level 2, Governed](https://raw.githubusercontent.com/mglaeser/ai-audit-mandate/main/assets/badges/level-2-governed.svg)](audit/)
+[![AI Audit Mandate: Level 2, Governed](https://raw.githubusercontent.com/mglaeser/ai-audit-mandate/main/assets/badges/level-2-governed.svg)](https://github.com/mglaeser/ai-audit-mandate)
 
 Deutschsprachiger Food- & Reiseblog mit CMS, CRM und Newsletter (Double-Opt-in).
 Eine Anwendung, eine SQLite-Datenbank, ein Container — betrieben mit Podman
