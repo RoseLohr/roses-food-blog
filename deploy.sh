@@ -468,6 +468,26 @@ fi
 if command -v systemctl >/dev/null 2>&1; then
   UNIT_DIR="$HOME/.config/systemd/user"
   mkdir -p "$UNIT_DIR"
+
+  # Einmaliger Befund-Hinweis (Vorfall 2026-08-14): frühere Fassungen dieses
+  # Skripts hatten Backticks im unquotierten Heredoc unten. `env -u
+  # INVOCATION_ID` im Erklärtext scheiterte nicht, sondern LIEF — und schrieb
+  # die vollständige Prozessumgebung in die Unit-Datei. Weil deploy.sh die
+  # .env vorher in die Umgebung lädt, standen dort Secrets im Klartext.
+  # Gleich wird die Datei sauber überschrieben; ohne diesen Hinweis verschwände
+  # der Beleg lautlos und niemand wüsste, dass etwas zu wechseln ist.
+  ALTE_UNIT="$UNIT_DIR/roses-blog-deploy.service"
+  if [[ -f "$ALTE_UNIT" ]] && grep -qE '^(SESSION_SECRET|ADMIN_PASSWORD|SMTP_PASS|ANTHROPIC_API_KEY|DEPLOY_GITHUB_TOKEN)=' "$ALTE_UNIT"; then
+    echo "WARNUNG: Die bisherige Unit $ALTE_UNIT enthielt Secrets im Klartext"
+    echo "         (Folge eines Heredoc-Fehlers in einer früheren deploy.sh)."
+    echo "         Sie wird jetzt sauber überschrieben. Prüfe zusätzlich Backups"
+    echo "         des Home-Verzeichnisses und wechsle die betroffenen Werte in"
+    echo "         der .env, falls weitere Personen Zugriff auf diesen Host haben."
+  fi
+
+  # ACHTUNG, unquotiertes Heredoc: $SCRIPT_DIR/$HOME/$PATH sollen eingesetzt
+  # werden — Backticks und $( ) im Text würden aber AUSGEFÜHRT statt
+  # geschrieben. tests/deploy-betrieb.test.ts erzwingt das.
   cat > "$UNIT_DIR/roses-blog-deploy.service" <<EOF
 [Unit]
 Description=Roses Food Blog – Pull & Deploy (aus dem Admin-Panel angestoßen)
@@ -494,17 +514,17 @@ Environment=PATH=$HOME/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/
 #     roses-blog-deploy.service: State 'stop-sigterm' timed out. Killing.
 #     Killing process … (rootlessport) with signal SIGKILL.
 #     Killing process … (conmon)      with signal SIGKILL.
-# 90 s nach der Erfolgsmeldung war die Seite tot, und `restart: always` konnte
+# 90 s nach der Erfolgsmeldung war die Seite tot, und „restart: always“ konnte
 # nicht greifen, weil der Supervisor (conmon) selbst erschossen war.
 # Zwei Maßnahmen, absichtlich beide — die TRAGENDE ist die erste:
-#  1. `KillMode=process`. Der rekursive cgroup-Kill hängt in systemd an
-#     KillMode=control-group (Default) bzw. mixed; bei `process` signalisiert
+#  1. „KillMode=process“. Der rekursive cgroup-Kill hängt in systemd an
+#     KillMode=control-group (Default) bzw. mixed; bei „process“ signalisiert
 #     systemd ausschließlich den Hauptprozess — conmon und rootlessport werden
 #     nie angefasst. Wer diese Zeile wegräumt, stellt den Ausfall wieder her.
-#     (`mixed` wäre SCHLIMMER als der Default: die SIGTERM-Phase fände nichts,
+#     („mixed“ wäre SCHLIMMER als der Default: die SIGTERM-Phase fände nichts,
 #     systemd eskalierte sofort zu SIGKILL, und der Container stürbe in
-#     Millisekunden statt nach 90 s. `none` ist seit systemd v249 abgekündigt.)
-#  2. `env -u INVOCATION_ID` ergänzt das strukturell: an dieser Variablen
+#     Millisekunden statt nach 90 s. „none“ ist seit systemd v249 abgekündigt.)
+#  2. „env -u INVOCATION_ID“ ergänzt das strukturell: an dieser Variablen
 #     erkennt podman eine umgebende Unit und überspringt dann das Verschieben
 #     von conmon in eine eigene transiente Scope (libpod-conmon-<id>.scope).
 #     Ohne sie verhält sich podman wie beim interaktiven Start. Das ist

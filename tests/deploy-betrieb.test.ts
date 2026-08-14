@@ -357,3 +357,69 @@ describe("Deploy-Protokoll: rotieren statt überschreiben", () => {
     expect(deploySh).toMatch(/deploy-\*\.log[\s\S]{0,80}tail -n \+11/);
   });
 });
+
+describe("Heredocs: kein ungewollter Shell-Aufruf im geschriebenen Text", () => {
+  /**
+   * Vorfall 2026-08-14. Die Panel-Deploy-Unit wird über ein UNQUOTIERTES
+   * Heredoc (`<<EOF`) geschrieben — nötig, weil $SCRIPT_DIR, $HOME und $PATH
+   * eingesetzt werden müssen. Dadurch wirkt im Rumpf aber auch die
+   * Kommandosubstitution. In den Erklärkommentaren standen Backticks:
+   *
+   *   #  1. `KillMode=process`. … bei `process` signalisiert …
+   *   #  2. `env -u INVOCATION_ID` ergänzt das strukturell …
+   *
+   * Folge, empirisch nachgestellt: vier Zeilen scheiterten sichtbar
+   * („restart:: command not found"), der zitierte Text verschwand aus der
+   * erzeugten Datei — und `env -u INVOCATION_ID` scheiterte NICHT, sondern
+   * lief: die vollständige Prozessumgebung landete in der Unit-Datei. Da
+   * deploy.sh die .env vorher in die Umgebung lädt, standen SESSION_SECRET,
+   * ADMIN_PASSWORD, SMTP_PASS und ANTHROPIC_API_KEY im Klartext darin.
+   *
+   * Der laute Teil (command not found) war harmlos, der leise war das Leck.
+   * Deshalb prüft dieser Test die FEHLERKLASSE, nicht die vier Fundstellen.
+   */
+  const shellDateien = ["deploy.sh", "bootstrap.sh", "deploy/rollback.sh", "deploy/backup.sh", "scripts/entry.sh"]
+    .filter((f) => fs.existsSync(path.join(ROOT, f)));
+
+  /** Rümpfe aller Heredocs, bei denen die Shell den Text noch anfasst. */
+  function unquotierteHeredocRuempfe(quelle: string) {
+    const zeilen = quelle.split("\n");
+    const treffer: Array<{ zeile: number; text: string }> = [];
+    for (let i = 0; i < zeilen.length; i++) {
+      // <<EOF / <<-EOF sind unquotiert; <<'EOF' und <<"EOF" sind es nicht.
+      const m = /<<-?([A-Za-z_][A-Za-z0-9_]*)\s*$/.exec(zeilen[i]);
+      if (!m) continue;
+      for (let j = i + 1; j < zeilen.length && zeilen[j].trim() !== m[1]; j++) {
+        treffer.push({ zeile: j + 1, text: zeilen[j] });
+      }
+    }
+    return treffer;
+  }
+
+  it("keine Datei schreibt Heredoc-Text mit aktiver Kommandosubstitution", () => {
+    const funde: string[] = [];
+    for (const datei of shellDateien) {
+      const quelle = fs.readFileSync(path.join(ROOT, datei), "utf8");
+      for (const { zeile, text } of unquotierteHeredocRuempfe(quelle)) {
+        // Ein escapetes \` bzw. \$( ist ungefährlich — die Shell fasst es nicht an.
+        const scharf = text.replace(/\\[`$]/g, "");
+        if (scharf.includes("`") || scharf.includes("$(")) {
+          funde.push(`${datei}:${zeile}: ${text.trim()}`);
+        }
+      }
+    }
+    expect(
+      funde,
+      "Kommandosubstitution im Heredoc-Rumpf: der Text wird ausgeführt statt geschrieben " +
+        "(so gelangten schon einmal Secrets in eine systemd-Unit). Backticks in Erklärtexten " +
+        "durch „…“ ersetzen oder das Heredoc quoten (<<'EOF'), falls keine Variablen nötig sind.",
+    ).toEqual([]);
+  });
+
+  it("die Unit-Vorlage enthält keinen Text, der die Umgebung ausgeben würde", () => {
+    // Zusicherung mit Namen statt nur mit Muster: genau dieser Aufruf war das Leck.
+    const vorlage = unitTemplate();
+    expect(vorlage).not.toMatch(/`[^`]*env[^`]*`/);
+    expect(vorlage).not.toContain("`");
+  });
+});
