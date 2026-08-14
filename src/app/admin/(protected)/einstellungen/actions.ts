@@ -4,7 +4,11 @@ import { redirect } from "next/navigation";
 import { requireAdmin } from "@/lib/auth";
 import { getBaseUrl } from "@/lib/base-url";
 import { renderEmail, sendEmail } from "@/lib/mailer";
-import { setSettings, type SettingKey } from "@/lib/settings";
+import {
+  clearAnthropicApiKey,
+  setSettings,
+  type SettingKey,
+} from "@/lib/settings";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -40,8 +44,29 @@ export async function saveSettingsAction(formData: FormData): Promise<void> {
   const deployToken = str("deploy_github_token");
   if (deployToken) values.deploy_github_token = deployToken;
 
+  // KI-Kill-Switch: das Kästchen bildet den Panel-Schalter ab. Bewusst
+  // explizit „on"/„off" statt „leer heißt aus" — setSettings überspringt keine
+  // leeren Strings, ein unbeschicktes Feld würde also „an" bedeuten und den
+  // Schalter unbrauchbar machen.
+  values.ai_enabled = formData.get("ai_enabled") !== null ? "on" : "off";
+
   setSettings(values);
   back(d.saved);
+}
+
+/**
+ * Entfernt den im Panel gespeicherten Anthropic-Schlüssel.
+ *
+ * Bewusst eine EIGENE Aktion statt eines Kästchens im Speichern-Formular: das
+ * Schlüsselfeld behält nach dem Speichern seinen getippten Inhalt (unkontrol-
+ * liertes Feld, Client-Navigation). Ein Kästchen hätte also mal gelöscht und
+ * mal nicht — je nachdem, ob noch Text im Feld stand. Diese Aktion sieht das
+ * Feld gar nicht erst an.
+ */
+export async function clearAiKeyAction(): Promise<void> {
+  await requireAdmin();
+  clearAnthropicApiKey();
+  back(d.aiKeyDeleted);
 }
 
 export async function sendTestEmailAction(): Promise<void> {

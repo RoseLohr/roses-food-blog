@@ -1,10 +1,19 @@
 import type { Metadata } from "next";
 import { requireAdmin } from "@/lib/auth";
-import { getAllSettings, SITE_BRAND_DEFAULT } from "@/lib/settings";
+import {
+  getAllSettings,
+  getAnthropicApiKeySource,
+  SITE_BRAND_DEFAULT,
+} from "@/lib/settings";
+import { aiFeatureState } from "@/lib/ai-guard";
 import { listImageChoices } from "@/lib/media";
 import { ImagePicker } from "@/components/admin/image-picker";
 import { t } from "@/i18n/de";
-import { saveSettingsAction, sendTestEmailAction } from "./actions";
+import {
+  clearAiKeyAction,
+  saveSettingsAction,
+  sendTestEmailAction,
+} from "./actions";
 
 const dict = t();
 const d = dict.admin.settings;
@@ -30,7 +39,10 @@ export default async function SettingsPage(props: {
   // Effektiver Anzeigewert: DB-Wert, sonst .env-Vorgabe (nur zur Anzeige).
   const eff = (dbKey: string, envKey: string) => s[dbKey] || process.env[envKey] || "";
   const passIsSet = Boolean(s.smtp_pass || process.env.SMTP_PASS);
-  const aiKeyIsSet = Boolean(s.anthropic_api_key || process.env.ANTHROPIC_API_KEY);
+  // Nicht nur „gesetzt/nicht gesetzt": WELCHE Quelle greift, entscheidet
+  // darüber, wo man einen abgelehnten Schlüssel korrigiert.
+  const aiKeySource = getAnthropicApiKeySource();
+  const aiState = aiFeatureState();
   const deployTokenIsSet = Boolean(
     s.deploy_github_token ||
       process.env.DEPLOY_GITHUB_TOKEN ||
@@ -165,11 +177,40 @@ export default async function SettingsPage(props: {
         <section className="bg-white p-5 shadow-sm">
           <h2 className="text-lg font-semibold">{d.aiTitle}</h2>
           <p className="mb-4 text-sm text-ink-soft">{d.aiIntro}</p>
+          {/* Zustand des Kill-Switches ZUERST: steht er auf „aus", nützt der
+              schönste Schlüssel nichts — und genau das war vorher unsichtbar. */}
+          <div className="mb-5 border border-ink-soft/20 p-4">
+            <label className="flex items-start gap-3 text-sm">
+              <input
+                type="checkbox"
+                name="ai_enabled"
+                defaultChecked={!aiState.vonPanelAus}
+                className="mt-1"
+              />
+              <span>
+                <span className="font-medium">{d.aiEnabled}</span>
+                <span className="mt-1 block text-xs text-ink-soft">
+                  {d.aiEnabledHint}
+                </span>
+              </span>
+            </label>
+            {aiState.vonPanelAus && (
+              <p className="mt-3 bg-amber-50 p-2 text-xs text-amber-900">
+                {d.aiHalted}
+              </p>
+            )}
+            {aiState.vonUmgebungAus && (
+              <p role="alert" className="mt-3 bg-red-50 p-2 text-xs text-red-800">
+                {d.aiEnvOff}
+              </p>
+            )}
+          </div>
+
           <div>
             <label className={labelCls} htmlFor="anthropic_api_key">
               {d.aiKey}{" "}
               <span className="font-normal text-ink-soft">
-                ({aiKeyIsSet ? d.passwordSet : d.passwordUnset})
+                ({d.aiKeySource[aiKeySource]})
               </span>
             </label>
             <input
@@ -181,6 +222,21 @@ export default async function SettingsPage(props: {
               className={inputCls}
             />
             <p className="mt-1 text-xs text-ink-soft">{d.aiKeyHint}</p>
+            {aiKeySource === "panel" && (
+              <div className="mt-3">
+                {/* Eigene Aktion am selben Formular (formAction) statt eines
+                    Kästchens: so kann ein noch im Feld stehender Text das
+                    Entfernen nicht aushebeln. */}
+                <button
+                  type="submit"
+                  formAction={clearAiKeyAction}
+                  className="border border-ink-soft/40 px-3 py-1.5 text-sm font-medium hover:bg-cream"
+                >
+                  {d.aiKeyDelete}
+                </button>
+                <p className="mt-1 text-xs text-ink-soft">{d.aiKeyDeleteHint}</p>
+              </div>
+            )}
           </div>
         </section>
 

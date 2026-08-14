@@ -553,9 +553,30 @@ export const de = {
       aiTitle: "KI-Assistent (Claude)",
       aiIntro:
         "API-Schlüssel für den KI-Rezeptassistenten. Wird nur serverseitig verwendet.",
+      aiEnabled: "KI-Assistent eingeschaltet",
+      aiEnabledHint:
+        "Schaltet den Rezeptassistenten scharf. Häufen sich Fehler (5 in 10 Minuten), schaltet er sich selbst ab — hier wieder einschalten.",
+      aiHalted:
+        "Der Assistent ist derzeit abgeschaltet. Häkchen setzen und speichern, um ihn wieder einzuschalten.",
+      aiEnvOff:
+        "Zusätzlich per Umgebungsvariable AI_DISABLED=1 abgeschaltet. Das lässt sich hier nicht aufheben — die Variable muss in der .env auf dem Server entfernt und neu deployt werden.",
       aiKey: "Anthropic API-Schlüssel",
       aiKeyHint:
         "Leer lassen, um den gespeicherten Schlüssel beizubehalten. Schlüssel unter console.anthropic.com erstellen.",
+      /**
+       * Nicht bloß „gesetzt": ein hier gespeicherter Schlüssel hat Vorrang vor
+       * der Umgebungsvariable und verdeckt sie. Ohne diese Angabe sucht man
+       * einen abgelehnten Schlüssel an der falschen Stelle.
+       */
+      aiKeySource: {
+        panel: "hier gespeichert — hat Vorrang vor ANTHROPIC_API_KEY",
+        env: "aus der Umgebungsvariable ANTHROPIC_API_KEY",
+        keiner: "nicht gesetzt",
+      },
+      aiKeyDelete: "Gespeicherten Schlüssel entfernen",
+      aiKeyDeleteHint:
+        "Löscht den hier gespeicherten Schlüssel sofort. Danach gilt wieder ANTHROPIC_API_KEY aus der Umgebung, falls dort einer steht.",
+      aiKeyDeleted: "Gespeicherter Anthropic-Schlüssel entfernt.",
       testTitle: "Testmail senden",
       testIntro: "Sendet eine Testmail an die eigene Admin-Adresse.",
       sendTest: "Testmail senden",
