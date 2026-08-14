@@ -9,6 +9,7 @@ import {
   setSettings,
   type SettingKey,
 } from "@/lib/settings";
+import { enableAiFeature, haltAiFeature } from "@/lib/ai-guard";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -44,14 +45,33 @@ export async function saveSettingsAction(formData: FormData): Promise<void> {
   const deployToken = str("deploy_github_token");
   if (deployToken) values.deploy_github_token = deployToken;
 
-  // KI-Kill-Switch: das Kästchen bildet den Panel-Schalter ab. Bewusst
-  // explizit „on"/„off" statt „leer heißt aus" — setSettings überspringt keine
-  // leeren Strings, ein unbeschicktes Feld würde also „an" bedeuten und den
-  // Schalter unbrauchbar machen.
-  values.ai_enabled = formData.get("ai_enabled") !== null ? "on" : "off";
-
+  // Der KI-Kill-Switch wird hier BEWUSST NICHT angefasst — siehe
+  // setAiEnabledAction/haltAiAction.
   setSettings(values);
   back(d.saved);
+}
+
+/**
+ * KI-Assistent einschalten bzw. abschalten — bewusst als eigene Aktionen,
+ * nicht als Feld im Speichern-Formular (Befund gpt-5.6-sol, PR #61).
+ *
+ * Ein Kästchen trägt den Zustand vom Zeitpunkt des Seitenaufbaus. Feuert der
+ * Auto-Halt, während die Seite offen liegt, würde das nächste Speichern
+ * irgendeiner unbeteiligten Einstellung den veralteten Wert „an" zurück-
+ * schreiben und den fail-closed Schalter ohne Absicht wieder öffnen. Als
+ * eigene Aktion gibt es diesen Lese-Schreib-Abstand nicht: es wird nur
+ * geschaltet, wenn genau das angeklickt wurde.
+ */
+export async function enableAiAction(): Promise<void> {
+  await requireAdmin();
+  enableAiFeature();
+  back(d.aiTurnedOn);
+}
+
+export async function haltAiAction(): Promise<void> {
+  await requireAdmin();
+  haltAiFeature("im Panel abgeschaltet");
+  back(d.aiTurnedOff);
 }
 
 /**

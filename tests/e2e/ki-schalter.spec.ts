@@ -24,14 +24,22 @@ async function alsAdmin(page: Page) {
   ]);
 }
 
-const schalter = (page: Page) =>
-  page.getByRole("checkbox", { name: /KI-Assistent eingeschaltet/ });
+const einschalten = (page: Page) =>
+  page.getByRole("button", { name: "KI-Assistent einschalten" });
+const abschalten = (page: Page) =>
+  page.getByRole("button", { name: "KI-Assistent abschalten" });
+const zustand = (page: Page) => page.getByText(/^Zustand: /);
 
 async function speichern(page: Page) {
   await page
     .locator("form", { has: page.locator("#anthropic_api_key") })
     .getByRole("button", { name: "Speichern" })
     .click();
+  await page.waitForURL(/meldung=/);
+}
+
+async function schalten(page: Page, knopf: ReturnType<typeof einschalten>) {
+  await knopf.click();
   await page.waitForURL(/meldung=/);
 }
 
@@ -44,20 +52,53 @@ test("Kill-Switch lässt sich im Panel aus- UND wieder einschalten", async ({ pa
   });
 
   // Ausgangslage: eingeschaltet, kein Hinweis.
-  await expect(schalter(page)).toBeChecked();
+  await expect(zustand(page)).toHaveText("Zustand: eingeschaltet");
   await expect(hinweis).toHaveCount(0);
 
   // Abschalten — so, wie es auch der Auto-Halt tut.
-  await schalter(page).uncheck();
-  await speichern(page);
-  await expect(schalter(page)).not.toBeChecked();
+  await schalten(page, abschalten(page));
+  await expect(zustand(page)).toHaveText("Zustand: abgeschaltet");
   await expect(hinweis).toBeVisible();
 
   // Und zurück: genau der Weg, den die Fehlermeldung verspricht.
-  await schalter(page).check();
-  await speichern(page);
-  await expect(schalter(page)).toBeChecked();
+  await schalten(page, einschalten(page));
+  await expect(zustand(page)).toHaveText("Zustand: eingeschaltet");
   await expect(hinweis).toHaveCount(0);
+});
+
+test("Speichern nimmt einen zwischenzeitlichen Auto-Halt NICHT zurück", async ({
+  browser,
+}) => {
+  // Befund gpt-5.6-sol (PR #61): trüge der Schalter als Feld im Speichern-
+  // Formular mit, schriebe das nächste Speichern irgendeiner unbeteiligten
+  // Einstellung den Zustand vom Seitenaufbau zurück — und öffnete den
+  // fail-closed Kill-Switch ohne Absicht. Hier nachgestellt mit zwei
+  // Sitzungen: A sieht „eingeschaltet", B schaltet ab, A speichert SMTP.
+  const a = await browser.newPage();
+  const b = await browser.newPage();
+  await alsAdmin(a);
+  await alsAdmin(b);
+
+  await a.goto("/admin/einstellungen");
+  await expect(zustand(a)).toHaveText("Zustand: eingeschaltet");
+
+  await b.goto("/admin/einstellungen");
+  await schalten(b, abschalten(b));
+  await expect(zustand(b)).toHaveText("Zustand: abgeschaltet");
+
+  // A weiß nichts davon und speichert eine völlig andere Einstellung.
+  await a.locator("#smtp_host").fill("smtp.beispiel.test");
+  await speichern(a);
+
+  // Der Kill-Switch muss zu bleiben — in BEIDEN Sitzungen.
+  await expect(zustand(a)).toHaveText("Zustand: abgeschaltet");
+  await b.reload();
+  await expect(zustand(b)).toHaveText("Zustand: abgeschaltet");
+
+  // Aufräumen, damit die folgenden Tests eine eingeschaltete KI vorfinden.
+  await schalten(b, einschalten(b));
+  await a.close();
+  await b.close();
 });
 
 test("Schlüsselquelle wird benannt und ein gespeicherter Schlüssel ist entfernbar", async ({

@@ -11,6 +11,8 @@ import { ImagePicker } from "@/components/admin/image-picker";
 import { t } from "@/i18n/de";
 import {
   clearAiKeyAction,
+  enableAiAction,
+  haltAiAction,
   saveSettingsAction,
   sendTestEmailAction,
 } from "./actions";
@@ -178,22 +180,18 @@ export default async function SettingsPage(props: {
           <h2 className="text-lg font-semibold">{d.aiTitle}</h2>
           <p className="mb-4 text-sm text-ink-soft">{d.aiIntro}</p>
           {/* Zustand des Kill-Switches ZUERST: steht er auf „aus", nützt der
-              schönste Schlüssel nichts — und genau das war vorher unsichtbar. */}
+              schönste Schlüssel nichts — und genau das war vorher unsichtbar.
+              Geschaltet wird über EIGENE Aktionen, nicht über ein Feld im
+              Speichern-Formular: ein Kästchen trüge den Zustand vom Seiten-
+              aufbau und könnte einen zwischenzeitlich ausgelösten Auto-Halt
+              beim nächsten Speichern unbeabsichtigt zurücknehmen. */}
           <div className="mb-5 border border-ink-soft/20 p-4">
-            <label className="flex items-start gap-3 text-sm">
-              <input
-                type="checkbox"
-                name="ai_enabled"
-                defaultChecked={!aiState.vonPanelAus}
-                className="mt-1"
-              />
-              <span>
-                <span className="font-medium">{d.aiEnabled}</span>
-                <span className="mt-1 block text-xs text-ink-soft">
-                  {d.aiEnabledHint}
-                </span>
-              </span>
-            </label>
+            <p className="text-sm">
+              <span className="font-medium">{d.aiStatus}</span>{" "}
+              <strong className={aiState.enabled ? "text-leaf" : "text-red-700"}>
+                {aiState.enabled ? d.aiStatusOn : d.aiStatusOff}
+              </strong>
+            </p>
             {aiState.vonPanelAus && (
               <p className="mt-3 bg-amber-50 p-2 text-xs text-amber-900">
                 {d.aiHalted}
@@ -204,6 +202,16 @@ export default async function SettingsPage(props: {
                 {d.aiEnvOff}
               </p>
             )}
+            <div className="mt-3">
+              <button
+                type="submit"
+                formAction={aiState.vonPanelAus ? enableAiAction : haltAiAction}
+                className="border border-ink-soft/40 px-3 py-1.5 text-sm font-medium hover:bg-cream"
+              >
+                {aiState.vonPanelAus ? d.aiTurnOn : d.aiTurnOff}
+              </button>
+              <p className="mt-1 text-xs text-ink-soft">{d.aiSwitchHint}</p>
+            </div>
           </div>
 
           <div>

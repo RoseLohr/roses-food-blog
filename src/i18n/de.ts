@@ -553,11 +553,22 @@ export const de = {
       aiTitle: "KI-Assistent (Claude)",
       aiIntro:
         "API-Schlüssel für den KI-Rezeptassistenten. Wird nur serverseitig verwendet.",
-      aiEnabled: "KI-Assistent eingeschaltet",
-      aiEnabledHint:
-        "Schaltet den Rezeptassistenten scharf. Häufen sich Fehler (5 in 10 Minuten), schaltet er sich selbst ab — hier wieder einschalten.",
+      aiStatus: "Zustand:",
+      aiStatusOn: "eingeschaltet",
+      aiStatusOff: "abgeschaltet",
+      aiTurnOn: "KI-Assistent einschalten",
+      aiTurnOff: "KI-Assistent abschalten",
+      /**
+       * „Sofort" ist keine Floskel: der Schalter läuft über eine eigene
+       * Aktion, nicht über „Speichern" — genau damit ein zwischenzeitlicher
+       * Auto-Halt nicht versehentlich zurückgenommen wird.
+       */
+      aiSwitchHint:
+        "Wirkt sofort, unabhängig von „Speichern“. Häufen sich Fehler (5 in 10 Minuten), schaltet sich der Assistent selbst ab.",
+      aiTurnedOn: "KI-Assistent eingeschaltet.",
+      aiTurnedOff: "KI-Assistent abgeschaltet.",
       aiHalted:
-        "Der Assistent ist derzeit abgeschaltet. Häkchen setzen und speichern, um ihn wieder einzuschalten.",
+        "Der Assistent ist derzeit abgeschaltet — entweder von Hand oder durch den Auto-Halt nach mehreren Fehlern.",
       aiEnvOff:
         "Zusätzlich per Umgebungsvariable AI_DISABLED=1 abgeschaltet. Das lässt sich hier nicht aufheben — die Variable muss in der .env auf dem Server entfernt und neu deployt werden.",
       aiKey: "Anthropic API-Schlüssel",
