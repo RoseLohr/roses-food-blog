@@ -553,9 +553,41 @@ export const de = {
       aiTitle: "KI-Assistent (Claude)",
       aiIntro:
         "API-Schlüssel für den KI-Rezeptassistenten. Wird nur serverseitig verwendet.",
+      aiStatus: "Zustand:",
+      aiStatusOn: "eingeschaltet",
+      aiStatusOff: "abgeschaltet",
+      aiTurnOn: "KI-Assistent einschalten",
+      aiTurnOff: "KI-Assistent abschalten",
+      /**
+       * „Sofort" ist keine Floskel: der Schalter läuft über eine eigene
+       * Aktion, nicht über „Speichern" — genau damit ein zwischenzeitlicher
+       * Auto-Halt nicht versehentlich zurückgenommen wird.
+       */
+      aiSwitchHint:
+        "Wirkt sofort, unabhängig von „Speichern“. Häufen sich Fehler (5 in 10 Minuten), schaltet sich der Assistent selbst ab.",
+      aiTurnedOn: "KI-Assistent eingeschaltet.",
+      aiTurnedOff: "KI-Assistent abgeschaltet.",
+      aiHalted:
+        "Der Assistent ist derzeit abgeschaltet — entweder von Hand oder durch den Auto-Halt nach mehreren Fehlern.",
+      aiEnvOff:
+        "Zusätzlich per Umgebungsvariable AI_DISABLED=1 abgeschaltet. Das lässt sich hier nicht aufheben — die Variable muss in der .env auf dem Server entfernt und neu deployt werden.",
       aiKey: "Anthropic API-Schlüssel",
       aiKeyHint:
         "Leer lassen, um den gespeicherten Schlüssel beizubehalten. Schlüssel unter console.anthropic.com erstellen.",
+      /**
+       * Nicht bloß „gesetzt": ein hier gespeicherter Schlüssel hat Vorrang vor
+       * der Umgebungsvariable und verdeckt sie. Ohne diese Angabe sucht man
+       * einen abgelehnten Schlüssel an der falschen Stelle.
+       */
+      aiKeySource: {
+        panel: "hier gespeichert — hat Vorrang vor ANTHROPIC_API_KEY",
+        env: "aus der Umgebungsvariable ANTHROPIC_API_KEY",
+        keiner: "nicht gesetzt",
+      },
+      aiKeyDelete: "Gespeicherten Schlüssel entfernen",
+      aiKeyDeleteHint:
+        "Löscht den hier gespeicherten Schlüssel sofort. Danach gilt wieder ANTHROPIC_API_KEY aus der Umgebung, falls dort einer steht.",
+      aiKeyDeleted: "Gespeicherter Anthropic-Schlüssel entfernt.",
       testTitle: "Testmail senden",
       testIntro: "Sendet eine Testmail an die eigene Admin-Adresse.",
       sendTest: "Testmail senden",

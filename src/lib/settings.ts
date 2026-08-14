@@ -128,6 +128,34 @@ export function getAnthropicApiKey(): string {
   return getSetting("anthropic_api_key") || process.env.ANTHROPIC_API_KEY || "";
 }
 
+/** Woher der wirksame Schlüssel stammt — für die Anzeige im Admin. */
+export type ApiKeySource = "panel" | "env" | "keiner";
+
+/**
+ * Welche Quelle den Schlüssel tatsächlich liefert.
+ *
+ * Die Unterscheidung ist kein Detail: ein im Panel gespeicherter Schlüssel
+ * VERDECKT einen in der Umgebung gesetzten (DB hat Vorrang). Wer nur „gesetzt"
+ * sieht, sucht bei einem abgelehnten Schlüssel an der falschen Stelle.
+ * Dieselbe Reihenfolge wie getAnthropicApiKey — bewusst hier gespiegelt und
+ * per Test aneinander gebunden.
+ */
+export function getAnthropicApiKeySource(): ApiKeySource {
+  if (getSetting("anthropic_api_key")) return "panel";
+  if (process.env.ANTHROPIC_API_KEY) return "env";
+  return "keiner";
+}
+
+/**
+ * Entfernt den im Panel gespeicherten Schlüssel. Ohne das gäbe es keinen Weg
+ * zurück: ein einmal gespeicherter (womöglich falscher) Wert bliebe für immer
+ * vor der Umgebungsvariable stehen, weil das Formular leere Felder bewusst
+ * überspringt, statt zu löschen.
+ */
+export function clearAnthropicApiKey(): void {
+  db.delete(schema.setting).where(eq(schema.setting.key, "anthropic_api_key")).run();
+}
+
 /**
  * Ob die Newsletter-Anmeldebox(en) im Frontend angezeigt werden. Standard:
  * sichtbar. Nur der explizite Wert "0" (im Admin ausgeschaltet) blendet sie aus.

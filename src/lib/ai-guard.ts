@@ -21,6 +21,35 @@ export function aiFeatureEnabled(): boolean {
   return getSetting("ai_enabled") !== "off";
 }
 
+/**
+ * Aufgeschlüsselter Zustand für die Anzeige im Admin — welcher der beiden
+ * Schalter greift, ist von außen sonst nicht erkennbar.
+ *
+ * Das ist der Grund für diese Funktion: der Auto-Halt kippt `ai_enabled` auf
+ * „off", und die Fehlermeldung verweist auf die Einstellungen. Ohne sichtbaren
+ * Zustand UND Schalter dort war das eine Sackgasse — das Feature ließ sich
+ * ohne Datenbankeingriff nicht wieder einschalten.
+ */
+export function aiFeatureState(): {
+  /** Effektiv nutzbar (beide Schalter offen). */
+  enabled: boolean;
+  /** Umgebung erzwingt „aus" (AI_DISABLED=1) — im Panel nicht änderbar. */
+  vonUmgebungAus: boolean;
+  /** Das im Panel schaltbare Kennzeichen steht auf „aus". */
+  vonPanelAus: boolean;
+} {
+  const vonUmgebungAus = process.env.AI_DISABLED === "1";
+  const vonPanelAus = getSetting("ai_enabled") === "off";
+  return { enabled: !vonUmgebungAus && !vonPanelAus, vonUmgebungAus, vonPanelAus };
+}
+
+/** Kill-Switch wieder öffnen (Gegenstück zu haltAiFeature). */
+export function enableAiFeature(): void {
+  setSettings({ ai_enabled: "on" });
+  logJson("info", "ai_enabled", {});
+  recordOpsEvent({ kind: "request", route: "ai", detail: "KI-Feature wieder eingeschaltet" });
+}
+
 /** Kill-Switch bewusst auslösen (Admin oder Auto-Halt). Idempotent. */
 export function haltAiFeature(reason: string): void {
   try {
