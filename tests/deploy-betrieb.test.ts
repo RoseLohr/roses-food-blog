@@ -389,32 +389,88 @@ describe("Heredocs: kein ungewollter Shell-Aufruf im geschriebenen Text", () => 
     .split("\n")
     .filter(Boolean);
 
-  /** Rümpfe aller Heredocs, bei denen die Shell den Text noch anfasst. */
+  /**
+   * Eröffnende Heredocs einer Zeile, in der Reihenfolge, in der die Shell ihre
+   * Rümpfe liest.
+   *
+   * Erlaubt ist genau das, was bash erlaubt (alles hier empirisch mit bash 5
+   * nachgestellt, 2026-08-15):
+   *  - `<<EOF`, `<< EOF`, `<<-EOF`, `<<- EOF` — Leerraum hinter dem Operator
+   *    ist zulässig und substituiert genauso. Eine Fassung ohne `[ \t]*` sah
+   *    diese Heredocs nicht (Befund gpt-5.6-sol, PR #63).
+   *  - `<<'EOF'`, `<<"EOF"`, `<<\EOF` sind gequotet — die Shell fasst den Text
+   *    nicht an, also nichts zu prüfen. Der Nachschau-Ausschluss deckt auch
+   *    Misch­formen wie `<<E'O'F` ab (bash quotet dann das ganze Wort).
+   *  - `<<<` ist ein Here-String, kein Heredoc: der Blick zurück/voraus auf `<`
+   *    hält ihn heraus.
+   *  - `$((1 << N))` ist ein Links-Shift. Ihn trennt vom Heredoc nur, was
+   *    folgt: die Arithmetik schließt mit `))`. Ohne diesen Ausschluss liefe
+   *    der Scanner dort in ein nie endendes Pseudo-Heredoc.
+   */
+  function heredocOeffner(zeile: string) {
+    const muster =
+      /(?<!<)<<(?!<)(-?)[ \t]*([A-Za-z_][A-Za-z0-9_]*)(?![A-Za-z0-9_'"\\])/g;
+    const oeffner: Array<{ delimiter: string; tabsErlaubt: boolean }> = [];
+    for (const m of zeile.matchAll(muster)) {
+      const dahinter = zeile.slice(m.index + m[0].length);
+      if (/^[ \t]*\)\)/.test(dahinter)) continue; // $(( 1 << N )) — Arithmetik
+      oeffner.push({ delimiter: m[2], tabsErlaubt: m[1] === "-" });
+    }
+    return oeffner;
+  }
+
+  /**
+   * Endet die Zeile das Heredoc? bash vergleicht das Wort EXAKT: führende Tabs
+   * fallen nur bei `<<-` weg, Leerzeichen nie, nachlaufender Leerraum nie.
+   * `.trim()` war deshalb zu großzügig — es hielt `  EOF` für das Ende, die
+   * Shell nicht, und alles danach blieb ungescannt (Befund gpt-5.6-sol).
+   */
+  function istTerminator(zeile: string, delimiter: string, tabsErlaubt: boolean) {
+    return (tabsErlaubt ? zeile.replace(/^\t+/, "") : zeile) === delimiter;
+  }
+
+  /**
+   * Rümpfe aller unquotierten Heredocs — plus die, denen der Terminator fehlt.
+   *
+   * Fehlt er, liest bash bis Dateiende und substituiert den ganzen Rest; `bash
+   * -n` warnt dabei nur und endet mit 0, die Syntaxprüfung der CI sieht es also
+   * nicht. Ein `continue` an dieser Stelle hätte genau diesen Fall — den
+   * schlimmsten — ungeprüft gelassen (Befund gpt-5.6-sol). Also wird bis
+   * Dateiende gescannt, so wie die Shell es täte.
+   */
   function unquotierteHeredocRuempfe(quelle: string) {
     const zeilen = quelle.split("\n");
     const treffer: Array<{ zeile: number; text: string }> = [];
-    for (let i = 0; i < zeilen.length; i++) {
-      // <<EOF / <<-EOF sind unquotiert; <<'EOF' und <<"EOF" sind es nicht.
-      // Kein $-Anker: `cat <<EOF > datei` und `cat <<EOF | cmd` sind gängig
-      // und substituieren genauso. \b statt \s*$ fängt beide; der Links-Shift
-      // `$((1 << N))` wird nicht getroffen, weil dort kein Wort auf << folgt.
-      const m = /<<-?([A-Za-z_][A-Za-z0-9_]*)\b/.exec(zeilen[i]);
-      if (!m) continue;
-      // Rumpf nur zählen, wenn der Terminator wirklich kommt. Sonst liefe die
-      // Schleife bis Dateiende und meldete gewöhnlichen Code als Heredoc.
-      let ende = -1;
-      for (let j = i + 1; j < zeilen.length; j++) {
-        if (zeilen[j].trim() === m[1]) {
-          ende = j;
+    const ohneTerminator: Array<{ zeile: number; delimiter: string }> = [];
+    let i = 0;
+    while (i < zeilen.length) {
+      const oeffner = heredocOeffner(zeilen[i]);
+      if (oeffner.length === 0) {
+        i++;
+        continue;
+      }
+      // Mehrere Heredocs in einer Zeile (`cat <<A <<B`) liest die Shell
+      // nacheinander — der Rumpf des zweiten folgt auf den des ersten.
+      let start = i + 1;
+      for (const { delimiter, tabsErlaubt } of oeffner) {
+        let ende = zeilen.length;
+        for (let j = start; j < zeilen.length; j++) {
+          if (istTerminator(zeilen[j], delimiter, tabsErlaubt)) {
+            ende = j;
+            break;
+          }
+        }
+        for (let j = start; j < ende; j++) treffer.push({ zeile: j + 1, text: zeilen[j] });
+        if (ende === zeilen.length) {
+          ohneTerminator.push({ zeile: i + 1, delimiter });
+          start = zeilen.length;
           break;
         }
+        start = ende + 1;
       }
-      if (ende === -1) continue;
-      for (let j = i + 1; j < ende; j++) {
-        treffer.push({ zeile: j + 1, text: zeilen[j] });
-      }
+      i = start;
     }
-    return treffer;
+    return { treffer, ohneTerminator };
   }
 
   it("die Dateiliste kommt aus der Entdeckung und ist nicht leer", () => {
@@ -425,11 +481,81 @@ describe("Heredocs: kein ungewollter Shell-Aufruf im geschriebenen Text", () => 
     expect(shellDateien).toContain("bootstrap.sh");
   });
 
+  /**
+   * Gegenprobe für den Scanner selbst — ohne sie prüft dieser Test nur, dass er
+   * NICHTS findet, und das täte ein kaputter Scanner ebenso zuverlässig.
+   *
+   * Jeder Fall ist mit bash 5 nachgestellt (2026-08-15): das Erwartete ist,
+   * was die Shell wirklich tut, nicht was plausibel aussieht. Die drei ersten
+   * Fälle sind genau die Lücken, durch die eine frühere Fassung durchsah.
+   */
+  const SCANNER_FAELLE: Array<{ name: string; quelle: string[]; erwartet: string[] }> = [
+    {
+      name: "Leerraum hinter << und <<-",
+      quelle: ["cat << EOF > a", "A: `id`", "EOF", "cat <<- ZWEI > b", "\tB: $(id)", "\tZWEI"],
+      erwartet: ["A: `id`", "\tB: $(id)"],
+    },
+    {
+      name: "fehlender Terminator — bash liest bis Dateiende",
+      quelle: ["cat <<EOF > a", "A: `id`", "immer noch Rumpf: $(id)"],
+      erwartet: ["A: `id`", "immer noch Rumpf: $(id)"],
+    },
+    {
+      name: "leerzeichen-eingerücktes Pseudo-Ende beendet nichts",
+      quelle: ["cat <<EOF > a", "  EOF", "danach: `id`", "EOF"],
+      erwartet: ["  EOF", "danach: `id`"],
+    },
+    {
+      name: "nachlaufender Leerraum am Terminator beendet nichts",
+      quelle: ["cat <<EOF > a", "EOF ", "danach: `id`", "EOF"],
+      erwartet: ["EOF ", "danach: `id`"],
+    },
+    {
+      name: "<<- endet nur an Tabs, nicht an Leerzeichen",
+      quelle: ["cat <<-EOF > a", "  EOF", "danach: `id`", "\tEOF"],
+      erwartet: ["  EOF", "danach: `id`"],
+    },
+    {
+      name: "zwei Heredocs in einer Zeile — beide Rümpfe zählen",
+      quelle: ["cat <<A <<B", "erster: `id`", "A", "zweiter: $(id)", "B"],
+      erwartet: ["erster: `id`", "zweiter: $(id)"],
+    },
+    {
+      name: "gequotetes Heredoc: die Shell fasst den Text nicht an",
+      quelle: ["cat <<'EOF' > a", "harmlos: `id`", "EOF", 'cat <<"Z" > b', "harmlos: $(id)", "Z"],
+      erwartet: [],
+    },
+    {
+      name: "Here-String und Links-Shift sind keine Heredocs",
+      quelle: ["cat <<<EOF", "N=3", "echo $((1 << N))", "echo $(( 1 <<N ))", "echo fertig"],
+      erwartet: [],
+    },
+  ];
+
+  it.each(SCANNER_FAELLE)("Scanner: $name", ({ quelle, erwartet }) => {
+    const { treffer } = unquotierteHeredocRuempfe(quelle.join("\n"));
+    expect(treffer.map((t) => t.text)).toEqual(erwartet);
+  });
+
+  it("kein Shell-Skript lässt ein Heredoc unbeendet", () => {
+    // Eigener Befund, nicht nur Nebenwirkung des Scans: `bash -n` warnt hier
+    // bloß und endet mit 0 — der Syntax-Schritt der CI würde es durchwinken,
+    // während die Shell den gesamten Rest der Datei substituiert.
+    const funde: string[] = [];
+    for (const datei of shellDateien) {
+      const quelle = fs.readFileSync(path.join(ROOT, datei), "utf8");
+      for (const { zeile, delimiter } of unquotierteHeredocRuempfe(quelle).ohneTerminator) {
+        funde.push(`${datei}:${zeile}: Heredoc <<${delimiter} ohne Zeile „${delimiter}“`);
+      }
+    }
+    expect(funde).toEqual([]);
+  });
+
   it("keine Datei schreibt Heredoc-Text mit aktiver Kommandosubstitution", () => {
     const funde: string[] = [];
     for (const datei of shellDateien) {
       const quelle = fs.readFileSync(path.join(ROOT, datei), "utf8");
-      for (const { zeile, text } of unquotierteHeredocRuempfe(quelle)) {
+      for (const { zeile, text } of unquotierteHeredocRuempfe(quelle).treffer) {
         // Ein escapetes \` bzw. \$( ist ungefährlich — die Shell fasst es nicht an.
         const scharf = text.replace(/\\[`$]/g, "");
         if (scharf.includes("`") || scharf.includes("$(")) {
