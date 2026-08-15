@@ -35,11 +35,16 @@ export function TravelToc({
   hideLabel,
   showLabel,
   entries,
+  className = "",
 }: {
   title: string;
   hideLabel: string;
   showLabel: string;
   entries: TocEntry[];
+  /** Positionierung und Breite kommen vom Aufrufer — nur der weiß, ob das
+   *  Verzeichnis als umflossener Block oder gestapelt steht. Farbe, Rahmen
+   *  und Innenabstand bleiben hier. */
+  className?: string;
 }) {
   const [open, setOpen] = useState(true);
   if (entries.length === 0) return null;
@@ -52,7 +57,7 @@ export function TravelToc({
     // mit. Der Text bleibt auf Weiß-über-Tint bei vollem Kontrast.
     <nav
       aria-label={title}
-      className="my-6 rounded-sm border border-leaf/15 bg-leaf/[0.06] p-4 md:my-0"
+      className={`rounded-sm border border-leaf/15 bg-leaf/[0.06] p-4 ${className}`}
     >
       {/* flex-wrap + nowrap am Knopf: In der schmalen Seitenspalte passt
           „[ Verbergen ]" nicht neben den Titel. Ohne diese beiden Klassen

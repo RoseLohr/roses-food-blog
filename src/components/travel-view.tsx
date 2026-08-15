@@ -15,76 +15,57 @@ import { ResponsiveImg } from "./responsive-img";
 import { GalleryLightbox } from "./gallery-lightbox";
 import { HeroActions } from "./hero-actions";
 import { TravelToc, type TocEntry } from "./travel-toc";
-import {
-  IconCalendar,
-  IconCity,
-  IconCountry,
-  IconPinCutlery,
-  IconRegion,
-  IconTag,
-} from "./icons";
+import { IconCalendar, IconCity, IconCountry, IconRegion, IconTag } from "./icons";
+import { IconBesteck } from "./icon-besteck";
 
 const dict = t();
 
 /**
- * Reale Anzeigebreiten der Bilder in der Inhaltsspalte — AUSGERECHNET, nicht
- * geschätzt. Ein zu großes `sizes` lässt den Browser eine zu schwere Variante
- * laden, ein zu kleines liefert ein unscharfes Bild; beides ist ein Fehler.
+ * Reale Anzeigebreiten der Bilder — AUSGERECHNET, nicht geschätzt. Ein zu
+ * großes `sizes` lässt den Browser eine zu schwere Variante laden, ein zu
+ * kleines liefert ein unscharfes Bild; beides ist ein Fehler.
  *
- * Die Kette bis zur Inhaltsspalte (C):
- *   Layout `px-4`             → 2rem  auf jeder Breite
- *   Artikel `p-6 md:p-10`     → 3rem  bis 767 px, darüber 5rem
- *   Artikel `max-w-4xl`       → deckelt bei 896 px, also ab 928 px Viewport
- *   Inhaltsverzeichnis ab md  → 200 px Spalte + `gap-8` (32 px) = 232 px
- *                               = 14.5rem, ABER nur wenn es eines gibt
+ * Die Kette bis zum Inhaltsbereich:
+ *   Layout `px-4`          → 2rem  auf jeder Breite
+ *   Artikel `p-6 md:p-10`  → 3rem  bis 767 px, darüber 5rem
+ *   Artikel `max-w-4xl`    → deckelt bei 896 px, also ab 928 px Viewport
  *
- *   ohne Verzeichnis:  <768: 100vw−5rem | <929: 100vw−7rem    | ≥929: 816px
- *   mit  Verzeichnis:  <768: 100vw−5rem | <929: 100vw−21.5rem | ≥929: 584px
+ *   <768: 100vw − 5rem | <929: 100vw − 7rem | ≥929: 816 px
  *
- * Deshalb gibt es die Maße zweimal: ob ein Verzeichnis steht, weiß erst
- * `TravelView` (es hängt an Überschriften und Restaurants), und ein `sizes`
- * kann das nicht selbst abfragen. Der Wert wird von dort durchgereicht.
+ * Das Inhaltsverzeichnis kommt hier NICHT mehr vor, und das ist der Kern des
+ * Umbaus: Es steht als umflossener Block (float) im Text, nicht mehr als
+ * Rasterspalte. Umflossen werden nur die TEXTZEILEN; alle bildtragenden
+ * Blöcke tragen `clear-left` und beginnen unter dem Verzeichnis. Ein Bild ist
+ * damit in JEDER Fensterbreite genau so breit wie der Inhaltsbereich —
+ * an elf Breiten nachgemessen. Vorher brauchte es dafür zwei Maßtabellen,
+ * die durch alle Komponenten gereicht wurden.
  *
  * Nicht eingerechnet sind die 1-px-Rahmen der Restaurant-Karte (2 px je
  * Bild). Das deklariert 2 px MEHR als nötig — auf der Variantenleiter
  * (160/320/480/640/…) ändert das nie die Stufe, und zu großzügig ist die
  * sichere Richtung: die Gegenrichtung ergäbe ein unscharfes Bild.
  */
-interface Bildmasse {
-  /** Bild über die volle Breite der Inhaltsspalte (Block-Bild, Restaurant-Band). */
-  inhalt: string;
-  /** Bilder im 2er-Raster der Galerie (`sm:grid-cols-2`, `gap-4` = 16 px). */
-  galerie: string;
-  /** Bühne eines Gerichts: volle Breite INNERHALB der Restaurant-Karte
-   *  (deren `p-4 md:p-6` zieht mobil 2rem, ab md 3rem ab). */
-  buehne: string;
-  /** Streifen darunter: Drittel der Bühne (`grid-cols-3`, `gap-2` = 8 px, also
-   *  16 px auf drei Spalten). Der abgezogene rem-Wert ist bewusst leicht zu
-   *  klein gerundet — lieber ein Pixel zu großzügig als ein unscharfes Bild. */
-  streifen: string;
-}
-
-const MASSE_OHNE_TOC: Bildmasse = {
+const MASSE = {
+  /** Bild über die volle Breite des Inhalts (Block-Bild, Restaurant-Band). */
   inhalt:
     "(max-width: 767px) calc(100vw - 5rem), (max-width: 928px) calc(100vw - 7rem), 816px",
+  /** Bilder im 2er-Raster der Galerie (`sm:grid-cols-2`, `gap-4` = 16 px). */
   galerie:
     "(max-width: 639px) calc(100vw - 5rem), (max-width: 767px) calc(50vw - 3rem), (max-width: 928px) calc(50vw - 4rem), 400px",
+  /** Bühne eines Gerichts: volle Breite innerhalb der Restaurant-Karte
+   *  (`p-4 md:p-6` zieht mobil 2rem ab, ab md 3rem) und abzüglich der
+   *  Stationsschiene (36 px Punkt + 16 px Abstand = 52 px = 3.25rem). */
   buehne:
-    "(max-width: 767px) calc(100vw - 7rem), (max-width: 928px) calc(100vw - 10rem), 768px",
+    "(max-width: 767px) calc(100vw - 10.25rem), (max-width: 928px) calc(100vw - 13.25rem), 714px",
+  /** Streifen darunter. Die Spaltenzahl steht nicht fest, sie ergibt sich aus
+   *  `auto-fit`/`minmax(6.25rem, 1fr)`: leere Spuren fallen weg, die übrigen
+   *  teilen sich den Platz. Deklariert wird der GRÖSSTE Fall (zwei Kacheln),
+   *  weil ein zu kleines `sizes` unscharf würde, ein zu großes nur Bytes
+   *  kostet — und die Leiter zwischen 353 und 233 px ohnehin dieselbe
+   *  Stufe (w480/w320) trifft. */
   streifen:
-    "(max-width: 767px) calc(33.4vw - 2.6rem), (max-width: 928px) calc(33.4vw - 3.6rem), 251px",
-};
-
-const MASSE_MIT_TOC: Bildmasse = {
-  inhalt:
-    "(max-width: 767px) calc(100vw - 5rem), (max-width: 928px) calc(100vw - 21.5rem), 584px",
-  galerie:
-    "(max-width: 639px) calc(100vw - 5rem), (max-width: 767px) calc(50vw - 3rem), (max-width: 928px) calc(50vw - 11.25rem), 284px",
-  buehne:
-    "(max-width: 767px) calc(100vw - 7rem), (max-width: 928px) calc(100vw - 24.5rem), 536px",
-  streifen:
-    "(max-width: 767px) calc(33.4vw - 2.6rem), (max-width: 928px) calc(33.4vw - 8.4rem), 174px",
-};
+    "(max-width: 767px) calc(50vw - 5.375rem), (max-width: 928px) calc(50vw - 6.875rem), 353px",
+} as const;
 
 /** Google-Maps-Ziel aus Koordinaten — gleiche URL wie die Weltkarten-Pins. */
 function mapsUrl(lat: number, lng: number): string {
@@ -232,96 +213,137 @@ function SimilarRecipeTiles({ recipes }: { recipes: RecipeCardData[] }) {
 }
 
 /**
- * Ein Gericht als „Bühne und Streifen" (Entwurf, Vorschlag C): Kopf mit
- * Kategorie und Name, darunter das erste Foto groß als Bühne und die übrigen
- * klein als Streifen, dann der Text über die volle Breite.
+ * Ein Gericht als STATION: links ein nummerierter Punkt an einer dünnen Linie,
+ * rechts der Inhalt (Kopf, Fotos, Text). Innerhalb der Fotos gilt „Bühne und
+ * Streifen": das erste Foto groß, die übrigen klein darunter.
  *
- * Warum so: Das beste Foto bekommt den Auftritt, die übrigen bleiben Beleg —
- * genau die Rangfolge, die ein Reisebericht ohnehin hat. Und weil der Text
- * UNTER den Bildern über die ganze Breite läuft, hält die Anordnung jede
- * Textlänge aus: bei zwei Zeilen entsteht kein Loch neben einer Bilderspalte
- * (das war die Schwäche der Alternative „Text links, Bilder rechts"), bei
- * einem langen Absatz bricht nichts auseinander.
+ * Der Punkt ist nicht neu erfunden — die Zubereitungsschritte im Rezept
+ * (`recipe-view.tsx`) tragen längst genau diesen Kreis: 36 px, `bg-leaf-soft`,
+ * weiße Ziffer, 16 px Abstand zum Text. Die Reise übernimmt ihn und hängt nur
+ * die Linie dazwischen. Ein Haus, eine Sprache.
  *
- * Die Trennlinie oben grenzt aufeinanderfolgende Gerichte ab; beim ersten
- * Eintrag entfällt sie, sonst stünde direkt unter dem Zwischentitel
- * „Gerichte / Getränke" eine zweite Linie.
+ * FOTOS, Regel C (abgestimmt): Bei GENAU ZWEI Fotos gibt es keine Bühne,
+ * sondern zwei gleich große nebeneinander — bei dieser Zahl existiert die
+ * Rangfolge nicht, die eine Bühne behaupten würde. Ab drei Fotos trägt die
+ * Bühne, und der Streifen bekommt so viele Spalten, wie Fotos übrig sind:
+ * `auto-fit` mit `minmax(6.25rem, 1fr)` legt so viele Spuren an, wie bei
+ * mindestens 100 px hineinpassen, und lässt leere Spuren wegfallen — die
+ * vorhandenen teilen sich dann den Platz. Deshalb bleibt nie ein Drittel der
+ * Zeile leer, und auf dem Handy ergeben sich von selbst höchstens zwei je Zeile.
  */
 function DishItem({
   dish,
   similar,
-  masse,
+  nummer,
+  letzte,
 }: {
   dish: FullDish;
   similar: RecipeCardData[];
-  masse: Bildmasse;
+  /** Fortlaufende Nummer innerhalb des Restaurants (1-basiert). */
+  nummer: number;
+  /** Letzte Station: dann endet die Schiene, es folgt nichts mehr. */
+  letzte: boolean;
 }) {
+  const fotos = dish.images;
+  // Genau zwei Fotos → gleichrangig nebeneinander, sonst Bühne + Streifen.
+  const paarweise = fotos.length === 2;
+
   return (
     <li
       id={`dish-${dish.id}`}
-      className="flex flex-col gap-4 border-t border-ink/10 pt-6 first:border-t-0 first:pt-0"
+      className="grid grid-cols-[2.25rem_minmax(0,1fr)] gap-4"
     >
-      <div>
-        {(dish.categories.length > 0 || dish.dietTypes.length > 0) && (
-          // Kategorie · Ernährungsform als Eyebrow — identisch zu den
-          // Rezept-Kacheln (Leaf-Grün, gesperrt, „·"-getrennt).
-          <p className="mb-1 text-xs font-semibold uppercase tracking-[0.14em] text-leaf">
-            {[...dish.categories, ...dish.dietTypes]
-              .map((x) => x.name)
-              .join(" · ")}
-          </p>
-        )}
-        {/* Gleiche Größe wie der Titel der Rezept-Kacheln darunter (text-lg).
-            h5: unter dem „Gerichte / Getränke"-Zwischentitel (h4). */}
-        <h5 className="font-display text-lg font-bold">{dish.name}</h5>
+      {/* Schiene: Punkt, darunter die Linie bis zur nächsten Station. Beim
+          letzten Eintrag entfällt sie — bewusst über ein Prop und nicht über
+          die `last:`-Variante: die zielt auf das letzte KIND, und dieses div
+          ist immer das erste von zweien, nie das letzte. */}
+      <div
+        className={`relative ${
+          letzte
+            ? ""
+            : "before:absolute before:left-[1.09rem] before:top-11 before:-bottom-8 before:w-px before:bg-leaf/30"
+        }`}
+      >
+        <span
+          aria-hidden
+          className="relative z-10 flex h-9 w-9 items-center justify-center rounded-full bg-leaf-soft text-base font-semibold tabular-nums text-white"
+        >
+          {nummer}
+        </span>
       </div>
 
-      {dish.images.length > 0 && (
-        // Eigener Wrapper, damit Bühne und Streifen EIN Element im
-        // `flex-col gap-4` darüber sind — sonst schöbe sich der Spalten-
-        // Abstand zwischen beide und der Streifen verlöre den Bezug.
+      <div className="flex min-w-0 flex-col gap-4">
         <div>
-          {/* Alle ausgewählten Fotos als EINE klickbare Galerie: ein Klick
-              öffnet das Bild groß im Pop-up, bei mehreren Fotos mit
-              Vor/Zurück — die Bühne zählt dabei mit („1 von 4"), sie ist
-              kein Sonderfall. */}
-          <GalleryLightbox
-            images={dish.images}
-            label={dish.name}
-            lead={{
-              className: "aspect-[16/9] w-full object-cover",
-              sizes: masse.buehne,
-            }}
-            thumbSizes={masse.streifen}
-            thumbClassName="aspect-square w-full object-cover"
-            groupClassName="mt-2 grid grid-cols-3 gap-2"
-          />
-        </div>
-      )}
-
-      {(dish.description || dish.ingredients.length > 0) && (
-        <div>
-          {dish.description && (
-            <div
-              className="prose-content text-sm text-ink-soft"
-              dangerouslySetInnerHTML={{
-                __html: renderMarkdown(dish.description),
-              }}
-            />
-          )}
-          {dish.ingredients.length > 0 && (
-            <p className="mt-2 flex items-center gap-1.5 text-xs text-ink-soft">
-              <IconTag className="h-3.5 w-3.5" />
-              <strong className="font-semibold text-ink">
-                {dict.travelList.dishIngredients}:
-              </strong>{" "}
-              {dish.ingredients.map((i) => i.name).join(", ")}
+          {(dish.categories.length > 0 || dish.dietTypes.length > 0) && (
+            // Kategorie · Ernährungsform als Eyebrow — identisch zu den
+            // Rezept-Kacheln (Leaf-Grün, gesperrt, „·"-getrennt).
+            <p className="mb-1 text-xs font-semibold uppercase tracking-[0.14em] text-leaf">
+              {[...dish.categories, ...dish.dietTypes]
+                .map((x) => x.name)
+                .join(" · ")}
             </p>
           )}
+          {/* Gleiche Größe wie der Titel der Rezept-Kacheln darunter (text-lg).
+              h5: unter dem „Gerichte / Getränke"-Zwischentitel (h4). */}
+          <h5 className="font-display text-lg font-bold">{dish.name}</h5>
         </div>
-      )}
 
-      <SimilarRecipeTiles recipes={similar} />
+        {fotos.length > 0 && (
+          // Eigener Wrapper, damit Bühne und Streifen EIN Element im
+          // `flex-col gap-4` darüber sind — sonst schöbe sich der Spalten-
+          // Abstand zwischen beide und der Streifen verlöre den Bezug.
+          <div>
+            {/* Alle Fotos als EINE klickbare Galerie: ein Klick öffnet das Bild
+                groß im Pop-up, bei mehreren mit Vor/Zurück — die Bühne zählt
+                dabei mit („1 von 4"), sie ist kein Sonderfall. */}
+            <GalleryLightbox
+              images={fotos}
+              label={dish.name}
+              lead={
+                paarweise
+                  ? undefined
+                  : {
+                      className: "aspect-[16/9] w-full object-cover",
+                      sizes: MASSE.buehne,
+                    }
+              }
+              thumbSizes={MASSE.streifen}
+              thumbClassName={
+                paarweise
+                  ? "aspect-[4/3] w-full object-cover"
+                  : "aspect-square w-full object-cover"
+              }
+              groupClassName={`grid gap-2 [grid-template-columns:repeat(auto-fit,minmax(6.25rem,1fr))] ${
+                paarweise ? "" : "mt-2"
+              }`}
+            />
+          </div>
+        )}
+
+        {(dish.description || dish.ingredients.length > 0) && (
+          <div>
+            {dish.description && (
+              <div
+                className="prose-content text-sm text-ink-soft"
+                dangerouslySetInnerHTML={{
+                  __html: renderMarkdown(dish.description),
+                }}
+              />
+            )}
+            {dish.ingredients.length > 0 && (
+              <p className="mt-2 flex items-center gap-1.5 text-xs text-ink-soft">
+                <IconTag className="h-3.5 w-3.5" />
+                <strong className="font-semibold text-ink">
+                  {dict.travelList.dishIngredients}:
+                </strong>{" "}
+                {dish.ingredients.map((i) => i.name).join(", ")}
+              </p>
+            )}
+          </div>
+        )}
+
+        <SimilarRecipeTiles recipes={similar} />
+      </div>
     </li>
   );
 }
@@ -341,11 +363,9 @@ function DishItem({
 function RestaurantCard({
   r,
   similarByDish,
-  masse,
 }: {
   r: FullRestaurant;
   similarByDish: Record<number, RecipeCardData[]>;
-  masse: Bildmasse;
 }) {
   const coords = restaurantCoords(r);
   return (
@@ -385,7 +405,7 @@ function RestaurantCard({
         <GalleryLightbox
           images={[r.image]}
           label={`${dict.travelList.restaurantWord} ${r.name}`}
-          thumbSizes={masse.inhalt}
+          thumbSizes={MASSE.inhalt}
           thumbClassName="aspect-[3/2] w-full object-cover"
         />
       )}
@@ -408,13 +428,17 @@ function RestaurantCard({
             >
               {dict.travelList.dishesTitle}
             </h4>
-            <ul className="mt-4 flex flex-col gap-6">
-              {r.dishes.map((dish) => (
+            {/* gap-8: der Abstand trägt die Schienenlinie zwischen den
+                Stationen — enger wirkt die Linie wie ein Strich, weiter reißt
+                die Kette optisch. */}
+            <ul className="mt-4 flex flex-col gap-8">
+              {r.dishes.map((dish, i) => (
                 <DishItem
                   key={dish.id}
                   dish={dish}
                   similar={similarByDish[dish.id] ?? []}
-                  masse={masse}
+                  nummer={i + 1}
+                  letzte={i === r.dishes.length - 1}
                 />
               ))}
             </ul>
@@ -502,11 +526,6 @@ export async function TravelView({
     });
   }
 
-  // Erst jetzt steht fest, ob links ein Inhaltsverzeichnis steht — und damit,
-  // wie breit die Inhaltsspalte wirklich ist. Genau daran hängen die
-  // `sizes`-Angaben aller Bilder darunter.
-  const masse = tocEntries.length > 0 ? MASSE_MIT_TOC : MASSE_OHNE_TOC;
-
   // Gibt es überhaupt etwas unter dem Kopf? Sonst stünde dort eine einsame
   // Trennlinie über einem leeren Raster.
   const hatInhalt =
@@ -593,122 +612,129 @@ export async function TravelView({
             versetzt. */}
         {hatInhalt && <hr className="my-8 border-ink/10" />}
 
-        {/* Ab Tablet zweispaltig: Inhaltsverzeichnis links, Inhalt rechts.
-            Beides steht INNERHALB des weissen Blattes — stünde das
-            Verzeichnis im grauen Rand, wäre der Rand links und rechts wieder
-            ungleich breit, also genau das, was der Umbau abstellen soll.
-            Ohne Verzeichnis (kurzer Bericht ohne Überschriften und
-            Restaurants) bleibt es einspaltig, sonst stünde links eine leere
-            Spalte. Die 200 px sind gemessen, nicht geraten: darunter bricht
-            „1.1.1 Pasta alla Norma" auf der dritten Ebene in drei Zeilen. */}
-        <div
-          className={
-            tocEntries.length > 0
-              ? "grid gap-8 md:grid-cols-[200px_minmax(0,1fr)] md:items-start"
-              : ""
-          }
-        >
+        {/* Inhaltsverzeichnis als UMFLOSSENER Block, nicht als Rasterspalte.
+            Warum kein Raster: Eine Rasterspalte bleibt über die GANZE Länge des
+            Berichts stehen — auch weit unter dem Verzeichnis, wo links nur noch
+            Weißraum ist (am geseedeten Bericht gemessen: 200 × 2303 px tote
+            Spalte). Ein Grid-Element kann nicht in Spalte 2 beginnen und weiter
+            unten über beide Spalten weiterlaufen; Raster-Spuren fragmentieren
+            nicht. Ein Float kann genau das.
+
+            `flow-root` schließt den Float ein, damit das weiße Blatt mitwächst,
+            wenn das Verzeichnis höher ist als der Text daneben. Bewusst NICHT
+            `overflow-hidden` — das schnitte später ein `position: sticky` ab.
+
+            Und bewusst KEIN Flex-Wrapper um die Blöcke: der wäre EIN Kasten,
+            verschmälerte sich neben dem Float auf dessen Restbreite und behielte
+            sie über die ganze Länge. Die Blöcke sind Geschwister im normalen
+            Fluss, der Abstand kommt über `space-y`. */}
+        {/* `[&>nav+*]:mt-0` ab md: Der erste Block soll auf gleicher Höhe
+            beginnen wie das Verzeichnis. Ohne die Regel schöbe ihn der
+            Geschwister-Abstand 28 px tiefer und beide stünden sichtbar
+            versetzt (gemessen). Auf dem Handy ist das Verzeichnis gestapelt,
+            dort SOLL der Abstand bleiben. */}
+        <div className="flow-root [&>*+*]:mt-7 md:[&>nav+*]:mt-0">
           {tocEntries.length > 0 && (
             <TravelToc
               title={dict.travelList.tocTitle}
               hideLabel={dict.travelList.tocHide}
               showLabel={dict.travelList.tocShow}
               entries={tocEntries}
+              /* 300 px sind gemessen: Bei den vorherigen 200 px waren 4 von 13
+                 echten Einträgen dreizeilig, bei 300 px keiner mehr, und das
+                 Verzeichnis wird um ein Drittel flacher (798 → 534 px). Die
+                 Schwelle steht als `md:` (48rem, also in em) — stellt jemand
+                 den Browser auf 24 px Grundschrift, wandert sie mit und der
+                 Umfluss schaltet sich ab, statt 40 Zeichen je Zeile zu lassen.
+                 first:mt-0 hier nicht nötig: als erstes Kind greift `[&>*+*]`
+                 ohnehin nicht. */
+              className="my-6 md:float-left md:my-0 md:mr-8 md:mb-6 md:w-[clamp(240px,38%,300px)]"
             />
           )}
 
-          {/* min-w-0: ohne das sprengt ein langes Wort oder ein breites Bild
-              die Rasterspalte, statt umzubrechen. */}
-          <div className="min-w-0">
-            {/* Inhalt als Blockfolge: Text, Bild, Restaurant */}
-            {full.blocks.length > 0 && (
-              <div className="flex flex-col gap-7">
-                {full.blocks.map((b, i) => {
-                  if (b.type === "text") {
-                    return (
-                      <div
-                        key={i}
-                        className="prose-content"
-                        dangerouslySetInnerHTML={{
-                          __html: renderMarkdown(b.markdown),
-                        }}
-                      />
-                    );
-                  }
-                  if (b.type === "bild") {
-                    const img = full.blockImages[b.imageId];
-                    return img ? (
-                      <ResponsiveImg
-                        key={i}
-                        image={img}
-                        // Volle Breite der Inhaltsspalte (Herleitung siehe
-                        // Bildmasse oben) — mit Verzeichnis schmaler.
-                        sizes={masse.inhalt}
-                        className="w-full object-cover"
-                      />
-                    ) : null;
-                  }
-                  const r = full.restaurants[b.index];
-                  return r ? (
-                    <RestaurantCard
+          {/* Der erste Block startet auf gleicher Höhe wie das Verzeichnis. */}
+          {full.blocks.length > 0 && (
+            <div className="[&>*+*]:mt-7">
+              {full.blocks.map((b, i) => {
+                if (b.type === "text") {
+                  return (
+                    <div
                       key={i}
-                      r={r}
-                      similarByDish={similarByDish}
-                      masse={masse}
+                      className="prose-content"
+                      dangerouslySetInnerHTML={{
+                        __html: renderMarkdown(b.markdown),
+                      }}
+                    />
+                  );
+                }
+                if (b.type === "bild") {
+                  const img = full.blockImages[b.imageId];
+                  return img ? (
+                    <ResponsiveImg
+                      key={i}
+                      image={img}
+                      sizes={MASSE.inhalt}
+                      // clear-left: Ein Bild ist ein Block. Neben einem Float
+                      // weichen nur die ZEILEN aus, nicht die Blockkante — das
+                      // Bild liefe sonst unter dem Verzeichnis durch und
+                      // überdeckte es. Mit clear beginnt es darunter und ist
+                      // dafür volle Blattbreite statt Restbreite.
+                      className="w-full object-cover md:clear-left"
                     />
                   ) : null;
-                })}
-              </div>
-            )}
-
-            {full.images.length > 0 && (
-              <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2">
-                {full.images.map((img) => (
-                  <ResponsiveImg
-                    key={img.id}
-                    image={img}
-                    // Halbe Inhaltsspalte abzüglich gap-4 (siehe Bildmasse);
-                    // bis 639 px steht das Raster einspaltig.
-                    sizes={masse.galerie}
-                    className="w-full object-cover"
-                  />
-                ))}
-              </div>
-            )}
-
-            {remainingRestaurants.length > 0 && (
-              <>
-                {/* Trenner mit Marke statt schlichter Linie: Linie links,
-                    Kartenpin mit Besteck in der Marken-Farbe, Linie rechts.
-                    Dasselbe Muster trägt schon das Zeit-Band im Rezept
-                    (recipe-view.tsx) — ein Haus, eine Sprache.
-                    aria-hidden: rein schmückend, die Überschrift darunter
-                    benennt die Sektion für Screenreader.
-                    36 px (h-9): darunter laufen Gabel und Messer im Pin zu
-                    einem Fleck zusammen (im Rendering-Vergleich gemessen). */}
-                <div className="my-8 flex items-center gap-4" aria-hidden>
-                  <span className="h-px flex-1 bg-ink/10" />
-                  <IconPinCutlery className="h-9 w-9 shrink-0 text-leaf" />
-                  <span className="h-px flex-1 bg-ink/10" />
-                </div>
-                <section id="restaurants">
-                  <h2 className="font-display text-2xl font-bold md:text-3xl">
-                    {dict.travelList.restaurantsTitle}
-                  </h2>
-                  <div className="mt-6 flex flex-col gap-8">
-                    {remainingRestaurants.map((r) => (
-                      <RestaurantCard
-                        key={r.id}
-                        r={r}
-                        similarByDish={similarByDish}
-                        masse={masse}
-                      />
-                    ))}
+                }
+                const r = full.restaurants[b.index];
+                return r ? (
+                  <div key={i} className="md:clear-left">
+                    <RestaurantCard r={r} similarByDish={similarByDish} />
                   </div>
-                </section>
-              </>
-            )}
-          </div>
+                ) : null;
+              })}
+            </div>
+          )}
+
+          {full.images.length > 0 && (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:clear-left">
+              {full.images.map((img) => (
+                <ResponsiveImg
+                  key={img.id}
+                  image={img}
+                  sizes={MASSE.galerie}
+                  className="w-full object-cover"
+                />
+              ))}
+            </div>
+          )}
+
+          {remainingRestaurants.length > 0 && (
+            <div className="md:clear-left">
+              {/* Trenner mit Marke statt schlichter Linie: Linie links, Gabel
+                  und Messer über Kreuz, Linie rechts. Dasselbe Muster trägt
+                  schon das Zeit-Band im Rezept (recipe-view.tsx) — ein Haus,
+                  eine Sprache. aria-hidden: rein schmückend, die Überschrift
+                  darunter benennt die Sektion für Screenreader.
+                  Zur Größe h-9 (36 px) siehe icon-besteck.tsx. */}
+              <div className="mb-8 flex items-center gap-4" aria-hidden>
+                <span className="h-px flex-1 bg-ink/10" />
+                <IconBesteck className="h-9 w-9 shrink-0 text-ink-soft" />
+                <span className="h-px flex-1 bg-ink/10" />
+              </div>
+              <section id="restaurants">
+                <h2 className="font-display text-2xl font-bold md:text-3xl">
+                  {dict.travelList.restaurantsTitle}
+                </h2>
+                <div className="mt-6 flex flex-col gap-8">
+                  {remainingRestaurants.map((r) => (
+                    <RestaurantCard
+                      key={r.id}
+                      r={r}
+                      similarByDish={similarByDish}
+                    />
+                  ))}
+                </div>
+              </section>
+            </div>
+          )}
         </div>
       </div>
     </article>

@@ -457,6 +457,31 @@ html {
   font-size: 0.9em;
 }
 
+/* Neben einem umflossenen Block (Inhaltsverzeichnis der Reiseberichte, s.
+   travel-view.tsx) weichen nur die ZEILEN aus, nicht die Blockkanten. Bei
+   Aufzählung und Zitat ist die Kante links aber sichtbar: Ohne eigenen
+   Block-Formatierungskontext säßen die ersten Listenpunkte am Float-Rand und
+   die folgenden 300 px weiter links — die Punktspalte bräche mitten in der
+   Liste. `flow-root` lässt die ganze Box ausweichen, die Kante bleibt gerade.
+   Absätze und Überschriften bleiben bewusst normale Blöcke: nur sie sollen
+   umfließen. */
+.prose-content ul,
+.prose-content ol,
+.prose-content blockquote {
+  display: flow-root;
+}
+/* Der Browser gibt <blockquote> 40 px links UND rechts — hier trägt die
+   Randlinie die Einrückung. */
+.prose-content blockquote {
+  margin-inline: 0;
+}
+/* Ein sehr langes Wort oder eine URL neben dem schmalen Reststreifen reißt
+   sonst den Absatz auf (gemessen: 506 px Zeilensprung bei 1024 px Viewport). */
+.prose-content {
+  overflow-wrap: anywhere;
+  hyphens: auto;
+}
+
 @media print {
   body {
     background: #fff;
