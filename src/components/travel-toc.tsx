@@ -45,14 +45,27 @@ export function TravelToc({
   if (entries.length === 0) return null;
 
   return (
-    <nav aria-label={title} className="my-6">
-      <p className="flex items-baseline gap-2">
+    // Hinterlegt mit einem sehr hellen Ton der Marken-Farbe (--color-leaf,
+    // #277a70) bei 6 % Deckung, umrandet bei 15 %. Bewusst aus der bestehenden
+    // Palette abgeleitet statt als neuer Farbwert: so bleibt EINE Quelle der
+    // Wahrheit, und ein späterer Wechsel des Markentons zieht das Verzeichnis
+    // mit. Der Text bleibt auf Weiß-über-Tint bei vollem Kontrast.
+    <nav
+      aria-label={title}
+      className="my-6 rounded-sm border border-leaf/15 bg-leaf/[0.06] p-4 md:my-0"
+    >
+      {/* flex-wrap + nowrap am Knopf: In der schmalen Seitenspalte passt
+          „[ Verbergen ]" nicht neben den Titel. Ohne diese beiden Klassen
+          bricht der Browser INNERHALB des Knopfes um („[", „Verbergen", „]"
+          auf drei Zeilen); so rutscht er stattdessen als Ganzes eine Zeile
+          tiefer und steht auf breiten Spalten weiterhin daneben. */}
+      <p className="flex flex-wrap items-baseline gap-x-2">
         <span className="text-lg font-bold">{title}</span>
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
           aria-expanded={open}
-          className="text-sm text-leaf hover:underline"
+          className="whitespace-nowrap text-sm text-leaf hover:underline"
         >
           [ {open ? hideLabel : showLabel} ]
         </button>

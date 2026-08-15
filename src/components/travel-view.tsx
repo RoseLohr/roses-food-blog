@@ -15,9 +15,76 @@ import { ResponsiveImg } from "./responsive-img";
 import { GalleryLightbox } from "./gallery-lightbox";
 import { HeroActions } from "./hero-actions";
 import { TravelToc, type TocEntry } from "./travel-toc";
-import { IconCalendar, IconCity, IconCountry, IconRegion, IconTag } from "./icons";
+import {
+  IconCalendar,
+  IconCity,
+  IconCountry,
+  IconPinCutlery,
+  IconRegion,
+  IconTag,
+} from "./icons";
 
 const dict = t();
+
+/**
+ * Reale Anzeigebreiten der Bilder in der Inhaltsspalte — AUSGERECHNET, nicht
+ * geschätzt. Ein zu großes `sizes` lässt den Browser eine zu schwere Variante
+ * laden, ein zu kleines liefert ein unscharfes Bild; beides ist ein Fehler.
+ *
+ * Die Kette bis zur Inhaltsspalte (C):
+ *   Layout `px-4`             → 2rem  auf jeder Breite
+ *   Artikel `p-6 md:p-10`     → 3rem  bis 767 px, darüber 5rem
+ *   Artikel `max-w-4xl`       → deckelt bei 896 px, also ab 928 px Viewport
+ *   Inhaltsverzeichnis ab md  → 200 px Spalte + `gap-8` (32 px) = 232 px
+ *                               = 14.5rem, ABER nur wenn es eines gibt
+ *
+ *   ohne Verzeichnis:  <768: 100vw−5rem | <929: 100vw−7rem    | ≥929: 816px
+ *   mit  Verzeichnis:  <768: 100vw−5rem | <929: 100vw−21.5rem | ≥929: 584px
+ *
+ * Deshalb gibt es die Maße zweimal: ob ein Verzeichnis steht, weiß erst
+ * `TravelView` (es hängt an Überschriften und Restaurants), und ein `sizes`
+ * kann das nicht selbst abfragen. Der Wert wird von dort durchgereicht.
+ *
+ * Nicht eingerechnet sind die 1-px-Rahmen der Restaurant-Karte (2 px je
+ * Bild). Das deklariert 2 px MEHR als nötig — auf der Variantenleiter
+ * (160/320/480/640/…) ändert das nie die Stufe, und zu großzügig ist die
+ * sichere Richtung: die Gegenrichtung ergäbe ein unscharfes Bild.
+ */
+interface Bildmasse {
+  /** Bild über die volle Breite der Inhaltsspalte (Block-Bild, Restaurant-Band). */
+  inhalt: string;
+  /** Bilder im 2er-Raster der Galerie (`sm:grid-cols-2`, `gap-4` = 16 px). */
+  galerie: string;
+  /** Bühne eines Gerichts: volle Breite INNERHALB der Restaurant-Karte
+   *  (deren `p-4 md:p-6` zieht mobil 2rem, ab md 3rem ab). */
+  buehne: string;
+  /** Streifen darunter: Drittel der Bühne (`grid-cols-3`, `gap-2` = 8 px, also
+   *  16 px auf drei Spalten). Der abgezogene rem-Wert ist bewusst leicht zu
+   *  klein gerundet — lieber ein Pixel zu großzügig als ein unscharfes Bild. */
+  streifen: string;
+}
+
+const MASSE_OHNE_TOC: Bildmasse = {
+  inhalt:
+    "(max-width: 767px) calc(100vw - 5rem), (max-width: 928px) calc(100vw - 7rem), 816px",
+  galerie:
+    "(max-width: 639px) calc(100vw - 5rem), (max-width: 767px) calc(50vw - 3rem), (max-width: 928px) calc(50vw - 4rem), 400px",
+  buehne:
+    "(max-width: 767px) calc(100vw - 7rem), (max-width: 928px) calc(100vw - 10rem), 768px",
+  streifen:
+    "(max-width: 767px) calc(33.4vw - 2.6rem), (max-width: 928px) calc(33.4vw - 3.6rem), 251px",
+};
+
+const MASSE_MIT_TOC: Bildmasse = {
+  inhalt:
+    "(max-width: 767px) calc(100vw - 5rem), (max-width: 928px) calc(100vw - 21.5rem), 584px",
+  galerie:
+    "(max-width: 639px) calc(100vw - 5rem), (max-width: 767px) calc(50vw - 3rem), (max-width: 928px) calc(50vw - 11.25rem), 284px",
+  buehne:
+    "(max-width: 767px) calc(100vw - 7rem), (max-width: 928px) calc(100vw - 24.5rem), 536px",
+  streifen:
+    "(max-width: 767px) calc(33.4vw - 2.6rem), (max-width: 928px) calc(33.4vw - 8.4rem), 174px",
+};
 
 /** Google-Maps-Ziel aus Koordinaten — gleiche URL wie die Weltkarten-Pins. */
 function mapsUrl(lat: number, lng: number): string {
@@ -128,7 +195,10 @@ function MetaFilterLinks({
         <span key={`${tok}-${i}`}>
           {i > 0 && ", "}
           {interactive ? (
-            <Link href={`${base}/${encodeURIComponent(tok)}`} className={metaLinkCls}>
+            <Link
+              href={`${base}/${encodeURIComponent(tok)}`}
+              className={metaLinkCls}
+            >
               {tok}
             </Link>
           ) : (
@@ -161,60 +231,79 @@ function SimilarRecipeTiles({ recipes }: { recipes: RecipeCardData[] }) {
   );
 }
 
+/**
+ * Ein Gericht als „Bühne und Streifen" (Entwurf, Vorschlag C): Kopf mit
+ * Kategorie und Name, darunter das erste Foto groß als Bühne und die übrigen
+ * klein als Streifen, dann der Text über die volle Breite.
+ *
+ * Warum so: Das beste Foto bekommt den Auftritt, die übrigen bleiben Beleg —
+ * genau die Rangfolge, die ein Reisebericht ohnehin hat. Und weil der Text
+ * UNTER den Bildern über die ganze Breite läuft, hält die Anordnung jede
+ * Textlänge aus: bei zwei Zeilen entsteht kein Loch neben einer Bilderspalte
+ * (das war die Schwäche der Alternative „Text links, Bilder rechts"), bei
+ * einem langen Absatz bricht nichts auseinander.
+ *
+ * Die Trennlinie oben grenzt aufeinanderfolgende Gerichte ab; beim ersten
+ * Eintrag entfällt sie, sonst stünde direkt unter dem Zwischentitel
+ * „Gerichte / Getränke" eine zweite Linie.
+ */
 function DishItem({
   dish,
   similar,
+  masse,
 }: {
   dish: FullDish;
   similar: RecipeCardData[];
+  masse: Bildmasse;
 }) {
   return (
-    <li id={`dish-${dish.id}`} className="flex flex-col gap-4">
-      {/* Graue Box: nur das Gericht selbst (Bild, Name, Chips, Zutaten) */}
-      <div className="flex flex-col gap-4 bg-cream/60 p-4 sm:flex-row">
-        {dish.images.length > 0 && (
-          // Alle ausgewählten Fotos als klickbare Galerie: ein Klick öffnet das
-          // Bild groß im Pop-up, bei mehreren Fotos mit Vor/Zurück-Navigation.
-          // Einzelbild → volle Breite; mehrere → mobil 3er-Reihe, ab Tablet in
-          // der schmalen Seitenspalte untereinander.
-          <div className="sm:w-44 sm:shrink-0">
-            <GalleryLightbox
-              images={dish.images}
-              label={dish.name}
-              // Reale Breite mobil: 100vw − Layout-px-4 (2rem) − Artikel-p-6
-              // (3rem) − Box-p-4 (2rem) = calc(100vw - 7rem); im 3er-Raster
-              // entsprechend gedrittelt (~25vw). Das frühere „100vw" ließ
-              // Mobil-Browser w960 für ~300 px Anzeige laden.
-              thumbSizes={
-                dish.images.length === 1
-                  ? "(max-width: 640px) calc(100vw - 7rem), 176px"
-                  : "(max-width: 640px) 25vw, 176px"
-              }
-              thumbClassName="aspect-[4/3] w-full object-cover"
-              groupClassName={
-                dish.images.length === 1
-                  ? undefined
-                  : "grid grid-cols-3 gap-2 sm:grid-cols-1"
-              }
-            />
-          </div>
+    <li
+      id={`dish-${dish.id}`}
+      className="flex flex-col gap-4 border-t border-ink/10 pt-6 first:border-t-0 first:pt-0"
+    >
+      <div>
+        {(dish.categories.length > 0 || dish.dietTypes.length > 0) && (
+          // Kategorie · Ernährungsform als Eyebrow — identisch zu den
+          // Rezept-Kacheln (Leaf-Grün, gesperrt, „·"-getrennt).
+          <p className="mb-1 text-xs font-semibold uppercase tracking-[0.14em] text-leaf">
+            {[...dish.categories, ...dish.dietTypes]
+              .map((x) => x.name)
+              .join(" · ")}
+          </p>
         )}
-        <div className="min-w-0 grow">
-          {(dish.categories.length > 0 || dish.dietTypes.length > 0) && (
-            // Kategorie · Ernährungsform als Eyebrow — identisch zu den
-            // Rezept-Kacheln (Leaf-Grün, gesperrt, „·"-getrennt).
-            <p className="mb-1 text-xs font-semibold uppercase tracking-[0.14em] text-leaf">
-              {[...dish.categories, ...dish.dietTypes]
-                .map((x) => x.name)
-                .join(" · ")}
-            </p>
-          )}
-          {/* Gleiche Größe wie der Titel der Rezept-Kacheln darunter (text-lg).
-              h5: unter dem „Gerichte / Getränke"-Zwischentitel (h4). */}
-          <h5 className="font-display text-lg font-bold">{dish.name}</h5>
+        {/* Gleiche Größe wie der Titel der Rezept-Kacheln darunter (text-lg).
+            h5: unter dem „Gerichte / Getränke"-Zwischentitel (h4). */}
+        <h5 className="font-display text-lg font-bold">{dish.name}</h5>
+      </div>
+
+      {dish.images.length > 0 && (
+        // Eigener Wrapper, damit Bühne und Streifen EIN Element im
+        // `flex-col gap-4` darüber sind — sonst schöbe sich der Spalten-
+        // Abstand zwischen beide und der Streifen verlöre den Bezug.
+        <div>
+          {/* Alle ausgewählten Fotos als EINE klickbare Galerie: ein Klick
+              öffnet das Bild groß im Pop-up, bei mehreren Fotos mit
+              Vor/Zurück — die Bühne zählt dabei mit („1 von 4"), sie ist
+              kein Sonderfall. */}
+          <GalleryLightbox
+            images={dish.images}
+            label={dish.name}
+            lead={{
+              className: "aspect-[16/9] w-full object-cover",
+              sizes: masse.buehne,
+            }}
+            thumbSizes={masse.streifen}
+            thumbClassName="aspect-square w-full object-cover"
+            groupClassName="mt-2 grid grid-cols-3 gap-2"
+          />
+        </div>
+      )}
+
+      {(dish.description || dish.ingredients.length > 0) && (
+        <div>
           {dish.description && (
             <div
-              className="prose-content mt-1 text-sm text-ink-soft"
+              className="prose-content text-sm text-ink-soft"
               dangerouslySetInnerHTML={{
                 __html: renderMarkdown(dish.description),
               }}
@@ -230,88 +319,108 @@ function DishItem({
             </p>
           )}
         </div>
-      </div>
+      )}
 
-      {/* Rezept-Vorschläge: außerhalb der grauen Box, klar zugeordnet */}
       <SimilarRecipeTiles recipes={similar} />
     </li>
   );
 }
 
-/** Restaurant-Karte — im Blockfluss oder in der Sammel-Sektion unten. */
+/**
+ * Restaurant als „Karteikarte" (Entwurf, Vorschlag A) — im Blockfluss oder in
+ * der Sammel-Sektion unten. Kopfzeile mit Name und Ort, darunter das Foto als
+ * durchgehendes Band, dann Beschreibung und Gerichte im Karten-Körper.
+ *
+ * Warum ein Rahmen: Ein Bericht listet oft mehrere Stationen hintereinander,
+ * jede mit Fotos, Text und mehreren Gerichten. Ohne Abgrenzung verschwimmt,
+ * was wozu gehört — die Karte macht daraus einen Eintrag, den man auch
+ * überspringen kann. Das Foto läuft dabei bewusst über die volle Kartenbreite
+ * statt neben dem Text: in der schmalen Spalte neben dem Inhaltsverzeichnis
+ * bliebe für die Beschreibung sonst kaum mehr Platz als ein paar Zeichen.
+ */
 function RestaurantCard({
   r,
   similarByDish,
+  masse,
 }: {
   r: FullRestaurant;
   similarByDish: Record<number, RecipeCardData[]>;
+  masse: Bildmasse;
 }) {
   const coords = restaurantCoords(r);
   return (
-    <div id={`restaurant-${r.id}`}>
-      <h3 className="font-display text-xl font-bold">
-        {dict.travelList.restaurantWord} {r.name}
-        {r.city && (
-          <span className="ml-2 text-sm font-normal text-ink-soft">
-            ·{" "}
-            {coords ? (
-              // Ort → Google Maps (Koordinaten aus den EXIF-Daten der
-              // Fotos, wie die Pins auf der Weltkarte)
-              <a
-                href={mapsUrl(coords.lat, coords.lng)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-leaf underline underline-offset-2 hover:text-rose-primary-dark"
-              >
-                {r.city}
-              </a>
-            ) : (
-              r.city
-            )}
-          </span>
-        )}
-      </h3>
-      {/* Bild + Beschreibung: mobil untereinander, ab Tablet (sm, deckt auch
-          iPad-Hochformat ab) nebeneinander */}
-      {(r.image || r.description) && (
-        <div className="mt-3 flex flex-col gap-4 sm:flex-row sm:items-start">
-          {r.image && (
-            // Restaurant-Foto klickbar: öffnet sich groß im Pop-up.
-            <div className="sm:w-72 sm:shrink-0 md:w-96">
-              <GalleryLightbox
-                images={[r.image]}
-                label={`${dict.travelList.restaurantWord} ${r.name}`}
-                // Mobil: 100vw − Layout-px-4 − Artikel-p-6 = calc(100vw - 5rem);
-                // 640–767 px: Container sm:w-72 (288 px), ab md: w-96 (384 px).
-                thumbSizes="(max-width: 640px) calc(100vw - 5rem), (max-width: 767px) 288px, 384px"
-                thumbClassName="aspect-[3/2] w-full object-cover"
-              />
-            </div>
+    <div
+      id={`restaurant-${r.id}`}
+      className="overflow-hidden rounded-sm border border-ink/15"
+    >
+      <div className="border-b border-ink/10 bg-cream/50 px-4 py-3 md:px-6 md:py-4">
+        <h3 className="font-display text-xl font-bold">
+          {dict.travelList.restaurantWord} {r.name}
+          {r.city && (
+            <span className="ml-2 text-sm font-normal text-ink-soft">
+              ·{" "}
+              {coords ? (
+                // Ort → Google Maps (Koordinaten aus den EXIF-Daten der
+                // Fotos, wie die Pins auf der Weltkarte)
+                <a
+                  href={mapsUrl(coords.lat, coords.lng)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-leaf underline underline-offset-2 hover:text-rose-primary-dark"
+                >
+                  {r.city}
+                </a>
+              ) : (
+                r.city
+              )}
+            </span>
           )}
-          {r.description && (
-            <div
-              className="prose-content min-w-0 grow text-ink-soft"
-              dangerouslySetInnerHTML={{
-                __html: renderMarkdown(r.description),
-              }}
-            />
-          )}
-        </div>
+        </h3>
+      </div>
+
+      {r.image && (
+        // Restaurant-Foto klickbar: öffnet sich groß im Pop-up. Als Band ohne
+        // Innenabstand ist es exakt so breit wie die Karte, also wie die
+        // Inhaltsspalte.
+        <GalleryLightbox
+          images={[r.image]}
+          label={`${dict.travelList.restaurantWord} ${r.name}`}
+          thumbSizes={masse.inhalt}
+          thumbClassName="aspect-[3/2] w-full object-cover"
+        />
       )}
-      {r.dishes.length > 0 && (
-        <h4 className="mt-5 font-display text-base font-bold text-ink">
-          {dict.travelList.dishesTitle}
-        </h4>
-      )}
-      <ul className="mt-4 flex flex-col gap-5">
-        {r.dishes.map((dish) => (
-          <DishItem
-            key={dish.id}
-            dish={dish}
-            similar={similarByDish[dish.id] ?? []}
+
+      <div className="p-4 md:p-6">
+        {r.description && (
+          <div
+            className="prose-content text-ink-soft"
+            dangerouslySetInnerHTML={{
+              __html: renderMarkdown(r.description),
+            }}
           />
-        ))}
-      </ul>
+        )}
+        {r.dishes.length > 0 && (
+          <>
+            <h4
+              className={`font-display text-base font-bold text-ink ${
+                r.description ? "mt-6" : ""
+              }`}
+            >
+              {dict.travelList.dishesTitle}
+            </h4>
+            <ul className="mt-4 flex flex-col gap-6">
+              {r.dishes.map((dish) => (
+                <DishItem
+                  key={dish.id}
+                  dish={dish}
+                  similar={similarByDish[dish.id] ?? []}
+                  masse={masse}
+                />
+              ))}
+            </ul>
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -393,21 +502,41 @@ export async function TravelView({
     });
   }
 
+  // Erst jetzt steht fest, ob links ein Inhaltsverzeichnis steht — und damit,
+  // wie breit die Inhaltsspalte wirklich ist. Genau daran hängen die
+  // `sizes`-Angaben aller Bilder darunter.
+  const masse = tocEntries.length > 0 ? MASSE_MIT_TOC : MASSE_OHNE_TOC;
+
+  // Gibt es überhaupt etwas unter dem Kopf? Sonst stünde dort eine einsame
+  // Trennlinie über einem leeren Raster.
+  const hatInhalt =
+    full.blocks.length > 0 ||
+    full.images.length > 0 ||
+    remainingRestaurants.length > 0;
+
   return (
-    <article className="overflow-hidden bg-white shadow-sm">
+    // Gleiche Breite wie die Rezeptseite (recipe-view.tsx: mx-auto max-w-4xl):
+    // beide stehen damit als 896-px-Blatt auf demselben grauen Grund, und der
+    // Wechsel zwischen Rezept und Reise springt nicht mehr. Der Layout-
+    // Container ringsum bleibt unangetastet (max-w-6xl gilt weiter für die
+    // Listenseiten) — deshalb hier am Artikel und nicht im Layout.
+    <article className="mx-auto max-w-4xl overflow-hidden bg-white shadow-sm">
       {full.heroImage && (
         <div className="relative">
           <ResponsiveImg
             image={full.heroImage}
-            // Der Hero füllt die Artikelbreite (Layout max-w-6xl → 1120 px
-            // Inhalt) — der alte 768px-Deckel lieferte auf Desktop ein zu
-            // kleines, hochskaliert-weiches Bild.
-            sizes="(max-width: 1184px) calc(100vw - 2rem), 1120px"
+            // Der Hero füllt die Artikelbreite: bis 928 px Viewport die volle
+            // Breite abzüglich Layout-px-4, darüber der Deckel von 896 px.
+            // (928 = 896 + 2×16; derselbe Umschaltpunkt wie im Rezept.)
+            sizes="(max-width: 928px) calc(100vw - 2rem), 896px"
             priority
             className="aspect-[2/1] w-full object-cover"
           />
           {interactive && (
-            <HeroActions title={post.title} publicPath={`/reisen/${post.slug}`} />
+            <HeroActions
+              title={post.title}
+              publicPath={`/reisen/${post.slug}`}
+            />
           )}
         </div>
       )}
@@ -458,92 +587,129 @@ export async function TravelView({
           </div>
         </header>
 
-        {/* Inhaltsverzeichnis — unter Land/Region/Stadt, mit Trennstrich */}
-        {tocEntries.length > 0 && (
-          <>
-            <hr className="mt-8 border-ink/10" />
+        {/* Trennt den Kopf vom Inhalt — bewusst ÜBER dem Raster, nicht in der
+            rechten Spalte: sonst begänne der Text 32 px tiefer als das
+            Inhaltsverzeichnis daneben, und die beiden Spalten stünden sichtbar
+            versetzt. */}
+        {hatInhalt && <hr className="my-8 border-ink/10" />}
+
+        {/* Ab Tablet zweispaltig: Inhaltsverzeichnis links, Inhalt rechts.
+            Beides steht INNERHALB des weissen Blattes — stünde das
+            Verzeichnis im grauen Rand, wäre der Rand links und rechts wieder
+            ungleich breit, also genau das, was der Umbau abstellen soll.
+            Ohne Verzeichnis (kurzer Bericht ohne Überschriften und
+            Restaurants) bleibt es einspaltig, sonst stünde links eine leere
+            Spalte. Die 200 px sind gemessen, nicht geraten: darunter bricht
+            „1.1.1 Pasta alla Norma" auf der dritten Ebene in drei Zeilen. */}
+        <div
+          className={
+            tocEntries.length > 0
+              ? "grid gap-8 md:grid-cols-[200px_minmax(0,1fr)] md:items-start"
+              : ""
+          }
+        >
+          {tocEntries.length > 0 && (
             <TravelToc
               title={dict.travelList.tocTitle}
               hideLabel={dict.travelList.tocHide}
               showLabel={dict.travelList.tocShow}
               entries={tocEntries}
             />
-          </>
-        )}
+          )}
 
-        {/* Inhalt als Blockfolge: Text, Bild, Restaurant */}
-        {full.blocks.length > 0 && (
-          <>
-            <hr className="my-8 border-ink/10" />
-            <div className="flex flex-col gap-7">
-              {full.blocks.map((b, i) => {
-                if (b.type === "text") {
-                  return (
-                    <div
+          {/* min-w-0: ohne das sprengt ein langes Wort oder ein breites Bild
+              die Rasterspalte, statt umzubrechen. */}
+          <div className="min-w-0">
+            {/* Inhalt als Blockfolge: Text, Bild, Restaurant */}
+            {full.blocks.length > 0 && (
+              <div className="flex flex-col gap-7">
+                {full.blocks.map((b, i) => {
+                  if (b.type === "text") {
+                    return (
+                      <div
+                        key={i}
+                        className="prose-content"
+                        dangerouslySetInnerHTML={{
+                          __html: renderMarkdown(b.markdown),
+                        }}
+                      />
+                    );
+                  }
+                  if (b.type === "bild") {
+                    const img = full.blockImages[b.imageId];
+                    return img ? (
+                      <ResponsiveImg
+                        key={i}
+                        image={img}
+                        // Volle Breite der Inhaltsspalte (Herleitung siehe
+                        // Bildmasse oben) — mit Verzeichnis schmaler.
+                        sizes={masse.inhalt}
+                        className="w-full object-cover"
+                      />
+                    ) : null;
+                  }
+                  const r = full.restaurants[b.index];
+                  return r ? (
+                    <RestaurantCard
                       key={i}
-                      className="prose-content"
-                      dangerouslySetInnerHTML={{
-                        __html: renderMarkdown(b.markdown),
-                      }}
-                    />
-                  );
-                }
-                if (b.type === "bild") {
-                  const img = full.blockImages[b.imageId];
-                  return img ? (
-                    <ResponsiveImg
-                      key={i}
-                      image={img}
-                      // Blockbreite: Layout-px-4 + Artikel-p-6 (mobil, 5rem)
-                      // bzw. md:p-10 (7rem); Deckel = 1120 − 80 = 1040 px.
-                      sizes="(max-width: 767px) calc(100vw - 5rem), (max-width: 1184px) calc(100vw - 7rem), 1040px"
-                      className="w-full object-cover"
+                      r={r}
+                      similarByDish={similarByDish}
+                      masse={masse}
                     />
                   ) : null;
-                }
-                const r = full.restaurants[b.index];
-                return r ? (
-                  <RestaurantCard key={i} r={r} similarByDish={similarByDish} />
-                ) : null;
-              })}
-            </div>
-          </>
-        )}
+                })}
+              </div>
+            )}
 
-        {full.images.length > 0 && (
-          <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2">
-            {full.images.map((img) => (
-              <ResponsiveImg
-                key={img.id}
-                image={img}
-                // 2er-Raster in der Artikel-Innenbreite: max. (1040 − 16)/2
-                // = 512 px je Bild; mobil einspaltig in calc(100vw - 5rem).
-                sizes="(max-width: 640px) calc(100vw - 5rem), (max-width: 1184px) calc(50vw - 4rem), 512px"
-                className="w-full object-cover"
-              />
-            ))}
-          </div>
-        )}
-
-        {remainingRestaurants.length > 0 && (
-          <>
-            <hr className="my-8 border-ink/10" />
-            <section id="restaurants">
-              <h2 className="font-display text-2xl font-bold md:text-3xl">
-                {dict.travelList.restaurantsTitle}
-              </h2>
-              <div className="mt-6 flex flex-col gap-8">
-                {remainingRestaurants.map((r) => (
-                  <RestaurantCard
-                    key={r.id}
-                    r={r}
-                    similarByDish={similarByDish}
+            {full.images.length > 0 && (
+              <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                {full.images.map((img) => (
+                  <ResponsiveImg
+                    key={img.id}
+                    image={img}
+                    // Halbe Inhaltsspalte abzüglich gap-4 (siehe Bildmasse);
+                    // bis 639 px steht das Raster einspaltig.
+                    sizes={masse.galerie}
+                    className="w-full object-cover"
                   />
                 ))}
               </div>
-            </section>
-          </>
-        )}
+            )}
+
+            {remainingRestaurants.length > 0 && (
+              <>
+                {/* Trenner mit Marke statt schlichter Linie: Linie links,
+                    Kartenpin mit Besteck in der Marken-Farbe, Linie rechts.
+                    Dasselbe Muster trägt schon das Zeit-Band im Rezept
+                    (recipe-view.tsx) — ein Haus, eine Sprache.
+                    aria-hidden: rein schmückend, die Überschrift darunter
+                    benennt die Sektion für Screenreader.
+                    36 px (h-9): darunter laufen Gabel und Messer im Pin zu
+                    einem Fleck zusammen (im Rendering-Vergleich gemessen). */}
+                <div className="my-8 flex items-center gap-4" aria-hidden>
+                  <span className="h-px flex-1 bg-ink/10" />
+                  <IconPinCutlery className="h-9 w-9 shrink-0 text-leaf" />
+                  <span className="h-px flex-1 bg-ink/10" />
+                </div>
+                <section id="restaurants">
+                  <h2 className="font-display text-2xl font-bold md:text-3xl">
+                    {dict.travelList.restaurantsTitle}
+                  </h2>
+                  <div className="mt-6 flex flex-col gap-8">
+                    {remainingRestaurants.map((r) => (
+                      <RestaurantCard
+                        key={r.id}
+                        r={r}
+                        similarByDish={similarByDish}
+                        masse={masse}
+                      />
+                    ))}
+                  </div>
+                </section>
+              </>
+            )}
+          </div>
+        </div>
       </div>
     </article>
   );

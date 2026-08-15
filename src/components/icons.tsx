@@ -110,3 +110,32 @@ export function IconHeart({
     </svg>
   );
 }
+
+/**
+ * Kartenpin mit Besteck — Marke der Restaurant-Sektion im Reisebericht.
+ *
+ * Zwei bewusste Vereinfachungen gegenüber der Vorlage, beide aus einem
+ * Rendering-Vergleich bei 24/28/36/48/96 px:
+ *  - Kein Teller um das Besteck: der Kreis fällt bei Trenner-Größe mit dem
+ *    Pin-Umriss zusammen und macht die Mitte zum Fleck.
+ *  - Die Gabel hat ZWEI Zinken, nicht drei. Drei Zinken liegen bei 36 px nur
+ *    ~1,3 px auseinander und verschmelzen zu einem Balken; mit zwei Zinken
+ *    bleibt die Gabel als Gabel erkennbar.
+ * Das Besteck ist dünner gestrichelt als der Pin (1,25 statt 1,8), damit die
+ * Silhouette führt und die Binnenzeichnung nicht zuläuft.
+ */
+export function IconPinCutlery({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} {...base}>
+      <path d="M12 21.5c0-.1 7-6.1 7-11.2A7 7 0 0 0 5 10.3c0 5.1 7 11.1 7 11.2Z" />
+      {/* Gabel: zwei Zinken, Steg, Stiel */}
+      <path
+        d="M9.1 6.2v2.4M11.3 6.2v2.4M9.1 8.6h2.2M10.2 8.6v4.6"
+        strokeWidth="1.25"
+      />
+      {/* Messer: Stiel mit angesetzter Klinge */}
+      <path d="M14.6 6.2v6.9" strokeWidth="1.25" />
+      <path d="M14.6 6.2c1.1.7 1.1 3 0 3.6" strokeWidth="1.25" />
+    </svg>
+  );
+}
