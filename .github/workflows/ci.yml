@@ -73,14 +73,24 @@ jobs:
         run: node scripts/regime/prompt-lifecycle.mjs --selftest
       - name: Rollback-Fähigkeit + Drill (A-06/B-11)
         run: node scripts/regime/rollback-check.mjs --selftest
-      - name: Shell-Syntax (deploy.sh + rollback.sh)
-        run: bash -n deploy.sh && bash -n deploy/rollback.sh
+      # Entdeckung statt Aufzaehlung: eine Liste vergisst neue Skripte. Bis
+      # 08/2026 waren nur 2 von 8 Shell-Dateien geprueft — darunter NICHT
+      # bootstrap.sh, das die .env per Heredoc schreibt.
+      - name: Shell-Syntax (alle *.sh)
+        run: |
+          set -euo pipefail
+          dateien=$(git ls-files '*.sh')
+          test -n "$dateien" || { echo "Keine Shell-Dateien gefunden — pruefe den Glob."; exit 1; }
+          for f in $dateien; do echo "bash -n $f"; bash -n "$f"; done
       - name: Kalibrierung (A-36, Kontrollen fangen ihre Seeds — inkl. Track C)
         run: node scripts/regime/calibration/inject.mjs --strict
       - name: Tests (vitest)
         run: npm test
       - name: Build (next, standalone)
         run: npm run build
+      # Erst NACH dem Build — vorher gibt es die Chunks nicht.
+      - name: JS-Budget (First Load, gemessen am Artefakt)
+        run: node scripts/regime/bundle-budget.mjs
       - name: Findings-Gate (Report; scharf sobald Blocker geschlossen)
         run: node scripts/regime/findings-gate.mjs
       - name: Verfassung geladen & gehasht (Session-Steuer, §9.10.5)
