@@ -485,17 +485,27 @@ if command -v systemctl >/dev/null 2>&1; then
     echo "         der .env, falls weitere Personen Zugriff auf diesen Host haben."
   fi
 
-  # ACHTUNG, unquotiertes Heredoc: $SCRIPT_DIR/$HOME/$PATH sollen eingesetzt
-  # werden — Backticks und $( ) im Text würden aber AUSGEFÜHRT statt
-  # geschrieben. tests/deploy-betrieb.test.ts erzwingt das.
-  cat > "$UNIT_DIR/roses-blog-deploy.service" <<EOF
+  # Die Vorlage ist GEQUOTET (<<'EOF'): die Shell fasst den Text nicht an.
+  # Werte kommen ausschließlich über @PLATZHALTER@ herein (siehe unterhalb der
+  # Vorlage). Damit ist die Fehlerklasse vom 2026-08-14 strukturell erledigt —
+  # damals stand hier ein unquotiertes Heredoc, und ein `env -u INVOCATION_ID`
+  # im Erklärtext wurde AUSGEFÜHRT statt geschrieben: die vollständige
+  # Prozessumgebung samt SESSION_SECRET, ADMIN_PASSWORD, SMTP_PASS und
+  # ANTHROPIC_API_KEY landete im Klartext in dieser Unit-Datei.
+  #
+  # Ein Wächter, der stattdessen den Text unquotierter Heredocs abklopft, müsste
+  # die Shell nachbauen (Quoting über Zeilengrenzen, $( ) mit eigener Ebene,
+  # Zeilenfortsetzungen, eval) — elf belegte Umgehungen haben gezeigt, dass das
+  # nicht verlässlich gelingt. Ohne unquotiertes Heredoc gibt es nichts zu
+  # umgehen.
+  dienst_unit=$(cat <<'EOF'
 [Unit]
 Description=Roses Food Blog – Pull & Deploy (aus dem Admin-Panel angestoßen)
 After=network-online.target
 
 [Service]
 Type=oneshot
-WorkingDirectory=$SCRIPT_DIR
+WorkingDirectory=@SCRIPT_DIR@
 # WICHTIG: Ein systemd-User-Dienst startet mit MINIMALEM PATH — ohne
 # ~/.local/bin (dort liegt z. B. ein per pip installiertes podman-compose)
 # und ggf. ohne /usr/local/bin. deploy.sh bräche dann schon an der
@@ -503,8 +513,8 @@ WorkingDirectory=$SCRIPT_DIR
 # nicht“, während der manuelle Aufruf im Terminal problemlos läuft). Wir
 # setzen daher einen vollständigen PATH — die Standardorte plus den PATH,
 # den der installierende Aufruf hatte.
-Environment=HOME=$HOME
-Environment=PATH=$HOME/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH
+Environment=HOME=@HOME@
+Environment=PATH=@HOME@/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:@PATH@
 #
 # LEBENSDAUER DES CONTAINERS VON DER DES DIENSTES ENTKOPPELN
 # (Produktionsausfall 2026-08-10, ~11 h Totalausfall — Root Cause):
@@ -534,20 +544,51 @@ Environment=PATH=$HOME/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/
 # tests/deploy-betrieb.test.ts hält beide Zeilen fest.
 KillMode=process
 # Anfrage vor dem Lauf entfernen, damit der Path-Unit erneut auslösen kann.
-ExecStartPre=-/usr/bin/rm -f $DATA_DIR/deploy-request
-ExecStart=/usr/bin/env -u INVOCATION_ID bash $SCRIPT_DIR/deploy.sh
+ExecStartPre=-/usr/bin/rm -f @DATA_DIR@/deploy-request
+ExecStart=/usr/bin/env -u INVOCATION_ID bash @SCRIPT_DIR@/deploy.sh
 EOF
-  cat > "$UNIT_DIR/roses-blog-deploy.path" <<EOF
+)
+  pfad_unit=$(cat <<'EOF'
 [Unit]
 Description=Beobachtet Deploy-Anfragen aus dem Admin-Panel (Roses Food Blog)
 
 [Path]
-PathExists=$DATA_DIR/deploy-request
+PathExists=@DATA_DIR@/deploy-request
 Unit=roses-blog-deploy.service
 
 [Install]
 WantedBy=default.target
 EOF
+)
+
+  # Ersetzung mit GEQUOTETEM Ersatz: seit bash 5.2 steht ein unquotiertes `&`
+  # im Ersatzstring für den gefundenen Text (wie bei sed). Ein Pfad mit „&"
+  # zerlegte die Zeile sonst still — nachgestellt mit bash 5.2.21.
+  #
+  # Bewusst zweimal ausgeschrieben statt über eine Schleife mit `declare -n`
+  # oder eine Funktion: in einer Funktion liefe `fail` innerhalb einer
+  # Kommandosubstitution und seine Meldung landete in der Unit-Datei statt im
+  # Protokoll. Hier ist Deutlichkeit mehr wert als Kürze.
+  dienst_unit=${dienst_unit//@SCRIPT_DIR@/"$SCRIPT_DIR"}
+  dienst_unit=${dienst_unit//@DATA_DIR@/"$DATA_DIR"}
+  dienst_unit=${dienst_unit//@HOME@/"$HOME"}
+  dienst_unit=${dienst_unit//@PATH@/"$PATH"}
+  pfad_unit=${pfad_unit//@DATA_DIR@/"$DATA_DIR"}
+
+  # Fail-closed: ein nicht ersetzter Platzhalter wäre eine kaputte Unit — etwa
+  # wenn jemand einen neuen in die Vorlage schreibt und die Ersetzung vergisst.
+  # Lieber gar nicht deployen als eine Unit mit „@HOME@" darin.
+  for platz in @SCRIPT_DIR@ @DATA_DIR@ @HOME@ @PATH@; do
+    if [[ "$dienst_unit" == *"$platz"* ]]; then
+      fail "Dienst-Vorlage: Platzhalter $platz wurde nicht ersetzt."
+    fi
+    if [[ "$pfad_unit" == *"$platz"* ]]; then
+      fail "Pfad-Vorlage: Platzhalter $platz wurde nicht ersetzt."
+    fi
+  done
+
+  printf '%s\n' "$dienst_unit" > "$UNIT_DIR/roses-blog-deploy.service"
+  printf '%s\n' "$pfad_unit" > "$UNIT_DIR/roses-blog-deploy.path"
   systemctl --user daemon-reload >/dev/null 2>&1 || true
   if systemctl --user enable --now roses-blog-deploy.path >/dev/null 2>&1; then
     echo "Panel-Deploy: Watcher aktiv (roses-blog-deploy.path)."

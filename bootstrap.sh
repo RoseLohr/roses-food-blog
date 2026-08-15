@@ -71,25 +71,69 @@ else
   [[ ${#ADMIN_PASSWORD} -ge 10 ]] || fail "Das Admin-Passwort braucht mindestens 10 Zeichen."
 
   SESSION_SECRET="$(openssl rand -hex 32)"
-  cat > .env <<EOF
-BASE_URL=${BASE_URL%/}
-PORT=$PORT
-DATA_DIR=$DATA_DIR
-SESSION_SECRET=$SESSION_SECRET
+  BASE_URL_OHNE_SLASH="${BASE_URL%/}"
 
-SMTP_HOST=$SMTP_HOST
-SMTP_PORT=$SMTP_PORT
-SMTP_USER=$SMTP_USER
-SMTP_PASS=$SMTP_PASS
-SMTP_FROM="Roses Food Blog <$SMTP_FROM_ADDR>"
+  # Vorlage GEQUOTET (<<'EOF'): die Shell fasst den Text nicht an, Werte kommen
+  # ausschließlich über @PLATZHALTER@ herein. Das ist hier besonders wichtig,
+  # weil in diese Datei Secrets geschrieben werden (SESSION_SECRET,
+  # ADMIN_PASSWORD, SMTP_PASS) — und weil ein unquotiertes Heredoc in genau
+  # dieser Rolle am 2026-08-14 die komplette Prozessumgebung in eine
+  # systemd-Unit geschrieben hat. Zudem darf so ein Passwort mit Backtick oder
+  # $( ) nicht mehr zur Ausführung führen, sondern landet als Text in der .env.
+  env_vorlage=$(cat <<'EOF'
+BASE_URL=@BASE_URL@
+PORT=@PORT@
+DATA_DIR=@DATA_DIR@
+SESSION_SECRET=@SESSION_SECRET@
+
+SMTP_HOST=@SMTP_HOST@
+SMTP_PORT=@SMTP_PORT@
+SMTP_USER=@SMTP_USER@
+SMTP_PASS=@SMTP_PASS@
+SMTP_FROM="Roses Food Blog <@SMTP_FROM_ADDR@>"
 EMAIL_RATE_PER_MINUTE=30
 
-ADMIN_EMAIL=$ADMIN_EMAIL
-ADMIN_PASSWORD=$ADMIN_PASSWORD
+ADMIN_EMAIL=@ADMIN_EMAIL@
+ADMIN_PASSWORD=@ADMIN_PASSWORD@
 
 TZ=Europe/Berlin
 EOF
+)
+  # Ersatz GEQUOTET: seit bash 5.2 steht ein unquotiertes `&` im Ersatzstring
+  # für den gefundenen Text (wie bei sed). Ein Passwort mit „&" zerlegte die
+  # Zeile sonst still — nachgestellt mit bash 5.2.21.
+  env_vorlage=${env_vorlage//@BASE_URL@/"$BASE_URL_OHNE_SLASH"}
+  env_vorlage=${env_vorlage//@PORT@/"$PORT"}
+  env_vorlage=${env_vorlage//@DATA_DIR@/"$DATA_DIR"}
+  env_vorlage=${env_vorlage//@SESSION_SECRET@/"$SESSION_SECRET"}
+  env_vorlage=${env_vorlage//@SMTP_HOST@/"$SMTP_HOST"}
+  env_vorlage=${env_vorlage//@SMTP_PORT@/"$SMTP_PORT"}
+  env_vorlage=${env_vorlage//@SMTP_USER@/"$SMTP_USER"}
+  env_vorlage=${env_vorlage//@SMTP_PASS@/"$SMTP_PASS"}
+  env_vorlage=${env_vorlage//@SMTP_FROM_ADDR@/"$SMTP_FROM_ADDR"}
+  env_vorlage=${env_vorlage//@ADMIN_EMAIL@/"$ADMIN_EMAIL"}
+  env_vorlage=${env_vorlage//@ADMIN_PASSWORD@/"$ADMIN_PASSWORD"}
+  # Fail-closed: ein nicht ersetzter Platzhalter wäre eine kaputte .env — der
+  # Blog startete dann mit „@SESSION_SECRET@" als Schlüssel. Lieber abbrechen.
+  #
+  # Geprüft wird gegen die NAMENSLISTE, nicht gegen ein Muster wie
+  # `*"@"*"@"*`: jede .env enthält zwei E-Mail-Adressen, das Muster träfe also
+  # immer. Genau daran ist die erste Fassung gescheitert — der nachfolgende
+  # Test lief auf Rückgabewert 1 und `set -e` beendete bootstrap.sh mitten in
+  # der Ersteinrichtung, ohne Meldung.
+  for platz in @BASE_URL@ @PORT@ @DATA_DIR@ @SESSION_SECRET@ @SMTP_HOST@ \
+               @SMTP_PORT@ @SMTP_USER@ @SMTP_PASS@ @SMTP_FROM_ADDR@ \
+               @ADMIN_EMAIL@ @ADMIN_PASSWORD@; do
+    if [[ "$env_vorlage" == *"$platz"* ]]; then
+      fail ".env-Vorlage: Platzhalter $platz wurde nicht ersetzt."
+    fi
+  done
+
+  # Erst die leere Datei mit 600 anlegen, dann befüllen: sonst stünden die
+  # Secrets für einen Wimpernschlag mit den Standardrechten (meist 644) da.
+  : > .env
   chmod 600 .env
+  printf '%s\n' "$env_vorlage" > .env
   echo ".env geschrieben (SESSION_SECRET automatisch erzeugt)."
 fi
 
