@@ -28,6 +28,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import zlib from "node:zlib";
+import os from "node:os";
 import { createHash } from "node:crypto";
 
 /**
@@ -74,12 +75,18 @@ export function alleClientChunks(wurzel = ".next/static") {
  * build-manifest.json führt unter Turbopack nur `/_app`, die Zuordnung
  * Route → Client-Chunks steht ausschließlich dort.
  *
- * Das Muster lässt Unterverzeichnisse zu: der heutige Turbopack-Bau legt alles
- * flach unter static/chunks ab, andere Konfigurationen erzeugen aber
- * `static/chunks/app/…`. Ein zu enges Muster würde solche Chunks stillschweigend
- * aus der Routensumme fallen lassen (Befund gpt-5.6-sol, PR #63, Runde 4).
+ * KEINE Mustersuche auf Pfaden. Drei Anläufe mit immer weiteren Zeichenklassen
+ * (Unterverzeichnisse, dann Klammern/Prozentzeichen) haben gezeigt, dass das
+ * Raten des Dateinamen-Alphabets ein verlorenes Spiel ist — und jeder Fehlgriff
+ * hätte Chunks stillschweigend aus der Routensumme fallen lassen
+ * (Befunde gpt-5.6-sol, PR #63, Runden 4 und 5).
+ *
+ * Stattdessen wird gegen die Menge der TATSÄCHLICH vorhandenen Chunk-Dateien
+ * abgeglichen: kommt ein realer Dateiname im Manifest-Text vor, gehört der
+ * Chunk zur Route. Das ist unabhängig davon, welche Zeichen Next verwendet,
+ * und kann per Konstruktion keinen vorhandenen Chunk übersehen.
  */
-export function routenChunks(wurzel = ".next/server/app") {
+export function routenChunks(wurzel = ".next/server/app", bekannteChunks = []) {
   const manifeste = [];
   const lauf = (verzeichnis) => {
     for (const eintrag of fs.readdirSync(verzeichnis, { withFileTypes: true })) {
@@ -89,20 +96,32 @@ export function routenChunks(wurzel = ".next/server/app") {
     }
   };
   lauf(wurzel);
-  return manifeste.map((datei) => ({
-    route:
-      datei
-        .replace(wurzel, "")
-        .replace("_client-reference-manifest.js", "")
-        .replace(/\/(page|route)$/, "") || "/",
-    chunks: [
-      ...new Set(
-        [...fs.readFileSync(datei, "utf8").matchAll(/static\/chunks\/[\w./-]+\.js/g)].map(
-          (t) => t[0],
-        ),
-      ),
-    ],
-  }));
+
+  const routen = manifeste.map((datei) => {
+    const text = fs.readFileSync(datei, "utf8");
+    return {
+      route:
+        datei
+          .replace(wurzel, "")
+          .replace("_client-reference-manifest.js", "")
+          .replace(/\/(page|route)$/, "") || "/",
+      // Abgleich gegen die WIRKLICH vorhandenen Dateien statt Mustersuche.
+      // Ein zufälliger Treffer ist bei gehashten Namen praktisch ausgeschlossen
+      // und ginge zudem in die sichere Richtung: er würde eine Route teurer
+      // rechnen, nie billiger.
+      chunks: bekannteChunks.filter((c) => text.includes(c)),
+    };
+  });
+
+  // Fänden gar keine Manifeste einen einzigen Chunk, wäre die Zuordnung
+  // kaputt und jede Routensumme gleich dem Sockel — grün durch Nichtmessen.
+  if (routen.length > 0 && routen.every((r) => r.chunks.length === 0)) {
+    throw new Error(
+      "Kein einziges Routen-Manifest verweist auf eine vorhandene Chunk-Datei — " +
+        "die Zuordnung Route → Chunks greift nicht. Jede Routensumme wäre zu niedrig.",
+    );
+  }
+  return routen;
 }
 
 /**
@@ -298,6 +317,27 @@ function selbsttest() {
     process.exit(1);
   }
 
+  // Greift die Zuordnung Route -> Chunks überhaupt nicht, ist jede Routensumme
+  // gleich dem Sockel — das Routenbudget wäre wirkungslos und still.
+  const leeresVerzeichnis = fs.mkdtempSync(path.join(os.tmpdir(), "bb-"));
+  fs.writeFileSync(
+    path.join(leeresVerzeichnis, "page_client-reference-manifest.js"),
+    "kein einziger Chunkname steht hier drin",
+  );
+  let zuordnungGefangen = false;
+  try {
+    routenChunks(leeresVerzeichnis, ["static/chunks/gibtesnicht.js"]);
+  } catch {
+    zuordnungGefangen = true;
+  }
+  fs.rmSync(leeresVerzeichnis, { recursive: true, force: true });
+  if (!zuordnungGefangen) {
+    console.error(
+      "SELBSTTEST FEHLGESCHLAGEN: greifende-Zuordnung-Prüfung blieb stumm.",
+    );
+    process.exit(1);
+  }
+
   for (const [name, args] of [
     ["ohne geteilte Dateien", ["/e", [], ["/e/a.js"], [{ route: "/", chunks: [] }]]],
     ["ohne Chunks", ["/e", ["a.js"], [], [{ route: "/", chunks: [] }]]],
@@ -328,7 +368,16 @@ function haupt() {
     process.exit(1);
   }
   const manifest = JSON.parse(fs.readFileSync(manifestPfad, "utf8"));
-  const mass = messen(".next", geteilteDateien(manifest), alleClientChunks(), routenChunks());
+  const chunkDateien = alleClientChunks();
+  // Die Routen-Zuordnung braucht die Namen relativ zu .next — genau so stehen
+  // sie in den Manifesten.
+  const bekannt = chunkDateien.map((p) => path.relative(".next", p));
+  const mass = messen(
+    ".next",
+    geteilteDateien(manifest),
+    chunkDateien,
+    routenChunks(".next/server/app", bekannt),
+  );
 
   console.log(
     `Teuerste Route: ${kib(mass.schlechteste.gzip)} gzip ` +
