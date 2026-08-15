@@ -73,6 +73,14 @@ describe("Meldepfad: jeder unbeaufsichtigte Lauf meldet seinen Fehlschlag", () =
       expect(block, `${datei}: Meldeschritt legt kein Issue an`).toMatch(
         /gh issue (create|comment)/,
       );
+      // Die gh-CLI leitet das Repository sonst aus dem git-Remote im
+      // Arbeitsverzeichnis ab — das es nach einem gescheiterten Checkout nicht
+      // gibt. Ohne GH_REPO scheitert der Alarm also genau im Ernstfall.
+      expect(
+        block,
+        `${datei}: Meldeschritt setzt GH_REPO nicht — ohne Checkout findet gh ` +
+          "das Repository nicht und meldet nichts.",
+      ).toMatch(/GH_REPO:\s*\$\{\{\s*github\.repository\s*\}\}/);
     },
   );
 });

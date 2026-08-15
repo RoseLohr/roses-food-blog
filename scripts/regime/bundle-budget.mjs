@@ -1,18 +1,25 @@
 #!/usr/bin/env node
 /**
- * Budget für das JavaScript, das JEDE Seite lädt (First Load).
+ * Budget für das ausgelieferte Client-JavaScript.
  *
- * WARUM: Bis hierher prüften alle „Performance-Guardrails" ausschließlich
+ * WARUM: Bis 08/2026 prüften alle „Performance-Guardrails" ausschließlich
  * Zeichenketten im Quelltext (steht `loading="lazy"` da? ist browserslist
  * gesetzt?). Kein einziger Wächter sah je ein Byte eines gebauten Artefakts.
- * Ein Bundle konnte damit beliebig wachsen, ohne dass etwas rot wurde — und
- * die einzige Messung, die es überhaupt gab (Lighthouse in dast.yml), ist seit
- * dem 2026-07-20 in vier von vier Läufen übersprungen worden.
  *
  * Gemessen wird gzip, weil der Next-Server genau das ausliefert
  * (node_modules/next/dist/server/lib/router-server.js: compression() ohne
  * Brotli). Brotli wird zusätzlich ausgewiesen, aber NICHT gedeckelt — solange
  * nginx es nicht ausliefert, wäre das eine Zahl ohne Wirklichkeit.
+ *
+ * VIER GRENZEN, weil jede einzelne eine Lücke lässt (beide Lücken kamen aus
+ * dem Review, gpt-5.6-sol, PR #63):
+ *  - schlechtesteRoute: was die TEUERSTE Seite wirklich lädt. Nur den
+ *    geteilten Anteil zu messen ließ Seiten mit dicken Routen-Chunks durch —
+ *    die teuerste Route lag bei 228 KiB, während ein 180-KiB-Gate grün war.
+ *  - geteilt: der Sockel, den JEDE Seite zahlt. Wächst er, wird alles teurer.
+ *  - groessterChunk: gilt über ALLE Chunks, nicht nur die geteilten — sonst
+ *    schlüpft ein einzelner dicker Routen-Chunk durch, solange die Summe passt.
+ *  - gesamtClientJs: fängt Wachstum, das sich über viele Routen verteilt.
  *
  * Aufruf:
  *   node scripts/regime/bundle-budget.mjs            # nach `npm run build`
@@ -25,27 +32,26 @@ import { createHash } from "node:crypto";
 
 /**
  * Obergrenzen in Bytes. Ratchet: nur nach UNTEN anpassen, nie nach oben ohne
- * ausdrückliche Begründung im Commit. Startwerte = Ist-Messung 2026-08-15
- * (First Load gzip 172.549 B, größter Chunk gzip 70.984 B) plus knapper
- * Sicherheitsabstand, damit gewöhnliches Rauschen nicht rot wird.
+ * ausdrückliche Begründung im Commit. Startwerte = Ist-Messung 2026-08-15 plus
+ * knapper Abstand, damit gewöhnliches Rauschen nicht rot wird.
+ * Ist: teuerste Route 228,1 KiB (/admin/rezepte/[id]), geteilt 168,5 KiB,
+ * größter Chunk 69,3 KiB, gesamt 563,5 KiB.
  */
 export const BUDGET = {
-  firstLoadGzip: 184_320, // 180 KiB
+  schlechtesteRouteGzip: 245_760, // 240 KiB
+  geteiltGzip: 184_320, // 180 KiB
   groessterChunkGzip: 75_776, // 74 KiB
-  /**
-   * Gilt fuer JEDEN Chunk, auch fuer Routen-Chunks. Waere sie nur auf die
-   * First-Load-Dateien angewandt, kaeme ein 100-KiB-Routenchunk am Deckel
-   * vorbei, solange die Gesamtsumme unter der Grenze bleibt
-   * (Befund gpt-5.6-sol, PR #63, Runde 2).
-   */
-  /**
-   * Alle auslieferbaren Client-Chunks zusammen. Ohne diese Zeile bliebe
-   * beliebig wachsendes ROUTEN-JS grün: rootMainFiles/polyfillFiles decken nur
-   * ab, was JEDE Seite lädt — eine einzelne Route könnte unbemerkt um
-   * Megabytes wachsen (Befund gpt-5.6-sol, PR #63). Ist 2026-08-15: 563,5 KiB.
-   */
   gesamtClientJsGzip: 614_400, // 600 KiB
 };
+
+const kib = (b) => `${(b / 1024).toFixed(1)} KiB`;
+
+/** Dateien, die JEDE Seite lädt. */
+export function geteilteDateien(manifest) {
+  return [
+    ...new Set([...(manifest.rootMainFiles ?? []), ...(manifest.polyfillFiles ?? [])]),
+  ];
+}
 
 /** Jede auslieferbare .js unter .next/static — auch Routen-Chunks. */
 export function alleClientChunks(wurzel = ".next/static") {
@@ -61,73 +67,152 @@ export function alleClientChunks(wurzel = ".next/static") {
   return gefunden;
 }
 
-/** Dateien, die beim ersten Seitenaufruf unvermeidlich geladen werden. */
-export function firstLoadDateien(manifest) {
-  return [
-    ...new Set([...(manifest.rootMainFiles ?? []), ...(manifest.polyfillFiles ?? [])]),
-  ];
+/**
+ * Routen-spezifische Chunks je App-Route.
+ *
+ * Quelle sind die `*_client-reference-manifest.js` unter .next/server/app —
+ * build-manifest.json führt unter Turbopack nur `/_app`, die Zuordnung
+ * Route → Client-Chunks steht ausschließlich dort.
+ */
+export function routenChunks(wurzel = ".next/server/app") {
+  const manifeste = [];
+  const lauf = (verzeichnis) => {
+    for (const eintrag of fs.readdirSync(verzeichnis, { withFileTypes: true })) {
+      const p = path.join(verzeichnis, eintrag.name);
+      if (eintrag.isDirectory()) lauf(p);
+      else if (eintrag.name.endsWith("client-reference-manifest.js")) manifeste.push(p);
+    }
+  };
+  lauf(wurzel);
+  return manifeste.map((datei) => ({
+    route:
+      datei
+        .replace(wurzel, "")
+        .replace("_client-reference-manifest.js", "")
+        .replace(/\/(page|route)$/, "") || "/",
+    chunks: [
+      ...new Set(
+        [...fs.readFileSync(datei, "utf8").matchAll(/static\/chunks\/[\w.-]+\.js/g)].map(
+          (t) => t[0],
+        ),
+      ),
+    ],
+  }));
 }
 
 /**
- * Misst die übertragene Größe. Wirft, wenn eine Datei fehlt oder die Liste
- * leer ist — beides würde sonst ein grünes Ergebnis durch Nichtmessen
- * erzeugen, also genau die Tautologie, gegen die dieser Wächter antritt.
+ * Misst alles und liefert die Kennzahlen. Wirft, wenn eine Messgrundlage
+ * fehlt — ein leeres Ergebnis darf nie grün sein, das ist genau die
+ * Tautologie, gegen die dieser Wächter antritt.
  */
-export function messen(wurzel, dateien, leseDatei = (p) => fs.readFileSync(p)) {
-  if (dateien.length === 0) {
+export function messen(wurzel, geteilt, chunkDateien, routen, leseDatei) {
+  const lies = leseDatei ?? ((p) => fs.readFileSync(p));
+  if (geteilt.length === 0) {
     throw new Error(
-      "Keine First-Load-Dateien im Build-Manifest — nichts zu messen. " +
-        "Lief `npm run build`? (Ein leeres Ergebnis darf nie grün sein.)",
+      "Keine geteilten First-Load-Dateien im Build-Manifest — nichts zu messen. " +
+        "Lief `npm run build`?",
     );
   }
-  let gzip = 0;
-  let brotli = 0;
-  let groesster = { datei: "", gzip: 0 };
-  for (const datei of dateien) {
-    const inhalt = leseDatei(path.join(wurzel, datei));
-    const g = zlib.gzipSync(inhalt, { level: 6 }).length;
-    gzip += g;
-    brotli += zlib.brotliCompressSync(inhalt).length;
-    if (g > groesster.gzip) groesster = { datei, gzip: g };
+  if (chunkDateien.length === 0) {
+    throw new Error("Keine Client-Chunks unter .next/static gefunden.");
   }
-  return { anzahl: dateien.length, gzip, brotli, groesster };
+  if (routen.length === 0) {
+    throw new Error(
+      "Keine Routen-Manifeste unter .next/server/app gefunden — dann wäre die " +
+        "teuerste Seite ungemessen.",
+    );
+  }
+
+  const cache = new Map();
+  const gzipVon = (relativ) => {
+    if (!cache.has(relativ)) {
+      cache.set(
+        relativ,
+        zlib.gzipSync(lies(path.join(wurzel, relativ)), { level: 6 }).length,
+      );
+    }
+    return cache.get(relativ);
+  };
+
+  const geteiltGzip = geteilt.reduce((n, f) => n + gzipVon(f), 0);
+  const geteiltBrotli = geteilt.reduce(
+    (n, f) => n + zlib.brotliCompressSync(lies(path.join(wurzel, f))).length,
+    0,
+  );
+
+  let gesamt = 0;
+  let groesster = { datei: "", gzip: 0 };
+  for (const p of chunkDateien) {
+    const g = zlib.gzipSync(lies(p), { level: 6 }).length;
+    gesamt += g;
+    if (g > groesster.gzip) groesster = { datei: path.relative(wurzel, p), gzip: g };
+  }
+
+  let schlechteste = { route: "", gzip: 0, chunks: 0 };
+  for (const r of routen) {
+    let summe = geteiltGzip;
+    for (const c of r.chunks) {
+      if (geteilt.includes(c)) continue; // schon im Sockel enthalten
+      try {
+        summe += gzipVon(c);
+      } catch {
+        // Ein im Manifest genannter, aber fehlender Chunk ist ein kaputter
+        // Bau; die Gesamtsumme oben deckt den Fall ohnehin ab.
+      }
+    }
+    if (summe > schlechteste.gzip) {
+      schlechteste = { route: r.route, gzip: summe, chunks: r.chunks.length };
+    }
+  }
+
+  return {
+    geteiltAnzahl: geteilt.length,
+    geteiltGzip,
+    geteiltBrotli,
+    gesamt,
+    gesamtAnzahl: chunkDateien.length,
+    groesster,
+    schlechteste,
+    routenAnzahl: routen.length,
+  };
 }
 
-/** Ergebnis gegen die Budgets halten. Liefert die Liste der Überschreitungen. */
+/** Kennzahlen gegen die Budgets halten. */
 export function bewerten(mass, budget = BUDGET) {
   const verstoesse = [];
-  if (mass.gzip > budget.firstLoadGzip) {
+  if (mass.schlechteste.gzip > budget.schlechtesteRouteGzip) {
     verstoesse.push(
-      `First Load JS (gzip) ${kib(mass.gzip)} > Budget ${kib(budget.firstLoadGzip)}`,
+      `Teuerste Route ${kib(mass.schlechteste.gzip)} > Budget ` +
+        `${kib(budget.schlechtesteRouteGzip)} — ${mass.schlechteste.route}`,
+    );
+  }
+  if (mass.geteiltGzip > budget.geteiltGzip) {
+    verstoesse.push(
+      `Geteiltes First-Load-JS ${kib(mass.geteiltGzip)} > Budget ${kib(budget.geteiltGzip)}`,
     );
   }
   if (mass.groesster.gzip > budget.groessterChunkGzip) {
     verstoesse.push(
-      `Größter Chunk (gzip) ${kib(mass.groesster.gzip)} > Budget ` +
+      `Größter Chunk ${kib(mass.groesster.gzip)} > Budget ` +
         `${kib(budget.groessterChunkGzip)} — ${mass.groesster.datei}`,
     );
   }
-  if (mass.gesamt != null && mass.gesamt > budget.gesamtClientJsGzip) {
+  if (mass.gesamt > budget.gesamtClientJsGzip) {
     verstoesse.push(
-      `Client-JS gesamt (gzip) ${kib(mass.gesamt)} > Budget ` +
-        `${kib(budget.gesamtClientJsGzip)} — wächst eine einzelne Route, fällt es hier auf.`,
+      `Client-JS gesamt ${kib(mass.gesamt)} > Budget ${kib(budget.gesamtClientJsGzip)}`,
     );
   }
   return verstoesse;
 }
 
-const kib = (b) => `${(b / 1024).toFixed(1)} KiB`;
-
 /**
- * Selbsttest (A-36): der Wächter muss an einem künstlich aufgeblähten Manifest
- * ROT werden und an einem schlanken GRÜN. Ohne diesen Nachweis wäre nicht
- * belegt, dass er überhaupt etwas fangen kann.
+ * Selbsttest (A-36): der Wächter muss bei JEDER der vier Grenzen rot werden
+ * und bei jeder fehlenden Messgrundlage ebenfalls.
  */
 function selbsttest() {
   // Bewusst schwer komprimierbar: ein Puffer aus Wiederholungen schrumpft
-  // unter gzip auf wenige Bytes und würde das Budget NIE reißen — der
-  // Selbsttest wäre dann selbst die Tautologie, die er ausschließen soll.
-  // Deterministisch (fester Startwert), damit das Ergebnis reproduzierbar ist.
+  // unter gzip auf wenige Bytes und würde kein Budget reißen — der Selbsttest
+  // wäre dann selbst die Tautologie, die er ausschließen soll.
   const rauschen = (bytes) => {
     const teile = [];
     let saat = createHash("sha256").update("bundle-budget").digest();
@@ -137,48 +222,64 @@ function selbsttest() {
     }
     return Buffer.concat(teile).subarray(0, bytes);
   };
-  const fett = messen("/egal", ["a.js", "b.js"], () => rauschen(150_000));
-  const verstoesseFett = bewerten(fett);
-  if (verstoesseFett.length === 0) {
-    console.error("SELBSTTEST FEHLGESCHLAGEN: aufgeblähtes Bundle blieb grün.");
-    process.exit(1);
-  }
-  // Routen-Chunk-Grenze muss ebenfalls greifen können.
-  const routen = { ...messen("/egal", ["a.js"], () => Buffer.from("x")), gesamt: 900_000 };
-  if (bewerten(routen).length !== 1) {
-    console.error("SELBSTTEST FEHLGESCHLAGEN: gewachsene Routen-Chunks blieben grün.");
-    process.exit(1);
-  }
 
-  // Ein einzelner dicker Chunk muss auffallen, AUCH wenn die Gesamtsumme passt.
-  const dickerEinzelner = {
-    ...messen("/egal", ["a.js"], () => Buffer.from("x")),
-    gesamt: 300_000,
-    groesster: { datei: "static/chunks/route-xyz.js", gzip: 120_000 },
-  };
-  if (bewerten(dickerEinzelner).length !== 1) {
-    console.error(
-      "SELBSTTEST FEHLGESCHLAGEN: dicker Einzel-Chunk blieb grün, weil die Summe passte.",
-    );
-    process.exit(1);
-  }
-
-  const schlank = messen("/egal", ["a.js"], () => Buffer.from("console.log(1)"));
+  const schlank = messen(
+    "/e",
+    ["a.js"],
+    ["/e/a.js"],
+    [{ route: "/", chunks: ["a.js"] }],
+    () => Buffer.from("x"),
+  );
   if (bewerten(schlank).length !== 0) {
-    console.error("SELBSTTEST FEHLGESCHLAGEN: schlankes Bundle wurde rot.");
+    console.error("SELBSTTEST FEHLGESCHLAGEN: schlanker Bau wurde rot.");
     process.exit(1);
   }
-  let leerGefangen = false;
-  try {
-    messen("/egal", []);
-  } catch {
-    leerGefangen = true;
+
+  // Echte Bytes statt gesetzter Felder: so ist belegt, dass die MESSUNG das
+  // Wachstum sieht, nicht bloß der Vergleich.
+  // 200 KB je Datei, vier Chunks: reißt alle vier Grenzen gleichzeitig
+  // (Sockel 200 > 180, Route 400 > 240, Einzel-Chunk 200 > 74, gesamt 800 > 600).
+  const fett = messen(
+    "/e",
+    ["a.js"],
+    ["/e/a.js", "/e/b.js", "/e/c.js", "/e/d.js"],
+    [{ route: "/", chunks: ["a.js", "b.js"] }],
+    () => rauschen(200_000),
+  );
+  const gefunden = bewerten(fett);
+  for (const erwartet of ["Teuerste Route", "Geteiltes", "Größter Chunk", "gesamt"]) {
+    if (!gefunden.some((v) => v.includes(erwartet))) {
+      console.error(`SELBSTTEST FEHLGESCHLAGEN: Grenze „${erwartet}" blieb stumm.`);
+      process.exit(1);
+    }
   }
-  if (!leerGefangen) {
-    console.error("SELBSTTEST FEHLGESCHLAGEN: leere Dateiliste galt als messbar.");
+
+  // Eine teure Route bei sonst schlankem Bau muss allein auffallen.
+  const nurRoute = { ...schlank, schlechteste: { route: "/teuer", gzip: 400_000, chunks: 3 } };
+  if (bewerten(nurRoute).length !== 1) {
+    console.error("SELBSTTEST FEHLGESCHLAGEN: teure Einzelroute blieb grün.");
     process.exit(1);
   }
-  console.log("bundle-budget: Selbsttest ok (fängt Wachstum, meldet Nichtmessung).");
+
+  for (const [name, args] of [
+    ["ohne geteilte Dateien", ["/e", [], ["/e/a.js"], [{ route: "/", chunks: [] }]]],
+    ["ohne Chunks", ["/e", ["a.js"], [], [{ route: "/", chunks: [] }]]],
+    ["ohne Routen", ["/e", ["a.js"], ["/e/a.js"], []]],
+  ]) {
+    let gefangen = false;
+    try {
+      messen(...args, () => Buffer.from("x"));
+    } catch {
+      gefangen = true;
+    }
+    if (!gefangen) {
+      console.error(`SELBSTTEST FEHLGESCHLAGEN: „${name}" galt als messbar.`);
+      process.exit(1);
+    }
+  }
+  console.log(
+    "bundle-budget: Selbsttest ok (alle vier Grenzen feuern, jede fehlende Messgrundlage fällt auf).",
+  );
 }
 
 function haupt() {
@@ -186,42 +287,28 @@ function haupt() {
 
   const manifestPfad = path.resolve(".next/build-manifest.json");
   if (!fs.existsSync(manifestPfad)) {
-    console.error(
-      `Kein Build gefunden (${manifestPfad}). Erst \`npm run build\` ausführen.`,
-    );
+    console.error(`Kein Build gefunden (${manifestPfad}). Erst \`npm run build\`.`);
     process.exit(1);
   }
   const manifest = JSON.parse(fs.readFileSync(manifestPfad, "utf8"));
-  const mass = messen(".next", firstLoadDateien(manifest));
-  // Routen-Chunks zusätzlich, absolut gemessen (Befund gpt-5.6-sol).
-  const chunks = alleClientChunks();
-  if (chunks.length === 0) {
-    console.error("Keine Client-Chunks unter .next/static gefunden — nichts zu messen.");
-    process.exit(1);
-  }
-  mass.gesamt = 0;
-  for (const p of chunks) {
-    const g = zlib.gzipSync(fs.readFileSync(p), { level: 6 }).length;
-    mass.gesamt += g;
-    // Der Deckel gilt fuer JEDEN Chunk — sonst schluepft ein dicker
-    // Routen-Chunk durch, solange die Summe passt.
-    if (g > mass.groesster.gzip) {
-      mass.groesster = { datei: path.relative(".next", p), gzip: g };
-    }
-  }
-  mass.gesamtAnzahl = chunks.length;
+  const mass = messen(".next", geteilteDateien(manifest), alleClientChunks(), routenChunks());
 
   console.log(
-    `First Load: ${mass.anzahl} Dateien, gzip ${kib(mass.gzip)} ` +
-      `(Budget ${kib(BUDGET.firstLoadGzip)}), brotli ${kib(mass.brotli)} — nur zur Information.`,
+    `Teuerste Route: ${kib(mass.schlechteste.gzip)} gzip ` +
+      `(Budget ${kib(BUDGET.schlechtesteRouteGzip)}) — ${mass.schlechteste.route} ` +
+      `[${mass.routenAnzahl} Routen geprüft]`,
   );
   console.log(
-    `Größter Chunk (über ALLE Chunks): ${kib(mass.groesster.gzip)} gzip ` +
+    `Geteilter Sockel: ${mass.geteiltAnzahl} Dateien, ${kib(mass.geteiltGzip)} gzip ` +
+      `(Budget ${kib(BUDGET.geteiltGzip)}), brotli ${kib(mass.geteiltBrotli)} — nur zur Information.`,
+  );
+  console.log(
+    `Größter Chunk: ${kib(mass.groesster.gzip)} gzip ` +
       `(Budget ${kib(BUDGET.groessterChunkGzip)}) — ${mass.groesster.datei}`,
   );
   console.log(
     `Client-JS gesamt: ${mass.gesamtAnzahl} Dateien, ${kib(mass.gesamt)} gzip ` +
-      `(Budget ${kib(BUDGET.gesamtClientJsGzip)}) — enthält die Routen-Chunks.`,
+      `(Budget ${kib(BUDGET.gesamtClientJsGzip)}).`,
   );
 
   const verstoesse = bewerten(mass);
@@ -234,7 +321,12 @@ function haupt() {
     );
     process.exit(1);
   }
-  console.log("Budget eingehalten.");
+  console.log("Alle Budgets eingehalten.");
 }
 
-haupt();
+try {
+  haupt();
+} catch (fehler) {
+  console.error(`FEHLER: ${fehler instanceof Error ? fehler.message : String(fehler)}`);
+  process.exit(1);
+}

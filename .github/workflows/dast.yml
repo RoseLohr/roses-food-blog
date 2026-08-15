@@ -70,6 +70,11 @@ jobs:
         if: failure()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # OHNE GH_REPO leitet die gh-CLI das Repository aus dem git-Remote im
+          # Arbeitsverzeichnis ab — nach einem fehlgeschlagenen Checkout gibt es
+          # keines, und der Alarm scheitert mit „not a git repository". Genau im
+          # gemeldeten Fall (Befund gpt-5.6-sol, PR #63, Runde 3).
+          GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           gh label create kadenz-alarm --force --color B60205 \
