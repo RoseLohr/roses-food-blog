@@ -39,6 +39,18 @@ const SEITEN = [
 
 const KONTEXTE = [
   {
+    // Schmales Telefon (iPhone SE, Galaxy S8). Bewusst DRIN, seit ein
+    // `auto-fit`-Raster im Reisebericht unterhalb ~372 px auf eine Spalte
+    // zurückfiel: Die Kachel wurde doppelt so breit wie das `sizes` behauptete,
+    // der Browser lud die zu kleine Variante — sichtbar unscharf. Bei 390 px
+    // war davon nichts zu sehen. Ein Layout, das erst unter einer bestimmten
+    // Breite umschaltet, muss auch unter dieser Breite gemessen werden.
+    name: "Schmales Telefon 360px @ DPR 3",
+    viewport: { width: 360, height: 780 },
+    deviceScaleFactor: 3,
+    isMobile: true,
+  },
+  {
     name: "Mobil 390px @ DPR 2",
     viewport: { width: 390, height: 844 },
     deviceScaleFactor: 2,

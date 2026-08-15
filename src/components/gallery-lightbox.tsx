@@ -48,6 +48,7 @@ export function GalleryLightbox({
   thumbSizes,
   thumbClassName,
   groupClassName,
+  lead,
   label,
 }: {
   images: GalleryImage[];
@@ -58,6 +59,14 @@ export function GalleryLightbox({
   /** Optionaler Wrapper um mehrere Thumbnails (z. B. Grid/Stack). Bei einem
    *  einzelnen Bild weglassen → das Thumbnail steht ohne Zusatz-Wrapper. */
   groupClassName?: string;
+  /** „Bühne und Streifen": Das ERSTE Foto steht groß allein, die übrigen
+   *  darunter im `groupClassName`-Raster. Beide Teile gehören zu EINER
+   *  Galerie — das Blättern im Pop-up läuft weiter über die vollständige
+   *  Reihe, und der Zähler zählt alle Fotos. Weil die Bühne andere Maße hat
+   *  als die Streifen, bringt sie ihr eigenes `sizes` mit (beides zusammen in
+   *  EINEM Feld: so kann kein Aufrufer die Klasse setzen und das `sizes`
+   *  vergessen — das wäre wieder eine gelogene Breitenangabe). */
+  lead?: { className: string; sizes: string };
   /** Kontext fürs Vorlese-Label, z. B. Gericht-/Restaurantname. */
   label?: string;
 }) {
@@ -147,6 +156,7 @@ export function GalleryLightbox({
   const thumbs = shown.map((im, i) => {
     const widths = im.variantWidths;
     const objectPosition = focusPosition(im.focusX, im.focusY);
+    const istBuehne = lead !== undefined && i === 0;
     return (
       <button
         key={im.fileKey}
@@ -167,13 +177,13 @@ export function GalleryLightbox({
           // Originalmaße (Seitenverhältnis fürs Layout, CSS steuert die Größe).
           src={imageUrl(im.fileKey, optimalVariant(widths, 640))}
           srcSet={srcset(im.fileKey, widths)}
-          sizes={thumbSizes}
+          sizes={istBuehne ? lead.sizes : thumbSizes}
           alt={im.altText}
           width={im.width}
           height={im.height}
           loading="lazy"
           decoding="async"
-          className={thumbClassName}
+          className={istBuehne ? lead.className : thumbClassName}
           style={objectPosition ? { objectPosition } : undefined}
         />
       </button>
@@ -182,9 +192,20 @@ export function GalleryLightbox({
 
   const current = openIndex !== null ? shown[openIndex] : null;
 
+  // Anordnung der Thumbnails: mit `lead` steht das erste Foto vor der Gruppe,
+  // ohne `lead` liegen alle im (optionalen) Gruppen-Wrapper.
+  const rest = lead ? thumbs.slice(1) : thumbs;
+  const angeordnet = (
+    <>
+      {lead && thumbs[0]}
+      {rest.length > 0 &&
+        (groupClassName ? <div className={groupClassName}>{rest}</div> : rest)}
+    </>
+  );
+
   return (
     <>
-      {groupClassName ? <div className={groupClassName}>{thumbs}</div> : thumbs}
+      {angeordnet}
 
       {current &&
         createPortal(

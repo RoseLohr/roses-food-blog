@@ -17,7 +17,9 @@ let adminId: number;
 beforeAll(async () => {
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), "roses-dishimg-"));
   process.env.DATA_DIR = tmp;
-  execSync("node scripts/migrate.mjs", { env: { ...process.env, DATA_DIR: tmp } });
+  execSync("node scripts/migrate.mjs", {
+    env: { ...process.env, DATA_DIR: tmp },
+  });
   const { db, schema } = await import("@/db");
   const [admin] = await db
     .insert(schema.adminUser)
@@ -98,7 +100,9 @@ describe("Reisebericht-Frontend: Gericht-Fotos", () => {
     ]);
 
     // Rendering: ALLE drei Fotos erscheinen im öffentlichen Markup.
-    const markup = renderToStaticMarkup(await TravelView({ full: full!, interactive: false }));
+    const markup = renderToStaticMarkup(
+      await TravelView({ full: full!, interactive: false }),
+    );
     expect(markup).toContain("dishfoto-a");
     expect(markup).toContain("dishfoto-b");
     expect(markup).toContain("dishfoto-c");
@@ -109,6 +113,96 @@ describe("Reisebericht-Frontend: Gericht-Fotos", () => {
     // Pop-up). Das Overlay selbst rendert erst nach Klick (Client-State).
     expect(markup.match(/cursor-zoom-in/g)?.length).toBe(3);
     expect(markup).toContain("vergrößern");
+  });
+
+  it("Regel C: GENAU ZWEI Fotos stehen gleichrangig, ohne Bühne", async () => {
+    const { saveTravelFromForm } = await import("@/lib/travel-save");
+    const { getFullTravelPost } = await import("@/lib/travel");
+    const { TravelView } = await import("@/components/travel-view");
+
+    // Zwei Fotos: Bei dieser Zahl gibt es die Rangfolge nicht, die eine Bühne
+    // behaupten würde — beide bekommen dasselbe Format. Ab DREI Fotos trägt
+    // die Bühne wieder (zweiter Teil dieses Tests).
+    const zwei = [await seedImage("regelc-a"), await seedImage("regelc-b")];
+    const fd = new FormData();
+    fd.set("titel", "Zwei Fotos, keine Bühne");
+    fd.set("status", "veroeffentlicht");
+    fd.set(
+      "restaurants",
+      JSON.stringify([
+        {
+          name: "Bar Dos",
+          city: "Sevilla",
+          description: "",
+          dishes: [
+            {
+              name: "Salmorejo",
+              description: "",
+              imageIds: zwei,
+              ingredients: [],
+            },
+          ],
+        },
+      ]),
+    );
+    const id = ((await saveTravelFromForm(fd, adminId)) as { travelId: number })
+      .travelId;
+    const full = await getFullTravelPost({ id });
+    const markup = renderToStaticMarkup(
+      await TravelView({ full: full!, interactive: false }),
+    );
+
+    // Beide Fotos tragen dasselbe Seitenverhältnis (4/3) — keines ist Bühne.
+    const seiten = markup.match(/aspect-\[4\/3\] w-full object-cover/g) ?? [];
+    expect(seiten.length).toBe(2);
+    // Und es gibt KEINE Bühne (16/9) in diesem Bericht.
+    expect(markup).not.toContain("aspect-[16/9]");
+  });
+
+  it("Regel C: ab DREI Fotos trägt die Bühne wieder", async () => {
+    const { saveTravelFromForm } = await import("@/lib/travel-save");
+    const { getFullTravelPost } = await import("@/lib/travel");
+    const { TravelView } = await import("@/components/travel-view");
+
+    const drei = [
+      await seedImage("regelc-c"),
+      await seedImage("regelc-d"),
+      await seedImage("regelc-e"),
+    ];
+    const fd = new FormData();
+    fd.set("titel", "Drei Fotos, mit Bühne");
+    fd.set("status", "veroeffentlicht");
+    fd.set(
+      "restaurants",
+      JSON.stringify([
+        {
+          name: "Bar Tres",
+          city: "Sevilla",
+          description: "",
+          dishes: [
+            {
+              name: "Espinacas",
+              description: "",
+              imageIds: drei,
+              ingredients: [],
+            },
+          ],
+        },
+      ]),
+    );
+    const id = ((await saveTravelFromForm(fd, adminId)) as { travelId: number })
+      .travelId;
+    const full = await getFullTravelPost({ id });
+    const markup = renderToStaticMarkup(
+      await TravelView({ full: full!, interactive: false }),
+    );
+
+    // Genau EINE Bühne (16/9) …
+    expect((markup.match(/aspect-\[16\/9\]/g) ?? []).length).toBe(1);
+    // … und zwei quadratische Streifen-Fotos.
+    expect(
+      (markup.match(/aspect-square w-full object-cover/g) ?? []).length,
+    ).toBe(2);
   });
 
   it("zeigt ein einzelnes Gericht-Foto unverändert (Regression der Single-Ansicht)", async () => {
@@ -128,16 +222,22 @@ describe("Reisebericht-Frontend: Gericht-Fotos", () => {
           city: "Catania",
           description: "",
           dishes: [
-            { name: "Pasta alla Norma", description: "", imageIds: [only], ingredients: [] },
+            {
+              name: "Pasta alla Norma",
+              description: "",
+              imageIds: [only],
+              ingredients: [],
+            },
           ],
         },
       ]),
     );
-    const id = (
-      (await saveTravelFromForm(fd, adminId)) as { travelId: number }
-    ).travelId;
+    const id = ((await saveTravelFromForm(fd, adminId)) as { travelId: number })
+      .travelId;
     const full = await getFullTravelPost({ id });
-    const markup = renderToStaticMarkup(await TravelView({ full: full!, interactive: false }));
+    const markup = renderToStaticMarkup(
+      await TravelView({ full: full!, interactive: false }),
+    );
     expect(markup.match(/src="\/uploads\/dishfoto-solo/g)?.length).toBe(1);
   });
 });
