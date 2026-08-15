@@ -211,6 +211,35 @@ describe("Texttreue: der eingefügte Text ist Vorlage, nicht Entwurf", () => {
     expect(SYSTEM).not.toMatch(/klar formulierter Satz/);
   });
 
+  it("lässt bei Unleserlichem eine Lücke, statt zu ergänzen", async () => {
+    // Befund gpt-5.6-sol (PR #64): „Unleserliches … plausibel aus dem Kontext
+    // ergänzen" stand direkt gegen „nichts hinzuerfinden". Bei einem unscharfen
+    // Foto durfte damit eine Zutat erfunden werden — der schlimmste Fall, weil
+    // das Ergebnis wie eine echte Angabe aussieht und still falsch ist.
+    const { SYSTEM } = await import("@/lib/prompts/recipe-draft");
+    expect(SYSTEM).toMatch(/Unleserliches wird weder geraten noch aus dem Kontext ergänzt/);
+    expect(SYSTEM).toMatch(/lass die Lücke offen/);
+    expect(SYSTEM).not.toMatch(/Unleserliches nicht raten, sondern plausibel/);
+  });
+
+  it("erfindet keine Abschnittsnamen", async () => {
+    // Befund gpt-5.6-sol (PR #64): die Gliederungsregel erlaubte weiterhin einen
+    // „sprechenden Namen", obwohl nur vier Redaktionsfelder frei sein sollen.
+    // Ein Abschnittsname IST Rezepttext und stand damit im Widerspruch.
+    const { SYSTEM } = await import("@/lib/prompts/recipe-draft");
+    expect(SYSTEM).toMatch(/Erfinde keine Abschnittsnamen/);
+    expect(SYSTEM).not.toMatch(/sonst vergib einen sprechenden Namen/);
+  });
+
+  it("regelt den Vorrang, statt Widersprüche dem Modell zu überlassen", async () => {
+    // Zwei einander widersprechende Regeln heißen: das Modell wählt. Genau die
+    // Beliebigkeit, die abgestellt werden soll. Deshalb eine ausdrückliche
+    // Vorrangregel für Fälle, die niemand vorhergesehen hat.
+    const { SYSTEM } = await import("@/lib/prompts/recipe-draft");
+    expect(SYSTEM).toMatch(/hat die Texttreue Vorrang/);
+    expect(SYSTEM).toMatch(/Lieber eine offene Lücke als eine erfundene Angabe/);
+  });
+
   it("gilt für beide Stilpfade — Referenztexte wie internes Template", async () => {
     // Die Stilvorgabe (Referenzen ODER internes Template) betrifft nur das Feld
     // „tips". Stünde die Texttreue dort statt im System-Prompt, hinge sie davon
