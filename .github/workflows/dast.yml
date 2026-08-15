@@ -60,8 +60,27 @@ jobs:
       # Die Messung laeuft jetzt in .github/workflows/perf-uptime.yml gegen die
       # ECHTE Domain — in CI gaebe es die betroffenen Bilder gar nicht (leere DB).
 
+      # BEWUSST INLINE, nicht als Skript aus dem Repo (Befund gpt-5.6-sol,
+      # PR #63, Runde 2): schlägt schon der Checkout fehl, existiert kein
+      # Skript — der Alarm-Schritt liefe zwar, fände die Datei nicht und
+      # meldete nichts. Ausgerechnet der Totalausfall des Laufs bliebe still.
+      # Der Preis ist ein wiederholter Block in drei Workflows; die Alternative
+      # wäre eine Kontrolle, die im wichtigsten Fall nicht greift.
       - name: Fehlschlag melden
         if: failure()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: bash scripts/regime/kadenz-alarm.sh "${{ github.workflow }}"
+        run: |
+          set -euo pipefail
+          gh label create kadenz-alarm --force --color B60205 \
+            --description "Ein wiederkehrender Lauf ist fehlgeschlagen"
+          titel="Wiederkehrender Lauf fehlgeschlagen: ${{ github.workflow }}"
+          text="Lauf: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          Commit: ${{ github.sha }}"
+          nummer=$(gh issue list --label kadenz-alarm --state open \
+            --search "$titel in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$nummer" ]; then
+            gh issue comment "$nummer" --body "$text"
+          else
+            gh issue create --title "$titel" --label kadenz-alarm --body "$text"
+          fi

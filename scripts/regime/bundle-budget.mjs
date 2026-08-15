@@ -33,6 +33,12 @@ export const BUDGET = {
   firstLoadGzip: 184_320, // 180 KiB
   groessterChunkGzip: 75_776, // 74 KiB
   /**
+   * Gilt fuer JEDEN Chunk, auch fuer Routen-Chunks. Waere sie nur auf die
+   * First-Load-Dateien angewandt, kaeme ein 100-KiB-Routenchunk am Deckel
+   * vorbei, solange die Gesamtsumme unter der Grenze bleibt
+   * (Befund gpt-5.6-sol, PR #63, Runde 2).
+   */
+  /**
    * Alle auslieferbaren Client-Chunks zusammen. Ohne diese Zeile bliebe
    * beliebig wachsendes ROUTEN-JS grün: rootMainFiles/polyfillFiles decken nur
    * ab, was JEDE Seite lädt — eine einzelne Route könnte unbemerkt um
@@ -144,6 +150,19 @@ function selbsttest() {
     process.exit(1);
   }
 
+  // Ein einzelner dicker Chunk muss auffallen, AUCH wenn die Gesamtsumme passt.
+  const dickerEinzelner = {
+    ...messen("/egal", ["a.js"], () => Buffer.from("x")),
+    gesamt: 300_000,
+    groesster: { datei: "static/chunks/route-xyz.js", gzip: 120_000 },
+  };
+  if (bewerten(dickerEinzelner).length !== 1) {
+    console.error(
+      "SELBSTTEST FEHLGESCHLAGEN: dicker Einzel-Chunk blieb grün, weil die Summe passte.",
+    );
+    process.exit(1);
+  }
+
   const schlank = messen("/egal", ["a.js"], () => Buffer.from("console.log(1)"));
   if (bewerten(schlank).length !== 0) {
     console.error("SELBSTTEST FEHLGESCHLAGEN: schlankes Bundle wurde rot.");
@@ -180,10 +199,16 @@ function haupt() {
     console.error("Keine Client-Chunks unter .next/static gefunden — nichts zu messen.");
     process.exit(1);
   }
-  mass.gesamt = chunks.reduce(
-    (n, p) => n + zlib.gzipSync(fs.readFileSync(p), { level: 6 }).length,
-    0,
-  );
+  mass.gesamt = 0;
+  for (const p of chunks) {
+    const g = zlib.gzipSync(fs.readFileSync(p), { level: 6 }).length;
+    mass.gesamt += g;
+    // Der Deckel gilt fuer JEDEN Chunk — sonst schluepft ein dicker
+    // Routen-Chunk durch, solange die Summe passt.
+    if (g > mass.groesster.gzip) {
+      mass.groesster = { datei: path.relative(".next", p), gzip: g };
+    }
+  }
   mass.gesamtAnzahl = chunks.length;
 
   console.log(
@@ -191,7 +216,7 @@ function haupt() {
       `(Budget ${kib(BUDGET.firstLoadGzip)}), brotli ${kib(mass.brotli)} — nur zur Information.`,
   );
   console.log(
-    `Größter Chunk: ${kib(mass.groesster.gzip)} gzip ` +
+    `Größter Chunk (über ALLE Chunks): ${kib(mass.groesster.gzip)} gzip ` +
       `(Budget ${kib(BUDGET.groessterChunkGzip)}) — ${mass.groesster.datei}`,
   );
   console.log(
