@@ -159,6 +159,105 @@ describe("KI-Rezeptassistent", () => {
   });
 });
 
+describe("Texttreue: der eingefügte Text ist Vorlage, nicht Entwurf", () => {
+  /**
+   * Angeordnet 2026-08-15: Beim Anlegen eines Rezepts soll am eingefügten Text
+   * so wenig wie möglich geändert werden. Vorher lud der Prompt zum Umschreiben
+   * ein („Fülle jedes Feld sinnvoll aus", „klar formulierter Satz"), sodass
+   * Mengen, Schrittfolgen und Formulierungen von Rezept zu Rezept anders
+   * ausfielen.
+   *
+   * Geprüft wird der Registry-Text, weil dort die Verhaltensregel steht — und
+   * weil eine Abschwächung sonst nur über den B-05-Hash auffiele, also ohne
+   * erkennbaren Grund. Hier steht der Grund dabei.
+   */
+  it("verlangt wörtliche Übernahme von Zutaten, Mengen, Zeiten und Schritten", async () => {
+    const { SYSTEM } = await import("@/lib/prompts/recipe-draft");
+    expect(SYSTEM).toMatch(/TEXTTREUE/);
+    expect(SYSTEM).toMatch(/so wörtlich wie möglich/);
+    expect(SYSTEM).toMatch(/Zutaten, Mengen, Zeiten, Abschnittsnamen/);
+  });
+
+  it("benennt die erlaubten Abweichungen abschließend", () => {
+    // Ohne diese Aufzählung wäre „wörtlich" unerfüllbar: Menge und Einheit
+    // MÜSSEN getrennt werden, sonst passt der Entwurf nicht ins Schema.
+    return import("@/lib/prompts/recipe-draft").then(({ SYSTEM }) => {
+      expect(SYSTEM).toMatch(/Erlaubt sind ausschließlich Änderungen, die das Zielformat erzwingt/);
+      expect(SYSTEM).toMatch(/Menge und Einheit in getrennte Felder/);
+      expect(SYSTEM).toMatch(/Nicht umformulieren, nicht kürzen, nicht ausschmücken/);
+    });
+  });
+
+  it("grenzt den frei formulierten Teil auf die vier redaktionellen Felder ein", async () => {
+    // Der Assistent soll weiterhin Teaser, Haupttext und SEO schreiben — sonst
+    // wäre er zwecklos. Die Grenze muss im Prompt stehen, nicht im Kopf.
+    const { SYSTEM } = await import("@/lib/prompts/recipe-draft");
+    for (const feld of ["teaser", "tips", "seoTitle", "seoDescription"]) {
+      expect(SYSTEM).toContain(`"${feld}"`);
+    }
+    expect(SYSTEM).toMatch(/Frei formuliert wird nur der redaktionelle Teil/);
+    expect(SYSTEM).toMatch(/im Rezeptteil ausdrücklich nicht/);
+  });
+
+  it("lässt Erfinden nur bei Metadaten zu, nicht bei Zutaten und Schritten", async () => {
+    // Die alte Fassung erlaubte pauschales „plausibel ableiten" — das war der
+    // Freibrief zum Umschreiben. Jetzt ist die Erlaubnis auf Metadaten begrenzt.
+    const { SYSTEM } = await import("@/lib/prompts/recipe-draft");
+    expect(SYSTEM).toMatch(/Fehlt eine METADATEN-Angabe/);
+    expect(SYSTEM).toMatch(
+      /Für Zutaten und Zubereitungsschritte gilt dagegen die Texttreue/,
+    );
+    expect(SYSTEM).not.toMatch(/Fülle jedes Feld sinnvoll aus/);
+    expect(SYSTEM).not.toMatch(/klar formulierter Satz/);
+  });
+
+  it("lässt bei Unleserlichem eine Lücke, statt zu ergänzen", async () => {
+    // Befund gpt-5.6-sol (PR #64): „Unleserliches … plausibel aus dem Kontext
+    // ergänzen" stand direkt gegen „nichts hinzuerfinden". Bei einem unscharfen
+    // Foto durfte damit eine Zutat erfunden werden — der schlimmste Fall, weil
+    // das Ergebnis wie eine echte Angabe aussieht und still falsch ist.
+    const { SYSTEM } = await import("@/lib/prompts/recipe-draft");
+    expect(SYSTEM).toMatch(/Unleserliches wird weder geraten noch aus dem Kontext ergänzt/);
+    expect(SYSTEM).toMatch(/lass die Lücke offen/);
+    expect(SYSTEM).not.toMatch(/Unleserliches nicht raten, sondern plausibel/);
+  });
+
+  it("erfindet keine Abschnittsnamen", async () => {
+    // Befund gpt-5.6-sol (PR #64): die Gliederungsregel erlaubte weiterhin einen
+    // „sprechenden Namen", obwohl nur vier Redaktionsfelder frei sein sollen.
+    // Ein Abschnittsname IST Rezepttext und stand damit im Widerspruch.
+    const { SYSTEM } = await import("@/lib/prompts/recipe-draft");
+    expect(SYSTEM).toMatch(/Erfinde keine Abschnittsnamen/);
+    expect(SYSTEM).not.toMatch(/sonst vergib einen sprechenden Namen/);
+  });
+
+  it("regelt den Vorrang, statt Widersprüche dem Modell zu überlassen", async () => {
+    // Zwei einander widersprechende Regeln heißen: das Modell wählt. Genau die
+    // Beliebigkeit, die abgestellt werden soll. Deshalb eine ausdrückliche
+    // Vorrangregel für Fälle, die niemand vorhergesehen hat.
+    const { SYSTEM } = await import("@/lib/prompts/recipe-draft");
+    expect(SYSTEM).toMatch(/hat die Texttreue Vorrang/);
+    expect(SYSTEM).toMatch(/Lieber eine offene Lücke als eine erfundene Angabe/);
+  });
+
+  it("gilt für beide Stilpfade — Referenztexte wie internes Template", async () => {
+    // Die Stilvorgabe (Referenzen ODER internes Template) betrifft nur das Feld
+    // „tips". Stünde die Texttreue dort statt im System-Prompt, hinge sie davon
+    // ab, ob der Blog schon lange Rezepttexte hat.
+    const quelle = fs.readFileSync(
+      path.join(process.cwd(), "src/lib/ai-recipe.ts"),
+      "utf8",
+    );
+    // Beide Zweige der Stilvorgabe müssen mit derselben Einschränkung auf das
+    // Feld „tips" beginnen. Sonst wirkte die Stilimitation auch auf den
+    // Rezeptteil — und stünde damit gegen die Texttreue.
+    const zweige = [...quelle.matchAll(/Für den Haupttext \(Feld "tips"\):([^`]*)/g)];
+    expect(zweige, "Stilvorgabe nicht auf „tips\" eingeschränkt").toHaveLength(2);
+    expect(zweige.some((m) => /imitiere sie/.test(m[1]))).toBe(true);
+    expect(zweige.some((m) => /internes Template/.test(m[1]))).toBe(true);
+  });
+});
+
 describe("Foto-Limits (checkAiImageSelection — Editor UND Route)", () => {
   const f = (size: number, type = "image/jpeg", name = "foto.jpg") => ({
     name,
