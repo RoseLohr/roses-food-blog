@@ -57,15 +57,34 @@ const MASSE = {
    *  Stationsschiene (36 px Punkt + 16 px Abstand = 52 px = 3.25rem). */
   buehne:
     "(max-width: 767px) calc(100vw - 10.25rem), (max-width: 928px) calc(100vw - 13.25rem), 714px",
-  /** Streifen darunter. Die Spaltenzahl steht nicht fest, sie ergibt sich aus
-   *  `auto-fit`/`minmax(6.25rem, 1fr)`: leere Spuren fallen weg, die übrigen
-   *  teilen sich den Platz. Deklariert wird der GRÖSSTE Fall (zwei Kacheln),
-   *  weil ein zu kleines `sizes` unscharf würde, ein zu großes nur Bytes
-   *  kostet — und die Leiter zwischen 353 und 233 px ohnehin dieselbe
-   *  Stufe (w480/w320) trifft. */
-  streifen:
-    "(max-width: 767px) calc(50vw - 5.375rem), (max-width: 928px) calc(50vw - 6.875rem), 353px",
 } as const;
+
+/**
+ * `sizes` einer Streifen-Kachel. Es gibt genau ZWEI Formen, weil der Streifen
+ * genau zwei oder drei Spalten hat — auf dem Handy immer zwei.
+ *
+ * Das war nicht immer so: Zuerst stand hier `auto-fit` mit
+ * `minmax(6.25rem, 1fr)`, also „so viele Spalten, wie bei 100 px hineinpassen".
+ * Elegant, aber die Spaltenzahl war damit eine VERSTECKTE Funktion von
+ * Containerbreite, Mindestbreite und Abstand — und ein `sizes`-Attribut kann
+ * sie nicht ausrechnen. Unter etwa 372 px Viewport fiel das Raster auf EINE
+ * Spalte zurück, die Kachel wurde doppelt so breit wie deklariert, und der
+ * Browser lud eine zu kleine Variante: sichtbar unscharf. Gleichzeitig stand
+ * der Zwei-Foto-Fall dort gestapelt statt nebeneinander — also gerade nicht
+ * das, was Regel C zusagt. (Befund gpt-5.6-sol, PR #67.)
+ *
+ * Deshalb steht die Spaltenzahl jetzt AUSGESCHRIEBEN in den Rasterklassen und
+ * hier — beides direkt nebeneinander, damit es nicht auseinanderlaufen kann.
+ *
+ * Kachelbreite = (Stationsbreite − Abstände) / Spalten, mit `gap-2` = 0,5rem:
+ *   Station  <768 px : 100vw − 10.25rem   (Layout 2 + Artikel 3 + Karte 2 + Schiene 3.25)
+ *   Station  <929 px : 100vw − 13.25rem   (ab md Artikel 5 + Karte 3)
+ *   Station ≥929 px  : 714 px             (816 − 2 Rahmen − 48 − 52)
+ */
+const STREIFEN_ZWEISPALTIG =
+  "(max-width: 767px) calc(50vw - 5.375rem), (max-width: 928px) calc(50vw - 6.875rem), 353px";
+const STREIFEN_DREISPALTIG =
+  "(max-width: 639px) calc(50vw - 5.375rem), (max-width: 767px) calc(33.33vw - 3.75rem), (max-width: 928px) calc(33.33vw - 4.75rem), 233px";
 
 /** Google-Maps-Ziel aus Koordinaten — gleiche URL wie die Weltkarten-Pins. */
 function mapsUrl(lat: number, lng: number): string {
@@ -225,11 +244,14 @@ function SimilarRecipeTiles({ recipes }: { recipes: RecipeCardData[] }) {
  * FOTOS, Regel C (abgestimmt): Bei GENAU ZWEI Fotos gibt es keine Bühne,
  * sondern zwei gleich große nebeneinander — bei dieser Zahl existiert die
  * Rangfolge nicht, die eine Bühne behaupten würde. Ab drei Fotos trägt die
- * Bühne, und der Streifen bekommt so viele Spalten, wie Fotos übrig sind:
- * `auto-fit` mit `minmax(6.25rem, 1fr)` legt so viele Spuren an, wie bei
- * mindestens 100 px hineinpassen, und lässt leere Spuren wegfallen — die
- * vorhandenen teilen sich dann den Platz. Deshalb bleibt nie ein Drittel der
- * Zeile leer, und auf dem Handy ergeben sich von selbst höchstens zwei je Zeile.
+ * Bühne, und der Streifen bekommt so viele Spalten, wie Fotos übrig sind,
+ * gedeckelt bei drei; auf dem Handy sind es immer zwei. Damit ist die Zeile
+ * bei zwei und drei Streifen-Fotos immer voll — nie bleibt ein Drittel leer,
+ * was der eigentliche Anlass für Regel C war.
+ *
+ * Die Spaltenzahl steht AUSGESCHRIEBEN (`grid-cols-2 sm:grid-cols-3`), nicht
+ * als `auto-fit`: Nur so kann das `sizes`-Attribut sie kennen. Warum das
+ * nötig ist, steht bei STREIFEN_ZWEISPALTIG.
  */
 function DishItem({
   dish,
@@ -247,6 +269,10 @@ function DishItem({
   const fotos = dish.images;
   // Genau zwei Fotos → gleichrangig nebeneinander, sonst Bühne + Streifen.
   const paarweise = fotos.length === 2;
+  // Streifen-Fotos = alle ohne die Bühne. Ab dreien wird ab `sm` dreispaltig;
+  // darunter und auf dem Handy bleibt es bei zwei Spalten.
+  const streifenAnzahl = paarweise ? fotos.length : fotos.length - 1;
+  const dreispaltig = streifenAnzahl >= 3;
 
   return (
     <li
@@ -307,15 +333,17 @@ function DishItem({
                       sizes: MASSE.buehne,
                     }
               }
-              thumbSizes={MASSE.streifen}
+              thumbSizes={
+                dreispaltig ? STREIFEN_DREISPALTIG : STREIFEN_ZWEISPALTIG
+              }
               thumbClassName={
                 paarweise
                   ? "aspect-[4/3] w-full object-cover"
                   : "aspect-square w-full object-cover"
               }
-              groupClassName={`grid gap-2 [grid-template-columns:repeat(auto-fit,minmax(6.25rem,1fr))] ${
-                paarweise ? "" : "mt-2"
-              }`}
+              groupClassName={`grid gap-2 grid-cols-2 ${
+                dreispaltig ? "sm:grid-cols-3" : ""
+              } ${paarweise ? "" : "mt-2"}`}
             />
           </div>
         )}
