@@ -32,7 +32,28 @@ import { createHash } from "node:crypto";
 export const BUDGET = {
   firstLoadGzip: 184_320, // 180 KiB
   groessterChunkGzip: 75_776, // 74 KiB
+  /**
+   * Alle auslieferbaren Client-Chunks zusammen. Ohne diese Zeile bliebe
+   * beliebig wachsendes ROUTEN-JS grün: rootMainFiles/polyfillFiles decken nur
+   * ab, was JEDE Seite lädt — eine einzelne Route könnte unbemerkt um
+   * Megabytes wachsen (Befund gpt-5.6-sol, PR #63). Ist 2026-08-15: 563,5 KiB.
+   */
+  gesamtClientJsGzip: 614_400, // 600 KiB
 };
+
+/** Jede auslieferbare .js unter .next/static — auch Routen-Chunks. */
+export function alleClientChunks(wurzel = ".next/static") {
+  const gefunden = [];
+  const lauf = (verzeichnis) => {
+    for (const eintrag of fs.readdirSync(verzeichnis, { withFileTypes: true })) {
+      const p = path.join(verzeichnis, eintrag.name);
+      if (eintrag.isDirectory()) lauf(p);
+      else if (eintrag.name.endsWith(".js")) gefunden.push(p);
+    }
+  };
+  lauf(wurzel);
+  return gefunden;
+}
 
 /** Dateien, die beim ersten Seitenaufruf unvermeidlich geladen werden. */
 export function firstLoadDateien(manifest) {
@@ -80,6 +101,12 @@ export function bewerten(mass, budget = BUDGET) {
         `${kib(budget.groessterChunkGzip)} — ${mass.groesster.datei}`,
     );
   }
+  if (mass.gesamt != null && mass.gesamt > budget.gesamtClientJsGzip) {
+    verstoesse.push(
+      `Client-JS gesamt (gzip) ${kib(mass.gesamt)} > Budget ` +
+        `${kib(budget.gesamtClientJsGzip)} — wächst eine einzelne Route, fällt es hier auf.`,
+    );
+  }
   return verstoesse;
 }
 
@@ -110,6 +137,13 @@ function selbsttest() {
     console.error("SELBSTTEST FEHLGESCHLAGEN: aufgeblähtes Bundle blieb grün.");
     process.exit(1);
   }
+  // Routen-Chunk-Grenze muss ebenfalls greifen können.
+  const routen = { ...messen("/egal", ["a.js"], () => Buffer.from("x")), gesamt: 900_000 };
+  if (bewerten(routen).length !== 1) {
+    console.error("SELBSTTEST FEHLGESCHLAGEN: gewachsene Routen-Chunks blieben grün.");
+    process.exit(1);
+  }
+
   const schlank = messen("/egal", ["a.js"], () => Buffer.from("console.log(1)"));
   if (bewerten(schlank).length !== 0) {
     console.error("SELBSTTEST FEHLGESCHLAGEN: schlankes Bundle wurde rot.");
@@ -140,6 +174,17 @@ function haupt() {
   }
   const manifest = JSON.parse(fs.readFileSync(manifestPfad, "utf8"));
   const mass = messen(".next", firstLoadDateien(manifest));
+  // Routen-Chunks zusätzlich, absolut gemessen (Befund gpt-5.6-sol).
+  const chunks = alleClientChunks();
+  if (chunks.length === 0) {
+    console.error("Keine Client-Chunks unter .next/static gefunden — nichts zu messen.");
+    process.exit(1);
+  }
+  mass.gesamt = chunks.reduce(
+    (n, p) => n + zlib.gzipSync(fs.readFileSync(p), { level: 6 }).length,
+    0,
+  );
+  mass.gesamtAnzahl = chunks.length;
 
   console.log(
     `First Load: ${mass.anzahl} Dateien, gzip ${kib(mass.gzip)} ` +
@@ -148,6 +193,10 @@ function haupt() {
   console.log(
     `Größter Chunk: ${kib(mass.groesster.gzip)} gzip ` +
       `(Budget ${kib(BUDGET.groessterChunkGzip)}) — ${mass.groesster.datei}`,
+  );
+  console.log(
+    `Client-JS gesamt: ${mass.gesamtAnzahl} Dateien, ${kib(mass.gesamt)} gzip ` +
+      `(Budget ${kib(BUDGET.gesamtClientJsGzip)}) — enthält die Routen-Chunks.`,
   );
 
   const verstoesse = bewerten(mass);

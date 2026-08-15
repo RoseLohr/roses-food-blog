@@ -94,15 +94,22 @@ jobs:
 
       # Gepinnt (B-13): eine gleitende Version würde die Messwerte unbemerkt
       # verschieben und das Budget wertlos machen.
-      - name: Lighthouse gegen die Produktion (Budgets)
+      #
+      # KEIN --budget-path: empirisch geprüft (12.8.2), mit
+      # --only-categories=performance enthält der Report gar kein Audit
+      # „performance-budget" — weder bei eingehaltenem noch bei gerissenem
+      # Budget. Die Bewertung macht deshalb der eigene Auswerter unten, auf
+      # Basis von „resource-summary" (echte Transfergrößen).
+      - name: Lighthouse gegen die Produktion
         run: |
           set -euo pipefail
           npx --yes lighthouse@12.8.2 "$ZIEL/" \
             --only-categories=performance \
-            --budget-path=.lighthouse/budget.json \
             --output=json --output-path=./lighthouse.json \
             --chrome-flags="--headless --no-sandbox --disable-gpu"
-          node scripts/regime/lighthouse-budget.mjs ./lighthouse.json
+
+      - name: Budgets bewerten (fail-closed)
+        run: node scripts/regime/lighthouse-budget.mjs ./lighthouse.json
 
       - uses: actions/upload-artifact@v4
         if: always()

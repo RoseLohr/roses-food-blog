@@ -1,6 +1,6 @@
 [
   {
-    "//": "Budgets für die Startseite, gemessen an der ECHTEN Domain. Die Werte sind der heutige IST-Stand plus knapper Abstand — sie verhindern das Schlimmerwerden, sie beheben nichts. Ratchet: nur nach unten. Quelle des Ausgangswerts: Lighthouse-Bericht 2026-08-14 (609,7 KiB Bilder auf der Startseite).",
+    "//": "Budgets für die Startseite (KiB Transfergröße), ausgewertet von scripts/regime/lighthouse-budget.mjs gegen das Audit resource-summary — NICHT von Lighthouse selbst (dessen Budget-Audit fehlt bei --only-categories=performance). Gemessen an der ECHTEN Domain. Die Werte sind der heutige IST-Stand plus knapper Abstand — sie verhindern das Schlimmerwerden, sie beheben nichts. Ratchet: nur nach unten. Quelle des Ausgangswerts: Lighthouse-Bericht 2026-08-14 (609,7 KiB Bilder auf der Startseite).",
     "path": "/*",
     "resourceSizes": [
       { "resourceType": "image", "budget": 640 },
