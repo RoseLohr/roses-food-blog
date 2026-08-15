@@ -39,6 +39,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 
 const ROOT = process.cwd();
@@ -378,8 +379,15 @@ describe("Heredocs: kein ungewollter Shell-Aufruf im geschriebenen Text", () => 
    * Der laute Teil (command not found) war harmlos, der leise war das Leck.
    * Deshalb prüft dieser Test die FEHLERKLASSE, nicht die vier Fundstellen.
    */
-  const shellDateien = ["deploy.sh", "bootstrap.sh", "deploy/rollback.sh", "deploy/backup.sh", "scripts/entry.sh"]
-    .filter((f) => fs.existsSync(path.join(ROOT, f)));
+  // Entdeckung statt Aufzählung: eine gepflegte Liste vergisst neue Skripte,
+  // und ein `.filter(existsSync)` ließe eine umbenannte Datei lautlos
+  // herausfallen — die Kontrolle bliebe grün, weil sie nichts mehr prüft.
+  const shellDateien = execFileSync("git", ["ls-files", "*.sh"], {
+    cwd: ROOT,
+    encoding: "utf8",
+  })
+    .split("\n")
+    .filter(Boolean);
 
   /** Rümpfe aller Heredocs, bei denen die Shell den Text noch anfasst. */
   function unquotierteHeredocRuempfe(quelle: string) {
@@ -387,14 +395,35 @@ describe("Heredocs: kein ungewollter Shell-Aufruf im geschriebenen Text", () => 
     const treffer: Array<{ zeile: number; text: string }> = [];
     for (let i = 0; i < zeilen.length; i++) {
       // <<EOF / <<-EOF sind unquotiert; <<'EOF' und <<"EOF" sind es nicht.
-      const m = /<<-?([A-Za-z_][A-Za-z0-9_]*)\s*$/.exec(zeilen[i]);
+      // Kein $-Anker: `cat <<EOF > datei` und `cat <<EOF | cmd` sind gängig
+      // und substituieren genauso. \b statt \s*$ fängt beide; der Links-Shift
+      // `$((1 << N))` wird nicht getroffen, weil dort kein Wort auf << folgt.
+      const m = /<<-?([A-Za-z_][A-Za-z0-9_]*)\b/.exec(zeilen[i]);
       if (!m) continue;
-      for (let j = i + 1; j < zeilen.length && zeilen[j].trim() !== m[1]; j++) {
+      // Rumpf nur zählen, wenn der Terminator wirklich kommt. Sonst liefe die
+      // Schleife bis Dateiende und meldete gewöhnlichen Code als Heredoc.
+      let ende = -1;
+      for (let j = i + 1; j < zeilen.length; j++) {
+        if (zeilen[j].trim() === m[1]) {
+          ende = j;
+          break;
+        }
+      }
+      if (ende === -1) continue;
+      for (let j = i + 1; j < ende; j++) {
         treffer.push({ zeile: j + 1, text: zeilen[j] });
       }
     }
     return treffer;
   }
+
+  it("die Dateiliste kommt aus der Entdeckung und ist nicht leer", () => {
+    // Ohne diese Zusicherung wäre ein kaputter Glob (0 Dateien) grün — die
+    // Kontrolle prüfte dann nichts, und niemand merkte es.
+    expect(shellDateien.length).toBeGreaterThanOrEqual(5);
+    expect(shellDateien).toContain("deploy.sh");
+    expect(shellDateien).toContain("bootstrap.sh");
+  });
 
   it("keine Datei schreibt Heredoc-Text mit aktiver Kommandosubstitution", () => {
     const funde: string[] = [];

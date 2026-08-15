@@ -1,0 +1,12 @@
+[
+  {
+    "//": "Budgets für die Startseite, gemessen an der ECHTEN Domain. Die Werte sind der heutige IST-Stand plus knapper Abstand — sie verhindern das Schlimmerwerden, sie beheben nichts. Ratchet: nur nach unten. Quelle des Ausgangswerts: Lighthouse-Bericht 2026-08-14 (609,7 KiB Bilder auf der Startseite).",
+    "path": "/*",
+    "resourceSizes": [
+      { "resourceType": "image", "budget": 640 },
+      { "resourceType": "script", "budget": 200 },
+      { "resourceType": "stylesheet", "budget": 40 },
+      { "resourceType": "total", "budget": 1000 }
+    ]
+  }
+]

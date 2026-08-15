@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  issues: write # Meldepfad: Fehlschlag wird als Issue sichtbar
 
 jobs:
   cadence:
@@ -42,3 +43,9 @@ jobs:
           node scripts/regime/data-map.mjs --selftest
           node scripts/regime/authz-coverage.mjs --selftest
           node scripts/regime/provenance-reconstruct.mjs --selftest
+
+      - name: Fehlschlag melden
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash scripts/regime/kadenz-alarm.sh "${{ github.workflow }}"
