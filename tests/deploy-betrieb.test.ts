@@ -393,27 +393,44 @@ describe("Heredocs: kein ungewollter Shell-Aufruf im geschriebenen Text", () => 
    * Eröffnende Heredocs einer Zeile, in der Reihenfolge, in der die Shell ihre
    * Rümpfe liest.
    *
-   * Erlaubt ist genau das, was bash erlaubt (alles hier empirisch mit bash 5
-   * nachgestellt, 2026-08-15):
+   * GRUNDRICHTUNG: im Zweifel zu VIEL scannen. Ein Fehlalarm ist laut und wird
+   * behoben; eine Lücke ist still — und still war jeder Befund, den dieser
+   * Wächter bisher kassiert hat.
+   *
+   * Als Begrenzer taugt bash JEDES Wort, nicht nur ein Bezeichner: `<<1`,
+   * `<<.`, `<<@@`, `<<!` und `<<END-OF-FILE` substituieren alle (empirisch mit
+   * bash 5, 2026-08-15). Ein Muster `[A-Za-z_][A-Za-z0-9_]*` sah sie nicht —
+   * aktive Kommandosubstitution kam damit durch beide Tore (Befund
+   * gpt-5.6-sol, PR #63). Das Wort endet deshalb erst an Leerraum, an einem
+   * Shell-Metazeichen (`|&;()<>`) oder an einem Anführungszeichen.
+   *
+   * Ebenfalls empirisch festgelegt:
    *  - `<<EOF`, `<< EOF`, `<<-EOF`, `<<- EOF` — Leerraum hinter dem Operator
-   *    ist zulässig und substituiert genauso. Eine Fassung ohne `[ \t]*` sah
-   *    diese Heredocs nicht (Befund gpt-5.6-sol, PR #63).
+   *    ist zulässig und substituiert genauso.
+   *  - Ein `-` zählt nur als Operator, wenn es direkt am `<<` klebt. Bei
+   *    `<< -EOF` ist der Begrenzer `-EOF`, und Tabs werden NICHT abgeschnitten.
    *  - `<<'EOF'`, `<<"EOF"`, `<<\EOF` sind gequotet — die Shell fasst den Text
-   *    nicht an, also nichts zu prüfen. Der Nachschau-Ausschluss deckt auch
-   *    Misch­formen wie `<<E'O'F` ab (bash quotet dann das ganze Wort).
-   *  - `<<<` ist ein Here-String, kein Heredoc: der Blick zurück/voraus auf `<`
-   *    hält ihn heraus.
-   *  - `$((1 << N))` ist ein Links-Shift. Ihn trennt vom Heredoc nur, was
-   *    folgt: die Arithmetik schließt mit `))`. Ohne diesen Ausschluss liefe
-   *    der Scanner dort in ein nie endendes Pseudo-Heredoc.
+   *    nicht an. Auch Mischformen wie `<<E'O'F` quotet bash vollständig; sie
+   *    fallen über das Zeichen unmittelbar hinter dem Wort heraus.
+   *  - `<<<` ist ein Here-String, kein Heredoc.
+   *  - `$((1 << N))` ist ein Links-Shift. Entscheidend ist die Umgebung, nicht
+   *    das Folgezeichen: steht vor dem `<<` eine unabgeschlossene `((`-Klammer,
+   *    ist es Arithmetik. Ein Test nur auf ein nachfolgendes `))` verfehlte
+   *    `$(( (1 << 3) + 1 ))`.
    */
   function heredocOeffner(zeile: string) {
-    const muster =
-      /(?<!<)<<(?!<)(-?)[ \t]*([A-Za-z_][A-Za-z0-9_]*)(?![A-Za-z0-9_'"\\])/g;
+    // Eine Zeile, die mit # beginnt, ist ein Kommentar — dort eröffnet die
+    // Shell nie ein Heredoc. (Rumpfzeilen erreichen diese Funktion nicht.)
+    if (/^[ \t]*#/.test(zeile)) return [];
+    const muster = /(?<!<)<<(?!<)(-?)[ \t]*([^\s|&;()<>'"\\]+)/g;
     const oeffner: Array<{ delimiter: string; tabsErlaubt: boolean }> = [];
     for (const m of zeile.matchAll(muster)) {
       const dahinter = zeile.slice(m.index + m[0].length);
-      if (/^[ \t]*\)\)/.test(dahinter)) continue; // $(( 1 << N )) — Arithmetik
+      if (/^['"\\]/.test(dahinter)) continue; // <<E'O'F — bash quotet das Wort
+      const davor = zeile.slice(0, m.index);
+      const offen = (davor.match(/\(\(/g) ?? []).length;
+      const zu = (davor.match(/\)\)/g) ?? []).length;
+      if (offen > zu) continue; // innerhalb von $(( … )) — Links-Shift
       oeffner.push({ delimiter: m[2], tabsErlaubt: m[1] === "-" });
     }
     return oeffner;
@@ -521,13 +538,70 @@ describe("Heredocs: kein ungewollter Shell-Aufruf im geschriebenen Text", () => 
       erwartet: ["erster: `id`", "zweiter: $(id)"],
     },
     {
+      name: "Begrenzer ohne Bezeichnerform: <<1, <<., <<@@, <<!, <<MIT-STRICH",
+      quelle: [
+        "cat <<1 > a",
+        "eins: `id`",
+        "1",
+        "cat <<. > b",
+        "punkt: $(id)",
+        ".",
+        "cat <<@@ > c",
+        "at: `id`",
+        "@@",
+        "cat <<! > d",
+        "knall: $(id)",
+        "!",
+        "cat <<END-OF-FILE > e",
+        "strich: `id`",
+        "END-OF-FILE",
+      ],
+      erwartet: ["eins: `id`", "punkt: $(id)", "at: `id`", "knall: $(id)", "strich: `id`"],
+    },
+    {
+      name: "<< -EOF: der Strich gehört zum Wort, Tabs bleiben stehen",
+      quelle: ["cat << -EOF > a", "\tminus: `id`", "\t-EOF", "-EOF"],
+      erwartet: ["\tminus: `id`", "\t-EOF"],
+    },
+    {
       name: "gequotetes Heredoc: die Shell fasst den Text nicht an",
-      quelle: ["cat <<'EOF' > a", "harmlos: `id`", "EOF", 'cat <<"Z" > b', "harmlos: $(id)", "Z"],
+      quelle: [
+        "cat <<'EOF' > a",
+        "harmlos: `id`",
+        "EOF",
+        'cat <<"Z" > b',
+        "harmlos: $(id)",
+        "Z",
+        "cat <<\\Y > c",
+        "harmlos: `id`",
+        "Y",
+        "cat <<E'O'F > d",
+        "harmlos: $(id)",
+        "EOF",
+      ],
       erwartet: [],
     },
     {
       name: "Here-String und Links-Shift sind keine Heredocs",
-      quelle: ["cat <<<EOF", "N=3", "echo $((1 << N))", "echo $(( 1 <<N ))", "echo fertig"],
+      quelle: [
+        "cat <<<EOF",
+        "N=3",
+        "echo $((1 << N))",
+        "echo $(( 1 <<N ))",
+        "echo $(( (1 << 3) + 1 ))",
+        "(( x <<= 1 ))",
+        "echo fertig",
+      ],
+      erwartet: [],
+    },
+    {
+      name: "Heredoc nach abgeschlossener Arithmetik in derselben Zeile",
+      quelle: ["echo $(( 1 << 2 )) ; cat <<EOF > a", "danach: `id`", "EOF"],
+      erwartet: ["danach: `id`"],
+    },
+    {
+      name: "Kommentarzeile eröffnet kein Heredoc",
+      quelle: ["# Beispiel: cat <<EOF", "echo `id`", "echo fertig"],
       erwartet: [],
     },
   ];
