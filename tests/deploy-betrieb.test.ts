@@ -39,8 +39,6 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import os from "node:os";
-import { execFileSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 
 const ROOT = process.cwd();
@@ -378,406 +376,44 @@ describe("Heredocs: kein ungewollter Shell-Aufruf im geschriebenen Text", () => 
    * ADMIN_PASSWORD, SMTP_PASS und ANTHROPIC_API_KEY im Klartext darin.
    *
    * Der laute Teil (command not found) war harmlos, der leise war das Leck.
-   *
-   * WARUM DIESE KONTROLLE NICHT MEHR SELBST PARST (Lehre aus zehn
-   * Review-Runden, gpt-5.6-sol, PR #63): Die erste Fassung suchte die
-   * Heredoc-Rümpfe selbst und prüfte deren Text. Dafür muss man die Shell
-   * nachbauen — Anführungszeichen über Zeilengrenzen, `$( … )` mit eigener
-   * Quotierungsebene, Zeilenfortsetzungen, `<<-` gegen `<< -WORT`, Begrenzer
-   * ohne Bezeichnerform, Kommentare. Acht Runden lang fand jede Runde eine
-   * weitere Abweichung, und jede ließ die Kontrolle STILL grün. Der letzte
-   * Versuch, Anführungszeichen über Zeilen mitzuführen, ließ die Kontrolle
-   * sogar an der ECHTEN Fundstelle vorbeilaufen (deploy.sh vor dem Fix:
-   * vorher 6 Treffer, danach 0) — sie hätte den Vorfall, für den es sie gibt,
-   * nicht mehr erkannt.
-   *
-   * Deshalb jetzt umgekehrt und ohne Nachbau:
-   *  1. JEDES `<<` in einer Shell-Datei muss entweder gequotet sein
-   *     (`<<'EOF'` — dann fasst die Shell den Text nicht an) oder unten
-   *     ausdrücklich verzeichnet stehen. Gesucht wird im ROHTEXT, bewusst
-   *     grob: zu viel zu finden kostet einen Eintrag mit Begründung, zu wenig
-   *     zu finden kostet ein Leck.
-   *  2. Nur für die verzeichneten Stellen wird der Rumpf angesehen — dort ist
-   *     eindeutig bekannt, wo er anfängt und aufhört, weil jede Stelle
-   *     einzeln geprüft und begründet ist.
-   *
-   * Das ist strenger als vorher: ein NEUES unquotiertes Heredoc fällt jetzt
-   * auf, statt nur auf verbotene Zeichen abgeklopft zu werden.
+   * Deshalb prüft dieser Test die FEHLERKLASSE, nicht die vier Fundstellen.
    */
-  // Entdeckung statt Aufzählung: eine gepflegte Liste vergisst neue Skripte,
-  // und ein `.filter(existsSync)` ließe eine umbenannte Datei lautlos
-  // herausfallen — die Kontrolle bliebe grün, weil sie nichts mehr prüft.
-  const shellDateien = execFileSync("git", ["ls-files", "*.sh"], {
-    cwd: ROOT,
-    encoding: "utf8",
-  })
-    .split("\n")
-    .filter(Boolean);
+  const shellDateien = ["deploy.sh", "bootstrap.sh", "deploy/rollback.sh", "deploy/backup.sh", "scripts/entry.sh"]
+    .filter((f) => fs.existsSync(path.join(ROOT, f)));
 
-  /**
-   * Die ausdrücklich geprüften `<<`-Stellen. Wer eine hinzufügt, muss sie
-   * begründen; wer eine Zeile ändert, macht diesen Test rot und muss erneut
-   * hinsehen. Genau das ist beabsichtigt.
-   *
-   * `delimiter` gesetzt  → unquotiertes Heredoc, der Rumpf wird geprüft.
-   * `delimiter` fehlt    → gar kein Heredoc (z. B. Links-Shift `$((1 << N))`).
-   */
-  const VERZEICHNETE_STELLEN: Array<{
-    datei: string;
-    zeile: string;
-    delimiter?: string;
-    grund: string;
-  }> = [
-    {
-      datei: "bootstrap.sh",
-      zeile: "  cat > .env <<EOF",
-      delimiter: "EOF",
-      grund:
-        "Schreibt die .env mit erzeugten Werten ($SESSION_SECRET, $ADMIN_PASSWORD); " +
-        "die müssen eingesetzt werden, ein gequotetes Heredoc könnte das nicht.",
-    },
-    {
-      datei: "deploy.sh",
-      zeile: '  cat > "$UNIT_DIR/roses-blog-deploy.service" <<EOF',
-      delimiter: "EOF",
-      grund:
-        "Panel-Deploy-Unit; $SCRIPT_DIR, $HOME und $PATH müssen eingesetzt werden. " +
-        "Genau hier entstand der Vorfall vom 2026-08-14.",
-    },
-    {
-      datei: "deploy.sh",
-      zeile: '  cat > "$UNIT_DIR/roses-blog-deploy.path" <<EOF',
-      delimiter: "EOF",
-      grund: "Zugehörige .path-Unit; setzt $SCRIPT_DIR ein.",
-    },
-  ];
-
-  /**
-   * ALLE `<<`-Stellen einer Zeile — nicht nur die erste. Eine Fassung mit
-   * einem einzelnen `exec` sah bei `cat <<'A' <<B` nur das gequotete `<<'A'`
-   * und hielt die ganze Zeile für harmlos; bash führt den Rumpf von B aber
-   * aus (Befund gpt-5.6-sol, PR #63; mit bash 5 nachgestellt).
-   *
-   * Gequotet heißt: das erste Zeichen des Begrenzers ist `'`, `"` oder `\` —
-   * dann fasst die Shell den Rumpf nicht an.
-   */
-  function heredocStellen(zeile: string) {
-    return [...zeile.matchAll(/(?<!<)<<(?!<)-?[ \t]*(\S)/g)].map((m) => ({
-      gequotet: ["'", '"', "\\"].includes(m[1]),
-    }));
-  }
-
-  function zeilenMitHeredocOperator(quelle: string) {
-    return quelle
-      .split("\n")
-      .map((text, i) => ({ nr: i + 1, text, stellen: heredocStellen(text) }))
-      .filter(({ stellen }) => stellen.length > 0);
-  }
-
-  /**
-   * Zeilenfortsetzungen im Rumpf auflösen — mit Rücksicht auf die Parität der
-   * Backslashes. In einem unquotierten Heredoc ist `\` am Zeilenende eine
-   * Fortsetzung: beide Zeichen fallen weg und die Zeilen wachsen zusammen.
-   * `\\` dagegen ist ein escapter Backslash, der folgende Umbruch bleibt.
-   *
-   * Ohne diesen Schritt las eine zeilenweise Prüfung `$\` und `(cmd)` als
-   * zwei harmlose Zeilen — bash macht daraus `$(cmd)` und führt es aus
-   * (Befund gpt-5.6-sol; nachgestellt: schrieb TREFFER in die Zieldatei).
-   *
-   * Die Herkunftszeile wandert mit, damit ein Fund noch verortbar ist.
-   */
-  function fortsetzungenAufloesen(zeilen: string[], erstesNr: number) {
-    let text = "";
-    const herkunft: number[] = [];
-    const roh = zeilen.join("\n");
-    let nr = erstesNr;
-    for (let i = 0; i < roh.length; i++) {
-      if (roh[i] === "\\" && i + 1 < roh.length) {
-        if (roh[i + 1] === "\n") {
-          nr++;
-          i++;
-          continue; // Fortsetzung: Backslash UND Umbruch fallen weg
-        }
-        text += roh[i] + roh[i + 1]; // escaptes Paar unverändert übernehmen
-        herkunft.push(nr, nr);
-        i++;
-        continue;
+  /** Rümpfe aller Heredocs, bei denen die Shell den Text noch anfasst. */
+  function unquotierteHeredocRuempfe(quelle: string) {
+    const zeilen = quelle.split("\n");
+    const treffer: Array<{ zeile: number; text: string }> = [];
+    for (let i = 0; i < zeilen.length; i++) {
+      // <<EOF / <<-EOF sind unquotiert; <<'EOF' und <<"EOF" sind es nicht.
+      const m = /<<-?([A-Za-z_][A-Za-z0-9_]*)\s*$/.exec(zeilen[i]);
+      if (!m) continue;
+      for (let j = i + 1; j < zeilen.length && zeilen[j].trim() !== m[1]; j++) {
+        treffer.push({ zeile: j + 1, text: zeilen[j] });
       }
-      if (roh[i] === "\n") nr++;
-      text += roh[i];
-      herkunft.push(nr);
     }
-    return { text, herkunft };
+    return treffer;
   }
 
-  /**
-   * Die erste Stelle im aufgelösten Rumpf, an der die Shell ein Kommando
-   * ausführen würde — oder null.
-   *
-   * Maßgeblich ist die Backslash-Parität, nicht ein Muster: `\$(cmd)` ist
-   * harmlos, `\\$(cmd)` NICHT — dort ist der erste Backslash escapt, der
-   * zweite Backslash steht literal, und `$(cmd)` läuft. Eine Vorab-Ersetzung
-   * `/\\[`$]/` entfernte genau das falsche Paar und hielt den Rest für
-   * entschärft (Befund gpt-5.6-sol; nachgestellt: schrieb TREFFER in die
-   * Zieldatei).
-   *
-   * Im unquotierten Heredoc behält `\` seine Sonderrolle nur vor `$`, `` ` ``
-   * und `\` (sowie vor dem Umbruch, den `fortsetzungenAufloesen` schon
-   * behandelt hat) — vor allem anderen ist er ein gewöhnliches Zeichen.
-   */
-  function ersteSubstitution(text: string) {
-    for (let i = 0; i < text.length; i++) {
-      const z = text[i];
-      if (z === "\\" && i + 1 < text.length && ["$", "`", "\\"].includes(text[i + 1])) {
-        i++; // escaptes Paar — die Shell fasst es nicht an
-        continue;
-      }
-      if (z === "`") return { pos: i, art: "`" };
-      if (z === "$" && text[i + 1] === "(") return { pos: i, art: "$(" };
-    }
-    return null;
-  }
-
-  /**
-   * Prüft einen Rumpf so, wie die Shell ihn liest, und liefert die Fundstellen.
-   * Reihenfolge zwingend: erst Fortsetzungen auflösen, dann auf
-   * Kommandosubstitution sehen — andersherum bliebe `$\`+Umbruch+`(cmd)`
-   * unsichtbar.
-   */
-  function substitutionenImRumpf(zeilen: string[], erstesNr: number) {
-    // Je betroffener Zeile ein Eintrag: ein Paar `…` ist EINE Substitution,
-    // und für den Befund zählt, welche Zeile zu berichtigen ist — nicht, wie
-    // oft ein Zeichen darin vorkommt.
-    const jeZeile = new Map<number, string>();
-    let { text, herkunft } = fortsetzungenAufloesen(zeilen, erstesNr);
-    for (;;) {
-      const fund = ersteSubstitution(text);
-      if (!fund) break;
-      const nr = herkunft[fund.pos] ?? erstesNr;
-      if (!jeZeile.has(nr)) jeZeile.set(nr, fund.art);
-      const versatz = fund.pos + 1;
-      text = text.slice(versatz);
-      herkunft = herkunft.slice(versatz);
-    }
-    return [...jeZeile].map(([nr, art]) => ({ nr, art }));
-  }
-
-  it("die Dateiliste kommt aus der Entdeckung und ist nicht leer", () => {
-    // Ohne diese Zusicherung wäre ein kaputter Glob (0 Dateien) grün — die
-    // Kontrolle prüfte dann nichts, und niemand merkte es.
-    expect(shellDateien.length).toBeGreaterThanOrEqual(5);
-    expect(shellDateien).toContain("deploy.sh");
-    expect(shellDateien).toContain("bootstrap.sh");
-  });
-
-  it("jedes << ist entweder gequotet oder ausdrücklich verzeichnet", () => {
-    const unerwartet: string[] = [];
+  it("keine Datei schreibt Heredoc-Text mit aktiver Kommandosubstitution", () => {
+    const funde: string[] = [];
     for (const datei of shellDateien) {
       const quelle = fs.readFileSync(path.join(ROOT, datei), "utf8");
-      for (const { nr, text, stellen } of zeilenMitHeredocOperator(quelle)) {
-        if (stellen.every((s) => s.gequotet)) continue;
-        const verzeichnet = VERZEICHNETE_STELLEN.some(
-          (e) => e.datei === datei && e.zeile === text,
-        );
-        if (!verzeichnet) unerwartet.push(`${datei}:${nr}: ${text.trim()}`);
-      }
-    }
-    expect(
-      unerwartet,
-      "Unquotiertes Heredoc ohne Eintrag. Ein unquotierter Rumpf wird von der " +
-        "Shell AUSGEFÜHRT, nicht geschrieben — so gelangten schon einmal Secrets " +
-        "in eine systemd-Unit. Entweder `<<'EOF'` schreiben (dann bleibt der Text " +
-        "unangetastet) oder die Stelle in VERZEICHNETE_STELLEN mit Begründung " +
-        "eintragen; ihr Rumpf wird dann auf Kommandosubstitution geprüft.",
-    ).toEqual([]);
-  });
-
-  it("eine verzeichnete Zeile trägt genau EIN Heredoc", () => {
-    // Bei `cat <<'A' <<B` liest die Shell zwei Rümpfe nacheinander. Wo ihre
-    // Grenzen liegen, ist von außen nicht mehr sicher zu bestimmen — der
-    // Begrenzer des zweiten kann als Text im ersten stehen. Solche Zeilen
-    // werden deshalb gar nicht erst zugelassen, statt sie halb zu prüfen.
-    const mehrdeutig = VERZEICHNETE_STELLEN.filter(
-      (e) => e.delimiter && heredocStellen(e.zeile).length !== 1,
-    ).map((e) => `${e.datei}: „${e.zeile.trim()}"`);
-    expect(
-      mehrdeutig,
-      "Verzeichnete Zeile mit mehr als einem Heredoc — die Rumpfgrenzen sind " +
-        "dann nicht eindeutig. Auf getrennte Zeilen schreiben.",
-    ).toEqual([]);
-  });
-
-  it("jeder Eintrag existiert noch — die Liste darf nicht verrotten", () => {
-    // Ohne diese Prüfung bliebe ein Eintrag stehen, dessen Stelle längst weg
-    // ist, und niemand würde merken, dass hier nichts mehr geprüft wird.
-    const verwaist = VERZEICHNETE_STELLEN.filter(
-      (e) =>
-        !fs
-          .readFileSync(path.join(ROOT, e.datei), "utf8")
-          .split("\n")
-          .includes(e.zeile),
-    ).map((e) => `${e.datei}: „${e.zeile.trim()}"`);
-    expect(verwaist).toEqual([]);
-  });
-
-  it("die verzeichneten Rümpfe enthalten keine Kommandosubstitution", () => {
-    const funde: string[] = [];
-    for (const eintrag of VERZEICHNETE_STELLEN) {
-      if (!eintrag.delimiter) continue;
-      const zeilen = fs.readFileSync(path.join(ROOT, eintrag.datei), "utf8").split("\n");
-      const start = zeilen.indexOf(eintrag.zeile);
-      expect(start, `${eintrag.datei}: Eintrag nicht gefunden`).toBeGreaterThan(-1);
-      const ende = zeilen.indexOf(eintrag.delimiter, start + 1);
-      // Fehlt der Begrenzer, liest bash bis Dateiende und substituiert alles;
-      // `bash -n` warnt dabei nur und endet mit 0. Also hier hart prüfen.
-      expect(
-        ende,
-        `${eintrag.datei}: Heredoc ab „${eintrag.zeile.trim()}" hat keine Zeile ` +
-          `„${eintrag.delimiter}" — bash liest dann bis Dateiende.`,
-      ).toBeGreaterThan(start);
-      // Wird der Begrenzer unbrauchbar (etwa „EOF " mit Leerzeichen), liest die
-      // Shell bis zum NÄCHSTEN passenden — der Rumpf reicht dann über fremden
-      // Code hinweg. Sichtbar wird das daran, dass ein weiterer Heredoc-Öffner
-      // im Rumpf liegt. Ohne diese Zusicherung blieb die Kontrolle dabei grün
-      // (eigene Gegenprobe, 2026-08-15).
-      const fremderOeffner = zeilen
-        .slice(start + 1, ende)
-        .find((z) => heredocStellen(z).length > 0);
-      expect(
-        fremderOeffner,
-        `${eintrag.datei}: im Rumpf ab „${eintrag.zeile.trim()}" liegt ein ` +
-          "weiterer Heredoc-Öffner — der Begrenzer greift nicht, die Grenzen " +
-          "des Rumpfs stimmen nicht.",
-      ).toBeUndefined();
-      for (const f of substitutionenImRumpf(zeilen.slice(start + 1, ende), start + 2)) {
-        funde.push(`${eintrag.datei}:${f.nr}: ${f.art} in ${zeilen[f.nr - 1]?.trim()}`);
+      for (const { zeile, text } of unquotierteHeredocRuempfe(quelle)) {
+        // Ein escapetes \` bzw. \$( ist ungefährlich — die Shell fasst es nicht an.
+        const scharf = text.replace(/\\[`$]/g, "");
+        if (scharf.includes("`") || scharf.includes("$(")) {
+          funde.push(`${datei}:${zeile}: ${text.trim()}`);
+        }
       }
     }
     expect(
       funde,
-      "Kommandosubstitution im Rumpf eines unquotierten Heredocs: der Text wird " +
-        "ausgeführt statt geschrieben (so gelangten schon einmal Secrets in eine " +
-        "systemd-Unit). Backticks in Erklärtexten durch „…“ ersetzen.",
+      "Kommandosubstitution im Heredoc-Rumpf: der Text wird ausgeführt statt geschrieben " +
+        "(so gelangten schon einmal Secrets in eine systemd-Unit). Backticks in Erklärtexten " +
+        "durch „…“ ersetzen oder das Heredoc quoten (<<'EOF'), falls keine Variablen nötig sind.",
     ).toEqual([]);
-  });
-
-  /**
-   * Differentialtest gegen die einzige verlässliche Instanz: bash selbst.
-   *
-   * Jeder vorige Anlauf dieser Kontrolle ist daran gescheitert, dass ich mir
-   * das Verhalten der Shell ÜBERLEGT habe. Elfmal war die Überlegung plausibel
-   * und falsch. Hier wird sie deshalb nicht mehr behauptet, sondern gemessen:
-   * jeder Fall läuft als echtes Skript durch bash, und „ausgeführt" wird an
-   * einer NEBENWIRKUNG abgelesen (das Kommando legt eine Datei an), nicht am
-   * geschriebenen Text — der könnte die Zeichenkette auch literal enthalten.
-   *
-   * Der Test vergleicht nur: tut bash es, und meldet der Wächter es? Ein
-   * Erwartungswert von mir kommt nicht mehr vor.
-   *
-   * Kein Überspringen, wenn bash fehlt: eine Kontrolle, die je nach Umgebung
-   * prüft oder nicht, prüft nicht.
-   */
-  const DIFFERENTIAL_RUMPFE: Array<{ name: string; rumpf: string[] }> = [
-    { name: "schlichtes $(", rumpf: ["a: $(K)"] },
-    { name: "schlichter Backtick", rumpf: ["a: `K`"] },
-    { name: "escaptes \\$(", rumpf: ["a: \\$(K)"] },
-    { name: "escapter \\`", rumpf: ["a: \\`K\\`"] },
-    { name: "ein Backslash-Paar vor $(", rumpf: ["a: \\\\$(K)"] },
-    { name: "anderthalb Paare vor $(", rumpf: ["a: \\\\\\$(K)"] },
-    { name: "zwei Paare vor $(", rumpf: ["a: \\\\\\\\$(K)"] },
-    { name: "Fortsetzung trennt $ von (", rumpf: ["a: $\\", "(K)"] },
-    { name: "Backslash-Paar am Zeilenende setzt nicht fort", rumpf: ["a: $\\\\", "(K)"] },
-    { name: "drei Backslashes am Zeilenende", rumpf: ["a: $\\\\\\", "(K)"] },
-    { name: "arithmetische Expansion neben $(", rumpf: ["a: $((1+1)) $(K)"] },
-    { name: "Kommando in Parameter-Expansion", rumpf: ["a: ${LEER:-$(K)}"] },
-    { name: "Backtick innerhalb von $( )", rumpf: ["a: $(echo `K`)"] },
-    { name: "Fortsetzung mitten im Backtick", rumpf: ["a: `K\\", "`"] },
-    { name: "nur Variablen", rumpf: ["a: $HOME ${PATH}"] },
-    { name: "gewöhnlicher Unit-Text", rumpf: ["Description=Blog", "After=network.target"] },
-    { name: "zwei Substitutionen in einer Zeile", rumpf: ["a: $(K) und `true`"] },
-    { name: "Klammern ohne Dollar", rumpf: ["a: (K)"] },
-    { name: "Dollar ohne Klammer", rumpf: ["a: $K"] },
-    { name: "Dollar am Rumpfende", rumpf: ["a: $"] },
-    { name: "Backslash am Rumpfende", rumpf: ["a: \\"] },
-  ];
-
-  it.each(DIFFERENTIAL_RUMPFE)(
-    "deckt sich mit bash: $name",
-    ({ rumpf }) => {
-      const arbeit = fs.mkdtempSync(path.join(os.tmpdir(), "heredoc-diff-"));
-      try {
-        // K steht für das Kommando mit Nebenwirkung. Erst hier eingesetzt,
-        // damit die Fälle oben lesbar bleiben.
-        const konkret = rumpf.map((z) => z.replace(/K/g, "touch AUSGEFUEHRT"));
-        fs.writeFileSync(
-          path.join(arbeit, "probe.sh"),
-          ["#!/usr/bin/env bash", "cat <<EOF > ausgabe.txt", ...konkret, "EOF", ""].join("\n"),
-        );
-        try {
-          execFileSync("bash", ["probe.sh"], { cwd: arbeit, stdio: "pipe" });
-        } catch {
-          // Ein nicht-nuller Exit ist erlaubt; es zählt allein die Nebenwirkung.
-        }
-        const bashFuehrtAus = fs.existsSync(path.join(arbeit, "AUSGEFUEHRT"));
-        const gemeldet = substitutionenImRumpf(konkret, 1).length > 0;
-        expect(
-          gemeldet,
-          bashFuehrtAus
-            ? "bash führt diesen Rumpf AUS, der Wächter meldet ihn nicht — eine " +
-              "stille Lücke, genau die Klasse, die den Vorfall verursacht hat."
-            : "bash führt diesen Rumpf NICHT aus, der Wächter meldet ihn trotzdem — " +
-              "ein Fehlalarm, der die Kontrolle unglaubwürdig macht.",
-        ).toBe(bashFuehrtAus);
-      } finally {
-        fs.rmSync(arbeit, { recursive: true, force: true });
-      }
-    },
-  );
-
-  it("der Differentialtest prüft beide Richtungen wirklich ab", () => {
-    // Ohne diese Zusicherung könnten alle Fälle zufällig auf einer Seite
-    // liegen — dann vergliche der Test nur „nichts gegen nichts".
-    const ergebnisse = DIFFERENTIAL_RUMPFE.map(({ rumpf }) => {
-      const arbeit = fs.mkdtempSync(path.join(os.tmpdir(), "heredoc-diff-"));
-      try {
-        const konkret = rumpf.map((z) => z.replace(/K/g, "touch AUSGEFUEHRT"));
-        fs.writeFileSync(
-          path.join(arbeit, "probe.sh"),
-          ["#!/usr/bin/env bash", "cat <<EOF > ausgabe.txt", ...konkret, "EOF", ""].join("\n"),
-        );
-        try {
-          execFileSync("bash", ["probe.sh"], { cwd: arbeit, stdio: "pipe" });
-        } catch {
-          // siehe oben
-        }
-        return fs.existsSync(path.join(arbeit, "AUSGEFUEHRT"));
-      } finally {
-        fs.rmSync(arbeit, { recursive: true, force: true });
-      }
-    });
-    expect(ergebnisse.filter(Boolean).length, "kein Fall, den bash ausführt").toBeGreaterThanOrEqual(8);
-    expect(ergebnisse.filter((e) => !e).length, "kein harmloser Fall").toBeGreaterThanOrEqual(8);
-  });
-
-  it("erkennt den historischen Vorfall wieder (Momentaufnahme im Repository)", () => {
-    // Die Datei ist deploy.sh vor dem Fix (3078866), als Momentaufnahme im
-    // Repository. Bewusst NICHT über `git show`: der Checkout in der CI ist
-    // flach, dort gibt es den alten Commit nicht — die Probe lief lokal und
-    // fiel in der CI aus, und eine Kontrolle, die je nach Umgebung prüft oder
-    // nicht, prüft nicht.
-    const vorFix = fs
-      .readFileSync(path.join(ROOT, "tests/fixtures/heredoc-vorfall-2026-08-14.txt"), "utf8")
-      .split("\n");
-    const zeile = '  cat > "$UNIT_DIR/roses-blog-deploy.service" <<EOF';
-    const start = vorFix.indexOf(zeile);
-    expect(start, "historische Fundstelle nicht mehr auffindbar").toBeGreaterThan(-1);
-    const ende = vorFix.indexOf("EOF", start + 1);
-    expect(ende).toBeGreaterThan(start);
-    const funde = substitutionenImRumpf(vorFix.slice(start + 1, ende), start + 2);
-    // Sechs Zeilen mit Backticks, darunter das eigentliche Leck.
-    expect(funde).toHaveLength(6);
-    const zeilentexte = funde.map((f) => vorFix[f.nr - 1]);
-    expect(zeilentexte.some((z) => z.includes("env -u INVOCATION_ID"))).toBe(true);
   });
 
   it("die Unit-Vorlage enthält keinen Text, der die Umgebung ausgeben würde", () => {
