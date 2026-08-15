@@ -14,6 +14,7 @@ on:
 
 permissions:
   contents: read
+  issues: write # Meldepfad: Fehlschlag wird als Issue sichtbar
 
 jobs:
   zap-baseline:
@@ -53,15 +54,38 @@ jobs:
           path: |
             report_html.html
             report_md.md
-      - name: Lighthouse Core Web Vitals messen (A-17, NFR)
+      # Lighthouse stand hier — hinter dem fail-closed ZAP-Schritt und ohne
+      # `if:`. Alle vier planmaessigen Laeufe endeten mit failure, der Schritt
+      # wurde jedes Mal uebersprungen; zudem war er mit `|| true` entschaerft.
+      # Die Messung laeuft jetzt in .github/workflows/perf-uptime.yml gegen die
+      # ECHTE Domain — in CI gaebe es die betroffenen Bilder gar nicht (leere DB).
+
+      # BEWUSST INLINE, nicht als Skript aus dem Repo (Befund gpt-5.6-sol,
+      # PR #63, Runde 2): schlägt schon der Checkout fehl, existiert kein
+      # Skript — der Alarm-Schritt liefe zwar, fände die Datei nicht und
+      # meldete nichts. Ausgerechnet der Totalausfall des Laufs bliebe still.
+      # Der Preis ist ein wiederholter Block in drei Workflows; die Alternative
+      # wäre eine Kontrolle, die im wichtigsten Fall nicht greift.
+      - name: Fehlschlag melden
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # OHNE GH_REPO leitet die gh-CLI das Repository aus dem git-Remote im
+          # Arbeitsverzeichnis ab — nach einem fehlgeschlagenen Checkout gibt es
+          # keines, und der Alarm scheitert mit „not a git repository". Genau im
+          # gemeldeten Fall (Befund gpt-5.6-sol, PR #63, Runde 3).
+          GH_REPO: ${{ github.repository }}
         run: |
-          npx --yes lighthouse http://localhost:3000/ \
-            --only-categories=performance \
-            --output=json --output-path=./lighthouse.json \
-            --chrome-flags="--headless --no-sandbox --disable-gpu" || true
-          node -e "try{const r=require('./lighthouse.json');const a=r.audits;console.log('LCP',a['largest-contentful-paint']?.displayValue,'CLS',a['cumulative-layout-shift']?.displayValue,'TBT',a['total-blocking-time']?.displayValue,'Perf',r.categories.performance.score)}catch(e){console.log('Lighthouse-Report nicht lesbar:',e.message)}"
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: lighthouse-cwv
-          path: ./lighthouse.json
+          set -euo pipefail
+          gh label create kadenz-alarm --force --color B60205 \
+            --description "Ein wiederkehrender Lauf ist fehlgeschlagen"
+          titel="Wiederkehrender Lauf fehlgeschlagen: ${{ github.workflow }}"
+          text="Lauf: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          Commit: ${{ github.sha }}"
+          nummer=$(gh issue list --label kadenz-alarm --state open \
+            --search "$titel in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$nummer" ]; then
+            gh issue comment "$nummer" --body "$text"
+          else
+            gh issue create --title "$titel" --label kadenz-alarm --body "$text"
+          fi

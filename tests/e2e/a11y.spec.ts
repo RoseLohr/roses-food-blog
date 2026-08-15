@@ -16,7 +16,19 @@
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 
-const SEITEN = ["/", "/rezepte", "/reisen", "/saisonkalender", "/suche"];
+// Bis 08/2026 standen hier nur Listenseiten — die inhaltlich dichtesten
+// Seiten des Blogs (ein Rezept, ein Reisebericht) waren ungeprüft. Genau dort
+// sitzen Überschriften-Hierarchie, Galerie-Knöpfe, Landmarken und
+// Zierelemente, also alles, was axe finden kann. Beide sind geseedet.
+const SEITEN = [
+  "/",
+  "/rezepte",
+  "/reisen",
+  "/saisonkalender",
+  "/suche",
+  "/rezepte/linsen-bolognese-mit-vollkornnudeln",
+  "/reisen/streetfood-und-trattorien-in-sizilien",
+];
 
 // Einzige geduldete schwere Regel (dokumentierte Altlast R-CONTRAST). Nur kürzen.
 // Kontrast-Altlast behoben (Akzent auf #277a70 abgedunkelt, WCAG-AA). Leer = strikt.
