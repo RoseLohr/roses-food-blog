@@ -1,0 +1,65 @@
+# Momentaufnahme: der Heredoc-Block aus deploy.sh VOR dem Fix (Commit 3078866).
+#
+# Diese Datei ist die Positivprobe der Heredoc-Kontrolle in
+# tests/deploy-betrieb.test.ts: der Wächter muss hier die sechs Zeilen mit
+# Kommandosubstitution wiederfinden, darunter `env -u INVOCATION_ID` — den
+# Aufruf, der am 2026-08-14 die vollständige Prozessumgebung samt
+# SESSION_SECRET, ADMIN_PASSWORD, SMTP_PASS und ANTHROPIC_API_KEY in die
+# erzeugte systemd-Unit geschrieben hat.
+#
+# Bewusst als Momentaufnahme im Repository und NICHT über `git show` geholt:
+# der Checkout in der CI ist flach, die alten Commits gibt es dort nicht.
+# Eine Kontrolle, die je nach Umgebung prüft oder nicht, prüft nicht.
+#
+# Endung .txt, damit `git ls-files '*.sh'` sie nicht als zu prüfendes
+# Skript aufsammelt — sie ist Prüfmaterial, kein Betriebscode.
+
+  cat > "$UNIT_DIR/roses-blog-deploy.service" <<EOF
+[Unit]
+Description=Roses Food Blog – Pull & Deploy (aus dem Admin-Panel angestoßen)
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=$SCRIPT_DIR
+# WICHTIG: Ein systemd-User-Dienst startet mit MINIMALEM PATH — ohne
+# ~/.local/bin (dort liegt z. B. ein per pip installiertes podman-compose)
+# und ggf. ohne /usr/local/bin. deploy.sh bräche dann schon an der
+# podman/podman-compose-Prüfung ab (Symptom: Panel meldet „Server reagiert
+# nicht“, während der manuelle Aufruf im Terminal problemlos läuft). Wir
+# setzen daher einen vollständigen PATH — die Standardorte plus den PATH,
+# den der installierende Aufruf hatte.
+Environment=HOME=$HOME
+Environment=PATH=$HOME/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH
+#
+# LEBENSDAUER DES CONTAINERS VON DER DES DIENSTES ENTKOPPELN
+# (Produktionsausfall 2026-08-10, ~11 h Totalausfall — Root Cause):
+# Ein oneshot-Dienst gilt nach ExecStart als beendet; systemd räumt dann seine
+# Control-Group ab. Der frisch gestartete Container lag mit conmon und
+# rootlessport GENAU IN DIESER cgroup und wurde mitgerissen:
+#     roses-blog-deploy.service: State 'stop-sigterm' timed out. Killing.
+#     Killing process … (rootlessport) with signal SIGKILL.
+#     Killing process … (conmon)      with signal SIGKILL.
+# 90 s nach der Erfolgsmeldung war die Seite tot, und `restart: always` konnte
+# nicht greifen, weil der Supervisor (conmon) selbst erschossen war.
+# Zwei Maßnahmen, absichtlich beide — die TRAGENDE ist die erste:
+#  1. `KillMode=process`. Der rekursive cgroup-Kill hängt in systemd an
+#     KillMode=control-group (Default) bzw. mixed; bei `process` signalisiert
+#     systemd ausschließlich den Hauptprozess — conmon und rootlessport werden
+#     nie angefasst. Wer diese Zeile wegräumt, stellt den Ausfall wieder her.
+#     (`mixed` wäre SCHLIMMER als der Default: die SIGTERM-Phase fände nichts,
+#     systemd eskalierte sofort zu SIGKILL, und der Container stürbe in
+#     Millisekunden statt nach 90 s. `none` ist seit systemd v249 abgekündigt.)
+#  2. `env -u INVOCATION_ID` ergänzt das strukturell: an dieser Variablen
+#     erkennt podman eine umgebende Unit und überspringt dann das Verschieben
+#     von conmon in eine eigene transiente Scope (libpod-conmon-<id>.scope).
+#     Ohne sie verhält sich podman wie beim interaktiven Start. Das ist
+#     allerdings undokumentiertes podman-Innenleben, setzt cgroup_manager=systemd
+#     und einen erreichbaren Benutzer-D-Bus voraus und kann still ausbleiben —
+#     deshalb Ergänzung, nicht Fundament.
+# tests/deploy-betrieb.test.ts hält beide Zeilen fest.
+KillMode=process
+# Anfrage vor dem Lauf entfernen, damit der Path-Unit erneut auslösen kann.
+ExecStartPre=-/usr/bin/rm -f $DATA_DIR/deploy-request
+ExecStart=/usr/bin/env -u INVOCATION_ID bash $SCRIPT_DIR/deploy.sh
+EOF
