@@ -467,10 +467,28 @@ describe("Heredocs: gar keine unquotierten — es gibt nichts zu substituieren",
     ).toEqual([]);
   });
 
-  it("die geschriebenen Vorlagen setzen ihre Platzhalter nachweislich ein", () => {
+  /**
+   * Der Skripttext ohne reine Kommentarzeilen.
+   *
+   * Nötig, weil die Erklärung zur falschen Schreibweise diese zwangsläufig
+   * zitiert — die Prüfungen unten fanden sonst ihren eigenen Kommentartext
+   * und schlugen an, obwohl der Code in Ordnung ist.
+   */
+  const ohneKommentare = (datei: string) =>
+    fs
+      .readFileSync(path.join(ROOT, datei), "utf8")
+      .split("\n")
+      .map((z) => (/^\s*#/.test(z) ? "" : z));
+
+  it("die Vorlagen setzen ihre Platzhalter über EINEN Durchlauf ein", () => {
     // Gegenstück zur Regel oben: gequotet allein genügt nicht, die Werte
-    // müssen auch ankommen. Fehlt die Ersetzung, stünde „@SCRIPT_DIR@" in der
-    // Unit — beide Skripte brechen dafür ab, und das wird hier festgehalten.
+    // müssen auch ankommen — und zwar in einem Durchlauf.
+    //
+    // Nacheinander ausgeführte Ersetzungen (`${v//@A@/$a}; ${v//@B@/$b}`)
+    // durchsuchen auch das, was der vorige Schritt eingesetzt hat. Ein
+    // SMTP_USER mit dem Text „@SMTP_PASS@" bekam so das echte Passwort
+    // eingesetzt — das Secret landete im Benutzernamen (Befund gpt-5.6-sol,
+    // PR #65, mit bash 5.2.21 nachgestellt).
     for (const [datei, platzhalter] of [
       ["deploy.sh", ["@SCRIPT_DIR@", "@DATA_DIR@", "@HOME@", "@PATH@"]],
       ["bootstrap.sh", ["@SESSION_SECRET@", "@ADMIN_PASSWORD@", "@SMTP_PASS@"]],
@@ -478,35 +496,49 @@ describe("Heredocs: gar keine unquotierten — es gibt nichts zu substituieren",
       const quelle = fs.readFileSync(path.join(ROOT, datei), "utf8");
       for (const platz of platzhalter) {
         expect(quelle, `${datei}: ${platz} kommt in keiner Vorlage vor`).toContain(platz);
-        expect(
-          quelle,
-          `${datei}: ${platz} wird nirgends ersetzt — der Wert käme nie an`,
-        ).toMatch(new RegExp(`//${platz}/`));
       }
       expect(
         quelle,
-        `${datei}: kein Abbruch bei nicht ersetztem Platzhalter (fail-closed)`,
-      ).toMatch(/Platzhalter .* nicht ersetzt|wurde nicht ersetzt/);
+        `${datei}: setzt die Werte nicht über einmal_einsetzen ein`,
+      ).toMatch(/einmal_einsetzen "\$\w+"/);
+      expect(
+        quelle,
+        `${datei}: kein Abbruch bei einem Platzhalter ohne Wert (fail-closed)`,
+      ).toMatch(/Platzhalter ohne Wert/);
     }
   });
 
-  it("der Ersatz ist gequotet — sonst zerlegt ein „&\" im Wert die Zeile", () => {
-    // Seit bash 5.2 steht ein UNQUOTIERTES `&` im Ersatzstring für den
-    // gefundenen Text, genau wie bei sed. Ein Passwort oder Pfad mit „&"
-    // hätte die Zeile still zerlegt (nachgestellt mit bash 5.2.21). Deshalb
-    // muss jede Ersetzung ihren Wert in Anführungszeichen setzen.
+  it("keine Kette sequenzieller Platzhalter-Ersetzungen mehr", () => {
+    // Negativprobe zur Regel oben: kehrt die alte Schreibweise zurück, kehrt
+    // auch die Kollision zurück — und die ist still.
+    const funde: string[] = [];
     for (const datei of ["deploy.sh", "bootstrap.sh"]) {
-      const quelle = fs.readFileSync(path.join(ROOT, datei), "utf8");
-      const ungequotet = quelle
-        .split("\n")
-        .map((z, i) => ({ nr: i + 1, z }))
-        .filter(({ z }) => /\/\/@[A-Z_]+@\/\$/.test(z))
-        .map(({ nr, z }) => `${datei}:${nr}: ${z.trim()}`);
+      ohneKommentare(datei).forEach((z, i) => {
+        if (/\$\{\w+\/\/@[A-Z_]+@\//.test(z)) funde.push(`${datei}:${i + 1}: ${z.trim()}`);
+      });
+    }
+    expect(
+      funde,
+      "Sequenzielle Ersetzung eines @PLATZHALTER@: ein Wert, der wie ein " +
+        "späterer Platzhalter aussieht, wird dabei still durch einen fremden " +
+        "Wert ersetzt. Stattdessen einmal_einsetzen verwenden.",
+    ).toEqual([]);
+  });
+
+  it("die Platzhalter-Prüfung läuft auf der VORLAGE, nicht auf dem Ergebnis", () => {
+    // Im Ergebnis kann ein @NAME@ aus einem WERT stammen (ein Passwort darf so
+    // etwas enthalten). Eine Prüfung dort schlüge falsch an und bräche die
+    // Ersteinrichtung ab. Deshalb wird der Vorlagentext geprüft, bevor
+    // eingesetzt wird.
+    for (const datei of ["deploy.sh", "bootstrap.sh"]) {
+      const quelle = ohneKommentare(datei).join("\n");
+      const pruefStelle = quelle.indexOf("rest_vorlage");
+      const einsetzStelle = quelle.indexOf("einmal_einsetzen \"$");
+      expect(pruefStelle, `${datei}: keine Vorlagen-Prüfung`).toBeGreaterThan(-1);
       expect(
-        ungequotet,
-        "Ersetzung mit ungequotetem Wert: ein „&\" darin würde für den " +
-          'gefundenen Platzhalter stehen. Schreibweise: ${v//@X@/"$WERT"}',
-      ).toEqual([]);
+        pruefStelle,
+        `${datei}: die Prüfung läuft NACH dem Einsetzen — dann trifft sie Werte`,
+      ).toBeLessThan(einsetzStelle);
     }
   });
 

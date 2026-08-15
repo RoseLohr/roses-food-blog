@@ -485,6 +485,44 @@ if command -v systemctl >/dev/null 2>&1; then
     echo "         der .env, falls weitere Personen Zugriff auf diesen Host haben."
   fi
 
+  # Setzt @NAME@-Platzhalter in EINEM Durchlauf ein.
+  #
+  # Warum nicht einfach `${text//@A@/$a}; ${text//@B@/$b}` nacheinander: dabei
+  # durchsucht jeder Schritt auch das, was der vorige eingesetzt hat. Ein Wert,
+  # der zufällig wie ein späterer Platzhalter aussieht, wird dann still durch
+  # einen fremden Wert ersetzt — nachgestellt: ein SMTP_USER mit dem Text
+  # „@SMTP_PASS@" bekam das echte Passwort eingesetzt, das Secret landete im
+  # Benutzernamen. Umgekehrt bleibt ein FRÜHERER Marker in einem SPÄT
+  # eingesetzten Wert stehen und ließ die Rest-Prüfung falsch anschlagen
+  # (Befund gpt-5.6-sol, PR #65).
+  #
+  # Hier wird der Text von links nach rechts zerlegt und die Ausgabe nur
+  # ANGEHÄNGT. Was einmal eingesetzt ist, wird nie wieder angesehen.
+  #
+  # Aufruf: einmal_einsetzen "$vorlage" NAME1 "$wert1" NAME2 "$wert2" …
+  einmal_einsetzen() {
+    local rest="$1"; shift
+    local aus="" vor name i j gefunden
+    while [[ "$rest" == *@*@* ]]; do
+      vor=${rest%%@*}          # Text vor dem nächsten @
+      rest=${rest#*@}          # ab hinter diesem @
+      name=${rest%%@*}         # möglicher Platzhaltername
+      gefunden=0
+      for ((i = 1; i <= $#; i += 2)); do
+        if [[ "${!i}" == "$name" ]]; then
+          j=$((i + 1))
+          aus+="$vor${!j}"     # Wert anhängen — nie erneut durchsucht
+          rest=${rest#*@}      # schließendes @ überspringen
+          gefunden=1
+          break
+        fi
+      done
+      # Kein bekannter Name: das @ gehört zum Text (etwa eine E-Mail-Adresse).
+      (( gefunden )) || aus+="$vor@"
+    done
+    printf '%s' "$aus$rest"
+  }
+
   # Die Vorlage ist GEQUOTET (<<'EOF'): die Shell fasst den Text nicht an.
   # Werte kommen ausschließlich über @PLATZHALTER@ herein (siehe unterhalb der
   # Vorlage). Damit ist die Fehlerklasse vom 2026-08-14 strukturell erledigt —
@@ -561,31 +599,21 @@ WantedBy=default.target
 EOF
 )
 
-  # Ersetzung mit GEQUOTETEM Ersatz: seit bash 5.2 steht ein unquotiertes `&`
-  # im Ersatzstring für den gefundenen Text (wie bei sed). Ein Pfad mit „&"
-  # zerlegte die Zeile sonst still — nachgestellt mit bash 5.2.21.
-  #
-  # Bewusst zweimal ausgeschrieben statt über eine Schleife mit `declare -n`
-  # oder eine Funktion: in einer Funktion liefe `fail` innerhalb einer
-  # Kommandosubstitution und seine Meldung landete in der Unit-Datei statt im
-  # Protokoll. Hier ist Deutlichkeit mehr wert als Kürze.
-  dienst_unit=${dienst_unit//@SCRIPT_DIR@/"$SCRIPT_DIR"}
-  dienst_unit=${dienst_unit//@DATA_DIR@/"$DATA_DIR"}
-  dienst_unit=${dienst_unit//@HOME@/"$HOME"}
-  dienst_unit=${dienst_unit//@PATH@/"$PATH"}
-  pfad_unit=${pfad_unit//@DATA_DIR@/"$DATA_DIR"}
-
-  # Fail-closed: ein nicht ersetzter Platzhalter wäre eine kaputte Unit — etwa
-  # wenn jemand einen neuen in die Vorlage schreibt und die Ersetzung vergisst.
-  # Lieber gar nicht deployen als eine Unit mit „@HOME@" darin.
+  # Vorlage prüfen, BEVOR eingesetzt wird: jeder @NAME@ in der Vorlage muss
+  # unten auch einen Wert bekommen. Geprüft wird hier der Vorlagentext (also
+  # Quelltext), nicht das Ergebnis — im Ergebnis stünde sonst womöglich ein
+  # @NAME@, das aus einem WERT stammt, und die Prüfung schlüge falsch an.
+  rest_vorlage="$dienst_unit$pfad_unit"
   for platz in @SCRIPT_DIR@ @DATA_DIR@ @HOME@ @PATH@; do
-    if [[ "$dienst_unit" == *"$platz"* ]]; then
-      fail "Dienst-Vorlage: Platzhalter $platz wurde nicht ersetzt."
-    fi
-    if [[ "$pfad_unit" == *"$platz"* ]]; then
-      fail "Pfad-Vorlage: Platzhalter $platz wurde nicht ersetzt."
-    fi
+    rest_vorlage=${rest_vorlage//"$platz"/}
   done
+  if [[ "$rest_vorlage" =~ @[A-Z_]+@ ]]; then
+    fail "Unit-Vorlage enthält einen Platzhalter ohne Wert: ${BASH_REMATCH[0]}"
+  fi
+
+  dienst_unit=$(einmal_einsetzen "$dienst_unit" \
+    SCRIPT_DIR "$SCRIPT_DIR" DATA_DIR "$DATA_DIR" HOME "$HOME" PATH "$PATH")
+  pfad_unit=$(einmal_einsetzen "$pfad_unit" DATA_DIR "$DATA_DIR")
 
   printf '%s\n' "$dienst_unit" > "$UNIT_DIR/roses-blog-deploy.service"
   printf '%s\n' "$pfad_unit" > "$UNIT_DIR/roses-blog-deploy.path"
