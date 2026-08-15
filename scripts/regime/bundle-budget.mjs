@@ -73,6 +73,11 @@ export function alleClientChunks(wurzel = ".next/static") {
  * Quelle sind die `*_client-reference-manifest.js` unter .next/server/app —
  * build-manifest.json führt unter Turbopack nur `/_app`, die Zuordnung
  * Route → Client-Chunks steht ausschließlich dort.
+ *
+ * Das Muster lässt Unterverzeichnisse zu: der heutige Turbopack-Bau legt alles
+ * flach unter static/chunks ab, andere Konfigurationen erzeugen aber
+ * `static/chunks/app/…`. Ein zu enges Muster würde solche Chunks stillschweigend
+ * aus der Routensumme fallen lassen (Befund gpt-5.6-sol, PR #63, Runde 4).
  */
 export function routenChunks(wurzel = ".next/server/app") {
   const manifeste = [];
@@ -92,7 +97,7 @@ export function routenChunks(wurzel = ".next/server/app") {
         .replace(/\/(page|route)$/, "") || "/",
     chunks: [
       ...new Set(
-        [...fs.readFileSync(datei, "utf8").matchAll(/static\/chunks\/[\w.-]+\.js/g)].map(
+        [...fs.readFileSync(datei, "utf8").matchAll(/static\/chunks\/[\w./-]+\.js/g)].map(
           (t) => t[0],
         ),
       ),
@@ -126,10 +131,18 @@ export function messen(wurzel, geteilt, chunkDateien, routen, leseDatei) {
   const cache = new Map();
   const gzipVon = (relativ) => {
     if (!cache.has(relativ)) {
-      cache.set(
-        relativ,
-        zlib.gzipSync(lies(path.join(wurzel, relativ)), { level: 6 }).length,
-      );
+      let inhalt;
+      try {
+        inhalt = lies(path.join(wurzel, relativ));
+      } catch (fehler) {
+        throw new Error(
+          `Chunk „${relativ}" ist im Manifest genannt, aber nicht lesbar ` +
+            `(${fehler instanceof Error ? fehler.message : String(fehler)}). ` +
+            "Der Bau ist unvollständig oder das Pfadmuster passt nicht — in " +
+            "beiden Fällen wäre die Messung zu niedrig.",
+        );
+      }
+      cache.set(relativ, zlib.gzipSync(inhalt, { level: 6 }).length);
     }
     return cache.get(relativ);
   };
@@ -153,12 +166,12 @@ export function messen(wurzel, geteilt, chunkDateien, routen, leseDatei) {
     let summe = geteiltGzip;
     for (const c of r.chunks) {
       if (geteilt.includes(c)) continue; // schon im Sockel enthalten
-      try {
-        summe += gzipVon(c);
-      } catch {
-        // Ein im Manifest genannter, aber fehlender Chunk ist ein kaputter
-        // Bau; die Gesamtsumme oben deckt den Fall ohnehin ab.
-      }
+      // KEIN try/catch: ein im Manifest genannter, aber nicht lesbarer Chunk
+      // ginge sonst mit 0 Byte in die Summe ein — die Route sähe billiger aus,
+      // als sie ist, und das Budget bliebe grün. Genau die Sorte stiller
+      // Fehlmessung, gegen die dieser Wächter antritt. Er ist zugleich das
+      // Netz für ein Chunk-Pfadmuster, das die Erkennung oben nicht trifft.
+      summe += gzipVon(c);
     }
     if (summe > schlechteste.gzip) {
       schlechteste = { route: r.route, gzip: summe, chunks: r.chunks.length };
@@ -258,6 +271,30 @@ function selbsttest() {
   const nurRoute = { ...schlank, schlechteste: { route: "/teuer", gzip: 400_000, chunks: 3 } };
   if (bewerten(nurRoute).length !== 1) {
     console.error("SELBSTTEST FEHLGESCHLAGEN: teure Einzelroute blieb grün.");
+    process.exit(1);
+  }
+
+  // Ein referenzierter, aber nicht lesbarer Chunk muss LAUT scheitern, nicht
+  // stillschweigend mit 0 Byte in die Routensumme eingehen.
+  let leseFehlerGefangen = false;
+  try {
+    messen(
+      "/e",
+      ["a.js"],
+      ["/e/a.js"],
+      [{ route: "/", chunks: ["a.js", "fehlt.js"] }],
+      (p) => {
+        if (p.endsWith("fehlt.js")) throw new Error("ENOENT");
+        return Buffer.from("x");
+      },
+    );
+  } catch {
+    leseFehlerGefangen = true;
+  }
+  if (!leseFehlerGefangen) {
+    console.error(
+      "SELBSTTEST FEHLGESCHLAGEN: unlesbarer Routen-Chunk zählte als 0 Byte.",
+    );
     process.exit(1);
   }
 
