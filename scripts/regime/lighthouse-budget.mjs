@@ -19,6 +19,10 @@
  *  - fehlender/leerer Report            → Fehler
  *  - fehlendes/leeres resource-summary  → Fehler (Messung fand nicht statt)
  *  - budgetierte Art fehlt im Report    → Fehler (ungemessenes Budget ist keins)
+ *  - fehlendes network-requests         → Fehler (Herkunft der Messung unbelegt)
+ *  - Hauptdokument ≠ HTTP 200           → Fehler (eine Fehlerseite ist kleiner
+ *                                         als die echte; die Budgets sähen
+ *                                         besser aus, obwohl die Seite kaputt ist)
  *
  *   node scripts/regime/lighthouse-budget.mjs ./lighthouse.json
  *   node scripts/regime/lighthouse-budget.mjs --selftest
@@ -38,6 +42,36 @@ export function budgetLesen(datei = ".lighthouse/budget.json") {
     );
   }
   return zeilen;
+}
+
+/**
+ * Der Statuscode des Hauptdokuments — die Messung ist nur etwas wert, wenn sie
+ * an der ECHTEN Seite stattfand.
+ *
+ * Bei einem klaren 5xx verweigert Lighthouse zwar ganz (runtimeError
+ * ERRORED_DOCUMENT_REQUEST, kein resource-summary) und fällt schon über
+ * `gemessen()`. Eine Fehlerseite MIT Status 200 vermisst es dagegen anstandslos
+ * — und weil sie kleiner ist als die echte Startseite, sähen die Budgets sogar
+ * besser aus als je zuvor. Deshalb wird hier der Status geprüft und nicht bloß
+ * die Größe (Befund gpt-5.6-sol, PR #63).
+ *
+ * `network-requests` ist bei --only-categories=performance vorhanden —
+ * empirisch geprüft mit Lighthouse 12.8.2, anders als das nicht existierende
+ * Audit „performance-budget". Fehlt es trotzdem, ist das ein Fehler: eine
+ * Messung ohne belegbare Herkunft ist keine.
+ */
+export function dokumentStatus(report) {
+  const zeilen = report?.audits?.["network-requests"]?.details?.items;
+  if (!Array.isArray(zeilen) || zeilen.length === 0) {
+    throw new Error(
+      "Report enthält kein auswertbares Audit „network-requests" +
+        "\" — ohne die Anfrageliste ist nicht belegbar, WELCHE Seite gemessen " +
+        "wurde. Eine Messung ohne Herkunft darf nicht als „Budget eingehalten\" " +
+        "durchgehen.",
+    );
+  }
+  const dokument = zeilen.find((z) => z.resourceType === "Document") ?? zeilen[0];
+  return { code: dokument?.statusCode, url: dokument?.url };
 }
 
 /** Übertragene Bytes je Ressourcenart aus dem Report. */
@@ -152,8 +186,39 @@ function selbsttest() {
       process.exit(1);
     }
   }
+
+  // Herkunft der Messung: ohne network-requests ist nicht belegbar, WELCHE
+  // Seite vermessen wurde; ein Statuscode ≠ 200 ist eine Fehlerseite.
+  const anfragen = (items) => ({ audits: { "network-requests": { details: { items } } } });
+  let herkunftGefangen = false;
+  try {
+    dokumentStatus(anfragen([]));
+  } catch {
+    herkunftGefangen = true;
+  }
+  if (!herkunftGefangen) {
+    console.error("SELBSTTEST FEHLGESCHLAGEN: Report ohne Anfrageliste galt als belegt.");
+    process.exit(1);
+  }
+  const fehlerseite = dokumentStatus(
+    anfragen([{ resourceType: "Document", statusCode: 500, url: "https://x/" }]),
+  );
+  if (fehlerseite.code !== 500) {
+    console.error("SELBSTTEST FEHLGESCHLAGEN: Statuscode des Dokuments nicht gelesen.");
+    process.exit(1);
+  }
+  const echt = dokumentStatus(
+    anfragen([
+      { resourceType: "Script", statusCode: 200, url: "https://x/a.js" },
+      { resourceType: "Document", statusCode: 200, url: "https://x/" },
+    ]),
+  );
+  if (echt.code !== 200 || echt.url !== "https://x/") {
+    console.error("SELBSTTEST FEHLGESCHLAGEN: Dokument nicht aus der Liste erkannt.");
+    process.exit(1);
+  }
   console.log(
-    "lighthouse-budget: Selbsttest ok (fängt Überschreitung, fehlende Art und Nichtmessung).",
+    "lighthouse-budget: Selbsttest ok (fängt Überschreitung, fehlende Art, Nichtmessung und Fehlerseite).",
   );
 }
 
@@ -173,6 +238,17 @@ function haupt() {
       `CLS ${a["cumulative-layout-shift"]?.displayValue ?? "?"} · ` +
       `TBT ${a["total-blocking-time"]?.displayValue ?? "?"}`,
   );
+
+  const dokument = dokumentStatus(report);
+  console.log(`Gemessenes Dokument: HTTP ${dokument.code} — ${dokument.url}`);
+  if (dokument.code !== 200) {
+    console.error(
+      `\nFEHLER: gemessen wurde eine Seite mit HTTP ${dokument.code}. Eine ` +
+        "Fehlerseite ist kleiner als die echte Seite — die Budgets sähen dann " +
+        "besser aus, obwohl die Seite kaputt ist.",
+    );
+    process.exit(1);
+  }
 
   const nachArt = gemessen(report);
   for (const [art, m] of nachArt) console.log(`  ${art}: ${kib(m.bytes)} (${m.anfragen})`);

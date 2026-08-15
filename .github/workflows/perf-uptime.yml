@@ -64,14 +64,43 @@ jobs:
             console.log('Ausgelieferter Commit:', h.commit);
           "
 
+      # Die Startseite selbst — VOR allem, was auf ihr aufbaut.
+      #
+      # `/health` ist eine eigene Route und kann 200 liefern, während die Seite
+      # kaputt ist. Und eine Fehlerseite trägt weiterhin /_next/static/*.js:
+      # der Schritt darunter hätte daraus fröhlich eine Chunk-URL gezogen und
+      # grün gemeldet, Lighthouse hätte die Fehlerseite vermessen — die ist
+      # KLEINER als die echte Startseite, die Budgets sähen also besser aus als
+      # je zuvor (Befund gpt-5.6-sol, PR #63).
+      #
+      # Geprüft wird deshalb beides: der Status UND dass es wirklich die
+      # Startseite ist. `section.featured-slider` ist die Bühne der Startseite;
+      # dieselbe Marke nutzen die E2E-Tests. Eine Fehlerseite hat sie nicht.
+      # Nur bei 200 mit Bühne läuft der Rest — sonst bricht der Lauf hier ab und
+      # meldet, statt auf einer Fehlerseite Kennzahlen zu erheben.
+      - name: Startseite liefert wirklich die Startseite
+        run: |
+          set -euo pipefail
+          code=$(curl -sS -o /tmp/start.html -w '%{http_code}' --max-time 30 "$ZIEL/")
+          echo "HTTP $code, $(wc -c < /tmp/start.html) Bytes"
+          if [ "$code" != "200" ]; then
+            echo "Startseite antwortet mit $code — hier wird nichts gemessen."
+            exit 1
+          fi
+          if ! grep -q 'featured-slider' /tmp/start.html; then
+            echo "Startseite ohne Bühne (section.featured-slider) — das ist nicht"
+            echo "die Startseite, sondern vermutlich eine Fehlerseite mit Status 200."
+            exit 1
+          fi
+
       # Auslieferungs-Header der statischen Dateien. Prüft, was der Besucher
       # wirklich bekommt — nicht, was die Konfiguration behauptet.
       - name: Auslieferung der statischen Dateien
         run: |
           set -euo pipefail
-          # Eine reale Chunk-URL aus dem HTML der Startseite ziehen.
-          datei=$(curl -sS --max-time 20 "$ZIEL/" \
-            | grep -oE '/_next/static/[^"]+\.js' | head -1)
+          # Chunk-URL aus dem GEPRÜFTEN HTML des vorigen Schritts, nicht aus
+          # einem neuen, ungeprüften Abruf.
+          datei=$(grep -oE '/_next/static/[^"]+\.js' /tmp/start.html | head -1)
           test -n "$datei" || { echo "Keine Chunk-URL im HTML gefunden."; exit 1; }
           echo "Prüfe $datei"
           kopf=$(curl -sSI --max-time 20 -H 'Accept-Encoding: br,gzip' "$ZIEL$datei")
