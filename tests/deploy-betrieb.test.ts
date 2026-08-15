@@ -377,7 +377,31 @@ describe("Heredocs: kein ungewollter Shell-Aufruf im geschriebenen Text", () => 
    * ADMIN_PASSWORD, SMTP_PASS und ANTHROPIC_API_KEY im Klartext darin.
    *
    * Der laute Teil (command not found) war harmlos, der leise war das Leck.
-   * Deshalb prüft dieser Test die FEHLERKLASSE, nicht die vier Fundstellen.
+   *
+   * WARUM DIESE KONTROLLE NICHT MEHR SELBST PARST (Lehre aus zehn
+   * Review-Runden, gpt-5.6-sol, PR #63): Die erste Fassung suchte die
+   * Heredoc-Rümpfe selbst und prüfte deren Text. Dafür muss man die Shell
+   * nachbauen — Anführungszeichen über Zeilengrenzen, `$( … )` mit eigener
+   * Quotierungsebene, Zeilenfortsetzungen, `<<-` gegen `<< -WORT`, Begrenzer
+   * ohne Bezeichnerform, Kommentare. Acht Runden lang fand jede Runde eine
+   * weitere Abweichung, und jede ließ die Kontrolle STILL grün. Der letzte
+   * Versuch, Anführungszeichen über Zeilen mitzuführen, ließ die Kontrolle
+   * sogar an der ECHTEN Fundstelle vorbeilaufen (deploy.sh vor dem Fix:
+   * vorher 6 Treffer, danach 0) — sie hätte den Vorfall, für den es sie gibt,
+   * nicht mehr erkannt.
+   *
+   * Deshalb jetzt umgekehrt und ohne Nachbau:
+   *  1. JEDES `<<` in einer Shell-Datei muss entweder gequotet sein
+   *     (`<<'EOF'` — dann fasst die Shell den Text nicht an) oder unten
+   *     ausdrücklich verzeichnet stehen. Gesucht wird im ROHTEXT, bewusst
+   *     grob: zu viel zu finden kostet einen Eintrag mit Begründung, zu wenig
+   *     zu finden kostet ein Leck.
+   *  2. Nur für die verzeichneten Stellen wird der Rumpf angesehen — dort ist
+   *     eindeutig bekannt, wo er anfängt und aufhört, weil jede Stelle
+   *     einzeln geprüft und begründet ist.
+   *
+   * Das ist strenger als vorher: ein NEUES unquotiertes Heredoc fällt jetzt
+   * auf, statt nur auf verbotene Zeichen abgeklopft zu werden.
    */
   // Entdeckung statt Aufzählung: eine gepflegte Liste vergisst neue Skripte,
   // und ein `.filter(existsSync)` ließe eine umbenannte Datei lautlos
@@ -390,165 +414,55 @@ describe("Heredocs: kein ungewollter Shell-Aufruf im geschriebenen Text", () => 
     .filter(Boolean);
 
   /**
-   * Eröffnende Heredocs einer Zeile, in der Reihenfolge, in der die Shell ihre
-   * Rümpfe liest.
+   * Die ausdrücklich geprüften `<<`-Stellen. Wer eine hinzufügt, muss sie
+   * begründen; wer eine Zeile ändert, macht diesen Test rot und muss erneut
+   * hinsehen. Genau das ist beabsichtigt.
    *
-   * GRUNDRICHTUNG: im Zweifel zu VIEL scannen. Ein Fehlalarm ist laut und wird
-   * behoben; eine Lücke ist still — und still war jeder Befund, den dieser
-   * Wächter bisher kassiert hat.
-   *
-   * Als Begrenzer taugt bash JEDES Wort, nicht nur ein Bezeichner: `<<1`,
-   * `<<.`, `<<@@`, `<<!` und `<<END-OF-FILE` substituieren alle (empirisch mit
-   * bash 5, 2026-08-15). Ein Muster `[A-Za-z_][A-Za-z0-9_]*` sah sie nicht —
-   * aktive Kommandosubstitution kam damit durch beide Tore (Befund
-   * gpt-5.6-sol, PR #63). Das Wort endet deshalb erst an Leerraum, an einem
-   * Shell-Metazeichen (`|&;()<>`) oder an einem Anführungszeichen.
-   *
-   * Ebenfalls empirisch festgelegt:
-   *  - `<<EOF`, `<< EOF`, `<<-EOF`, `<<- EOF` — Leerraum hinter dem Operator
-   *    ist zulässig und substituiert genauso.
-   *  - Ein `-` zählt nur als Operator, wenn es direkt am `<<` klebt. Bei
-   *    `<< -EOF` ist der Begrenzer `-EOF`, und Tabs werden NICHT abgeschnitten.
-   *  - `<<'EOF'`, `<<"EOF"`, `<<\EOF` sind gequotet — die Shell fasst den Text
-   *    nicht an. Auch Mischformen wie `<<E'O'F` quotet bash vollständig; sie
-   *    fallen über das Zeichen unmittelbar hinter dem Wort heraus.
-   *  - `<<<` ist ein Here-String, kein Heredoc.
-   *  - `$((1 << N))` ist ein Links-Shift. Entscheidend ist die Umgebung, nicht
-   *    das Folgezeichen: steht vor dem `<<` eine unabgeschlossene `((`-Klammer,
-   *    ist es Arithmetik. Ein Test nur auf ein nachfolgendes `))` verfehlte
-   *    `$(( (1 << 3) + 1 ))`.
+   * `delimiter` gesetzt  → unquotiertes Heredoc, der Rumpf wird geprüft.
+   * `delimiter` fehlt    → gar kein Heredoc (z. B. Links-Shift `$((1 << N))`).
    */
-  /**
-   * Platzhalter für alles, was die Shell als Text und nicht als Syntax liest.
-   *
-   * Der Zeilenumbruch ist der einzig kollisionsfreie Platzhalter: eine Zeile
-   * kann ihn nicht enthalten (dort ist sie ja geteilt), er zählt nicht als
-   * Leerraum im Sinne von `[ \t]*`, und `\s` schließt ihn aus dem Wort für den
-   * Begrenzer schon aus. Ein sichtbares Zeichen wäre mehrdeutig: stünde es
-   * echt im Code (etwa `cat <<EOF|grep x`), hielte der Scanner es für Maske
-   * und übersähe das Heredoc — genau die stille Lücke, um die es hier geht.
-   */
-  const MASKE = "\n";
+  const VERZEICHNETE_STELLEN: Array<{
+    datei: string;
+    zeile: string;
+    delimiter?: string;
+    grund: string;
+  }> = [
+    {
+      datei: "bootstrap.sh",
+      zeile: "  cat > .env <<EOF",
+      delimiter: "EOF",
+      grund:
+        "Schreibt die .env mit erzeugten Werten ($SESSION_SECRET, $ADMIN_PASSWORD); " +
+        "die müssen eingesetzt werden, ein gequotetes Heredoc könnte das nicht.",
+    },
+    {
+      datei: "deploy.sh",
+      zeile: '  cat > "$UNIT_DIR/roses-blog-deploy.service" <<EOF',
+      delimiter: "EOF",
+      grund:
+        "Panel-Deploy-Unit; $SCRIPT_DIR, $HOME und $PATH müssen eingesetzt werden. " +
+        "Genau hier entstand der Vorfall vom 2026-08-14.",
+    },
+    {
+      datei: "deploy.sh",
+      zeile: '  cat > "$UNIT_DIR/roses-blog-deploy.path" <<EOF',
+      delimiter: "EOF",
+      grund: "Zugehörige .path-Unit; setzt $SCRIPT_DIR ein.",
+    },
+  ];
 
-  /**
-   * Die Zeile, reduziert auf das, was die Shell als Syntax liest: Zeichen in
-   * Anführungszeichen, hinter einem `\` und ab einem Kommentarzeichen werden
-   * durch `MASKE` ersetzt, positionsgetreu.
-   *
-   * Ohne diesen Schritt liest der Scanner Text als Syntax und Syntax als Text.
-   * Beides empirisch belegt (bash 5, 2026-08-15):
-   *  - `echo '((' ; cat <<EOF` ist ein ECHTES Heredoc; eine Klammerzählung
-   *    über den Rohtext hielt das gequotete `((` für offene Arithmetik und
-   *    übersprang es (Befund gpt-5.6-sol, PR #63).
-   *  - `echo 'cat <<NIXEOF'` ist KEINS — die Zeile gibt den Text nur aus.
-   *
-   * `MASKE` ist bewusst kein Leerzeichen: sonst könnte `[ \t]*` über einen
-   * ausmaskierten gequoteten Begrenzer hinweglesen und das nächste Wort dafür
-   * halten (`cat <<'A' B`).
-   *
-   * Grenze, bewusst gezogen: der Zustand wird je Zeile zurückgesetzt. Eine
-   * über Zeilen laufende Zeichenkette wird ab der zweiten Zeile also als Code
-   * gelesen — das scannt zu viel, nie zu wenig.
-   */
-  function nurSyntax(zeile: string) {
-    let aus = "";
-    let einfach = false;
-    let doppelt = false;
-    for (let i = 0; i < zeile.length; i++) {
-      const z = zeile[i];
-      if (!einfach && z === "\\") {
-        // Der Backslash und das maskierte Zeichen sind beide keine Syntax.
-        aus += MASKE + (i + 1 < zeile.length ? MASKE : "");
-        i++;
-        continue;
-      }
-      if (!einfach && !doppelt && z === "#" && (i === 0 || /\s/.test(zeile[i - 1]))) {
-        aus += MASKE.repeat(zeile.length - i);
-        break;
-      }
-      if (!doppelt && z === "'") {
-        einfach = !einfach;
-        aus += MASKE;
-        continue;
-      }
-      if (!einfach && z === '"') {
-        doppelt = !doppelt;
-        aus += MASKE;
-        continue;
-      }
-      aus += einfach || doppelt ? MASKE : z;
-    }
-    return aus;
+  /** Jede Zeile mit `<<`, die kein Here-String (`<<<`) ist. */
+  function stellenMitHeredocOperator(quelle: string) {
+    return quelle
+      .split("\n")
+      .map((text, i) => ({ nr: i + 1, text }))
+      .filter(({ text }) => /(?<!<)<<(?!<)-?[ \t]*\S/.test(text));
   }
 
-  function heredocOeffner(rohzeile: string) {
-    const zeile = nurSyntax(rohzeile);
-    const muster = /(?<!<)<<(?!<)(-?)[ \t]*([^\s|&;()<>'"\\]+)/g;
-    const oeffner: Array<{ delimiter: string; tabsErlaubt: boolean }> = [];
-    for (const m of zeile.matchAll(muster)) {
-      // <<E'O'F — bash quotet dann das ganze Wort, der Rumpf bleibt unberührt.
-      if (zeile[m.index + m[0].length] === MASKE) continue;
-      const davor = zeile.slice(0, m.index);
-      const offen = (davor.match(/\(\(/g) ?? []).length;
-      const zu = (davor.match(/\)\)/g) ?? []).length;
-      if (offen > zu) continue; // innerhalb von $(( … )) — Links-Shift
-      oeffner.push({ delimiter: m[2], tabsErlaubt: m[1] === "-" });
-    }
-    return oeffner;
-  }
-
-  /**
-   * Endet die Zeile das Heredoc? bash vergleicht das Wort EXAKT: führende Tabs
-   * fallen nur bei `<<-` weg, Leerzeichen nie, nachlaufender Leerraum nie.
-   * `.trim()` war deshalb zu großzügig — es hielt `  EOF` für das Ende, die
-   * Shell nicht, und alles danach blieb ungescannt (Befund gpt-5.6-sol).
-   */
-  function istTerminator(zeile: string, delimiter: string, tabsErlaubt: boolean) {
-    return (tabsErlaubt ? zeile.replace(/^\t+/, "") : zeile) === delimiter;
-  }
-
-  /**
-   * Rümpfe aller unquotierten Heredocs — plus die, denen der Terminator fehlt.
-   *
-   * Fehlt er, liest bash bis Dateiende und substituiert den ganzen Rest; `bash
-   * -n` warnt dabei nur und endet mit 0, die Syntaxprüfung der CI sieht es also
-   * nicht. Ein `continue` an dieser Stelle hätte genau diesen Fall — den
-   * schlimmsten — ungeprüft gelassen (Befund gpt-5.6-sol). Also wird bis
-   * Dateiende gescannt, so wie die Shell es täte.
-   */
-  function unquotierteHeredocRuempfe(quelle: string) {
-    const zeilen = quelle.split("\n");
-    const treffer: Array<{ zeile: number; text: string }> = [];
-    const ohneTerminator: Array<{ zeile: number; delimiter: string }> = [];
-    let i = 0;
-    while (i < zeilen.length) {
-      const oeffner = heredocOeffner(zeilen[i]);
-      if (oeffner.length === 0) {
-        i++;
-        continue;
-      }
-      // Mehrere Heredocs in einer Zeile (`cat <<A <<B`) liest die Shell
-      // nacheinander — der Rumpf des zweiten folgt auf den des ersten.
-      let start = i + 1;
-      for (const { delimiter, tabsErlaubt } of oeffner) {
-        let ende = zeilen.length;
-        for (let j = start; j < zeilen.length; j++) {
-          if (istTerminator(zeilen[j], delimiter, tabsErlaubt)) {
-            ende = j;
-            break;
-          }
-        }
-        for (let j = start; j < ende; j++) treffer.push({ zeile: j + 1, text: zeilen[j] });
-        if (ende === zeilen.length) {
-          ohneTerminator.push({ zeile: i + 1, delimiter });
-          start = zeilen.length;
-          break;
-        }
-        start = ende + 1;
-      }
-      i = start;
-    }
-    return { treffer, ohneTerminator };
+  /** Beginnt das Wort hinter `<<` mit einem Zeichen, das bash quoten lässt? */
+  function istGequotet(text: string) {
+    const m = /(?<!<)<<(?!<)-?[ \t]*(\S)/.exec(text);
+    return m !== null && ["'", '"', "\\"].includes(m[1]);
   }
 
   it("die Dateiliste kommt aus der Entdeckung und ist nicht leer", () => {
@@ -559,179 +473,105 @@ describe("Heredocs: kein ungewollter Shell-Aufruf im geschriebenen Text", () => 
     expect(shellDateien).toContain("bootstrap.sh");
   });
 
-  /**
-   * Gegenprobe für den Scanner selbst — ohne sie prüft dieser Test nur, dass er
-   * NICHTS findet, und das täte ein kaputter Scanner ebenso zuverlässig.
-   *
-   * Jeder Fall ist mit bash 5 nachgestellt (2026-08-15): das Erwartete ist,
-   * was die Shell wirklich tut, nicht was plausibel aussieht. Die drei ersten
-   * Fälle sind genau die Lücken, durch die eine frühere Fassung durchsah.
-   */
-  const SCANNER_FAELLE: Array<{ name: string; quelle: string[]; erwartet: string[] }> = [
-    {
-      name: "Leerraum hinter << und <<-",
-      quelle: ["cat << EOF > a", "A: `id`", "EOF", "cat <<- ZWEI > b", "\tB: $(id)", "\tZWEI"],
-      erwartet: ["A: `id`", "\tB: $(id)"],
-    },
-    {
-      name: "fehlender Terminator — bash liest bis Dateiende",
-      quelle: ["cat <<EOF > a", "A: `id`", "immer noch Rumpf: $(id)"],
-      erwartet: ["A: `id`", "immer noch Rumpf: $(id)"],
-    },
-    {
-      name: "leerzeichen-eingerücktes Pseudo-Ende beendet nichts",
-      quelle: ["cat <<EOF > a", "  EOF", "danach: `id`", "EOF"],
-      erwartet: ["  EOF", "danach: `id`"],
-    },
-    {
-      name: "nachlaufender Leerraum am Terminator beendet nichts",
-      quelle: ["cat <<EOF > a", "EOF ", "danach: `id`", "EOF"],
-      erwartet: ["EOF ", "danach: `id`"],
-    },
-    {
-      name: "<<- endet nur an Tabs, nicht an Leerzeichen",
-      quelle: ["cat <<-EOF > a", "  EOF", "danach: `id`", "\tEOF"],
-      erwartet: ["  EOF", "danach: `id`"],
-    },
-    {
-      name: "zwei Heredocs in einer Zeile — beide Rümpfe zählen",
-      quelle: ["cat <<A <<B", "erster: `id`", "A", "zweiter: $(id)", "B"],
-      erwartet: ["erster: `id`", "zweiter: $(id)"],
-    },
-    {
-      name: "Begrenzer ohne Bezeichnerform: <<1, <<., <<@@, <<!, <<MIT-STRICH",
-      quelle: [
-        "cat <<1 > a",
-        "eins: `id`",
-        "1",
-        "cat <<. > b",
-        "punkt: $(id)",
-        ".",
-        "cat <<@@ > c",
-        "at: `id`",
-        "@@",
-        "cat <<! > d",
-        "knall: $(id)",
-        "!",
-        "cat <<END-OF-FILE > e",
-        "strich: `id`",
-        "END-OF-FILE",
-      ],
-      erwartet: ["eins: `id`", "punkt: $(id)", "at: `id`", "knall: $(id)", "strich: `id`"],
-    },
-    {
-      name: "<< -EOF: der Strich gehört zum Wort, Tabs bleiben stehen",
-      quelle: ["cat << -EOF > a", "\tminus: `id`", "\t-EOF", "-EOF"],
-      erwartet: ["\tminus: `id`", "\t-EOF"],
-    },
-    {
-      name: "gequotetes Heredoc: die Shell fasst den Text nicht an",
-      quelle: [
-        "cat <<'EOF' > a",
-        "harmlos: `id`",
-        "EOF",
-        'cat <<"Z" > b',
-        "harmlos: $(id)",
-        "Z",
-        "cat <<\\Y > c",
-        "harmlos: `id`",
-        "Y",
-        "cat <<E'O'F > d",
-        "harmlos: $(id)",
-        "EOF",
-      ],
-      erwartet: [],
-    },
-    {
-      name: "Here-String und Links-Shift sind keine Heredocs",
-      quelle: [
-        "cat <<<EOF",
-        "N=3",
-        "echo $((1 << N))",
-        "echo $(( 1 <<N ))",
-        "echo $(( (1 << 3) + 1 ))",
-        "(( x <<= 1 ))",
-        "echo fertig",
-      ],
-      erwartet: [],
-    },
-    {
-      name: "Heredoc nach abgeschlossener Arithmetik in derselben Zeile",
-      quelle: ["echo $(( 1 << 2 )) ; cat <<EOF > a", "danach: `id`", "EOF"],
-      erwartet: ["danach: `id`"],
-    },
-    {
-      name: "Kommentar eröffnet kein Heredoc — weder ganze Zeile noch am Zeilenende",
-      quelle: [
-        "# Beispiel mit (( und cat <<KOMMENTAR",
-        "echo `id`",
-        "cat <<EOF > a  # hier schon",
-        "im rumpf: $(id)",
-        "EOF",
-      ],
-      erwartet: ["im rumpf: $(id)"],
-    },
-    {
-      name: "gequotete Klammern verstecken kein echtes Heredoc",
-      quelle: [
-        "echo '((' ; cat <<EOF > a",
-        "einfach: $(id)",
-        "EOF",
-        'echo "((" ; cat <<Z > b',
-        "doppelt: `id`",
-        "Z",
-      ],
-      erwartet: ["einfach: $(id)", "doppelt: `id`"],
-    },
-    {
-      name: "ein Heredoc IN Anführungszeichen ist nur Text",
-      quelle: ["echo 'cat <<NIXEOF'", "echo \"auch nicht: cat <<AUCHNIX\"", "echo `id`"],
-      erwartet: [],
-    },
-    {
-      name: "gequoteter Begrenzer: das folgende Wort ist nicht der Begrenzer",
-      quelle: ["cat <<'A' B", "harmlos: `id`", "B", "A"],
-      erwartet: [],
-    },
-  ];
-
-  it.each(SCANNER_FAELLE)("Scanner: $name", ({ quelle, erwartet }) => {
-    const { treffer } = unquotierteHeredocRuempfe(quelle.join("\n"));
-    expect(treffer.map((t) => t.text)).toEqual(erwartet);
-  });
-
-  it("kein Shell-Skript lässt ein Heredoc unbeendet", () => {
-    // Eigener Befund, nicht nur Nebenwirkung des Scans: `bash -n` warnt hier
-    // bloß und endet mit 0 — der Syntax-Schritt der CI würde es durchwinken,
-    // während die Shell den gesamten Rest der Datei substituiert.
-    const funde: string[] = [];
+  it("jedes << ist entweder gequotet oder ausdrücklich verzeichnet", () => {
+    const unerwartet: string[] = [];
     for (const datei of shellDateien) {
       const quelle = fs.readFileSync(path.join(ROOT, datei), "utf8");
-      for (const { zeile, delimiter } of unquotierteHeredocRuempfe(quelle).ohneTerminator) {
-        funde.push(`${datei}:${zeile}: Heredoc <<${delimiter} ohne Zeile „${delimiter}“`);
+      for (const { nr, text } of stellenMitHeredocOperator(quelle)) {
+        if (istGequotet(text)) continue;
+        const verzeichnet = VERZEICHNETE_STELLEN.some(
+          (e) => e.datei === datei && e.zeile === text,
+        );
+        if (!verzeichnet) unerwartet.push(`${datei}:${nr}: ${text.trim()}`);
       }
     }
-    expect(funde).toEqual([]);
+    expect(
+      unerwartet,
+      "Unquotiertes Heredoc ohne Eintrag. Ein unquotierter Rumpf wird von der " +
+        "Shell AUSGEFÜHRT, nicht geschrieben — so gelangten schon einmal Secrets " +
+        "in eine systemd-Unit. Entweder `<<'EOF'` schreiben (dann bleibt der Text " +
+        "unangetastet) oder die Stelle in VERZEICHNETE_STELLEN mit Begründung " +
+        "eintragen; ihr Rumpf wird dann auf Kommandosubstitution geprüft.",
+    ).toEqual([]);
   });
 
-  it("keine Datei schreibt Heredoc-Text mit aktiver Kommandosubstitution", () => {
+  it("jeder Eintrag existiert noch — die Liste darf nicht verrotten", () => {
+    // Ohne diese Prüfung bliebe ein Eintrag stehen, dessen Stelle längst weg
+    // ist, und niemand würde merken, dass hier nichts mehr geprüft wird.
+    const verwaist = VERZEICHNETE_STELLEN.filter(
+      (e) =>
+        !fs
+          .readFileSync(path.join(ROOT, e.datei), "utf8")
+          .split("\n")
+          .includes(e.zeile),
+    ).map((e) => `${e.datei}: „${e.zeile.trim()}"`);
+    expect(verwaist).toEqual([]);
+  });
+
+  it("die verzeichneten Rümpfe enthalten keine Kommandosubstitution", () => {
     const funde: string[] = [];
-    for (const datei of shellDateien) {
-      const quelle = fs.readFileSync(path.join(ROOT, datei), "utf8");
-      for (const { zeile, text } of unquotierteHeredocRuempfe(quelle).treffer) {
+    for (const eintrag of VERZEICHNETE_STELLEN) {
+      if (!eintrag.delimiter) continue;
+      const zeilen = fs.readFileSync(path.join(ROOT, eintrag.datei), "utf8").split("\n");
+      const start = zeilen.indexOf(eintrag.zeile);
+      expect(start, `${eintrag.datei}: Eintrag nicht gefunden`).toBeGreaterThan(-1);
+      const ende = zeilen.indexOf(eintrag.delimiter, start + 1);
+      // Fehlt der Begrenzer, liest bash bis Dateiende und substituiert alles;
+      // `bash -n` warnt dabei nur und endet mit 0. Also hier hart prüfen.
+      expect(
+        ende,
+        `${eintrag.datei}: Heredoc ab „${eintrag.zeile.trim()}" hat keine Zeile ` +
+          `„${eintrag.delimiter}" — bash liest dann bis Dateiende.`,
+      ).toBeGreaterThan(start);
+      // Wird der Begrenzer unbrauchbar (etwa „EOF " mit Leerzeichen), liest die
+      // Shell bis zum NÄCHSTEN passenden — der Rumpf reicht dann über fremden
+      // Code hinweg. Sichtbar wird das daran, dass ein weiterer Heredoc-Öffner
+      // im Rumpf liegt. Ohne diese Zusicherung blieb die Kontrolle dabei grün
+      // (eigene Gegenprobe, 2026-08-15).
+      const fremderOeffner = zeilen
+        .slice(start + 1, ende)
+        .find((z) => /(?<!<)<<(?!<)-?[ \t]*\S/.test(z));
+      expect(
+        fremderOeffner,
+        `${eintrag.datei}: im Rumpf ab „${eintrag.zeile.trim()}" liegt ein ` +
+          "weiterer Heredoc-Öffner — der Begrenzer greift nicht, die Grenzen " +
+          "des Rumpfs stimmen nicht.",
+      ).toBeUndefined();
+      for (let j = start + 1; j < ende; j++) {
         // Ein escapetes \` bzw. \$( ist ungefährlich — die Shell fasst es nicht an.
-        const scharf = text.replace(/\\[`$]/g, "");
+        const scharf = zeilen[j].replace(/\\[`$]/g, "");
         if (scharf.includes("`") || scharf.includes("$(")) {
-          funde.push(`${datei}:${zeile}: ${text.trim()}`);
+          funde.push(`${eintrag.datei}:${j + 1}: ${zeilen[j].trim()}`);
         }
       }
     }
     expect(
       funde,
-      "Kommandosubstitution im Heredoc-Rumpf: der Text wird ausgeführt statt geschrieben " +
-        "(so gelangten schon einmal Secrets in eine systemd-Unit). Backticks in Erklärtexten " +
-        "durch „…“ ersetzen oder das Heredoc quoten (<<'EOF'), falls keine Variablen nötig sind.",
+      "Kommandosubstitution im Rumpf eines unquotierten Heredocs: der Text wird " +
+        "ausgeführt statt geschrieben (so gelangten schon einmal Secrets in eine " +
+        "systemd-Unit). Backticks in Erklärtexten durch „…“ ersetzen.",
     ).toEqual([]);
+  });
+
+  it("erkennt den historischen Vorfall wieder (Gegenprobe an der echten Datei)", () => {
+    // Ohne diese Probe prüfen die Tests oben nur, dass sie NICHTS finden — das
+    // täte eine kaputte Kontrolle ebenso zuverlässig. Hier läuft dieselbe
+    // Prüfung gegen deploy.sh in dem Zustand, der das Leck verursacht hat.
+    const vorFix = execFileSync("git", ["show", "3078866:deploy.sh"], {
+      cwd: ROOT,
+      encoding: "utf8",
+      maxBuffer: 8 * 1024 * 1024,
+    }).split("\n");
+    const zeile = '  cat > "$UNIT_DIR/roses-blog-deploy.service" <<EOF';
+    const start = vorFix.indexOf(zeile);
+    expect(start, "historische Fundstelle nicht mehr auffindbar").toBeGreaterThan(-1);
+    const ende = vorFix.indexOf("EOF", start + 1);
+    const treffer = vorFix
+      .slice(start + 1, ende)
+      .filter((z) => z.replace(/\\[`$]/g, "").match(/`|\$\(/));
+    // Sechs Zeilen mit Backticks, darunter das eigentliche Leck.
+    expect(treffer).toHaveLength(6);
+    expect(treffer.some((z) => z.includes("env -u INVOCATION_ID"))).toBe(true);
   });
 
   it("die Unit-Vorlage enthält keinen Text, der die Umgebung ausgeben würde", () => {
