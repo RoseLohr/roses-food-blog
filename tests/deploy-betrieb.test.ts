@@ -418,15 +418,76 @@ describe("Heredocs: kein ungewollter Shell-Aufruf im geschriebenen Text", () => 
    *    ist es Arithmetik. Ein Test nur auf ein nachfolgendes `))` verfehlte
    *    `$(( (1 << 3) + 1 ))`.
    */
-  function heredocOeffner(zeile: string) {
-    // Eine Zeile, die mit # beginnt, ist ein Kommentar — dort eröffnet die
-    // Shell nie ein Heredoc. (Rumpfzeilen erreichen diese Funktion nicht.)
-    if (/^[ \t]*#/.test(zeile)) return [];
+  /**
+   * Platzhalter für alles, was die Shell als Text und nicht als Syntax liest.
+   *
+   * Der Zeilenumbruch ist der einzig kollisionsfreie Platzhalter: eine Zeile
+   * kann ihn nicht enthalten (dort ist sie ja geteilt), er zählt nicht als
+   * Leerraum im Sinne von `[ \t]*`, und `\s` schließt ihn aus dem Wort für den
+   * Begrenzer schon aus. Ein sichtbares Zeichen wäre mehrdeutig: stünde es
+   * echt im Code (etwa `cat <<EOF|grep x`), hielte der Scanner es für Maske
+   * und übersähe das Heredoc — genau die stille Lücke, um die es hier geht.
+   */
+  const MASKE = "\n";
+
+  /**
+   * Die Zeile, reduziert auf das, was die Shell als Syntax liest: Zeichen in
+   * Anführungszeichen, hinter einem `\` und ab einem Kommentarzeichen werden
+   * durch `MASKE` ersetzt, positionsgetreu.
+   *
+   * Ohne diesen Schritt liest der Scanner Text als Syntax und Syntax als Text.
+   * Beides empirisch belegt (bash 5, 2026-08-15):
+   *  - `echo '((' ; cat <<EOF` ist ein ECHTES Heredoc; eine Klammerzählung
+   *    über den Rohtext hielt das gequotete `((` für offene Arithmetik und
+   *    übersprang es (Befund gpt-5.6-sol, PR #63).
+   *  - `echo 'cat <<NIXEOF'` ist KEINS — die Zeile gibt den Text nur aus.
+   *
+   * `MASKE` ist bewusst kein Leerzeichen: sonst könnte `[ \t]*` über einen
+   * ausmaskierten gequoteten Begrenzer hinweglesen und das nächste Wort dafür
+   * halten (`cat <<'A' B`).
+   *
+   * Grenze, bewusst gezogen: der Zustand wird je Zeile zurückgesetzt. Eine
+   * über Zeilen laufende Zeichenkette wird ab der zweiten Zeile also als Code
+   * gelesen — das scannt zu viel, nie zu wenig.
+   */
+  function nurSyntax(zeile: string) {
+    let aus = "";
+    let einfach = false;
+    let doppelt = false;
+    for (let i = 0; i < zeile.length; i++) {
+      const z = zeile[i];
+      if (!einfach && z === "\\") {
+        // Der Backslash und das maskierte Zeichen sind beide keine Syntax.
+        aus += MASKE + (i + 1 < zeile.length ? MASKE : "");
+        i++;
+        continue;
+      }
+      if (!einfach && !doppelt && z === "#" && (i === 0 || /\s/.test(zeile[i - 1]))) {
+        aus += MASKE.repeat(zeile.length - i);
+        break;
+      }
+      if (!doppelt && z === "'") {
+        einfach = !einfach;
+        aus += MASKE;
+        continue;
+      }
+      if (!einfach && z === '"') {
+        doppelt = !doppelt;
+        aus += MASKE;
+        continue;
+      }
+      aus += einfach || doppelt ? MASKE : z;
+    }
+    return aus;
+  }
+
+  function heredocOeffner(rohzeile: string) {
+    const zeile = nurSyntax(rohzeile);
     const muster = /(?<!<)<<(?!<)(-?)[ \t]*([^\s|&;()<>'"\\]+)/g;
     const oeffner: Array<{ delimiter: string; tabsErlaubt: boolean }> = [];
     for (const m of zeile.matchAll(muster)) {
-      const dahinter = zeile.slice(m.index + m[0].length);
-      if (/^['"\\]/.test(dahinter)) continue; // <<E'O'F — bash quotet das Wort
+      // <<E'O'F — bash quotet dann das ganze Wort, der Rumpf bleibt unberührt.
+      if (zeile[m.index + m[0].length] === MASKE) continue;
       const davor = zeile.slice(0, m.index);
       const offen = (davor.match(/\(\(/g) ?? []).length;
       const zu = (davor.match(/\)\)/g) ?? []).length;
@@ -600,8 +661,36 @@ describe("Heredocs: kein ungewollter Shell-Aufruf im geschriebenen Text", () => 
       erwartet: ["danach: `id`"],
     },
     {
-      name: "Kommentarzeile eröffnet kein Heredoc",
-      quelle: ["# Beispiel: cat <<EOF", "echo `id`", "echo fertig"],
+      name: "Kommentar eröffnet kein Heredoc — weder ganze Zeile noch am Zeilenende",
+      quelle: [
+        "# Beispiel mit (( und cat <<KOMMENTAR",
+        "echo `id`",
+        "cat <<EOF > a  # hier schon",
+        "im rumpf: $(id)",
+        "EOF",
+      ],
+      erwartet: ["im rumpf: $(id)"],
+    },
+    {
+      name: "gequotete Klammern verstecken kein echtes Heredoc",
+      quelle: [
+        "echo '((' ; cat <<EOF > a",
+        "einfach: $(id)",
+        "EOF",
+        'echo "((" ; cat <<Z > b',
+        "doppelt: `id`",
+        "Z",
+      ],
+      erwartet: ["einfach: $(id)", "doppelt: `id`"],
+    },
+    {
+      name: "ein Heredoc IN Anführungszeichen ist nur Text",
+      quelle: ["echo 'cat <<NIXEOF'", "echo \"auch nicht: cat <<AUCHNIX\"", "echo `id`"],
+      erwartet: [],
+    },
+    {
+      name: "gequoteter Begrenzer: das folgende Wort ist nicht der Begrenzer",
+      quelle: ["cat <<'A' B", "harmlos: `id`", "B", "A"],
       erwartet: [],
     },
   ];
