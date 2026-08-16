@@ -75,8 +75,35 @@ describe("Kompression: App schweigt, Proxy komprimiert", () => {
     expect(gzip.size, "gzip_types nicht gefunden").toBeGreaterThan(0);
     expect([...brotli].sort()).toEqual([...gzip].sort());
     // Und die Typen, die dieses Projekt tatsächlich ausliefert, sind dabei.
-    for (const typ of ["text/css", "application/javascript", "image/svg+xml"]) {
+    // Am gebauten Server nachgemessen (node .next/standalone/server.js):
+    //
+    //   /rezepte                      text/html
+    //   /rezepte  mit Header „RSC: 1" text/x-component   ← Client-Navigation
+    //   /_next/static/…/*.js          application/javascript
+    //   /_next/static/…/*.css         text/css
+    //   /sitemap.xml                  application/xml
+    //   /fonts/*.woff2                font/woff2         ← NICHT komprimieren
+    //
+    // text/html fehlt in beiden Listen mit Absicht: gzip und brotli binden
+    // nginx' Vorgabetabelle ein, die es unabtrennbar enthält; eine
+    // ausdrückliche Nennung quittiert nginx mit „duplicate MIME type".
+    //
+    // text/x-component ist der Eintrag, den man übersieht (Panel-Befund
+    // gpt-5.6-sol): Er trägt jede Client-Navigation. Ohne ihn ginge unter
+    // `compress: false` genau der Verkehr unkomprimiert raus, den Next vorher
+    // selbst gzip-komprimiert hat.
+    for (const typ of [
+      "text/css",
+      "application/javascript",
+      "text/x-component",
+      "image/svg+xml",
+    ]) {
       expect(gzip, `${typ} fehlt in den Typlisten`).toContain(typ);
+    }
+    // Schon komprimierte Formate gehören NICHT hinein — erneutes Komprimieren
+    // kostet Rechenzeit und macht die Antwort eher größer.
+    for (const typ of ["font/woff2", "image/webp"]) {
+      expect(gzip, `${typ} steht in den Typlisten`).not.toContain(typ);
     }
   });
 

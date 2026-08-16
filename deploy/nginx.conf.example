@@ -31,8 +31,19 @@ server {
     # einrichtet:
     #   sudo apt install libnginx-mod-http-brotli-filter
     # und bei Fehlanzeige die brotli-Zeilen aus dieser Datei streichen.
+    # `text/html` steht in KEINER der beiden Listen und muss das auch nicht:
+    # gzip wie brotli binden nginx' Vorgabetabelle ein (ngx_http_types_slot /
+    # ngx_http_html_default_types — beim brotli-Modul nachgeprüft), und die
+    # enthält text/html unabtrennbar. Eine ausdrückliche Nennung quittiert
+    # nginx mit „duplicate MIME type".
+    #
+    # `text/x-component` dagegen MUSS hier stehen: Damit antwortet der App
+    # Router auf jede Client-Navigation (RSC-/Flight-Nutzlast, am gebauten
+    # Server nachgemessen). Ohne den Eintrag ginge genau der Verkehr
+    # unkomprimiert raus, der beim Klicken durch die Seite entsteht — der Teil,
+    # den `compress: false` in next.config.ts vorher abgedeckt hat.
     gzip on;
-    gzip_types text/css application/javascript application/json image/svg+xml text/xml application/xml;
+    gzip_types text/css application/javascript application/json text/x-component image/svg+xml text/xml application/xml;
     # BROTLI-ANFANG (bootstrap.sh entfernt diesen Block ohne Modul)
     brotli on;
     # Stufe 5, gemessen an diesem Bundle (39 JS-Chunks, 1.657 KiB roh; CSS
@@ -49,7 +60,7 @@ server {
     # dafür ~3 ms. Der Sprung von 5 auf 6 bringt 0,5 Prozentpunkte für 14 %
     # mehr Rechenzeit und lohnt nicht.
     brotli_comp_level 5;
-    brotli_types text/css application/javascript application/json image/svg+xml text/xml application/xml;
+    brotli_types text/css application/javascript application/json text/x-component image/svg+xml text/xml application/xml;
     # BROTLI-ENDE
 
     location / {
