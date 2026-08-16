@@ -42,6 +42,22 @@ server {
     # Server nachgemessen). Ohne den Eintrag ginge genau der Verkehr
     # unkomprimiert raus, der beim Klicken durch die Seite entsteht — der Teil,
     # den `compress: false` in next.config.ts vorher abgedeckt hat.
+    # Vary MUSS gesetzt sein, sobald die Antwort vom Accept-Encoding des
+    # Clients abhängt: Ein geteilter Cache (CDN, Firmenproxy) darf sonst eine
+    # brotli-Antwort an einen Client ausliefern, der nur gzip versteht.
+    #
+    # Bewusst `add_header` statt `gzip_vary on;`: gzip_vary setzt den Header NUR
+    # bei Antworten, die der gzip-Filter komprimiert hat. Für brotli-Antworten
+    # gäbe es kein Gegenstück — das Modul kennt die Direktive nicht. Nachgesehen
+    # in ngx_http_brotli_filter_module.so; es bringt genau mit: brotli,
+    # brotli_buffers, brotli_comp_level, brotli_min_length, brotli_ratio,
+    # brotli_types, brotli_window. Kein brotli_vary.
+    #
+    # Der Preis: Auch nie komprimierte Antworten (Bilder, Schriften) tragen den
+    # Header und werden im Cache je Accept-Encoding getrennt abgelegt. Das ist
+    # der kleinere Schaden gegenüber einer falsch ausgelieferten Kodierung —
+    # und die Alternative wären zwei Header an gzip-Antworten.
+    add_header Vary Accept-Encoding always;
     gzip on;
     gzip_types text/css application/javascript application/json text/x-component image/svg+xml text/xml application/xml;
     # BROTLI-ANFANG (bootstrap.sh entfernt diesen Block ohne Modul)

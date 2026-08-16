@@ -24,7 +24,6 @@
  */
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -105,6 +104,35 @@ describe("Kompression: App schweigt, Proxy komprimiert", () => {
     for (const typ of ["font/woff2", "image/webp"]) {
       expect(gzip, `${typ} steht in den Typlisten`).not.toContain(typ);
     }
+  });
+
+  it("Vary: Accept-Encoding wird gesetzt — und zwar für BEIDE Kodierungen", () => {
+    // Ohne Vary darf ein geteilter Cache (CDN, Firmenproxy) eine brotli-Antwort
+    // an einen Client ausliefern, der nur gzip versteht. (Panel-Befund
+    // gpt-5.6-sol.)
+    //
+    // `gzip_vary on;` reicht dafür NICHT: Es setzt den Header nur bei Antworten,
+    // die der gzip-Filter komprimiert hat. Ein Gegenstück für brotli gibt es
+    // nicht — nachgesehen in ngx_http_brotli_filter_module.so, das genau diese
+    // Direktiven mitbringt: brotli, brotli_buffers, brotli_comp_level,
+    // brotli_min_length, brotli_ratio, brotli_types, brotli_window.
+    const d = direktiven(nginx);
+    expect(
+      d.some((z) => /^add_header Vary Accept-Encoding\b/.test(z)),
+      "kein Vary: Accept-Encoding — geteilte Caches liefern falsche Kodierungen aus",
+    ).toBe(true);
+    expect(
+      d,
+      "gzip_vary deckt brotli-Antworten nicht ab und doppelt den Header bei gzip",
+    ).not.toContain("gzip_vary on;");
+    // Und der Header muss AUSSERHALB der Marken stehen: Ohne brotli-Modul wird
+    // der Block herausgeschnitten, gzip bleibt — und braucht Vary weiterhin.
+    const anfang = nginx.indexOf("# BROTLI-ANFANG");
+    const ende = nginx.indexOf("# BROTLI-ENDE");
+    expect(
+      nginx.slice(anfang, ende),
+      "Vary steht im brotli-Block und verschwindet mit ihm",
+    ).not.toMatch(/add_header Vary/);
   });
 
   it("kein load_module in der Server-Vorlage", () => {
@@ -230,93 +258,113 @@ describe("Kompression: die Einrichtung bricht nicht an einem fehlenden Modul", (
     // trotzdem. Dann stünde ein „brotli on;" ohne Modul in der Config und
     // `nginx -t` scheiterte unter `set -e` mitten in der Einrichtung.
     // Verankert am Code, nicht am ersten Vorkommen im Fließtext: Der Nachweis
-    // muss BROTLI_OK in BEIDE Richtungen setzen, nicht bloß warnen.
-    const stelle = bootstrap.indexOf("if grep -Rqs");
+    // muss BROTLI_MODUL in BEIDE Richtungen setzen, nicht bloß warnen.
+    const stelle = bootstrap.indexOf("if NGINX_EFFEKTIV=");
     expect(stelle, "Modulnachweis nicht gefunden").toBeGreaterThan(-1);
     const abschnitt = bootstrap.slice(
       stelle,
-      bootstrap.indexOf('if [[ "$BROTLI_OK" == "0" ]]', stelle),
+      bootstrap.indexOf("unset NGINX_EFFEKTIV", stelle),
     );
-    expect(abschnitt).toMatch(/modules-enabled/);
-    expect(abschnitt).toMatch(/BROTLI_OK=1/);
-    expect(abschnitt).toMatch(/BROTLI_OK=0/);
+    expect(abschnitt).toMatch(/BROTLI_MODUL=ja/);
+    expect(abschnitt).toMatch(/BROTLI_MODUL=nein/);
+  });
+
+  it("gefragt wird nginx selbst, nicht ein einzelnes Verzeichnis", () => {
+    // Ein `load_module` ist auch direkt in der nginx.conf oder in einem anderen
+    // include gültig. Ein Blick nur nach modules-enabled übersähe das — und der
+    // Reparaturzweig schnitte den brotli-Block dann aus einer einwandfrei
+    // laufenden Config. (Panel-Befund gpt-5.6-sol.)
+    //
+    // `nginx -T` gibt die vollständige aufgelöste Konfiguration aus; das ist
+    // die einzige Quelle, die alle Ablageorte abdeckt.
+    expect(bootstrap, "fragt nicht nginx selbst").toMatch(/nginx -T/);
+    expect(
+      bootstrap,
+      "sucht weiterhin nur in modules-enabled — verfehlt load_module in nginx.conf",
+    ).not.toMatch(/grep -Rqs[^\n]*modules-enabled/);
+  });
+
+  it("bei unbeantwortbarer Frage wird an bestehenden Configs nichts geschnitten", () => {
+    // `nginx -T` scheitert nur, wenn die Konfiguration ohnehin schon ungültig
+    // ist. Dann ist nicht feststellbar, ob das Modul geladen würde — und ein
+    // Schnitt auf Verdacht entfernte womöglich einen intakten brotli-Block aus
+    // einer Config, deren Fehler ganz woanders liegt.
+    expect(bootstrap).toMatch(/BROTLI_MODUL=unbekannt/);
+    const stelle = bootstrap.indexOf("Entferne brotli-Block aus der bestehenden");
+    const davor = bootstrap.lastIndexOf("if [[", stelle);
+    expect(
+      bootstrap.slice(davor, stelle),
+      'Schnitt hängt nicht an einem belegten "nein"',
+    ).toMatch(/BROTLI_MODUL"?\s*==\s*"nein"/);
   });
 
   it("die Modulprüfung erkennt genau das Filter-Modul — echt ausgeführt", () => {
-    // Diese Prüfung beurteilt NICHT die Schreibweise des Befehls, sondern
-    // führt ihn aus. Zwei Fallen stecken darin, beide von gpt-5.6-sol gefunden:
+    // Diese Prüfung beurteilt NICHT die Schreibweise des Ausdrucks, sondern
+    // führt ihn gegen realistische `nginx -T`-Ausgaben aus. Drei Tarnungen
+    // stecken darin, alle von gpt-5.6-sol gefunden:
     //
-    // 1. Das Schwesterpaket …-static verlinkt ebenfalls nach modules-enabled,
-    //    bringt aber nur `brotli_static` mit. Eine grobe Suche ginge auf,
-    //    während `brotli on;` eine unbekannte Direktive bliebe.
-    // 2. Die Einträge in modules-enabled sind SYMLINKS nach modules-available.
-    //    `grep -r` folgt Symlinks im Verzeichnis nicht (nur denen auf der
-    //    Kommandozeile) und fände den Debian-Standardlink nie.
+    // 1. Das Schwesterpaket …-static bringt nur `brotli_static` mit. Eine grobe
+    //    Suche ginge auf, während `brotli on;` unbekannt bliebe.
+    // 2. Eine auskommentierte Zeile ist kein geladenes Modul.
+    // 3. Das `load_module` kann auch direkt in der nginx.conf stehen — wer nur
+    //    modules-enabled ansieht, übersieht es und schneidet den brotli-Block
+    //    aus einer laufenden Config heraus.
     //
-    // Fall 2 ist der gefährlichere: Er sähe nicht nach „brotli fehlt" aus,
-    // sondern löschte den Block bei jedem Re-Run aus einer FUNKTIONIERENDEN
-    // Config — ein Server, der sich still selbst verschlechtert.
-    // `[^;]*` statt `[^\n]*`: Der Befehl steht mit Zeilenfortsetzungen über
-    // mehrere Zeilen — bis zum abschließenden Semikolon ist er EIN Kommando.
-    const befund = /\b(grep[^;]*ngx_http_brotli_filter_module[^;]*);/.exec(
-      bootstrap,
-    );
+    // Fall 3 ist der gefährlichste: Er sieht nicht nach „brotli fehlt" aus,
+    // sondern nach einem Server, der sich still selbst verschlechtert.
+    const befund = /\|\s*(grep -qE[^\n]*\\?\n?[^\n]*ngx_http_brotli_filter_module[^;]*);/
+      .exec(bootstrap);
     expect(befund, "Modulprüfung in bootstrap.sh nicht gefunden").not.toBeNull();
 
-    /**
-     * Legt die echte Debian-Struktur an: Link in enabled → Datei in available.
-     * `endung` und `aktiv` stellen die beiden Tarnungen nach, die nginx
-     * ignoriert, eine reine Textsuche aber nicht.
-     */
-    const modulverzeichnis = (
-      module: string[],
-      { endung = ".conf", aktiv = true } = {},
-    ) => {
-      const wurzel = fs.mkdtempSync(path.join(os.tmpdir(), "nginx-module-"));
-      fs.mkdirSync(path.join(wurzel, "modules-available"));
-      fs.mkdirSync(path.join(wurzel, "modules-enabled"));
-      for (const m of module) {
-        // Dateiname mit Bindestrich (mod-http-brotli-filter.conf), Modulname
-        // mit Unterstrich (ngx_http_brotli_filter_module.so) — so benennt es
-        // das Paket, und genau daran hängt die Suche.
-        const ziel = path.join(wurzel, "modules-available", `mod-http-${m}.conf`);
-        const so = `ngx_http_${m.replace(/-/g, "_")}_module.so`;
-        fs.writeFileSync(ziel, `${aktiv ? "" : "# "}load_module modules/${so};\n`);
-        fs.symlinkSync(
-          ziel,
-          path.join(wurzel, "modules-enabled", `50-mod-http-${m}${endung}`),
-        );
-      }
-      return wurzel;
-    };
+    /** Führt den echten grep-Ausdruck gegen eine nginx-T-Ausgabe aus. */
+    const findet = (ausgabe: string) =>
+      spawnSync("bash", ["-c", befund![1]], { input: ausgabe, cwd: ROOT })
+        .status === 0;
 
-    const findet = (module: string[], lage?: { endung?: string; aktiv?: boolean }) => {
-      const wurzel = modulverzeichnis(module, lage);
-      const befehl = befund![1].replace(
-        "/etc/nginx/modules-enabled/",
-        `${wurzel}/modules-enabled/`,
-      );
-      return spawnSync("bash", ["-c", befehl]).status === 0;
-    };
+    // So sieht es aus, wenn das Paket die Datei nach modules-enabled verlinkt
+    // und `nginx -T` sie mit ausgibt.
+    const ueberModulesEnabled = [
+      "# configuration file /etc/nginx/nginx.conf:",
+      "include /etc/nginx/modules-enabled/*.conf;",
+      "",
+      "# configuration file /etc/nginx/modules-enabled/50-mod-http-brotli-filter.conf:",
+      "load_module modules/ngx_http_brotli_filter_module.so;",
+    ].join("\n");
+    expect(findet(ueberModulesEnabled), "findet das verlinkte Modul nicht").toBe(
+      true,
+    );
 
+    // Und so, wenn jemand es direkt in die nginx.conf geschrieben hat.
+    const inNginxConf = [
+      "# configuration file /etc/nginx/nginx.conf:",
+      "load_module modules/ngx_http_brotli_filter_module.so;",
+      "events { worker_connections 768; }",
+    ].join("\n");
     expect(
-      findet(["brotli-filter"]),
-      "findet den Debian-Symlink des Filter-Moduls nicht (grep -r statt -R?)",
+      findet(inNginxConf),
+      "übersieht load_module in der nginx.conf — schneidet dann eine laufende Config",
     ).toBe(true);
+
+    // Nur das Static-Modul: `brotli on;` bliebe unbekannt.
     expect(
-      findet(["brotli-static"]),
+      findet("load_module modules/ngx_http_brotli_static_module.so;"),
       "hält das Static-Modul fälschlich für das Filter-Modul",
     ).toBe(false);
-    expect(findet([]), "meldet ein Modul, wo keines verlinkt ist").toBe(false);
-    // nginx bindet nur `modules-enabled/*.conf` ein — eine abgelegte
-    // Sicherungskopie liest es nicht.
+
+    // Auskommentiert ist nicht geladen.
     expect(
-      findet(["brotli-filter"], { endung: ".conf.disabled" }),
-      "zählt eine .disabled-Sicherung, die nginx gar nicht einliest",
+      findet("# load_module modules/ngx_http_brotli_filter_module.so;"),
+      "hält eine auskommentierte load_module-Zeile für ein geladenes Modul",
     ).toBe(false);
     expect(
-      findet(["brotli-filter"], { aktiv: false }),
-      "hält eine auskommentierte load_module-Zeile für ein geladenes Modul",
+      findet("    #load_module modules/ngx_http_brotli_filter_module.so;"),
+      "hält eine eingerückte Kommentarzeile für ein geladenes Modul",
+    ).toBe(false);
+
+    // Gar nichts.
+    expect(
+      findet("events { worker_connections 768; }"),
+      "meldet ein Modul, wo keines geladen ist",
     ).toBe(false);
   });
 
@@ -414,7 +462,7 @@ describe("Kompression: die Einrichtung bricht nicht an einem fehlenden Modul", (
       stelle,
       bootstrap.indexOf('if [[ "$NGINX_GEAENDERT" == "1" ]]', stelle),
     );
-    expect(abschnitt).toMatch(/BROTLI_OK.*==.*"0"/s);
+    expect(abschnitt).toMatch(/BROTLI_MODUL.*==.*"nein"/s);
     expect(abschnitt).toMatch(/brotli_block_entfernen/);
     // Und bei einem Abbruch der Funktion darf nichts an die Stelle der Config
     // rutschen — die Zwischendatei wird verworfen, nicht verschoben.

@@ -249,37 +249,46 @@ if [[ "$DOMAIN" != "localhost:${PORT:-3000}" && "$DOMAIN" != "localhost" && -n "
     # aber nur `brotli_static` mit. Wäre nur das installiert, ginge eine grobe
     # Suche auf, und `brotli on;` bliebe eine unbekannte Direktive.
     #
-    # Gelesen wird GENAU das, was auch nginx liest — sonst weicht die Antwort
-    # von der Wirklichkeit ab, und zwar in beide Richtungen gefährlich:
+    # Gefragt wird NGINX SELBST, nicht das Dateisystem.
     #
-    #   `-R`, nicht `-r`: Die Einträge in modules-enabled sind Symlinks nach
-    #   modules-available. `grep -r` folgt Symlinks nur auf der Kommandozeile,
-    #   nicht im Verzeichnis — es fände den Debian-Standardlink NIE.
+    # Die Frage lautet ja nicht „liegt irgendwo eine Datei", sondern „kennt
+    # nginx die brotli-Direktiven". Ein Blick nur nach
+    # /etc/nginx/modules-enabled/ beantwortet das falsch, sobald jemand das
+    # `load_module` direkt in die nginx.conf oder ein anderes include
+    # geschrieben hat — dort ist es genauso gültig. Die Folge wäre die
+    # schlimmste Sorte Fehler: BROTLI_OK=0 bei aktivem Modul, und der
+    # Reparaturzweig weiter unten schnitte den brotli-Block aus einer
+    # einwandfrei laufenden Config heraus.
     #
-    #   `--include='*.conf'`: nginx.conf bindet die Module mit
-    #   `include /etc/nginx/modules-enabled/*.conf;` ein. Eine Sicherungskopie
-    #   wie „…conf.disabled" liest nginx NICHT — sie darf hier also auch nicht
-    #   zählen.
+    # `nginx -T` gibt die vollständige aufgelöste Konfiguration aus — nginx.conf,
+    # sämtliche includes, modules-enabled. Genau das, was nginx wirklich liest.
     #
-    #   `^[[:space:]]*load_module`: eine auskommentierte Zeile ist keine
-    #   geladene. Reine Textsuche hielte „# load_module …brotli…" für ein
-    #   aktives Modul.
-    #
-    # Ein falsches Ja heißt: brotli-Direktiven ohne Modul, nginx verweigert den
-    # Start. Ein falsches Nein heißt: der Reparaturzweig weiter unten löscht den
-    # Block bei jedem Re-Run aus einer funktionierenden Config.
-    # tests/kompression.test.ts führt genau diesen Befehl gegen die echte
-    # Verzeichnisstruktur aus, in allen fünf Lagen.
-    if grep -Rqs --include='*.conf' -E \
-      '^[[:space:]]*load_module[^#]*ngx_http_brotli_filter_module' \
-      /etc/nginx/modules-enabled/; then
-      BROTLI_OK=1
-    else
-      BROTLI_OK=0
+    # Der Anker `^[[:space:]]*load_module` bleibt nötig: Die Ausgabe enthält
+    # auch Kommentarzeilen, und „# load_module …brotli…" ist kein geladenes
+    # Modul. Und gesucht wird das FILTER-Modul: Das Schwesterpaket …-static
+    # bringt nur `brotli_static` mit, `brotli on;` bliebe damit unbekannt.
+    BROTLI_MODUL=unbekannt
+    if NGINX_EFFEKTIV="$($SUDO nginx -T 2>/dev/null)"; then
+      if printf '%s\n' "$NGINX_EFFEKTIV" | grep -qE \
+        '^[[:space:]]*load_module[^#]*ngx_http_brotli_filter_module'; then
+        BROTLI_MODUL=ja
+      else
+        BROTLI_MODUL=nein
+      fi
     fi
-    if [[ "$BROTLI_OK" == "0" ]]; then
+    unset NGINX_EFFEKTIV
+    # `nginx -T` scheitert nur, wenn die aktuelle Konfiguration ungültig ist.
+    # Dann ist NICHT feststellbar, ob das Modul geladen würde — und dann wird an
+    # einer bestehenden Config nichts geschnitten (siehe unten). Für eine neu
+    # geschriebene Config ist „ohne brotli" die sichere Wahl: gzip funktioniert.
+    if [[ "$BROTLI_MODUL" == "ja" ]]; then BROTLI_OK=1; else BROTLI_OK=0; fi
+    if [[ "$BROTLI_MODUL" == "nein" ]]; then
       echo "HINWEIS: brotli-Modul nicht aktiv — nginx komprimiert nur mit gzip."
       echo "         Das ist funktionsfähig, kostet aber rund 4 % mehr Bytes (JS) bzw. 7 % (CSS)."
+    elif [[ "$BROTLI_MODUL" == "unbekannt" ]]; then
+      echo 'HINWEIS: „nginx -T" schlug fehl — die vorhandene Konfiguration ist ungültig.'
+      echo "         Ob das brotli-Modul geladen ist, lässt sich damit nicht feststellen."
+      echo "         An einer bestehenden Config wird deshalb NICHTS geändert."
     fi
     # nginx-Config nur beim ersten Mal aus der HTTP-Vorlage schreiben. Ein
     # Re-Run darf certbots eingefügten TLS-/443-Block NICHT überschreiben.
@@ -313,7 +322,11 @@ if [[ "$DOMAIN" != "localhost:${PORT:-3000}" && "$DOMAIN" != "localhost" && -n "
       # Zustandsmaschine bricht bei unsauber gepaarten Marken ab, statt still
       # bis zum Dateiende zu löschen. Und weil hier in eine fremde, laufende
       # Datei geschrieben wird, geht nichts ohne Sicherungskopie.
-      if [[ "$BROTLI_OK" == "0" ]] &&
+      # „nein", nicht „nicht ja": Bei BROTLI_MODUL=unbekannt (nginx -T scheitert,
+      # die Konfiguration ist also ohnehin schon ungültig) wird NICHT geschnitten.
+      # Ein Schnitt aufgrund einer unbeantwortbaren Frage könnte einen intakten
+      # brotli-Block aus einer Config entfernen, deren Fehler ganz woanders liegt.
+      if [[ "$BROTLI_MODUL" == "nein" ]] &&
         $SUDO grep -q '# BROTLI-ANFANG' /etc/nginx/sites-available/roses-blog; then
         echo "Entferne brotli-Block aus der bestehenden Config — das Modul fehlt."
         NGINX_SICHERUNG="/etc/nginx/sites-available/roses-blog.vor-brotli-schnitt"
@@ -337,7 +350,7 @@ if [[ "$DOMAIN" != "localhost:${PORT:-3000}" && "$DOMAIN" != "localhost" && -n "
       # von certbot verwalteten Block hineinschreiben, und der Zustand ist
       # funktionsfähig (gzip), nur nicht optimal. Wer nachrüsten will, nimmt den
       # Block aus deploy/nginx.conf.example (README §4).
-      if [[ "$BROTLI_OK" == "1" ]] &&
+      if [[ "$BROTLI_MODUL" == "ja" ]] &&
         ! $SUDO grep -q '# BROTLI-ANFANG' /etc/nginx/sites-available/roses-blog; then
         echo "HINWEIS: brotli-Modul ist aktiv, die bestehende Config nutzt es aber nicht."
         echo "         Nachrüsten: Block aus deploy/nginx.conf.example übernehmen (README §4)."
