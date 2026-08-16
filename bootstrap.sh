@@ -195,10 +195,24 @@ if [[ "$DOMAIN" != "localhost:${PORT:-3000}" && "$DOMAIN" != "localhost" && -n "
     # weiter unten der brotli-Block aus der Config entfernt — nginx läuft dann
     # mit gzip, und `nginx -t` bleibt grün. Ein „brotli on;" ohne geladenes
     # Modul ist ein harter Konfigurationsfehler, kein stiller Rückfall.
+    #
+    # Nur das „…-filter"-Paket: es komprimiert im Durchreichen. Das Gegenstück
+    # „…-static" liefert vorkomprimierte .br-Dateien aus — die erzeugt hier
+    # niemand.
     BROTLI_OK=1
-    $SUDO apt-get install -y libnginx-mod-brotli || BROTLI_OK=0
+    $SUDO apt-get install -y libnginx-mod-http-brotli-filter || BROTLI_OK=0
+    # Der Rückgabewert von apt ist KEIN Beweis, dass nginx das Modul lädt: Das
+    # postinst des Pakets verlinkt nach /etc/nginx/modules-enabled NUR bei der
+    # Erstinstallation ([ -z "$2" ]). War das Paket schon installiert und der
+    # Link von Hand entfernt, meldet apt Erfolg und `load_module` fehlt
+    # trotzdem — ein „brotli on;" zerlegte dann das `nginx -t` weiter unten.
+    # Beweis ist der Link, nicht der Exit-Code.
+    if [[ "$BROTLI_OK" == "1" ]] &&
+      ! compgen -G "/etc/nginx/modules-enabled/*brotli*" >/dev/null; then
+      BROTLI_OK=0
+    fi
     if [[ "$BROTLI_OK" == "0" ]]; then
-      echo "HINWEIS: libnginx-mod-brotli nicht installierbar — nginx komprimiert nur mit gzip."
+      echo "HINWEIS: brotli-Modul nicht aktiv — nginx komprimiert nur mit gzip."
       echo "         Das ist funktionsfähig, kostet aber rund 4 % mehr Bytes (JS) bzw. 7 % (CSS)."
     fi
     # nginx-Config nur beim ersten Mal aus der HTTP-Vorlage schreiben. Ein

@@ -116,12 +116,59 @@ describe("Kompression: App schweigt, Proxy komprimiert", () => {
   });
 });
 
+/**
+ * Der echte Paketname, geprüft gegen das Ubuntu-Archiv (noble):
+ *
+ *   Package: libnginx-mod-http-brotli-filter
+ *   Source:  libnginx-mod-http-brotli
+ *   Depends: nginx-abi-1.24.0-1, libbrotli1, libc6
+ *   liefert: /usr/lib/nginx/modules/ngx_http_brotli_filter_module.so
+ *   postinst: verlinkt /etc/nginx/modules-enabled/50-mod-http-brotli-filter.conf
+ *             mit dem Inhalt `load_module modules/ngx_http_brotli_filter_module.so;`
+ *
+ * Ein erfundener Name (hier stand „libnginx-mod-brotli") fällt nicht auf:
+ * `apt-get install` scheitert, `|| BROTLI_OK=0` fängt das ab, der brotli-Block
+ * wird entfernt — die Einrichtung läuft grün durch und komprimiert für immer
+ * nur mit gzip. Ein Fehler, der sich als „funktioniert" tarnt.
+ */
+const BROTLI_PAKET = "libnginx-mod-http-brotli-filter";
+
 describe("Kompression: die Einrichtung bricht nicht an einem fehlenden Modul", () => {
   it("bootstrap.sh installiert das brotli-Modul ohne Abbruch", () => {
     // `set -e` gilt im ganzen Skript: ein `apt-get install` ohne Auffangnetz
     // beendet die Ersteinrichtung mitten im Lauf, wenn das Paket auf der
     // Distribution fehlt.
-    expect(bootstrap).toMatch(/libnginx-mod-brotli\s*\|\|\s*BROTLI_OK=0/);
+    expect(bootstrap).toMatch(
+      new RegExp(`${BROTLI_PAKET}\\s*\\|\\|\\s*BROTLI_OK=0`),
+    );
+  });
+
+  it("README und bootstrap.sh nennen dasselbe, existierende Paket", () => {
+    // Zwei Stellen, ein Fakt. Läuft der README-Name aus dem Skript-Namen
+    // heraus, folgt genau eine Hälfte der Leserschaft einer Anleitung, die
+    // nichts installiert.
+    const readme = lies("README.md");
+    const namen = new Set(
+      [...`${bootstrap}\n${readme}`.matchAll(/libnginx-mod[a-z0-9-]*/g)].map(
+        (m) => m[0],
+      ),
+    );
+    expect(namen.size, `uneinheitliche Paketnamen: ${[...namen].join(", ")}`).toBe(
+      1,
+    );
+    expect([...namen][0]).toBe(BROTLI_PAKET);
+  });
+
+  it("der Exit-Code von apt gilt nicht als Beweis für ein geladenes Modul", () => {
+    // Das postinst verlinkt nach /etc/nginx/modules-enabled NUR bei der
+    // ERSTinstallation (`[ -z "$2" ]`). Ist das Paket bereits installiert und
+    // der Link von Hand entfernt, meldet apt Erfolg — und `load_module` fehlt
+    // trotzdem. Dann stünde ein „brotli on;" ohne Modul in der Config und
+    // `nginx -t` scheiterte unter `set -e` mitten in der Einrichtung.
+    expect(bootstrap).toMatch(/modules-enabled\/\*brotli\*/);
+    // Und der Befund muss BROTLI_OK auch wirklich umlegen, nicht nur warnen.
+    const stelle = bootstrap.indexOf("modules-enabled/*brotli*");
+    expect(bootstrap.slice(stelle, stelle + 200)).toMatch(/BROTLI_OK=0/);
   });
 
   it("ohne Modul werden die brotli-Direktiven aus der Config entfernt", () => {

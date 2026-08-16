@@ -123,7 +123,7 @@ Antwort schon als gzip an und nginx könnte kein brotli mehr anwenden. Ohne
 einen komprimierenden Proxy davor gehen alle Antworten unkomprimiert raus.
 
 ```bash
-sudo apt install -y libnginx-mod-brotli   # ohne das Modul: brotli-Zeilen streichen
+sudo apt install -y libnginx-mod-http-brotli-filter   # ohne das Modul: brotli-Zeilen streichen
 sudo cp deploy/nginx.conf.example /etc/nginx/sites-available/roses-blog
 sudo nano /etc/nginx/sites-available/roses-blog   # server_name anpassen
 sudo ln -s /etc/nginx/sites-available/roses-blog /etc/nginx/sites-enabled/
@@ -131,12 +131,20 @@ sudo nginx -t && sudo systemctl reload nginx
 sudo certbot --nginx -d www.example.de -d example.de
 ```
 
-Ist `libnginx-mod-brotli` nicht verfügbar, kennt nginx die `brotli`-Direktiven
-nicht und `nginx -t` schlägt fehl. Dann den Block zwischen `# BROTLI-ANFANG`
-und `# BROTLI-ENDE` aus der Config entfernen — gzip allein funktioniert, kostet
-gemessen rund 4 % mehr Bytes bei JS und 7 % bei CSS. `bootstrap.sh` erledigt
-beides selbst: Es versucht das Modul zu installieren und schneidet den Block
-heraus, wenn das nicht klappt.
+Das Paket heißt `libnginx-mod-http-brotli-filter` (Ubuntu/Debian; das
+Schwesterpaket `…-static` liefert vorkomprimierte `.br`-Dateien aus und wird
+hier nicht gebraucht). Es hängt an der nginx-ABI — auf einem Stand, für den es
+kein passendes Paket gibt, ist es schlicht nicht installierbar.
+
+Fehlt das Modul, kennt nginx die `brotli`-Direktiven nicht und `nginx -t`
+schlägt fehl. Dann den Block zwischen `# BROTLI-ANFANG` und `# BROTLI-ENDE`
+aus der Config entfernen — gzip allein funktioniert, kostet gemessen rund 4 %
+mehr Bytes bei JS und 7 % bei CSS. `bootstrap.sh` erledigt beides selbst: Es
+installiert das Modul und schneidet den Block heraus, wenn es hinterher nicht
+unter `/etc/nginx/modules-enabled/` verlinkt ist. Geprüft wird der Link, nicht
+der Rückgabewert von apt — das postinst verlinkt nur bei der *Erst*installation,
+ein bereits installiertes Paket mit von Hand entferntem Link meldet sonst
+fälschlich Erfolg.
 
 ### 5. Autostart nach Reboot
 
