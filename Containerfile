@@ -12,11 +12,6 @@
 # ---------------------------------------------------------------------------
 FROM docker.io/library/node:22-bookworm-slim AS deps
 WORKDIR /app
-# LOW_CPU=1: für CPUs ohne SSE4.2/x86-64-v2 (z. B. Intel Atom/Bonnell oder
-# VMs mit qemu64/kvm64-CPU-Typ). sharps native Bibliothek würde dort mit
-# SIGILL abstürzen; stattdessen nutzt die Bildpipeline die Debian-libvips-CLI
-# (IMAGE_BACKEND=vips, gesetzt vom Entrypoint). deploy.sh erkennt das selbst.
-ARG LOW_CPU=0
 # @playwright/test ist eine reine Test-Abhängigkeit (E2E-Frontend-Tests). Seine
 # postinstall würde sonst ~150 MB Browser herunterladen — im Produktions-Build
 # unnötig und auf schwacher Hardware/eingeschränktem Netz fehleranfällig. Die
@@ -65,8 +60,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund --ignore-scripts
 # Schnelltest der nativen Module — schlägt hier gezielt fehl (mit Modulname
 # im Log), statt später anonym im Next-Build. Passworthashing läuft über
-# hash-wasm (WASM, CPU-portabel) — kein nativer Test nötig. sharp wird auf
-# LOW_CPU nie geladen und daher dort auch nicht getestet.
+# hash-wasm (WASM, CPU-portabel) — kein nativer Test nötig.
 #
 # better-sqlite3 wird BENUTZT, nicht nur geladen: Seit die Binärdatei aus dem
 # Paket kommt statt aus einem Build, ist „require() wirft nicht" zu wenig — die
@@ -74,8 +68,7 @@ RUN npm ci --no-audit --no-fund --ignore-scripts
 RUN node -e "const D=require('better-sqlite3');const db=new D(':memory:');db.exec('create table t(a)');db.prepare('insert into t values (?)').run(42);if(db.prepare('select a from t').get().a!==42)throw new Error('better-sqlite3 liefert falsche Daten');" \
  && echo "OK better-sqlite3" \
  && node -e "require('hash-wasm')" && echo "OK hash-wasm" \
- && if [ "$LOW_CPU" != "1" ]; then node -e "require('sharp')" && echo "OK sharp"; \
-    else echo "LOW_CPU=1 — sharp übersprungen (Bildpipeline nutzt libvips-CLI)"; fi
+ && node -e "require('sharp')" && echo "OK sharp"
 
 FROM docker.io/library/node:22-bookworm-slim AS build
 WORKDIR /app
@@ -83,14 +76,11 @@ ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
-# Auf normalen CPUs die nativen sharp-Laufzeitpakete in den Standalone-Output
-# spiegeln. Auf LOW_CPU wird sharp NICHT gebraucht (Bildpipeline nutzt vips)
-# — dort NICHT kopieren, damit keine SSE4.2-Binärdatei ins Image gelangt.
-ARG LOW_CPU=0
-RUN if [ "$LOW_CPU" != "1" ]; then \
-      mkdir -p .next/standalone/node_modules/@img \
-      && cp -r node_modules/@img/. .next/standalone/node_modules/@img/ 2>/dev/null || true; \
-    fi
+# Die nativen sharp-Laufzeitpakete in den Standalone-Output spiegeln. `next
+# build` nimmt sie nicht mit, weil sharp in next.config.ts als externes Paket
+# geführt wird.
+RUN mkdir -p .next/standalone/node_modules/@img \
+ && cp -r node_modules/@img/. .next/standalone/node_modules/@img/
 
 FROM docker.io/library/node:22-bookworm-slim AS runtime
 WORKDIR /app
@@ -99,15 +89,6 @@ ENV NODE_ENV=production \
     DATA_DIR=/data \
     HOSTNAME=0.0.0.0 \
     PORT=3000
-
-# LOW_CPU=1: Debians libvips-CLI als Bild-Backend (Baseline-x86-64, läuft
-# auf jeder CPU). Der Entrypoint setzt dann IMAGE_BACKEND=vips.
-ARG LOW_CPU=0
-RUN if [ "$LOW_CPU" = "1" ]; then \
-      apt-get update -qq \
-      && apt-get install -y --no-install-recommends libvips-tools \
-      && rm -rf /var/lib/apt/lists/*; \
-    fi
 
 ARG APP_COMMIT=unbekannt
 ENV APP_COMMIT=$APP_COMMIT
@@ -125,12 +106,10 @@ COPY --from=build /app/scripts/entry.sh ./scripts/entry.sh
 # Inline-JavaScript scheiterte an der /bin/sh-Auswertung von podman.
 COPY --from=build /app/scripts/healthcheck.mjs ./scripts/healthcheck.mjs
 RUN chmod +x ./scripts/entry.sh && mkdir -p /data
-# LOW_CPU-Fail-Safe: natives sharp aus dem Image entfernen. So kann selbst ein
-# versehentlicher sharp-Ladepfad nur noch einen abfangbaren MODULE_NOT_FOUND
-# statt eines prozesstötenden SIGILL auslösen (Bildpipeline nutzt hier vips).
-RUN if [ "$LOW_CPU" = "1" ]; then \
-      rm -rf node_modules/sharp node_modules/@img; \
-    fi
+# sharp im LAUFZEIT-Image benutzen, nicht nur laden: Die deps-Stufe ist nicht
+# das Laufzeit-Image — hierher kommen die nativen Pakete über den @img-Spiegel
+# aus der build-Stufe. Ein echter Encode beweist, dass dieser Weg trägt.
+RUN node -e "const s=require('sharp');s({create:{width:4,height:4,channels:3,background:'#fff'}}).webp().toBuffer().then(b=>{if(!b.length)throw new Error('sharp liefert kein Bild');console.log('OK sharp im Laufzeit-Image');})"
 
 # Bewusst KEIN "USER node": rootless betrieben ist Container-root der
 # unprivilegierte Host-User (siehe Kopf). Das macht das Host-Bind-Mount

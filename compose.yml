@@ -1,8 +1,8 @@
-# Podman-Compose-Definition. Das Image wird IMMER von deploy.sh gebaut
-# (mit der zur CPU passenden Variante, u. a. --build-arg LOW_CPU). Hier
-# bewusst KEIN build:-Block — sonst könnte "podman compose up" auf einem
-# Server ohne SSE4.2 versehentlich die falsche (sharp/SIGILL-)Variante
-# bauen. Erststart daher über ./deploy.sh bzw. ./bootstrap.sh.
+# Podman-Compose-Definition. Das Image wird IMMER von deploy.sh gebaut —
+# hier bewusst KEIN build:-Block, damit "podman compose up" nicht am
+# Deploy-Weg vorbei ein Image erzeugt, das weder den Commit-Stempel
+# (APP_COMMIT) noch die Build-Caches des Hosts kennt. Erststart daher über
+# ./deploy.sh bzw. ./bootstrap.sh.
 services:
   app:
     image: localhost/roses-blog:latest

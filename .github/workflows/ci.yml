@@ -147,11 +147,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Container-Image bauen (wie deploy.sh, ohne LOW_CPU)
+      - name: Container-Image bauen (wie deploy.sh)
         run: |
           docker build -f Containerfile \
             --build-arg APP_COMMIT="${GITHUB_SHA::7}" \
-            --build-arg LOW_CPU=0 \
             -t roses-blog:ci .
       - name: Native Module im FERTIGEN Image benutzen (nicht nur laden)
         run: |

@@ -3,24 +3,26 @@
  * entfernt, Orientierung angewendet) und als WebP in responsiven Breiten
  * abgelegt. Siehe docs/ASSUMPTIONS.md B10.
  *
- * Zwei Backends:
- * - "sharp" (Standard): schnell, native Binärdatei — braucht SSE4.2.
- * - "vips":  Debian-libvips-CLI (vipsheader/vipsthumbnail) — läuft auf
- *   jeder CPU (z. B. Intel Atom/Bonnell), Auswahl via IMAGE_BACKEND=vips.
+ * EIN Backend: sharp (native Binärdatei, braucht x86-64-v2/SSE4.2).
+ *
+ * Bis 08/2026 gab es ein zweites — die Debian-libvips-CLI (vipsheader/
+ * vipsthumbnail), wählbar über IMAGE_BACKEND=vips. Es existierte allein für
+ * das „LOW_CPU-Image", das deploy.sh auf CPUs ohne SSE4.2 baute. Die Maschine
+ * ist inzwischen eine AMD EPYC 7352 (x86-64-v4); das Image wurde ohnehin nur
+ * noch mit sharp gebaut, und der Entrypoint schaltete mangels vipsthumbnail
+ * nie um. Zwei Encoder, von denen einer nie läuft, sind kein Netz — sie sind
+ * zwei mögliche Ausgaben für dieselben Einstellungen, von denen nur eine je
+ * geprüft wird. Deshalb ist der vips-Pfad entfernt.
  *
  * sharp wird ausschließlich lazy geladen, damit weder der Next-Build noch
  * der Serverstart die native Bibliothek anfassen.
  */
 import crypto from "node:crypto";
-import { execFile } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { promisify } from "node:util";
 import { asc, eq, inArray } from "drizzle-orm";
 import { db, schema } from "@/db";
-
-const execFileAsync = promisify(execFile);
 
 /**
  * Encoder-Einstellungen kommen zentral aus config/bild-encoder.json — EINE
@@ -38,7 +40,7 @@ export const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
 export const ALLOWED_MIME = ["image/jpeg", "image/png", "image/webp"];
 
 /**
- * WebP-Qualität für ALLE erzeugten Varianten (beide Backends). 68 mit
+ * WebP-Qualität für ALLE erzeugten Varianten. 68 mit
  * effort 6 + smart-subsample spart gegenüber der alten 76/effort-4-Kodierung
  * gemessen ~36 % Bytes (Lighthouse „Bildübermittlung verbessern → höhere
  * Kompression", Befund 07/2026) und bleibt für Foto-Inhalte visuell sauber —
@@ -53,11 +55,11 @@ export const WEBP_QUALITY: number = encoder.webpQuality;
  *  Kodierzeit fällt nur einmal pro Upload/Regenerierung an, nie beim Leser. */
 export const WEBP_EFFORT: number = encoder.webpEffort;
 
-/** Selektive Chroma-Unterabtastung (s. o.) — beide Backends. */
+/** Selektive Chroma-Unterabtastung (s. o.). */
 export const WEBP_SMART_SUBSAMPLE: boolean = encoder.webpSmartSubsample;
 
 /**
- * JPEG-Qualität für KI-Rezeptfotos (prepareAiImage, beide Backends): 80 ist
+ * JPEG-Qualität für KI-Rezeptfotos (prepareAiImage): 80 ist
  * für abfotografierten TEXT die sichere Wahl — Kompressionsartefakte kosten
  * bei Schrift direkt Lesegenauigkeit, deshalb bewusst etwas höher als die
  * WebP-Qualität der Galerie-Bilder. Zentral definiert wie WEBP_QUALITY
@@ -249,59 +251,8 @@ const sharpBackend: ImageBackend = {
   },
 };
 
-/** Debian-libvips-CLI: von der Distribution für Baseline-x86-64 kompiliert. */
-const vipsBackend: ImageBackend = {
-  async probe(file) {
-    const header = async (field: string) => {
-      const { stdout } = await execFileAsync("vipsheader", ["-f", field, file]);
-      return stdout.trim();
-    };
-    try {
-      const [width, height, loader] = await Promise.all([
-        header("width"),
-        header("height"),
-        header("vips-loader"),
-      ]);
-      const format = loader.replace(/load.*$/, ""); // jpegload -> jpeg
-      if (!Number(width) || !Number(height)) {
-        throw new Error("leer");
-      }
-      return { width: Number(width), height: Number(height), format };
-    } catch {
-      throw new Error("Datei ist kein gültiges Bild.");
-    }
-  },
-  async resizeToWebp(file, _buffer, outFile, targetWidth) {
-    // vipsthumbnail: rotiert nach EXIF (Default) und entfernt Metadaten
-    // (strip). effort/smart-subsample: identische Encoder-Disziplin wie das
-    // sharp-Backend (libvips ≥ 8.12; Produktions-Image nutzt 8.15).
-    await execFileAsync("vipsthumbnail", [
-      file,
-      "-s",
-      `${targetWidth}x100000`,
-      "-o",
-      `${outFile}[Q=${WEBP_QUALITY},effort=${WEBP_EFFORT}${WEBP_SMART_SUBSAMPLE ? ",smart-subsample=true" : ""},strip]`,
-    ]);
-  },
-  async resizeToJpeg(file, _buffer, outFile, maxEdge) {
-    // Beide Kanten begrenzen (Langkante ≤ maxEdge), Ausgabe als JPEG.
-    // vipsthumbnail rotiert nach EXIF (Default seit libvips 8.9 — dasselbe
-    // dokumentierte Verhalten, auf das resizeToWebp oben produktiv baut;
-    // ein --rotate-Flag existiert in modernen Versionen nicht mehr) und
-    // entfernt Metadaten (strip). background=255 flattet Transparenz auf
-    // WEISS — JPEG kennt kein Alpha, Standard wäre unlesbares Schwarz.
-    await execFileAsync("vipsthumbnail", [
-      file,
-      "-s",
-      `${maxEdge}x${maxEdge}`,
-      "-o",
-      `${outFile}[Q=${AI_JPEG_QUALITY},strip,background=255]`,
-    ]);
-  },
-};
-
 function backend(): ImageBackend {
-  return process.env.IMAGE_BACKEND === "vips" ? vipsBackend : sharpBackend;
+  return sharpBackend;
 }
 
 /**
@@ -441,7 +392,7 @@ const AI_IMAGE_MAX_EDGE = 1568;
  * Format-Prüfung per Bildprobe (Magic Bytes, nie der Client-MIME-Typ), auf
  * die Langkante verkleinern, als JPEG (Qualität 80) neu kodieren und base64
  * zurückgeben. Läuft über dieselbe Backend-Abstraktion wie die Medien-Uploads
- * (sharp bzw. vips — der Server kann per IMAGE_BACKEND=vips laufen). Das Foto
+ * (sharp). Das Foto
  * wird NICHT in der Medienbibliothek gespeichert — es ist Wegwerf-Input für
  * die Texterkennung und landet nirgends auf Platte (nur ein Temp-Verzeichnis
  * während der Konvertierung, das sofort wieder gelöscht wird).
@@ -456,7 +407,7 @@ export async function prepareAiImage(
     fs.writeFileSync(inFile, buffer);
     const be = backend();
     // Probe-Fehler (kein Bild) in eine deutsche, anzeigbare Meldung übersetzen —
-    // sharp/vips werfen hier sonst englische Interna bis in die Fehleranzeige.
+    // sharp wirft hier sonst englische Interna bis in die Fehleranzeige.
     let meta: Probe;
     try {
       meta = await be.probe(inFile, buffer);
