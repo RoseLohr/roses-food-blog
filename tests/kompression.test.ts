@@ -22,8 +22,9 @@
  * Antwort. Der Sprung von 5 auf 6 bringt 0,5 Prozentpunkte für 14 % mehr
  * Rechenzeit.
  */
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -172,17 +173,63 @@ describe("Kompression: die Einrichtung bricht nicht an einem fehlenden Modul", (
     expect(bootstrap.slice(stelle, stelle + 200)).toMatch(/BROTLI_OK=0/);
   });
 
-  it("gesucht wird das FILTER-Modul, nicht „irgendwas mit brotli“", () => {
-    // Das Schwesterpaket …-static verlinkt ebenfalls nach modules-enabled
-    // (50-mod-http-brotli-static.conf), bringt aber nur `brotli_static` mit.
-    // Eine grobe Suche nach „*brotli*" ginge damit auf, während `brotli on;`
-    // eine unbekannte Direktive bliebe — genau der harte nginx-Fehler, den die
-    // Prüfung verhindern soll. (Panel-Befund gpt-5.6-sol.)
-    expect(bootstrap).toMatch(/ngx_http_brotli_filter_module/);
-    expect(
+  it("die Modulprüfung erkennt genau das Filter-Modul — echt ausgeführt", () => {
+    // Diese Prüfung beurteilt NICHT die Schreibweise des Befehls, sondern
+    // führt ihn aus. Zwei Fallen stecken darin, beide von gpt-5.6-sol gefunden:
+    //
+    // 1. Das Schwesterpaket …-static verlinkt ebenfalls nach modules-enabled,
+    //    bringt aber nur `brotli_static` mit. Eine grobe Suche ginge auf,
+    //    während `brotli on;` eine unbekannte Direktive bliebe.
+    // 2. Die Einträge in modules-enabled sind SYMLINKS nach modules-available.
+    //    `grep -r` folgt Symlinks im Verzeichnis nicht (nur denen auf der
+    //    Kommandozeile) und fände den Debian-Standardlink nie.
+    //
+    // Fall 2 ist der gefährlichere: Er sähe nicht nach „brotli fehlt" aus,
+    // sondern löschte den Block bei jedem Re-Run aus einer FUNKTIONIERENDEN
+    // Config — ein Server, der sich still selbst verschlechtert.
+    const befund = /!\s*(grep [^\n]*ngx_http_brotli_filter_module[^\n]*?);/.exec(
       bootstrap,
-      "grobe Modulsuche — das Static-Modul erfüllt sie fälschlich",
-    ).not.toMatch(/modules-enabled\/\*brotli\*/);
+    );
+    expect(befund, "Modulprüfung in bootstrap.sh nicht gefunden").not.toBeNull();
+
+    /** Legt die echte Debian-Struktur an: Link in enabled → Datei in available. */
+    const modulverzeichnis = (module: string[]) => {
+      const wurzel = fs.mkdtempSync(path.join(os.tmpdir(), "nginx-module-"));
+      fs.mkdirSync(path.join(wurzel, "modules-available"));
+      fs.mkdirSync(path.join(wurzel, "modules-enabled"));
+      for (const m of module) {
+        // Dateiname mit Bindestrich (mod-http-brotli-filter.conf), Modulname
+        // mit Unterstrich (ngx_http_brotli_filter_module.so) — so benennt es
+        // das Paket, und genau daran hängt die Suche.
+        const ziel = path.join(wurzel, "modules-available", `mod-http-${m}.conf`);
+        const so = `ngx_http_${m.replace(/-/g, "_")}_module.so`;
+        fs.writeFileSync(ziel, `load_module modules/${so};\n`);
+        fs.symlinkSync(
+          ziel,
+          path.join(wurzel, "modules-enabled", `50-mod-http-${m}.conf`),
+        );
+      }
+      return wurzel;
+    };
+
+    const findet = (module: string[]) => {
+      const wurzel = modulverzeichnis(module);
+      const befehl = befund![1].replace(
+        "/etc/nginx/modules-enabled/",
+        `${wurzel}/modules-enabled/`,
+      );
+      return spawnSync("bash", ["-c", befehl]).status === 0;
+    };
+
+    expect(
+      findet(["brotli-filter"]),
+      "findet den Debian-Symlink des Filter-Moduls nicht (grep -r statt -R?)",
+    ).toBe(true);
+    expect(
+      findet(["brotli-static"]),
+      "hält das Static-Modul fälschlich für das Filter-Modul",
+    ).toBe(false);
+    expect(findet([]), "meldet ein Modul, wo keines verlinkt ist").toBe(false);
   });
 
   it("eine bestehende Config wird repariert, wenn das Modul verschwindet", () => {

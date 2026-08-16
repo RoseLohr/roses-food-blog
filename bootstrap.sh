@@ -212,8 +212,16 @@ if [[ "$DOMAIN" != "localhost:${PORT:-3000}" && "$DOMAIN" != "localhost" && -n "
     # Schwesterpaket …-static verlinkt ebenfalls nach modules-enabled, bringt
     # aber nur `brotli_static` mit. Wäre nur das installiert, ginge eine grobe
     # Suche auf, und `brotli on;` bliebe eine unbekannte Direktive.
+    #
+    # `-R`, NICHT `-r`: Die Einträge in modules-enabled sind Symlinks nach
+    # modules-available. `grep -r` folgt Symlinks nur, wenn sie selbst auf der
+    # Kommandozeile stehen — die im Verzeichnis überspringt es. Mit `-r` fände
+    # die Prüfung den Debian-Standardlink also NIE. Das wäre nicht bloß „kein
+    # brotli": Der Reparaturzweig weiter unten würde den Block dann bei jedem
+    # Re-Run aus einer funktionierenden Config löschen. tests/kompression.test.ts
+    # führt genau diesen Befehl gegen die echte Verzeichnisstruktur aus.
     if [[ "$BROTLI_OK" == "1" ]] &&
-      ! grep -rqs ngx_http_brotli_filter_module /etc/nginx/modules-enabled/; then
+      ! grep -Rqs ngx_http_brotli_filter_module /etc/nginx/modules-enabled/; then
       BROTLI_OK=0
     fi
     if [[ "$BROTLI_OK" == "0" ]]; then
