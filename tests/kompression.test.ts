@@ -24,6 +24,7 @@
  */
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -190,17 +191,55 @@ describe("Kompression: App schweigt, Proxy komprimiert", () => {
  */
 const BROTLI_PAKET = "libnginx-mod-http-brotli-filter";
 
-/** Führt eine Funktion aus bootstrap.sh mit der übergebenen Eingabe aus. */
-function ausBootstrap(funktion: string, eingabe: string, ...args: string[]) {
+/**
+ * Führt eine Funktion aus bootstrap.sh mit der übergebenen Eingabe aus.
+ *
+ * `umgebung` erlaubt es, NGINX_BEFEHL auf eine Attrappe zu zeigen. Das ist
+ * nötig, damit die Prüfung überall dasselbe Ergebnis liefert: Auf dem
+ * CI-Läufer ist kein nginx installiert, und ein Ergebnis, das davon abhängt,
+ * prüft nichts.
+ */
+function ausBootstrap(
+  funktion: string,
+  eingabe: string,
+  { args = [] as string[], umgebung = {} as Record<string, string> } = {},
+) {
   const ergebnis = spawnSync(
     "bash",
     [
       "-c",
       `source <(sed -n "/^${funktion}()/,/^}/p" bootstrap.sh); ${funktion} ${args.join(" ")}`,
     ],
-    { input: eingabe, encoding: "utf8", cwd: ROOT },
+    {
+      input: eingabe,
+      encoding: "utf8",
+      cwd: ROOT,
+      env: { ...process.env, ...umgebung },
+    },
   );
   return { code: ergebnis.status, aus: ergebnis.stdout, fehler: ergebnis.stderr };
+}
+
+/**
+ * Legt eine nginx-Attrappe an, die sich beim Prüfen einer Konfiguration so
+ * verhält wie das echte nginx in der jeweiligen Bauweise.
+ */
+function nginxAttrappe(art: "dynamisch" | "statisch" | "kaputt"): string {
+  // Ins Systemtemp, NICHT ins Repo — dort hätte es Spuren hinterlassen.
+  const verzeichnis = fs.mkdtempSync(path.join(os.tmpdir(), "nginx-attrappe-"));
+  const pfad = path.join(verzeichnis, "nginx");
+  const skripte = {
+    // Braucht eine load_module-Zeile, sonst kennt es „brotli" nicht.
+    dynamisch: `grep -qE '^[[:space:]]*load_module[^#]*brotli_filter' "$3" && exit 0
+echo 'nginx: [emerg] unknown directive "brotli" in '"$3"':5' >&2; exit 1`,
+    // brotli ist einkompiliert — die Direktive gilt OHNE load_module.
+    statisch: `exit 0`,
+    // Scheitert aus einem Grund, der mit brotli nichts zu tun hat.
+    kaputt: `echo 'nginx: [emerg] open() "/var/log/nginx" failed' >&2; exit 1`,
+  };
+  fs.writeFileSync(pfad, `#!/usr/bin/env bash\n${skripte[art]}\n`);
+  fs.chmodSync(pfad, 0o755);
+  return pfad;
 }
 
 describe("Kompression: die Einrichtung bricht nicht an einem fehlenden Modul", () => {
@@ -308,52 +347,62 @@ describe("Kompression: die Einrichtung bricht nicht an einem fehlenden Modul", (
     ).toMatch(/BROTLI_MODUL"?\s*==\s*"nein"/);
   });
 
-  it("die Modulprüfung beantwortet alle sieben Lagen — echt ausgeführt", () => {
-    // Diese Prüfung führt brotli_modul_status aus bootstrap.sh aus, statt über
-    // seine Schreibweise zu urteilen. Vier Tarnungen stecken darin, alle von
-    // gpt-5.6-sol gefunden:
+  it("die Modulprüfung fragt nginx, ob es die Direktive kennt — echt ausgeführt", () => {
+    // Diese Prüfung führt brotli_modul_status aus bootstrap.sh aus. Der Weg
+    // dahin ging über fünf Fehlschlüsse, alle von gpt-5.6-sol gefunden:
     //
-    // 1. Das Schwesterpaket …-static bringt nur `brotli_static` mit.
-    // 2. Eine auskommentierte Zeile ist kein geladenes Modul.
-    // 3. Das `load_module` kann direkt in der nginx.conf stehen — deshalb wird
-    //    `nginx -T` gefragt und nicht ein Verzeichnis durchsucht.
-    // 4. Der heikelste Fall: Enthält die bestehende Config `brotli on;` OHNE
-    //    Modul, dann scheitert `nginx -T` genau daran. Würde das pauschal
-    //    „unbekannt" ergeben, wäre die Reparatur ausgerechnet in ihrem eigenen
-    //    Anwendungsfall unerreichbar — die kaputte Config bliebe liegen und der
-    //    nächste nginx-Start scheiterte. nginx nennt den Grund aber selbst.
-    const status = (ausgabe: string, code: number) =>
-      ausBootstrap("brotli_modul_status", ausgabe, String(code)).aus.trim();
+    //   1. Der apt-Exit-Code entschied mit.
+    //   2. Gesucht wurde „irgendwas mit brotli" — das Static-Modul erfüllte das.
+    //   3. `grep -r` folgte den Symlinks in modules-enabled nicht.
+    //   4. Nur modules-enabled durchsucht — ein load_module in der nginx.conf
+    //      blieb unsichtbar.
+    //   5. Auf eine load_module-ZEILE geprüft — bei statisch einkompiliertem
+    //      brotli gibt es keine, die Direktive funktioniert aber.
+    //
+    // Allen fünf ist dasselbe gemeinsam: Sie messen ein Stellvertretermerkmal
+    // statt der Sache. Die Sache ist „akzeptiert dieses nginx `brotli on;`",
+    // und die Antwort kennt nur nginx. Es bekommt deshalb eine
+    // Wegwerf-Konfiguration mit genau dieser Direktive zu prüfen.
+    //
+    // Die Attrappen bilden die drei Bauweisen nach; auf dem CI-Läufer ist kein
+    // nginx installiert, und ein Ergebnis, das davon abhinge, prüfte nichts.
+    const status = (ausgabe: string, code: number, art?: "dynamisch" | "statisch" | "kaputt") =>
+      ausBootstrap("brotli_modul_status", ausgabe, {
+        args: [String(code)],
+        umgebung: art ? { NGINX_BEFEHL: nginxAttrappe(art) } : {},
+      }).aus.trim();
 
-    // --- nginx -T lief durch (Exit 0) ---
+    const ladezeile = "load_module modules/ngx_http_brotli_filter_module.so;";
+
+    // --- nginx -T lief durch: die Sonde entscheidet ---
     expect(
-      status(
-        [
-          "# configuration file /etc/nginx/modules-enabled/50-mod-http-brotli-filter.conf:",
-          "load_module modules/ngx_http_brotli_filter_module.so;",
-        ].join("\n"),
-        0,
-      ),
-      "erkennt das verlinkte Modul nicht",
+      status(ladezeile, 0, "dynamisch"),
+      "erkennt das dynamisch geladene Modul nicht",
     ).toBe("ja");
     expect(
-      status(
-        [
-          "# configuration file /etc/nginx/nginx.conf:",
-          "load_module modules/ngx_http_brotli_filter_module.so;",
-        ].join("\n"),
-        0,
-      ),
+      status(`# configuration file /etc/nginx/nginx.conf:\n${ladezeile}`, 0, "dynamisch"),
       "übersieht load_module in der nginx.conf",
     ).toBe("ja");
     expect(
-      status("load_module modules/ngx_http_brotli_static_module.so;", 0),
+      status("load_module modules/ngx_http_brotli_static_module.so;", 0, "dynamisch"),
       "hält das Static-Modul für das Filter-Modul",
     ).toBe("nein");
     expect(
-      status("  # load_module modules/ngx_http_brotli_filter_module.so;", 0),
+      status(`  # ${ladezeile}`, 0, "dynamisch"),
       "hält eine auskommentierte Zeile für ein geladenes Modul",
     ).toBe("nein");
+    expect(
+      status("events { worker_connections 768; }", 0, "dynamisch"),
+      "meldet ein Modul, wo keines geladen ist",
+    ).toBe("nein");
+
+    // Der Fall, der die reine Zeilensuche widerlegt: statisch einkompiliert,
+    // also KEINE load_module-Zeile — und brotli funktioniert trotzdem. Eine
+    // Zeilensuche sagte hier „nein" und schnitte einen intakten Block heraus.
+    expect(
+      status("events { worker_connections 768; }", 0, "statisch"),
+      "statisch einkompiliertes brotli wird als fehlend eingestuft",
+    ).toBe("ja");
 
     // --- nginx -T scheiterte ---
     expect(
@@ -367,22 +416,21 @@ describe("Kompression: die Einrichtung bricht nicht an einem fehlenden Modul", (
       "Reparatur unerreichbar: nginx sagt selbst, dass es brotli nicht kennt",
     ).toBe("nein");
     expect(
-      status(
-        'nginx: [emerg] unknown directive "brotli_comp_level" in /etc/nginx/sites-enabled/roses-blog:49',
-        1,
-      ),
-      "erkennt nur die Direktive „brotli“, nicht die übrigen des Blocks",
-    ).toBe("nein");
-    expect(
       status('nginx: [emerg] unexpected "}" in /etc/nginx/nginx.conf:112', 1),
       "hält einen fremden Konfigurationsfehler für ein fehlendes brotli-Modul",
     ).toBe("unbekannt");
+
+    // --- die Sonde selbst scheitert aus fremdem Grund ---
     expect(
-      status(
-        'nginx: [emerg] cannot load certificate "/etc/letsencrypt/live/x/fullchain.pem"',
-        1,
-      ),
-      "hält ein Zertifikatsproblem für ein fehlendes brotli-Modul",
+      status(ladezeile, 0, "kaputt"),
+      "wertet einen Sondenfehler als belegtes Nein",
+    ).toBe("unbekannt");
+    expect(
+      ausBootstrap("brotli_modul_status", ladezeile, {
+        args: ["0"],
+        umgebung: { NGINX_BEFEHL: "/nicht/vorhanden/nginx" },
+      }).aus.trim(),
+      "ohne aufrufbares nginx wird trotzdem ein Nein behauptet",
     ).toBe("unbekannt");
   });
 

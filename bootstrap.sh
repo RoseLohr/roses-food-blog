@@ -52,18 +52,52 @@ fail() { printf '\n\033[1;31mFEHLER: %s\033[0m\n' "$*"; exit 1; }
 # nicht kennt. Jeder ANDERE Fehler bleibt „unbekannt", denn dann liegt das
 # Problem woanders und an der Config wird nichts angefasst.
 brotli_modul_status() {
-  local code="$1" ausgabe
+  local code="$1" ausgabe verzeichnis sonde
   ausgabe="$(cat)"
-  if [[ "$code" == "0" ]]; then
-    if printf '%s\n' "$ausgabe" |
-      grep -qE '^[[:space:]]*load_module[^#]*ngx_http_brotli_filter_module'; then
-      printf 'ja\n'
-    else
-      printf 'nein\n'
-    fi
-  elif printf '%s\n' "$ausgabe" | grep -q 'unknown directive "brotli'; then
+
+  # Belegter geht es nicht: nginx hat die echte Konfiguration gelesen und sagt
+  # wörtlich, dass es die Direktive nicht kennt.
+  if printf '%s\n' "$ausgabe" | grep -q 'unknown directive "brotli'; then
+    printf 'nein\n'
+    return
+  fi
+  # Ein anderer Fehler heißt: Das Problem liegt woanders, und über brotli ist
+  # nichts ausgesagt.
+  if [[ "$code" != "0" ]]; then
+    printf 'unbekannt\n'
+    return
+  fi
+
+  # Jetzt die eigentliche Frage. NICHT „steht irgendwo eine load_module-Zeile"
+  # — das ist bloß ein Stellvertretermerkmal und geht schief, sobald jemand
+  # nginx mit statisch einkompiliertem brotli betreibt (--add-module). Dann gibt
+  # es keine load_module-Zeile, die Direktive funktioniert aber einwandfrei, und
+  # der Reparaturzweig schnitte einen intakten Block heraus.
+  #
+  # Gefragt wird deshalb nginx selbst: Es soll eine Wegwerf-Konfiguration
+  # prüfen, die genau diese Direktive benutzt. Die load_module-Zeilen der
+  # echten Konfiguration werden übernommen (dynamisch geladene Module); bei
+  # statisch einkompiliertem Modul gibt es keine — und dann braucht es auch
+  # keine.
+  verzeichnis="$(mktemp -d)"
+  {
+    printf '%s\n' "$ausgabe" | grep -E '^[[:space:]]*load_module[^#]*;' || true
+    printf 'pid %s/sonde.pid;\n' "$verzeichnis"
+    printf 'error_log %s/sonde.log;\n' "$verzeichnis"
+    printf 'events {}\n'
+    printf 'http { brotli on; brotli_comp_level 5; }\n'
+  } >"$verzeichnis/sonde.conf"
+
+  if sonde="$(${SUDO:-} "${NGINX_BEFEHL:-nginx}" -t -c "$verzeichnis/sonde.conf" 2>&1)"; then
+    rm -rf "$verzeichnis"
+    printf 'ja\n'
+  elif printf '%s\n' "$sonde" | grep -q 'unknown directive "brotli'; then
+    rm -rf "$verzeichnis"
     printf 'nein\n'
   else
+    # Die Sonde scheiterte aus einem anderen Grund (nginx nicht aufrufbar,
+    # Schreibrechte). Dann ist nichts belegt — und es wird nichts geschnitten.
+    rm -rf "$verzeichnis"
     printf 'unbekannt\n'
   fi
 }
