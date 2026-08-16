@@ -120,10 +120,17 @@ describe("Schriften: Achse, @font-face und Quelltext sagen dasselbe", () => {
   });
 
   it("kein im Quelltext angefordertes Gewicht liegt außerhalb ALLER Achsen", () => {
-    // Bewusst gegen die Vereinigung aller Spannen, nicht je Familie: Welche
-    // Familie eine Regel trifft, entscheidet die Kaskade und ist statisch nicht
-    // sicher zuzuordnen. Ein Gewicht, das KEINE Datei kann, ist dagegen
-    // eindeutig ein Fehler — genau die Klasse, die beim Beschneiden entsteht.
+    // GROBES NETZ, BEWUSST SO BENANNT. Geprüft wird gegen die VEREINIGUNG aller
+    // Spannen — das fängt nur Gewichte, die KEINE Datei liefern kann (etwa 900).
+    // Es fängt NICHT den Fall „Nunito-Element verlangt 100": Raleway beginnt bei
+    // 100, also passiert das hier. Welche Familie eine CSS-Regel trifft,
+    // entscheidet die Kaskade und ist statisch nicht sicher zuzuordnen.
+    //
+    // Die exakte Prüfung JE FAMILIE macht deshalb tests/e2e/schrift-gewichte.spec.ts
+    // im Browser, wo die Kaskade bereits aufgelöst ist. Dieser Test hier ist der
+    // schnelle Vorfilter im Unit-Gate, nicht die eigentliche Kontrolle — Befund
+    // gpt-5.6-sol (Cross-Vendor-Veto auf PR #72), der die erste Fassung zu Recht
+    // als „nur gegen die globale Achsenhülle" beanstandet hat.
     const min = Math.min(...faces.map((f) => f.min));
     const max = Math.max(...faces.map((f) => f.max));
     const draussen = angeforderteGewichte().filter((g) => g < min || g > max);
@@ -133,6 +140,17 @@ describe("Schriften: Achse, @font-face und Quelltext sagen dasselbe", () => {
         "Entweder die Achse wieder weiten (und die Bytes bezahlen) oder das Gewicht im Entwurf ändern — " +
         "der Browser klemmt sonst still, und bei font-synthesis: none sieht man es nur am Ergebnis.",
     ).toEqual([]);
+  });
+
+  it("die exakte Prüfung je Familie existiert und läuft im Gate", () => {
+    // Ohne diese Zusicherung könnte der Browser-Test verschwinden und der
+    // grobe Vorfilter oben bliebe als scheinbar vollständige Kontrolle zurück —
+    // genau die Sorte Lücke, die dieser PR gerade geschlossen hat.
+    const spec = path.join(ROOT, "tests/e2e/schrift-gewichte.spec.ts");
+    expect(fs.existsSync(spec), "tests/e2e/schrift-gewichte.spec.ts fehlt").toBe(true);
+    const text = fs.readFileSync(spec, "utf8");
+    expect(text).toMatch(/getComputedStyle/);
+    expect(text).toMatch(/fontWeight/);
   });
 
   it("das Marken-Lockup bleibt vollständig innerhalb der Jost-Achse", () => {
