@@ -22,7 +22,7 @@
  * Antwort. Der Sprung von 5 auf 6 bringt 0,5 Prozentpunkte für 14 % mehr
  * Rechenzeit.
  */
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -128,12 +128,25 @@ describe("Kompression: App schweigt, Proxy komprimiert", () => {
  *   postinst: verlinkt /etc/nginx/modules-enabled/50-mod-http-brotli-filter.conf
  *             mit dem Inhalt `load_module modules/ngx_http_brotli_filter_module.so;`
  *
- * Ein erfundener Name (hier stand „libnginx-mod-brotli") fällt nicht auf:
- * `apt-get install` scheitert, `|| BROTLI_OK=0` fängt das ab, der brotli-Block
- * wird entfernt — die Einrichtung läuft grün durch und komprimiert für immer
- * nur mit gzip. Ein Fehler, der sich als „funktioniert" tarnt.
+ * Ein erfundener Name (hier stand „libnginx-mod-brotli") fällt nicht auf: Die
+ * Installation scheitert, der Fehler wird aufgefangen, der brotli-Block wird
+ * entfernt — die Einrichtung läuft grün durch und komprimiert für immer nur mit
+ * gzip. Ein Fehler, der sich als „funktioniert" tarnt.
  */
 const BROTLI_PAKET = "libnginx-mod-http-brotli-filter";
+
+/** Führt eine Funktion aus bootstrap.sh mit der übergebenen Eingabe aus. */
+function ausBootstrap(funktion: string, eingabe: string) {
+  const ergebnis = spawnSync(
+    "bash",
+    [
+      "-c",
+      `source <(sed -n "/^${funktion}()/,/^}/p" bootstrap.sh); ${funktion}`,
+    ],
+    { input: eingabe, encoding: "utf8", cwd: ROOT },
+  );
+  return { code: ergebnis.status, aus: ergebnis.stdout, fehler: ergebnis.stderr };
+}
 
 describe("Kompression: die Einrichtung bricht nicht an einem fehlenden Modul", () => {
   it("bootstrap.sh installiert das brotli-Modul ohne Abbruch", () => {
@@ -141,8 +154,30 @@ describe("Kompression: die Einrichtung bricht nicht an einem fehlenden Modul", (
     // beendet die Ersteinrichtung mitten im Lauf, wenn das Paket auf der
     // Distribution fehlt.
     expect(bootstrap).toMatch(
-      new RegExp(`${BROTLI_PAKET}\\s*\\|\\|\\s*BROTLI_OK=0`),
+      new RegExp(`${BROTLI_PAKET}[^\\n]*\\|\\|\\s*true`),
     );
+  });
+
+  it("ein apt-Aussetzer überstimmt den Modulnachweis nicht", () => {
+    // apt kann aus Gründen ungleich 0 sein, die mit brotli nichts zu tun haben:
+    // ein belegter dpkg-Lock, ein Spiegel, der gerade 404 liefert. Entschiede
+    // das mit, entfernte so ein Aussetzer den brotli-Block aus einer laufenden
+    // Config, obwohl das Modul geladen ist. (Panel-Befund gpt-5.6-sol.)
+    //
+    // Deshalb darf BROTLI_OK NUR aus dem Modulnachweis stammen — die Zuweisung
+    // darf nicht am apt-Ergebnis hängen.
+    expect(
+      bootstrap,
+      "apt-Ergebnis setzt BROTLI_OK — ein Aussetzer schaltet brotli ab",
+    ).not.toMatch(new RegExp(`${BROTLI_PAKET}[^\\n]*\\|\\|\\s*BROTLI_OK=`));
+    // Und der Nachweis darf nicht hinter einer BROTLI_OK-Bedingung stehen,
+    // sonst entfiele er nach einem apt-Fehler ganz.
+    const nachweis = bootstrap.indexOf("ngx_http_brotli_filter_module");
+    const davor = bootstrap.lastIndexOf("if ", nachweis);
+    expect(
+      bootstrap.slice(davor, nachweis),
+      "der Modulnachweis hängt an einer Vorbedingung",
+    ).not.toMatch(/BROTLI_OK/);
   });
 
   it("README und bootstrap.sh nennen dasselbe, existierende Paket", () => {
@@ -167,16 +202,16 @@ describe("Kompression: die Einrichtung bricht nicht an einem fehlenden Modul", (
     // der Link von Hand entfernt, meldet apt Erfolg — und `load_module` fehlt
     // trotzdem. Dann stünde ein „brotli on;" ohne Modul in der Config und
     // `nginx -t` scheiterte unter `set -e` mitten in der Einrichtung.
-    // Verankert am Code, nicht am ersten Vorkommen im Fließtext: Die Prüfung
-    // hängt an der Bedingung, und ihr Befund muss BROTLI_OK auch wirklich
-    // umlegen, nicht bloß eine Warnung ausgeben.
-    const stelle = bootstrap.indexOf('if [[ "$BROTLI_OK" == "1" ]] &&');
-    expect(stelle, "Modulprüfung nicht gefunden").toBeGreaterThan(-1);
+    // Verankert am Code, nicht am ersten Vorkommen im Fließtext: Der Nachweis
+    // muss BROTLI_OK in BEIDE Richtungen setzen, nicht bloß warnen.
+    const stelle = bootstrap.indexOf("if grep -Rqs");
+    expect(stelle, "Modulnachweis nicht gefunden").toBeGreaterThan(-1);
     const abschnitt = bootstrap.slice(
       stelle,
       bootstrap.indexOf('if [[ "$BROTLI_OK" == "0" ]]', stelle),
     );
     expect(abschnitt).toMatch(/modules-enabled/);
+    expect(abschnitt).toMatch(/BROTLI_OK=1/);
     expect(abschnitt).toMatch(/BROTLI_OK=0/);
   });
 
@@ -196,7 +231,7 @@ describe("Kompression: die Einrichtung bricht nicht an einem fehlenden Modul", (
     // Config — ein Server, der sich still selbst verschlechtert.
     // `[^;]*` statt `[^\n]*`: Der Befehl steht mit Zeilenfortsetzungen über
     // mehrere Zeilen — bis zum abschließenden Semikolon ist er EIN Kommando.
-    const befund = /!\s*(grep[^;]*ngx_http_brotli_filter_module[^;]*);/.exec(
+    const befund = /\b(grep[^;]*ngx_http_brotli_filter_module[^;]*);/.exec(
       bootstrap,
     );
     expect(befund, "Modulprüfung in bootstrap.sh nicht gefunden").not.toBeNull();
@@ -258,45 +293,71 @@ describe("Kompression: die Einrichtung bricht nicht an einem fehlenden Modul", (
     ).toBe(false);
   });
 
-  it("ohne Endmarke wird NICHT geschnitten — sed liefe bis zum Dateiende", () => {
-    // Ein sed-Bereich, dessen Endmuster fehlt, löscht ab der Anfangsmarke alles
-    // Weitere: TLS-Pfade, proxy_pass, schließende Klammern. Aus der Reparatur
-    // würde ein Totalschaden an einer fremden, laufenden Config — und weil
-    // danach `nginx -t` scheitert, bliebe der Server zerstört zurück.
-    // (Panel-Befund gpt-5.6-sol.) Zum Beleg der Schnitt, echt ausgeführt:
-    const ohneEndmarke = [
-      "server {",
-      "    # BROTLI-ANFANG",
-      "    brotli on;",
+  it("unsaubere Marken kürzen die Config nicht — die Funktion, echt ausgeführt", () => {
+    // Das hier ist der gefährlichste Pfad des ganzen PRs: ein Schreibzugriff
+    // auf eine fremde, laufende Config. Ein sed-Bereich (`/ANFANG/,/ENDE/d`)
+    // wäre dafür ungeeignet, gleich doppelt:
+    //
+    //   * Fehlt die Endmarke, löscht sed ab ANFANG bis zum DATEIENDE.
+    //   * Steht ein ENDE VOR seinem ANFANG, ist jede Mengenzählung der Marken
+    //     ausgeglichen — und sed löscht trotzdem bis zum Dateiende.
+    //
+    // Im zweiten Fall kann der Rest syntaktisch gültig bleiben: `nginx -t` wäre
+    // grün, das Rückrollen bliebe aus, und der Reload übernähme den Verlust
+    // ganzer server-Blöcke. (Beide Befunde gpt-5.6-sol.)
+    const zeilen = (...z: string[]) => z.join("\n") + "\n";
+    const nutzlast = [
       "    proxy_pass http://127.0.0.1:3000;",
       "    ssl_certificate /etc/letsencrypt/live/example.de/fullchain.pem;",
       "}",
-    ].join("\n");
-    const rest = execFileSync("sed", ["/# BROTLI-ANFANG/,/# BROTLI-ENDE/d"], {
-      input: ohneEndmarke,
-      encoding: "utf8",
-    });
-    expect(rest.trim(), "sed schneidet hier bis EOF — genau darum die Zählung").toBe(
-      "server {",
-    );
+    ];
 
-    // Deshalb zählt bootstrap.sh beide Marken und bricht bei Ungleichstand ab,
-    // statt zu schneiden …
-    const stelle = bootstrap.indexOf("MARKEN_AUF=");
-    expect(stelle, "Markenzählung nicht gefunden").toBeGreaterThan(-1);
-    const abschnitt = bootstrap.slice(stelle, stelle + 900);
-    expect(abschnitt).toMatch(/MARKEN_ZU=/);
-    expect(abschnitt).toMatch(/"\$MARKEN_AUF" != "\$MARKEN_ZU"/);
-    expect(abschnitt, "Ungleichstand muss abbrechen, nicht schneiden").toMatch(
-      /fail /,
+    // Sauber gepaart: Block weg, alles andere bleibt.
+    const gut = ausBootstrap(
+      "brotli_block_entfernen",
+      zeilen(
+        "server {",
+        "    # BROTLI-ANFANG",
+        "    brotli on;",
+        "    # BROTLI-ENDE",
+        ...nutzlast,
+      ),
     );
-    // … und der Schnitt selbst läuft nur über eine Sicherungskopie.
-    expect(abschnitt).toMatch(/cp -a .*NGINX_SICHERUNG|NGINX_SICHERUNG=/);
-    const schnitt = bootstrap.indexOf("sed -i '/# BROTLI-ANFANG/");
-    expect(
-      bootstrap.slice(stelle, schnitt),
-      "keine Sicherung vor dem Schnitt",
-    ).toMatch(/cp -a/);
+    expect(gut.code).toBe(0);
+    expect(gut.aus).not.toMatch(/brotli/);
+    expect(gut.aus).toContain("ssl_certificate /etc/letsencrypt");
+    expect(gut.aus).toContain("proxy_pass");
+
+    // Endmarke fehlt → Abbruch statt Kürzung.
+    const ohneEnde = ausBootstrap(
+      "brotli_block_entfernen",
+      zeilen("server {", "    # BROTLI-ANFANG", "    brotli on;", ...nutzlast),
+    );
+    expect(ohneEnde.code, "kürzt still bis zum Dateiende").toBe(2);
+    expect(ohneEnde.fehler).toMatch(/ohne abschließendes BROTLI-ENDE/);
+
+    // ENDE vor ANFANG → ausgeglichene Zählung, trotzdem Abbruch.
+    const verdreht = ausBootstrap(
+      "brotli_block_entfernen",
+      zeilen(
+        "server {",
+        "    # BROTLI-ENDE",
+        "    # BROTLI-ANFANG",
+        "    brotli on;",
+        ...nutzlast,
+      ),
+    );
+    expect(verdreht.code, "1:1 gezählt und trotzdem bis EOF gelöscht").toBe(2);
+    expect(verdreht.fehler).toMatch(/ohne vorangehendes BROTLI-ANFANG/);
+
+    // Und der Schnitt an der bestehenden Config läuft nur über eine Sicherung.
+    const stelle = bootstrap.indexOf("Entferne brotli-Block aus der bestehenden");
+    expect(stelle, "Reparaturzweig nicht gefunden").toBeGreaterThan(-1);
+    const bisSchnitt = bootstrap.slice(
+      stelle,
+      bootstrap.indexOf("brotli_block_entfernen", stelle),
+    );
+    expect(bisSchnitt, "keine Sicherung vor dem Schnitt").toMatch(/cp -a/);
   });
 
   it("schlägt nginx -t nach dem Schnitt fehl, wird zurückgerollt", () => {
@@ -327,7 +388,11 @@ describe("Kompression: die Einrichtung bricht nicht an einem fehlenden Modul", (
       bootstrap.indexOf('if [[ "$NGINX_GEAENDERT" == "1" ]]', stelle),
     );
     expect(abschnitt).toMatch(/BROTLI_OK.*==.*"0"/s);
-    expect(abschnitt).toMatch(/sed -i.*BROTLI-ANFANG.*BROTLI-ENDE.*d/s);
+    expect(abschnitt).toMatch(/brotli_block_entfernen/);
+    // Und bei einem Abbruch der Funktion darf nichts an die Stelle der Config
+    // rutschen — die Zwischendatei wird verworfen, nicht verschoben.
+    expect(abschnitt, "Abbruch ohne fail()").toMatch(/fail /);
+    expect(abschnitt).toMatch(/rm -f .*\.neu/);
   });
 
   it("nach jeder Änderung an der Config laufen nginx -t und reload", () => {
@@ -343,7 +408,7 @@ describe("Kompression: die Einrichtung bricht nicht an einem fehlenden Modul", (
   });
 
   it("der Schnitt trifft auch den von certbot kopierten 443-Block", () => {
-    // Hier wird der echte sed-Befehl auf eine Config losgelassen, wie sie nach
+    // Hier wird die echte Funktion auf eine Config losgelassen, wie sie nach
     // `certbot --nginx` aussieht: der server{}-Block ist dupliziert, der
     // markierte Bereich taucht damit ZWEIMAL auf. Bliebe eine der beiden
     // brotli-Gruppen stehen, scheiterte `nginx -t` trotz Reparatur.
@@ -358,11 +423,9 @@ describe("Kompression: die Einrichtung bricht nicht an einem fehlenden Modul", (
         ),
     ].join("\n");
 
-    const geschnitten = execFileSync(
-      "sed",
-      ["/# BROTLI-ANFANG/,/# BROTLI-ENDE/d"],
-      { input: certbotConfig, encoding: "utf8" },
-    );
+    const ergebnis = ausBootstrap("brotli_block_entfernen", certbotConfig);
+    expect(ergebnis.code, ergebnis.fehler).toBe(0);
+    const geschnitten = ergebnis.aus;
 
     // Keine einzige brotli-Direktive überlebt …
     expect(

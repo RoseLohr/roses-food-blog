@@ -23,6 +23,37 @@ cd "$(dirname "$0")"
 log()  { printf '\n\033[1;32m==> %s\033[0m\n' "$*"; }
 fail() { printf '\n\033[1;31mFEHLER: %s\033[0m\n' "$*"; exit 1; }
 
+# Entfernt den mit „# BROTLI-ANFANG" / „# BROTLI-ENDE" markierten Block aus
+# stdin und schreibt den Rest nach stdout.
+#
+# Warum kein `sed '/ANFANG/,/ENDE/d'`: Ein sed-Bereich, dessen Endmuster nicht
+# mehr auftritt, läuft bis zum DATEIENDE. Fehlt die Endmarke, löscht er den
+# gesamten Rest der Config — TLS-Pfade, proxy_pass, ganze server-Blöcke. Und
+# eine bloße Mengenzählung der Marken deckt das nicht ab: Steht ein ENDE VOR
+# seinem ANFANG, sind beide Zahlen gleich, das Tor geht auf, und gelöscht wird
+# trotzdem bis zum Dateiende. Weil das Ergebnis syntaktisch gültig bleiben
+# kann, wäre `nginx -t` danach grün und der Verlust nicht zu bemerken.
+#
+# Dieser Durchlauf prüft stattdessen die Struktur und bricht mit Exit 2 ab,
+# statt still zu kürzen.
+brotli_block_entfernen() {
+  awk '
+    /# BROTLI-ANFANG/ {
+      if (drin) { fehler = "zweites BROTLI-ANFANG ohne dazwischenliegendes ENDE" ; exit 2 }
+      drin = 1; next
+    }
+    /# BROTLI-ENDE/ {
+      if (!drin) { fehler = "BROTLI-ENDE ohne vorangehendes BROTLI-ANFANG" ; exit 2 }
+      drin = 0; next
+    }
+    !drin { print }
+    END {
+      if (fehler == "" && drin) fehler = "BROTLI-ANFANG ohne abschließendes BROTLI-ENDE"
+      if (fehler != "") { print "Marken nicht sauber gepaart: " fehler > "/dev/stderr"; exit 2 }
+    }
+  '
+}
+
 SUDO="sudo"
 [[ $(id -u) -eq 0 ]] && SUDO=""
 
@@ -199,14 +230,19 @@ if [[ "$DOMAIN" != "localhost:${PORT:-3000}" && "$DOMAIN" != "localhost" && -n "
     # Nur das „…-filter"-Paket: es komprimiert im Durchreichen. Das Gegenstück
     # „…-static" liefert vorkomprimierte .br-Dateien aus — die erzeugt hier
     # niemand.
-    BROTLI_OK=1
-    $SUDO apt-get install -y libnginx-mod-http-brotli-filter || BROTLI_OK=0
-    # Der Rückgabewert von apt ist KEIN Beweis, dass nginx das Modul lädt: Das
-    # postinst des Pakets verlinkt nach /etc/nginx/modules-enabled NUR bei der
-    # Erstinstallation ([ -z "$2" ]). War das Paket schon installiert und der
-    # Link von Hand entfernt, meldet apt Erfolg und `load_module` fehlt
-    # trotzdem — ein „brotli on;" zerlegte dann das `nginx -t` weiter unten.
-    # Beweis ist der Link, nicht der Exit-Code.
+    # Der Rückgabewert von apt entscheidet hier NICHTS — in keine Richtung.
+    #
+    # Kein Erfolgsbeweis: Das postinst verlinkt nach modules-enabled NUR bei der
+    # Erstinstallation ([ -z "$2" ]). War das Paket schon da und der Link von
+    # Hand entfernt, meldet apt Erfolg und `load_module` fehlt trotzdem.
+    #
+    # Aber auch kein Misserfolgsbeweis: apt kann aus Gründen ungleich 0 sein,
+    # die mit brotli nichts zu tun haben — ein belegter dpkg-Lock, ein Spiegel,
+    # der gerade 404 liefert. Zählte das, entfernte ein solcher Aussetzer den
+    # brotli-Block aus einer laufenden Config, obwohl das Modul geladen ist.
+    #
+    # Maßgeblich ist allein, ob nginx das Modul lädt.
+    $SUDO apt-get install -y libnginx-mod-http-brotli-filter || true
     #
     # Gesucht wird gezielt das FILTER-Modul, nicht „irgendwas mit brotli": Das
     # Schwesterpaket …-static verlinkt ebenfalls nach modules-enabled, bringt
@@ -234,10 +270,11 @@ if [[ "$DOMAIN" != "localhost:${PORT:-3000}" && "$DOMAIN" != "localhost" && -n "
     # Block bei jedem Re-Run aus einer funktionierenden Config.
     # tests/kompression.test.ts führt genau diesen Befehl gegen die echte
     # Verzeichnisstruktur aus, in allen fünf Lagen.
-    if [[ "$BROTLI_OK" == "1" ]] &&
-      ! grep -Rqs --include='*.conf' -E \
-        '^[[:space:]]*load_module[^#]*ngx_http_brotli_filter_module' \
-        /etc/nginx/modules-enabled/; then
+    if grep -Rqs --include='*.conf' -E \
+      '^[[:space:]]*load_module[^#]*ngx_http_brotli_filter_module' \
+      /etc/nginx/modules-enabled/; then
+      BROTLI_OK=1
+    else
       BROTLI_OK=0
     fi
     if [[ "$BROTLI_OK" == "0" ]]; then
@@ -254,7 +291,7 @@ if [[ "$DOMAIN" != "localhost:${PORT:-3000}" && "$DOMAIN" != "localhost" && -n "
             -e "s/127\.0\.0\.1:3000/127.0.0.1:${PORT:-3000}/" \
             deploy/nginx.conf.example \
         | if [[ "$BROTLI_OK" == "1" ]]; then cat; else
-            sed '/# BROTLI-ANFANG/,/# BROTLI-ENDE/d'
+            brotli_block_entfernen
           fi
       )
       $SUDO ln -sf /etc/nginx/sites-available/roses-blog /etc/nginx/sites-enabled/roses-blog
@@ -272,30 +309,28 @@ if [[ "$DOMAIN" != "localhost:${PORT:-3000}" && "$DOMAIN" != "localhost" && -n "
       # kopierten 443-Block; alles außerhalb der Marken — Zertifikatspfade,
       # Weiterleitungen, proxy_pass — bleibt unangetastet.
       #
-      # ABER: Ein sed-Bereich, dessen Endmuster nie auftritt, läuft bis zum
-      # DATEIENDE. Fehlt „# BROTLI-ENDE" — von Hand entfernt, beim Editieren
-      # verrutscht —, löschte der Schnitt den gesamten Rest der Config: TLS,
-      # proxy_pass, schließende Klammern. Aus einer Reparatur würde ein
-      # Totalschaden an einer fremden, laufenden Datei. Deshalb wird nur
-      # geschnitten, wenn die Marken PAARWEISE aufgehen, und nur über eine
-      # Sicherungskopie.
+      # Geschnitten wird mit brotli_block_entfernen (siehe oben) — die
+      # Zustandsmaschine bricht bei unsauber gepaarten Marken ab, statt still
+      # bis zum Dateiende zu löschen. Und weil hier in eine fremde, laufende
+      # Datei geschrieben wird, geht nichts ohne Sicherungskopie.
       if [[ "$BROTLI_OK" == "0" ]] &&
         $SUDO grep -q '# BROTLI-ANFANG' /etc/nginx/sites-available/roses-blog; then
-        MARKEN_AUF=$($SUDO grep -c '# BROTLI-ANFANG' /etc/nginx/sites-available/roses-blog || true)
-        MARKEN_ZU=$($SUDO grep -c '# BROTLI-ENDE' /etc/nginx/sites-available/roses-blog || true)
-        if [[ "$MARKEN_AUF" != "$MARKEN_ZU" ]]; then
-          echo "Gefunden: $MARKEN_AUF × BROTLI-ANFANG, aber $MARKEN_ZU × BROTLI-ENDE."
-          echo "Ohne Endmarke schnitte sed bis zum Dateiende und zerstörte die Config."
-          fail "brotli-Block in /etc/nginx/sites-available/roses-blog ist unvollständig markiert.
-       Das Modul fehlt, die brotli-Zeilen müssen weg — bitte von Hand entfernen.
-       nginx nimmt die Config sonst nicht mehr an (unknown directive „brotli\")."
-        fi
         echo "Entferne brotli-Block aus der bestehenden Config — das Modul fehlt."
         NGINX_SICHERUNG="/etc/nginx/sites-available/roses-blog.vor-brotli-schnitt"
         $SUDO cp -a /etc/nginx/sites-available/roses-blog "$NGINX_SICHERUNG"
-        $SUDO sed -i '/# BROTLI-ANFANG/,/# BROTLI-ENDE/d' \
-          /etc/nginx/sites-available/roses-blog
-        NGINX_GEAENDERT=1
+        if $SUDO cat /etc/nginx/sites-available/roses-blog \
+          | brotli_block_entfernen \
+          | $SUDO tee /etc/nginx/sites-available/roses-blog.neu >/dev/null; then
+          $SUDO mv /etc/nginx/sites-available/roses-blog.neu \
+            /etc/nginx/sites-available/roses-blog
+          NGINX_GEAENDERT=1
+        else
+          $SUDO rm -f /etc/nginx/sites-available/roses-blog.neu
+          fail "Die brotli-Marken in /etc/nginx/sites-available/roses-blog sind
+       nicht sauber gepaart (Meldung oben). Es wurde NICHTS geändert.
+       Das Modul fehlt, die brotli-Zeilen müssen weg — bitte von Hand entfernen.
+       nginx nimmt die Config sonst nicht mehr an (unknown directive „brotli\")."
+        fi
       fi
       # Die Gegenrichtung — Modul ist da, Config kennt kein brotli — wird
       # bewusst NICHT automatisch nachgetragen: Dafür müsste das Skript in einen
