@@ -21,13 +21,15 @@ server {
     # wirkungslos. Beides ist konfiguriert: Browser mit brotli bekommen brotli,
     # alle anderen gzip.
     #
-    # brotli braucht das Modul libnginx-mod-brotli (Debian/Ubuntu). Es lädt
-    # sich über /etc/nginx/modules-enabled/ selbst; ein `load_module` gehört
-    # NICHT hierher, sondern auf die oberste Ebene der nginx.conf. Fehlt das
-    # Paket, kennt nginx die brotli-Direktiven nicht und `nginx -t` schlägt
-    # fehl — bootstrap.sh entfernt die vier Zeilen deshalb, wenn das Modul
-    # nicht installierbar war (siehe dort). Wer von Hand einrichtet:
-    #   sudo apt install libnginx-mod-brotli
+    # brotli braucht das Paket libnginx-mod-http-brotli-filter (Debian/Ubuntu;
+    # das Schwesterpaket …-static liefert nur vorkomprimierte .br-Dateien aus
+    # und reicht hier NICHT). Es lädt sich über /etc/nginx/modules-enabled/
+    # selbst; ein `load_module` gehört NICHT hierher, sondern auf die oberste
+    # Ebene der nginx.conf. Fehlt das Modul, kennt nginx die brotli-Direktiven
+    # nicht und `nginx -t` schlägt fehl — bootstrap.sh entfernt den Block
+    # deshalb, wenn das Modul nicht geladen ist (siehe dort). Wer von Hand
+    # einrichtet:
+    #   sudo apt install libnginx-mod-http-brotli-filter
     # und bei Fehlanzeige die brotli-Zeilen aus dieser Datei streichen.
     gzip on;
     gzip_types text/css application/javascript application/json image/svg+xml text/xml application/xml;

@@ -22,6 +22,7 @@
  * Antwort. Der Sprung von 5 auf 6 bringt 0,5 Prozentpunkte für 14 % mehr
  * Rechenzeit.
  */
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -165,10 +166,83 @@ describe("Kompression: die Einrichtung bricht nicht an einem fehlenden Modul", (
     // der Link von Hand entfernt, meldet apt Erfolg — und `load_module` fehlt
     // trotzdem. Dann stünde ein „brotli on;" ohne Modul in der Config und
     // `nginx -t` scheiterte unter `set -e` mitten in der Einrichtung.
-    expect(bootstrap).toMatch(/modules-enabled\/\*brotli\*/);
+    expect(bootstrap).toMatch(/modules-enabled/);
     // Und der Befund muss BROTLI_OK auch wirklich umlegen, nicht nur warnen.
-    const stelle = bootstrap.indexOf("modules-enabled/*brotli*");
+    const stelle = bootstrap.indexOf("modules-enabled/");
     expect(bootstrap.slice(stelle, stelle + 200)).toMatch(/BROTLI_OK=0/);
+  });
+
+  it("gesucht wird das FILTER-Modul, nicht „irgendwas mit brotli“", () => {
+    // Das Schwesterpaket …-static verlinkt ebenfalls nach modules-enabled
+    // (50-mod-http-brotli-static.conf), bringt aber nur `brotli_static` mit.
+    // Eine grobe Suche nach „*brotli*" ginge damit auf, während `brotli on;`
+    // eine unbekannte Direktive bliebe — genau der harte nginx-Fehler, den die
+    // Prüfung verhindern soll. (Panel-Befund gpt-5.6-sol.)
+    expect(bootstrap).toMatch(/ngx_http_brotli_filter_module/);
+    expect(
+      bootstrap,
+      "grobe Modulsuche — das Static-Modul erfüllt sie fälschlich",
+    ).not.toMatch(/modules-enabled\/\*brotli\*/);
+  });
+
+  it("eine bestehende Config wird repariert, wenn das Modul verschwindet", () => {
+    // Der Re-Run lässt die Config in Ruhe, um certbots 443-Block nicht zu
+    // überschreiben. Für brotli darf das NICHT gelten: Wurde die Config einst
+    // mit Modul geschrieben und ist es heute weg (nginx-Upgrade auf eine neue
+    // ABI — das Paket hängt an nginx-abi-1.24.0-1 —, Paket entfernt), bliebe
+    // eine Config stehen, die nginx nicht mehr annimmt. (Panel-Befund
+    // gpt-5.6-sol.)
+    const stelle = bootstrap.indexOf("Server-Block unverändert gelassen");
+    expect(stelle, "Re-Run-Zweig nicht gefunden").toBeGreaterThan(-1);
+    const abschnitt = bootstrap.slice(stelle, stelle + 1600);
+    expect(abschnitt).toMatch(/BROTLI_OK.*==.*"0"/s);
+    expect(abschnitt).toMatch(/sed -i.*BROTLI-ANFANG.*BROTLI-ENDE.*d/s);
+  });
+
+  it("nach jeder Änderung an der Config laufen nginx -t und reload", () => {
+    // Sonst bliebe die Reparatur oben ungeprüft liegen und würde erst beim
+    // nächsten Neustart wirksam — im schlechtesten Fall nach einem Reboot,
+    // wenn niemand mehr weiß, warum nginx nicht hochkommt.
+    expect(bootstrap).toMatch(/NGINX_GEAENDERT=1/);
+    const stelle = bootstrap.indexOf('if [[ "$NGINX_GEAENDERT" == "1" ]]');
+    expect(stelle, "Sammelzweig für nginx -t nicht gefunden").toBeGreaterThan(-1);
+    const abschnitt = bootstrap.slice(stelle, stelle + 200);
+    expect(abschnitt).toMatch(/nginx -t/);
+    expect(abschnitt).toMatch(/systemctl reload nginx/);
+  });
+
+  it("der Schnitt trifft auch den von certbot kopierten 443-Block", () => {
+    // Hier wird der echte sed-Befehl auf eine Config losgelassen, wie sie nach
+    // `certbot --nginx` aussieht: der server{}-Block ist dupliziert, der
+    // markierte Bereich taucht damit ZWEIMAL auf. Bliebe eine der beiden
+    // brotli-Gruppen stehen, scheiterte `nginx -t` trotz Reparatur.
+    const vorlage = nginx;
+    const certbotConfig = [
+      vorlage,
+      vorlage
+        .replace("listen 80;", "listen 443 ssl;")
+        .replace(
+          "server_name",
+          "ssl_certificate /etc/letsencrypt/live/example.de/fullchain.pem;\n    server_name",
+        ),
+    ].join("\n");
+
+    const geschnitten = execFileSync(
+      "sed",
+      ["/# BROTLI-ANFANG/,/# BROTLI-ENDE/d"],
+      { input: certbotConfig, encoding: "utf8" },
+    );
+
+    // Keine einzige brotli-Direktive überlebt …
+    expect(
+      direktiven(geschnitten).filter((z) => z.startsWith("brotli")),
+    ).toEqual([]);
+    // … gzip und alles außerhalb der Marken schon.
+    expect(direktiven(geschnitten)).toContain("gzip on;");
+    expect(geschnitten).toContain("ssl_certificate /etc/letsencrypt");
+    expect(geschnitten.match(/proxy_pass http:\/\/127\.0\.0\.1:3000;/g)).toHaveLength(
+      4,
+    );
   });
 
   it("ohne Modul werden die brotli-Direktiven aus der Config entfernt", () => {

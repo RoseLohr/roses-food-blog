@@ -207,8 +207,13 @@ if [[ "$DOMAIN" != "localhost:${PORT:-3000}" && "$DOMAIN" != "localhost" && -n "
     # Link von Hand entfernt, meldet apt Erfolg und `load_module` fehlt
     # trotzdem — ein „brotli on;" zerlegte dann das `nginx -t` weiter unten.
     # Beweis ist der Link, nicht der Exit-Code.
+    #
+    # Gesucht wird gezielt das FILTER-Modul, nicht „irgendwas mit brotli": Das
+    # Schwesterpaket …-static verlinkt ebenfalls nach modules-enabled, bringt
+    # aber nur `brotli_static` mit. Wäre nur das installiert, ginge eine grobe
+    # Suche auf, und `brotli on;` bliebe eine unbekannte Direktive.
     if [[ "$BROTLI_OK" == "1" ]] &&
-      ! compgen -G "/etc/nginx/modules-enabled/*brotli*" >/dev/null; then
+      ! grep -rqs ngx_http_brotli_filter_module /etc/nginx/modules-enabled/; then
       BROTLI_OK=0
     fi
     if [[ "$BROTLI_OK" == "0" ]]; then
@@ -217,6 +222,7 @@ if [[ "$DOMAIN" != "localhost:${PORT:-3000}" && "$DOMAIN" != "localhost" && -n "
     fi
     # nginx-Config nur beim ersten Mal aus der HTTP-Vorlage schreiben. Ein
     # Re-Run darf certbots eingefügten TLS-/443-Block NICHT überschreiben.
+    NGINX_GEAENDERT=0
     if [[ ! -e /etc/nginx/sites-available/roses-blog ]]; then
       $SUDO tee /etc/nginx/sites-available/roses-blog >/dev/null < <(
         sed -e "s/www\.example\.de example\.de/$DOMAIN/" \
@@ -227,10 +233,40 @@ if [[ "$DOMAIN" != "localhost:${PORT:-3000}" && "$DOMAIN" != "localhost" && -n "
           fi
       )
       $SUDO ln -sf /etc/nginx/sites-available/roses-blog /etc/nginx/sites-enabled/roses-blog
+      NGINX_GEAENDERT=1
+    else
+      echo "nginx-Config existiert bereits — Server-Block unverändert gelassen."
+      # GENAU EINE Ausnahme von „unverändert": brotli-Direktiven ohne geladenes
+      # Modul sind ein harter `nginx -t`-Fehler, kein stiller Rückfall auf gzip.
+      # Wurde die Config einst MIT brotli geschrieben und ist das Modul heute
+      # weg (nginx-Upgrade auf eine neue ABI — das Paket hängt an
+      # nginx-abi-1.24.0-1 —, Paket entfernt, Distributionswechsel), stünde hier
+      # eine ungültige Config, die nginx beim nächsten Start nicht mehr annimmt.
+      # Der markierte Block wird deshalb gezielt herausgeschnitten. Der
+      # sed-Bereich trifft JEDES Vorkommen, also auch das in den von certbot
+      # kopierten 443-Block; alles außerhalb der Marken — Zertifikatspfade,
+      # Weiterleitungen, proxy_pass — bleibt unangetastet.
+      if [[ "$BROTLI_OK" == "0" ]] &&
+        $SUDO grep -q '# BROTLI-ANFANG' /etc/nginx/sites-available/roses-blog; then
+        echo "Entferne brotli-Block aus der bestehenden Config — das Modul fehlt."
+        $SUDO sed -i '/# BROTLI-ANFANG/,/# BROTLI-ENDE/d' \
+          /etc/nginx/sites-available/roses-blog
+        NGINX_GEAENDERT=1
+      fi
+      # Die Gegenrichtung — Modul ist da, Config kennt kein brotli — wird
+      # bewusst NICHT automatisch nachgetragen: Dafür müsste das Skript in einen
+      # von certbot verwalteten Block hineinschreiben, und der Zustand ist
+      # funktionsfähig (gzip), nur nicht optimal. Wer nachrüsten will, nimmt den
+      # Block aus deploy/nginx.conf.example (README §4).
+      if [[ "$BROTLI_OK" == "1" ]] &&
+        ! $SUDO grep -q '# BROTLI-ANFANG' /etc/nginx/sites-available/roses-blog; then
+        echo "HINWEIS: brotli-Modul ist aktiv, die bestehende Config nutzt es aber nicht."
+        echo "         Nachrüsten: Block aus deploy/nginx.conf.example übernehmen (README §4)."
+      fi
+    fi
+    if [[ "$NGINX_GEAENDERT" == "1" ]]; then
       $SUDO nginx -t
       $SUDO systemctl reload nginx
-    else
-      echo "nginx-Config existiert bereits — unverändert gelassen."
     fi
     # certbot nur, wenn noch kein Zertifikat existiert (sonst Re-Run-Rausch /
     # Rate-Limit-Risiko).
