@@ -208,3 +208,86 @@ test.describe("Bild-Auslieferung: gewählte Variante passt zur Rendergröße", (
     }
   }
 });
+
+/**
+ * Auslieferungs-Budget: Wie viel Pixelfläche wird ÜBER den Bedarf hinaus
+ * geliefert — über alle Seiten und Geräteklassen zusammen?
+ *
+ * Die Prüfungen oben arbeiten je Bild und fragen: „passt die gewählte Stufe
+ * zur Rendergröße?" Sie sind gegen Fehlgriffe robust, sagen aber nichts über
+ * die LEITER selbst. Eine Leiter mit nur zwei Stufen (160, 1920) bestünde
+ * jede einzelne Prüfung — 1920 ist dann schlicht „die kleinste deckende
+ * Stufe" — und lieferte trotzdem systematisch das Vielfache.
+ *
+ * Genau diese Lücke schließt dieser Test. Er misst, was die Leiter im
+ * Zusammenspiel mit den echten Layouts kostet, und macht eine Leiter-Änderung
+ * belegpflichtig statt begründungspflichtig.
+ *
+ * NUR ÜBERGRÖSSE, KEINE NETTOBILANZ. Die erste Fassung summierte geliefert
+ * gegen gebraucht und bildete die Differenz — dabei hoben sich zu große
+ * Thumbnails und gedeckelte Großbilder gegenseitig auf: Gemessen kam −4,3 %
+ * heraus, obwohl 18,5 % Übergröße im Spiel waren. Ein Budget, das sich durch
+ * UNTERlieferung erfüllen lässt, misst das Falsche. Unterlieferung ist Sache
+ * der SCHAERFE_MINIMUM-Prüfung oben; hier zählt ausschließlich, was zu viel
+ * war.
+ *
+ * Warum Pixelfläche und nicht Bytes: Ein Byte-Budget bräuchte ein festes
+ * Referenzbild. Auf einem synthetisch erzeugten Bild steigen die Bytes pro
+ * Pixel mit der Breite (gemessen 0,083 bei w160 auf 0,149 bei w1920), weil
+ * eingestreutes Rauschen beim Verkleinern verschwindet, beim Vergrößern aber
+ * nicht — eine daran kalibrierte Grenze sagt über echte Fotos nichts. An
+ * echten Fotos kalibriert bräche sie bei jedem libwebp-Sprung und lüde zum
+ * Lockern ein. Pixelfläche ist encoder-unabhängig und misst genau das, was
+ * die Leiter beeinflusst. Die Kompression selbst bewacht das relative Budget
+ * in tests/media-regeneration.integration.test.ts.
+ */
+/** Gemessen: alte Leiter 26,6 %, mit der Stufe 1152 noch 18,5 %. Der Deckel
+ *  liegt dazwischen — wer 1152 wieder entfernt, wird rot. */
+const UEBERGROESSE_DECKEL = 0.22;
+
+test.describe("Bild-Auslieferung: Budget über alle Seiten", () => {
+  test("die Leiter liefert nicht systematisch zu groß aus", async ({
+    browser,
+  }) => {
+    let zuviel = 0;
+    let gebraucht = 0;
+    let bilder = 0;
+    const schlimmste: Array<{ faktor: number; info: string }> = [];
+
+    for (const kontext of KONTEXTE) {
+      for (const seite of SEITEN) {
+        for (const m of await messeSeite(browser, kontext, seite)) {
+          const gewaehlt = Number(/\/w(\d+)\.webp/.exec(m.current)?.[1] ?? 0);
+          const bedarf = Math.ceil(m.breite * kontext.deviceScaleFactor);
+          if (!gewaehlt || !bedarf) continue;
+          // Fläche statt Breite: Bytes hängen an der Fläche, ein
+          // Breitenvergleich unterschätzte den Aufwand quadratisch.
+          zuviel += Math.max(0, gewaehlt * gewaehlt - bedarf * bedarf);
+          gebraucht += bedarf * bedarf;
+          bilder++;
+          schlimmste.push({
+            faktor: (gewaehlt * gewaehlt) / (bedarf * bedarf),
+            info: `${seite} · ${kontext.name} · Bedarf ${bedarf}px → w${gewaehlt}`,
+          });
+        }
+      }
+    }
+
+    // Fail-closed: ohne Messwerte prüft der Test nichts.
+    expect(bilder, "keine Upload-Bilder gemessen").toBeGreaterThan(50);
+
+    const uebergroesse = zuviel / gebraucht;
+    schlimmste.sort((a, b) => b.faktor - a.faktor);
+    const bericht = schlimmste
+      .slice(0, 8)
+      .map((s) => `  ×${s.faktor.toFixed(2)}  ${s.info}`)
+      .join("\n");
+
+    expect(
+      uebergroesse,
+      `Übergröße ${(uebergroesse * 100).toFixed(1)} % über ${bilder} Bilder ` +
+        `(Deckel ${(UEBERGROESSE_DECKEL * 100).toFixed(0)} %).\n` +
+        `Größte Einzelabweichungen:\n${bericht}`,
+    ).toBeLessThanOrEqual(UEBERGROESSE_DECKEL);
+  });
+});
