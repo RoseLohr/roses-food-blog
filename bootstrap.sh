@@ -36,6 +36,38 @@ fail() { printf '\n\033[1;31mFEHLER: %s\033[0m\n' "$*"; exit 1; }
 #
 # Dieser Durchlauf prüft stattdessen die Struktur und bricht mit Exit 2 ab,
 # statt still zu kürzen.
+# Beantwortet: Kennt nginx die brotli-Direktiven? — „ja", „nein" oder
+# „unbekannt". Erwartet die Ausgabe von `nginx -T` (samt stderr) auf stdin und
+# dessen Exit-Code als $1.
+#
+# Der unscheinbare Fall ist der zweite Zweig. Wenn eine bestehende Config
+# `brotli on;` enthält und das Modul fehlt, dann scheitert `nginx -T` GENAU
+# daran — die Konfiguration ist ja ungültig. Würde das pauschal als
+# „unbekannt" gewertet, wäre die Reparatur weiter unten ausgerechnet in ihrem
+# eigenen Anwendungsfall unerreichbar: Die kaputte Config bliebe liegen, der
+# Re-Run liefe grün durch, und der nächste nginx-Start scheiterte.
+#
+# nginx nennt den Grund aber selbst — „unknown directive \"brotli…\"". Das ist
+# ein belegtes Nein, kein Verdacht: nginx sagt wörtlich, dass es die Direktive
+# nicht kennt. Jeder ANDERE Fehler bleibt „unbekannt", denn dann liegt das
+# Problem woanders und an der Config wird nichts angefasst.
+brotli_modul_status() {
+  local code="$1" ausgabe
+  ausgabe="$(cat)"
+  if [[ "$code" == "0" ]]; then
+    if printf '%s\n' "$ausgabe" |
+      grep -qE '^[[:space:]]*load_module[^#]*ngx_http_brotli_filter_module'; then
+      printf 'ja\n'
+    else
+      printf 'nein\n'
+    fi
+  elif printf '%s\n' "$ausgabe" | grep -q 'unknown directive "brotli'; then
+    printf 'nein\n'
+  else
+    printf 'unbekannt\n'
+  fi
+}
+
 brotli_block_entfernen() {
   awk '
     /# BROTLI-ANFANG/ {
@@ -267,20 +299,19 @@ if [[ "$DOMAIN" != "localhost:${PORT:-3000}" && "$DOMAIN" != "localhost" && -n "
     # auch Kommentarzeilen, und „# load_module …brotli…" ist kein geladenes
     # Modul. Und gesucht wird das FILTER-Modul: Das Schwesterpaket …-static
     # bringt nur `brotli_static` mit, `brotli on;` bliebe damit unbekannt.
-    BROTLI_MODUL=unbekannt
-    if NGINX_EFFEKTIV="$($SUDO nginx -T 2>/dev/null)"; then
-      if printf '%s\n' "$NGINX_EFFEKTIV" | grep -qE \
-        '^[[:space:]]*load_module[^#]*ngx_http_brotli_filter_module'; then
-        BROTLI_MODUL=ja
-      else
-        BROTLI_MODUL=nein
-      fi
+    # stderr wird mit eingefangen: Scheitert `nginx -T`, steht dort die
+    # Begründung, und die brauchen wir (siehe brotli_modul_status).
+    if NGINX_EFFEKTIV="$($SUDO nginx -T 2>&1)"; then
+      NGINX_CODE=0
+    else
+      NGINX_CODE=$?
     fi
-    unset NGINX_EFFEKTIV
-    # `nginx -T` scheitert nur, wenn die aktuelle Konfiguration ungültig ist.
-    # Dann ist NICHT feststellbar, ob das Modul geladen würde — und dann wird an
-    # einer bestehenden Config nichts geschnitten (siehe unten). Für eine neu
-    # geschriebene Config ist „ohne brotli" die sichere Wahl: gzip funktioniert.
+    BROTLI_MODUL="$(printf '%s\n' "$NGINX_EFFEKTIV" | brotli_modul_status "$NGINX_CODE")"
+    unset NGINX_EFFEKTIV NGINX_CODE
+    # Bleibt es bei „unbekannt", ist die Konfiguration aus einem Grund ungültig,
+    # der mit brotli nichts zu tun hat. Dann wird an einer bestehenden Config
+    # nichts geschnitten (siehe unten). Für eine neu geschriebene Config ist
+    # „ohne brotli" die sichere Wahl: gzip funktioniert.
     if [[ "$BROTLI_MODUL" == "ja" ]]; then BROTLI_OK=1; else BROTLI_OK=0; fi
     if [[ "$BROTLI_MODUL" == "nein" ]]; then
       echo "HINWEIS: brotli-Modul nicht aktiv — nginx komprimiert nur mit gzip."

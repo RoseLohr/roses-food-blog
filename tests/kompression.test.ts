@@ -191,12 +191,12 @@ describe("Kompression: App schweigt, Proxy komprimiert", () => {
 const BROTLI_PAKET = "libnginx-mod-http-brotli-filter";
 
 /** Führt eine Funktion aus bootstrap.sh mit der übergebenen Eingabe aus. */
-function ausBootstrap(funktion: string, eingabe: string) {
+function ausBootstrap(funktion: string, eingabe: string, ...args: string[]) {
   const ergebnis = spawnSync(
     "bash",
     [
       "-c",
-      `source <(sed -n "/^${funktion}()/,/^}/p" bootstrap.sh); ${funktion}`,
+      `source <(sed -n "/^${funktion}()/,/^}/p" bootstrap.sh); ${funktion} ${args.join(" ")}`,
     ],
     { input: eingabe, encoding: "utf8", cwd: ROOT },
   );
@@ -258,15 +258,25 @@ describe("Kompression: die Einrichtung bricht nicht an einem fehlenden Modul", (
     // trotzdem. Dann stünde ein „brotli on;" ohne Modul in der Config und
     // `nginx -t` scheiterte unter `set -e` mitten in der Einrichtung.
     // Verankert am Code, nicht am ersten Vorkommen im Fließtext: Der Nachweis
-    // muss BROTLI_MODUL in BEIDE Richtungen setzen, nicht bloß warnen.
+    // muss den Status aus nginx' eigener Antwort ableiten, nicht aus apt.
     const stelle = bootstrap.indexOf("if NGINX_EFFEKTIV=");
     expect(stelle, "Modulnachweis nicht gefunden").toBeGreaterThan(-1);
     const abschnitt = bootstrap.slice(
       stelle,
       bootstrap.indexOf("unset NGINX_EFFEKTIV", stelle),
     );
-    expect(abschnitt).toMatch(/BROTLI_MODUL=ja/);
-    expect(abschnitt).toMatch(/BROTLI_MODUL=nein/);
+    expect(abschnitt).toMatch(/nginx -T/);
+    expect(abschnitt).toMatch(/BROTLI_MODUL="?\$\(/);
+    expect(abschnitt).toMatch(/brotli_modul_status/);
+    // Und der Exit-Code von nginx -T muss mitgereicht werden — ohne ihn kann
+    // die Funktion „Konfiguration ungültig, weil brotli fehlt" nicht von
+    // „Konfiguration gültig, Modul nicht geladen" unterscheiden.
+    // Geprüft wird die ÜBERGABESTELLE, nicht bloß das Vorkommen des Namens:
+    // NGINX_CODE steht auch in den Zuweisungen darüber, ein Aufruf mit fester
+    // 0 käme an einer reinen Namenssuche vorbei.
+    expect(abschnitt, "Exit-Code von nginx -T wird verworfen").toMatch(
+      /brotli_modul_status "\$NGINX_CODE"/,
+    );
   });
 
   it("gefragt wird nginx selbst, nicht ein einzelnes Verzeichnis", () => {
@@ -298,74 +308,82 @@ describe("Kompression: die Einrichtung bricht nicht an einem fehlenden Modul", (
     ).toMatch(/BROTLI_MODUL"?\s*==\s*"nein"/);
   });
 
-  it("die Modulprüfung erkennt genau das Filter-Modul — echt ausgeführt", () => {
-    // Diese Prüfung beurteilt NICHT die Schreibweise des Ausdrucks, sondern
-    // führt ihn gegen realistische `nginx -T`-Ausgaben aus. Drei Tarnungen
-    // stecken darin, alle von gpt-5.6-sol gefunden:
+  it("die Modulprüfung beantwortet alle sieben Lagen — echt ausgeführt", () => {
+    // Diese Prüfung führt brotli_modul_status aus bootstrap.sh aus, statt über
+    // seine Schreibweise zu urteilen. Vier Tarnungen stecken darin, alle von
+    // gpt-5.6-sol gefunden:
     //
-    // 1. Das Schwesterpaket …-static bringt nur `brotli_static` mit. Eine grobe
-    //    Suche ginge auf, während `brotli on;` unbekannt bliebe.
+    // 1. Das Schwesterpaket …-static bringt nur `brotli_static` mit.
     // 2. Eine auskommentierte Zeile ist kein geladenes Modul.
-    // 3. Das `load_module` kann auch direkt in der nginx.conf stehen — wer nur
-    //    modules-enabled ansieht, übersieht es und schneidet den brotli-Block
-    //    aus einer laufenden Config heraus.
-    //
-    // Fall 3 ist der gefährlichste: Er sieht nicht nach „brotli fehlt" aus,
-    // sondern nach einem Server, der sich still selbst verschlechtert.
-    const befund = /\|\s*(grep -qE[^\n]*\\?\n?[^\n]*ngx_http_brotli_filter_module[^;]*);/
-      .exec(bootstrap);
-    expect(befund, "Modulprüfung in bootstrap.sh nicht gefunden").not.toBeNull();
+    // 3. Das `load_module` kann direkt in der nginx.conf stehen — deshalb wird
+    //    `nginx -T` gefragt und nicht ein Verzeichnis durchsucht.
+    // 4. Der heikelste Fall: Enthält die bestehende Config `brotli on;` OHNE
+    //    Modul, dann scheitert `nginx -T` genau daran. Würde das pauschal
+    //    „unbekannt" ergeben, wäre die Reparatur ausgerechnet in ihrem eigenen
+    //    Anwendungsfall unerreichbar — die kaputte Config bliebe liegen und der
+    //    nächste nginx-Start scheiterte. nginx nennt den Grund aber selbst.
+    const status = (ausgabe: string, code: number) =>
+      ausBootstrap("brotli_modul_status", ausgabe, String(code)).aus.trim();
 
-    /** Führt den echten grep-Ausdruck gegen eine nginx-T-Ausgabe aus. */
-    const findet = (ausgabe: string) =>
-      spawnSync("bash", ["-c", befund![1]], { input: ausgabe, cwd: ROOT })
-        .status === 0;
-
-    // So sieht es aus, wenn das Paket die Datei nach modules-enabled verlinkt
-    // und `nginx -T` sie mit ausgibt.
-    const ueberModulesEnabled = [
-      "# configuration file /etc/nginx/nginx.conf:",
-      "include /etc/nginx/modules-enabled/*.conf;",
-      "",
-      "# configuration file /etc/nginx/modules-enabled/50-mod-http-brotli-filter.conf:",
-      "load_module modules/ngx_http_brotli_filter_module.so;",
-    ].join("\n");
-    expect(findet(ueberModulesEnabled), "findet das verlinkte Modul nicht").toBe(
-      true,
-    );
-
-    // Und so, wenn jemand es direkt in die nginx.conf geschrieben hat.
-    const inNginxConf = [
-      "# configuration file /etc/nginx/nginx.conf:",
-      "load_module modules/ngx_http_brotli_filter_module.so;",
-      "events { worker_connections 768; }",
-    ].join("\n");
+    // --- nginx -T lief durch (Exit 0) ---
     expect(
-      findet(inNginxConf),
-      "übersieht load_module in der nginx.conf — schneidet dann eine laufende Config",
-    ).toBe(true);
+      status(
+        [
+          "# configuration file /etc/nginx/modules-enabled/50-mod-http-brotli-filter.conf:",
+          "load_module modules/ngx_http_brotli_filter_module.so;",
+        ].join("\n"),
+        0,
+      ),
+      "erkennt das verlinkte Modul nicht",
+    ).toBe("ja");
+    expect(
+      status(
+        [
+          "# configuration file /etc/nginx/nginx.conf:",
+          "load_module modules/ngx_http_brotli_filter_module.so;",
+        ].join("\n"),
+        0,
+      ),
+      "übersieht load_module in der nginx.conf",
+    ).toBe("ja");
+    expect(
+      status("load_module modules/ngx_http_brotli_static_module.so;", 0),
+      "hält das Static-Modul für das Filter-Modul",
+    ).toBe("nein");
+    expect(
+      status("  # load_module modules/ngx_http_brotli_filter_module.so;", 0),
+      "hält eine auskommentierte Zeile für ein geladenes Modul",
+    ).toBe("nein");
 
-    // Nur das Static-Modul: `brotli on;` bliebe unbekannt.
+    // --- nginx -T scheiterte ---
     expect(
-      findet("load_module modules/ngx_http_brotli_static_module.so;"),
-      "hält das Static-Modul fälschlich für das Filter-Modul",
-    ).toBe(false);
-
-    // Auskommentiert ist nicht geladen.
+      status(
+        [
+          'nginx: [emerg] unknown directive "brotli" in /etc/nginx/sites-enabled/roses-blog:35',
+          "nginx: configuration file /etc/nginx/nginx.conf test failed",
+        ].join("\n"),
+        1,
+      ),
+      "Reparatur unerreichbar: nginx sagt selbst, dass es brotli nicht kennt",
+    ).toBe("nein");
     expect(
-      findet("# load_module modules/ngx_http_brotli_filter_module.so;"),
-      "hält eine auskommentierte load_module-Zeile für ein geladenes Modul",
-    ).toBe(false);
+      status(
+        'nginx: [emerg] unknown directive "brotli_comp_level" in /etc/nginx/sites-enabled/roses-blog:49',
+        1,
+      ),
+      "erkennt nur die Direktive „brotli“, nicht die übrigen des Blocks",
+    ).toBe("nein");
     expect(
-      findet("    #load_module modules/ngx_http_brotli_filter_module.so;"),
-      "hält eine eingerückte Kommentarzeile für ein geladenes Modul",
-    ).toBe(false);
-
-    // Gar nichts.
+      status('nginx: [emerg] unexpected "}" in /etc/nginx/nginx.conf:112', 1),
+      "hält einen fremden Konfigurationsfehler für ein fehlendes brotli-Modul",
+    ).toBe("unbekannt");
     expect(
-      findet("events { worker_connections 768; }"),
-      "meldet ein Modul, wo keines geladen ist",
-    ).toBe(false);
+      status(
+        'nginx: [emerg] cannot load certificate "/etc/letsencrypt/live/x/fullchain.pem"',
+        1,
+      ),
+      "hält ein Zertifikatsproblem für ein fehlendes brotli-Modul",
+    ).toBe("unbekannt");
   });
 
   it("unsaubere Marken kürzen die Config nicht — die Funktion, echt ausgeführt", () => {
