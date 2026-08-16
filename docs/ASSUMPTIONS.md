@@ -69,11 +69,19 @@ Annahmen, die während der Umsetzung getroffen wurden:
   Übersetzung überflüssig macht. Getragen wird B17 seither von
   `npm ci --ignore-scripts` im Containerfile, ratifiziert in
   `tests/build-abhaengigkeiten.test.ts` und ausgeführt vom CI-Job `image`.
-- **B19 — Schriften:** Statt heruntergeladener Webfonts werden hochwertige
-  System-Schrift-Stacks verwendet (Serif für Überschriften, Sans für Text).
-  Das erfüllt „selbst gehostet/keine externen CDNs" (A7) mit 0 KB Font-Payload
-  und bestmöglicher Ladezeit. Eigene Font-Dateien können später einfach unter
-  `public/fonts` + `@font-face` ergänzt werden.
+- **B19 — Schriften:** Ursprünglich System-Schrift-Stacks (0 KB Payload).
+  Diese Annahme gilt seit der Marken-Umsetzung NICHT mehr: Unter `public/fonts`
+  liegen drei selbst gehostete Variable-woff2 — Raleway (`--font-display`,
+  Überschriften), Nunito Sans (`--font-sans`, Fließtext) und Jost
+  (`--font-brand`, ausschließlich das Marken-Lockup). Kein externes CDN, kein
+  Laufzeit-Download; A7 bleibt damit erfüllt, nur eben mit eigenen Dateien.
+  *Stand 2026-08-16:* zusammen 92.916 B. Die Dateien sind latin-subgesetzt
+  (221–231 Zeichen); der verbliebene Ballast steckt in der `gvar`-Tabelle, also
+  in der Breite der Gewichtsachse. Die Achsen sind deshalb auf die im Browser
+  GEMESSEN benutzten Schnitte beschnitten (Jost 400–500, Nunito Sans 400–800,
+  Raleway 100–800) — das nimmt 13.000 B heraus, davon allein 9.400 B bei Jost.
+  `tests/schrift-achsen.test.ts` hält Achse, `@font-face`-Spanne und die im
+  Quelltext angeforderten Gewichte gegeneinander fest und deckelt die Summe.
 - **B20 — CSP und Inline-Skripte:** Die CSP erlaubt `'unsafe-inline'` für
   script-src, weil Next.js Bootstrap-Inline-Skripte nutzt; sämtliche externen
   Quellen bleiben blockiert (default-src 'self'). Nonce-basierte CSP wäre mit
