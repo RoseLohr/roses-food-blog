@@ -23,12 +23,56 @@ ARG LOW_CPU=0
 # Browser werden nur lokal/CI zum Testen gebraucht, nie zur Laufzeit.
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 COPY package.json package-lock.json ./
-RUN npm ci --no-audit --no-fund
+# --ignore-scripts: KEIN Fremdcode beim Installieren — und genau deshalb baut
+# hier auch nichts mehr aus Quelltext.
+#
+# WARUM (Deploy-Fehlschlag 2026-08-16, Commit 298e6b6): better-sqlite3 13
+# liefert im veröffentlichten Paket fertige Binärdateien mit
+# (`prebuilds/linux-x64.node`) — aber eben AUCH eine `binding.gyp`, und es
+# definiert kein eigenes `install`-Skript. In dieser Konstellation ergänzt npm
+# von sich aus den Standardbefehl `node-gyp rebuild`:
+#
+#   npm error path /app/node_modules/better-sqlite3
+#   npm error command sh -c node-gyp rebuild
+#   npm error gyp ERR! find Python … Could not find any Python installation
+#
+# GESCHEITERT IST NICHT DAS ÜBERSETZEN, SONDERN DAS VORBEREITEN DES ÜBERSETZENS.
+# Die binding.gyp des Pakets ist nämlich extra so gebaut, dass sie bei
+# vorhandener Binärdatei NICHTS tut: Beide Targets stehen unter
+# `['force_build==1 or prebuild_exists==0', …, { 'type': 'none' }]`, und
+# `prebuild_exists` ermittelt `node lib/binding.js` aus dem Vorhandensein von
+# `prebuilds/<plattform>-<arch>.node`. node-gyp kommt dort aber nie an: Schon
+# der configure-Schritt braucht Python, und den gibt es im Basisimage
+# (bookworm-SLIM) nicht. Übersetzt worden wäre also ohnehin nichts — es
+# scheiterte an der Vorbereitung eines Leerlaufs.
+#
+# Bis Version 12 stand dort `prebuild-install || node-gyp rebuild`, das lud die
+# Binärdatei und übersetzte nur im Notfall. Der Wechsel auf 13.0.1 (PR #46)
+# entfernte dieses Skript — seither greift der npm-Standard. 13.0.2 und 13.0.3
+# sind unverändert, ein Versionssprung behebt es also nicht.
+#
+# NICHT der Weg: Python und einen Compiler ins Build-Image legen. Sie würden
+# einen Schritt ermöglichen, der nachweislich nichts erzeugt — Bauzeit und
+# Angriffsfläche für einen Leerlauf. Ohne Install-Skripte wird die
+# mitgelieferte Binärdatei benutzt, so wie vom Paket vorgesehen.
+#
+# Pakete mit Lifecycle-Skripten im Baum sind better-sqlite3, esbuild (dessen
+# postinstall nur die Plattform-Binärdatei prüft; die API arbeitet auch ohne)
+# und fsevents (nur macOS, im Linux-Image gar nicht installiert). Alle drei sind
+# nachgemessen und in tests/build-abhaengigkeiten.test.ts ratifiziert. Kommt ein
+# VIERTES hinzu, schlägt diese Kontrolle an — dann ist zu entscheiden, nicht zu
+# hoffen.
+RUN npm ci --no-audit --no-fund --ignore-scripts
 # Schnelltest der nativen Module — schlägt hier gezielt fehl (mit Modulname
 # im Log), statt später anonym im Next-Build. Passworthashing läuft über
 # hash-wasm (WASM, CPU-portabel) — kein nativer Test nötig. sharp wird auf
 # LOW_CPU nie geladen und daher dort auch nicht getestet.
-RUN node -e "require('better-sqlite3')" && echo "OK better-sqlite3" \
+#
+# better-sqlite3 wird BENUTZT, nicht nur geladen: Seit die Binärdatei aus dem
+# Paket kommt statt aus einem Build, ist „require() wirft nicht" zu wenig — die
+# Abfrage unten beweist, dass die native Bindung wirklich arbeitet.
+RUN node -e "const D=require('better-sqlite3');const db=new D(':memory:');db.exec('create table t(a)');db.prepare('insert into t values (?)').run(42);if(db.prepare('select a from t').get().a!==42)throw new Error('better-sqlite3 liefert falsche Daten');" \
+ && echo "OK better-sqlite3" \
  && node -e "require('hash-wasm')" && echo "OK hash-wasm" \
  && if [ "$LOW_CPU" != "1" ]; then node -e "require('sharp')" && echo "OK sharp"; \
     else echo "LOW_CPU=1 — sharp übersprungen (Bildpipeline nutzt libvips-CLI)"; fi

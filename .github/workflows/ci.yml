@@ -127,6 +127,46 @@ jobs:
           path: test-results/
           if-no-files-found: ignore
 
+  # ---- Image-Gate: der Bauplan wird AUSGEFÜHRT, nicht nur gelesen -----------
+  # Root-Fix des Fehlschlags vom 2026-08-16 (Commit 298e6b6): Bis hierher hat
+  # KEIN Workflow je das Container-Image gebaut. `npm ci` scheiterte deshalb
+  # zum ersten Mal auf dem Produktionsserver — nach dem Merge, beim Deploy.
+  #
+  # Der Unterschied ist nicht theoretisch: Die Runner von GitHub bringen Python
+  # und einen Compiler mit, das schlanke Basisimage nicht. Genau deshalb lief
+  # `npm ci` in den anderen Jobs durch (npm übersetzte better-sqlite3 aus
+  # Quelltext) und im Image nicht. Ein Gate, das nur `npm ci` auf dem Runner
+  # ausführt, prüft also einen ANDEREN Abhängigkeitsbaum als den ausgelieferten.
+  #
+  # Gebaut wird das vollständige Image — nicht nur die deps-Stufe. Die Stufen
+  # sind durch nichts aneinander gebunden; erst der Lauf über alle drei zeigt,
+  # dass am Ende ein startfähiges Image steht. Anschließend wird das Ergebnis
+  # BENUTZT: better-sqlite3 aus dem fertigen Standalone-Verzeichnis, denn die
+  # deps-Stufe ist nicht das Laufzeit-Image.
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Container-Image bauen (wie deploy.sh, ohne LOW_CPU)
+        run: |
+          docker build -f Containerfile \
+            --build-arg APP_COMMIT="${GITHUB_SHA::7}" \
+            --build-arg LOW_CPU=0 \
+            -t roses-blog:ci .
+      - name: Native Module im FERTIGEN Image benutzen (nicht nur laden)
+        run: |
+          docker run --rm --entrypoint node roses-blog:ci -e "
+            const D = require('better-sqlite3');
+            const db = new D(':memory:');
+            db.exec('create table t(a)');
+            db.prepare('insert into t values (?)').run(42);
+            if (db.prepare('select a from t').get().a !== 42) {
+              throw new Error('better-sqlite3 liefert falsche Daten');
+            }
+            require('sharp');
+            console.log('OK: better-sqlite3 und sharp arbeiten im Laufzeit-Image');
+          "
+
   # ---- Sicherheits-Gate: Abhängigkeiten, Existenz, SBOM ---------------------
   security:
     runs-on: ubuntu-latest

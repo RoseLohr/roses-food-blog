@@ -62,6 +62,13 @@ Annahmen, die während der Umsetzung getroffen wurden:
 - **B17 — Container-Basisimage:** `node:22-bookworm-slim` (glibc) statt Alpine,
   damit better-sqlite3/sharp/argon2 als Prebuilds funktionieren — kein
   Compiler-Toolchain im Image nötig.
+  *Ergänzt am 2026-08-16 (Fehlschlag Commit 298e6b6):* Die Annahme trug nicht von
+  selbst. better-sqlite3 13 bringt eine `binding.gyp` ohne eigenes
+  `install`-Skript mit; npm ergänzt dann `node-gyp rebuild`, und dessen
+  configure-Schritt braucht Python — obwohl die mitgelieferte Binärdatei jede
+  Übersetzung überflüssig macht. Getragen wird B17 seither von
+  `npm ci --ignore-scripts` im Containerfile, ratifiziert in
+  `tests/build-abhaengigkeiten.test.ts` und ausgeführt vom CI-Job `image`.
 - **B19 — Schriften:** Statt heruntergeladener Webfonts werden hochwertige
   System-Schrift-Stacks verwendet (Serif für Überschriften, Sans für Text).
   Das erfüllt „selbst gehostet/keine externen CDNs" (A7) mit 0 KB Font-Payload
