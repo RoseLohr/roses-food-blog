@@ -117,14 +117,14 @@ describe("Bildübermittlung: Encoder-Konfiguration (config/bild-encoder.json)", 
       2: "q68-e6-ss1-w160,320,480,640,768,960,1280,1920",
       // rev 3 (08/2026): EINE Stufe ergänzt — 1152. Gemessen, nicht geschätzt:
       // Das Auslieferungs-Budget in tests/e2e/bild-auslieferung.spec.ts summiert
-      // über 108 sichtbare Upload-Bilder (sechs Seiten × vier Geräteklassen),
+      // über die sichtbaren Upload-Bilder (sechs Seiten × vier Geräteklassen),
       // wie viel Pixelfläche ÜBER den Bedarf geliefert wird. Mit der alten
-      // Leiter waren das 26,6 %, mit 1152 sind es 18,5 %.
+      // Leiter waren das 41,2 %, mit 1152 sind es 28,8 %.
       //
       // 1536 war ebenfalls im Entwurf und ist wieder rausgeflogen: Die Messung
-      // ergab mit 1536 exakt dieselben 26,6 % wie ohne, weil oberhalb von 1280
-      // nur Bedarfe auftreten, die auch 1536 nicht deckt. Eine Stufe kostet
-      // jedes Bild eine weitere Datei — dafür muss sie etwas messen.
+      // ergab mit 1536 denselben Wert wie ohne, weil oberhalb von 1280 nur
+      // Bedarfe auftreten, die auch 1536 nicht deckt. Eine Stufe kostet jedes
+      // Bild eine weitere Datei — dafür muss sie etwas messen.
       3: "q68-e6-ss1-w160,320,480,640,768,960,1152,1280,1920",
     };
     expect(

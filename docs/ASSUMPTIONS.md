@@ -36,7 +36,7 @@ Annahmen, die während der Umsetzung getroffen wurden:
   aus `config/bild-encoder.json` (Stand rev 3: 160–1920 px in neun Stufen,
   Q68/effort 6). Die Stufe 1152 kam mit rev 3 dazu — belegt durch das
   Auslieferungs-Budget in `tests/e2e/bild-auslieferung.spec.ts`, das die
-  über den Bedarf hinaus gelieferte Pixelfläche misst (26,6 % → 18,5 %).
+  über den Bedarf hinaus gelieferte Pixelfläche misst (41,2 % → 28,8 %).
   Ändert sich dort etwas, MUSS `rev` steigen: der Container-Start zieht dann
   alle Bestands-Uploads nach (`scripts/regenerate-variants.mjs`, idempotent,
   Quelle = größte Variante, die selbst nie re-kodiert wird — das Original
