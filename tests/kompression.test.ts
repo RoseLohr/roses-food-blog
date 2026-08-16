@@ -167,10 +167,17 @@ describe("Kompression: die Einrichtung bricht nicht an einem fehlenden Modul", (
     // der Link von Hand entfernt, meldet apt Erfolg — und `load_module` fehlt
     // trotzdem. Dann stünde ein „brotli on;" ohne Modul in der Config und
     // `nginx -t` scheiterte unter `set -e` mitten in der Einrichtung.
-    expect(bootstrap).toMatch(/modules-enabled/);
-    // Und der Befund muss BROTLI_OK auch wirklich umlegen, nicht nur warnen.
-    const stelle = bootstrap.indexOf("modules-enabled/");
-    expect(bootstrap.slice(stelle, stelle + 200)).toMatch(/BROTLI_OK=0/);
+    // Verankert am Code, nicht am ersten Vorkommen im Fließtext: Die Prüfung
+    // hängt an der Bedingung, und ihr Befund muss BROTLI_OK auch wirklich
+    // umlegen, nicht bloß eine Warnung ausgeben.
+    const stelle = bootstrap.indexOf('if [[ "$BROTLI_OK" == "1" ]] &&');
+    expect(stelle, "Modulprüfung nicht gefunden").toBeGreaterThan(-1);
+    const abschnitt = bootstrap.slice(
+      stelle,
+      bootstrap.indexOf('if [[ "$BROTLI_OK" == "0" ]]', stelle),
+    );
+    expect(abschnitt).toMatch(/modules-enabled/);
+    expect(abschnitt).toMatch(/BROTLI_OK=0/);
   });
 
   it("die Modulprüfung erkennt genau das Filter-Modul — echt ausgeführt", () => {
@@ -187,13 +194,22 @@ describe("Kompression: die Einrichtung bricht nicht an einem fehlenden Modul", (
     // Fall 2 ist der gefährlichere: Er sähe nicht nach „brotli fehlt" aus,
     // sondern löschte den Block bei jedem Re-Run aus einer FUNKTIONIERENDEN
     // Config — ein Server, der sich still selbst verschlechtert.
-    const befund = /!\s*(grep [^\n]*ngx_http_brotli_filter_module[^\n]*?);/.exec(
+    // `[^;]*` statt `[^\n]*`: Der Befehl steht mit Zeilenfortsetzungen über
+    // mehrere Zeilen — bis zum abschließenden Semikolon ist er EIN Kommando.
+    const befund = /!\s*(grep[^;]*ngx_http_brotli_filter_module[^;]*);/.exec(
       bootstrap,
     );
     expect(befund, "Modulprüfung in bootstrap.sh nicht gefunden").not.toBeNull();
 
-    /** Legt die echte Debian-Struktur an: Link in enabled → Datei in available. */
-    const modulverzeichnis = (module: string[]) => {
+    /**
+     * Legt die echte Debian-Struktur an: Link in enabled → Datei in available.
+     * `endung` und `aktiv` stellen die beiden Tarnungen nach, die nginx
+     * ignoriert, eine reine Textsuche aber nicht.
+     */
+    const modulverzeichnis = (
+      module: string[],
+      { endung = ".conf", aktiv = true } = {},
+    ) => {
       const wurzel = fs.mkdtempSync(path.join(os.tmpdir(), "nginx-module-"));
       fs.mkdirSync(path.join(wurzel, "modules-available"));
       fs.mkdirSync(path.join(wurzel, "modules-enabled"));
@@ -203,17 +219,17 @@ describe("Kompression: die Einrichtung bricht nicht an einem fehlenden Modul", (
         // das Paket, und genau daran hängt die Suche.
         const ziel = path.join(wurzel, "modules-available", `mod-http-${m}.conf`);
         const so = `ngx_http_${m.replace(/-/g, "_")}_module.so`;
-        fs.writeFileSync(ziel, `load_module modules/${so};\n`);
+        fs.writeFileSync(ziel, `${aktiv ? "" : "# "}load_module modules/${so};\n`);
         fs.symlinkSync(
           ziel,
-          path.join(wurzel, "modules-enabled", `50-mod-http-${m}.conf`),
+          path.join(wurzel, "modules-enabled", `50-mod-http-${m}${endung}`),
         );
       }
       return wurzel;
     };
 
-    const findet = (module: string[]) => {
-      const wurzel = modulverzeichnis(module);
+    const findet = (module: string[], lage?: { endung?: string; aktiv?: boolean }) => {
+      const wurzel = modulverzeichnis(module, lage);
       const befehl = befund![1].replace(
         "/etc/nginx/modules-enabled/",
         `${wurzel}/modules-enabled/`,
@@ -230,6 +246,69 @@ describe("Kompression: die Einrichtung bricht nicht an einem fehlenden Modul", (
       "hält das Static-Modul fälschlich für das Filter-Modul",
     ).toBe(false);
     expect(findet([]), "meldet ein Modul, wo keines verlinkt ist").toBe(false);
+    // nginx bindet nur `modules-enabled/*.conf` ein — eine abgelegte
+    // Sicherungskopie liest es nicht.
+    expect(
+      findet(["brotli-filter"], { endung: ".conf.disabled" }),
+      "zählt eine .disabled-Sicherung, die nginx gar nicht einliest",
+    ).toBe(false);
+    expect(
+      findet(["brotli-filter"], { aktiv: false }),
+      "hält eine auskommentierte load_module-Zeile für ein geladenes Modul",
+    ).toBe(false);
+  });
+
+  it("ohne Endmarke wird NICHT geschnitten — sed liefe bis zum Dateiende", () => {
+    // Ein sed-Bereich, dessen Endmuster fehlt, löscht ab der Anfangsmarke alles
+    // Weitere: TLS-Pfade, proxy_pass, schließende Klammern. Aus der Reparatur
+    // würde ein Totalschaden an einer fremden, laufenden Config — und weil
+    // danach `nginx -t` scheitert, bliebe der Server zerstört zurück.
+    // (Panel-Befund gpt-5.6-sol.) Zum Beleg der Schnitt, echt ausgeführt:
+    const ohneEndmarke = [
+      "server {",
+      "    # BROTLI-ANFANG",
+      "    brotli on;",
+      "    proxy_pass http://127.0.0.1:3000;",
+      "    ssl_certificate /etc/letsencrypt/live/example.de/fullchain.pem;",
+      "}",
+    ].join("\n");
+    const rest = execFileSync("sed", ["/# BROTLI-ANFANG/,/# BROTLI-ENDE/d"], {
+      input: ohneEndmarke,
+      encoding: "utf8",
+    });
+    expect(rest.trim(), "sed schneidet hier bis EOF — genau darum die Zählung").toBe(
+      "server {",
+    );
+
+    // Deshalb zählt bootstrap.sh beide Marken und bricht bei Ungleichstand ab,
+    // statt zu schneiden …
+    const stelle = bootstrap.indexOf("MARKEN_AUF=");
+    expect(stelle, "Markenzählung nicht gefunden").toBeGreaterThan(-1);
+    const abschnitt = bootstrap.slice(stelle, stelle + 900);
+    expect(abschnitt).toMatch(/MARKEN_ZU=/);
+    expect(abschnitt).toMatch(/"\$MARKEN_AUF" != "\$MARKEN_ZU"/);
+    expect(abschnitt, "Ungleichstand muss abbrechen, nicht schneiden").toMatch(
+      /fail /,
+    );
+    // … und der Schnitt selbst läuft nur über eine Sicherungskopie.
+    expect(abschnitt).toMatch(/cp -a .*NGINX_SICHERUNG|NGINX_SICHERUNG=/);
+    const schnitt = bootstrap.indexOf("sed -i '/# BROTLI-ANFANG/");
+    expect(
+      bootstrap.slice(stelle, schnitt),
+      "keine Sicherung vor dem Schnitt",
+    ).toMatch(/cp -a/);
+  });
+
+  it("schlägt nginx -t nach dem Schnitt fehl, wird zurückgerollt", () => {
+    // `set -e` bräche sonst ab und ließe eine von uns beschädigte Config
+    // stehen — der Server liefe bis zum nächsten Neustart weiter und käme dann
+    // nicht mehr hoch, weit weg von der Ursache.
+    const stelle = bootstrap.indexOf("if ! $SUDO nginx -t; then");
+    expect(stelle, "nginx -t ohne Fehlerbehandlung").toBeGreaterThan(-1);
+    const abschnitt = bootstrap.slice(stelle, stelle + 500);
+    expect(abschnitt).toMatch(/NGINX_SICHERUNG/);
+    expect(abschnitt, "Rückrollen fehlt").toMatch(/cp -a "\$NGINX_SICHERUNG"/);
+    expect(abschnitt, "der Fehler muss laut sein").toMatch(/fail /);
   });
 
   it("eine bestehende Config wird repariert, wenn das Modul verschwindet", () => {
@@ -241,7 +320,12 @@ describe("Kompression: die Einrichtung bricht nicht an einem fehlenden Modul", (
     // gpt-5.6-sol.)
     const stelle = bootstrap.indexOf("Server-Block unverändert gelassen");
     expect(stelle, "Re-Run-Zweig nicht gefunden").toBeGreaterThan(-1);
-    const abschnitt = bootstrap.slice(stelle, stelle + 1600);
+    // Bis zum Ende des Zweigs, nicht über eine geratene Zeichenzahl — sonst
+    // bricht die Prüfung, sobald jemand einen Kommentar ergänzt.
+    const abschnitt = bootstrap.slice(
+      stelle,
+      bootstrap.indexOf('if [[ "$NGINX_GEAENDERT" == "1" ]]', stelle),
+    );
     expect(abschnitt).toMatch(/BROTLI_OK.*==.*"0"/s);
     expect(abschnitt).toMatch(/sed -i.*BROTLI-ANFANG.*BROTLI-ENDE.*d/s);
   });
@@ -253,7 +337,7 @@ describe("Kompression: die Einrichtung bricht nicht an einem fehlenden Modul", (
     expect(bootstrap).toMatch(/NGINX_GEAENDERT=1/);
     const stelle = bootstrap.indexOf('if [[ "$NGINX_GEAENDERT" == "1" ]]');
     expect(stelle, "Sammelzweig für nginx -t nicht gefunden").toBeGreaterThan(-1);
-    const abschnitt = bootstrap.slice(stelle, stelle + 200);
+    const abschnitt = bootstrap.slice(stelle, bootstrap.indexOf("certbot", stelle));
     expect(abschnitt).toMatch(/nginx -t/);
     expect(abschnitt).toMatch(/systemctl reload nginx/);
   });

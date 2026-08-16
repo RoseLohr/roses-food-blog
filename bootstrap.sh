@@ -213,15 +213,31 @@ if [[ "$DOMAIN" != "localhost:${PORT:-3000}" && "$DOMAIN" != "localhost" && -n "
     # aber nur `brotli_static` mit. Wäre nur das installiert, ginge eine grobe
     # Suche auf, und `brotli on;` bliebe eine unbekannte Direktive.
     #
-    # `-R`, NICHT `-r`: Die Einträge in modules-enabled sind Symlinks nach
-    # modules-available. `grep -r` folgt Symlinks nur, wenn sie selbst auf der
-    # Kommandozeile stehen — die im Verzeichnis überspringt es. Mit `-r` fände
-    # die Prüfung den Debian-Standardlink also NIE. Das wäre nicht bloß „kein
-    # brotli": Der Reparaturzweig weiter unten würde den Block dann bei jedem
-    # Re-Run aus einer funktionierenden Config löschen. tests/kompression.test.ts
-    # führt genau diesen Befehl gegen die echte Verzeichnisstruktur aus.
+    # Gelesen wird GENAU das, was auch nginx liest — sonst weicht die Antwort
+    # von der Wirklichkeit ab, und zwar in beide Richtungen gefährlich:
+    #
+    #   `-R`, nicht `-r`: Die Einträge in modules-enabled sind Symlinks nach
+    #   modules-available. `grep -r` folgt Symlinks nur auf der Kommandozeile,
+    #   nicht im Verzeichnis — es fände den Debian-Standardlink NIE.
+    #
+    #   `--include='*.conf'`: nginx.conf bindet die Module mit
+    #   `include /etc/nginx/modules-enabled/*.conf;` ein. Eine Sicherungskopie
+    #   wie „…conf.disabled" liest nginx NICHT — sie darf hier also auch nicht
+    #   zählen.
+    #
+    #   `^[[:space:]]*load_module`: eine auskommentierte Zeile ist keine
+    #   geladene. Reine Textsuche hielte „# load_module …brotli…" für ein
+    #   aktives Modul.
+    #
+    # Ein falsches Ja heißt: brotli-Direktiven ohne Modul, nginx verweigert den
+    # Start. Ein falsches Nein heißt: der Reparaturzweig weiter unten löscht den
+    # Block bei jedem Re-Run aus einer funktionierenden Config.
+    # tests/kompression.test.ts führt genau diesen Befehl gegen die echte
+    # Verzeichnisstruktur aus, in allen fünf Lagen.
     if [[ "$BROTLI_OK" == "1" ]] &&
-      ! grep -Rqs ngx_http_brotli_filter_module /etc/nginx/modules-enabled/; then
+      ! grep -Rqs --include='*.conf' -E \
+        '^[[:space:]]*load_module[^#]*ngx_http_brotli_filter_module' \
+        /etc/nginx/modules-enabled/; then
       BROTLI_OK=0
     fi
     if [[ "$BROTLI_OK" == "0" ]]; then
@@ -231,6 +247,7 @@ if [[ "$DOMAIN" != "localhost:${PORT:-3000}" && "$DOMAIN" != "localhost" && -n "
     # nginx-Config nur beim ersten Mal aus der HTTP-Vorlage schreiben. Ein
     # Re-Run darf certbots eingefügten TLS-/443-Block NICHT überschreiben.
     NGINX_GEAENDERT=0
+    NGINX_SICHERUNG=""
     if [[ ! -e /etc/nginx/sites-available/roses-blog ]]; then
       $SUDO tee /etc/nginx/sites-available/roses-blog >/dev/null < <(
         sed -e "s/www\.example\.de example\.de/$DOMAIN/" \
@@ -254,9 +271,28 @@ if [[ "$DOMAIN" != "localhost:${PORT:-3000}" && "$DOMAIN" != "localhost" && -n "
       # sed-Bereich trifft JEDES Vorkommen, also auch das in den von certbot
       # kopierten 443-Block; alles außerhalb der Marken — Zertifikatspfade,
       # Weiterleitungen, proxy_pass — bleibt unangetastet.
+      #
+      # ABER: Ein sed-Bereich, dessen Endmuster nie auftritt, läuft bis zum
+      # DATEIENDE. Fehlt „# BROTLI-ENDE" — von Hand entfernt, beim Editieren
+      # verrutscht —, löschte der Schnitt den gesamten Rest der Config: TLS,
+      # proxy_pass, schließende Klammern. Aus einer Reparatur würde ein
+      # Totalschaden an einer fremden, laufenden Datei. Deshalb wird nur
+      # geschnitten, wenn die Marken PAARWEISE aufgehen, und nur über eine
+      # Sicherungskopie.
       if [[ "$BROTLI_OK" == "0" ]] &&
         $SUDO grep -q '# BROTLI-ANFANG' /etc/nginx/sites-available/roses-blog; then
+        MARKEN_AUF=$($SUDO grep -c '# BROTLI-ANFANG' /etc/nginx/sites-available/roses-blog || true)
+        MARKEN_ZU=$($SUDO grep -c '# BROTLI-ENDE' /etc/nginx/sites-available/roses-blog || true)
+        if [[ "$MARKEN_AUF" != "$MARKEN_ZU" ]]; then
+          echo "Gefunden: $MARKEN_AUF × BROTLI-ANFANG, aber $MARKEN_ZU × BROTLI-ENDE."
+          echo "Ohne Endmarke schnitte sed bis zum Dateiende und zerstörte die Config."
+          fail "brotli-Block in /etc/nginx/sites-available/roses-blog ist unvollständig markiert.
+       Das Modul fehlt, die brotli-Zeilen müssen weg — bitte von Hand entfernen.
+       nginx nimmt die Config sonst nicht mehr an (unknown directive „brotli\")."
+        fi
         echo "Entferne brotli-Block aus der bestehenden Config — das Modul fehlt."
+        NGINX_SICHERUNG="/etc/nginx/sites-available/roses-blog.vor-brotli-schnitt"
+        $SUDO cp -a /etc/nginx/sites-available/roses-blog "$NGINX_SICHERUNG"
         $SUDO sed -i '/# BROTLI-ANFANG/,/# BROTLI-ENDE/d' \
           /etc/nginx/sites-available/roses-blog
         NGINX_GEAENDERT=1
@@ -273,8 +309,21 @@ if [[ "$DOMAIN" != "localhost:${PORT:-3000}" && "$DOMAIN" != "localhost" && -n "
       fi
     fi
     if [[ "$NGINX_GEAENDERT" == "1" ]]; then
-      $SUDO nginx -t
+      # `set -e` würde hier abbrechen und eine womöglich von uns beschädigte
+      # Config zurücklassen. Wenn wir geschnitten haben, wird sie zuerst
+      # zurückgerollt — der Server läuft dann weiter wie vorher, und der Fehler
+      # steht im Klartext da, statt beim nächsten Neustart aufzuschlagen.
+      if ! $SUDO nginx -t; then
+        if [[ -n "$NGINX_SICHERUNG" ]]; then
+          echo "nginx -t fehlgeschlagen — stelle $NGINX_SICHERUNG wieder her."
+          $SUDO cp -a "$NGINX_SICHERUNG" /etc/nginx/sites-available/roses-blog
+        fi
+        fail "nginx-Konfiguration ungültig (nginx -t, Ausgabe siehe oben)."
+      fi
       $SUDO systemctl reload nginx
+      if [[ -n "$NGINX_SICHERUNG" ]]; then
+        echo "Sicherung der vorherigen Config: $NGINX_SICHERUNG"
+      fi
     fi
     # certbot nur, wenn noch kein Zertifikat existiert (sonst Re-Run-Rausch /
     # Rate-Limit-Risiko).
