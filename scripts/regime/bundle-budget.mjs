@@ -45,6 +45,13 @@ export const BUDGET = {
   gesamtClientJsGzip: 614_400, // 600 KiB
 };
 
+/**
+ * Kompressionsstufe, die der Reverse Proxy fährt — Quelle der Wahrheit ist
+ * deploy/nginx.conf.example (`brotli_comp_level`). Weicht sie dort ab, meldet
+ * es tests/kompression.test.ts.
+ */
+const PROXY_BROTLI_STUFE = 5;
+
 const kib = (b) => `${(b / 1024).toFixed(1)} KiB`;
 
 /** Dateien, die JEDE Seite lädt. */
@@ -167,8 +174,17 @@ export function messen(wurzel, geteilt, chunkDateien, routen, leseDatei) {
   };
 
   const geteiltGzip = geteilt.reduce((n, f) => n + gzipVon(f), 0);
+  // Brotli auf der Stufe messen, die der Reverse Proxy WIRKLICH fährt
+  // (deploy/nginx.conf.example: brotli_comp_level). Node komprimiert ohne
+  // Angabe auf Stufe 11 — das ist an diesem Bundle rund 8 Prozentpunkte
+  // besser, als je beim Besucher ankommt. Eine Kennzahl, die schmeichelt, ist
+  // schlechter als keine.
   const geteiltBrotli = geteilt.reduce(
-    (n, f) => n + zlib.brotliCompressSync(lies(path.join(wurzel, f))).length,
+    (n, f) =>
+      n +
+      zlib.brotliCompressSync(lies(path.join(wurzel, f)), {
+        params: { [zlib.constants.BROTLI_PARAM_QUALITY]: PROXY_BROTLI_STUFE },
+      }).length,
     0,
   );
 
@@ -386,7 +402,8 @@ function haupt() {
   );
   console.log(
     `Geteilter Sockel: ${mass.geteiltAnzahl} Dateien, ${kib(mass.geteiltGzip)} gzip ` +
-      `(Budget ${kib(BUDGET.geteiltGzip)}), brotli ${kib(mass.geteiltBrotli)} — nur zur Information.`,
+      `(Budget ${kib(BUDGET.geteiltGzip)}), brotli/Stufe ${PROXY_BROTLI_STUFE} ` +
+      `${kib(mass.geteiltBrotli)} — nur zur Information.`,
   );
   console.log(
     `Größter Chunk: ${kib(mass.groesster.gzip)} gzip ` +

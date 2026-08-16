@@ -15,8 +15,40 @@ server {
     # Nach TLS-Einrichtung aktivieren:
     # add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;
 
+    # KOMPRIMIERUNG LIEGT HIER, NICHT IN DER APP.
+    # next.config.ts setzt `compress: false` — sonst käme jede Antwort schon
+    # als gzip an und nginx reichte sie unverändert durch; brotli wäre dann
+    # wirkungslos. Beides ist konfiguriert: Browser mit brotli bekommen brotli,
+    # alle anderen gzip.
+    #
+    # brotli braucht das Modul libnginx-mod-brotli (Debian/Ubuntu). Es lädt
+    # sich über /etc/nginx/modules-enabled/ selbst; ein `load_module` gehört
+    # NICHT hierher, sondern auf die oberste Ebene der nginx.conf. Fehlt das
+    # Paket, kennt nginx die brotli-Direktiven nicht und `nginx -t` schlägt
+    # fehl — bootstrap.sh entfernt die vier Zeilen deshalb, wenn das Modul
+    # nicht installierbar war (siehe dort). Wer von Hand einrichtet:
+    #   sudo apt install libnginx-mod-brotli
+    # und bei Fehlanzeige die brotli-Zeilen aus dieser Datei streichen.
     gzip on;
     gzip_types text/css application/javascript application/json image/svg+xml text/xml application/xml;
+    # BROTLI-ANFANG (bootstrap.sh entfernt diesen Block ohne Modul)
+    brotli on;
+    # Stufe 5, gemessen an diesem Bundle (39 JS-Chunks, 1.657 KiB roh; CSS
+    # 156 KiB roh) gegen das, was Next heute liefert (gzip Stufe 6):
+    #
+    #   brotli  5   JS -3,9 %   CSS -6,9 %      50 ms für 1.657 KiB
+    #   brotli  6   JS -4,4 %   CSS -7,9 %      57 ms
+    #   brotli 11   JS -11,5 %  CSS -16,3 %   2.559 ms  (~1,6 ms je KiB)
+    #
+    # Stufe 11 wäre deutlich kleiner, kostet aber das Fünfzigfache an Rechenzeit
+    # und läuft hier bei JEDER Anfrage neu (nginx komprimiert im Durchreichen,
+    # es gibt keinen Vorrat vorkomprimierter Dateien). Für eine 100-KiB-Antwort
+    # wären das ~160 ms CPU — das zahlt der nächste Besucher. Stufe 5 kostet
+    # dafür ~3 ms. Der Sprung von 5 auf 6 bringt 0,5 Prozentpunkte für 14 %
+    # mehr Rechenzeit und lohnt nicht.
+    brotli_comp_level 5;
+    brotli_types text/css application/javascript application/json image/svg+xml text/xml application/xml;
+    # BROTLI-ENDE
 
     location / {
         proxy_pass http://127.0.0.1:3000;

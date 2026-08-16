@@ -189,13 +189,28 @@ if [[ "$DOMAIN" != "localhost:${PORT:-3000}" && "$DOMAIN" != "localhost" && -n "
   if [[ "$SETUP_NGINX" =~ ^[jJyY] ]]; then
     log "Richte nginx + certbot für $DOMAIN ein"
     $SUDO apt-get install -y nginx certbot python3-certbot-nginx
+    # brotli-Modul separat und OHNE Abbruch: `set -e` gilt im ganzen Skript,
+    # ein fehlendes Paket (andere Distribution, alter Ubuntu-Stand) würde die
+    # Ersteinrichtung sonst mitten im Lauf beenden. Schlägt es fehl, wird
+    # weiter unten der brotli-Block aus der Config entfernt — nginx läuft dann
+    # mit gzip, und `nginx -t` bleibt grün. Ein „brotli on;" ohne geladenes
+    # Modul ist ein harter Konfigurationsfehler, kein stiller Rückfall.
+    BROTLI_OK=1
+    $SUDO apt-get install -y libnginx-mod-brotli || BROTLI_OK=0
+    if [[ "$BROTLI_OK" == "0" ]]; then
+      echo "HINWEIS: libnginx-mod-brotli nicht installierbar — nginx komprimiert nur mit gzip."
+      echo "         Das ist funktionsfähig, kostet aber rund 4 % mehr Bytes (JS) bzw. 7 % (CSS)."
+    fi
     # nginx-Config nur beim ersten Mal aus der HTTP-Vorlage schreiben. Ein
     # Re-Run darf certbots eingefügten TLS-/443-Block NICHT überschreiben.
     if [[ ! -e /etc/nginx/sites-available/roses-blog ]]; then
       $SUDO tee /etc/nginx/sites-available/roses-blog >/dev/null < <(
         sed -e "s/www\.example\.de example\.de/$DOMAIN/" \
             -e "s/127\.0\.0\.1:3000/127.0.0.1:${PORT:-3000}/" \
-            deploy/nginx.conf.example
+            deploy/nginx.conf.example \
+        | if [[ "$BROTLI_OK" == "1" ]]; then cat; else
+            sed '/# BROTLI-ANFANG/,/# BROTLI-ENDE/d'
+          fi
       )
       $SUDO ln -sf /etc/nginx/sites-available/roses-blog /etc/nginx/sites-enabled/roses-blog
       $SUDO nginx -t
@@ -215,6 +230,12 @@ if [[ "$DOMAIN" != "localhost:${PORT:-3000}" && "$DOMAIN" != "localhost" && -n "
     fi
   else
     echo "nginx-Einrichtung übersprungen — Anleitung: README.md Abschnitt 4."
+    echo
+    echo "  ACHTUNG: Die App komprimiert NICHT selbst (next.config.ts:"
+    echo "  compress: false) — das übernimmt der Reverse Proxy. Ohne einen"
+    echo "  solchen gehen alle Antworten unkomprimiert raus, also grob das"
+    echo "  Dreifache an Bytes. Entweder nginx nach README §4 einrichten oder"
+    echo "  in next.config.ts wieder compress: true setzen."
   fi
 fi
 

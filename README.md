@@ -117,13 +117,26 @@ Autostart ein. Danach antwortet `curl http://127.0.0.1:3000/health`.
 
 ### 4. nginx + TLS
 
+**Der Reverse Proxy ist nicht optional.** Die App komprimiert seit 08/2026
+nicht mehr selbst (`compress: false` in `next.config.ts`) — sonst käme jede
+Antwort schon als gzip an und nginx könnte kein brotli mehr anwenden. Ohne
+einen komprimierenden Proxy davor gehen alle Antworten unkomprimiert raus.
+
 ```bash
+sudo apt install -y libnginx-mod-brotli   # ohne das Modul: brotli-Zeilen streichen
 sudo cp deploy/nginx.conf.example /etc/nginx/sites-available/roses-blog
 sudo nano /etc/nginx/sites-available/roses-blog   # server_name anpassen
 sudo ln -s /etc/nginx/sites-available/roses-blog /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
 sudo certbot --nginx -d www.example.de -d example.de
 ```
+
+Ist `libnginx-mod-brotli` nicht verfügbar, kennt nginx die `brotli`-Direktiven
+nicht und `nginx -t` schlägt fehl. Dann den Block zwischen `# BROTLI-ANFANG`
+und `# BROTLI-ENDE` aus der Config entfernen — gzip allein funktioniert, kostet
+gemessen rund 4 % mehr Bytes bei JS und 7 % bei CSS. `bootstrap.sh` erledigt
+beides selbst: Es versucht das Modul zu installieren und schneidet den Block
+heraus, wenn das nicht klappt.
 
 ### 5. Autostart nach Reboot
 
