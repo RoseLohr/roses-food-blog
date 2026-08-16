@@ -38,6 +38,7 @@
  *     dem nächsten Lauf jede Forensik verloren (genau das passierte hier).
  */
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
@@ -549,5 +550,88 @@ describe("Heredocs: gar keine unquotierten — es gibt nichts zu substituieren",
     const vorlage = unitTemplate();
     expect(vorlage).not.toMatch(/`[^`]*env[^`]*`/);
     expect(vorlage).not.toContain("$(");
+  });
+});
+
+describe("Deploy-Protokoll: der GRUND des Fehlschlags steht drin", () => {
+  /**
+   * Fehlschlag 2026-08-16 (Commit 298e6b6). Das Panel meldete „Image-Build
+   * fehlgeschlagen" — mehr nicht. `log()`/`fail()` schreiben nur Phasentexte
+   * ins Protokoll; die Ausgabe der Kommandos, die wirklich scheitern können,
+   * ging nach stdout/stderr und damit ins Journal des Watcher-Dienstes. Vom
+   * Panel aus war sie unerreichbar: Der Betreiber sieht, DASS der Build
+   * scheiterte, aber nicht WARUM (npm-Fehler? Registry? Platte voll?).
+   *
+   * Die Kontrolle prüft deshalb zweierlei: dass jeder Build-Aufruf durch den
+   * mitschreibenden Wrapper läuft — und dass dieser Wrapper den Status des
+   * BEFEHLS weitergibt und nicht den der Pipe.
+   */
+  const buildAufrufe = deploySh
+    .split("\n")
+    .filter((z) => /^\s*(run_logged\s+)?podman build\b/.test(z));
+
+  it("es gibt überhaupt Image-Build-Aufrufe zu prüfen", () => {
+    // Ohne diese Zusicherung wäre der Test unten auf einer leeren Liste grün —
+    // genau die Sorte Kontrolle, die nie wieder feuert, wenn das Kommando
+    // einmal umbenannt wird.
+    expect(buildAufrufe.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("JEDER Image-Build schreibt seine Ausgabe ins Protokoll", () => {
+    const ungeloggt = buildAufrufe.filter((z) => !/^\s*run_logged\s+podman build\b/.test(z));
+    expect(
+      ungeloggt,
+      `Image-Build ohne run_logged — sein Fehler wäre im Panel unsichtbar:\n${ungeloggt.join("\n")}`,
+    ).toEqual([]);
+  });
+
+  it("run_logged hängt an das Protokoll an, statt es zu überschreiben", () => {
+    const start = deploySh.indexOf("run_logged() {");
+    expect(start, "run_logged() nicht gefunden").toBeGreaterThan(-1);
+    const rumpf = deploySh.slice(start, deploySh.indexOf("\n}", start));
+    // `tee -a`: ein `tee` ohne -a schnitte das Protokoll beim ersten Build ab
+    // und damit die bereits protokollierte Vorprüfung samt git-Ausgabe.
+    expect(rumpf).toMatch(/tee -a "\$DATA_DIR\/deploy\.log"/);
+    expect(rumpf).not.toMatch(/tee "\$DATA_DIR/);
+    // Ohne beschreibbares DATA_DIR muss der Befehl trotzdem laufen.
+    expect(rumpf).toMatch(/_status_ready/);
+  });
+
+  it("gibt den Status des BEFEHLS weiter, nicht den von tee (pipefail)", () => {
+    // Ohne pipefail liefert `podman build … | tee …` immer 0 — ein
+    // fehlgeschlagener Build liefe als Erfolg durch, das `|| fail` dahinter
+    // feuerte nie, und der Deploy startete einen Container mit dem ALTEN
+    // Image, während das Panel Erfolg meldete. Schlimmer als der Fehlschlag.
+    expect(deploySh).toMatch(/^set -euo pipefail$/m);
+  });
+
+  it("bash hält den Wrapper für gültig und er reicht den Fehlerstatus durch", () => {
+    // Nicht nur Text prüfen: den Wrapper wirklich ausführen. Nachgebaut wird
+    // exakt die Konstruktion aus deploy.sh (pipefail + tee + `|| fail`).
+    const start = deploySh.indexOf("run_logged() {");
+    const rumpf = deploySh.slice(start, deploySh.indexOf("\n}", start) + 2);
+    const skript = [
+      "set -euo pipefail",
+      'DATA_DIR="$1"',
+      "_status_ready() { [[ -n \"${DATA_DIR:-}\" && -d \"${DATA_DIR:-/nonexistent}\" ]]; }",
+      rumpf,
+      // Erfolgsfall: Ausgabe muss im Protokoll landen.
+      'run_logged sh -c "echo hallo-aus-dem-build" > /dev/null',
+      // Fehlerfall: Status muss ankommen (sonst gäbe es kein "GEFANGEN").
+      'run_logged sh -c "echo grund-des-fehlers >&2; exit 7" > /dev/null || echo "GEFANGEN=$?"',
+    ].join("\n");
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "deploy-log-"));
+    try {
+      const ausgabe = execFileSync("bash", ["-c", skript, "bash", tmp], {
+        encoding: "utf8",
+      });
+      expect(ausgabe).toContain("GEFANGEN=7");
+      const protokoll = fs.readFileSync(path.join(tmp, "deploy.log"), "utf8");
+      expect(protokoll).toContain("hallo-aus-dem-build");
+      // Auch stderr gehört ins Protokoll — dort stehen die echten Fehler.
+      expect(protokoll).toContain("grund-des-fehlers");
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
   });
 });
