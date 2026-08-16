@@ -360,14 +360,34 @@ if [[ "$DOMAIN" != "localhost:${PORT:-3000}" && "$DOMAIN" != "localhost" && -n "
     NGINX_GEAENDERT=0
     NGINX_SICHERUNG=""
     if [[ ! -e /etc/nginx/sites-available/roses-blog ]]; then
-      $SUDO tee /etc/nginx/sites-available/roses-blog >/dev/null < <(
-        sed -e "s/www\.example\.de example\.de/$DOMAIN/" \
-            -e "s/127\.0\.0\.1:3000/127.0.0.1:${PORT:-3000}/" \
-            deploy/nginx.conf.example \
+      # Erst vollständig bauen, dann installieren — NICHT über eine
+      # Prozess-Substitution direkt in die Zieldatei.
+      #
+      # Der Grund ist ein Fehler, der sich nicht meldet: `tee … < <(…)` erfährt
+      # den Exit-Code der Substitution nicht, auch mit `set -o pipefail` nicht.
+      # Nachgestellt — `tee ziel < <(printf 'zeile1\n'; exit 2)` meldet Erfolg
+      # und legt die Teildatei an. Bräche brotli_block_entfernen also mitten im
+      # Text ab, stünde eine halbe Config in sites-available; `nginx -t`
+      # scheiterte, die Datei bliebe liegen, und der nächste Lauf hielte sie für
+      # eine gewachsene Bestandskonfiguration und fasste sie nicht mehr an.
+      # (Panel-Befund gpt-5.6-sol.)
+      #
+      # Als echte Pipeline in eine temporäre Datei greift `pipefail`, und
+      # installiert wird nur, was vollständig entstanden ist.
+      NEUE_CONF="$(mktemp)"
+      if sed -e "s/www\.example\.de example\.de/$DOMAIN/" \
+             -e "s/127\.0\.0\.1:3000/127.0.0.1:${PORT:-3000}/" \
+             deploy/nginx.conf.example \
         | if [[ "$BROTLI_OK" == "1" ]]; then cat; else
             brotli_block_entfernen
-          fi
-      )
+          fi >"$NEUE_CONF"; then
+        $SUDO cp "$NEUE_CONF" /etc/nginx/sites-available/roses-blog
+        rm -f "$NEUE_CONF"
+      else
+        rm -f "$NEUE_CONF"
+        fail "Die brotli-Marken in deploy/nginx.conf.example sind nicht sauber
+       gepaart (Meldung oben). Es wurde KEINE Konfiguration installiert."
+      fi
       $SUDO ln -sf /etc/nginx/sites-available/roses-blog /etc/nginx/sites-enabled/roses-blog
       NGINX_GEAENDERT=1
     else

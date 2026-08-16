@@ -136,6 +136,34 @@ describe("Kompression: App schweigt, Proxy komprimiert", () => {
     ).not.toMatch(/add_header Vary/);
   });
 
+  it("gzip komprimiert auch hinter einem vorgeschalteten Proxy", () => {
+    // `gzip_proxied` hat die Vorgabe `off`: Sobald eine Anfrage einen
+    // Via-Header trägt — hinter jedem CDN, jedem Firmenproxy —, komprimiert
+    // gzip gar nicht. Gegenüber vorher wäre das eine Verschlechterung, denn
+    // Next hat bis zu `compress: false` unabhängig davon komprimiert.
+    //
+    // Betroffen wären ausgerechnet die Clients OHNE brotli: Das brotli-Modul
+    // kennt keine solche Bedingung (es hat kein brotli_proxied) und
+    // komprimiert weiter. Genau die Besucher mit dem älteren Browser bekämen
+    // also gar nichts. (Panel-Befund gpt-5.6-sol.)
+    const d = direktiven(nginx);
+    expect(
+      d.some((z) => /^gzip_proxied\s+\S/.test(z)),
+      "gzip_proxied fehlt — hinter einem Proxy bleibt gzip aus",
+    ).toBe(true);
+    expect(
+      d,
+      "gzip_proxied off schaltet die Kompression hinter Proxys ab",
+    ).not.toContain("gzip_proxied off;");
+    // Und außerhalb der Marken: Ohne brotli-Modul wird der Block geschnitten,
+    // gzip bleibt — und braucht die Einstellung dann erst recht.
+    const anfang = nginx.indexOf("# BROTLI-ANFANG");
+    expect(
+      nginx.slice(anfang, nginx.indexOf("# BROTLI-ENDE")),
+      "gzip_proxied steht im brotli-Block und verschwindet mit ihm",
+    ).not.toMatch(/gzip_proxied/);
+  });
+
   it("kein load_module in der Server-Vorlage", () => {
     // `load_module` ist auf der obersten Ebene der nginx.conf gültig, NICHT in
     // einer sites-available-Datei. Dort führt es zu „load_module directive is
@@ -534,6 +562,38 @@ describe("Kompression: die Einrichtung bricht nicht an einem fehlenden Modul", (
     // rutschen — die Zwischendatei wird verworfen, nicht verschoben.
     expect(abschnitt, "Abbruch ohne fail()").toMatch(/fail /);
     expect(abschnitt).toMatch(/rm -f .*\.neu/);
+  });
+
+  it("eine halb entstandene Config wird nicht installiert", () => {
+    // `tee ziel < <(quelle)` erfährt den Exit-Code der Quelle NICHT, auch mit
+    // `set -o pipefail` nicht — hier nachgestellt. Bräche der Schnitt also
+    // mitten im Text ab, stünde eine halbe Config in sites-available:
+    // `nginx -t` scheiterte, die Datei bliebe liegen, und der nächste Lauf
+    // hielte sie für eine gewachsene Bestandskonfiguration.
+    // (Panel-Befund gpt-5.6-sol.)
+    const ziel = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "tee-")), "ziel");
+    const substitution = spawnSync(
+      "bash",
+      ["-c", `set -o pipefail; tee ${ziel} >/dev/null < <(printf 'zeile1\\n'; exit 2)`],
+      { encoding: "utf8" },
+    );
+    expect(
+      substitution.status,
+      "Prozess-Substitution meldet den Fehler doch — Begründung neu prüfen",
+    ).toBe(0);
+    expect(fs.readFileSync(ziel, "utf8")).toBe("zeile1\n");
+
+    // Deshalb baut bootstrap.sh die Datei erst vollständig und installiert sie
+    // nur bei Erfolg.
+    const stelle = bootstrap.indexOf("NEUE_CONF=");
+    expect(stelle, "Zwischendatei nicht gefunden").toBeGreaterThan(-1);
+    const abschnitt = bootstrap.slice(stelle, bootstrap.indexOf("ln -sf", stelle));
+    expect(
+      abschnitt,
+      "die Vorlage geht weiterhin über eine Prozess-Substitution ins Ziel",
+    ).not.toMatch(/tee[^\n]*<\s*<\(/);
+    expect(abschnitt, "kein Abbruch bei unvollständigem Schnitt").toMatch(/fail /);
+    expect(abschnitt, "Zwischendatei wird nicht verworfen").toMatch(/rm -f "\$NEUE_CONF"/);
   });
 
   it("nach jeder Änderung an der Config laufen nginx -t und reload", () => {

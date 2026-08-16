@@ -59,6 +59,13 @@ server {
     # und die Alternative wären zwei Header an gzip-Antworten.
     add_header Vary Accept-Encoding always;
     gzip on;
+    # Ohne das komprimiert gzip NICHT, sobald die Anfrage einen Via-Header
+    # trägt — also hinter jedem vorgeschalteten Proxy oder CDN. Die Vorgabe ist
+    # `off`, und das wäre hier eine Verschlechterung gegenüber vorher: Next hat
+    # bis zu `compress: false` unabhängig davon komprimiert. Betroffen wären
+    # ausgerechnet die Clients OHNE brotli — das brotli-Modul kennt keine solche
+    # Bedingung und komprimiert ohnehin. (Panel-Befund gpt-5.6-sol.)
+    gzip_proxied any;
     gzip_types text/css application/javascript application/json text/x-component image/svg+xml text/xml application/xml;
     # BROTLI-ANFANG (bootstrap.sh entfernt diesen Block ohne Modul)
     brotli on;
