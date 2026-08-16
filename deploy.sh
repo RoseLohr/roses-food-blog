@@ -98,6 +98,30 @@ fail() {
   status_write
   exit 1
 }
+# Einen langlaufenden Schritt ausführen und seine Ausgabe SOWOHL ins Terminal
+# ALS AUCH ins Protokoll schreiben.
+#
+# WARUM (Fehlschlag 2026-08-16): `log()`/`fail()` hielten nur die Phasentexte
+# fest. Die Ausgabe der Kommandos, die tatsächlich scheitern können, ging
+# ausschließlich nach stdout/stderr — und wird deploy.sh vom Panel-Watcher
+# (systemd) angestoßen, landet das im Journal des Dienstes. Im Panel stand
+# darum nur „FEHLER: Image-Build fehlgeschlagen (Stufe: …)". Der eigentliche
+# Grund — npm-Fehler, Compiler-Meldung, „no space left on device", nicht
+# erreichbare Registry — war von dort aus unerreichbar; man musste sich auf
+# den Server einloggen. Genau das kostete die Diagnose des fehlgeschlagenen
+# Deploys von 298e6b6.
+#
+# `set -o pipefail` (ganz oben) ist hier VORAUSSETZUNG, nicht Beiwerk: ohne
+# pipefail lieferte die Pipe den Status von `tee` — also immer 0 — und ein
+# fehlgeschlagener Build liefe als Erfolg durch. Die Kontrolle dazu steht in
+# tests/deploy-betrieb.test.ts.
+run_logged() {
+  if _status_ready; then
+    "$@" 2>&1 | tee -a "$DATA_DIR/deploy.log"
+  else
+    "$@"
+  fi
+}
 
 # DATA_DIR so FRÜH wie möglich auflösen, damit ab hier jeder Fehler sichtbar
 # wird. .env liefert DATA_DIR/PORT; fehlt sie, greift der Standardpfad (wie in
@@ -344,9 +368,9 @@ fi
 # package-lock.json ändert. Die Extra-Builds kosten nichts: alle drei
 # Aufrufe teilen sich denselben Layer-Cache.
 log "Baue Container-Image (Commit $COMMIT)"
-podman build "${BUILD_OPTS[@]}" --target deps -t localhost/roses-blog:cache-deps . \
+run_logged podman build "${BUILD_OPTS[@]}" --target deps -t localhost/roses-blog:cache-deps . \
   || fail "Image-Build fehlgeschlagen (Stufe: Abhängigkeiten/npm ci)."
-podman build "${BUILD_OPTS[@]}" --target build -t localhost/roses-blog:cache-build . \
+run_logged podman build "${BUILD_OPTS[@]}" --target build -t localhost/roses-blog:cache-build . \
   || fail "Image-Build fehlgeschlagen (Stufe: App-Build/next build)."
 # Rollback-Vorbereitung (A-06/B-11): das aktuell laufende :latest als :previous
 # sichern, BEVOR es überschrieben wird — so kann deploy/rollback.sh es in
@@ -354,7 +378,7 @@ podman build "${BUILD_OPTS[@]}" --target build -t localhost/roses-blog:cache-bui
 if podman image exists localhost/roses-blog:latest 2>/dev/null; then
   podman tag localhost/roses-blog:latest localhost/roses-blog:previous || true
 fi
-podman build "${BUILD_OPTS[@]}" -t localhost/roses-blog:latest . \
+run_logged podman build "${BUILD_OPTS[@]}" -t localhost/roses-blog:latest . \
   || fail "Image-Build fehlgeschlagen (Stufe: Laufzeit-Image)."
 
 # --- 4. DB-Backup vor Migration/Neustart -------------------------------------

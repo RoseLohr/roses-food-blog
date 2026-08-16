@@ -192,7 +192,18 @@ export function DeployMonitor({ initial }: { initial: DeploySnapshot }) {
       {snap.log.length > 0 && (
         <div className="mt-4">
           <p className="mb-1 text-xs font-medium text-ink-soft">{d.logTitle}</p>
-          <pre className="max-h-64 overflow-auto bg-ink/90 p-3 text-xs leading-relaxed text-cream">
+          {/* whitespace-pre-wrap + wrap-anywhere: `<pre>` bricht von Haus aus
+              NICHT um (white-space: pre) — lange Zeilen liefen rechts aus dem
+              Kasten heraus. Betroffen war ausgerechnet die wichtigste Zeile:
+              „FEHLER: Image-Build fehlgeschlagen (Stufe: …)" ist die längste
+              im Protokoll, und auf dem Telefon war der Teil in der Klammer,
+              also die Stufe, nicht mehr zu sehen. Beim Fehlschlag am
+              2026-08-16 war deshalb am Panel nicht ablesbar, WORAN der Deploy
+              gescheitert war. `wrap-anywhere` statt `break-words`, weil
+              Maschinenausgabe lange Wörter ohne Trennstellen enthält
+              (Pfade, Image-Digests) — die müssen notfalls mitten im Wort
+              umbrechen, sonst bleibt der Kasten trotz Umbruch zu schmal. */}
+          <pre className="max-h-64 overflow-auto bg-ink/90 p-3 text-xs leading-relaxed whitespace-pre-wrap wrap-anywhere text-cream">
             {snap.log.join("\n")}
           </pre>
         </div>
