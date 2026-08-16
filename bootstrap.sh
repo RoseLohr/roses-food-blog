@@ -71,25 +71,98 @@ else
   [[ ${#ADMIN_PASSWORD} -ge 10 ]] || fail "Das Admin-Passwort braucht mindestens 10 Zeichen."
 
   SESSION_SECRET="$(openssl rand -hex 32)"
-  cat > .env <<EOF
-BASE_URL=${BASE_URL%/}
-PORT=$PORT
-DATA_DIR=$DATA_DIR
-SESSION_SECRET=$SESSION_SECRET
+  BASE_URL_OHNE_SLASH="${BASE_URL%/}"
 
-SMTP_HOST=$SMTP_HOST
-SMTP_PORT=$SMTP_PORT
-SMTP_USER=$SMTP_USER
-SMTP_PASS=$SMTP_PASS
-SMTP_FROM="Roses Food Blog <$SMTP_FROM_ADDR>"
+  # Setzt @NAME@-Platzhalter in EINEM Durchlauf ein.
+  #
+  # Warum nicht einfach `${text//@A@/$a}; ${text//@B@/$b}` nacheinander: dabei
+  # durchsucht jeder Schritt auch das, was der vorige eingesetzt hat. Ein Wert,
+  # der zufällig wie ein späterer Platzhalter aussieht, wird dann still durch
+  # einen fremden Wert ersetzt — nachgestellt: ein SMTP_USER mit dem Text
+  # „@SMTP_PASS@" bekam das echte Passwort eingesetzt, das Secret landete im
+  # Benutzernamen. Umgekehrt bleibt ein FRÜHERER Marker in einem SPÄT
+  # eingesetzten Wert stehen und ließ die Rest-Prüfung falsch anschlagen
+  # (Befund gpt-5.6-sol, PR #65).
+  #
+  # Hier wird der Text von links nach rechts zerlegt und die Ausgabe nur
+  # ANGEHÄNGT. Was einmal eingesetzt ist, wird nie wieder angesehen.
+  #
+  # Aufruf: einmal_einsetzen "$vorlage" NAME1 "$wert1" NAME2 "$wert2" …
+  einmal_einsetzen() {
+    local rest="$1"; shift
+    local aus="" vor name i j gefunden
+    while [[ "$rest" == *@*@* ]]; do
+      vor=${rest%%@*}          # Text vor dem nächsten @
+      rest=${rest#*@}          # ab hinter diesem @
+      name=${rest%%@*}         # möglicher Platzhaltername
+      gefunden=0
+      for ((i = 1; i <= $#; i += 2)); do
+        if [[ "${!i}" == "$name" ]]; then
+          j=$((i + 1))
+          aus+="$vor${!j}"     # Wert anhängen — nie erneut durchsucht
+          rest=${rest#*@}      # schließendes @ überspringen
+          gefunden=1
+          break
+        fi
+      done
+      # Kein bekannter Name: das @ gehört zum Text (etwa eine E-Mail-Adresse).
+      (( gefunden )) || aus+="$vor@"
+    done
+    printf '%s' "$aus$rest"
+  }
+
+  # Vorlage GEQUOTET (<<'EOF'): die Shell fasst den Text nicht an, Werte kommen
+  # ausschließlich über @PLATZHALTER@ herein. Das ist hier besonders wichtig,
+  # weil in diese Datei Secrets geschrieben werden (SESSION_SECRET,
+  # ADMIN_PASSWORD, SMTP_PASS) — und weil ein unquotiertes Heredoc in genau
+  # dieser Rolle am 2026-08-14 die komplette Prozessumgebung in eine
+  # systemd-Unit geschrieben hat. Zudem darf so ein Passwort mit Backtick oder
+  # $( ) nicht mehr zur Ausführung führen, sondern landet als Text in der .env.
+  env_vorlage=$(cat <<'EOF'
+BASE_URL=@BASE_URL@
+PORT=@PORT@
+DATA_DIR=@DATA_DIR@
+SESSION_SECRET=@SESSION_SECRET@
+
+SMTP_HOST=@SMTP_HOST@
+SMTP_PORT=@SMTP_PORT@
+SMTP_USER=@SMTP_USER@
+SMTP_PASS=@SMTP_PASS@
+SMTP_FROM="Roses Food Blog <@SMTP_FROM_ADDR@>"
 EMAIL_RATE_PER_MINUTE=30
 
-ADMIN_EMAIL=$ADMIN_EMAIL
-ADMIN_PASSWORD=$ADMIN_PASSWORD
+ADMIN_EMAIL=@ADMIN_EMAIL@
+ADMIN_PASSWORD=@ADMIN_PASSWORD@
 
 TZ=Europe/Berlin
 EOF
+)
+  # Vorlage prüfen, BEVOR eingesetzt wird: jeder @NAME@ in der Vorlage muss
+  # unten einen Wert bekommen. Geprüft wird der VORLAGENTEXT (Quelltext), nicht
+  # das Ergebnis — dort könnte ein @NAME@ aus einem WERT stammen, und die
+  # Prüfung schlüge falsch an (Befund gpt-5.6-sol, PR #65).
+  rest_vorlage="$env_vorlage"
+  for platz in @BASE_URL@ @PORT@ @DATA_DIR@ @SESSION_SECRET@ @SMTP_HOST@ \
+               @SMTP_PORT@ @SMTP_USER@ @SMTP_PASS@ @SMTP_FROM_ADDR@ \
+               @ADMIN_EMAIL@ @ADMIN_PASSWORD@; do
+    rest_vorlage=${rest_vorlage//"$platz"/}
+  done
+  if [[ "$rest_vorlage" =~ @[A-Z_]+@ ]]; then
+    fail ".env-Vorlage enthält einen Platzhalter ohne Wert: ${BASH_REMATCH[0]}"
+  fi
+
+  env_vorlage=$(einmal_einsetzen "$env_vorlage" \
+    BASE_URL "$BASE_URL_OHNE_SLASH" PORT "$PORT" DATA_DIR "$DATA_DIR" \
+    SESSION_SECRET "$SESSION_SECRET" SMTP_HOST "$SMTP_HOST" \
+    SMTP_PORT "$SMTP_PORT" SMTP_USER "$SMTP_USER" SMTP_PASS "$SMTP_PASS" \
+    SMTP_FROM_ADDR "$SMTP_FROM_ADDR" ADMIN_EMAIL "$ADMIN_EMAIL" \
+    ADMIN_PASSWORD "$ADMIN_PASSWORD")
+
+  # Erst die leere Datei mit 600 anlegen, dann befüllen: sonst stünden die
+  # Secrets für einen Wimpernschlag mit den Standardrechten (meist 644) da.
+  : > .env
   chmod 600 .env
+  printf '%s\n' "$env_vorlage" > .env
   echo ".env geschrieben (SESSION_SECRET automatisch erzeugt)."
 fi
 

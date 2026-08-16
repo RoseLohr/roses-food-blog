@@ -39,6 +39,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 
 const ROOT = process.cwd();
@@ -48,11 +49,16 @@ const containerfile = fs.readFileSync(path.join(ROOT, "Containerfile"), "utf8");
 
 /** Der Heredoc-Block, mit dem deploy.sh die Panel-Deploy-Unit schreibt. */
 function unitTemplate(): string {
-  const start = deploySh.indexOf('cat > "$UNIT_DIR/roses-blog-deploy.service"');
+  // Die Vorlage ist seit der Umstellung auf `<<'EOF'` eine gequotete
+  // Zuweisung; der Anker heißt deshalb nicht mehr `cat > …`.
+  const oeffner = "dienst_unit=$(cat <<'EOF'\n";
+  const start = deploySh.indexOf(oeffner);
   expect(start, "Unit-Vorlage in deploy.sh nicht gefunden").toBeGreaterThan(-1);
   const end = deploySh.indexOf("\nEOF", start);
   expect(end, "Ende der Unit-Vorlage nicht gefunden").toBeGreaterThan(start);
-  return deploySh.slice(start, end);
+  // Nur den RUMPF zurückgeben, ohne die Öffnerzeile: sonst prüfte etwa eine
+  // Zusicherung gegen „$(" die Zeile `…=$(cat …` statt den geschriebenen Text.
+  return deploySh.slice(start + oeffner.length, end);
 }
 
 describe("Panel-Deploy-Unit: Container überlebt das Dienstende", () => {
@@ -358,68 +364,190 @@ describe("Deploy-Protokoll: rotieren statt überschreiben", () => {
   });
 });
 
-describe("Heredocs: kein ungewollter Shell-Aufruf im geschriebenen Text", () => {
+describe("Heredocs: gar keine unquotierten — es gibt nichts zu substituieren", () => {
   /**
-   * Vorfall 2026-08-14. Die Panel-Deploy-Unit wird über ein UNQUOTIERTES
-   * Heredoc (`<<EOF`) geschrieben — nötig, weil $SCRIPT_DIR, $HOME und $PATH
-   * eingesetzt werden müssen. Dadurch wirkt im Rumpf aber auch die
-   * Kommandosubstitution. In den Erklärkommentaren standen Backticks:
+   * Vorfall 2026-08-14. Die Panel-Deploy-Unit wurde über ein UNQUOTIERTES
+   * Heredoc (`<<EOF`) geschrieben, weil $SCRIPT_DIR, $HOME und $PATH
+   * eingesetzt werden mussten. Damit wirkte im Rumpf aber auch die
+   * Kommandosubstitution, und in den Erklärkommentaren standen Backticks:
    *
    *   #  1. `KillMode=process`. … bei `process` signalisiert …
    *   #  2. `env -u INVOCATION_ID` ergänzt das strukturell …
    *
-   * Folge, empirisch nachgestellt: vier Zeilen scheiterten sichtbar
-   * („restart:: command not found"), der zitierte Text verschwand aus der
-   * erzeugten Datei — und `env -u INVOCATION_ID` scheiterte NICHT, sondern
-   * lief: die vollständige Prozessumgebung landete in der Unit-Datei. Da
-   * deploy.sh die .env vorher in die Umgebung lädt, standen SESSION_SECRET,
-   * ADMIN_PASSWORD, SMTP_PASS und ANTHROPIC_API_KEY im Klartext darin.
+   * Empirisch nachgestellt: vier Zeilen scheiterten sichtbar („restart::
+   * command not found"), der zitierte Text verschwand aus der erzeugten
+   * Datei — und `env -u INVOCATION_ID` scheiterte NICHT, sondern LIEF: die
+   * vollständige Prozessumgebung landete in der Unit. Da deploy.sh die .env
+   * vorher in die Umgebung lädt, standen SESSION_SECRET, ADMIN_PASSWORD,
+   * SMTP_PASS und ANTHROPIC_API_KEY im Klartext darin. Der laute Teil war
+   * harmlos, der leise war das Leck.
    *
-   * Der laute Teil (command not found) war harmlos, der leise war das Leck.
-   * Deshalb prüft dieser Test die FEHLERKLASSE, nicht die vier Fundstellen.
+   * WARUM DIESE KONTROLLE NICHT DEN RUMPF PRÜFT:
+   * Die erste Fassung suchte die Rümpfe unquotierter Heredocs und klopfte
+   * ihren Text ab. Dafür muss man die Shell nachbauen. Ein Angriffslauf mit
+   * drei unabhängigen Prüflinsen hat daran ELF Umgehungen belegt — jede
+   * doppelt: bash führt wirklich aus UND die Kontrolle bleibt grün. Unter
+   * anderem: `<< \` + Umbruch + `EOF` (der Backslash quotet nicht, er setzt
+   * fort), `<\` + Umbruch + `<EOF` (der Operator selbst zerteilt), Begrenzer
+   * ohne Bezeichnerform (`<<1`, `<<.`, `<<@@`), eine Fortsetzung auf der
+   * letzten Rumpfzeile, die den Begrenzer verschluckt, und `eval` mit zur
+   * Laufzeit gebautem Operator — da steht im Quelltext gar kein `<<` mehr.
+   *
+   * Die letzte Klasse ist statisch grundsätzlich nicht zu fassen. Deshalb ist
+   * die Gefahr beseitigt statt bewacht: bootstrap.sh und deploy.sh schreiben
+   * ihre Dateien jetzt aus GEQUOTETEN Vorlagen (`<<'EOF'`) und setzen Werte
+   * über @PLATZHALTER@ ein. Wo kein unquotiertes Heredoc mehr steht, gibt es
+   * auch nichts mehr zu substituieren — und die Kontrolle muss die Shell
+   * nicht mehr nachbauen, sondern nur noch eine Abwesenheit prüfen.
+   *
+   * Diese Suche darf grob sein: Sie findet im Zweifel ZU VIEL, und zu viel
+   * kostet nur eine Zeile Begründung. Zu wenig kostet ein Leck.
    */
-  const shellDateien = ["deploy.sh", "bootstrap.sh", "deploy/rollback.sh", "deploy/backup.sh", "scripts/entry.sh"]
-    .filter((f) => fs.existsSync(path.join(ROOT, f)));
+  const shellDateien = execFileSync("git", ["ls-files", "*.sh"], {
+    cwd: ROOT,
+    encoding: "utf8",
+  })
+    .split("\n")
+    .filter(Boolean);
 
-  /** Rümpfe aller Heredocs, bei denen die Shell den Text noch anfasst. */
-  function unquotierteHeredocRuempfe(quelle: string) {
+  /**
+   * Jede Stelle, an der ein `<<` steht, das kein Here-String (`<<<`) ist —
+   * über die LOGISCHEN Zeilen, also nach Auflösung der Zeilenfortsetzungen.
+   * Ohne diese Auflösung wäre `<\`+Umbruch+`<EOF` unsichtbar: keine physische
+   * Zeile enthält dann `<<`, die Shell sieht den Operator trotzdem.
+   */
+  function heredocStellen(quelle: string) {
     const zeilen = quelle.split("\n");
-    const treffer: Array<{ zeile: number; text: string }> = [];
-    for (let i = 0; i < zeilen.length; i++) {
-      // <<EOF / <<-EOF sind unquotiert; <<'EOF' und <<"EOF" sind es nicht.
-      const m = /<<-?([A-Za-z_][A-Za-z0-9_]*)\s*$/.exec(zeilen[i]);
-      if (!m) continue;
-      for (let j = i + 1; j < zeilen.length && zeilen[j].trim() !== m[1]; j++) {
-        treffer.push({ zeile: j + 1, text: zeilen[j] });
+    const treffer: Array<{ zeile: number; text: string; gequotet: boolean }> = [];
+    let i = 0;
+    while (i < zeilen.length) {
+      const start = i;
+      let logisch = zeilen[i];
+      // Ungerade Anzahl Backslashes am Zeilenende = Fortsetzung.
+      while (/(?<!\\)(\\\\)*\\$/.test(logisch) && i + 1 < zeilen.length) {
+        logisch = logisch.slice(0, -1) + zeilen[++i];
       }
+      for (const m of logisch.matchAll(/(?<!<)<<(?!<)-?[ \t]*(\S)/g)) {
+        treffer.push({
+          zeile: start + 1,
+          text: logisch.trim(),
+          // Nur ' " \ am Wortanfang quoten. Ein Backslash am ZEILENENDE ist
+          // dagegen Fortsetzung — den hat die Auflösung oben schon entfernt,
+          // er kann hier also nicht mehr fälschlich als Quotierung zählen.
+          gequotet: ["'", '"', "\\"].includes(m[1]),
+        });
+      }
+      i++;
     }
     return treffer;
   }
 
-  it("keine Datei schreibt Heredoc-Text mit aktiver Kommandosubstitution", () => {
+  it("die Dateiliste kommt aus der Entdeckung und ist nicht leer", () => {
+    // Ohne diese Zusicherung wäre ein kaputter Glob (0 Dateien) grün — die
+    // Kontrolle prüfte dann nichts, und niemand merkte es.
+    expect(shellDateien.length).toBeGreaterThanOrEqual(5);
+    expect(shellDateien).toContain("deploy.sh");
+    expect(shellDateien).toContain("bootstrap.sh");
+  });
+
+  it("kein Shell-Skript enthält ein unquotiertes Heredoc", () => {
     const funde: string[] = [];
     for (const datei of shellDateien) {
       const quelle = fs.readFileSync(path.join(ROOT, datei), "utf8");
-      for (const { zeile, text } of unquotierteHeredocRuempfe(quelle)) {
-        // Ein escapetes \` bzw. \$( ist ungefährlich — die Shell fasst es nicht an.
-        const scharf = text.replace(/\\[`$]/g, "");
-        if (scharf.includes("`") || scharf.includes("$(")) {
-          funde.push(`${datei}:${zeile}: ${text.trim()}`);
-        }
+      for (const stelle of heredocStellen(quelle)) {
+        if (!stelle.gequotet) funde.push(`${datei}:${stelle.zeile}: ${stelle.text}`);
       }
     }
     expect(
       funde,
-      "Kommandosubstitution im Heredoc-Rumpf: der Text wird ausgeführt statt geschrieben " +
-        "(so gelangten schon einmal Secrets in eine systemd-Unit). Backticks in Erklärtexten " +
-        "durch „…“ ersetzen oder das Heredoc quoten (<<'EOF'), falls keine Variablen nötig sind.",
+      "Unquotiertes Heredoc. Sein Rumpf wird von der Shell AUSGEFÜHRT statt " +
+        "geschrieben — so gelangten am 2026-08-14 Secrets in eine systemd-Unit. " +
+        "Stattdessen `<<'EOF'` schreiben und Werte über @PLATZHALTER@ einsetzen " +
+        "(Vorbild: bootstrap.sh und deploy.sh).",
     ).toEqual([]);
   });
 
+  /**
+   * Der Skripttext ohne reine Kommentarzeilen.
+   *
+   * Nötig, weil die Erklärung zur falschen Schreibweise diese zwangsläufig
+   * zitiert — die Prüfungen unten fanden sonst ihren eigenen Kommentartext
+   * und schlugen an, obwohl der Code in Ordnung ist.
+   */
+  const ohneKommentare = (datei: string) =>
+    fs
+      .readFileSync(path.join(ROOT, datei), "utf8")
+      .split("\n")
+      .map((z) => (/^\s*#/.test(z) ? "" : z));
+
+  it("die Vorlagen setzen ihre Platzhalter über EINEN Durchlauf ein", () => {
+    // Gegenstück zur Regel oben: gequotet allein genügt nicht, die Werte
+    // müssen auch ankommen — und zwar in einem Durchlauf.
+    //
+    // Nacheinander ausgeführte Ersetzungen (`${v//@A@/$a}; ${v//@B@/$b}`)
+    // durchsuchen auch das, was der vorige Schritt eingesetzt hat. Ein
+    // SMTP_USER mit dem Text „@SMTP_PASS@" bekam so das echte Passwort
+    // eingesetzt — das Secret landete im Benutzernamen (Befund gpt-5.6-sol,
+    // PR #65, mit bash 5.2.21 nachgestellt).
+    for (const [datei, platzhalter] of [
+      ["deploy.sh", ["@SCRIPT_DIR@", "@DATA_DIR@", "@HOME@", "@PATH@"]],
+      ["bootstrap.sh", ["@SESSION_SECRET@", "@ADMIN_PASSWORD@", "@SMTP_PASS@"]],
+    ] as const) {
+      const quelle = fs.readFileSync(path.join(ROOT, datei), "utf8");
+      for (const platz of platzhalter) {
+        expect(quelle, `${datei}: ${platz} kommt in keiner Vorlage vor`).toContain(platz);
+      }
+      expect(
+        quelle,
+        `${datei}: setzt die Werte nicht über einmal_einsetzen ein`,
+      ).toMatch(/einmal_einsetzen "\$\w+"/);
+      expect(
+        quelle,
+        `${datei}: kein Abbruch bei einem Platzhalter ohne Wert (fail-closed)`,
+      ).toMatch(/Platzhalter ohne Wert/);
+    }
+  });
+
+  it("keine Kette sequenzieller Platzhalter-Ersetzungen mehr", () => {
+    // Negativprobe zur Regel oben: kehrt die alte Schreibweise zurück, kehrt
+    // auch die Kollision zurück — und die ist still.
+    const funde: string[] = [];
+    for (const datei of ["deploy.sh", "bootstrap.sh"]) {
+      ohneKommentare(datei).forEach((z, i) => {
+        if (/\$\{\w+\/\/@[A-Z_]+@\//.test(z)) funde.push(`${datei}:${i + 1}: ${z.trim()}`);
+      });
+    }
+    expect(
+      funde,
+      "Sequenzielle Ersetzung eines @PLATZHALTER@: ein Wert, der wie ein " +
+        "späterer Platzhalter aussieht, wird dabei still durch einen fremden " +
+        "Wert ersetzt. Stattdessen einmal_einsetzen verwenden.",
+    ).toEqual([]);
+  });
+
+  it("die Platzhalter-Prüfung läuft auf der VORLAGE, nicht auf dem Ergebnis", () => {
+    // Im Ergebnis kann ein @NAME@ aus einem WERT stammen (ein Passwort darf so
+    // etwas enthalten). Eine Prüfung dort schlüge falsch an und bräche die
+    // Ersteinrichtung ab. Deshalb wird der Vorlagentext geprüft, bevor
+    // eingesetzt wird.
+    for (const datei of ["deploy.sh", "bootstrap.sh"]) {
+      const quelle = ohneKommentare(datei).join("\n");
+      const pruefStelle = quelle.indexOf("rest_vorlage");
+      const einsetzStelle = quelle.indexOf("einmal_einsetzen \"$");
+      expect(pruefStelle, `${datei}: keine Vorlagen-Prüfung`).toBeGreaterThan(-1);
+      expect(
+        pruefStelle,
+        `${datei}: die Prüfung läuft NACH dem Einsetzen — dann trifft sie Werte`,
+      ).toBeLessThan(einsetzStelle);
+    }
+  });
+
   it("die Unit-Vorlage enthält keinen Text, der die Umgebung ausgeben würde", () => {
-    // Zusicherung mit Namen statt nur mit Muster: genau dieser Aufruf war das Leck.
+    // Zusicherung mit Namen statt nur mit Muster: genau dieser Aufruf war das
+    // Leck. Er darf im geschriebenen Text nicht als Kommandosubstitution
+    // stehen — als Erklärtext in „…" ist er dagegen erwünscht.
     const vorlage = unitTemplate();
     expect(vorlage).not.toMatch(/`[^`]*env[^`]*`/);
-    expect(vorlage).not.toContain("`");
+    expect(vorlage).not.toContain("$(");
   });
 });

@@ -485,17 +485,65 @@ if command -v systemctl >/dev/null 2>&1; then
     echo "         der .env, falls weitere Personen Zugriff auf diesen Host haben."
   fi
 
-  # ACHTUNG, unquotiertes Heredoc: $SCRIPT_DIR/$HOME/$PATH sollen eingesetzt
-  # werden — Backticks und $( ) im Text würden aber AUSGEFÜHRT statt
-  # geschrieben. tests/deploy-betrieb.test.ts erzwingt das.
-  cat > "$UNIT_DIR/roses-blog-deploy.service" <<EOF
+  # Setzt @NAME@-Platzhalter in EINEM Durchlauf ein.
+  #
+  # Warum nicht einfach `${text//@A@/$a}; ${text//@B@/$b}` nacheinander: dabei
+  # durchsucht jeder Schritt auch das, was der vorige eingesetzt hat. Ein Wert,
+  # der zufällig wie ein späterer Platzhalter aussieht, wird dann still durch
+  # einen fremden Wert ersetzt — nachgestellt: ein SMTP_USER mit dem Text
+  # „@SMTP_PASS@" bekam das echte Passwort eingesetzt, das Secret landete im
+  # Benutzernamen. Umgekehrt bleibt ein FRÜHERER Marker in einem SPÄT
+  # eingesetzten Wert stehen und ließ die Rest-Prüfung falsch anschlagen
+  # (Befund gpt-5.6-sol, PR #65).
+  #
+  # Hier wird der Text von links nach rechts zerlegt und die Ausgabe nur
+  # ANGEHÄNGT. Was einmal eingesetzt ist, wird nie wieder angesehen.
+  #
+  # Aufruf: einmal_einsetzen "$vorlage" NAME1 "$wert1" NAME2 "$wert2" …
+  einmal_einsetzen() {
+    local rest="$1"; shift
+    local aus="" vor name i j gefunden
+    while [[ "$rest" == *@*@* ]]; do
+      vor=${rest%%@*}          # Text vor dem nächsten @
+      rest=${rest#*@}          # ab hinter diesem @
+      name=${rest%%@*}         # möglicher Platzhaltername
+      gefunden=0
+      for ((i = 1; i <= $#; i += 2)); do
+        if [[ "${!i}" == "$name" ]]; then
+          j=$((i + 1))
+          aus+="$vor${!j}"     # Wert anhängen — nie erneut durchsucht
+          rest=${rest#*@}      # schließendes @ überspringen
+          gefunden=1
+          break
+        fi
+      done
+      # Kein bekannter Name: das @ gehört zum Text (etwa eine E-Mail-Adresse).
+      (( gefunden )) || aus+="$vor@"
+    done
+    printf '%s' "$aus$rest"
+  }
+
+  # Die Vorlage ist GEQUOTET (<<'EOF'): die Shell fasst den Text nicht an.
+  # Werte kommen ausschließlich über @PLATZHALTER@ herein (siehe unterhalb der
+  # Vorlage). Damit ist die Fehlerklasse vom 2026-08-14 strukturell erledigt —
+  # damals stand hier ein unquotiertes Heredoc, und ein `env -u INVOCATION_ID`
+  # im Erklärtext wurde AUSGEFÜHRT statt geschrieben: die vollständige
+  # Prozessumgebung samt SESSION_SECRET, ADMIN_PASSWORD, SMTP_PASS und
+  # ANTHROPIC_API_KEY landete im Klartext in dieser Unit-Datei.
+  #
+  # Ein Wächter, der stattdessen den Text unquotierter Heredocs abklopft, müsste
+  # die Shell nachbauen (Quoting über Zeilengrenzen, $( ) mit eigener Ebene,
+  # Zeilenfortsetzungen, eval) — elf belegte Umgehungen haben gezeigt, dass das
+  # nicht verlässlich gelingt. Ohne unquotiertes Heredoc gibt es nichts zu
+  # umgehen.
+  dienst_unit=$(cat <<'EOF'
 [Unit]
 Description=Roses Food Blog – Pull & Deploy (aus dem Admin-Panel angestoßen)
 After=network-online.target
 
 [Service]
 Type=oneshot
-WorkingDirectory=$SCRIPT_DIR
+WorkingDirectory=@SCRIPT_DIR@
 # WICHTIG: Ein systemd-User-Dienst startet mit MINIMALEM PATH — ohne
 # ~/.local/bin (dort liegt z. B. ein per pip installiertes podman-compose)
 # und ggf. ohne /usr/local/bin. deploy.sh bräche dann schon an der
@@ -503,8 +551,8 @@ WorkingDirectory=$SCRIPT_DIR
 # nicht“, während der manuelle Aufruf im Terminal problemlos läuft). Wir
 # setzen daher einen vollständigen PATH — die Standardorte plus den PATH,
 # den der installierende Aufruf hatte.
-Environment=HOME=$HOME
-Environment=PATH=$HOME/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH
+Environment=HOME=@HOME@
+Environment=PATH=@HOME@/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:@PATH@
 #
 # LEBENSDAUER DES CONTAINERS VON DER DES DIENSTES ENTKOPPELN
 # (Produktionsausfall 2026-08-10, ~11 h Totalausfall — Root Cause):
@@ -534,20 +582,41 @@ Environment=PATH=$HOME/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/
 # tests/deploy-betrieb.test.ts hält beide Zeilen fest.
 KillMode=process
 # Anfrage vor dem Lauf entfernen, damit der Path-Unit erneut auslösen kann.
-ExecStartPre=-/usr/bin/rm -f $DATA_DIR/deploy-request
-ExecStart=/usr/bin/env -u INVOCATION_ID bash $SCRIPT_DIR/deploy.sh
+ExecStartPre=-/usr/bin/rm -f @DATA_DIR@/deploy-request
+ExecStart=/usr/bin/env -u INVOCATION_ID bash @SCRIPT_DIR@/deploy.sh
 EOF
-  cat > "$UNIT_DIR/roses-blog-deploy.path" <<EOF
+)
+  pfad_unit=$(cat <<'EOF'
 [Unit]
 Description=Beobachtet Deploy-Anfragen aus dem Admin-Panel (Roses Food Blog)
 
 [Path]
-PathExists=$DATA_DIR/deploy-request
+PathExists=@DATA_DIR@/deploy-request
 Unit=roses-blog-deploy.service
 
 [Install]
 WantedBy=default.target
 EOF
+)
+
+  # Vorlage prüfen, BEVOR eingesetzt wird: jeder @NAME@ in der Vorlage muss
+  # unten auch einen Wert bekommen. Geprüft wird hier der Vorlagentext (also
+  # Quelltext), nicht das Ergebnis — im Ergebnis stünde sonst womöglich ein
+  # @NAME@, das aus einem WERT stammt, und die Prüfung schlüge falsch an.
+  rest_vorlage="$dienst_unit$pfad_unit"
+  for platz in @SCRIPT_DIR@ @DATA_DIR@ @HOME@ @PATH@; do
+    rest_vorlage=${rest_vorlage//"$platz"/}
+  done
+  if [[ "$rest_vorlage" =~ @[A-Z_]+@ ]]; then
+    fail "Unit-Vorlage enthält einen Platzhalter ohne Wert: ${BASH_REMATCH[0]}"
+  fi
+
+  dienst_unit=$(einmal_einsetzen "$dienst_unit" \
+    SCRIPT_DIR "$SCRIPT_DIR" DATA_DIR "$DATA_DIR" HOME "$HOME" PATH "$PATH")
+  pfad_unit=$(einmal_einsetzen "$pfad_unit" DATA_DIR "$DATA_DIR")
+
+  printf '%s\n' "$dienst_unit" > "$UNIT_DIR/roses-blog-deploy.service"
+  printf '%s\n' "$pfad_unit" > "$UNIT_DIR/roses-blog-deploy.path"
   systemctl --user daemon-reload >/dev/null 2>&1 || true
   if systemctl --user enable --now roses-blog-deploy.path >/dev/null 2>&1; then
     echo "Panel-Deploy: Watcher aktiv (roses-blog-deploy.path)."
