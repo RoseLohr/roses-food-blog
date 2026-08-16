@@ -318,32 +318,23 @@ describe("Kompression: die Einrichtung bricht nicht an einem fehlenden Modul", (
     expect([...namen][0]).toBe(BROTLI_PAKET);
   });
 
-  it("der Exit-Code von apt gilt nicht als Beweis für ein geladenes Modul", () => {
-    // Das postinst verlinkt nach /etc/nginx/modules-enabled NUR bei der
-    // ERSTinstallation (`[ -z "$2" ]`). Ist das Paket bereits installiert und
-    // der Link von Hand entfernt, meldet apt Erfolg — und `load_module` fehlt
-    // trotzdem. Dann stünde ein „brotli on;" ohne Modul in der Config und
-    // `nginx -t` scheiterte unter `set -e` mitten in der Einrichtung.
-    // Verankert am Code, nicht am ersten Vorkommen im Fließtext: Der Nachweis
-    // muss den Status aus nginx' eigener Antwort ableiten, nicht aus apt.
-    const stelle = bootstrap.indexOf("if NGINX_EFFEKTIV=");
-    expect(stelle, "Modulnachweis nicht gefunden").toBeGreaterThan(-1);
-    const abschnitt = bootstrap.slice(
-      stelle,
-      bootstrap.indexOf("unset NGINX_EFFEKTIV", stelle),
-    );
-    expect(abschnitt).toMatch(/nginx -T/);
-    expect(abschnitt).toMatch(/BROTLI_MODUL="?\$\(/);
-    expect(abschnitt).toMatch(/brotli_modul_status/);
-    // Und der Exit-Code von nginx -T muss mitgereicht werden — ohne ihn kann
-    // die Funktion „Konfiguration ungültig, weil brotli fehlt" nicht von
-    // „Konfiguration gültig, Modul nicht geladen" unterscheiden.
-    // Geprüft wird die ÜBERGABESTELLE, nicht bloß das Vorkommen des Namens:
-    // NGINX_CODE steht auch in den Zuweisungen darüber, ein Aufruf mit fester
-    // 0 käme an einer reinen Namenssuche vorbei.
-    expect(abschnitt, "Exit-Code von nginx -T wird verworfen").toMatch(
-      /brotli_modul_status "\$NGINX_CODE"/,
-    );
+  it("der Exit-Code von apt gilt nicht als Beweis für ein nutzbares brotli", () => {
+    // Das postinst verlinkt nach modules-enabled NUR bei der Erstinstallation
+    // (`[ -z "$2" ]`) — apt kann also Erfolg melden, ohne dass `load_module`
+    // da ist. Und umgekehrt kann apt aus Gründen scheitern, die mit brotli
+    // nichts zu tun haben (dpkg-Lock, Spiegel mit 404). Beide Richtungen
+    // waren Panel-Befunde von gpt-5.6-sol.
+    expect(bootstrap).toMatch(new RegExp(`${BROTLI_PAKET}[^\\n]*\\|\\|\\s*true`));
+    expect(
+      bootstrap,
+      "apt-Ergebnis setzt BROTLI_OK — ein Aussetzer schaltet brotli ab",
+    ).not.toMatch(new RegExp(`${BROTLI_PAKET}[^\\n]*\\|\\|\\s*BROTLI_OK=`));
+    // BROTLI_OK stammt ausschließlich aus der Sonde.
+    const stelle = bootstrap.indexOf("| brotli_verfuegbar");
+    expect(stelle, "Sondenaufruf nicht gefunden").toBeGreaterThan(-1);
+    const abschnitt = bootstrap.slice(stelle, stelle + 400);
+    expect(abschnitt).toMatch(/BROTLI_OK=1/);
+    expect(abschnitt).toMatch(/BROTLI_OK=0/);
   });
 
   it("gefragt wird nginx selbst, nicht ein einzelnes Verzeichnis", () => {
@@ -355,28 +346,15 @@ describe("Kompression: die Einrichtung bricht nicht an einem fehlenden Modul", (
     // `nginx -T` gibt die vollständige aufgelöste Konfiguration aus; das ist
     // die einzige Quelle, die alle Ablageorte abdeckt.
     expect(bootstrap, "fragt nicht nginx selbst").toMatch(/nginx -T/);
+    expect(bootstrap, "keine Sonde").toMatch(/brotli_verfuegbar/);
     expect(
       bootstrap,
       "sucht weiterhin nur in modules-enabled — verfehlt load_module in nginx.conf",
     ).not.toMatch(/grep -Rqs[^\n]*modules-enabled/);
   });
 
-  it("bei unbeantwortbarer Frage wird an bestehenden Configs nichts geschnitten", () => {
-    // `nginx -T` scheitert nur, wenn die Konfiguration ohnehin schon ungültig
-    // ist. Dann ist nicht feststellbar, ob das Modul geladen würde — und ein
-    // Schnitt auf Verdacht entfernte womöglich einen intakten brotli-Block aus
-    // einer Config, deren Fehler ganz woanders liegt.
-    expect(bootstrap).toMatch(/BROTLI_MODUL=unbekannt/);
-    const stelle = bootstrap.indexOf("Entferne brotli-Block aus der bestehenden");
-    const davor = bootstrap.lastIndexOf("if [[", stelle);
-    expect(
-      bootstrap.slice(davor, stelle),
-      'Schnitt hängt nicht an einem belegten "nein"',
-    ).toMatch(/BROTLI_MODUL"?\s*==\s*"nein"/);
-  });
-
   it("die Modulprüfung fragt nginx, ob es die Direktive kennt — echt ausgeführt", () => {
-    // Diese Prüfung führt brotli_modul_status aus bootstrap.sh aus. Der Weg
+    // Diese Prüfung führt brotli_verfuegbar aus bootstrap.sh aus. Der Weg
     // dahin ging über fünf Fehlschlüsse, alle von gpt-5.6-sol gefunden:
     //
     //   1. Der apt-Exit-Code entschied mit.
@@ -394,72 +372,50 @@ describe("Kompression: die Einrichtung bricht nicht an einem fehlenden Modul", (
     //
     // Die Attrappen bilden die drei Bauweisen nach; auf dem CI-Läufer ist kein
     // nginx installiert, und ein Ergebnis, das davon abhinge, prüfte nichts.
-    const status = (ausgabe: string, code: number, art?: "dynamisch" | "statisch" | "kaputt") =>
-      ausBootstrap("brotli_modul_status", ausgabe, {
-        args: [String(code)],
-        umgebung: art ? { NGINX_BEFEHL: nginxAttrappe(art) } : {},
-      }).aus.trim();
+    const verfuegbar = (
+      ladezeilen: string,
+      art: "dynamisch" | "statisch" | "kaputt" | "fehlt",
+    ) =>
+      ausBootstrap("brotli_verfuegbar", ladezeilen, {
+        umgebung: {
+          NGINX_BEFEHL:
+            art === "fehlt" ? "/nicht/vorhanden/nginx" : nginxAttrappe(art),
+        },
+      }).code === 0;
 
     const ladezeile = "load_module modules/ngx_http_brotli_filter_module.so;";
 
-    // --- nginx -T lief durch: die Sonde entscheidet ---
     expect(
-      status(ladezeile, 0, "dynamisch"),
+      verfuegbar(ladezeile, "dynamisch"),
       "erkennt das dynamisch geladene Modul nicht",
-    ).toBe("ja");
+    ).toBe(true);
     expect(
-      status(`# configuration file /etc/nginx/nginx.conf:\n${ladezeile}`, 0, "dynamisch"),
-      "übersieht load_module in der nginx.conf",
-    ).toBe("ja");
-    expect(
-      status("load_module modules/ngx_http_brotli_static_module.so;", 0, "dynamisch"),
+      verfuegbar("load_module modules/ngx_http_brotli_static_module.so;", "dynamisch"),
       "hält das Static-Modul für das Filter-Modul",
-    ).toBe("nein");
+    ).toBe(false);
     expect(
-      status(`  # ${ladezeile}`, 0, "dynamisch"),
-      "hält eine auskommentierte Zeile für ein geladenes Modul",
-    ).toBe("nein");
-    expect(
-      status("events { worker_connections 768; }", 0, "dynamisch"),
-      "meldet ein Modul, wo keines geladen ist",
-    ).toBe("nein");
+      verfuegbar("", "dynamisch"),
+      "meldet brotli, wo kein Modul geladen ist",
+    ).toBe(false);
 
-    // Der Fall, der die reine Zeilensuche widerlegt: statisch einkompiliert,
-    // also KEINE load_module-Zeile — und brotli funktioniert trotzdem. Eine
-    // Zeilensuche sagte hier „nein" und schnitte einen intakten Block heraus.
+    // Der Fall, der jede Zeilensuche widerlegt: statisch einkompiliert, also
+    // KEINE load_module-Zeile — und brotli funktioniert trotzdem.
     expect(
-      status("events { worker_connections 768; }", 0, "statisch"),
+      verfuegbar("", "statisch"),
       "statisch einkompiliertes brotli wird als fehlend eingestuft",
-    ).toBe("ja");
+    ).toBe(true);
 
-    // --- nginx -T scheiterte ---
+    // Im Zweifel NEIN: Scheitert die Sonde aus fremdem Grund oder ist nginx
+    // gar nicht aufrufbar, entsteht die Config ohne brotli. Das kostet ein
+    // paar Prozent Bytes und ist immer lauffähig.
     expect(
-      status(
-        [
-          'nginx: [emerg] unknown directive "brotli" in /etc/nginx/sites-enabled/roses-blog:35',
-          "nginx: configuration file /etc/nginx/nginx.conf test failed",
-        ].join("\n"),
-        1,
-      ),
-      "Reparatur unerreichbar: nginx sagt selbst, dass es brotli nicht kennt",
-    ).toBe("nein");
+      verfuegbar(ladezeile, "kaputt"),
+      "ein Sondenfehler wird als Ja gewertet",
+    ).toBe(false);
     expect(
-      status('nginx: [emerg] unexpected "}" in /etc/nginx/nginx.conf:112', 1),
-      "hält einen fremden Konfigurationsfehler für ein fehlendes brotli-Modul",
-    ).toBe("unbekannt");
-
-    // --- die Sonde selbst scheitert aus fremdem Grund ---
-    expect(
-      status(ladezeile, 0, "kaputt"),
-      "wertet einen Sondenfehler als belegtes Nein",
-    ).toBe("unbekannt");
-    expect(
-      ausBootstrap("brotli_modul_status", ladezeile, {
-        args: ["0"],
-        umgebung: { NGINX_BEFEHL: "/nicht/vorhanden/nginx" },
-      }).aus.trim(),
-      "ohne aufrufbares nginx wird trotzdem ein Nein behauptet",
-    ).toBe("unbekannt");
+      verfuegbar(ladezeile, "fehlt"),
+      "ohne aufrufbares nginx wird brotli behauptet",
+    ).toBe(false);
   });
 
   it("unsaubere Marken kürzen die Config nicht — die Funktion, echt ausgeführt", () => {
@@ -518,50 +474,6 @@ describe("Kompression: die Einrichtung bricht nicht an einem fehlenden Modul", (
     );
     expect(verdreht.code, "1:1 gezählt und trotzdem bis EOF gelöscht").toBe(2);
     expect(verdreht.fehler).toMatch(/ohne vorangehendes BROTLI-ANFANG/);
-
-    // Und der Schnitt an der bestehenden Config läuft nur über eine Sicherung.
-    const stelle = bootstrap.indexOf("Entferne brotli-Block aus der bestehenden");
-    expect(stelle, "Reparaturzweig nicht gefunden").toBeGreaterThan(-1);
-    const bisSchnitt = bootstrap.slice(
-      stelle,
-      bootstrap.indexOf("brotli_block_entfernen", stelle),
-    );
-    expect(bisSchnitt, "keine Sicherung vor dem Schnitt").toMatch(/cp -a/);
-  });
-
-  it("schlägt nginx -t nach dem Schnitt fehl, wird zurückgerollt", () => {
-    // `set -e` bräche sonst ab und ließe eine von uns beschädigte Config
-    // stehen — der Server liefe bis zum nächsten Neustart weiter und käme dann
-    // nicht mehr hoch, weit weg von der Ursache.
-    const stelle = bootstrap.indexOf("if ! $SUDO nginx -t; then");
-    expect(stelle, "nginx -t ohne Fehlerbehandlung").toBeGreaterThan(-1);
-    const abschnitt = bootstrap.slice(stelle, stelle + 500);
-    expect(abschnitt).toMatch(/NGINX_SICHERUNG/);
-    expect(abschnitt, "Rückrollen fehlt").toMatch(/cp -a "\$NGINX_SICHERUNG"/);
-    expect(abschnitt, "der Fehler muss laut sein").toMatch(/fail /);
-  });
-
-  it("eine bestehende Config wird repariert, wenn das Modul verschwindet", () => {
-    // Der Re-Run lässt die Config in Ruhe, um certbots 443-Block nicht zu
-    // überschreiben. Für brotli darf das NICHT gelten: Wurde die Config einst
-    // mit Modul geschrieben und ist es heute weg (nginx-Upgrade auf eine neue
-    // ABI — das Paket hängt an nginx-abi-1.24.0-1 —, Paket entfernt), bliebe
-    // eine Config stehen, die nginx nicht mehr annimmt. (Panel-Befund
-    // gpt-5.6-sol.)
-    const stelle = bootstrap.indexOf("Server-Block unverändert gelassen");
-    expect(stelle, "Re-Run-Zweig nicht gefunden").toBeGreaterThan(-1);
-    // Bis zum Ende des Zweigs, nicht über eine geratene Zeichenzahl — sonst
-    // bricht die Prüfung, sobald jemand einen Kommentar ergänzt.
-    const abschnitt = bootstrap.slice(
-      stelle,
-      bootstrap.indexOf('if [[ "$NGINX_GEAENDERT" == "1" ]]', stelle),
-    );
-    expect(abschnitt).toMatch(/BROTLI_MODUL.*==.*"nein"/s);
-    expect(abschnitt).toMatch(/brotli_block_entfernen/);
-    // Und bei einem Abbruch der Funktion darf nichts an die Stelle der Config
-    // rutschen — die Zwischendatei wird verworfen, nicht verschoben.
-    expect(abschnitt, "Abbruch ohne fail()").toMatch(/fail /);
-    expect(abschnitt).toMatch(/rm -f .*\.neu/);
   });
 
   it("eine halb entstandene Config wird nicht installiert", () => {
@@ -596,14 +508,55 @@ describe("Kompression: die Einrichtung bricht nicht an einem fehlenden Modul", (
     expect(abschnitt, "Zwischendatei wird nicht verworfen").toMatch(/rm -f "\$NEUE_CONF"/);
   });
 
-  it("nach jeder Änderung an der Config laufen nginx -t und reload", () => {
-    // Sonst bliebe die Reparatur oben ungeprüft liegen und würde erst beim
-    // nächsten Neustart wirksam — im schlechtesten Fall nach einem Reboot,
-    // wenn niemand mehr weiß, warum nginx nicht hochkommt.
-    expect(bootstrap).toMatch(/NGINX_GEAENDERT=1/);
-    const stelle = bootstrap.indexOf('if [[ "$NGINX_GEAENDERT" == "1" ]]');
-    expect(stelle, "Sammelzweig für nginx -t nicht gefunden").toBeGreaterThan(-1);
-    const abschnitt = bootstrap.slice(stelle, bootstrap.indexOf("certbot", stelle));
+  it("bootstrap.sh ändert eine BESTEHENDE nginx-Config unter keinen Umständen", () => {
+    // Die tragende Entscheidung dieses PRs (2026-08-16, nach zehn Prüfrunden am
+    // Gegenteil): Das Skript schreibt die Config nur, wenn es noch keine gibt.
+    //
+    // Der frühere Reparaturzweig — brotli-Block aus einer laufenden Config
+    // herausschneiden, wenn das Modul fehlt — war die Quelle von sieben
+    // Befunden in Folge, und jeder Fix führte den nächsten Fehler ein: erst
+    // löschte er bis zum Dateiende, dann bei jedem Re-Run, dann war er in
+    // seinem eigenen Anwendungsfall unerreichbar, dann verwechselte er
+    // brotli_static mit dem Filtermodul. Der Gewinn dahinter sind ~4 % Bytes.
+    // Ein Skript, das dafür in fremde, laufende Konfigurationen hineinschneidet,
+    // steht in keinem Verhältnis dazu.
+    //
+    // Diese Prüfung hält den Verzicht fest. Ohne sie käme der Zweig bei der
+    // nächsten „Verbesserung" unbemerkt zurück.
+    const stelle = bootstrap.indexOf("nginx-Config existiert bereits");
+    expect(stelle, "Re-Run-Zweig nicht gefunden").toBeGreaterThan(-1);
+    const zweig = bootstrap.slice(stelle, bootstrap.indexOf("certbot nur, wenn", stelle));
+
+    // Ohne Flag-Annahmen: ein schlichtes `cp ziel` muss genauso auffallen wie
+    // ein `cp -a`. Die erste Fassung verlangte ein Flag und ließ das
+    // Überschreiben per `cp` durch — beim Gegenprüfen aufgefallen.
+    for (const schreibend of [
+      /\bsed\s+-i/,
+      /\bcp\s/,
+      /\bmv\s/,
+      /\btee\s/,
+      /\binstall\s+-/,
+      /\btruncate\s/,
+      />>?\s*\/etc\/nginx/,
+    ]) {
+      expect(
+        zweig,
+        `schreibender Zugriff im Re-Run-Zweig: ${schreibend}`,
+      ).not.toMatch(schreibend);
+    }
+    // Berichten muss es aber — beide Abweichungen, in beide Richtungen.
+    expect(zweig, "meldet fehlendes brotli bei vorhandenem Block nicht").toMatch(
+      /ACHTUNG/,
+    );
+    expect(zweig, "meldet ungenutztes brotli nicht").toMatch(/HINWEIS/);
+  });
+
+  it("die neu geschriebene Config wird geprüft und geladen", () => {
+    // Ohne `nginx -t` bliebe ein Fehler bis zum nächsten Neustart unentdeckt —
+    // weit weg von der Ursache.
+    const stelle = bootstrap.indexOf("ln -sf /etc/nginx/sites-available/roses-blog");
+    expect(stelle, "Verlinken der Config nicht gefunden").toBeGreaterThan(-1);
+    const abschnitt = bootstrap.slice(stelle, stelle + 300);
     expect(abschnitt).toMatch(/nginx -t/);
     expect(abschnitt).toMatch(/systemctl reload nginx/);
   });

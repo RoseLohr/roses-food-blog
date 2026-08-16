@@ -36,70 +36,36 @@ fail() { printf '\n\033[1;31mFEHLER: %s\033[0m\n' "$*"; exit 1; }
 #
 # Dieser Durchlauf prüft stattdessen die Struktur und bricht mit Exit 2 ab,
 # statt still zu kürzen.
-# Beantwortet: Kennt nginx die brotli-Direktiven? — „ja", „nein" oder
-# „unbekannt". Erwartet die Ausgabe von `nginx -T` (samt stderr) auf stdin und
-# dessen Exit-Code als $1.
+# Beantwortet die eine Frage, auf die es ankommt: Akzeptiert dieses nginx die
+# Direktive `brotli`? Erwartet die load_module-Zeilen der laufenden Instanz auf
+# stdin; Exit 0 heißt ja.
 #
-# Der unscheinbare Fall ist der zweite Zweig. Wenn eine bestehende Config
-# `brotli on;` enthält und das Modul fehlt, dann scheitert `nginx -T` GENAU
-# daran — die Konfiguration ist ja ungültig. Würde das pauschal als
-# „unbekannt" gewertet, wäre die Reparatur weiter unten ausgerechnet in ihrem
-# eigenen Anwendungsfall unerreichbar: Die kaputte Config bliebe liegen, der
-# Re-Run liefe grün durch, und der nächste nginx-Start scheiterte.
+# Gefragt wird nicht das Dateisystem, sondern nginx: Es bekommt eine
+# Wegwerf-Konfiguration zu prüfen, die genau diese Direktive benutzt. Jedes
+# Stellvertretermerkmal wäre falsch — der apt-Exit-Code (transiente Fehler),
+# eine Suche nach „irgendwas mit brotli" (das Schwesterpaket …-static bringt nur
+# `brotli_static` mit), eine Verzeichnissuche (das `load_module` darf auch in
+# der nginx.conf stehen) oder das Vorhandensein einer load_module-Zeile
+# (statisch einkompiliertes brotli hat keine und funktioniert trotzdem).
 #
-# nginx nennt den Grund aber selbst — „unknown directive \"brotli…\"". Das ist
-# ein belegtes Nein, kein Verdacht: nginx sagt wörtlich, dass es die Direktive
-# nicht kennt. Jeder ANDERE Fehler bleibt „unbekannt", denn dann liegt das
-# Problem woanders und an der Config wird nichts angefasst.
-brotli_modul_status() {
-  local code="$1" ausgabe verzeichnis sonde
-  ausgabe="$(cat)"
-
-  # Belegter geht es nicht: nginx hat die echte Konfiguration gelesen und sagt
-  # wörtlich, dass es die Direktive nicht kennt.
-  if printf '%s\n' "$ausgabe" | grep -q 'unknown directive "brotli'; then
-    printf 'nein\n'
-    return
-  fi
-  # Ein anderer Fehler heißt: Das Problem liegt woanders, und über brotli ist
-  # nichts ausgesagt.
-  if [[ "$code" != "0" ]]; then
-    printf 'unbekannt\n'
-    return
-  fi
-
-  # Jetzt die eigentliche Frage. NICHT „steht irgendwo eine load_module-Zeile"
-  # — das ist bloß ein Stellvertretermerkmal und geht schief, sobald jemand
-  # nginx mit statisch einkompiliertem brotli betreibt (--add-module). Dann gibt
-  # es keine load_module-Zeile, die Direktive funktioniert aber einwandfrei, und
-  # der Reparaturzweig schnitte einen intakten Block heraus.
-  #
-  # Gefragt wird deshalb nginx selbst: Es soll eine Wegwerf-Konfiguration
-  # prüfen, die genau diese Direktive benutzt. Die load_module-Zeilen der
-  # echten Konfiguration werden übernommen (dynamisch geladene Module); bei
-  # statisch einkompiliertem Modul gibt es keine — und dann braucht es auch
-  # keine.
+# Im Zweifel lautet die Antwort NEIN: Ist nginx nicht aufrufbar oder scheitert
+# die Sonde aus einem fremden Grund, entsteht die Konfiguration ohne brotli.
+# Das kostet ein paar Prozent Bytes und ist immer lauffähig.
+brotli_verfuegbar() {
+  local verzeichnis ergebnis=1
   verzeichnis="$(mktemp -d)"
   {
-    printf '%s\n' "$ausgabe" | grep -E '^[[:space:]]*load_module[^#]*;' || true
+    cat
     printf 'pid %s/sonde.pid;\n' "$verzeichnis"
     printf 'error_log %s/sonde.log;\n' "$verzeichnis"
     printf 'events {}\n'
     printf 'http { brotli on; brotli_comp_level 5; }\n'
   } >"$verzeichnis/sonde.conf"
-
-  if sonde="$(${SUDO:-} "${NGINX_BEFEHL:-nginx}" -t -c "$verzeichnis/sonde.conf" 2>&1)"; then
-    rm -rf "$verzeichnis"
-    printf 'ja\n'
-  elif printf '%s\n' "$sonde" | grep -q 'unknown directive "brotli'; then
-    rm -rf "$verzeichnis"
-    printf 'nein\n'
-  else
-    # Die Sonde scheiterte aus einem anderen Grund (nginx nicht aufrufbar,
-    # Schreibrechte). Dann ist nichts belegt — und es wird nichts geschnitten.
-    rm -rf "$verzeichnis"
-    printf 'unbekannt\n'
+  if ${SUDO:-} "${NGINX_BEFEHL:-nginx}" -t -c "$verzeichnis/sonde.conf" >/dev/null 2>&1; then
+    ergebnis=0
   fi
+  rm -rf "$verzeichnis"
+  return "$ergebnis"
 }
 
 brotli_block_entfernen() {
@@ -288,92 +254,47 @@ if [[ "$DOMAIN" != "localhost:${PORT:-3000}" && "$DOMAIN" != "localhost" && -n "
     $SUDO apt-get install -y nginx certbot python3-certbot-nginx
     # brotli-Modul separat und OHNE Abbruch: `set -e` gilt im ganzen Skript,
     # ein fehlendes Paket (andere Distribution, alter Ubuntu-Stand) würde die
-    # Ersteinrichtung sonst mitten im Lauf beenden. Schlägt es fehl, wird
-    # weiter unten der brotli-Block aus der Config entfernt — nginx läuft dann
-    # mit gzip, und `nginx -t` bleibt grün. Ein „brotli on;" ohne geladenes
-    # Modul ist ein harter Konfigurationsfehler, kein stiller Rückfall.
+    # Ersteinrichtung sonst mitten im Lauf beenden.
     #
     # Nur das „…-filter"-Paket: es komprimiert im Durchreichen. Das Gegenstück
     # „…-static" liefert vorkomprimierte .br-Dateien aus — die erzeugt hier
     # niemand.
-    # Der Rückgabewert von apt entscheidet hier NICHTS — in keine Richtung.
     #
-    # Kein Erfolgsbeweis: Das postinst verlinkt nach modules-enabled NUR bei der
-    # Erstinstallation ([ -z "$2" ]). War das Paket schon da und der Link von
-    # Hand entfernt, meldet apt Erfolg und `load_module` fehlt trotzdem.
-    #
-    # Aber auch kein Misserfolgsbeweis: apt kann aus Gründen ungleich 0 sein,
-    # die mit brotli nichts zu tun haben — ein belegter dpkg-Lock, ein Spiegel,
-    # der gerade 404 liefert. Zählte das, entfernte ein solcher Aussetzer den
-    # brotli-Block aus einer laufenden Config, obwohl das Modul geladen ist.
-    #
-    # Maßgeblich ist allein, ob nginx das Modul lädt.
+    # Der Rückgabewert von apt entscheidet NICHTS. Er ist weder Erfolgs- noch
+    # Misserfolgsbeweis: Das postinst verlinkt nach modules-enabled nur bei der
+    # Erstinstallation, und apt kann aus Gründen scheitern, die mit brotli
+    # nichts zu tun haben (belegter dpkg-Lock, ein Spiegel mit 404). Gefragt
+    # wird danach nginx selbst.
     $SUDO apt-get install -y libnginx-mod-http-brotli-filter || true
-    #
-    # Gesucht wird gezielt das FILTER-Modul, nicht „irgendwas mit brotli": Das
-    # Schwesterpaket …-static verlinkt ebenfalls nach modules-enabled, bringt
-    # aber nur `brotli_static` mit. Wäre nur das installiert, ginge eine grobe
-    # Suche auf, und `brotli on;` bliebe eine unbekannte Direktive.
-    #
-    # Gefragt wird NGINX SELBST, nicht das Dateisystem.
-    #
-    # Die Frage lautet ja nicht „liegt irgendwo eine Datei", sondern „kennt
-    # nginx die brotli-Direktiven". Ein Blick nur nach
-    # /etc/nginx/modules-enabled/ beantwortet das falsch, sobald jemand das
-    # `load_module` direkt in die nginx.conf oder ein anderes include
-    # geschrieben hat — dort ist es genauso gültig. Die Folge wäre die
-    # schlimmste Sorte Fehler: BROTLI_OK=0 bei aktivem Modul, und der
-    # Reparaturzweig weiter unten schnitte den brotli-Block aus einer
-    # einwandfrei laufenden Config heraus.
-    #
-    # `nginx -T` gibt die vollständige aufgelöste Konfiguration aus — nginx.conf,
-    # sämtliche includes, modules-enabled. Genau das, was nginx wirklich liest.
-    #
-    # Der Anker `^[[:space:]]*load_module` bleibt nötig: Die Ausgabe enthält
-    # auch Kommentarzeilen, und „# load_module …brotli…" ist kein geladenes
-    # Modul. Und gesucht wird das FILTER-Modul: Das Schwesterpaket …-static
-    # bringt nur `brotli_static` mit, `brotli on;` bliebe damit unbekannt.
-    # stderr wird mit eingefangen: Scheitert `nginx -T`, steht dort die
-    # Begründung, und die brauchen wir (siehe brotli_modul_status).
-    if NGINX_EFFEKTIV="$($SUDO nginx -T 2>&1)"; then
-      NGINX_CODE=0
+
+    # Die load_module-Zeilen der laufenden Instanz einsammeln und nginx die
+    # Sonde vorlegen. Scheitert `nginx -T`, bleibt die Liste leer — dann
+    # entscheidet die Sonde eben ohne sie, und im Zweifel ohne brotli.
+    if printf '%s\n' "$($SUDO nginx -T 2>/dev/null |
+      grep -E '^[[:space:]]*load_module[^#]*;' || true)" | brotli_verfuegbar; then
+      BROTLI_OK=1
     else
-      NGINX_CODE=$?
-    fi
-    BROTLI_MODUL="$(printf '%s\n' "$NGINX_EFFEKTIV" | brotli_modul_status "$NGINX_CODE")"
-    unset NGINX_EFFEKTIV NGINX_CODE
-    # Bleibt es bei „unbekannt", ist die Konfiguration aus einem Grund ungültig,
-    # der mit brotli nichts zu tun hat. Dann wird an einer bestehenden Config
-    # nichts geschnitten (siehe unten). Für eine neu geschriebene Config ist
-    # „ohne brotli" die sichere Wahl: gzip funktioniert.
-    if [[ "$BROTLI_MODUL" == "ja" ]]; then BROTLI_OK=1; else BROTLI_OK=0; fi
-    if [[ "$BROTLI_MODUL" == "nein" ]]; then
-      echo "HINWEIS: brotli-Modul nicht aktiv — nginx komprimiert nur mit gzip."
+      BROTLI_OK=0
+      echo "HINWEIS: brotli ist auf diesem Server nicht nutzbar — nginx komprimiert nur mit gzip."
       echo "         Das ist funktionsfähig, kostet aber rund 4 % mehr Bytes (JS) bzw. 7 % (CSS)."
-    elif [[ "$BROTLI_MODUL" == "unbekannt" ]]; then
-      echo 'HINWEIS: „nginx -T" schlug fehl — die vorhandene Konfiguration ist ungültig.'
-      echo "         Ob das brotli-Modul geladen ist, lässt sich damit nicht feststellen."
-      echo "         An einer bestehenden Config wird deshalb NICHTS geändert."
     fi
-    # nginx-Config nur beim ersten Mal aus der HTTP-Vorlage schreiben. Ein
-    # Re-Run darf certbots eingefügten TLS-/443-Block NICHT überschreiben.
-    NGINX_GEAENDERT=0
-    NGINX_SICHERUNG=""
+
+    # WICHTIG: Dieses Skript schreibt die nginx-Config NUR, wenn es noch keine
+    # gibt. Eine bestehende Konfiguration wird NIE verändert — weder um
+    # certbots TLS-Block zu schonen noch sonst.
+    #
+    # Das ist eine bewusste Entscheidung (2026-08-16, nach zehn Prüfrunden am
+    # Gegenteil): Ein Skript, das in eine fremde, laufende Konfiguration
+    # hineinschneidet, trägt ein Schadensrisiko, das in keinem Verhältnis zu
+    # den ~4 % Bytes steht, um die es hier geht. Weicht der Bestand ab, sagt
+    # das Skript das — und ein Mensch entscheidet.
     if [[ ! -e /etc/nginx/sites-available/roses-blog ]]; then
       # Erst vollständig bauen, dann installieren — NICHT über eine
-      # Prozess-Substitution direkt in die Zieldatei.
-      #
-      # Der Grund ist ein Fehler, der sich nicht meldet: `tee … < <(…)` erfährt
-      # den Exit-Code der Substitution nicht, auch mit `set -o pipefail` nicht.
-      # Nachgestellt — `tee ziel < <(printf 'zeile1\n'; exit 2)` meldet Erfolg
-      # und legt die Teildatei an. Bräche brotli_block_entfernen also mitten im
-      # Text ab, stünde eine halbe Config in sites-available; `nginx -t`
-      # scheiterte, die Datei bliebe liegen, und der nächste Lauf hielte sie für
-      # eine gewachsene Bestandskonfiguration und fasste sie nicht mehr an.
-      # (Panel-Befund gpt-5.6-sol.)
-      #
-      # Als echte Pipeline in eine temporäre Datei greift `pipefail`, und
-      # installiert wird nur, was vollständig entstanden ist.
+      # Prozess-Substitution direkt in die Zieldatei. Deren Exit-Code erreicht
+      # `tee` nämlich nicht, auch mit `set -o pipefail` nicht (nachgestellt:
+      # `tee ziel < <(printf 'zeile1\n'; exit 2)` meldet Erfolg und legt die
+      # Teildatei an). Als echte Pipeline in eine temporäre Datei greift
+      # pipefail, und installiert wird nur, was vollständig entstanden ist.
       NEUE_CONF="$(mktemp)"
       if sed -e "s/www\.example\.de example\.de/$DOMAIN/" \
              -e "s/127\.0\.0\.1:3000/127.0.0.1:${PORT:-3000}/" \
@@ -389,73 +310,25 @@ if [[ "$DOMAIN" != "localhost:${PORT:-3000}" && "$DOMAIN" != "localhost" && -n "
        gepaart (Meldung oben). Es wurde KEINE Konfiguration installiert."
       fi
       $SUDO ln -sf /etc/nginx/sites-available/roses-blog /etc/nginx/sites-enabled/roses-blog
-      NGINX_GEAENDERT=1
-    else
-      echo "nginx-Config existiert bereits — Server-Block unverändert gelassen."
-      # GENAU EINE Ausnahme von „unverändert": brotli-Direktiven ohne geladenes
-      # Modul sind ein harter `nginx -t`-Fehler, kein stiller Rückfall auf gzip.
-      # Wurde die Config einst MIT brotli geschrieben und ist das Modul heute
-      # weg (nginx-Upgrade auf eine neue ABI — das Paket hängt an
-      # nginx-abi-1.24.0-1 —, Paket entfernt, Distributionswechsel), stünde hier
-      # eine ungültige Config, die nginx beim nächsten Start nicht mehr annimmt.
-      # Der markierte Block wird deshalb gezielt herausgeschnitten. Der
-      # sed-Bereich trifft JEDES Vorkommen, also auch das in den von certbot
-      # kopierten 443-Block; alles außerhalb der Marken — Zertifikatspfade,
-      # Weiterleitungen, proxy_pass — bleibt unangetastet.
-      #
-      # Geschnitten wird mit brotli_block_entfernen (siehe oben) — die
-      # Zustandsmaschine bricht bei unsauber gepaarten Marken ab, statt still
-      # bis zum Dateiende zu löschen. Und weil hier in eine fremde, laufende
-      # Datei geschrieben wird, geht nichts ohne Sicherungskopie.
-      # „nein", nicht „nicht ja": Bei BROTLI_MODUL=unbekannt (nginx -T scheitert,
-      # die Konfiguration ist also ohnehin schon ungültig) wird NICHT geschnitten.
-      # Ein Schnitt aufgrund einer unbeantwortbaren Frage könnte einen intakten
-      # brotli-Block aus einer Config entfernen, deren Fehler ganz woanders liegt.
-      if [[ "$BROTLI_MODUL" == "nein" ]] &&
-        $SUDO grep -q '# BROTLI-ANFANG' /etc/nginx/sites-available/roses-blog; then
-        echo "Entferne brotli-Block aus der bestehenden Config — das Modul fehlt."
-        NGINX_SICHERUNG="/etc/nginx/sites-available/roses-blog.vor-brotli-schnitt"
-        $SUDO cp -a /etc/nginx/sites-available/roses-blog "$NGINX_SICHERUNG"
-        if $SUDO cat /etc/nginx/sites-available/roses-blog \
-          | brotli_block_entfernen \
-          | $SUDO tee /etc/nginx/sites-available/roses-blog.neu >/dev/null; then
-          $SUDO mv /etc/nginx/sites-available/roses-blog.neu \
-            /etc/nginx/sites-available/roses-blog
-          NGINX_GEAENDERT=1
-        else
-          $SUDO rm -f /etc/nginx/sites-available/roses-blog.neu
-          fail "Die brotli-Marken in /etc/nginx/sites-available/roses-blog sind
-       nicht sauber gepaart (Meldung oben). Es wurde NICHTS geändert.
-       Das Modul fehlt, die brotli-Zeilen müssen weg — bitte von Hand entfernen.
-       nginx nimmt die Config sonst nicht mehr an (unknown directive „brotli\")."
-        fi
-      fi
-      # Die Gegenrichtung — Modul ist da, Config kennt kein brotli — wird
-      # bewusst NICHT automatisch nachgetragen: Dafür müsste das Skript in einen
-      # von certbot verwalteten Block hineinschreiben, und der Zustand ist
-      # funktionsfähig (gzip), nur nicht optimal. Wer nachrüsten will, nimmt den
-      # Block aus deploy/nginx.conf.example (README §4).
-      if [[ "$BROTLI_MODUL" == "ja" ]] &&
-        ! $SUDO grep -q '# BROTLI-ANFANG' /etc/nginx/sites-available/roses-blog; then
-        echo "HINWEIS: brotli-Modul ist aktiv, die bestehende Config nutzt es aber nicht."
-        echo "         Nachrüsten: Block aus deploy/nginx.conf.example übernehmen (README §4)."
-      fi
-    fi
-    if [[ "$NGINX_GEAENDERT" == "1" ]]; then
-      # `set -e` würde hier abbrechen und eine womöglich von uns beschädigte
-      # Config zurücklassen. Wenn wir geschnitten haben, wird sie zuerst
-      # zurückgerollt — der Server läuft dann weiter wie vorher, und der Fehler
-      # steht im Klartext da, statt beim nächsten Neustart aufzuschlagen.
-      if ! $SUDO nginx -t; then
-        if [[ -n "$NGINX_SICHERUNG" ]]; then
-          echo "nginx -t fehlgeschlagen — stelle $NGINX_SICHERUNG wieder her."
-          $SUDO cp -a "$NGINX_SICHERUNG" /etc/nginx/sites-available/roses-blog
-        fi
-        fail "nginx-Konfiguration ungültig (nginx -t, Ausgabe siehe oben)."
-      fi
+      $SUDO nginx -t
       $SUDO systemctl reload nginx
-      if [[ -n "$NGINX_SICHERUNG" ]]; then
-        echo "Sicherung der vorherigen Config: $NGINX_SICHERUNG"
+    else
+      echo "nginx-Config existiert bereits — unverändert gelassen."
+      # Nur berichten, nicht eingreifen. Beide Abweichungen sind für einen
+      # Menschen in einer Minute behoben; automatisch behoben waren sie die
+      # Quelle von sieben Befunden in Folge.
+      if [[ "$BROTLI_OK" == "0" ]] &&
+        $SUDO grep -q '# BROTLI-ANFANG' /etc/nginx/sites-available/roses-blog; then
+        echo 'ACHTUNG: Die bestehende Config enthält brotli-Direktiven, aber brotli ist'
+        echo '         hier nicht nutzbar. nginx lehnt sie mit „unknown directive" ab —'
+        echo '         spätestens der nächste Neustart scheitert daran.'
+        echo '         Bitte den Block zwischen # BROTLI-ANFANG und # BROTLI-ENDE in'
+        echo '         /etc/nginx/sites-available/roses-blog von Hand entfernen.'
+      fi
+      if [[ "$BROTLI_OK" == "1" ]] &&
+        ! $SUDO grep -q '# BROTLI-ANFANG' /etc/nginx/sites-available/roses-blog; then
+        echo "HINWEIS: brotli ist nutzbar, die bestehende Config nutzt es aber nicht."
+        echo "         Nachrüsten: Block aus deploy/nginx.conf.example übernehmen (README §4)."
       fi
     fi
     # certbot nur, wenn noch kein Zertifikat existiert (sonst Re-Run-Rausch /

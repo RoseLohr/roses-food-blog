@@ -139,12 +139,19 @@ kein passendes Paket gibt, ist es schlicht nicht installierbar.
 Fehlt das Modul, kennt nginx die `brotli`-Direktiven nicht und `nginx -t`
 schlägt fehl. Dann den Block zwischen `# BROTLI-ANFANG` und `# BROTLI-ENDE`
 aus der Config entfernen — gzip allein funktioniert, kostet gemessen rund 4 %
-mehr Bytes bei JS und 7 % bei CSS. `bootstrap.sh` erledigt beides selbst: Es
-installiert das Modul und schneidet den Block heraus, wenn es hinterher nicht
-unter `/etc/nginx/modules-enabled/` verlinkt ist. Geprüft wird der Link, nicht
-der Rückgabewert von apt — das postinst verlinkt nur bei der *Erst*installation,
-ein bereits installiertes Paket mit von Hand entferntem Link meldet sonst
-fälschlich Erfolg.
+mehr Bytes bei JS und 7 % bei CSS.
+
+`bootstrap.sh` nimmt das beim **ersten** Einrichten ab: Es installiert das
+Modul, fragt nginx mit einer Wegwerf-Konfiguration, ob es `brotli on;`
+akzeptiert, und schreibt die Config entsprechend mit oder ohne den Block. Ob
+apt Erfolg meldet, spielt dabei keine Rolle — gefragt wird das Ergebnis, nicht
+der Weg dorthin.
+
+**Eine bereits vorhandene Config ändert `bootstrap.sh` nie.** Weicht sie ab —
+brotli-Direktiven ohne nutzbares Modul oder umgekehrt —, sagt das Skript das
+beim Lauf und nennt den nötigen Handgriff. Das ist Absicht: Automatisch in eine
+laufende, womöglich von certbot erweiterte Konfiguration hineinzuschneiden ist
+ein Schadensrisiko, das zu den 4 % nicht im Verhältnis steht.
 
 ### 5. Autostart nach Reboot
 
