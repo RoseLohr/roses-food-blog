@@ -31,7 +31,7 @@ Annahmen, die während der Umsetzung getroffen wurden:
 - **B9 — Likes-Dedup:** Anonyme Client-ID (UUID in `localStorage`) + serverseitig
   gespeicherter Hash (Client-ID + Rezept). Best effort, wie im Auftrag erlaubt.
 - **B10 — Bildformate:** Uploads (JPEG/PNG/WebP, max. 15 MB) werden mit
-  sharp bzw. libvips neu verarbeitet (EXIF entfernt) zu WebP; Breiten-Leiter
+  sharp neu verarbeitet (EXIF entfernt) zu WebP; Breiten-Leiter
   und Encoder-Einstellungen (Qualität/effort/smart-subsample) kommen zentral
   aus `config/bild-encoder.json` (Stand rev 2: 160–1920 px, Q68/effort 6).
   Ändert sich dort etwas, MUSS `rev` steigen: der Container-Start zieht dann
@@ -100,11 +100,14 @@ Annahmen, die während der Umsetzung getroffen wurden:
   CPU; das Ausgabeformat ist Standard-PHC (`$argon2id$…`), also kompatibel zu
   bestehenden argon2-Hashes. Der Auftrag verlangt argon2id — das bleibt
   erfüllt (gleicher Algorithmus, nur WASM statt nativ). Parameter unverändert
-  (m=19456 KiB, t=2, p=1, 32-Byte-Hash).
+  (m=19456 KiB, t=2, p=1, 32-Byte-Hash). *Anmerkung 2026-08-16:* Der
+  SIGILL-Anlass ist mit dem Serverwechsel (AMD EPYC 7352) entfallen; die
+  Entscheidung bleibt trotzdem, weil hash-wasm formatkompatibel ist und ein
+  Rückbau auf eine native Bibliothek nichts gewönne außer Angriffsfläche.
 - **B22 — Next-Bild-Optimizer deaktiviert:** `images.unoptimized = true`. Die
   App erzeugt eigene WebP-Varianten und liefert sie über `<img srcSet>` aus;
-  der eingebaute `/_next/image`-Optimizer wird nicht gebraucht und würde auf
-  CPUs ohne SSE4.2 (LOW_CPU) beim Laden von sharp einen unabfangbaren SIGILL
-  auslösen. Deaktiviert liefert die Route sofort 404, ohne sharp zu laden.
+  der eingebaute `/_next/image`-Optimizer wird nicht gebraucht. Deaktiviert
+  liefert die Route sofort 404, ohne sharp zu laden — das spart nicht nur
+  Arbeit, es hält auch die native Bibliothek aus dem Anfragepfad heraus.
 - **B18 — Healthcheck:** `/health` prüft auch die DB-Verbindung (einfaches
   `SELECT 1`) und liefert Commit/Version aus dem Build.

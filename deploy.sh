@@ -336,15 +336,15 @@ DEPLOY_RUNNING=1; DEPLOY_STATUS_RESULT=""
 log "Deployment gestartet (Commit $(git rev-parse --short HEAD 2>/dev/null || echo '?'))"
 
 # --- 3. Image bauen ----------------------------------------------------------
-# CPU-Check: sharps native Binärdatei braucht SSE4.2 (x86-64-v2). Fehlt das
-# Flag (alte CPUs wie Intel Atom/Bonnell, VMs mit qemu64/kvm64-CPU-Typ),
-# nutzt die Bildpipeline stattdessen die Debian-libvips-CLI (LOW_CPU-Image).
-LOW_CPU="${FORCE_LOW_CPU:-0}"
-if [[ "$LOW_CPU" != "1" ]] && ! grep -qm1 sse4_2 /proc/cpuinfo; then
-  LOW_CPU=1
-  echo "HINWEIS: CPU ohne SSE4.2 erkannt — baue LOW_CPU-Image"
-  echo "         (Bildverarbeitung über Debians libvips-CLI statt sharp)."
-fi
+# Bis 08/2026 stand hier ein CPU-Check: Fehlte /proc/cpuinfo das Flag sse4_2,
+# baute deploy.sh ein „LOW_CPU-Image", in dem die Bildpipeline statt sharp die
+# Debian-libvips-CLI benutzte — sharps native Bibliothek hätte auf solchen CPUs
+# einen unabfangbaren SIGILL ausgelöst. Die Maschine ist inzwischen eine AMD
+# EPYC 7352; sie meldet alle sechs x86-64-v2-Flags, ld.so nennt zusätzlich v3
+# und v4. Der Zweig war damit schon vor seiner Entfernung tot: Gebaut wurde
+# ohnehin nur noch mit LOW_CPU=0, und der Entrypoint schaltete mangels
+# vipsthumbnail nie auf vips um. Ein zweites Bild-Backend, das nie läuft, ist
+# kein Netz, sondern unbelegter Code — deshalb ist es ganz weg.
 
 # Persistente Build-Caches auf dem Host (NO_CACHE=1 schaltet beides ab):
 #  - npm-Cache: npm ci lädt Pakete nur noch einmal herunter
@@ -352,7 +352,7 @@ fi
 #    (next.config.ts: experimental.turbopackFileSystemCacheForBuild)
 # `podman build -v` blendet die Host-Verzeichnisse nur während der RUN-Schritte
 # ein — sie landen NICHT im Image.
-BUILD_OPTS=(--build-arg "APP_COMMIT=$COMMIT" --build-arg "LOW_CPU=$LOW_CPU" -f Containerfile)
+BUILD_OPTS=(--build-arg "APP_COMMIT=$COMMIT" -f Containerfile)
 if [[ "${NO_CACHE:-0}" != "1" ]]; then
   mkdir -p "$DATA_DIR/build-cache/npm" "$DATA_DIR/build-cache/next"
   BUILD_OPTS+=(-v "$DATA_DIR/build-cache/npm:/root/.npm" \

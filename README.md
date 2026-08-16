@@ -212,13 +212,20 @@ curl -fsS http://127.0.0.1:3000/health
 Die CPU des Servers unterstützt kein SSE4.2/x86-64-v2 — die vorkompilierte
 native Bibliothek von sharp stürzt dann ab. Betrifft alte physische CPUs
 (z. B. Intel Atom N2xxx/Bonnell) und VMs mit CPU-Typ `qemu64`/`kvm64`.
-`deploy.sh` erkennt das automatisch (Check auf `sse4_2` in `/proc/cpuinfo`)
-und baut ein **LOW_CPU-Image**: Die Bildverarbeitung läuft dann über Debians
-libvips-Kommandozeilen-Tools (für Baseline-x86-64 kompiliert, laufen überall,
-minimaler Speicherbedarf) statt über sharp — Ergebnis (WebP-Varianten,
-EXIF-Entfernung, Rotation) ist identisch. Erzwingen: `FORCE_LOW_CPU=1
-./deploy.sh`. Bei VMs ist die Alternative, den CPU-Typ der VM auf „host“ zu
-stellen (z. B. Proxmox: VM → Hardware → Prozessoren) und normal zu deployen.
+
+Bis 08/2026 baute `deploy.sh` in diesem Fall automatisch ein „LOW_CPU-Image",
+in dem die Bildverarbeitung über Debians libvips-Kommandozeilen-Tools lief.
+Dieser Zweig ist entfernt: Der Server läuft auf einer AMD EPYC 7352
+(x86-64-v4), der Fall trat seit dem Umzug nicht mehr ein, und ein zweiter
+Encoder, der nie ausgeführt wird, ist kein Netz — nur unbelegter Code.
+
+Tritt der Fehler auf einer anderen Maschine doch auf, ist die Abhilfe der
+CPU-Typ der VM: auf „host" stellen (z. B. Proxmox: VM → Hardware →
+Prozessoren) und normal deployen. Prüfen lässt sich das vorab mit
+`grep -c sse4_2 /proc/cpuinfo` (0 = betroffen). Wer den libvips-Weg wieder
+braucht, holt ihn aus der Historie zurück (Commit vor 08/2026) — als
+bewusste Entscheidung mit eigenem Test, nicht als schlafenden Zweig.
+
 Hinweis: Die WASM-Variante von sharp ist bewusst KEINE Option — sie
 alloziert beim Laden bis zu 2 GB geteilten Speicher und scheitert auf
 RAM-armen Geräten.

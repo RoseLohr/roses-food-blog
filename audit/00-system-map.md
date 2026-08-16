@@ -24,7 +24,8 @@ der wichtigste Befund (siehe `A-01`, `A-39`, `B-01`, `B-35`): Die
   FTS5-Virtualtabellen für Volltextsuche; Uploads im Dateisystem (`DATA_DIR`)
 - **Auth:** ein Admin-Konto; Passwort-Hash über `hash-wasm` (WASM, CPU-portabel);
   Session-Cookie (`src/lib/auth-core.ts`)
-- **Bildpipeline:** `sharp` bzw. libvips-CLI-Fallback (LOW_CPU)
+- **Bildpipeline:** `sharp` (einziges Backend; der libvips-CLI-Fallback für
+  CPUs ohne SSE4.2 ist am 2026-08-16 entfallen)
 - **Deployment:** `Containerfile` (Multi-Stage) + `compose.yml` (podman);
   Migrationen im Container-Entrypoint (`scripts/entry.sh` → `scripts/migrate.mjs`)
 - **Öffentliche Adresse:** `https://gourmetcompass.de` — in der `.env` des

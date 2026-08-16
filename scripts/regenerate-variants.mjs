@@ -21,9 +21,9 @@
  *   UND die inzwischen konfigurierten (z. B. neue Mini-Stufe 160) — fehlende
  *   media_variant-Zeilen werden ergänzt, damit srcset sie anbietet.
  * - Schreiben atomar: erst neu-<pid>-w<N>.webp, dann Umbenennen — nie eine
- *   halb geschriebene Datei ausliefern. Der Temp-Name MUSS auf .webp enden
- *   (vipsthumbnail leitet das Ausgabeformat aus der Endung ab); ausgeliefert
- *   wird er nie (die Route akzeptiert ausschließlich w<N>.webp).
+ *   halb geschriebene Datei ausliefern. Der Temp-Name endet auf .webp;
+ *   ausgeliefert wird er nie (die Route akzeptiert ausschließlich
+ *   w<N>.webp).
  * - PID im Temp-Namen statt Prozess-Lock (Panel-Befunde gpt-5.6-sol R5/R7):
  *   Laufen zwei Nachzüge parallel (Container-Hintergrundlauf + manueller
  *   npm-Aufruf), publiziert jeder nur Dateien, die er SELBST vollständig
@@ -41,16 +41,12 @@
  * die Bild-URLs selbst (?v=rev aus derselben Konfiguration, media-url.ts) —
  * deshalb MUSS rev bei jeder Encoder-Änderung steigen (Guardrail-Test).
  *
- * Backend wie in der App: IMAGE_BACKEND=vips → vipsthumbnail-CLI, sonst sharp.
+ * Backend wie in der App: sharp.
  * Läuft im Standalone-Image (better-sqlite3/sharp sind dort externe Pakete)
  * und lokal (npm run bilder:regenerieren).
  */
-import { execFile } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { promisify } from "node:util";
-
-const execFileAsync = promisify(execFile);
 
 const encoder = JSON.parse(
   fs.readFileSync(new URL("../config/bild-encoder.json", import.meta.url), "utf8"),
@@ -65,8 +61,6 @@ if (!fs.existsSync(dbFile) || !fs.existsSync(uploads)) {
   console.log("[bilder] Keine Datenbank/Uploads vorhanden — nichts zu tun.");
   process.exit(0);
 }
-
-const useVips = process.env.IMAGE_BACKEND === "vips";
 
 /** Marker lesen und prüfen, ob er die aktuelle Revision bestätigt (JSON). */
 function markerAktuell(file) {
@@ -106,28 +100,15 @@ function raeumeTemps(dir) {
 
 /** Eine Zielbreite aus der Quelldatei kodieren (gleiche Parameter wie media.ts). */
 async function encodeWidth(srcFile, outFile, width) {
-  if (useVips) {
-    const opts = `Q=${encoder.webpQuality},effort=${encoder.webpEffort}${
-      encoder.webpSmartSubsample ? ",smart-subsample=true" : ""
-    },strip`;
-    await execFileAsync("vipsthumbnail", [
-      srcFile,
-      "-s",
-      `${width}x100000`,
-      "-o",
-      `${outFile}[${opts}]`,
-    ]);
-  } else {
-    const sharp = (await import("sharp")).default;
-    await sharp(srcFile)
-      .resize({ width, withoutEnlargement: true })
-      .webp({
-        quality: encoder.webpQuality,
-        effort: encoder.webpEffort,
-        smartSubsample: encoder.webpSmartSubsample,
-      })
-      .toFile(outFile);
-  }
+  const sharp = (await import("sharp")).default;
+  await sharp(srcFile)
+    .resize({ width, withoutEnlargement: true })
+    .webp({
+      quality: encoder.webpQuality,
+      effort: encoder.webpEffort,
+      smartSubsample: encoder.webpSmartSubsample,
+    })
+    .toFile(outFile);
 }
 
 const { default: Database } = await import("better-sqlite3");

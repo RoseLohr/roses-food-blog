@@ -134,16 +134,21 @@ describe("Bildübermittlung: Encoder-Konfiguration (config/bild-encoder.json)", 
     expect(q).toBeLessThanOrEqual(85); // keine unnötig großen API-Payloads
   });
 
-  it("beide Backends (sharp + vips) nutzen die Konstanten inkl. effort/smart-subsample", () => {
+  it("das Backend nutzt die Konstanten inkl. effort/smart-subsample", () => {
+    // Bis 08/2026 prüfte diese Zusicherung ZWEI Backends: sharp und die
+    // libvips-CLI, deren Optionen als Zeichenkette gebaut wurden
+    // (`Q=${WEBP_QUALITY}`, `effort=${WEBP_EFFORT}`). Der vips-Pfad ist
+    // entfernt (tests/bild-backend.test.ts hält das fest), also gibt es diese
+    // Zeichenketten nicht mehr — die Prüfung darauf würde nie wieder feuern.
+    // Der sharp-Teil bleibt UNVERÄNDERT streng; nur die Verbote unten sind
+    // jetzt die einzige Absicherung gegen hartkodierte Werte.
     expect(media).toContain('from "../../config/bild-encoder.json"');
     expect(media).toContain("quality: WEBP_QUALITY");
     expect(media).toContain("effort: WEBP_EFFORT");
     expect(media).toContain("smartSubsample: WEBP_SMART_SUBSAMPLE");
-    expect(media).toContain("Q=${WEBP_QUALITY}");
-    expect(media).toContain("effort=${WEBP_EFFORT}");
     expect(media).toContain("quality: AI_JPEG_QUALITY");
-    expect(media).toContain("Q=${AI_JPEG_QUALITY}");
-    // Kein hartcodiertes quality:80 / Q=80 mehr.
+    // Kein hartcodiertes quality:80 / Q=80 mehr — auch nicht in einer
+    // wiederbelebten CLI-Optionszeichenkette.
     expect(media).not.toMatch(/quality:\s*\d/);
     expect(media).not.toMatch(/Q=\d/);
   });
