@@ -7,6 +7,14 @@
  */
 import Link from "next/link";
 import type { FullDish, FullRestaurant, FullTravelPost } from "@/lib/travel";
+import type { MediaImage } from "@/lib/recipes";
+import {
+  bildSizes,
+  reihenSizes,
+  seitenverhaeltnis,
+  zuRenderBloecken,
+  type BildStufe,
+} from "@/lib/bildreihen";
 import { extractHeadings, renderMarkdown } from "@/lib/markdown";
 import { getSimilarRecipesByDish } from "@/lib/similar-recipes";
 import { RecipeCard, type RecipeCardData } from "@/components/recipe-card";
@@ -46,12 +54,9 @@ const dict = t();
  * sichere Richtung: die Gegenrichtung ergäbe ein unscharfes Bild.
  */
 const MASSE = {
-  /** Bild über die volle Breite des Inhalts (Block-Bild, Restaurant-Band). */
+  /** Bild über die volle Breite des Inhalts (Titelbild, Restaurant-Band). */
   inhalt:
     "(max-width: 767px) calc(100vw - 5rem), (max-width: 928px) calc(100vw - 7rem), 816px",
-  /** Bilder im 2er-Raster der Galerie (`sm:grid-cols-2`, `gap-4` = 16 px). */
-  galerie:
-    "(max-width: 639px) calc(100vw - 5rem), (max-width: 767px) calc(50vw - 3rem), (max-width: 928px) calc(50vw - 4rem), 400px",
   /** Bühne eines Gerichts: volle Breite innerhalb der Restaurant-Karte
    *  (`p-4 md:p-6` zieht mobil 2rem ab, ab md 3rem) und abzüglich der
    *  Stationsschiene (36 px Punkt + 16 px Abstand = 52 px = 3.25rem). */
@@ -85,6 +90,56 @@ const STREIFEN_ZWEISPALTIG =
   "(max-width: 767px) calc(50vw - 5.375rem), (max-width: 928px) calc(50vw - 6.875rem), 353px";
 const STREIFEN_DREISPALTIG =
   "(max-width: 639px) calc(50vw - 5.375rem), (max-width: 767px) calc(33.33vw - 3.75rem), (max-width: 928px) calc(33.33vw - 4.75rem), 233px";
+
+/**
+ * Eine Bildreihe: gleich hohe Bilder nebeneinander, unten bündig, mittig — die
+ * Regel steht in `src/lib/bildreihen.ts`, das Layout in `globals.css`, hier
+ * wird nur beides zusammengeführt.
+ *
+ * `--ar` (Seitenverhältnis) muss je Bild inline stehen: es ist eine Eigenschaft
+ * des Bildes, keine des Layouts. `sizes` kommt aus der Reihe — im Text exakt
+ * gerechnet, in der umbrechenden Galerie als Obergrenze (siehe `bildSizes`).
+ *
+ * Nicht zuständig für die Gerichtsfotos der Restaurant-Karten: die behalten
+ * ihren Streifen (Regel C) und ihr eigenes Maß. Die Grenze ist gewollt und
+ * durch `tests/bildreihen-grenze.test.ts` festgenagelt.
+ */
+function Bildreihe({
+  images,
+  stufe,
+  umbruch = false,
+  className = "",
+}: {
+  images: MediaImage[];
+  stufe: BildStufe;
+  /** Galerie: Reihe mit Zeilenumbruch statt genau einer Zeile. */
+  umbruch?: boolean;
+  className?: string;
+}) {
+  if (images.length === 0) return null;
+  const verhaeltnisse = images.map((img) =>
+    seitenverhaeltnis(img.width, img.height),
+  );
+  const sizes = umbruch
+    ? verhaeltnisse.map((ar) => bildSizes(ar, stufe))
+    : reihenSizes(verhaeltnisse, stufe);
+  return (
+    <div
+      className={`bildreihe stufe-${stufe}${umbruch ? " umbruch" : ""}${className ? ` ${className}` : ""}`}
+    >
+      {images.map((img, i) => (
+        <ResponsiveImg
+          // Dasselbe Bild darf zweimal in einer Reihe stehen — der Index gehört
+          // deshalb in den Key.
+          key={`${img.id}-${i}`}
+          image={img}
+          sizes={sizes[i]}
+          style={{ "--ar": verhaeltnisse[i].toFixed(4) } as React.CSSProperties}
+        />
+      ))}
+    </div>
+  );
+}
 
 /** Google-Maps-Ziel aus Koordinaten — gleiche URL wie die Weltkarten-Pins. */
 function mapsUrl(lat: number, lng: number): string {
@@ -683,8 +738,8 @@ export async function TravelView({
           {/* Der erste Block startet auf gleicher Höhe wie das Verzeichnis. */}
           {full.blocks.length > 0 && (
             <div className="[&>*+*]:mt-7">
-              {full.blocks.map((b, i) => {
-                if (b.type === "text") {
+              {zuRenderBloecken(full.blocks).map((b, i) => {
+                if (b.art === "text") {
                   return (
                     <div
                       key={i}
@@ -695,21 +750,23 @@ export async function TravelView({
                     />
                   );
                 }
-                if (b.type === "bild") {
-                  const img = full.blockImages[b.imageId];
-                  return img ? (
-                    <ResponsiveImg
+                if (b.art === "bildreihe") {
+                  const bilder = b.imageIds
+                    .map((id) => full.blockImages[id])
+                    .filter((img) => img !== undefined);
+                  return (
+                    <Bildreihe
                       key={i}
-                      image={img}
-                      sizes={MASSE.inhalt}
-                      // clear-left: Ein Bild ist ein Block. Neben einem Float
-                      // weichen nur die ZEILEN aus, nicht die Blockkante — das
-                      // Bild liefe sonst unter dem Verzeichnis durch und
-                      // überdeckte es. Mit clear beginnt es darunter und ist
-                      // dafür volle Blattbreite statt Restbreite.
-                      className="w-full object-cover md:clear-left"
+                      images={bilder}
+                      stufe={b.stufe}
+                      // clear-left: Eine Bildreihe ist ein Block. Neben einem
+                      // Float weichen nur die ZEILEN aus, nicht die Blockkante —
+                      // die Reihe liefe sonst unter dem Verzeichnis durch und
+                      // überdeckte es. Mit clear beginnt sie darunter und hat
+                      // dafür die volle Blattbreite statt der Restbreite.
+                      className="md:clear-left"
                     />
-                  ) : null;
+                  );
                 }
                 const r = full.restaurants[b.index];
                 return r ? (
@@ -721,17 +778,18 @@ export async function TravelView({
             </div>
           )}
 
+          {/* Die Galerie ist keine eigene Erfindung mehr, sondern dieselbe
+              Reihe mit Umbruch. Das starre 2er-Raster ließ neben einem Hochbild
+              eine Lücke stehen, weil die Zeilenhöhe aus dem Raster kam statt
+              aus den Bildern; hier bezieht jede Zeile ihre Höhe aus ihrem
+              Inhalt und ist deshalb immer voll. */}
           {full.images.length > 0 && (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:clear-left">
-              {full.images.map((img) => (
-                <ResponsiveImg
-                  key={img.id}
-                  image={img}
-                  sizes={MASSE.galerie}
-                  className="w-full object-cover"
-                />
-              ))}
-            </div>
+            <Bildreihe
+              images={full.images}
+              stufe="s"
+              umbruch
+              className="md:clear-left"
+            />
           )}
 
           {remainingRestaurants.length > 0 && (

@@ -27,12 +27,17 @@ export function ResponsiveImg({
   image,
   sizes,
   className,
+  style,
   priority = false,
   alt,
 }: {
   image: MediaImageLike;
   sizes: string;
   className?: string;
+  /** Zusätzliche Inline-Stile des Aufrufers — genutzt für Custom Properties,
+   *  die je Bild verschieden sind (`--ar` der Bildreihe). Der Fokuspunkt bleibt
+   *  Sache dieser Komponente und wird darübergelegt. */
+  style?: React.CSSProperties;
   priority?: boolean;
   alt?: string;
 }) {
@@ -55,7 +60,11 @@ export function ResponsiveImg({
       fetchPriority={priority ? "high" : undefined}
       decoding="async"
       className={className}
-      style={objectPosition ? { objectPosition } : undefined}
+      style={
+        style || objectPosition
+          ? { ...style, ...(objectPosition ? { objectPosition } : null) }
+          : undefined
+      }
     />
   );
 }
