@@ -26,6 +26,7 @@ import { HeroActions } from "./hero-actions";
 import { TravelToc, type TocEntry } from "./travel-toc";
 import { IconCalendar, IconCity, IconCountry, IconRegion, IconTag } from "./icons";
 import { IconBesteck } from "./icon-besteck";
+import { IconLoeffel } from "./icon-loeffel";
 
 const dict = t();
 
@@ -253,29 +254,73 @@ function MetaFilterLinks({
 }
 
 /**
- * `sizes` einer „Ähnliche Rezepte"-Kachel. Sie steht in der Gerichts-Bühne,
- * gilt also von deren Breite aus (MASSE.buehne) — die Standard-Angabe der
- * RecipeCard rechnet mit der vollen Listenseite und deklarierte hier mobil
- * fast das Zehnfache der echten Kachelbreite.
+ * `sizes` einer „Ähnliche Rezepte"-Kachel. Sie steht NICHT in der Gerichts-
+ * Bühne, sondern in der ausgerückten Fläche darum (siehe SimilarRecipeTiles):
+ * Die ist links um Schiene + Abstand (3.25rem) breiter als die Bühne, mobil
+ * zusätzlich um den rechten Karten-Innenabstand (1rem), und zieht selbst
+ * Innenabstand ab (mobil links 1.25 + rechts 1rem, ab md 1.25rem je Seite).
+ *
+ * Fläche  <768 : (100vw − 10.25rem) + 3.25 + 1     = 100vw − 6rem
+ * Inhalt  <768 : − 1.25 − 1                        = 100vw − 8.25rem
+ * Fläche  <929 : (100vw − 13.25rem) + 3.25         = 100vw − 10rem
+ * Inhalt  <929 : − 2 × 1.25                        = 100vw − 12.5rem
+ * Inhalt ≥929  : 714 + 52 − 40                     = 726 px
  *
  * Spalten: 1 (<640) · 2 (ab sm) · 3 (ab lg), Abstand ab sm 20 px.
- *   ≥1024: (714 − 40) / 3 = 224,7 → 225 px
- *   929–1023: (714 − 20) / 2 = 347 px
+ *   ≥1024: (726 − 40) / 3 = 228,7 → 229 px
+ *   929–1023: (726 − 20) / 2 = 353 px
  */
 const AEHNLICH_SIZES =
-  "(max-width: 639px) calc(100vw - 10.25rem), " +
-  "(max-width: 767px) calc((100vw - 10.25rem - 20px) / 2), " +
-  "(max-width: 928px) calc((100vw - 13.25rem - 20px) / 2), " +
-  "(max-width: 1023px) 347px, 225px";
+  "(max-width: 639px) calc(100vw - 8.25rem), " +
+  "(max-width: 767px) calc((100vw - 8.25rem - 20px) / 2), " +
+  "(max-width: 928px) calc((100vw - 12.5rem - 20px) / 2), " +
+  "(max-width: 1023px) 353px, 229px";
 
-/** „Ähnliche Rezepte selbst machen" — als vollwertige Rezept-Kacheln (dieselbe
- *  RecipeCard wie auf der Startseite), auf dem Handy einspaltig. */
+/**
+ * „Ähnliche Rezepte selbst machen" — als vollwertige Rezept-Kacheln (dieselbe
+ * RecipeCard wie auf der Startseite), auf dem Handy einspaltig.
+ *
+ * ABGESETZT ÜBER ZWEI SIGNALE, die dasselbe auf zwei Arten sagen (Entwurf
+ * „B + C", abgestimmt):
+ *
+ * 1. TRENNER MIT LÖFFEL — derselbe Bau wie vor der Restaurant-Sektion (Linie,
+ *    Zeichen, Linie), nur mit einem anderen Zeichen: zwei Wechsel, zwei
+ *    Zeichen. Er markiert den Wechsel zeitlich: hier hört das Gericht auf.
+ * 2. AUSRÜCKEN um Schiene + Abstand (`-ml-13` = 52 px) auf getöntem Grund. Das
+ *    markiert ihn räumlich: hier gehört etwas anderes hin. Die Gericht-Spalte
+ *    bleibt eingerückt, der Bereich ist so breit wie der Karteninhalt.
+ *
+ * Der Trenner spannt über die AUSGERÜCKTE Breite, nicht über die Gericht-
+ * Spalte — dadurch fällt der Versatz genau an der Linie auf, wo der Blick
+ * ohnehin hinschaut. Ohne diese Kopplung wären es zwei Signale nebeneinander
+ * statt eines gemeinsamen.
+ *
+ * Mobil rückt der Bereich auch nach rechts aus (`-mr-4 pr-4`) und wird damit
+ * zum Band über die ganze Kartenbreite; ab `md` bleibt die rechte Kante bündig,
+ * weil dort der Versatz allein schon trägt.
+ *
+ * `relative`: Die Schienenlinie zur nächsten Station ist ein Pseudo-Element
+ * eines positionierten Elements und läge sonst ÜBER der getönten Fläche — sie
+ * sagt „hier geht dasselbe weiter", während die Fläche „hier ist etwas
+ * anderes" sagt. Positioniert bricht die Fläche die Linie und gibt sie unter
+ * sich wieder frei, sodass die Kette zur nächsten Station sichtbar bleibt.
+ */
 function SimilarRecipeTiles({ recipes }: { recipes: RecipeCardData[] }) {
   if (recipes.length === 0) return null;
   return (
-    <section className="border-t border-ink/10 pt-4">
-      {/* Abschnittstitel als Eyebrow im Marken-Grün (wie die Kachel-Eyebrows). */}
-      <h6 className="mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-leaf">
+    <section className="relative -ml-13 -mr-4 bg-cream px-5 pt-5 pr-4 pb-6 md:mr-0 md:pr-5">
+      {/* aria-hidden: rein schmückend, die Überschrift darunter benennt den
+          Abschnitt für Screenreader. Zur Größe h-9 siehe icon-loeffel.tsx. */}
+      <div className="mb-3 flex items-center gap-4" aria-hidden>
+        <span className="h-px flex-1 bg-ink/15" />
+        <IconLoeffel className="h-9 w-9 shrink-0 text-ink-soft" />
+        <span className="h-px flex-1 bg-ink/15" />
+      </div>
+      {/* Titel in der Titelschrift, mittig unter dem Löffel. Vorher stand hier
+          eine Eyebrow-Zeile — also exakt dieselbe Auszeichnung, die zwei
+          Zentimeter darüber schon die Kategorien des Gerichts trägt. Genau
+          daran war der Abschnitt nicht als eigener Bereich zu erkennen. */}
+      <h6 className="mb-4 text-center font-display text-base font-bold text-ink">
         {dict.travelList.similarTitle}
       </h6>
       {/* Auf dem Handy EINE Spalte über die volle Breite. Vorher standen hier
