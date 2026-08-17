@@ -98,16 +98,65 @@ function holeDb(): Datenbank {
  * Verhält sich wie die Drizzle-Instanz, öffnet die Verbindung aber erst beim
  * ersten Zugriff auf eine ihrer Eigenschaften.
  *
- * Methoden werden an die echte Instanz gebunden: Drizzle arbeitet intern mit
- * `this`, ein loses `db.select` ohne Bindung liefe ins Leere.
+ * „Verhält sich wie" ist wörtlich gemeint und war es zunächst nicht: Eine
+ * Fassung, die nur `get` und `has` bediente, wich in vier nachgestellten
+ * Punkten vom Original ab (Panel-Befund gpt-5.6-sol):
+ *
+ *   db.select === db.select   ->  false   (jeder Zugriff band neu)
+ *   Object.keys(db)           ->  []      (ownKeys ging auf das leere Ziel)
+ *   {...db}                   ->  {}      (dito)
+ *   db.x = 1; db.x            ->  undefined (set landete auf dem leeren Ziel)
+ *
+ * Deshalb werden hier ALLE Zugriffsarten an die echte Instanz weitergereicht,
+ * und gebundene Methoden werden gemerkt, damit ihre Identität stabil bleibt.
  */
+const gebundeneMethoden = new Map<PropertyKey, unknown>();
+
 export const db = new Proxy({} as Datenbank, {
   get(_ziel, eigenschaft) {
     const echte = holeDb();
     const wert = Reflect.get(echte as object, eigenschaft);
-    return typeof wert === "function" ? wert.bind(echte) : wert;
+    if (typeof wert !== "function") return wert;
+    // Drizzle arbeitet intern mit `this`; ein loses `const run = db.run` liefe
+    // ohne Bindung ins Leere. Die Bindung wird gemerkt, sonst wäre
+    // `db.run !== db.run` — und Code, der Funktionen vergleicht oder als
+    // Schlüssel benutzt, verhielte sich anders als vorher.
+    let gebunden = gebundeneMethoden.get(eigenschaft);
+    if (!gebunden) {
+      gebunden = (wert as (...a: unknown[]) => unknown).bind(echte);
+      gebundeneMethoden.set(eigenschaft, gebunden);
+    }
+    return gebunden;
+  },
+  // Bleibt bewusst stehen, obwohl das Entfernen keine Prüfung rot macht:
+  // Ohne diese Falle geht eine Zuweisung den umständlichen Weg über das
+  // voreingestellte [[Set]], das den Proxy als Empfänger nimmt und dadurch
+  // `defineProperty` unten auslöst. Nachgestellt: Das Ergebnis stimmt, aber es
+  // hängt an einer Feinheit. Fällt später `defineProperty` weg, landet die
+  // Zuweisung im Leeren — diese Zeile macht sie unabhängig davon.
+  set(_ziel, eigenschaft, wert) {
+    return Reflect.set(holeDb() as object, eigenschaft, wert);
+  },
+  deleteProperty(_ziel, eigenschaft) {
+    gebundeneMethoden.delete(eigenschaft);
+    return Reflect.deleteProperty(holeDb() as object, eigenschaft);
   },
   has: (_ziel, eigenschaft) => Reflect.has(holeDb() as object, eigenschaft),
+  ownKeys: () => Reflect.ownKeys(holeDb() as object),
+  getOwnPropertyDescriptor(_ziel, eigenschaft) {
+    const beschreibung = Reflect.getOwnPropertyDescriptor(
+      holeDb() as object,
+      eigenschaft,
+    );
+    // `configurable: true` ist Pflicht: Das Proxy-Ziel ist ein leeres Objekt,
+    // und die Laufzeit verbietet es, für eine dort nicht vorhandene
+    // Eigenschaft eine nicht-konfigurierbare zu melden.
+    return beschreibung && { ...beschreibung, configurable: true };
+  },
+  defineProperty(_ziel, eigenschaft, beschreibung) {
+    return Reflect.defineProperty(holeDb() as object, eigenschaft, beschreibung);
+  },
+  getPrototypeOf: () => Reflect.getPrototypeOf(holeDb() as object),
 });
 
 export { schema };

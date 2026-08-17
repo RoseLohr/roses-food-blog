@@ -150,6 +150,31 @@ describe("Datenbank: die Verbindung entsteht beim Zugriff, nicht beim Import", (
     ).toBe(true);
   });
 
+  it("der Proxy verhält sich in JEDER Zugriffsart wie das Original", () => {
+    // Eine Fassung, die nur `get` und `has` bediente, wich hier ab — alle vier
+    // Punkte nachgestellt (Panel-Befund gpt-5.6-sol). Sie sind einzeln
+    // unscheinbar und zusammen der Unterschied zwischen „ist die Instanz" und
+    // „sieht ihr ähnlich".
+    const ergebnis = mitFrischemDatenverzeichnis(
+      [
+        "const m = await hole();",
+        // Identität: jeder Zugriff band vorher neu.
+        `if (m.db.select !== m.db.select) throw new Error("Methodenidentität instabil");`,
+        // Aufzählbarkeit: ownKeys ging vorher auf das leere Proxy-Ziel.
+        `if (Object.keys(m.db).length === 0) throw new Error("Object.keys leer");`,
+        `if (Object.keys({ ...m.db }).length === 0) throw new Error("Spread leer");`,
+        // Schreiben: landete vorher auf dem leeren Ziel und war beim Lesen weg.
+        `m.db.probe = 1;`,
+        `if (m.db.probe !== 1) throw new Error("set wird verworfen");`,
+        // Prototyp: kam vorher von {} statt von der Instanz.
+        `const proto = Object.getPrototypeOf(m.db);`,
+        `if (proto === Object.prototype) throw new Error("Prototyp ist der des leeren Ziels");`,
+      ].join("\n"),
+    );
+
+    expect(ergebnis.code, ergebnis.fehler).toBe(0);
+  });
+
   it("Methoden bleiben an die echte Instanz gebunden", () => {
     // Drizzle arbeitet intern mit `this`. Gäbe der Proxy Methoden ungebunden
     // heraus, liefen sie ins Leere — und zwar erst zur Laufzeit, nicht beim
