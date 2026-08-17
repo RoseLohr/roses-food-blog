@@ -67,6 +67,23 @@ const nextConfig: NextConfig = {
             key: "Permissions-Policy",
             value: "camera=(), microphone=(), geolocation=(), interest-cohort=()",
           },
+          // Verbietet das Einbetten fremder Ressourcen, die sich nicht per
+          // Cross-Origin-Resource-Policy dazu bekennen. Gemeldet vom
+          // wöchentlichen DAST-Lauf (ZAP-Regel 90004, Issue #75).
+          //
+          // `require-corp` ist hier die strenge und trotzdem gefahrlose Wahl:
+          // Diese Anwendung bettet NICHTS Fremdes ein — kein iframe, kein
+          // embed, keine externe Kachelquelle (die Karte ist Leaflet mit
+          // Markern, ohne Tile-Layer), und die CSP oben erlaubt ohnehin nur
+          // 'self' und data:. Geprüft wurde das nicht nur am Quelltext, sondern
+          // am laufenden Server: Alle Seiten, die die E2E-Sammlung ansieht,
+          // laden ihre Ressourcen weiterhin vollständig.
+          //
+          // Bewusst OHNE Cross-Origin-Opener-Policy: Erst beide Header zusammen
+          // ergeben „cross-origin isolated". COOP `same-origin` kappt aber
+          // window.open-Beziehungen zu fremden Seiten, und das ist eine eigene
+          // Entscheidung — nicht das, was hier gemeldet wurde.
+          { key: "Cross-Origin-Embedder-Policy", value: "require-corp" },
         ],
       },
       {
