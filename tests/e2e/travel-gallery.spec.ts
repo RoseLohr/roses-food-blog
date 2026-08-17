@@ -23,8 +23,9 @@ test.describe("Reisebericht: Foto-Galerie / Lightbox", () => {
       .filter({ has: page.getByRole("heading", { name: "Pasta alla Norma" }) });
     await expect(dish).toBeVisible();
 
-    // Drei klickbare Foto-Thumbnails (Galerie).
-    const thumbs = dish.getByRole("button");
+    // Drei klickbare Foto-Thumbnails (Galerie). Bewusst nur Knöpfe MIT Bild:
+    // „Ähnliche Rezepte" bringt im selben Listenpunkt einen Like-Knopf mit.
+    const thumbs = dish.locator("button:has(img)");
     await expect(thumbs).toHaveCount(3);
 
     // Erstes Foto öffnet das Pop-up.

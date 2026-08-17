@@ -1,4 +1,5 @@
 import { test, expect, type Locator } from "@playwright/test";
+import { t } from "../../src/i18n/de";
 
 /**
  * Bilder im Reisebericht — GEMESSEN, nicht behauptet.
@@ -153,15 +154,45 @@ test.describe("Reisebericht: Bilder im Textfluss", () => {
     }
   });
 
+  test("„Ähnliche Rezepte“ füllen auf dem Handy die Breite und schneiden nichts ab", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(REPORT);
+
+    const kachel = page
+      .locator("section")
+      .filter({ hasText: t().travelList.similarTitle })
+      .first()
+      .locator("article")
+      .first();
+    await expect(kachel).toBeVisible();
+
+    // Volle Breite der Gerichts-Bühne: die Kachel ist so breit wie ihr Raster.
+    const raster = (await kachel.locator("xpath=..").boundingBox())!;
+    const box = (await kachel.boundingBox())!;
+    expect(Math.abs(box.width - raster.width)).toBeLessThan(2);
+
+    // Und nichts läuft über die Kante: die Kachel trägt `overflow-hidden`,
+    // ein zu langes Wort würde also unsichtbar abgeschnitten statt umbrochen.
+    const ueberlauf = await kachel.evaluate((el) =>
+      [...el.querySelectorAll("p, h3")].some((k) => k.scrollWidth > k.clientWidth + 1),
+    );
+    expect(ueberlauf).toBe(false);
+  });
+
   test("Grenze: die Gerichtsfotos bleiben beim Streifen", async ({ page }) => {
     await page.goto(REPORT);
     const karten = page.locator('div[id^="restaurant-"]');
     await expect(karten.first()).toBeVisible();
     await expect(karten.locator(".bildreihe, .bildumfluss, .bildgalerie")).toHaveCount(0);
 
+    // Nur die Gerichtsfotos zählen: sie sind die klickbaren Streifen-Kacheln.
+    // Im selben Listenpunkt steht inzwischen auch „Ähnliche Rezepte" mit
+    // eigenem Bild — das gehört nicht zum Streifen.
     const gericht = page
       .locator("li")
       .filter({ has: page.getByRole("heading", { name: "Pasta alla Norma" }) });
-    await expect(gericht.locator("img")).toHaveCount(3);
+    await expect(gericht.locator("button img")).toHaveCount(3);
   });
 });
