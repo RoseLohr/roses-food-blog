@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getFullTravelPost } from "@/lib/travel";
-import { getBaseUrl } from "@/lib/base-url";
-import { imageUrl, optimalVariant } from "@/lib/media";
-import { JsonLd, breadcrumbJsonLd } from "@/lib/jsonld";
+import { getPublicBaseUrl } from "@/lib/base-url";
+import { absoluteImageUrl } from "@/lib/seo/og";
+import { JsonLd, breadcrumbJsonLd, organizationJsonLd } from "@/lib/jsonld";
 import { TravelView } from "@/components/travel-view";
 import { PageTracker } from "@/components/page-tracker";
 import { getSiteName } from "@/lib/settings";
@@ -26,31 +26,42 @@ export async function generateMetadata(props: {
   const full = await loadPublished(slug);
   if (!full) return {};
   const { post } = full;
-  const ogImage = full.heroImage
-    ? `${getBaseUrl()}${imageUrl(
-        full.heroImage.fileKey,
-        optimalVariant(full.heroImage.variantWidths, 1280),
-      )}`
-    : undefined;
+  const base = await getPublicBaseUrl();
+  const ogImage = absoluteImageUrl(base, full.heroImage);
+  const title = post.seoTitle || post.title;
+  const description = post.seoDescription || post.teaser;
   return {
-    title: post.seoTitle || post.title,
-    description: post.seoDescription || post.teaser,
+    title,
+    description,
     alternates: { canonical: `/reisen/${post.slug}` },
     openGraph: {
-      title: post.seoTitle || post.title,
-      description: post.seoDescription || post.teaser,
+      title,
+      description,
       type: "article",
-      url: `${getBaseUrl()}/reisen/${post.slug}`,
+      url: `${base}/reisen/${post.slug}`,
       images: ogImage ? [{ url: ogImage }] : undefined,
       locale: "de_DE",
       siteName: getSiteName(),
+      publishedTime: post.publishedAt?.toISOString(),
+      modifiedTime: post.updatedAt.toISOString(),
+    },
+    twitter: {
+      card: ogImage ? "summary_large_image" : "summary",
+      title,
+      description,
+      images: ogImage ? [ogImage] : undefined,
     },
   };
 }
 
-function articleJsonLd(full: NonNullable<Awaited<ReturnType<typeof loadPublished>>>) {
-  const base = getBaseUrl();
+function articleJsonLd(
+  base: string,
+  full: NonNullable<Awaited<ReturnType<typeof loadPublished>>>,
+) {
   const { post } = full;
+  // Google verlangt für Article einen Autor; der Blog tritt als Organisation
+  // auf (kein Personenbezug, Akzeptanzkriterium 14).
+  const org = organizationJsonLd(base);
   return {
     "@context": "https://schema.org",
     "@type": "Article",
@@ -60,15 +71,11 @@ function articleJsonLd(full: NonNullable<Awaited<ReturnType<typeof loadPublished
     inLanguage: "de",
     datePublished: post.publishedAt?.toISOString(),
     dateModified: post.updatedAt.toISOString(),
-    image: full.heroImage
-      ? [
-          `${base}${imageUrl(
-            full.heroImage.fileKey,
-            optimalVariant(full.heroImage.variantWidths, 1280),
-          )}`,
-        ]
+    image: absoluteImageUrl(base, full.heroImage)
+      ? [absoluteImageUrl(base, full.heroImage)]
       : undefined,
-    publisher: { "@type": "Organization", name: getSiteName(), url: base },
+    author: org,
+    publisher: org,
     about:
       [post.country, post.region, post.city].filter(Boolean).join(", ") ||
       undefined,
@@ -81,6 +88,7 @@ export default async function TravelPostPage(props: {
   const { slug } = await props.params;
   const full = await loadPublished(slug);
   if (!full) notFound();
+  const base = await getPublicBaseUrl();
 
   return (
     <main>
@@ -89,9 +97,9 @@ export default async function TravelPostPage(props: {
         contentId={full.post.id}
         path={`/reisen/${full.post.slug}`}
       />
-      <JsonLd data={articleJsonLd(full)} />
+      <JsonLd data={articleJsonLd(base, full)} />
       <JsonLd
-        data={breadcrumbJsonLd([
+        data={breadcrumbJsonLd(base, [
           [getSiteName(), "/"],
           [dict.nav.travel, "/reisen"],
           [full.post.title, `/reisen/${full.post.slug}`],

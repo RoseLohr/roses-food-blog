@@ -88,14 +88,36 @@ nano .env        # alle Werte befüllen; SESSION_SECRET: openssl rand -hex 32
 ```
 
 **`BASE_URL` ist in Produktion `https://gourmetcompass.de`** (ohne
-abschließenden Schrägstrich). Der Wert ist kein Schönheitsfehler, wenn er
-abweicht: aus ihm entstehen Sitemap, `robots.txt`, die Canonical-Links, die
-strukturierten Daten, die Fußzeile der Druckansicht und die Links in
-Newsletter-Mails. Steht dort eine veraltete Domain, meldet die Seite
-Suchmaschinen die falschen Adressen — sichtbar wird das von außen kaum.
+abschließenden Schrägstrich). Der Wert versorgt alles, was **ohne laufende
+Anfrage** entsteht: die Fußzeile der Druckansicht und die Links in
+Newsletter-Mails.
 
-Nach einer Änderung **neu deployen, nicht nur neu starten**: `robots.txt` wird
-beim Build erzeugt und trägt die Adresse fest eingebacken.
+Die ausgelieferten SEO-Artefakte hängen **nicht mehr** daran. `robots.txt`,
+`sitemap.xml`, `llms.txt`, Canonicals, OpenGraph und die strukturierten Daten
+nehmen den Ursprung der laufenden Anfrage (`Host` / `X-Forwarded-Proto` vom
+nginx). Läuft die Seite unter einer anderen Domain als hier eingetragen,
+gewinnt die ausgelieferte Domain; `www.`- und `http`-Varianten werden auf die
+kanonische Form normalisiert. Fehlt `BASE_URL` ganz, gilt `SITE_ORIGIN` aus
+`src/lib/base-url.ts` — **nie localhost**. Ein Domainwechsel ist damit eine
+Zeile in `src/lib/base-url.ts`.
+
+> **Befund 08/2026 (behoben).** Hier lag ein monatelang unsichtbarer
+> Totalausfall: `app/robots.ts` wurde beim Build vorgerendert, im Image-Build
+> gibt es keine `.env` — also lieferte die Seite dauerhaft
+> `Sitemap: http://localhost:3000/sitemap.xml` aus. Google konnte die Sitemap
+> über `robots.txt` nicht finden. Parallel zeigten Sitemap, Canonicals und
+> strukturierte Daten auf eine längst abgelegte Domain, und in der Sitemap
+> fehlten Kategorie- und Reisefilterseiten ganz. Alle Artefakte sind jetzt
+> laufzeit-dynamisch und durch `scripts/regime/seo-gate.mjs`,
+> `tests/seo.test.ts`, `tests/seo.integration.test.ts` und
+> `tests/e2e/seo.spec.ts` abgesichert.
+
+**Cloudflare, falls davor:** Die Managed-`robots.txt` von Cloudflare wird der
+Antwort der App **vorangestellt** und sperrt in ihrer Standardform sämtliche
+KI-Crawler (`GPTBot`, `ClaudeBot`, `Google-Extended`, `CCBot`,
+`meta-externalagent`, …) samt `ai-train=no`. Wer in KI-Antworten vorkommen
+will, muss das im Cloudflare-Dashboard abschalten — die App kann es nicht
+überschreiben.
 
 Das Datenverzeichnis (Standard `/srv/roses-blog/data`) einmalig anlegen und dem
 Deploy-Benutzer geben:

@@ -28,10 +28,14 @@ der wichtigste Befund (siehe `A-01`, `A-39`, `B-01`, `B-35`): Die
   CPUs ohne SSE4.2 ist am 2026-08-16 entfallen)
 - **Deployment:** `Containerfile` (Multi-Stage) + `compose.yml` (podman);
   Migrationen im Container-Entrypoint (`scripts/entry.sh` → `scripts/migrate.mjs`)
-- **Öffentliche Adresse:** `https://gourmetcompass.de` — in der `.env` des
-  Servers als `BASE_URL` hinterlegt (nirgends im Quelltext). Speist Sitemap,
-  `robots.txt`, Canonical, strukturierte Daten, Druck-Fußzeile und
-  Newsletter-Links; eine Abweichung fällt von außen kaum auf.
+- **Öffentliche Adresse:** `https://gourmetcompass.de` — kanonisch als
+  `SITE_ORIGIN` in `src/lib/base-url.ts` (einmandantig laut ADR, also eine
+  versionierte Eigenschaft des Quelltexts). `BASE_URL` in der `.env` des
+  Servers überschreibt sie für Druck-Fußzeile und Newsletter-Links, also für
+  alles ohne Anfrage-Kontext. Die ausgelieferten SEO-Artefakte (`robots.txt`,
+  `sitemap.xml`, `llms.txt`, Canonical, OpenGraph, strukturierte Daten) nehmen
+  dagegen den Ursprung der laufenden Anfrage und können nicht veralten.
+  Erzwungen von `scripts/regime/seo-gate.mjs` (Seed-Klasse S18).
 
 ## Modelle & Provider
 - **Ein KI-Feature:** Rezeptentwurf aus eingefügtem Rohtext.

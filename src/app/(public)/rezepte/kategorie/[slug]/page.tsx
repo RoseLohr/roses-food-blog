@@ -13,6 +13,7 @@ import { RecipeCard } from "@/components/recipe-card";
 import { publishedRecipeCards } from "@/lib/recipe-list";
 import { taxonomyBySlug } from "@/lib/taxonomies";
 import { PageTracker } from "@/components/page-tracker";
+import { getPublicBaseUrl } from "@/lib/base-url";
 import { JsonLd, breadcrumbJsonLd } from "@/lib/jsonld";
 import { getSiteName } from "@/lib/settings";
 import { t } from "@/i18n/de";
@@ -64,6 +65,7 @@ export default async function CategoryPage(props: {
 
   const ids = await recipeIdsInCategory(cat.id);
   const recipes = await publishedRecipeCards({ ids });
+  const base = await getPublicBaseUrl();
 
   return (
     <main>
@@ -72,7 +74,7 @@ export default async function CategoryPage(props: {
         path={`/rezepte/kategorie/${cat.slug}`}
       />
       <JsonLd
-        data={breadcrumbJsonLd([
+        data={breadcrumbJsonLd(base, [
           [getSiteName(), "/"],
           [dict.recipeList.title, "/rezepte"],
           [cat.name, `/rezepte/kategorie/${cat.slug}`],

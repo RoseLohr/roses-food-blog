@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getFullRecipe } from "@/lib/recipes";
-import { getBaseUrl } from "@/lib/base-url";
-import { imageUrl, optimalVariant } from "@/lib/media";
+import { getPublicBaseUrl } from "@/lib/base-url";
+import { absoluteImageUrl } from "@/lib/seo/og";
 import { JsonLd, breadcrumbJsonLd, recipeJsonLd } from "@/lib/jsonld";
 import { RecipeView } from "@/components/recipe-view";
 import { PageTracker } from "@/components/page-tracker";
@@ -26,24 +26,30 @@ export async function generateMetadata(props: {
   const full = await loadPublished(slug);
   if (!full) return {};
   const { recipe } = full;
-  const ogImage = full.heroImage
-    ? `${getBaseUrl()}${imageUrl(
-        full.heroImage.fileKey,
-        optimalVariant(full.heroImage.variantWidths, 1280),
-      )}`
-    : undefined;
+  const base = await getPublicBaseUrl();
+  const ogImage = absoluteImageUrl(base, full.heroImage);
+  const title = recipe.seoTitle || recipe.title;
+  const description = recipe.seoDescription || recipe.teaser;
   return {
-    title: recipe.seoTitle || recipe.title,
-    description: recipe.seoDescription || recipe.teaser,
+    title,
+    description,
     alternates: { canonical: `/rezepte/${recipe.slug}` },
     openGraph: {
-      title: recipe.seoTitle || recipe.title,
-      description: recipe.seoDescription || recipe.teaser,
+      title,
+      description,
       type: "article",
-      url: `${getBaseUrl()}/rezepte/${recipe.slug}`,
+      url: `${base}/rezepte/${recipe.slug}`,
       images: ogImage ? [{ url: ogImage }] : undefined,
       locale: "de_DE",
       siteName: getSiteName(),
+      publishedTime: recipe.publishedAt?.toISOString(),
+      modifiedTime: recipe.updatedAt?.toISOString(),
+    },
+    twitter: {
+      card: ogImage ? "summary_large_image" : "summary",
+      title,
+      description,
+      images: ogImage ? [ogImage] : undefined,
     },
   };
 }
@@ -54,6 +60,7 @@ export default async function RecipePage(props: {
   const { slug } = await props.params;
   const full = await loadPublished(slug);
   if (!full) notFound();
+  const base = await getPublicBaseUrl();
 
   return (
     // -mt-4 zieht den Detail-Inhalt 16 px hoch, damit der Abstand ÜBER dem Bild
@@ -64,9 +71,9 @@ export default async function RecipePage(props: {
         contentId={full.recipe.id}
         path={`/rezepte/${full.recipe.slug}`}
       />
-      <JsonLd data={recipeJsonLd(full)} />
+      <JsonLd data={recipeJsonLd(base, full)} />
       <JsonLd
-        data={breadcrumbJsonLd([
+        data={breadcrumbJsonLd(base, [
           [getSiteName(), "/"],
           [dict.nav.recipes, "/rezepte"],
           [full.recipe.title, `/rezepte/${full.recipe.slug}`],

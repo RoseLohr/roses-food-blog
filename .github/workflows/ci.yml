@@ -33,6 +33,10 @@ jobs:
         run: npm run lint
       - name: Quelltext-Gates (Stubs A-16, Modell-Aliase B-13)
         run: node scripts/regime/source-gates.mjs
+      - name: SEO-/LLM-Gate (Routen registriert, Artefakte laufzeit-dynamisch, ein Ursprung)
+        run: node scripts/regime/seo-gate.mjs
+      - name: SEO-Gate-Selbsttest (A-36)
+        run: node scripts/regime/seo-gate.mjs --selftest
       - name: Responsive-Images-Gate (srcSet⇒sizes, keine Großbilder als Thumbnail)
         run: node scripts/regime/responsive-images.mjs
       - name: Responsive-Images-Selbsttest (A-36)
