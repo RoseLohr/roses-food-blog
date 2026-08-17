@@ -1,33 +1,36 @@
 /**
- * Bildreihen der Reiseberichte — EIN Regler je Bild: die Höhe.
+ * Bilder im Reisebericht — Position vor Größe.
  *
- * Die Regel in drei Sätzen (sie gilt für die Bildblöcke im Text und für die
- * Galerie; die Gerichtsfotos der Restaurant-Karten bleiben ausdrücklich bei
- * ihrer eigenen Streifen-Logik, siehe travel-view.tsx):
+ * Die erste Fassung bemaß Bilder gut und stellte sie falsch: jede Reihe stand
+ * MITTIG in der Textspalte und erfand damit zwei senkrechte Kanten, die zu
+ * keinem anderen Element der Seite gehören. Eine Textspalte kennt genau drei
+ * erlaubte Kanten — linker Rand, rechter Rand, und beim Umfluss die Innenkante,
+ * an der der Text weiterläuft. Alles, was ein Bild an Kanten mitbringt, muss
+ * auf einer davon liegen. Daraus folgen drei Fälle:
  *
- *   1. Jedes Bild hat eine Höhe: S, M oder L. Die BREITE ergibt sich aus dem
- *      Seitenverhältnis — nie beschnitten, nie verzerrt. Dieselbe Stufe wiegt
- *      damit für ein Quer- und ein Hochbild optisch gleich.
- *   2. Bilder, die im Editor direkt aufeinander folgen, bilden eine REIHE:
- *      gleich hoch, unten bündig, mittig. Passt sie nicht in die Spalte,
- *      schrumpft sie als Ganzes (Flexbox verteilt proportional zur
- *      Wunschbreite, dadurch bleiben die Höhen gleich).
- *   3. L steht allein — ein L-Bild beginnt und beendet seine Reihe. So sind
- *      zwei große Bilder untereinander ohne Zusatzschalter möglich.
+ *   UMFLUSS   Ein Bild, das allein steht, steht IM Text. Höhe nach Stufe
+ *             (S 220, M 360 px), Breite folgt dem Format, gedeckelt auf die
+ *             halbe Spalte — was mehr nimmt, lässt daneben keine lesbare Zeile.
+ *             Die Seite wechselt automatisch: das erste Bild rechts, das
+ *             nächste links. Rechts zuerst, weil das Inhaltsverzeichnis links
+ *             steht und die beiden sich sonst im Kopf des Berichts begegnen.
+ *   REIHE     Zwei oder mehr Nachbarn teilen die Spalte nach Seitenverhältnis
+ *             auf; die Summe ist genau die Spaltenbreite. Gleiche Höhen, unten
+ *             bündig, beide Kanten sitzen. Die Stufe wirkt hier NICHT — die
+ *             Höhe ergibt sich aus den Formaten.
+ *   VOLLBILD  Stufe L: volle Spalte, kein Umfluss, steht allein.
  *
- * Was es NICHT gibt: Zuschnitt, Seitenverhältnis-Zwang, Breitenangabe,
- * Spaltenzahl, gemischte Stufen in einer Reihe. Was nicht darstellbar ist,
- * kann nicht kaputtgehen (Verfassung, Artikel IX).
+ * Auf dem Handy gibt es keinen Umfluss: neben einem halbbreiten Bild blieben
+ * rund 18 Zeichen je Zeile übrig — das ist keine Spalte mehr. Dort steht ein
+ * einzelnes Bild über die volle Breite; Reihen bleiben Reihen.
  */
 import type { TravelBlock } from "@/lib/travel-blocks";
 
 export const BILD_STUFEN = ["s", "m", "l"] as const;
 export type BildStufe = (typeof BILD_STUFEN)[number];
 
-/** Stufenhöhe in px je Breakpoint. Ausgeschrieben, nicht gerechnet — diese
- *  sechs Zahlen sind die einzige Stellschraube des ganzen Layouts. */
-const HOEHE_HANDY: Record<BildStufe, number> = { s: 160, m: 240, l: 380 };
-const HOEHE_GROSS: Record<BildStufe, number> = { s: 220, m: 360, l: 560 };
+/** Höhe eines umflossenen Einzelbildes je Stufe (ab 768 px). */
+const UMFLUSS_HOEHE: Record<Exclude<BildStufe, "l">, number> = { s: 220, m: 360 };
 
 /** Abstand zwischen zwei Bildern einer Reihe (gap-4 = 16 px). */
 const ABSTAND = 16;
@@ -41,6 +44,9 @@ const SPALTE_HANDY_ABZUG = 80; // 5rem
 const SPALTE_MITTEL_ABZUG = 112; // 7rem
 const SPALTE_GROSS = 816;
 
+/** Zeilenhöhe der Galerie. Fest, nicht wachsend — siehe `galerieSizes`. */
+const GALERIE_HOEHE = 220;
+
 /** Seitenverhältnis Breite/Höhe. Unbrauchbare Maße (0, negativ) → quadratisch:
  *  ein Bild ohne verwertbare Maße darf das Layout nicht in eine Division durch
  *  Null oder eine negative Breite ziehen. */
@@ -49,40 +55,68 @@ export function seitenverhaeltnis(breite: number, hoehe: number): number {
   return breite / hoehe;
 }
 
-/** Blockfolge, wie sie gerendert wird: Bilder bereits zu Reihen gefasst. */
+export type Umflussseite = "links" | "rechts";
+
+/** Blockfolge, wie sie gerendert wird — Position bereits entschieden. */
 export type RenderBlock =
   | { art: "text"; markdown: string }
-  | { art: "bildreihe"; stufe: BildStufe; imageIds: number[] }
-  | { art: "restaurant"; index: number };
+  | { art: "restaurant"; index: number }
+  /** Einzelbild im Text, umflossen. */
+  | { art: "umfluss"; imageId: number; stufe: Exclude<BildStufe, "l">; seite: Umflussseite }
+  /** Einzelbild über die volle Spalte (Stufe L). */
+  | { art: "vollbild"; imageId: number }
+  /** Zwei oder mehr Nachbarn, justiert über die Spalte. */
+  | { art: "reihe"; imageIds: number[] };
 
 /**
- * Fasst die Blockfolge des Editors zu Renderblöcken zusammen (Satz 2 und 3).
- * Die Reihe erbt die Stufe ihres ERSTEN Bildes; eine spätere abweichende Stufe
- * in derselben Reihe ist damit wirkungslos statt uneindeutig — genau das meint
- * „eine Reihe, eine Höhe".
+ * Fasst die Blockfolge des Editors zu Renderblöcken zusammen und vergibt dabei
+ * die Umflussseiten.
+ *
+ * Gezählt wird NUR über umflossene Einzelbilder: eine Reihe und ein Vollbild
+ * nehmen die ganze Spalte ein, haben also keine Seite und verbrauchen keinen
+ * Wechsel. Nach einer Reihe geht es dort weiter, wo der Wechsel vorher stand.
+ * Der Zähler läuft durch den ganzen Bericht — ein Neustart je Abschnitt ließe
+ * zwei Bilder über die Abschnittsgrenze hinweg auf derselben Seite landen,
+ * also genau das, was der Wechsel verhindern soll.
  */
 export function zuRenderBloecken(blocks: TravelBlock[]): RenderBlock[] {
   const out: RenderBlock[] = [];
-  // Offene Reihe = die letzte Ausgabe ist eine Reihe, die noch aufnehmen darf.
-  let offen: Extract<RenderBlock, { art: "bildreihe" }> | null = null;
+  let umflussZaehler = 0;
+  // Offene Gruppe benachbarter Bilder (ohne L — L steht immer allein).
+  let gruppe: Array<{ imageId: number; stufe: Exclude<BildStufe, "l"> }> = [];
+
+  const gruppeSchliessen = () => {
+    if (gruppe.length === 0) return;
+    if (gruppe.length === 1) {
+      const [b] = gruppe;
+      out.push({
+        art: "umfluss",
+        imageId: b.imageId,
+        stufe: b.stufe,
+        seite: umflussZaehler % 2 === 0 ? "rechts" : "links",
+      });
+      umflussZaehler++;
+    } else {
+      out.push({ art: "reihe", imageIds: gruppe.map((b) => b.imageId) });
+    }
+    gruppe = [];
+  };
+
   for (const b of blocks) {
     if (b.type === "text") {
-      offen = null;
+      gruppeSchliessen();
       out.push({ art: "text", markdown: b.markdown });
     } else if (b.type === "restaurant") {
-      offen = null;
+      gruppeSchliessen();
       out.push({ art: "restaurant", index: b.index });
     } else if (b.groesse === "l") {
-      // Satz 3: allein — schließt die laufende Reihe und öffnet keine neue.
-      offen = null;
-      out.push({ art: "bildreihe", stufe: "l", imageIds: [b.imageId] });
-    } else if (offen) {
-      offen.imageIds.push(b.imageId);
+      gruppeSchliessen();
+      out.push({ art: "vollbild", imageId: b.imageId });
     } else {
-      offen = { art: "bildreihe", stufe: b.groesse, imageIds: [b.imageId] };
-      out.push(offen);
+      gruppe.push({ imageId: b.imageId, stufe: b.groesse });
     }
   }
+  gruppeSchliessen();
   return out;
 }
 
@@ -92,89 +126,117 @@ function faktorText(anteil: number): string {
 }
 
 /**
- * `sizes` je Bild einer Reihe — AUSGERECHNET, nicht geschätzt.
+ * `sizes` für eine Breite, die auf die Spalte gedeckelt ist — also
+ * `min(Wunschbreite, Spaltenbreite)`.
  *
- * Das war vorher nicht möglich: Solange jedes Bild „volle Spalte" war, hing
- * die Anzeigebreite allein am Fenster und musste als Viewport-Kette geschätzt
- * werden. Mit fester Höhe ist die Wunschbreite = Höhe × Seitenverhältnis eine
- * bekannte Zahl, und die Schrumpfung der Reihe ist ihr Anteil an der Spalte:
- *
- *   Wunschbreite_i = Stufenhöhe × Seitenverhältnis_i
- *   Reihenbreite   = Σ Wunschbreiten + Abstände
- *   Breite_i       = Wunschbreite_i × min(1, (Spalte − Abstände) / Σ)
- *
- * Auf dem Handy steht jedes Bild allein in seiner Zeile (siehe globals.css),
- * dort gilt nur die Deckelung auf die Spaltenbreite. Bewusst OHNE die
- * CSS-Funktion `min()` im sizes-Attribut: der Kipppunkt, ab dem die Spalte
- * schmaler ist als das Bild, wird als eigener Breakpoint ausgeschrieben. Das
- * kommt mit `calc()` aus, das hier seit jeher trägt.
- *
- * Ein Rest bleibt ehrlich benannt: Ist die Stufenhöhe durch `78vh` gedeckelt
- * (sehr flaches Fenster), wird das Bild kleiner als hier deklariert. Das ist
- * die sichere Richtung — zu großzügig kostet Bytes, zu knapp kostet Schärfe.
+ * Bewusst OHNE die CSS-Funktion `min()` im sizes-Attribut: der Kipppunkt, ab
+ * dem die Spalte schmaler ist als das Bild, wird als eigener Breakpoint
+ * ausgeschrieben. Das kommt mit `calc()` aus, das hier seit jeher trägt.
  */
-export function reihenSizes(
-  seitenverhaeltnisse: number[],
-  stufe: BildStufe,
-): string[] {
+function gedeckeltSizes(wunsch: number): string {
+  const teile: string[] = [];
+  const kippHandy = wunsch + SPALTE_HANDY_ABZUG;
+  if (kippHandy <= 767) {
+    teile.push(`(max-width: ${kippHandy}px) calc(100vw - 5rem)`);
+    teile.push(`(max-width: 767px) ${wunsch}px`);
+  } else {
+    teile.push("(max-width: 767px) calc(100vw - 5rem)");
+  }
+  const kippMittel = wunsch + SPALTE_MITTEL_ABZUG;
+  if (kippMittel > 928) {
+    teile.push("(max-width: 928px) calc(100vw - 7rem)");
+  } else if (kippMittel > 768) {
+    teile.push(`(max-width: ${kippMittel}px) calc(100vw - 7rem)`);
+    teile.push(`(max-width: 928px) ${wunsch}px`);
+  } else {
+    teile.push(`(max-width: 928px) ${wunsch}px`);
+  }
+  const gross = `${Math.min(wunsch, SPALTE_GROSS)}px`;
+  if (teile[teile.length - 1] === `(max-width: 928px) ${gross}`) teile.pop();
+  teile.push(gross);
+  return teile.join(", ");
+}
+
+/** `sizes` eines Bildes über die volle Inhaltsspalte (Vollbild, Restaurant-Band). */
+export function vollbildSizes(): string {
+  return "(max-width: 767px) calc(100vw - 5rem), (max-width: 928px) calc(100vw - 7rem), 816px";
+}
+
+/**
+ * `sizes` eines umflossenen Einzelbildes. Ab 768 px ist es
+ * `min(Stufenhöhe × Format, halbe Spalte)`; darunter gibt es keinen Umfluss,
+ * dort füllt das Bild die Spalte.
+ */
+export function umflussSizes(
+  seitenverhaeltnisWert: number,
+  stufe: Exclude<BildStufe, "l">,
+): string {
+  const wunsch = Math.round(UMFLUSS_HOEHE[stufe] * seitenverhaeltnisWert);
+  const teile = ["(max-width: 767px) calc(100vw - 5rem)"];
+  // Halbe Spalte im Mittelbereich: (100vw − 7rem) / 2. Der Wunsch greift erst,
+  // wenn er hineinpasst — also ab 2 × Wunsch + 7rem Fensterbreite.
+  const kipp = 2 * wunsch + SPALTE_MITTEL_ABZUG;
+  const halbeSpalte = "calc((100vw - 7rem) / 2)";
+  if (kipp > 928) {
+    teile.push(`(max-width: 928px) ${halbeSpalte}`);
+  } else if (kipp > 768) {
+    teile.push(`(max-width: ${kipp}px) ${halbeSpalte}`);
+    teile.push(`(max-width: 928px) ${wunsch}px`);
+  } else {
+    teile.push(`(max-width: 928px) ${wunsch}px`);
+  }
+  const gross = `${Math.min(wunsch, SPALTE_GROSS / 2)}px`;
+  if (teile[teile.length - 1] === `(max-width: 928px) ${gross}`) teile.pop();
+  teile.push(gross);
+  return teile.join(", ");
+}
+
+/**
+ * `sizes` je Bild einer justierten Reihe — AUSGERECHNET, nicht geschätzt.
+ *
+ * Die Reihe füllt die Spalte exakt, die Breiten stehen im Verhältnis der
+ * Seitenverhältnisse:
+ *
+ *   Breite_i = (Spalte − Abstände) × Format_i / Σ Formate
+ *
+ * Damit sind alle Bilder einer Reihe gleich hoch (Breite_i / Format_i ist für
+ * alle derselbe Wert) — das ist der Grund, warum die Reihe unten bündig
+ * abschließt, ohne dass irgendetwas beschnitten wird.
+ */
+export function reihenSizes(seitenverhaeltnisse: number[]): string[] {
   const anzahl = seitenverhaeltnisse.length;
   if (anzahl === 0) return [];
   const abstaende = ABSTAND * (anzahl - 1);
-  const wunschHandy = seitenverhaeltnisse.map((ar) =>
-    Math.round(HOEHE_HANDY[stufe] * ar),
-  );
-  const wunschGross = seitenverhaeltnisse.map((ar) =>
-    Math.round(HOEHE_GROSS[stufe] * ar),
-  );
-  const summe = wunschGross.reduce((a, b) => a + b, 0);
-  // Fensterbreite, unterhalb derer die Reihe schrumpfen muss.
-  const kippMittel = summe + abstaende + SPALTE_MITTEL_ABZUG;
-  // Schrumpffaktor in der festen 816-px-Spalte (ab 929 px Fenster).
-  const faktorGross = Math.min(1, (SPALTE_GROSS - abstaende) / summe);
-
-  return seitenverhaeltnisse.map((_, i) => {
-    const teile: string[] = [];
-
-    // 1. Handy (<768): ein Bild je Zeile, gedeckelt auf die Spalte.
-    const kippHandy = wunschHandy[i] + SPALTE_HANDY_ABZUG;
-    if (kippHandy <= 767) {
-      teile.push(`(max-width: ${kippHandy}px) calc(100vw - 5rem)`);
-      teile.push(`(max-width: 767px) ${wunschHandy[i]}px`);
-    } else {
-      teile.push("(max-width: 767px) calc(100vw - 5rem)");
-    }
-
-    // 2. Mitte (768–928): Reihe, ggf. anteilig geschrumpft.
-    const anteil =
-      anzahl === 1
-        ? "calc(100vw - 7rem)"
-        : `calc((100vw - 7rem - ${abstaende}px) * ${faktorText(wunschGross[i] / summe)})`;
-    const ungeschrumpft = `${wunschGross[i]}px`;
-    if (kippMittel > 928) {
-      teile.push(`(max-width: 928px) ${anteil}`);
-    } else if (kippMittel > 768) {
-      teile.push(`(max-width: ${kippMittel}px) ${anteil}`);
-      teile.push(`(max-width: 928px) ${ungeschrumpft}`);
-    } else {
-      teile.push(`(max-width: 928px) ${ungeschrumpft}`);
-    }
-
-    // 3. Ab 929: feste Spalte, eine Zahl.
-    const gross = `${Math.round(wunschGross[i] * faktorGross)}px`;
-    // Eine Mittel-Angabe, die schon der Endangabe entspricht, ist Ballast.
-    if (teile[teile.length - 1] === `(max-width: 928px) ${gross}`) teile.pop();
-    teile.push(gross);
-    return teile.join(", ");
+  const summe = seitenverhaeltnisse.reduce((a, b) => a + b, 0);
+  return seitenverhaeltnisse.map((ar) => {
+    const anteil = faktorText(ar / summe);
+    const gross = Math.round(((SPALTE_GROSS - abstaende) * ar) / summe);
+    return [
+      `(max-width: 767px) calc((100vw - 5rem - ${abstaende}px) * ${anteil})`,
+      `(max-width: 928px) calc((100vw - 7rem - ${abstaende}px) * ${anteil})`,
+      `${gross}px`,
+    ].join(", ");
   });
 }
 
 /**
- * `sizes` eines Bildes, das für sich steht — die Galerie bricht um, welche
- * Bilder dort in einer Zeile landen, hängt an der Fensterbreite und ist
- * statisch nicht bestimmbar. Deklariert wird deshalb die Obergrenze: die
- * Wunschbreite, gedeckelt auf die Spalte. Nach dem Umbruch kann ein Bild nur
- * kleiner werden, nie größer (die Reihe wächst nie über die Wunschbreite).
+ * `sizes` eines Galeriebildes: Format × feste Zeilenhöhe, gedeckelt auf die
+ * Spalte.
+ *
+ * Die Galerie wächst BEWUSST nicht in die Zeile hinein. Der erste Anlauf ließ
+ * sie das (flex-grow proportional zum Format, Zeile füllt die Spalte) — dann
+ * hängt die Breite jedes Bildes davon ab, welche Bilder mit ihm in eine Zeile
+ * geraten, und das ist an einem einzelnen Bild nicht ausrechenbar. Deklariert
+ * werden musste die Obergrenze, gerendert wurde deutlich weniger: ein 241 px
+ * breites Bild lud die 480er-Variante statt der 320er. Der Auslieferungs-
+ * Guardrail (tests/e2e/bild-auslieferung.spec.ts) hat genau das gefangen.
+ *
+ * Mit fester Zeilenhöhe ist die Breite wieder eine Zahl — und die Galerie wird
+ * nebenbei ruhiger: ALLE Bilder sind gleich hoch, die Zeilen brechen um, jede
+ * beginnt auf der linken Textkante. Der Preis ist ein offener rechter Rand am
+ * Zeilenende; im Fließtext, wo es zählt, füllen die Reihen die Spalte weiterhin
+ * exakt.
  */
-export function bildSizes(seitenverhaeltnisWert: number, stufe: BildStufe): string {
-  return reihenSizes([seitenverhaeltnisWert], stufe)[0];
+export function galerieSizes(seitenverhaeltnisWert: number): string {
+  return gedeckeltSizes(Math.round(GALERIE_HOEHE * seitenverhaeltnisWert));
 }

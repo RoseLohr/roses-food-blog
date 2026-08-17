@@ -50,34 +50,41 @@ export type EditorBlockData =
 type EditorBlock = EditorBlockData & { key: string };
 
 /**
- * Rolle eines Bildblocks in seiner Reihe — dieselbe Regel wie im Renderer
- * (`zuRenderBloecken`), hier nur für die Anzeige: Wer die Höhe einer Reihe
- * bestimmt, darf sie einstellen; wer ihr folgt, erbt sie.
+ * Rolle eines Bildblocks — dieselbe Regel wie im Renderer (`zuRenderBloecken`),
+ * hier nur für die Anzeige. Ein Bild ist entweder ein Vollbild (L), Teil einer
+ * Reihe (zwei oder mehr Nachbarn) oder ein Einzelbild, das im Text steht und
+ * umflossen wird; dann bekommt es eine Seite, die sich automatisch abwechselt.
  */
-function reihenRolle(
+function bildRolle(
   blocks: EditorBlock[],
   i: number,
-): { rolle: "allein" | "erstes" | "folgend"; stufe: BildStufe } {
+): { rolle: "voll" | "reihe" | "umfluss"; stufe: BildStufe; seite: "links" | "rechts" } {
   const b = blocks[i];
-  if (b.type !== "bild") return { rolle: "allein", stufe: "m" };
-  if (b.groesse === "l") return { rolle: "allein", stufe: "l" };
-  let erstes = i;
-  while (erstes > 0) {
-    const vorher = blocks[erstes - 1];
-    if (vorher.type !== "bild" || vorher.groesse === "l") break;
-    erstes--;
-  }
-  const kopf = blocks[erstes];
-  const stufe = kopf.type === "bild" ? kopf.groesse : "m";
-  if (erstes !== i) return { rolle: "folgend", stufe };
-  const naechster = blocks[i + 1];
-  const hatNachbar =
-    naechster?.type === "bild" && naechster.groesse !== "l";
-  return { rolle: hatNachbar ? "erstes" : "allein", stufe };
-}
+  if (b.type !== "bild") return { rolle: "voll", stufe: "m", seite: "rechts" };
+  if (b.groesse === "l") return { rolle: "voll", stufe: "l", seite: "rechts" };
 
-let blockUid = 0;
-const nextBlockKey = () => `block-${++blockUid}`;
+  const istNachbar = (k: number) => {
+    const n = blocks[k];
+    return n !== undefined && n.type === "bild" && n.groesse !== "l";
+  };
+  const inReihe = istNachbar(i - 1) || istNachbar(i + 1);
+  if (inReihe) return { rolle: "reihe", stufe: b.groesse, seite: "rechts" };
+
+  // Umflossen: die Seite ergibt sich aus der Zahl der umflossenen Einzelbilder
+  // davor — Reihen und Vollbilder zählen nicht mit (siehe lib/bildreihen.ts).
+  let zaehler = 0;
+  for (let k = 0; k < i; k++) {
+    const v = blocks[k];
+    if (v.type !== "bild" || v.groesse === "l") continue;
+    if (istNachbar(k - 1) || istNachbar(k + 1)) continue; // Teil einer Reihe
+    zaehler++;
+  }
+  return {
+    rolle: "umfluss",
+    stufe: b.groesse,
+    seite: zaehler % 2 === 0 ? "rechts" : "links",
+  };
+}
 
 export interface TravelEditorProps {
   initial: {
@@ -109,6 +116,9 @@ export interface TravelEditorProps {
   message?: string | null;
 }
 
+let blockUid = 0;
+const nextBlockKey = () => `block-${++blockUid}`;
+
 const inputCls = "w-full border border-ink-soft/30 px-3 py-2 text-sm";
 const labelCls = "mb-1 block text-sm font-medium";
 const btnSecondary =
@@ -116,9 +126,9 @@ const btnSecondary =
 
 /**
  * Der einzige Regler eines Bildes: seine Höhe. Drei Knöpfe, keine Zahlen,
- * keine Prozente. Ein Bild, das einer Reihe FOLGT, erbt deren Höhe — dann
- * stehen S und M still (die Einstellung hätte keine Wirkung), während L
- * weiterhin wählbar bleibt, weil es das Bild aus der Reihe löst.
+ * keine Prozente. In einer REIHE wirkt die Höhe nicht — dort teilen sich die
+ * Breiten nach Seitenverhältnis auf. Deshalb stehen S und M dann still, während
+ * L wählbar bleibt: es löst das Bild aus der Reihe.
  */
 function StufenSchalter({
   wert,
@@ -459,7 +469,7 @@ export function TravelEditor({
                   )}
                   {b.type === "bild" &&
                     (() => {
-                      const { rolle, stufe } = reihenRolle(blocks, i);
+                      const { rolle, stufe, seite } = bildRolle(blocks, i);
                       return (
                         <>
                           <ImagePicker
@@ -475,16 +485,18 @@ export function TravelEditor({
                             <span className={labelCls}>{d.blockHeight}</span>
                             <StufenSchalter
                               wert={stufe}
-                              gesperrt={rolle === "folgend"}
+                              gesperrt={rolle === "reihe"}
                               onChange={(s) => updateBlock(i, { groesse: s })}
                             />
-                            {rolle !== "allein" && (
-                              <p className="mt-2 border-l-2 border-leaf bg-leaf/[0.06] px-3 py-1.5 text-xs text-ink-soft">
-                                {rolle === "erstes"
-                                  ? d.blockRowWithNext
-                                  : d.blockRowInherits}
-                              </p>
-                            )}
+                            <p className="mt-2 border-l-2 border-leaf bg-leaf/[0.06] px-3 py-1.5 text-xs text-ink-soft">
+                              {rolle === "reihe"
+                                ? d.blockInRow
+                                : rolle === "voll"
+                                  ? d.blockFullWidth
+                                  : seite === "rechts"
+                                    ? d.blockFloatRight
+                                    : d.blockFloatLeft}
+                            </p>
                           </div>
                         </>
                       );

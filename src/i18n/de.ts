@@ -854,10 +854,14 @@ export const de = {
         m: { label: "M", title: "Normal — der Standard beim Einfügen" },
         l: { label: "L", title: "Groß — steht allein in seiner Reihe" },
       },
-      blockRowWithNext:
-        "Steht in einer Reihe mit dem nächsten Bild — beide werden gleich hoch und schließen unten bündig ab.",
-      blockRowInherits:
-        "Übernimmt die Höhe des ersten Bildes der Reihe. „L“ löst es aus der Reihe.",
+      blockInRow:
+        "Steht in einer Reihe mit dem Nachbarbild: Die Breiten teilen sich nach Seitenverhältnis und füllen die Spalte, alle Bilder werden gleich hoch. Die Höhe wirkt hier nicht — „L“ löst das Bild aus der Reihe.",
+      blockFloatRight:
+        "Steht rechts im Text, der Text fließt links daneben. Das nächste einzelne Bild steht links.",
+      blockFloatLeft:
+        "Steht links im Text, der Text fließt rechts daneben. Das nächste einzelne Bild steht rechts.",
+      blockFullWidth:
+        "Steht allein über die volle Breite des Inhalts — kein Text daneben.",
       blockRestaurant: "Restaurant",
       blockUp: "Nach oben",
       blockDown: "Nach unten",
