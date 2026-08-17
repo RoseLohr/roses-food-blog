@@ -13,6 +13,7 @@ import {
   type Option as TaxonomyOption,
 } from "@/components/admin/quick-add-checkboxes";
 import { RichTextEditor } from "@/components/admin/rich-text-editor";
+import { BILD_STUFEN, type BildStufe } from "@/lib/bildreihen";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -44,9 +45,36 @@ interface EditorRestaurant {
 /** Inhalts-Block (siehe lib/travel-blocks.ts); imageId 0 = noch kein Bild. */
 export type EditorBlockData =
   | { type: "text"; markdown: string }
-  | { type: "bild"; imageId: number }
+  | { type: "bild"; imageId: number; groesse: BildStufe }
   | { type: "restaurant"; index: number };
 type EditorBlock = EditorBlockData & { key: string };
+
+/**
+ * Rolle eines Bildblocks in seiner Reihe — dieselbe Regel wie im Renderer
+ * (`zuRenderBloecken`), hier nur für die Anzeige: Wer die Höhe einer Reihe
+ * bestimmt, darf sie einstellen; wer ihr folgt, erbt sie.
+ */
+function reihenRolle(
+  blocks: EditorBlock[],
+  i: number,
+): { rolle: "allein" | "erstes" | "folgend"; stufe: BildStufe } {
+  const b = blocks[i];
+  if (b.type !== "bild") return { rolle: "allein", stufe: "m" };
+  if (b.groesse === "l") return { rolle: "allein", stufe: "l" };
+  let erstes = i;
+  while (erstes > 0) {
+    const vorher = blocks[erstes - 1];
+    if (vorher.type !== "bild" || vorher.groesse === "l") break;
+    erstes--;
+  }
+  const kopf = blocks[erstes];
+  const stufe = kopf.type === "bild" ? kopf.groesse : "m";
+  if (erstes !== i) return { rolle: "folgend", stufe };
+  const naechster = blocks[i + 1];
+  const hatNachbar =
+    naechster?.type === "bild" && naechster.groesse !== "l";
+  return { rolle: hatNachbar ? "erstes" : "allein", stufe };
+}
 
 let blockUid = 0;
 const nextBlockKey = () => `block-${++blockUid}`;
@@ -85,6 +113,50 @@ const inputCls = "w-full border border-ink-soft/30 px-3 py-2 text-sm";
 const labelCls = "mb-1 block text-sm font-medium";
 const btnSecondary =
   "rounded-lg border border-ink/20 px-3 py-1.5 text-sm hover:bg-cream";
+
+/**
+ * Der einzige Regler eines Bildes: seine Höhe. Drei Knöpfe, keine Zahlen,
+ * keine Prozente. Ein Bild, das einer Reihe FOLGT, erbt deren Höhe — dann
+ * stehen S und M still (die Einstellung hätte keine Wirkung), während L
+ * weiterhin wählbar bleibt, weil es das Bild aus der Reihe löst.
+ */
+function StufenSchalter({
+  wert,
+  gesperrt,
+  onChange,
+}: {
+  wert: BildStufe;
+  gesperrt: boolean;
+  onChange: (s: BildStufe) => void;
+}) {
+  return (
+    <div
+      role="group"
+      aria-label={d.blockHeight}
+      className="inline-flex overflow-hidden rounded-lg border border-ink/20"
+    >
+      {BILD_STUFEN.map((s) => {
+        const aktiv = s === wert;
+        const aus = gesperrt && s !== "l";
+        return (
+          <button
+            key={s}
+            type="button"
+            aria-pressed={aktiv}
+            disabled={aus}
+            title={d.blockHeightOptions[s].title}
+            onClick={() => onChange(s)}
+            className={`border-r border-ink/15 px-4 py-1.5 text-sm font-semibold last:border-r-0 ${
+              aktiv ? "bg-leaf text-white" : "hover:bg-cream"
+            } ${aus ? "opacity-50" : ""}`}
+          >
+            {d.blockHeightOptions[s].label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 function emptyDish(): EditorDish {
   return {
@@ -385,15 +457,38 @@ export function TravelEditor({
                       onChange={(md) => updateBlock(i, { markdown: md })}
                     />
                   )}
-                  {b.type === "bild" && (
-                    <ImagePicker
-                      legend={d.blockImage}
-                      options={images}
-                      multiple={false}
-                      value={b.imageId > 0 ? [b.imageId] : []}
-                      onChange={(ids) => updateBlock(i, { imageId: ids[0] ?? 0 })}
-                    />
-                  )}
+                  {b.type === "bild" &&
+                    (() => {
+                      const { rolle, stufe } = reihenRolle(blocks, i);
+                      return (
+                        <>
+                          <ImagePicker
+                            legend={d.blockImage}
+                            options={images}
+                            multiple={false}
+                            value={b.imageId > 0 ? [b.imageId] : []}
+                            onChange={(ids) =>
+                              updateBlock(i, { imageId: ids[0] ?? 0 })
+                            }
+                          />
+                          <div className="mt-3">
+                            <span className={labelCls}>{d.blockHeight}</span>
+                            <StufenSchalter
+                              wert={stufe}
+                              gesperrt={rolle === "folgend"}
+                              onChange={(s) => updateBlock(i, { groesse: s })}
+                            />
+                            {rolle !== "allein" && (
+                              <p className="mt-2 border-l-2 border-leaf bg-leaf/[0.06] px-3 py-1.5 text-xs text-ink-soft">
+                                {rolle === "erstes"
+                                  ? d.blockRowWithNext
+                                  : d.blockRowInherits}
+                              </p>
+                            )}
+                          </div>
+                        </>
+                      );
+                    })()}
                   {b.type === "restaurant" &&
                     (restaurants.length === 0 ? (
                       <p className="text-sm text-ink-soft">{d.blockNoRestaurants}</p>
@@ -425,7 +520,7 @@ export function TravelEditor({
                 </button>
                 <button
                   type="button"
-                  onClick={() => addBlock({ type: "bild", imageId: 0 })}
+                  onClick={() => addBlock({ type: "bild", imageId: 0, groesse: "m" })}
                   className={btnSecondary}
                 >
                   + {d.blockImage}

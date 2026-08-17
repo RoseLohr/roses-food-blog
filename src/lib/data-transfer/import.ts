@@ -404,17 +404,14 @@ export async function importBundle(
 
     // Inhalts-Blöcke: Bild-Referenzen in neue Bild-IDs auflösen; Restaurant-
     // Blöcke mit ungültigem Index entfallen. search_text entsteht daraus neu.
-    const blocks: Array<
-      | { type: "text"; markdown: string }
-      | { type: "bild"; imageId: number }
-      | { type: "restaurant"; index: number }
-    > = [];
+    const blocks: TravelBlock[] = [];
     for (const b of tv.contentBlocks) {
       if (b.type === "text") {
         if (b.markdown.trim()) blocks.push({ type: "text", markdown: b.markdown });
       } else if (b.type === "bild") {
         const imgId = await importImage(b.image);
-        if (imgId != null) blocks.push({ type: "bild", imageId: imgId });
+        if (imgId != null)
+          blocks.push({ type: "bild", imageId: imgId, groesse: b.groesse });
       } else if (b.index < tv.restaurants.length) {
         blocks.push({ type: "restaurant", index: b.index });
       }
@@ -564,6 +561,7 @@ export async function importBundle(
           sortOrder: i,
           type: "bild",
           imageId: b.imageId,
+          groesse: b.groesse,
         });
       } else {
         const restaurantId = restaurantIdByIndex[b.index];

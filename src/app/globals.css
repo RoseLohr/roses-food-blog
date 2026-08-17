@@ -83,6 +83,73 @@ html {
   margin-inline: calc(50% - 50vw);
 }
 
+/* Bildreihe der Reiseberichte — die ganze Layout-Regel aus src/lib/bildreihen.ts.
+   `--h` ist die Stufenhöhe (S/M/L), `--ar` das Seitenverhältnis des einzelnen
+   Bildes; die Wunschbreite ist ihr Produkt. Beschnitten wird nie.
+
+   Bewusst als eigene Regel statt Utility-Klassen: Die Wunschbreite ist ein
+   calc() aus ZWEI Custom Properties, von denen eine (`--ar`) je Bild inline
+   gesetzt wird — das ist keine Klasse, die es fertig gibt.
+
+   Handy (<768px): ein Bild je Zeile, mittig, gedeckelt auf die Spalte. Bei
+   295 px nutzbarer Breite wären drei Bilder nebeneinander je 90 px breit —
+   das ist keine Reihe mehr, das ist eine Briefmarkensammlung.
+
+   Ab 768px die echte Reihe. `flex-grow: 0` — ein Bild wird NIE breiter als
+   seine Wunschbreite. `flex-shrink: 1` verteilt eine zu breite Reihe
+   proportional zur Wunschbreite; dadurch schrumpfen alle Bilder einer Reihe um
+   denselben Faktor und bleiben gleich hoch. Genau das macht die Reihe unten
+   bündig, ohne Zuschnitt und ohne eine einzige Zeile JavaScript. */
+.bildreihe {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  --h: 240px;
+}
+.bildreihe.stufe-s {
+  --h: 160px;
+}
+.bildreihe.stufe-m {
+  --h: 240px;
+}
+.bildreihe.stufe-l {
+  --h: 380px;
+}
+.bildreihe > img {
+  width: calc(var(--ar) * var(--h));
+  max-width: 100%;
+  height: auto;
+}
+@media (min-width: 768px) {
+  .bildreihe {
+    flex-direction: row;
+    justify-content: center;
+    align-items: flex-start;
+    --h: 360px;
+  }
+  .bildreihe.stufe-s {
+    --h: 220px;
+  }
+  .bildreihe.stufe-m {
+    --h: 360px;
+  }
+  /* 78vh deckelt die größte Stufe: kein Bild wird je höher als der Bildschirm.
+     Es ist die einzige Zahl, die das verhindert — und sie steht hier, nicht
+     verteilt über die Aufrufer. */
+  .bildreihe.stufe-l {
+    --h: min(560px, 78vh);
+  }
+  .bildreihe > img {
+    flex: 0 1 calc(var(--ar) * var(--h));
+    width: auto;
+  }
+  /* Nur die Galerie bricht um; im Text ist eine Reihe genau eine Zeile. */
+  .bildreihe.umbruch {
+    flex-wrap: wrap;
+  }
+}
+
 /* Zutatenzeile im Rezept-Editor: auf schmalen Bildschirmen (Handy hochkant)
    gestapelt, damit ALLE Felder sichtbar und gut bedienbar sind; ab 640px in
    einer Zeile (Menge · Einheit · Name · Zusatz · Entfernen). Bewusst als eigene

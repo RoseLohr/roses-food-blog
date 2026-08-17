@@ -844,6 +844,20 @@ export const de = {
         "Der Inhalt besteht aus Blöcken (Text, Bild, Restaurant), die sich mit ↑/↓ anordnen lassen — die Reihenfolge bestimmt die Anzeige im Beitrag. Restaurants ohne eigenen Block erscheinen wie bisher gesammelt unter dem Inhalt.",
       blockText: "Text",
       blockImage: "Bild",
+      blockHeight: "Höhe",
+      /** Der einzige Regler eines Bildes (siehe lib/bildreihen.ts). */
+      blockHeightOptions: {
+        s: {
+          label: "S",
+          title: "Klein — für Belege und Details; mehrere passen nebeneinander",
+        },
+        m: { label: "M", title: "Normal — der Standard beim Einfügen" },
+        l: { label: "L", title: "Groß — steht allein in seiner Reihe" },
+      },
+      blockRowWithNext:
+        "Steht in einer Reihe mit dem nächsten Bild — beide werden gleich hoch und schließen unten bündig ab.",
+      blockRowInherits:
+        "Übernimmt die Höhe des ersten Bildes der Reihe. „L“ löst es aus der Reihe.",
       blockRestaurant: "Restaurant",
       blockUp: "Nach oben",
       blockDown: "Nach unten",
