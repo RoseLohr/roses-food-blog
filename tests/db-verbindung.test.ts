@@ -1,75 +1,32 @@
 /**
- * Das Importieren von `@/db` darf KEINE Datenbankverbindung öffnen.
+ * Der WAL-Wechsel muss gleichzeitige Öffnungen überleben.
  *
- * DER FEHLER, DEN DIESE DATEI VERHINDERT: `next build` sammelt die Seitendaten
- * mit mehreren Worker-Prozessen und wertet dafür jedes Routen-Modul aus. Solange
- * das db-Modul die Verbindung beim Import öffnete, taten das drei Prozesse
- * gleichzeitig mit derselben Datei — und `PRAGMA journal_mode = WAL` braucht
- * dafür einen exklusiven Lock. Der Build brach dann sporadisch ab:
+ * DER FEHLER, DEN DIESE DATEI VERHINDERT: `next build` wertet die Routen-Module
+ * mit mehreren Worker-Prozessen aus. Drei Prozesse öffneten dieselbe Datei
+ * gleichzeitig, und `PRAGMA journal_mode = WAL` braucht dafür eine exklusive
+ * Sperre — für die SQLite den busy-Handler NICHT aufruft. Der Build brach
+ * sporadisch ab:
  *
  *   Failed to collect page data for /admin/kontakte/export
  *     [cause]: SqliteError: database is locked
  *
- * WARUM HIER KEIN RENNEN NACHGESTELLT WIRD: Weil das nichts belegte. Das
- * Rennen tritt nur auf langsamen Läufern auf; auf einer schnellen Maschine
- * blieben 120 startsynchronisierte Importe fehlerfrei. Eine Prüfung, die
- * jederzeit auch ohne Fix grün sein kann, prüft nichts.
+ * WARUM HIER KEIN RENNEN NACHGESTELLT WIRD: Weil eine Prüfung, die auch ohne
+ * Fix grün sein kann, nichts prüft. Auf einer schnellen Maschine blieben 120
+ * gleichzeitige Öffnungen auch mit dem alten Code fehlerfrei; der Fehler zeigt
+ * sich nur auf langsameren Läufern. Nachgestellt wurde er in einem eigenen
+ * Prüfstand, der die drei Strategien gegeneinander stellt — die Zahlen stehen
+ * unten und in src/db/index.ts.
  *
- * Geprüft wird stattdessen die Eigenschaft, aus der das Rennen folgte, und die
- * ist beweisbar: Ein Import legt keine Datei an. Wo nichts geöffnet wird, kann
- * sich auch nichts um einen Lock streiten.
- *
- * (Die Reihenfolge der Pragmas war übrigens nicht die Ursache — gemessen 3
- * gegenüber 7 Fehlern auf je 120 Prozessen, also Rauschen. SQLite ruft den
- * busy-Handler für den journal_mode-Wechsel nicht auf.)
+ * Was hier steht, ist deshalb ausdrücklich eine Ratifizierung der gemessenen
+ * Entscheidung: die Reihenfolge der Pragmas, die begrenzte Wiederholung, und
+ * dass das Lesen mit in der Absicherung liegt.
  */
-import { spawnSync } from "node:child_process";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 const ROOT = process.cwd();
 const DB_MODUL = path.join(ROOT, "src/db/index.ts");
-
-/**
- * Führt ein Stück Code in einem eigenen Prozess aus, mit einem frischen,
- * NICHT existierenden DATA_DIR. Gibt zurück, ob danach eine Datenbank dasteht.
- */
-function mitFrischemDatenverzeichnis(code: string) {
-  const wurzel = fs.mkdtempSync(path.join(os.tmpdir(), "db-verbindung-"));
-  const datenDir = path.join(wurzel, "daten");
-
-  // In eine async-Funktion gekapselt: `tsx -e` übersetzt nach CJS und kennt
-  // dort kein Top-Level-await.
-  //
-  // `hole()` packt außerdem den CJS-Interop aus: Nach der Übersetzung liegen
-  // die Exporte unter `default`. Ohne das prüfte der Test `undefined` gegen
-  // `undefined` und wäre immer grün.
-  const gekapselt = [
-    "(async () => {",
-    `const hole = async () => { const m = await import(${JSON.stringify(DB_MODUL)}); return m.default ?? m; };`,
-    code,
-    "})().catch((f) => { console.error(f); process.exit(1); });",
-  ].join("\n");
-
-  const lauf = spawnSync(
-    path.join(ROOT, "node_modules/.bin/tsx"),
-    ["-e", gekapselt],
-    {
-      cwd: ROOT,
-      encoding: "utf8",
-      env: { ...process.env, DATA_DIR: datenDir, NODE_ENV: "production" },
-    },
-  );
-
-  return {
-    code: lauf.status,
-    fehler: lauf.stderr,
-    verzeichnisDa: fs.existsSync(datenDir),
-    datenbankDa: fs.existsSync(path.join(datenDir, "app.db")),
-  };
-}
 
 describe("Datenbank: der WAL-Wechsel überlebt gleichzeitige Öffnungen", () => {
   const quelltext = fs.readFileSync(DB_MODUL, "utf8");
@@ -105,112 +62,18 @@ describe("Datenbank: der WAL-Wechsel überlebt gleichzeitige Öffnungen", () => 
     // Lesen und Schreiben müssen ZUSAMMEN abgesichert sein: Unter fremder
     // Sperre scheitert schon das Lesen mit SQLITE_BUSY (nachgestellt). Stünde
     // es vor dem try, bräche es die Öffnung ab, bevor die Absicherung greift.
+    // Ausgeschnitten wird der try-Block SELBST, nicht die ganze Schleife: Ein
+    // Lesezugriff direkt vor dem `try` liegt zwar in der Schleife, aber nicht in
+    // der Absicherung — beim Gegenprüfen kam meine erste Fassung genau daran
+    // vorbei.
     const versuchsblock = code.slice(
-      code.indexOf("for (let versuch"),
-      code.indexOf("foreign_keys"),
+      code.indexOf("try {", code.indexOf("for (let versuch")),
+      code.indexOf("} catch", code.indexOf("for (let versuch")),
     );
     expect(
       versuchsblock,
       "das Lesen von journal_mode steht außerhalb der Absicherung",
     ).toMatch(/journal_mode",\s*\{\s*simple/);
     expect(versuchsblock).toMatch(/journal_mode = WAL/);
-  });
-});
-
-describe("Datenbank: die Verbindung entsteht beim Zugriff, nicht beim Import", () => {
-  it("ein blosser Import öffnet keine Datenbank", () => {
-    // Genau das tut `next build` beim Sammeln der Seitendaten: importieren und
-    // die Exporte lesen. Mehr nicht.
-    const ergebnis = mitFrischemDatenverzeichnis(
-      "await hole();",
-    );
-
-    expect(ergebnis.code, ergebnis.fehler).toBe(0);
-    expect(
-      ergebnis.datenbankDa,
-      "der Import hat app.db angelegt — im Build streiten sich dann mehrere Worker um den WAL-Lock",
-    ).toBe(false);
-    expect(
-      ergebnis.verzeichnisDa,
-      "der Import hat das Datenverzeichnis angelegt",
-    ).toBe(false);
-  });
-
-  it("der erste Zugriff öffnet sie dann aber wirklich", () => {
-    // Die Gegenrichtung. Ohne sie wäre die Prüfung oben auch dann grün, wenn
-    // das Modul gar nichts mehr täte.
-    const ergebnis = mitFrischemDatenverzeichnis(
-      "const m = await hole(); void m.db.select;",
-    );
-
-    expect(ergebnis.code, ergebnis.fehler).toBe(0);
-    expect(
-      ergebnis.datenbankDa,
-      "der erste Zugriff hat keine Verbindung geöffnet",
-    ).toBe(true);
-  });
-
-  it("der Proxy verhält sich in JEDER Zugriffsart wie das Original", () => {
-    // Eine Fassung, die nur `get` und `has` bediente, wich hier ab — alle vier
-    // Punkte nachgestellt (Panel-Befund gpt-5.6-sol). Sie sind einzeln
-    // unscheinbar und zusammen der Unterschied zwischen „ist die Instanz" und
-    // „sieht ihr ähnlich".
-    const ergebnis = mitFrischemDatenverzeichnis(
-      [
-        "const m = await hole();",
-        // Identität: jeder Zugriff band vorher neu.
-        `if (m.db.select !== m.db.select) throw new Error("Methodenidentität instabil");`,
-        // Aufzählbarkeit: ownKeys ging vorher auf das leere Proxy-Ziel.
-        `if (Object.keys(m.db).length === 0) throw new Error("Object.keys leer");`,
-        `if (Object.keys({ ...m.db }).length === 0) throw new Error("Spread leer");`,
-        // Schreiben: landete vorher auf dem leeren Ziel und war beim Lesen weg.
-        `m.db.probe = 1;`,
-        `if (m.db.probe !== 1) throw new Error("set wird verworfen");`,
-        // Prototyp: kam vorher von {} statt von der Instanz.
-        `const proto = Object.getPrototypeOf(m.db);`,
-        `if (proto === Object.prototype) throw new Error("Prototyp ist der des leeren Ziels");`,
-      ].join("\n"),
-    );
-
-    expect(ergebnis.code, ergebnis.fehler).toBe(0);
-  });
-
-  it("Methoden bleiben an die echte Instanz gebunden", () => {
-    // Drizzle arbeitet intern mit `this`. Gäbe der Proxy Methoden ungebunden
-    // heraus, liefen sie ins Leere — und zwar erst zur Laufzeit, nicht beim
-    // Übersetzen.
-    const ergebnis = mitFrischemDatenverzeichnis(
-      [
-        "const m = await hole();",
-        `const { sql } = await import("drizzle-orm");`,
-        // Losgelöste Referenz — der harte Fall.
-        `const run = m.db.run;`,
-        `run(sql\`SELECT 1\`);`,
-        `if (typeof m.db.transaction !== "function") throw new Error("transaction fehlt");`,
-        `if (!("select" in m.db)) throw new Error("has-Falle greift nicht");`,
-      ].join("\n"),
-    );
-
-    expect(ergebnis.code, ergebnis.fehler).toBe(0);
-    expect(ergebnis.datenbankDa).toBe(true);
-  });
-
-  it("zwei Zugriffe teilen sich eine Verbindung", () => {
-    // „Ein Prozess, eine Verbindung" gilt weiterhin — die Verzögerung darf
-    // daraus nicht zwei machen.
-    const ergebnis = mitFrischemDatenverzeichnis(
-      [
-        "const m = await hole();",
-        `const { sql } = await import("drizzle-orm");`,
-        `m.db.run(sql\`CREATE TABLE probe (x INTEGER)\`);`,
-        `m.db.run(sql\`INSERT INTO probe VALUES (1)\`);`,
-        // Eine zweite Verbindung sähe die Tabelle zwar auch, aber ein zweites
-        // CREATE in derselben Sitzung schlüge fehl — genau das prüfen wir.
-        `const zeilen = m.db.all(sql\`SELECT x FROM probe\`);`,
-        `if (zeilen.length !== 1) throw new Error("unerwartet: " + zeilen.length);`,
-      ].join("\n"),
-    );
-
-    expect(ergebnis.code, ergebnis.fehler).toBe(0);
   });
 });
