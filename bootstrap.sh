@@ -23,6 +23,69 @@ cd "$(dirname "$0")"
 log()  { printf '\n\033[1;32m==> %s\033[0m\n' "$*"; }
 fail() { printf '\n\033[1;31mFEHLER: %s\033[0m\n' "$*"; exit 1; }
 
+# Entfernt den mit „# BROTLI-ANFANG" / „# BROTLI-ENDE" markierten Block aus
+# stdin und schreibt den Rest nach stdout.
+#
+# Warum kein `sed '/ANFANG/,/ENDE/d'`: Ein sed-Bereich, dessen Endmuster nicht
+# mehr auftritt, läuft bis zum DATEIENDE. Fehlt die Endmarke, löscht er den
+# gesamten Rest der Config — TLS-Pfade, proxy_pass, ganze server-Blöcke. Und
+# eine bloße Mengenzählung der Marken deckt das nicht ab: Steht ein ENDE VOR
+# seinem ANFANG, sind beide Zahlen gleich, das Tor geht auf, und gelöscht wird
+# trotzdem bis zum Dateiende. Weil das Ergebnis syntaktisch gültig bleiben
+# kann, wäre `nginx -t` danach grün und der Verlust nicht zu bemerken.
+#
+# Dieser Durchlauf prüft stattdessen die Struktur und bricht mit Exit 2 ab,
+# statt still zu kürzen.
+# Beantwortet die eine Frage, auf die es ankommt: Akzeptiert dieses nginx die
+# Direktive `brotli`? Erwartet die load_module-Zeilen der laufenden Instanz auf
+# stdin; Exit 0 heißt ja.
+#
+# Gefragt wird nicht das Dateisystem, sondern nginx: Es bekommt eine
+# Wegwerf-Konfiguration zu prüfen, die genau diese Direktive benutzt. Jedes
+# Stellvertretermerkmal wäre falsch — der apt-Exit-Code (transiente Fehler),
+# eine Suche nach „irgendwas mit brotli" (das Schwesterpaket …-static bringt nur
+# `brotli_static` mit), eine Verzeichnissuche (das `load_module` darf auch in
+# der nginx.conf stehen) oder das Vorhandensein einer load_module-Zeile
+# (statisch einkompiliertes brotli hat keine und funktioniert trotzdem).
+#
+# Im Zweifel lautet die Antwort NEIN: Ist nginx nicht aufrufbar oder scheitert
+# die Sonde aus einem fremden Grund, entsteht die Konfiguration ohne brotli.
+# Das kostet ein paar Prozent Bytes und ist immer lauffähig.
+brotli_verfuegbar() {
+  local verzeichnis ergebnis=1
+  verzeichnis="$(mktemp -d)"
+  {
+    cat
+    printf 'pid %s/sonde.pid;\n' "$verzeichnis"
+    printf 'error_log %s/sonde.log;\n' "$verzeichnis"
+    printf 'events {}\n'
+    printf 'http { brotli on; brotli_comp_level 5; }\n'
+  } >"$verzeichnis/sonde.conf"
+  if ${SUDO:-} "${NGINX_BEFEHL:-nginx}" -t -c "$verzeichnis/sonde.conf" >/dev/null 2>&1; then
+    ergebnis=0
+  fi
+  rm -rf "$verzeichnis"
+  return "$ergebnis"
+}
+
+brotli_block_entfernen() {
+  awk '
+    /# BROTLI-ANFANG/ {
+      if (drin) { fehler = "zweites BROTLI-ANFANG ohne dazwischenliegendes ENDE" ; exit 2 }
+      drin = 1; next
+    }
+    /# BROTLI-ENDE/ {
+      if (!drin) { fehler = "BROTLI-ENDE ohne vorangehendes BROTLI-ANFANG" ; exit 2 }
+      drin = 0; next
+    }
+    !drin { print }
+    END {
+      if (fehler == "" && drin) fehler = "BROTLI-ANFANG ohne abschließendes BROTLI-ENDE"
+      if (fehler != "") { print "Marken nicht sauber gepaart: " fehler > "/dev/stderr"; exit 2 }
+    }
+  '
+}
+
 SUDO="sudo"
 [[ $(id -u) -eq 0 ]] && SUDO=""
 
@@ -189,19 +252,84 @@ if [[ "$DOMAIN" != "localhost:${PORT:-3000}" && "$DOMAIN" != "localhost" && -n "
   if [[ "$SETUP_NGINX" =~ ^[jJyY] ]]; then
     log "Richte nginx + certbot für $DOMAIN ein"
     $SUDO apt-get install -y nginx certbot python3-certbot-nginx
-    # nginx-Config nur beim ersten Mal aus der HTTP-Vorlage schreiben. Ein
-    # Re-Run darf certbots eingefügten TLS-/443-Block NICHT überschreiben.
+    # brotli-Modul separat und OHNE Abbruch: `set -e` gilt im ganzen Skript,
+    # ein fehlendes Paket (andere Distribution, alter Ubuntu-Stand) würde die
+    # Ersteinrichtung sonst mitten im Lauf beenden.
+    #
+    # Nur das „…-filter"-Paket: es komprimiert im Durchreichen. Das Gegenstück
+    # „…-static" liefert vorkomprimierte .br-Dateien aus — die erzeugt hier
+    # niemand.
+    #
+    # Der Rückgabewert von apt entscheidet NICHTS. Er ist weder Erfolgs- noch
+    # Misserfolgsbeweis: Das postinst verlinkt nach modules-enabled nur bei der
+    # Erstinstallation, und apt kann aus Gründen scheitern, die mit brotli
+    # nichts zu tun haben (belegter dpkg-Lock, ein Spiegel mit 404). Gefragt
+    # wird danach nginx selbst.
+    $SUDO apt-get install -y libnginx-mod-http-brotli-filter || true
+
+    # Die load_module-Zeilen der laufenden Instanz einsammeln und nginx die
+    # Sonde vorlegen. Scheitert `nginx -T`, bleibt die Liste leer — dann
+    # entscheidet die Sonde eben ohne sie, und im Zweifel ohne brotli.
+    if printf '%s\n' "$($SUDO nginx -T 2>/dev/null |
+      grep -E '^[[:space:]]*load_module[^#]*;' || true)" | brotli_verfuegbar; then
+      BROTLI_OK=1
+    else
+      BROTLI_OK=0
+      echo "HINWEIS: brotli ist auf diesem Server nicht nutzbar — nginx komprimiert nur mit gzip."
+      echo "         Das ist funktionsfähig, kostet aber rund 4 % mehr Bytes (JS) bzw. 7 % (CSS)."
+    fi
+
+    # WICHTIG: Dieses Skript schreibt die nginx-Config NUR, wenn es noch keine
+    # gibt. Eine bestehende Konfiguration wird NIE verändert — weder um
+    # certbots TLS-Block zu schonen noch sonst.
+    #
+    # Das ist eine bewusste Entscheidung (2026-08-16, nach zehn Prüfrunden am
+    # Gegenteil): Ein Skript, das in eine fremde, laufende Konfiguration
+    # hineinschneidet, trägt ein Schadensrisiko, das in keinem Verhältnis zu
+    # den ~4 % Bytes steht, um die es hier geht. Weicht der Bestand ab, sagt
+    # das Skript das — und ein Mensch entscheidet.
     if [[ ! -e /etc/nginx/sites-available/roses-blog ]]; then
-      $SUDO tee /etc/nginx/sites-available/roses-blog >/dev/null < <(
-        sed -e "s/www\.example\.de example\.de/$DOMAIN/" \
-            -e "s/127\.0\.0\.1:3000/127.0.0.1:${PORT:-3000}/" \
-            deploy/nginx.conf.example
-      )
+      # Erst vollständig bauen, dann installieren — NICHT über eine
+      # Prozess-Substitution direkt in die Zieldatei. Deren Exit-Code erreicht
+      # `tee` nämlich nicht, auch mit `set -o pipefail` nicht (nachgestellt:
+      # `tee ziel < <(printf 'zeile1\n'; exit 2)` meldet Erfolg und legt die
+      # Teildatei an). Als echte Pipeline in eine temporäre Datei greift
+      # pipefail, und installiert wird nur, was vollständig entstanden ist.
+      NEUE_CONF="$(mktemp)"
+      if sed -e "s/www\.example\.de example\.de/$DOMAIN/" \
+             -e "s/127\.0\.0\.1:3000/127.0.0.1:${PORT:-3000}/" \
+             deploy/nginx.conf.example \
+        | if [[ "$BROTLI_OK" == "1" ]]; then cat; else
+            brotli_block_entfernen
+          fi >"$NEUE_CONF"; then
+        $SUDO cp "$NEUE_CONF" /etc/nginx/sites-available/roses-blog
+        rm -f "$NEUE_CONF"
+      else
+        rm -f "$NEUE_CONF"
+        fail "Die brotli-Marken in deploy/nginx.conf.example sind nicht sauber
+       gepaart (Meldung oben). Es wurde KEINE Konfiguration installiert."
+      fi
       $SUDO ln -sf /etc/nginx/sites-available/roses-blog /etc/nginx/sites-enabled/roses-blog
       $SUDO nginx -t
       $SUDO systemctl reload nginx
     else
       echo "nginx-Config existiert bereits — unverändert gelassen."
+      # Nur berichten, nicht eingreifen. Beide Abweichungen sind für einen
+      # Menschen in einer Minute behoben; automatisch behoben waren sie die
+      # Quelle von sieben Befunden in Folge.
+      if [[ "$BROTLI_OK" == "0" ]] &&
+        $SUDO grep -q '# BROTLI-ANFANG' /etc/nginx/sites-available/roses-blog; then
+        echo 'ACHTUNG: Die bestehende Config enthält brotli-Direktiven, aber brotli ist'
+        echo '         hier nicht nutzbar. nginx lehnt sie mit „unknown directive" ab —'
+        echo '         spätestens der nächste Neustart scheitert daran.'
+        echo '         Bitte den Block zwischen # BROTLI-ANFANG und # BROTLI-ENDE in'
+        echo '         /etc/nginx/sites-available/roses-blog von Hand entfernen.'
+      fi
+      if [[ "$BROTLI_OK" == "1" ]] &&
+        ! $SUDO grep -q '# BROTLI-ANFANG' /etc/nginx/sites-available/roses-blog; then
+        echo "HINWEIS: brotli ist nutzbar, die bestehende Config nutzt es aber nicht."
+        echo "         Nachrüsten: Block aus deploy/nginx.conf.example übernehmen (README §4)."
+      fi
     fi
     # certbot nur, wenn noch kein Zertifikat existiert (sonst Re-Run-Rausch /
     # Rate-Limit-Risiko).
@@ -215,6 +343,12 @@ if [[ "$DOMAIN" != "localhost:${PORT:-3000}" && "$DOMAIN" != "localhost" && -n "
     fi
   else
     echo "nginx-Einrichtung übersprungen — Anleitung: README.md Abschnitt 4."
+    echo
+    echo "  ACHTUNG: Die App komprimiert NICHT selbst (next.config.ts:"
+    echo "  compress: false) — das übernimmt der Reverse Proxy. Ohne einen"
+    echo "  solchen gehen alle Antworten unkomprimiert raus, also grob das"
+    echo "  Dreifache an Bytes. Entweder nginx nach README §4 einrichten oder"
+    echo "  in next.config.ts wieder compress: true setzen."
   fi
 fi
 

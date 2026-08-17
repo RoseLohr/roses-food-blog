@@ -117,13 +117,41 @@ Autostart ein. Danach antwortet `curl http://127.0.0.1:3000/health`.
 
 ### 4. nginx + TLS
 
+**Der Reverse Proxy ist nicht optional.** Die App komprimiert seit 08/2026
+nicht mehr selbst (`compress: false` in `next.config.ts`) — sonst käme jede
+Antwort schon als gzip an und nginx könnte kein brotli mehr anwenden. Ohne
+einen komprimierenden Proxy davor gehen alle Antworten unkomprimiert raus.
+
 ```bash
+sudo apt install -y libnginx-mod-http-brotli-filter   # ohne das Modul: brotli-Zeilen streichen
 sudo cp deploy/nginx.conf.example /etc/nginx/sites-available/roses-blog
 sudo nano /etc/nginx/sites-available/roses-blog   # server_name anpassen
 sudo ln -s /etc/nginx/sites-available/roses-blog /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
 sudo certbot --nginx -d www.example.de -d example.de
 ```
+
+Das Paket heißt `libnginx-mod-http-brotli-filter` (Ubuntu/Debian; das
+Schwesterpaket `…-static` liefert vorkomprimierte `.br`-Dateien aus und wird
+hier nicht gebraucht). Es hängt an der nginx-ABI — auf einem Stand, für den es
+kein passendes Paket gibt, ist es schlicht nicht installierbar.
+
+Fehlt das Modul, kennt nginx die `brotli`-Direktiven nicht und `nginx -t`
+schlägt fehl. Dann den Block zwischen `# BROTLI-ANFANG` und `# BROTLI-ENDE`
+aus der Config entfernen — gzip allein funktioniert, kostet gemessen rund 4 %
+mehr Bytes bei JS und 7 % bei CSS.
+
+`bootstrap.sh` nimmt das beim **ersten** Einrichten ab: Es installiert das
+Modul, fragt nginx mit einer Wegwerf-Konfiguration, ob es `brotli on;`
+akzeptiert, und schreibt die Config entsprechend mit oder ohne den Block. Ob
+apt Erfolg meldet, spielt dabei keine Rolle — gefragt wird das Ergebnis, nicht
+der Weg dorthin.
+
+**Eine bereits vorhandene Config ändert `bootstrap.sh` nie.** Weicht sie ab —
+brotli-Direktiven ohne nutzbares Modul oder umgekehrt —, sagt das Skript das
+beim Lauf und nennt den nötigen Handgriff. Das ist Absicht: Automatisch in eine
+laufende, womöglich von certbot erweiterte Konfiguration hineinzuschneiden ist
+ein Schadensrisiko, das zu den 4 % nicht im Verhältnis steht.
 
 ### 5. Autostart nach Reboot
 

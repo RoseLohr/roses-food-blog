@@ -22,6 +22,23 @@ const nextConfig: NextConfig = {
   // node_modules liegt (scripts/migrate.mjs importiert es zur Laufzeit).
   serverExternalPackages: ["better-sqlite3", "sharp", "hash-wasm"],
   poweredByHeader: false,
+  // Komprimiert wird VOM REVERSE PROXY, nicht hier.
+  //
+  // Warum das nötig ist: Mit `compress: true` (Next-Default) verlässt jede
+  // Antwort den Server bereits als gzip. nginx komprimiert eine Antwort, die
+  // schon ein Content-Encoding trägt, NICHT noch einmal — es reicht sie durch.
+  // Ein `brotli on;` im nginx wäre damit wirkungslos, egal wie es konfiguriert
+  // ist. Erst wenn Next unkomprimiert ausliefert, kann nginx brotli anwenden
+  // (gemessen am geteilten Sockel: 166,1 KiB gzip gegenüber 143,7 KiB brotli,
+  // siehe scripts/regime/bundle-budget.mjs).
+  //
+  // VORAUSSETZUNG, ehrlich benannt: Vor der App MUSS ein komprimierender Proxy
+  // stehen. Das ist der dokumentierte Betrieb (README §4, bootstrap.sh richtet
+  // nginx samt TLS ein) und die Vorlage deploy/nginx.conf.example bringt gzip
+  // UND brotli mit. Wer die App OHNE Proxy direkt auf Port 3000 exponiert,
+  // liefert nach dieser Änderung unkomprimiert aus — bootstrap.sh weist beim
+  // Überspringen der nginx-Einrichtung ausdrücklich darauf hin.
+  compress: false,
   // Der eingebaute /_next/image-Optimizer lädt zur Laufzeit natives sharp.
   // Die App nutzt ihn nicht (eigene WebP-Varianten via <img srcSet> aus der
   // Medienbibliothek), daher komplett deaktivieren — das hält die native

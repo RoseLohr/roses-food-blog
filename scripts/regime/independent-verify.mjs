@@ -319,11 +319,12 @@ export function attestProof(votes, challenge, panelSize) {
 }
 
 const DIFF_OPTS = { encoding: "utf8", maxBuffer: 256 * 1024 * 1024 };
-// DATENSCHUTZ/GOVERNANCE: NUR Code geht an den Fremd-Vendor (OpenAI). Nicht-Code —
-// insbesondere BILDER (Raster UND Vektor/SVG), Schriften, Binär-/Asset-/GeoJSON-
-// Daten — wird weder in den --stat-Überblick noch in den Code-Auszug aufgenommen,
-// verlässt also nie den eigenen Origin. SVG/GeoJSON sind Text und würden sonst
+// DATENSCHUTZ/GOVERNANCE: NUR Code geht an den Fremd-Vendor (OpenAI). Der INHALT
+// von Nicht-Code — insbesondere BILDER (Raster UND Vektor/SVG), Schriften,
+// Binär-/Asset-/GeoJSON-Daten — wird aus dem Code-Auszug herausgehalten und
+// verlässt nie den eigenen Origin. SVG/GeoJSON sind Text und würden sonst
 // mitgesendet; daher explizit ausgeschlossen (auch app/icon.svg, /public/brand/*.svg …).
+// Im DATEI-ÜBERBLICK erscheinen sie dagegen mit Pfad und Größe (siehe unten).
 // ACHTUNG git-Pathspec: `:(glob)` unterstützt KEINE Brace-Expansion ({a,b}). Ein
 // früher genutztes `**/*.{png,jpg,…}` matchte NIE — d. h. selbst Rasterbilder gingen
 // bis dato an den Vendor. Daher wird JEDE Endung als EIGENER Pathspec ausgeschlossen.
@@ -331,10 +332,31 @@ const DIFF_OPTS = { encoding: "utf8", maxBuffer: 256 * 1024 * 1024 };
 // Body wird aus dem Code-Auszug gelassen) — sonst schließt ein Reviewer fälschlich,
 // das Lockfile sei zur package.json-Änderung nicht aktualisiert worden (npm-ci-Bruch).
 const EXCLUDE_EXTS = ["webp", "png", "jpg", "jpeg", "gif", "ico", "svg", "avif", "bmp", "tiff", "woff", "woff2", "ttf", "otf", "eot", "pdf", "geojson"];
-const EXCLUDE_STAT =
-  " -- . ':(exclude,glob).admin-data/**'" +
-  EXCLUDE_EXTS.map((e) => ` ':(exclude,glob)**/*.${e}'`).join("");
-const EXCLUDE_BODY = EXCLUDE_STAT + " ':(exclude,glob)**/package-lock.json'";
+// Der ÜBERBLICK schließt nur die Admin-Daten aus, NICHT die Assets.
+//
+// WARUM (falsches Veto auf PR #72, 2026-08-16): Bis hierher galt die
+// Asset-Ausschlussliste für BEIDE Teile. Der Prüfer bekam damit einen
+// Überblick, der sich „vollständig" nannte und die geänderten Schriftdateien
+// verschwieg. Er sah neue Inhalts-Hashes in globals.css, dazu keine einzige
+// Zeile zu public/fonts — und schloss daraus folgerichtig, die Dateien seien
+// nicht mitgeändert worden. Das Veto war sauber begründet und trotzdem falsch,
+// weil die Daten es waren. Das trifft JEDE Änderung an einem Bild oder einer
+// Schrift, ist also keine Panne, sondern eine Klasse.
+//
+// Der Datenschutz bleibt unangetastet: `git diff --stat` gibt für eine
+// Binärdatei genau eine Zeile aus — „pfad | Bin 26576 -> 17180 bytes". Pfad
+// und Größe, kein Inhalt. Der INHALT bleibt über EXCLUDE_BODY draußen und
+// verlässt den eigenen Origin weiterhin nie.
+//
+// Damit folgt der Überblick derselben Regel, die für package-lock.json schon
+// galt: im Überblick sichtbar, im Auszug ausgeschlossen. Der Grund ist
+// derselbe — ein Reviewer, der die Zeile nicht sieht, schließt auf das
+// Gegenteil dessen, was passiert ist.
+const EXCLUDE_STAT = " -- . ':(exclude,glob).admin-data/**'";
+const EXCLUDE_BODY =
+  EXCLUDE_STAT +
+  EXCLUDE_EXTS.map((e) => ` ':(exclude,glob)**/*.${e}'`).join("") +
+  " ':(exclude,glob)**/package-lock.json'";
 
 function sh(cmd) {
   try { return execSync(cmd, DIFF_OPTS); } catch { return ""; }
