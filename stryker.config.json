@@ -11,7 +11,8 @@
     "src/lib/slug.ts",
     "src/lib/season.ts",
     "src/lib/saisonkalender.ts",
-    "src/lib/visitor-class.ts"
+    "src/lib/visitor-class.ts",
+    "src/lib/bildreihen.ts"
   ],
   "concurrency": 2,
   "timeoutMS": 20000,

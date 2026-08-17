@@ -133,7 +133,12 @@ const restaurantSchema = z.object({
 /** Inhalts-Block eines Reiseberichts (Bild als Datei-Referenz). */
 const contentBlockSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("text"), markdown: z.string().default("") }),
-  z.object({ type: z.literal("bild"), image: z.string().nullable().default(null) }),
+  z.object({
+    type: z.literal("bild"),
+    image: z.string().nullable().default(null),
+    /** Höhenstufe (siehe lib/bildreihen.ts); ältere Archive ohne Feld → 'm'. */
+    groesse: z.enum(["s", "m", "l"]).default("m"),
+  }),
   z.object({ type: z.literal("restaurant"), index: z.number().int().nonnegative() }),
 ]);
 export type ExportContentBlock = z.infer<typeof contentBlockSchema>;

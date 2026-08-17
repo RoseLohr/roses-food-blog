@@ -254,7 +254,9 @@ beforeAll(async () => {
   // Inhalts-Blöcke: Text, Bild, Restaurant (relational)
   await db.insert(schema.travelBlock).values([
     { travelPostId: travelId, sortOrder: 0, type: "text", markdown: "Langer Reisetext." },
-    { travelPostId: travelId, sortOrder: 1, type: "bild", imageId: imgA },
+    // Höhenstufe bewusst NICHT der Default: nur so beweist der Rundlauf, dass
+    // sie wirklich mitgeschrieben und wieder eingelesen wird.
+    { travelPostId: travelId, sortOrder: 1, type: "bild", imageId: imgA, groesse: "l" },
     { travelPostId: travelId, sortOrder: 2, type: "restaurant", restaurantId: rest.id },
   ]);
 
@@ -336,7 +338,7 @@ describe("Export", () => {
     // Blöcke: Text + Bild (als Datei-Referenz) + Restaurant (als Index)
     expect(tv.contentBlocks).toEqual([
       { type: "text", markdown: "Langer Reisetext." },
-      { type: "bild", image: "aaaa1111" },
+      { type: "bild", image: "aaaa1111", groesse: "l" },
       { type: "restaurant", index: 0 },
     ]);
 
@@ -501,6 +503,7 @@ describe("Import (Round-Trip)", () => {
       .where(eq(schema.travelBlock.travelPostId, tv.id))
       .orderBy(asc(schema.travelBlock.sortOrder));
     expect(blocks.map((b) => b.type)).toEqual(["text", "bild", "restaurant"]);
+    expect(blocks[1].groesse).toBe("l"); // Höhenstufe überlebt den Rundlauf
     expect(blocks[2].restaurantId).toBe(rests[0].id);
     const dishes = await db.select().from(schema.dish).where(eq(schema.dish.restaurantId, rests[0].id));
     expect(dishes).toHaveLength(1);

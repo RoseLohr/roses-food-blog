@@ -396,13 +396,67 @@ async function main() {
     })
     .returning();
 
-  // Inhalt als Blockfolge: ein Textblock (weitere Blöcke im Admin pflegbar).
-  await db.insert(schema.travelBlock).values({
-    travelPostId: travel.id,
-    sortOrder: 0,
-    type: "text",
-    markdown: travelText,
-  });
+  // Inhalt als Blockfolge. Die Bilder sind BEWUSST gemischt hoch und quer:
+  // nur so zeigt der Beispielbericht, was die Höhenstufen leisten, und nur so
+  // messen die E2E-Tests (Bündigkeit, Bild-Auslieferung) an echten Formaten
+  // statt an lauter gleich geschnittenen Kacheln.
+  const bildGasse = await placeholder("Gasse", "#b5651d", 850, 1280); // hoch 2:3
+  const bildMarkt = await placeholder("Ballarò", "#c0392b", 1280, 850); // quer 3:2
+  const bildHafen = await placeholder("Hafen", "#1f6f8b", 1280, 720); // quer 16:9
+  await db.insert(schema.travelBlock).values([
+    {
+      travelPostId: travel.id,
+      sortOrder: 0,
+      type: "text",
+      markdown: travelText,
+    },
+    // Zwei Nachbarn = eine Reihe: gleich hoch, unten bündig, ohne Zuschnitt.
+    {
+      travelPostId: travel.id,
+      sortOrder: 1,
+      type: "bild",
+      imageId: bildGasse,
+      groesse: "m",
+    },
+    {
+      travelPostId: travel.id,
+      sortOrder: 2,
+      type: "bild",
+      imageId: bildMarkt,
+      groesse: "m",
+    },
+    {
+      travelPostId: travel.id,
+      sortOrder: 3,
+      type: "text",
+      markdown:
+        "Am Hafen von Catania wird der Fang des Morgens direkt an der Kante " +
+        "verkauft — und zwei Straßen weiter schon gegessen.",
+    },
+    // L steht allein und füllt als Querbild die Inhaltsspalte.
+    {
+      travelPostId: travel.id,
+      sortOrder: 4,
+      type: "bild",
+      imageId: bildHafen,
+      groesse: "l",
+    },
+  ]);
+
+  // Galerie: dieselbe Reihe mit Umbruch, Stufe S — gemischte Formate zeigen,
+  // dass keine Lücke bleibt (das alte 2er-Raster ließ neben einem Hochbild eine).
+  const galerie = [
+    await placeholder("Arancini", "#e67e22", 1000, 1000), // quadratisch
+    await placeholder("Granita", "#8e44ad", 1280, 850), // quer 3:2
+    await placeholder("Dom", "#2c7873", 900, 1200), // hoch 3:4
+  ];
+  await db.insert(schema.travelPostImage).values(
+    galerie.map((imageId, i) => ({
+      travelPostId: travel.id,
+      imageId,
+      sortOrder: i,
+    })),
+  );
 
   const restaurants = [
     {
