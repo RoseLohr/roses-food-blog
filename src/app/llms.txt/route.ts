@@ -1,45 +1,30 @@
 /**
- * llms.txt (optional, SEO/GEO): kompakte Übersicht für LLM-Crawler.
+ * llms.txt (llmstxt.org) — kompakte, maschinenlesbare Übersicht für
+ * Antwortmaschinen. Liest denselben Content-Pfad wie sitemap.xml, damit beide
+ * nie auseinanderlaufen: Vorher kannte die llms.txt weder die CMS-Seiten noch
+ * die Kategorien, die Sitemap wiederum keine Kategorien und keine Reisefilter.
  */
-import { eq } from "drizzle-orm";
-import { db, schema } from "@/db";
-import { getBaseUrl } from "@/lib/base-url";
+import { getPublicBaseUrl } from "@/lib/base-url";
+import { buildLlmsTxt } from "@/lib/seo/artifacts";
+import { loadSeoContent } from "@/lib/seo/content";
 import { getSiteName } from "@/lib/settings";
 import { t } from "@/i18n/de";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
-  const base = getBaseUrl();
-  const dict = t();
-
-  const [recipes, travels] = await Promise.all([
-    db
-      .select({ slug: schema.recipe.slug, title: schema.recipe.title, teaser: schema.recipe.teaser })
-      .from(schema.recipe)
-      .where(eq(schema.recipe.status, "veroeffentlicht")),
-    db
-      .select({ slug: schema.travelPost.slug, title: schema.travelPost.title, teaser: schema.travelPost.teaser })
-      .from(schema.travelPost)
-      .where(eq(schema.travelPost.status, "veroeffentlicht")),
+export async function GET(): Promise<Response> {
+  const [base, content] = await Promise.all([
+    getPublicBaseUrl(),
+    loadSeoContent(),
   ]);
-
-  const lines = [
-    `# ${getSiteName()}`,
-    "",
-    `> ${dict.site.tagline}. Deutschsprachiger Food-Blog mit gesunden Rezepten (30–90 Minuten Zubereitungszeit) und Reiseberichten über Essen im Ausland.`,
-    "",
-    "## Rezepte",
-    "",
-    ...recipes.map((r) => `- [${r.title}](${base}/rezepte/${r.slug}): ${r.teaser}`),
-    "",
-    "## Reiseberichte",
-    "",
-    ...travels.map((p) => `- [${p.title}](${base}/reisen/${p.slug}): ${p.teaser}`),
-    "",
-  ];
-
-  return new Response(lines.join("\n"), {
-    headers: { "Content-Type": "text/plain; charset=utf-8" },
+  const body = buildLlmsTxt(base, content, {
+    siteName: getSiteName(),
+    tagline: t().site.tagline,
+  });
+  return new Response(body, {
+    headers: {
+      "Content-Type": "text/plain; charset=utf-8",
+      "Cache-Control": "no-store",
+    },
   });
 }
