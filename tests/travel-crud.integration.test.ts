@@ -206,7 +206,8 @@ describe("Reise-CRUD", () => {
       "bloecke",
       JSON.stringify([
         { type: "text", markdown: "## Ankunft\n\nErster Abend." },
-        { type: "bild", imageId: img.id },
+        { type: "bild", imageId: img.id }, // ohne Stufe → 'm'
+        { type: "bild", imageId: img.id, groesse: "l" },
         { type: "restaurant", index: 1 }, // zeigt aufs 2. (nach Filterung 1.)
         { type: "text", markdown: "   " }, // leer → entfällt
       ]),
@@ -217,10 +218,13 @@ describe("Reise-CRUD", () => {
     const full = await getFullTravelPost({ id });
     // search_text = zusammengefügte Textblöcke (FTS-Quelle)
     expect(full!.post.searchText).toBe("## Ankunft\n\nErster Abend.");
-    // Blockfolge: Text, Bild, Restaurant (Index nach Filterung auf 0 gemappt)
+    // Blockfolge: Text, Bild, Bild, Restaurant (Index nach Filterung auf 0
+    // gemappt). Die Höhenstufe überlebt das Speichern; fehlt sie im Editor-
+    // JSON (Bestandsdaten), gilt 'm'.
     expect(full!.blocks).toEqual([
       { type: "text", markdown: "## Ankunft\n\nErster Abend." },
-      { type: "bild", imageId: img.id },
+      { type: "bild", imageId: img.id, groesse: "m" },
+      { type: "bild", imageId: img.id, groesse: "l" },
       { type: "restaurant", index: 0 },
     ]);
     expect(full!.blockImages[img.id]?.fileKey).toBe("blocktest");

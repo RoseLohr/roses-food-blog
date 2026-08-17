@@ -1,0 +1,11 @@
+-- Höhenstufe eines Bild-Blocks (s/m/l, siehe src/lib/bildreihen.ts): EIN Regler
+-- je Bild, aus dem sich Größe und Reihen-Layout im Reisebericht ergeben.
+-- Bestandsblöcke werden 'm' und sehen damit aus wie eine ruhigere Version von
+-- heute. Für Text- und Restaurant-Blöcke ist die Spalte bedeutungslos.
+--
+-- Bewusst als ADD COLUMN statt als Tabellen-Neubau (den drizzle-kit für eine
+-- geänderte CHECK-Liste erzeugen würde): Der Neubau kopiert per
+-- `INSERT INTO __new SELECT …, groesse, … FROM travel_block` — die Spalte, die
+-- es dort noch gar nicht gibt. ADD COLUMN mit benanntem CHECK leistet dasselbe
+-- und ist auf einer Bestandsdatenbank tatsächlich ausführbar (verifiziert).
+ALTER TABLE `travel_block` ADD `groesse` text DEFAULT 'm' NOT NULL CONSTRAINT "travel_block_groesse_check" CHECK("travel_block"."groesse" IN ('s','m','l'));

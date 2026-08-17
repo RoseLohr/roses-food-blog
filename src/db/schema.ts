@@ -472,6 +472,11 @@ export const travelBlock = sqliteTable(
     imageId: integer("image_id").references(() => mediaImage.id, {
       onDelete: "set null",
     }),
+    /** Höhenstufe eines Bild-Blocks (siehe lib/bildreihen.ts). Für Text- und
+     *  Restaurant-Blöcke bedeutungslos; 'm' ist der Normalfall. */
+    groesse: text("groesse", { enum: ["s", "m", "l"] })
+      .notNull()
+      .default("m"),
     restaurantId: integer("restaurant_id").references(() => restaurant.id, {
       onDelete: "cascade",
     }),
@@ -482,6 +487,7 @@ export const travelBlock = sqliteTable(
       "travel_block_type_check",
       sql`${t.type} IN ('text','bild','restaurant')`,
     ),
+    check("travel_block_groesse_check", sql`${t.groesse} IN ('s','m','l')`),
     check(
       "travel_block_restaurant_check",
       sql`(${t.type} = 'restaurant') = (${t.restaurantId} IS NOT NULL)`,

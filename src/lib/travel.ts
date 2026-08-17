@@ -262,7 +262,8 @@ export async function getFullTravelPost(
     if (b.type === "text") {
       blocks.push({ type: "text", markdown: b.markdown });
     } else if (b.type === "bild") {
-      if (b.imageId != null) blocks.push({ type: "bild", imageId: b.imageId });
+      if (b.imageId != null)
+        blocks.push({ type: "bild", imageId: b.imageId, groesse: b.groesse });
     } else {
       const idx =
         b.restaurantId != null ? restaurantIndexById.get(b.restaurantId) : undefined;

@@ -370,6 +370,7 @@ export async function saveTravelFromForm(
             sortOrder: i,
             type: "bild",
             imageId: b.imageId,
+            groesse: b.groesse,
           });
         }
       } else {
