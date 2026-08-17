@@ -9,6 +9,7 @@ import { notFound } from "next/navigation";
 import { PageTracker } from "./page-tracker";
 import { TravelPostCard } from "./travel-post-card";
 import { publishedTravelCards } from "@/lib/travel";
+import { getPublicBaseUrl } from "@/lib/base-url";
 import { JsonLd, breadcrumbJsonLd } from "@/lib/jsonld";
 import { getSiteName } from "@/lib/settings";
 import { t } from "@/i18n/de";
@@ -42,12 +43,13 @@ export async function TravelFilterList({
   if (posts.length === 0) notFound();
 
   const path = `/reisen/${dimension}/${encodeURIComponent(value)}`;
+  const base = await getPublicBaseUrl();
 
   return (
     <main>
       <PageTracker contentType="reise" path={path} />
       <JsonLd
-        data={breadcrumbJsonLd([
+        data={breadcrumbJsonLd(base, [
           [getSiteName(), "/"],
           [d.title, "/reisen"],
           [value, path],

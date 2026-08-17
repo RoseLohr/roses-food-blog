@@ -17,6 +17,7 @@ import { eq } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { mediaImageWithWidths } from "@/lib/media";
 import { renderMarkdown } from "@/lib/markdown";
+import { getPublicBaseUrl } from "@/lib/base-url";
 import { JsonLd, breadcrumbJsonLd } from "@/lib/jsonld";
 import { PageTracker } from "@/components/page-tracker";
 import { ResponsiveImg } from "@/components/responsive-img";
@@ -64,12 +65,13 @@ function Section({
 
 export default async function PrivacyPage() {
   const override = await loadOverride();
+  const base = await getPublicBaseUrl();
 
   return (
     <main className="mx-auto max-w-3xl">
       <PageTracker contentType="seite" path="/datenschutz" />
       <JsonLd
-        data={breadcrumbJsonLd([
+        data={breadcrumbJsonLd(base, [
           [getSiteName(), "/"],
           [d.title, "/datenschutz"],
         ])}

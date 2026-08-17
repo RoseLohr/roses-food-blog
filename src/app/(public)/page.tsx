@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { db, schema } from "@/db";
@@ -17,6 +18,7 @@ import {
   variantWidthsByImage,
 } from "@/lib/media";
 import { taxonomiesByType } from "@/lib/taxonomies";
+import { getPublicBaseUrl } from "@/lib/base-url";
 import { JsonLd, websiteJsonLd } from "@/lib/jsonld";
 import { currentIsoWeek, isWeekInSeason } from "@/lib/season";
 import { t } from "@/i18n/de";
@@ -32,6 +34,13 @@ const dict = t();
 // Default der Kachel (~360 px).
 const HOME_CARD_SIZES =
   "(max-width: 640px) calc(100vw - 2rem), (max-width: 1024px) 50vw, 256px";
+
+// Canonical der Startseite: ohne sie indexiert Google Parameter-Varianten
+// (?utm_source=…, ?fbclid=…) als eigenständige Seiten. Relativ notiert — der
+// Ursprung kommt pro Anfrage aus metadataBase (siehe app/layout.tsx).
+export const metadata: Metadata = {
+  alternates: { canonical: "/" },
+};
 
 export const dynamic = "force-dynamic";
 
@@ -297,6 +306,7 @@ async function boxItemsForRecipes(
 }
 
 export default async function HomePage() {
+  const base = await getPublicBaseUrl();
   const {
     config,
     slides,
@@ -390,7 +400,7 @@ export default async function HomePage() {
 
   return (
     <main>
-      <JsonLd data={websiteJsonLd()} />
+      <JsonLd data={websiteJsonLd(base)} />
       <PageTracker contentType="seite" path="/" />
       <h1 className="sr-only">{dict.home.welcome}</h1>
 

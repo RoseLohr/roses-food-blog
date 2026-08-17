@@ -7,6 +7,7 @@ import { notFound } from "next/navigation";
 import { db, schema } from "@/db";
 import { mediaImageWithWidths } from "@/lib/media";
 import { renderMarkdown } from "@/lib/markdown";
+import { getPublicBaseUrl } from "@/lib/base-url";
 import { JsonLd, breadcrumbJsonLd } from "@/lib/jsonld";
 import { PageTracker } from "@/components/page-tracker";
 import { ResponsiveImg } from "@/components/responsive-img";
@@ -47,12 +48,13 @@ export default async function CmsPage(props: {
   const data = await loadPage(slug);
   if (!data) notFound();
   const { page, heroImage } = data;
+  const base = await getPublicBaseUrl();
 
   return (
     <main className="mx-auto max-w-3xl">
       <PageTracker contentType="seite" contentId={page.id} path={`/${page.slug}`} />
       <JsonLd
-        data={breadcrumbJsonLd([
+        data={breadcrumbJsonLd(base, [
           [getSiteName(), "/"],
           [page.title, `/${page.slug}`],
         ])}

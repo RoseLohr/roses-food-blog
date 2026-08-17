@@ -1,24 +1,49 @@
 /**
- * JSON-LD-Strukturen (SEO/GEO): Recipe, Article, BreadcrumbList, WebSite.
+ * JSON-LD-Strukturen (SEO/GEO): Organization, WebSite, Recipe, Article,
+ * BreadcrumbList.
+ *
+ * Der Ursprung wird ÜBERGEBEN, nicht selbst aus der Umgebung gelesen: Die
+ * Aufrufer sind Server-Komponenten mit Anfrage-Kontext und kennen den
+ * tatsächlichen öffentlichen Ursprung (getPublicBaseUrl). Vorher las jede
+ * Funktion still `process.env.BASE_URL` — mit einer veralteten Variablen
+ * behaupteten die strukturierten Daten eine andere Domain als die, unter der
+ * die Seite ausgeliefert wurde.
  */
 import type { FullRecipe } from "@/lib/recipes";
 import { formatAmount } from "@/lib/servings";
-import { imageUrl, optimalVariant } from "@/lib/media";
-import { getBaseUrl } from "@/lib/base-url";
+import { absoluteImageUrl } from "@/lib/seo/og";
 import { getSiteName } from "@/lib/settings";
 import { t } from "@/i18n/de";
 
 const dict = t();
 
-export function websiteJsonLd() {
-  const base = getBaseUrl();
+/**
+ * Der Blog als Herausgeber — eine Organisation, kein Personenbezug
+ * (Akzeptanzkriterium 14: Autor wird Besuchern nie angezeigt).
+ */
+export function organizationJsonLd(base: string) {
+  return {
+    "@type": "Organization",
+    "@id": `${base}/#organization`,
+    name: getSiteName(),
+    url: base,
+    logo: {
+      "@type": "ImageObject",
+      url: `${base}/apple-icon.png`,
+    },
+  };
+}
+
+export function websiteJsonLd(base: string) {
   return {
     "@context": "https://schema.org",
     "@type": "WebSite",
+    "@id": `${base}/#website`,
     name: getSiteName(),
     description: dict.site.tagline,
     url: base,
     inLanguage: "de",
+    publisher: organizationJsonLd(base),
     potentialAction: {
       "@type": "SearchAction",
       target: `${base}/suche?q={search_term_string}`,
@@ -27,8 +52,7 @@ export function websiteJsonLd() {
   };
 }
 
-export function breadcrumbJsonLd(items: Array<[string, string]>) {
-  const base = getBaseUrl();
+export function breadcrumbJsonLd(base: string, items: Array<[string, string]>) {
   return {
     "@context": "https://schema.org",
     "@type": "BreadcrumbList",
@@ -36,13 +60,12 @@ export function breadcrumbJsonLd(items: Array<[string, string]>) {
       "@type": "ListItem",
       position: i + 1,
       name,
-      item: `${base}${path}`,
+      item: path === "/" ? base : `${base}${path}`,
     })),
   };
 }
 
-export function recipeJsonLd(full: FullRecipe) {
-  const base = getBaseUrl();
+export function recipeJsonLd(base: string, full: FullRecipe) {
   const { recipe } = full;
   const ingredients = full.sections.flatMap((s) =>
     s.ingredients.map((i) => {
@@ -51,18 +74,12 @@ export function recipeJsonLd(full: FullRecipe) {
       return [amount, i.name].filter(Boolean).join(" ");
     }),
   );
-  // Absolute Bild-URL für Crawler: kleinste Variante >= 1280 (OG-Empfehlung
-  // ~1200 px) — die größte Datei (bis w1920) wäre reiner Egress ohne Nutzen.
-  const imageAbs = (img: FullRecipe["heroImage"]): string | undefined => {
-    if (!img) return undefined;
-    return `${base}${imageUrl(img.fileKey, optimalVariant(img.variantWidths, 1280))}`;
-  };
 
   // Ein Zubereitungsschritt (mit optionalem Schritt-Bild).
   const stepObj = (
     st: FullRecipe["sections"][number]["steps"][number],
   ) => {
-    const img = imageAbs(st.image);
+    const img = absoluteImageUrl(base, st.image);
     return img
       ? { "@type": "HowToStep", text: st.text, image: img }
       : { "@type": "HowToStep", text: st.text };
@@ -85,10 +102,9 @@ export function recipeJsonLd(full: FullRecipe) {
   // Zeitangaben nur ausgeben, wenn > 0 (kein „PT0M"-Rauschen).
   const dur = (min: number) => (min > 0 ? `PT${min}M` : undefined);
 
-  // Der Blog selbst als Autor/Herausgeber — eine Organisation, kein
-  // Personenbezug (Akzeptanzkriterium 14: Autor wird Besuchern nie angezeigt).
-  const org = { "@type": "Organization", name: getSiteName(), url: base };
+  const org = organizationJsonLd(base);
   const url = `${base}/rezepte/${recipe.slug}`;
+  const heroImage = absoluteImageUrl(base, full.heroImage);
 
   return {
     "@context": "https://schema.org",
@@ -100,7 +116,7 @@ export function recipeJsonLd(full: FullRecipe) {
     inLanguage: "de",
     author: org,
     publisher: org,
-    image: full.heroImage ? [imageAbs(full.heroImage)] : undefined,
+    image: heroImage ? [heroImage] : undefined,
     datePublished: recipe.publishedAt?.toISOString(),
     dateModified: recipe.updatedAt?.toISOString(),
     prepTime: dur(recipe.prepMinutes),
