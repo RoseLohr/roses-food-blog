@@ -1,6 +1,7 @@
 {
   "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "_comment": "A-02: Mutation-Testing als Meta-Gate über reine Kernlogik mit starken Unit-Tests. Baseline wird per S11 zum Boden (darf nur steigen). break=60 blockiert; high/low für Reporting.",
+  "_comment_seo": "08/2026: src/lib/seo/model.ts kam hinzu (reine Ableitungen der SEO-Inhalte). NICHT aufgenommen sind src/lib/seo/artifacts.ts und src/lib/base-url.ts — beide tragen ihre Kernwerte in Konstanten auf Modulebene (AI_USER_AGENTS, SITE_ORIGIN, Regexe). Stryker stuft die als STATIC mutants ein und fährt für jeden einen kompletten Testlauf: gemessen 229 statische von 885 Mutanten, geschätzte Laufzeit ~2 h 45 min statt Minuten. Ein Gate, das eine CI-Stunde frisst, wird abgeschaltet statt beachtet. Beide Module sind stattdessen über tests/seo.test.ts (Byte-genau am erzeugten Text), tests/seo.integration.test.ts und tests/e2e/seo.spec.ts abgedeckt; die Struktur-Invarianten hält scripts/regime/seo-gate.mjs.",
   "packageManager": "npm",
   "testRunner": "vitest",
   "reporters": [
@@ -12,7 +13,8 @@
     "src/lib/season.ts",
     "src/lib/saisonkalender.ts",
     "src/lib/visitor-class.ts",
-    "src/lib/bildreihen.ts"
+    "src/lib/bildreihen.ts",
+    "src/lib/seo/model.ts"
   ],
   "concurrency": 2,
   "timeoutMS": 20000,

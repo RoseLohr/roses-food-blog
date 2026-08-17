@@ -148,6 +148,13 @@
       "control_cmd": "npx vitest run tests/perf-guardrails.test.ts tests/media-url.test.ts",
       "beispiel": "webpQuality in config/bild-encoder.json gesenkt, rev unverändert → Fingerprint-Abgleich schlägt fehl",
       "hinweis": "Reichweite der Garantie (bewusste Abwägung, dokumentiert in docs/ASSUMPTIONS.md B10): der Nachzug re-kodiert alle Anzeige-Varianten UNTERHALB der größten; die größte Variante je Bild ist die Regenerier-Quelle und wird nie aus sich selbst re-kodiert (sonst kumulative Generations-verluste über Revisionen — das Original wird aus Datenschutzgründen nicht aufbewahrt). Cache-Korrektheit ist davon unabhängig: immutable gibt die Route nur marker-bestätigt (uploadCacheControl)."
+    },
+    {
+      "id": "S18-seo-origin-frozen",
+      "klasse": "SEO-Artefakt mit eingefrorenem/fremdem Ursprung (robots.txt/sitemap.xml/llms.txt beim Build vorgerendert, localhost-Rückfall, veraltete Domain) oder öffentliche Route ohne Sitemap-Eintrag",
+      "aktiv": true,
+      "kontrolle": "SEO-Gate (scripts/regime/seo-gate.mjs) + tests/seo.test.ts",
+      "control_cmd": "node scripts/regime/seo-gate.mjs --selftest"
     }
   ]
 }
