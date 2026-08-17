@@ -83,6 +83,8 @@ interface Messung {
   breite: number;
   /** 0 = Ladefehler (z. B. 404 einer srcset-Breite) — wird hart gemeldet. */
   naturalWidth: number;
+  /** Für die Flächengewichtung im Budget: echtes Seitenverhältnis der Datei. */
+  naturalHeight: number;
 }
 
 function verfuegbareBreiten(m: Messung): number[] {
@@ -142,6 +144,7 @@ async function messeSeite(
         srcset: img.getAttribute("srcset") ?? "",
         breite: img.getBoundingClientRect().width,
         naturalWidth: img.naturalWidth,
+        naturalHeight: img.naturalHeight,
       }))
       .filter((d) => d.current.includes("/uploads/") && d.breite > 0),
   );
@@ -207,4 +210,122 @@ test.describe("Bild-Auslieferung: gewählte Variante passt zur Rendergröße", (
       });
     }
   }
+});
+
+/**
+ * Auslieferungs-Budget: Wie viel Pixelfläche wird ÜBER den Bedarf hinaus
+ * geliefert — über alle Seiten und Geräteklassen zusammen?
+ *
+ * Die Prüfungen oben arbeiten je Bild und fragen: „passt die gewählte Stufe
+ * zur Rendergröße?" Sie sind gegen Fehlgriffe robust, sagen aber nichts über
+ * die LEITER selbst. Eine Leiter mit nur zwei Stufen (160, 1920) bestünde
+ * jede einzelne Prüfung — 1920 ist dann schlicht „die kleinste deckende
+ * Stufe" — und lieferte trotzdem systematisch das Vielfache.
+ *
+ * Genau diese Lücke schließt dieser Test. Er misst, was die Leiter im
+ * Zusammenspiel mit den echten Layouts kostet, und macht eine Leiter-Änderung
+ * belegpflichtig statt begründungspflichtig.
+ *
+ * NUR ÜBERGRÖSSE, UND NUR ÜBER DIE ÜBERGROSSEN BILDER. Zwei Anläufe waren
+ * vorher nötig, beide mit demselben Fehler in unterschiedlicher Verkleidung
+ * (der zweite gefunden von gpt-5.6-sol, Cross-Vendor-Veto auf PR #71):
+ *
+ *  1. Erst summierte der Test geliefert gegen gebraucht und bildete die
+ *     Differenz. Zu große Thumbnails und gedeckelte Großbilder hoben sich auf:
+ *     gemessen −4,3 %, obwohl 18,5 % Übergröße im Spiel waren.
+ *  2. Dann zählte der ZÄHLER nur noch Übergröße, der NENNER aber weiterhin
+ *     ALLE Bilder. Damit senkte jedes zusätzliche oder größere unterlieferte
+ *     Bild die Quote — das Budget blieb also durch UNTERlieferung erfüllbar,
+ *     obwohl genau hier das Gegenteil behauptet stand.
+ *
+ * Jetzt gehen unterlieferte Bilder (gewählt < Bedarf) in KEINE der beiden
+ * Summen ein. Sie sind Sache der SCHAERFE_MINIMUM-Prüfung oben; wer sie hier
+ * mitzählte, könnte das eine Problem mit dem anderen bezahlen.
+ *
+ * ECHTE FLÄCHE, NICHT BREITE ZUM QUADRAT. Ebenfalls Sol-Befund: w² gewichtet
+ * ein quadratisches Thumbnail und ein 16:9-Bild gleicher Breite gleich, obwohl
+ * ihre Flächen um den Faktor des Seitenverhältnisses auseinanderliegen. Beide
+ * Summen tragen deshalb das gemessene Seitenverhältnis der Datei
+ * (naturalHeight/naturalWidth). Am Verhältnis eines EINZELNEN Bildes ändert
+ * das nichts — an seinem GEWICHT in der Summe sehr wohl.
+ *
+ * Warum Pixelfläche und nicht Bytes: Ein Byte-Budget bräuchte ein festes
+ * Referenzbild. Auf einem synthetisch erzeugten Bild steigen die Bytes pro
+ * Pixel mit der Breite (gemessen 0,083 bei w160 auf 0,149 bei w1920), weil
+ * eingestreutes Rauschen beim Verkleinern verschwindet, beim Vergrößern aber
+ * nicht — eine daran kalibrierte Grenze sagt über echte Fotos nichts. An
+ * echten Fotos kalibriert bräche sie bei jedem libwebp-Sprung und lüde zum
+ * Lockern ein. Pixelfläche ist encoder-unabhängig und misst genau das, was
+ * die Leiter beeinflusst. Die Kompression selbst bewacht das relative Budget
+ * in tests/media-regeneration.integration.test.ts.
+ */
+/**
+ * Gemessen mit der korrigierten Metrik: alte Leiter 41,2 %, mit der Stufe 1152
+ * noch 28,8 % (101 gewertete Bilder, 7 unterlieferte bleiben außen vor).
+ * Der Deckel liegt dazwischen — wer 1152 wieder entfernt, wird rot, und
+ * zugleich bleibt genug Luft für Rundungsunterschiede zwischen dem lokalen
+ * und dem in CI installierten Chromium.
+ *
+ * Die Zahlen sind DEUTLICH höher als in den ersten beiden Fassungen (26,6 /
+ * 18,5 %). Das ist kein Anstieg der Übergröße, sondern ihre ehrliche Messung:
+ * Vorher verdünnten die unterlieferten Bilder den Nenner mit.
+ */
+const UEBERGROESSE_DECKEL = 0.34;
+
+test.describe("Bild-Auslieferung: Budget über alle Seiten", () => {
+  test("die Leiter liefert nicht systematisch zu groß aus", async ({
+    browser,
+  }) => {
+    let zuviel = 0;
+    let bedarfsflaeche = 0;
+    let gewertet = 0;
+    let unterliefert = 0;
+    const schlimmste: Array<{ faktor: number; info: string }> = [];
+
+    for (const kontext of KONTEXTE) {
+      for (const seite of SEITEN) {
+        for (const m of await messeSeite(browser, kontext, seite)) {
+          const gewaehlt = Number(/\/w(\d+)\.webp/.exec(m.current)?.[1] ?? 0);
+          const bedarf = Math.ceil(m.breite * kontext.deviceScaleFactor);
+          if (!gewaehlt || !bedarf || !m.naturalWidth || !m.naturalHeight) {
+            continue;
+          }
+          if (gewaehlt < bedarf) {
+            unterliefert++;
+            continue; // gehört zur Schärfe-Prüfung, nicht ins Übergrößen-Budget
+          }
+          // Fläche statt Breite: Bytes hängen an der Fläche, und ein
+          // Breitenvergleich unterschätzte den Aufwand quadratisch. Das
+          // Seitenverhältnis kommt aus der geladenen Datei selbst.
+          const verhaeltnis = m.naturalHeight / m.naturalWidth;
+          zuviel += (gewaehlt * gewaehlt - bedarf * bedarf) * verhaeltnis;
+          bedarfsflaeche += bedarf * bedarf * verhaeltnis;
+          gewertet++;
+          schlimmste.push({
+            faktor: (gewaehlt * gewaehlt) / (bedarf * bedarf),
+            info: `${seite} · ${kontext.name} · Bedarf ${bedarf}px → w${gewaehlt}`,
+          });
+        }
+      }
+    }
+
+    // Fail-closed: ohne Messwerte prüft der Test nichts.
+    expect(gewertet, "keine übergroß gelieferten Bilder gemessen")
+      .toBeGreaterThan(50);
+
+    const uebergroesse = zuviel / bedarfsflaeche;
+    schlimmste.sort((a, b) => b.faktor - a.faktor);
+    const bericht = schlimmste
+      .slice(0, 8)
+      .map((s) => `  ×${s.faktor.toFixed(2)}  ${s.info}`)
+      .join("\n");
+
+    expect(
+      uebergroesse,
+      `Übergröße ${(uebergroesse * 100).toFixed(1)} % über ${gewertet} gewertete ` +
+        `Bilder (${unterliefert} unterlieferte bleiben außen vor, Deckel ` +
+        `${(UEBERGROESSE_DECKEL * 100).toFixed(0)} %).\n` +
+        `Größte Einzelabweichungen:\n${bericht}`,
+    ).toBeLessThanOrEqual(UEBERGROESSE_DECKEL);
+  });
 });
