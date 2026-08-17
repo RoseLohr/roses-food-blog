@@ -34,9 +34,9 @@ export function generateMetadata(): Metadata {
 // übereinstimmen (sonst lädt der Browser die Datei doppelt); das Gate
 // scripts/regime/font-cache.mjs erzwingt beides = aktueller Datei-Hash.
 const PRELOAD_FONTS = [
-  "/fonts/raleway.woff2?v=b1bef1f03a",
-  "/fonts/nunito-sans.woff2?v=29e3890496",
-  "/fonts/jost.woff2?v=7726a5cd6f",
+  "/fonts/raleway.woff2?v=ecb9e642af",
+  "/fonts/nunito-sans.woff2?v=8f59aa42d2",
+  "/fonts/jost.woff2?v=156ed2445f",
 ] as const;
 
 export default function RootLayout({

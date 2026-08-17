@@ -4,23 +4,26 @@
    Nunito Sans für den Fließtext. Variable Fonts, latin-Subset (deckt deutsche
    Umlaute ab), vom eigenen Origin unter /fonts — keine externen CDNs, kein
    Font-Download zur Laufzeit (Annahme B19). font-display: swap hält den Text
-   sofort sichtbar. Beide unter der SIL Open Font License. */
+   sofort sichtbar. Beide unter der SIL Open Font License.
+   Die Gewichtsachsen sind auf die tatsächlich benutzten Schnitte
+   beschnitten — die Spannen unten sind deshalb EXAKT das, was die
+   Dateien können (Kontrolle: tests/schrift-achsen.test.ts). */
 @font-face {
   font-family: "Raleway";
   font-style: normal;
-  font-weight: 400 900;
+  font-weight: 100 800;
   font-display: swap;
   /* ?v=<Inhalts-Hash>: versioniert die URL, damit der immutable-Jahrescache in
      next.config sicher ist (Font-Tausch → neuer Hash → neue URL, kein Stale).
      Der Hash wird vom Gate scripts/regime/font-cache.mjs erzwungen. */
-  src: url("/fonts/raleway.woff2?v=b1bef1f03a") format("woff2");
+  src: url("/fonts/raleway.woff2?v=ecb9e642af") format("woff2");
 }
 @font-face {
   font-family: "Nunito Sans";
   font-style: normal;
-  font-weight: 200 1000;
+  font-weight: 400 800;
   font-display: swap;
-  src: url("/fonts/nunito-sans.woff2?v=29e3890496") format("woff2");
+  src: url("/fonts/nunito-sans.woff2?v=8f59aa42d2") format("woff2");
 }
 /* Jost (indestructible type*, SIL Open Font License 1.1) — ausschließlich für
    das Marken-Lockup „Rose’s Gourmet Compass". Variable Datei, latin-Subset,
@@ -28,9 +31,9 @@
 @font-face {
   font-family: "Jost";
   font-style: normal;
-  font-weight: 100 900;
+  font-weight: 400 500;
   font-display: swap;
-  src: url("/fonts/jost.woff2?v=7726a5cd6f") format("woff2");
+  src: url("/fonts/jost.woff2?v=156ed2445f") format("woff2");
 }
 
 @theme {
