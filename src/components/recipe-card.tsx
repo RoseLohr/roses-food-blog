@@ -62,7 +62,10 @@ export function RecipeCard({
           (px-3), damit mehr Platz für Titel/Text bleibt; ab sm wieder p-5. */}
       <div className="px-3 py-4 sm:p-5">
         {(recipe.category || recipe.dietType) && (
-          <p className="mb-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-leaf">
+          // break-words: „FAMILIENESSEN" ist ein einziges langes Wort und lief
+          // auf schmalen Kacheln über die Kante — sichtbar ABGESCHNITTEN, weil
+          // die Kachel `overflow-hidden` trägt. Umbrechen statt abschneiden.
+          <p className="mb-1.5 text-xs font-semibold break-words uppercase tracking-[0.14em] text-leaf">
             {/* Kategorie und – falls vorhanden – Ernährungsform, „/“-getrennt. */}
             {[recipe.category, recipe.dietType].filter(Boolean).join(" · ")}
           </p>
@@ -77,7 +80,10 @@ export function RecipeCard({
             {recipe.teaser}
           </p>
         )}
-        <p className="mt-3 flex items-center gap-4 text-xs text-ink-soft">
+        {/* flex-wrap: Zeit und Likes stehen nebeneinander, solange sie passen —
+            auf sehr schmalen Kacheln rutschen die Likes in die zweite Zeile,
+            statt hinter der Kachelkante zu verschwinden. */}
+        <p className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-soft">
           <span className="flex items-center gap-1.5">
             <IconClock className="h-3.5 w-3.5" />
             {recipe.totalMinutes} {dict.recipe.minutes}

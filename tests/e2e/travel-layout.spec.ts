@@ -280,7 +280,10 @@ test.describe("Reisebericht: Restaurant-Karte und Gericht-Bühne", () => {
     const dish = page
       .locator("li")
       .filter({ has: page.getByRole("heading", { name: "Pasta alla Norma" }) });
-    const fotos = dish.locator("img");
+    // Nur die Streifen-Kacheln: sie sind die klickbaren Fotos. Im selben
+    // Listenpunkt steht auch „Ähnliche Rezepte" mit eigenem Bild und eigenem
+    // Like-Knopf — beides gehört nicht zur Gericht-Bühne.
+    const fotos = dish.locator("button img");
     await expect(fotos).toHaveCount(3);
 
     const breiten: number[] = [];
@@ -303,7 +306,7 @@ test.describe("Reisebericht: Restaurant-Karte und Gericht-Bühne", () => {
     expect(Math.abs(b1.y - b2.y)).toBeLessThan(2);
 
     // Eine Galerie: der Klick auf ein STREIFEN-Foto blättert über alle drei.
-    await dish.getByRole("button").nth(1).click();
+    await dish.locator("button:has(img)").nth(1).click();
     await expect(page.getByText(G.counter(2, 3))).toBeVisible();
     await page.getByRole("button", { name: G.prev }).click();
     await expect(page.getByText(G.counter(1, 3))).toBeVisible();

@@ -252,8 +252,24 @@ function MetaFilterLinks({
   );
 }
 
+/**
+ * `sizes` einer „Ähnliche Rezepte"-Kachel. Sie steht in der Gerichts-Bühne,
+ * gilt also von deren Breite aus (MASSE.buehne) — die Standard-Angabe der
+ * RecipeCard rechnet mit der vollen Listenseite und deklarierte hier mobil
+ * fast das Zehnfache der echten Kachelbreite.
+ *
+ * Spalten: 1 (<640) · 2 (ab sm) · 3 (ab lg), Abstand ab sm 20 px.
+ *   ≥1024: (714 − 40) / 3 = 224,7 → 225 px
+ *   929–1023: (714 − 20) / 2 = 347 px
+ */
+const AEHNLICH_SIZES =
+  "(max-width: 639px) calc(100vw - 10.25rem), " +
+  "(max-width: 767px) calc((100vw - 10.25rem - 20px) / 2), " +
+  "(max-width: 928px) calc((100vw - 13.25rem - 20px) / 2), " +
+  "(max-width: 1023px) 347px, 225px";
+
 /** „Ähnliche Rezepte selbst machen" — als vollwertige Rezept-Kacheln (dieselbe
- *  RecipeCard wie auf der Startseite) im gleichen Raster (bis zu 3 Vorschläge). */
+ *  RecipeCard wie auf der Startseite), auf dem Handy einspaltig. */
 function SimilarRecipeTiles({ recipes }: { recipes: RecipeCardData[] }) {
   if (recipes.length === 0) return null;
   return (
@@ -262,11 +278,14 @@ function SimilarRecipeTiles({ recipes }: { recipes: RecipeCardData[] }) {
       <h6 className="mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-leaf">
         {dict.travelList.similarTitle}
       </h6>
-      {/* Kompakt: schon auf Mobil 2-spaltig (mind. zwei Vorschläge sichtbar),
-          ab lg drei Spalten. Etwas kleineres Gap auf Mobil. */}
-      <div className="grid grid-cols-2 gap-3 sm:gap-5 lg:grid-cols-3">
+      {/* Auf dem Handy EINE Spalte über die volle Breite. Vorher standen hier
+          auch dort zwei Spalten — in der Gerichts-Bühne bleiben davon rund
+          147 px je Kachel, und darin ist ein Titel wie „Caponata –
+          Sizilianisches Schmorgemüse" sechs Zeilen lang und die Eyebrow-Zeile
+          abgeschnitten. Zwei Spalten ab sm, drei ab lg. */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-3">
         {recipes.map((rec) => (
-          <RecipeCard key={rec.slug} recipe={rec} />
+          <RecipeCard key={rec.slug} recipe={rec} imageSizes={AEHNLICH_SIZES} />
         ))}
       </div>
     </section>
