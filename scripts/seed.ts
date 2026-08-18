@@ -435,7 +435,12 @@ async function main() {
         "mit Auberginen. Wir haben uns durch vier Stände gegessen und keinen " +
         "davon bereut.\n\n" +
         "Zum Abschluss eine Granita mit Brioche, im Stehen, weil drinnen kein " +
-        "Platz mehr war — und das ist ohnehin die bessere Aussicht.",
+        "Platz mehr war — und das ist ohnehin die bessere Aussicht.\n\n" +
+        "Wer den Markt am Vormittag verpasst, findet abends dieselben Gassen " +
+        "wieder, nur leiser: Die Stände sind abgebaut, die Kisten gestapelt, " +
+        "und zwischen den Rollläden stehen Tische, die tagsüber nirgends " +
+        "waren. Man setzt sich dazu, ohne zu fragen, und bekommt, was gerade " +
+        "fertig ist.",
     },
     // Ein PAAR: das zweite Bild trägt das Häkchen und teilt sich mit dem
     // ersten dessen halbe Spalte — gleich hoch, unten bündig. Nachbarschaft

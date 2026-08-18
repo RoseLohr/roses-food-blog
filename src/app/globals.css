@@ -100,8 +100,17 @@ html {
    diese Regel entschiede allein die Länge des Absatzes darüber, ob sich zwei
    Bilder nebeneinander schieben — ein Satz mehr im Text, und das Layout
    springt um. Wer zwei Bilder nebeneinander will, sagt es (siehe .bildpaar). */
-.bildplatz {
+/* Der Kasten um Bild UND folgenden Text. `flow-root` schließt den Float ein:
+   Der Kasten wächst auf die Höhe des höheren von beiden, und kein späterer
+   Block kann in ihn hineinlaufen. `clear: both` rückt ihn als GANZES unter das
+   Inhaltsverzeichnis und unter das vorige Bild — vorher rückte nur das Bild,
+   der Textkasten blieb oben, und das Bild hing ohne eine Zeile neben sich in
+   der Luft (am geseedeten Bericht gemessen: Bild y=1596, sein Text y=1381). */
+.bildlauf {
+  display: flow-root;
   clear: both;
+}
+.bildplatz {
   margin-bottom: 0.875rem;
   height: auto;
 }

@@ -834,41 +834,78 @@ export async function TravelView({
           {/* Der erste Block startet auf gleicher Höhe wie das Verzeichnis. */}
           {full.blocks.length > 0 && (
             <div className="[&>*+*]:mt-7">
-              {zuRenderBloecken(full.blocks).map((b, i) => {
-                if (b.art === "text") {
-                  return (
-                    <div
-                      key={i}
-                      className="prose-content"
-                      dangerouslySetInnerHTML={{
-                        __html: renderMarkdown(b.markdown),
-                      }}
-                    />
-                  );
+              {(() => {
+                /**
+                 * BILD UND SEIN TEXT GEHÖREN IN EINEN KASTEN.
+                 *
+                 * Ein Float wirkt auf die Zeilen, die ihm folgen — nicht auf
+                 * die Kästen. Standen Bild und Text als Geschwister im Fluss,
+                 * schob `clear` das BILD nach unten (unter das Verzeichnis,
+                 * unter das vorige Bild), während der Textkasten oben blieb:
+                 * Am geseedeten Bericht gemessen begann das Bild bei y=1596,
+                 * sein Text schon bei y=1381 und war 54 px später zu Ende. Das
+                 * Bild hing dann ohne eine Zeile neben sich in der Luft — genau
+                 * das, was ein Umfluss verhindern soll.
+                 *
+                 * Deshalb umschließt `.bildlauf` (display: flow-root) das Bild
+                 * zusammen mit dem unmittelbar folgenden Textblock. Der Kasten
+                 * rückt als Ganzes nach unten, Bild und Text beginnen auf
+                 * derselben Höhe, und weil er den Float einschließt, kann kein
+                 * späterer Block in ihn hineinlaufen. Folgt kein Text, steht das
+                 * Bild allein im Kasten — dann gibt es nichts zu umfließen.
+                 */
+                const bloecke = zuRenderBloecken(full.blocks);
+                const ausgabe = [];
+                for (let i = 0; i < bloecke.length; i++) {
+                  const b = bloecke[i];
+                  if (b.art === "text") {
+                    ausgabe.push(
+                      <div
+                        key={i}
+                        className="prose-content"
+                        dangerouslySetInnerHTML={{
+                          __html: renderMarkdown(b.markdown),
+                        }}
+                      />,
+                    );
+                    continue;
+                  }
+                  if (b.art === "bild") {
+                    const bilder = b.imageIds
+                      .map((id) => full.blockImages[id])
+                      .filter((img) => img !== undefined);
+                    const naechster = bloecke[i + 1];
+                    const mitText = naechster?.art === "text" ? naechster : undefined;
+                    if (mitText) i++; // wird hier mitgerendert
+                    ausgabe.push(
+                      <div key={i} className="bildlauf">
+                        <Bildplatz
+                          images={bilder}
+                          groesse={b.groesse}
+                          platz={b.platz}
+                        />
+                        {mitText && (
+                          <div
+                            className="prose-content"
+                            dangerouslySetInnerHTML={{
+                              __html: renderMarkdown(mitText.markdown),
+                            }}
+                          />
+                        )}
+                      </div>,
+                    );
+                    continue;
+                  }
+                  const r = full.restaurants[b.index];
+                  if (r)
+                    ausgabe.push(
+                      <div key={i} className="md:clear-left">
+                        <RestaurantCard r={r} similarByDish={similarByDish} />
+                      </div>,
+                    );
                 }
-                if (b.art === "bild") {
-                  const bilder = b.imageIds
-                    .map((id) => full.blockImages[id])
-                    .filter((img) => img !== undefined);
-                  // Kein `clear-left` von außen: Der Bildplatz trägt sein
-                  // eigenes `clear: both` und beginnt damit ohnehin unterhalb
-                  // des Inhaltsverzeichnisses und jedes vorherigen Bildes.
-                  return (
-                    <Bildplatz
-                      key={i}
-                      images={bilder}
-                      groesse={b.groesse}
-                      platz={b.platz}
-                    />
-                  );
-                }
-                const r = full.restaurants[b.index];
-                return r ? (
-                  <div key={i} className="md:clear-left">
-                    <RestaurantCard r={r} similarByDish={similarByDish} />
-                  </div>
-                ) : null;
-              })}
+                return ausgabe;
+              })()}
             </div>
           )}
 

@@ -63,31 +63,53 @@ test.describe("Reisebericht: Bilder im Textfluss", () => {
     expect(await halb.evaluate((el) => getComputedStyle(el).float)).toBe("right");
   });
 
-  test("der Text fließt neben dem Bild weiter", async ({ page }) => {
+  test("JEDES schwebende Bild hat Text neben sich, auf gleicher Höhe", async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto(REPORT);
 
-    const bild = page.locator("article .bildplatz.gr-s").first();
-    const box = (await bild.boundingBox())!;
+    // Der Befund, der diesen Test erzwungen hat: Standen Bild und Text als
+    // Geschwister im Fluss, schob `clear` das BILD nach unten, während der
+    // Textkasten oben blieb — das Bild hing dann ohne eine Zeile neben sich in
+    // der Luft (gemessen: Bild y=1596, sein Text y=1381, 54 px später zu Ende).
+    // Genau das, was ein Umfluss verhindern soll.
+    const schwebende = await page.locator("article .bildplatz.pl-links, article .bildplatz.pl-rechts").all();
+    expect(schwebende.length).toBeGreaterThan(0);
 
-    // Daneben steht wirklich Text: irgendein Absatz überlappt das Bild auf
-    // halber Höhe und liegt RECHTS davon (das Bild steht links). Genau das ist
-    // der Unterschied zwischen „steht im Text" und „unterbricht den Text".
-    const textDaneben = await page.evaluate(
-      ({ oberkante, unterkante, bildRechts }) =>
-        [...document.querySelectorAll("article .prose-content p")].some((p) => {
-          const r = p.getBoundingClientRect();
-          const oben = r.top + window.scrollY;
-          const unten = r.bottom + window.scrollY;
-          return oben < unterkante && unten > oberkante && r.right > bildRechts;
-        }),
-      {
-        oberkante: box.y,
-        unterkante: box.y + box.height,
-        bildRechts: box.x + box.width,
-      },
-    );
-    expect(textDaneben).toBe(true);
+    for (const bild of schwebende) {
+      const box = (await bild.boundingBox())!;
+      const links = await bild.evaluate((el) => el.classList.contains("pl-links"));
+
+      // 1. Der Text beginnt auf DERSELBEN Höhe wie das Bild, nicht darüber.
+      const textOben = await bild.evaluate((el) => {
+        const text = el.closest(".bildlauf")?.querySelector(".prose-content");
+        return text ? text.getBoundingClientRect().top + window.scrollY : null;
+      });
+      expect(textOben).not.toBeNull();
+      expect(Math.abs(textOben! - box.y)).toBeLessThan(2);
+
+      // 2. Und daneben steht wirklich eine Zeile — auf der richtigen Seite.
+      //    Das ist der Unterschied zwischen „steht im Text" und „unterbricht
+      //    den Text".
+      const daneben = await page.evaluate(
+        ({ oben, unten, kante, istLinks }) =>
+          [...document.querySelectorAll("article .prose-content p")].some((p) => {
+            const r = p.getBoundingClientRect();
+            const o = r.top + window.scrollY;
+            const u = r.bottom + window.scrollY;
+            if (!(o < unten && u > oben)) return false;
+            return istLinks ? r.right > kante : r.left < kante;
+          }),
+        {
+          oben: box.y,
+          unten: box.y + box.height,
+          kante: links ? box.x + box.width : box.x,
+          istLinks: links,
+        },
+      );
+      expect(daneben).toBe(true);
+    }
   });
 
   test("ein Paar füllt seinen Platz exakt und ist gleich hoch", async ({ page }) => {
