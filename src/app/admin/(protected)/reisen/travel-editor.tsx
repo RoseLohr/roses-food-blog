@@ -13,7 +13,12 @@ import {
   type Option as TaxonomyOption,
 } from "@/components/admin/quick-add-checkboxes";
 import { RichTextEditor } from "@/components/admin/rich-text-editor";
-import { BILD_STUFEN, type BildStufe } from "@/lib/bildreihen";
+import {
+  BILD_GROESSEN,
+  BILD_PLAETZE,
+  type BildGroesse,
+  type BildPlatz,
+} from "@/lib/bildreihen";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -45,46 +50,15 @@ interface EditorRestaurant {
 /** Inhalts-Block (siehe lib/travel-blocks.ts); imageId 0 = noch kein Bild. */
 export type EditorBlockData =
   | { type: "text"; markdown: string }
-  | { type: "bild"; imageId: number; groesse: BildStufe }
+  | {
+      type: "bild";
+      imageId: number;
+      groesse: BildGroesse;
+      platz: BildPlatz;
+      mitVorherigem: boolean;
+    }
   | { type: "restaurant"; index: number };
 type EditorBlock = EditorBlockData & { key: string };
-
-/**
- * Rolle eines Bildblocks — dieselbe Regel wie im Renderer (`zuRenderBloecken`),
- * hier nur für die Anzeige. Ein Bild ist entweder ein Vollbild (L), Teil einer
- * Reihe (zwei oder mehr Nachbarn) oder ein Einzelbild, das im Text steht und
- * umflossen wird; dann bekommt es eine Seite, die sich automatisch abwechselt.
- */
-function bildRolle(
-  blocks: EditorBlock[],
-  i: number,
-): { rolle: "voll" | "reihe" | "umfluss"; stufe: BildStufe; seite: "links" | "rechts" } {
-  const b = blocks[i];
-  if (b.type !== "bild") return { rolle: "voll", stufe: "m", seite: "rechts" };
-  if (b.groesse === "l") return { rolle: "voll", stufe: "l", seite: "rechts" };
-
-  const istNachbar = (k: number) => {
-    const n = blocks[k];
-    return n !== undefined && n.type === "bild" && n.groesse !== "l";
-  };
-  const inReihe = istNachbar(i - 1) || istNachbar(i + 1);
-  if (inReihe) return { rolle: "reihe", stufe: b.groesse, seite: "rechts" };
-
-  // Umflossen: die Seite ergibt sich aus der Zahl der umflossenen Einzelbilder
-  // davor — Reihen und Vollbilder zählen nicht mit (siehe lib/bildreihen.ts).
-  let zaehler = 0;
-  for (let k = 0; k < i; k++) {
-    const v = blocks[k];
-    if (v.type !== "bild" || v.groesse === "l") continue;
-    if (istNachbar(k - 1) || istNachbar(k + 1)) continue; // Teil einer Reihe
-    zaehler++;
-  }
-  return {
-    rolle: "umfluss",
-    stufe: b.groesse,
-    seite: zaehler % 2 === 0 ? "rechts" : "links",
-  };
-}
 
 export interface TravelEditorProps {
   initial: {
@@ -125,42 +99,105 @@ const btnSecondary =
   "rounded-lg border border-ink/20 px-3 py-1.5 text-sm hover:bg-cream";
 
 /**
- * Der einzige Regler eines Bildes: seine Höhe. Drei Knöpfe, keine Zahlen,
- * keine Prozente. In einer REIHE wirkt die Höhe nicht — dort teilen sich die
- * Breiten nach Seitenverhältnis auf. Deshalb stehen S und M dann still, während
- * L wählbar bleibt: es löst das Bild aus der Reihe.
+ * Darf dieses Bild „neben dem Bild darüber" stehen?
+ *
+ * Dieselbe Bedingung wie im Renderer (`zuRenderBloecken`): Direkt darüber muss
+ * ein Bildblock stehen, der noch allein ist. Über einem Text- oder
+ * Restaurant-Block gibt es nichts, wozu sich etwas stellen könnte, und ein
+ * bereits gepaartes Bild bleibt bei zweien — zu dritt bliebe bei 816 px je Bild
+ * ein 264-px-Streifen.
+ *
+ * Die Regel steht hier ein zweites Mal, weil der Editor sie ANZEIGEN muss,
+ * bevor gespeichert wird. Damit sie nicht auseinanderlaufen kann, prüft ein
+ * Test beide Seiten gegen dieselben Fälle.
  */
-function StufenSchalter({
+function paarFaehig(blocks: EditorBlock[], i: number): boolean {
+  const davor = blocks[i - 1];
+  if (davor === undefined || davor.type !== "bild") return false;
+  // Ist das Bild darüber selbst schon angehängt, wäre dieses hier das dritte.
+  return !davor.mitVorherigem;
+}
+
+/** Fertige Anzeigegröße eines Bildes in Pixeln — die Antwort auf die Frage,
+ *  die der alte Höhen-Schalter offenließ. Spalte 816 px ab 929 px Fenster. */
+function fertigeGroesse(
+  groesse: BildGroesse,
+  bild: { width?: number; height?: number } | undefined,
+): { breite: number; hoehe: number } | null {
+  if (!bild?.width || !bild.height) return null;
+  const breite = Math.round(816 * (groesse === "s" ? 1 / 3 : groesse === "m" ? 1 / 2 : 1));
+  return { breite, hoehe: Math.round((breite * bild.height) / bild.width) };
+}
+
+function GroessenSchalter({
   wert,
   gesperrt,
   onChange,
 }: {
-  wert: BildStufe;
+  wert: BildGroesse;
   gesperrt: boolean;
-  onChange: (s: BildStufe) => void;
+  onChange: (g: BildGroesse) => void;
 }) {
   return (
     <div
       role="group"
-      aria-label={d.blockHeight}
+      aria-label={d.blockSize}
       className="inline-flex overflow-hidden rounded-lg border border-ink/20"
     >
-      {BILD_STUFEN.map((s) => {
-        const aktiv = s === wert;
-        const aus = gesperrt && s !== "l";
+      {BILD_GROESSEN.map((g) => {
+        const aktiv = g === wert;
         return (
           <button
-            key={s}
+            key={g}
             type="button"
             aria-pressed={aktiv}
-            disabled={aus}
-            title={d.blockHeightOptions[s].title}
-            onClick={() => onChange(s)}
+            disabled={gesperrt}
+            title={d.blockSizeOptions[g].title}
+            onClick={() => onChange(g)}
             className={`border-r border-ink/15 px-4 py-1.5 text-sm font-semibold last:border-r-0 ${
               aktiv ? "bg-leaf text-white" : "hover:bg-cream"
-            } ${aus ? "opacity-50" : ""}`}
+            } ${gesperrt ? "opacity-40" : ""}`}
           >
-            {d.blockHeightOptions[s].label}
+            {d.blockSizeOptions[g].label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Links oder rechts. Bei `l` gibt es keine Seite, bei einem angehängten Bild
+ *  kommt sie vom Partner — in beiden Fällen steht der Schalter still. */
+function PlatzSchalter({
+  wert,
+  gesperrt,
+  onChange,
+}: {
+  wert: BildPlatz;
+  gesperrt: boolean;
+  onChange: (p: BildPlatz) => void;
+}) {
+  return (
+    <div
+      role="group"
+      aria-label={d.blockPlace}
+      className="inline-flex overflow-hidden rounded-lg border border-ink/20"
+    >
+      {BILD_PLAETZE.map((p) => {
+        const aktiv = p === wert;
+        return (
+          <button
+            key={p}
+            type="button"
+            aria-pressed={aktiv}
+            disabled={gesperrt}
+            title={d.blockPlaceOptions[p].title}
+            onClick={() => onChange(p)}
+            className={`border-r border-ink/15 px-4 py-1.5 text-sm font-semibold last:border-r-0 ${
+              aktiv ? "bg-leaf text-white" : "hover:bg-cream"
+            } ${gesperrt ? "opacity-40" : ""}`}
+          >
+            {d.blockPlaceOptions[p].label}
           </button>
         );
       })}
@@ -469,7 +506,9 @@ export function TravelEditor({
                   )}
                   {b.type === "bild" &&
                     (() => {
-                      const { rolle, stufe, seite } = bildRolle(blocks, i);
+                      const gepaart = b.mitVorherigem && paarFaehig(blocks, i);
+                      const bild = images.find((x) => x.id === b.imageId);
+                      const fertig = fertigeGroesse(b.groesse, bild);
                       return (
                         <>
                           <ImagePicker
@@ -481,23 +520,60 @@ export function TravelEditor({
                               updateBlock(i, { imageId: ids[0] ?? 0 })
                             }
                           />
-                          <div className="mt-3">
-                            <span className={labelCls}>{d.blockHeight}</span>
-                            <StufenSchalter
-                              wert={stufe}
-                              gesperrt={rolle === "reihe"}
-                              onChange={(s) => updateBlock(i, { groesse: s })}
-                            />
-                            <p className="mt-2 border-l-2 border-leaf bg-leaf/[0.06] px-3 py-1.5 text-xs text-ink-soft">
-                              {rolle === "reihe"
-                                ? d.blockInRow
-                                : rolle === "voll"
-                                  ? d.blockFullWidth
-                                  : seite === "rechts"
-                                    ? d.blockFloatRight
-                                    : d.blockFloatLeft}
-                            </p>
+                          <div className="mt-3 flex flex-wrap items-end gap-x-6 gap-y-3">
+                            <div>
+                              <span className={labelCls}>{d.blockSize}</span>
+                              <GroessenSchalter
+                                wert={b.groesse}
+                                gesperrt={gepaart}
+                                onChange={(g) => updateBlock(i, { groesse: g })}
+                              />
+                            </div>
+                            <div>
+                              <span className={labelCls}>{d.blockPlace}</span>
+                              <PlatzSchalter
+                                wert={b.platz}
+                                gesperrt={gepaart || b.groesse === "l"}
+                                onChange={(p) => updateBlock(i, { platz: p })}
+                              />
+                            </div>
                           </div>
+                          <label
+                            className={`mt-3 flex items-start gap-2 text-sm ${
+                              paarFaehig(blocks, i) ? "" : "opacity-50"
+                            }`}
+                            title={
+                              paarFaehig(blocks, i) ? undefined : d.blockWithPreviousOff
+                            }
+                          >
+                            <input
+                              type="checkbox"
+                              className="mt-1 h-4 w-4 accent-leaf"
+                              checked={gepaart}
+                              disabled={!paarFaehig(blocks, i)}
+                              onChange={(e) =>
+                                updateBlock(i, { mitVorherigem: e.target.checked })
+                              }
+                            />
+                            <span>{d.blockWithPrevious}</span>
+                          </label>
+                          <p className="mt-2 border-l-2 border-leaf bg-leaf/[0.06] px-3 py-1.5 text-xs text-ink-soft">
+                            {gepaart
+                              ? d.blockPairedWith
+                              : b.groesse === "l"
+                                ? d.blockFullWidth
+                                : b.platz === "rechts"
+                                  ? d.blockFloatRight
+                                  : d.blockFloatLeft}
+                            {!gepaart && fertig && (
+                              <>
+                                {" "}
+                                <b className="font-semibold text-ink">
+                                  {d.blockRendered(fertig.breite, fertig.hoehe)}
+                                </b>
+                              </>
+                            )}
+                          </p>
                         </>
                       );
                     })()}
@@ -532,7 +608,13 @@ export function TravelEditor({
                 </button>
                 <button
                   type="button"
-                  onClick={() => addBlock({ type: "bild", imageId: 0, groesse: "m" })}
+                  onClick={() => addBlock({
+                      type: "bild",
+                      imageId: 0,
+                      groesse: "m",
+                      platz: "rechts",
+                      mitVorherigem: false,
+                    })}
                   className={btnSecondary}
                 >
                   + {d.blockImage}

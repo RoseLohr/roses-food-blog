@@ -15,6 +15,8 @@ export async function buildTravelEditorProps(
       originalName: schema.mediaImage.originalName,
       altText: schema.mediaImage.altText,
       fileKey: schema.mediaImage.fileKey,
+      width: schema.mediaImage.width,
+      height: schema.mediaImage.height,
     })
     .from(schema.mediaImage)
     .orderBy(asc(schema.mediaImage.originalName));
@@ -23,6 +25,9 @@ export async function buildTravelEditorProps(
     id: i.id,
     label: i.altText || i.originalName,
     thumbUrl: thumbUrl(i.fileKey, widthsById.get(i.id) ?? []),
+    // Für die Pixelzeile am Bildblock: Breite × daraus errechnete Höhe.
+    width: i.width,
+    height: i.height,
   }));
 
   // Taxonomie-Optionen für die Gericht-Zuordnung (gemeinsamer Stamm mit

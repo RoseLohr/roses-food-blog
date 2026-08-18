@@ -29,6 +29,10 @@ export interface ImageChoice {
   /** Fokuspunkt in Prozent (0–100), Standard Bildmitte. */
   focusX?: number;
   focusY?: number;
+  /** Maße des Originals. Optional, weil nicht jeder Editor sie braucht — der
+   *  Reise-Editor rechnet daraus die fertige Anzeigehöhe eines Bildes aus. */
+  width?: number;
+  height?: number;
 }
 
 export function ImagePicker({
