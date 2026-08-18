@@ -277,6 +277,13 @@ const AEHNLICH_SIZES =
   "(max-width: 1023px) 353px, 229px";
 
 /**
+ * `sizes` der EINZELNEN Kachel in Zeilenform. Unter `sm` steht sie gestapelt
+ * über die volle Breite der Fläche (wie im Raster), ab `sm` ist das Foto die
+ * feste linke Spalte der Zeile: 15rem = 240 px, unabhängig vom Viewport.
+ */
+const AEHNLICH_ZEILE_SIZES = "(max-width: 639px) calc(100vw - 8.25rem), 240px";
+
+/**
  * „Ähnliche Rezepte selbst machen" — als vollwertige Rezept-Kacheln (dieselbe
  * RecipeCard wie auf der Startseite), auf dem Handy einspaltig.
  *
@@ -323,16 +330,33 @@ function SimilarRecipeTiles({ recipes }: { recipes: RecipeCardData[] }) {
       <h6 className="mb-4 text-center font-display text-base font-bold text-ink">
         {dict.travelList.similarTitle}
       </h6>
-      {/* Auf dem Handy EINE Spalte über die volle Breite. Vorher standen hier
-          auch dort zwei Spalten — in der Gerichts-Bühne bleiben davon rund
-          147 px je Kachel, und darin ist ein Titel wie „Caponata –
-          Sizilianisches Schmorgemüse" sechs Zeilen lang und die Eyebrow-Zeile
-          abgeschnitten. Zwei Spalten ab sm, drei ab lg. */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-3">
-        {recipes.map((rec) => (
-          <RecipeCard key={rec.slug} recipe={rec} imageSizes={AEHNLICH_SIZES} />
-        ))}
-      </div>
+      {/* EIN Eintrag bekommt die ganze Breite — auf jedem Gerät. Auf dem Handy
+          galt das schon; im Drei-Spalten-Raster stand er dagegen in einem
+          Drittel links, und der Rest blieb leer. Unter einem Trenner, der über
+          die volle Breite spannt, liest sich das wie ein Fehler. Ab `sm` wird
+          daraus die Zeile: Foto links, Text rechts.
+
+          Ab zwei Einträgen bleibt es das Raster — eine Spalte bis sm, zwei ab
+          sm, drei ab lg. Zwei Spalten auch auf dem Handy ließen rund 147 px je
+          Kachel: Ein Titel wie „Caponata – Sizilianisches Schmorgemüse" ist
+          darin sechs Zeilen lang, und die Eyebrow-Zeile wurde abgeschnitten. */}
+      {recipes.length === 1 ? (
+        <RecipeCard
+          recipe={recipes[0]}
+          imageSizes={AEHNLICH_ZEILE_SIZES}
+          layout="zeile"
+        />
+      ) : (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-3">
+          {recipes.map((rec) => (
+            <RecipeCard
+              key={rec.slug}
+              recipe={rec}
+              imageSizes={AEHNLICH_SIZES}
+            />
+          ))}
+        </div>
+      )}
     </section>
   );
 }
