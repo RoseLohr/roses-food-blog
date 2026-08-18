@@ -503,6 +503,12 @@ async function main() {
           // Mehrere Fotos → Galerie mit Vor/Zurück im Pop-up.
           extraColors: ["#7b241c", "#a04000"],
           ingredients: ["Tomate", "Knoblauch", "Olivenöl"],
+          // Kategorie + Küche + Zutat: erst diese drei Überschneidungen
+          // qualifizieren ein Rezept für „Ähnliche Rezepte selbst machen"
+          // (siehe lib/similar-recipes.ts). Ohne sie bliebe der Abschnitt im
+          // Beispielbericht leer — und damit ungetestet.
+          categories: ["Hauptgericht"],
+          cuisines: ["Italienisch"],
         },
         {
           name: "Caponata",
@@ -510,6 +516,8 @@ async function main() {
           color: "#6e2c00",
           extraColors: [],
           ingredients: ["Tomate", "Zwiebel", "Olivenöl"],
+          categories: ["Salat"],
+          cuisines: ["Mediterran"],
         },
       ],
     },
@@ -528,6 +536,8 @@ async function main() {
           color: "#b7950b",
           extraColors: [],
           ingredients: ["Reis", "Zitrone", "Olivenöl"],
+          categories: [],
+          cuisines: [],
         },
       ],
     },
@@ -577,6 +587,21 @@ async function main() {
       await db.insert(schema.dishIngredient).values(
         d.ingredients.map((n) => ({ dishId: dishRow.id, ingredientId: ing[n] })),
       );
+      // Unbekannter Name → sofort lauter Fehler statt NULL in der Zuordnung.
+      const taxId = (topf: Record<string, number>, name: string): number => {
+        const id = topf[name];
+        if (id === undefined) throw new Error(`[seed] Unbekannte Taxonomie: ${name}`);
+        return id;
+      };
+      const dishTaxIds = [
+        ...d.categories.map((n) => taxId(categories, n)),
+        ...d.cuisines.map((n) => taxId(cuisines, n)),
+      ];
+      if (dishTaxIds.length) {
+        await db
+          .insert(schema.dishTaxonomy)
+          .values(dishTaxIds.map((taxonomyId) => ({ dishId: dishRow.id, taxonomyId })));
+      }
     }
   }
 
