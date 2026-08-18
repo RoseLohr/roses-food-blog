@@ -8,11 +8,11 @@
 import Link from "next/link";
 import type { FullDish, FullRestaurant, FullTravelPost } from "@/lib/travel";
 import type { MediaImage } from "@/lib/recipes";
+import type { BildGroesse, BildPlatz } from "@/lib/bildreihen";
 import {
+  bildSizes,
   galerieSizes,
-  reihenSizes,
   seitenverhaeltnis,
-  umflussSizes,
   vollbildSizes,
   zuRenderBloecken,
 } from "@/lib/bildreihen";
@@ -103,28 +103,49 @@ function arStil(img: MediaImage): React.CSSProperties {
 }
 
 /**
- * Zwei oder mehr Nachbarn: justierte Reihe. Breiten im Verhältnis der
- * Seitenverhältnisse, Summe genau die Spalte — dadurch gleich hoch, unten
- * bündig und an beiden Kanten bündig mit dem Text. Die Stufe wirkt hier
- * bewusst NICHT; die Höhe ergibt sich aus den Formaten (siehe lib/bildreihen).
+ * Ein BILDPLATZ: ein Bild oder zwei als Paar, in der eingestellten Breite und
+ * an der eingestellten Seite. Der Text fließt daneben weiter.
+ *
+ * Beim Paar teilen sich die beiden Bilder die Breite über
+ * `flex: var(--ar) 1 0` im Verhältnis ihrer Seitenverhältnisse. Die gesamte
+ * Breite ist freier Platz, der proportional zum Format verteilt wird — dadurch
+ * ist Breite_i / Format_i für beide gleich, also sind sie exakt gleich hoch und
+ * schließen unten bündig ab, ohne Zuschnitt und ohne eine Zeile JavaScript.
  */
-function Bildreihe({
+function Bildplatz({
   images,
-  className = "",
+  groesse,
+  platz,
 }: {
   images: MediaImage[];
-  className?: string;
+  groesse: BildGroesse;
+  platz: BildPlatz;
 }) {
   if (images.length === 0) return null;
-  const sizes = reihenSizes(
+  const sizes = bildSizes(
+    groesse,
     images.map((img) => seitenverhaeltnis(img.width, img.height)),
   );
+  // Bei `l` gibt es keine Seite — die Klasse entfällt, damit im CSS gar nicht
+  // erst eine Float-Regel greifen kann, die dann wieder aufgehoben werden müsste.
+  const klassen = `bildplatz gr-${groesse}${groesse === "l" ? "" : ` pl-${platz}`}`;
+  if (images.length === 1) {
+    return (
+      <ResponsiveImg image={images[0]} sizes={sizes[0]} className={klassen} />
+    );
+  }
   return (
-    <div className={`bildreihe${className ? ` ${className}` : ""}`}>
-      {images.map((img, i) => (
-        // Dasselbe Bild darf zweimal in einer Reihe stehen — Index in den Key.
-        <ResponsiveImg key={`${img.id}-${i}`} image={img} sizes={sizes[i]} style={arStil(img)} />
-      ))}
+    <div className={klassen}>
+      <div className="bildpaar">
+        {images.map((img, i) => (
+          <ResponsiveImg
+            key={img.id}
+            image={img}
+            sizes={sizes[i]}
+            style={arStil(img)}
+          />
+        ))}
+      </div>
     </div>
   );
 }
@@ -825,45 +846,21 @@ export async function TravelView({
                     />
                   );
                 }
-                if (b.art === "umfluss") {
-                  const img = full.blockImages[b.imageId];
-                  // Der Umfluss ist KEIN eigener Block im Fluss: das Bild steht
-                  // im Text, der ihm folgt. Deshalb ohne clear-left — es trägt
-                  // sein eigenes `clear: both` und beginnt damit ohnehin
-                  // unterhalb des Verzeichnisses.
-                  return img ? (
-                    <ResponsiveImg
-                      key={i}
-                      image={img}
-                      sizes={umflussSizes(
-                        seitenverhaeltnis(img.width, img.height),
-                        b.stufe,
-                      )}
-                      style={arStil(img)}
-                      className={`bildumfluss stufe-${b.stufe} ${b.seite}`}
-                    />
-                  ) : null;
-                }
-                if (b.art === "vollbild") {
-                  const img = full.blockImages[b.imageId];
-                  return img ? (
-                    <ResponsiveImg
-                      key={i}
-                      image={img}
-                      sizes={vollbildSizes()}
-                      className="bildvoll w-full md:clear-both"
-                    />
-                  ) : null;
-                }
-                if (b.art === "reihe") {
+                if (b.art === "bild") {
                   const bilder = b.imageIds
                     .map((id) => full.blockImages[id])
                     .filter((img) => img !== undefined);
-                  // clear-both: Eine Reihe ist ein Block. Neben einem Float
-                  // weichen nur die ZEILEN aus, nicht die Blockkante — die
-                  // Reihe liefe sonst unter dem Verzeichnis oder einem
-                  // umflossenen Bild durch.
-                  return <Bildreihe key={i} images={bilder} className="md:clear-both" />;
+                  // Kein `clear-left` von außen: Der Bildplatz trägt sein
+                  // eigenes `clear: both` und beginnt damit ohnehin unterhalb
+                  // des Inhaltsverzeichnisses und jedes vorherigen Bildes.
+                  return (
+                    <Bildplatz
+                      key={i}
+                      images={bilder}
+                      groesse={b.groesse}
+                      platz={b.platz}
+                    />
+                  );
                 }
                 const r = full.restaurants[b.index];
                 return r ? (
