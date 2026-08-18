@@ -9,16 +9,22 @@
  * travel_post.search_text die FTS-Quelle bildet.
  */
 import { z } from "zod";
-import { BILD_STUFEN } from "@/lib/bildreihen";
+import { BILD_GROESSEN, BILD_PLAETZE } from "@/lib/bildreihen";
 
 const blockSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("text"), markdown: z.string().max(20000) }),
   z.object({
     type: z.literal("bild"),
     imageId: z.number().int().positive(),
-    /** Höhenstufe des Bildes (siehe lib/bildreihen.ts). Mit Default, damit
-     *  gespeicherte Blockfolgen ohne das Feld weiterhin parsebar bleiben. */
-    groesse: z.enum(BILD_STUFEN).default("m"),
+    /** Breite als Anteil der Spalte: s = Drittel, m = Hälfte, l = ganze
+     *  Spalte (siehe lib/bildreihen.ts). Alle drei Felder mit Default, damit
+     *  gespeicherte Blockfolgen ohne sie weiterhin parsebar bleiben. */
+    groesse: z.enum(BILD_GROESSEN).default("m"),
+    /** Seite, an der das Bild steht; bei `l` bedeutungslos. */
+    platz: z.enum(BILD_PLAETZE).default("rechts"),
+    /** „neben dem Bild darüber" — die einzige Beziehung zwischen zwei
+     *  Blöcken, und sie wird gesagt statt aus Nachbarschaft erraten. */
+    mitVorherigem: z.boolean().default(false),
   }),
   z.object({
     type: z.literal("restaurant"),

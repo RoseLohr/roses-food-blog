@@ -206,7 +206,8 @@ describe("Reise-CRUD", () => {
       "bloecke",
       JSON.stringify([
         { type: "text", markdown: "## Ankunft\n\nErster Abend." },
-        { type: "bild", imageId: img.id }, // ohne Stufe → 'm'
+        { type: "bild", imageId: img.id }, // ohne Angaben → 'm', rechts, allein
+        { type: "bild", imageId: img.id, groesse: "s", platz: "links", mitVorherigem: true },
         { type: "bild", imageId: img.id, groesse: "l" },
         { type: "restaurant", index: 1 }, // zeigt aufs 2. (nach Filterung 1.)
         { type: "text", markdown: "   " }, // leer → entfällt
@@ -218,13 +219,14 @@ describe("Reise-CRUD", () => {
     const full = await getFullTravelPost({ id });
     // search_text = zusammengefügte Textblöcke (FTS-Quelle)
     expect(full!.post.searchText).toBe("## Ankunft\n\nErster Abend.");
-    // Blockfolge: Text, Bild, Bild, Restaurant (Index nach Filterung auf 0
-    // gemappt). Die Höhenstufe überlebt das Speichern; fehlt sie im Editor-
-    // JSON (Bestandsdaten), gilt 'm'.
+    // Blockfolge: Text, Bild, Bild, Bild, Restaurant (Index nach Filterung auf
+    // 0 gemappt). Größe, Platz und Paarung überleben das Speichern; fehlen sie
+    // im Editor-JSON (Bestandsdaten), gelten 'm', 'rechts' und „allein".
     expect(full!.blocks).toEqual([
       { type: "text", markdown: "## Ankunft\n\nErster Abend." },
-      { type: "bild", imageId: img.id, groesse: "m" },
-      { type: "bild", imageId: img.id, groesse: "l" },
+      { type: "bild", imageId: img.id, groesse: "m", platz: "rechts", mitVorherigem: false },
+      { type: "bild", imageId: img.id, groesse: "s", platz: "links", mitVorherigem: true },
+      { type: "bild", imageId: img.id, groesse: "l", platz: "rechts", mitVorherigem: false },
       { type: "restaurant", index: 0 },
     ]);
     expect(full!.blockImages[img.id]?.fileKey).toBe("blocktest");
