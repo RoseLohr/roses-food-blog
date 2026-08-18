@@ -403,6 +403,7 @@ async function main() {
   const bildGasse = await placeholder("Gasse", "#b5651d", 850, 1280); // hoch 2:3
   const bildMarkt = await placeholder("Ballarò", "#c0392b", 1280, 850); // quer 3:2
   const bildHafen = await placeholder("Hafen", "#1f6f8b", 1280, 720); // quer 16:9
+  const bildSalz = await placeholder("Salzsee", "#7a8b6f", 1280, 850); // quer 3:2
   await db.insert(schema.travelBlock).values([
     {
       travelPostId: travel.id,
@@ -410,7 +411,7 @@ async function main() {
       type: "text",
       markdown: travelText,
     },
-    // Zwei Nachbarn = eine Reihe: gleich hoch, unten bündig, ohne Zuschnitt.
+    // Einzelbild → steht im Text und wird umflossen (das erste rechts).
     {
       travelPostId: travel.id,
       sortOrder: 1,
@@ -421,24 +422,49 @@ async function main() {
     {
       travelPostId: travel.id,
       sortOrder: 2,
+      type: "text",
+      markdown:
+        "Am Hafen von Catania wird der Fang des Morgens direkt an der Kante " +
+        "verkauft — und zwei Straßen weiter schon gegessen. Wer früh genug da " +
+        "ist, bekommt den besten Platz an der Theke und sieht zu, wie die " +
+        "Schwertfische zerlegt werden.\n\n" +
+        "In den Gassen dahinter riecht es nach Zitrone und heißem Öl. An jeder " +
+        "zweiten Ecke steht ein Wagen mit Arancini, und keiner davon macht sie " +
+        "genau wie der Nachbar: mal mit Ragù, mal mit Butter und Schinken, mal " +
+        "mit Auberginen. Wir haben uns durch vier Stände gegessen und keinen " +
+        "davon bereut.\n\n" +
+        "Zum Abschluss eine Granita mit Brioche, im Stehen, weil drinnen kein " +
+        "Platz mehr war — und das ist ohnehin die bessere Aussicht.",
+    },
+    // Zwei Nachbarn → justierte Reihe: gleich hoch, unten bündig, füllt die Spalte.
+    {
+      travelPostId: travel.id,
+      sortOrder: 3,
       type: "bild",
       imageId: bildMarkt,
       groesse: "m",
     },
     {
       travelPostId: travel.id,
-      sortOrder: 3,
-      type: "text",
-      markdown:
-        "Am Hafen von Catania wird der Fang des Morgens direkt an der Kante " +
-        "verkauft — und zwei Straßen weiter schon gegessen.",
-    },
-    // L steht allein und füllt als Querbild die Inhaltsspalte.
-    {
-      travelPostId: travel.id,
       sortOrder: 4,
       type: "bild",
       imageId: bildHafen,
+      groesse: "m",
+    },
+    {
+      travelPostId: travel.id,
+      sortOrder: 5,
+      type: "text",
+      markdown:
+        "Nachmittags wird es an der Küste windig. Dann lohnt der Weg ins " +
+        "Landesinnere, wo die Salinen liegen und es plötzlich ganz still ist.",
+    },
+    // L → Vollbild über die ganze Spalte, steht allein.
+    {
+      travelPostId: travel.id,
+      sortOrder: 6,
+      type: "bild",
+      imageId: bildSalz,
       groesse: "l",
     },
   ]);

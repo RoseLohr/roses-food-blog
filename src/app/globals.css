@@ -83,71 +83,93 @@ html {
   margin-inline: calc(50% - 50vw);
 }
 
-/* Bildreihe der Reiseberichte — die ganze Layout-Regel aus src/lib/bildreihen.ts.
-   `--h` ist die Stufenhöhe (S/M/L), `--ar` das Seitenverhältnis des einzelnen
-   Bildes; die Wunschbreite ist ihr Produkt. Beschnitten wird nie.
+/* Bilder im Reisebericht — die Layout-Regel aus src/lib/bildreihen.ts.
+   `--ar` ist das Seitenverhältnis des einzelnen Bildes (inline je Bild gesetzt,
+   weil es eine Eigenschaft des Bildes ist, keine des Layouts), `--h` die
+   Stufenhöhe eines umflossenen Einzelbildes.
 
-   Bewusst als eigene Regel statt Utility-Klassen: Die Wunschbreite ist ein
-   calc() aus ZWEI Custom Properties, von denen eine (`--ar`) je Bild inline
-   gesetzt wird — das ist keine Klasse, die es fertig gibt.
+   Bewusst als eigene Regeln statt Utility-Klassen: die Breiten sind calc()
+   aus zwei Custom Properties — das ist keine Klasse, die es fertig gibt.
 
-   Handy (<768px): ein Bild je Zeile, mittig, gedeckelt auf die Spalte. Bei
-   295 px nutzbarer Breite wären drei Bilder nebeneinander je 90 px breit —
-   das ist keine Reihe mehr, das ist eine Briefmarkensammlung.
+   ------------------------------------------------------------------------
+   REIHE — zwei oder mehr Nachbarn, justiert über die Spalte.
 
-   Ab 768px die echte Reihe. `flex-grow: 0` — ein Bild wird NIE breiter als
-   seine Wunschbreite. `flex-shrink: 1` verteilt eine zu breite Reihe
-   proportional zur Wunschbreite; dadurch schrumpfen alle Bilder einer Reihe um
-   denselben Faktor und bleiben gleich hoch. Genau das macht die Reihe unten
-   bündig, ohne Zuschnitt und ohne eine einzige Zeile JavaScript. */
+   `flex: var(--ar) 1 0` ist die ganze Mechanik: flex-basis 0 heißt, die
+   gesamte Spaltenbreite ist freier Platz, und der wird im Verhältnis der
+   Seitenverhältnisse verteilt. Damit gilt Breite_i ∝ Format_i, also ist
+   Breite_i / Format_i für alle gleich — alle Bilder einer Reihe sind exakt
+   gleich hoch und schließen unten bündig ab, ohne Zuschnitt und ohne eine
+   Zeile JavaScript. Und die Reihe füllt die Spalte genau, statt mittig zu
+   stehen und zwei Kanten zu erfinden, die zu nichts gehören. */
 .bildreihe {
   display: flex;
-  flex-direction: column;
-  align-items: center;
   gap: 16px;
-  --h: 240px;
-}
-.bildreihe.stufe-s {
-  --h: 160px;
-}
-.bildreihe.stufe-m {
-  --h: 240px;
-}
-.bildreihe.stufe-l {
-  --h: 380px;
+  align-items: flex-start;
 }
 .bildreihe > img {
-  width: calc(var(--ar) * var(--h));
-  max-width: 100%;
+  flex: var(--ar) 1 0;
+  min-width: 0;
   height: auto;
 }
+
+/* ------------------------------------------------------------------------
+   UMFLUSS — ein einzelnes Bild steht IM Text.
+
+   Die Höhe bleibt der Regler (S/M), die Breite folgt dem Format und ist auf
+   die halbe Spalte gedeckelt: was mehr nimmt, lässt daneben keine lesbare
+   Zeile. `clear: both` macht das Ergebnis vorhersagbar — jedes umflossene
+   Bild beginnt unterhalb des vorigen (und unterhalb des Verzeichnisses).
+   Ohne diese Regel entschiede allein die Länge des Absatzes darüber, ob sich
+   zwei Bilder nebeneinander schieben; ein Satz mehr im Text, und das Layout
+   springt um. */
+.bildumfluss {
+  --h: 360px;
+  width: min(calc(var(--ar) * var(--h)), 50%);
+  height: auto;
+  margin-bottom: 0.875rem;
+  clear: both;
+}
+.bildumfluss.stufe-s {
+  --h: 220px;
+}
+/* Unter 768 px kein Umfluss: neben einem halbbreiten Bild blieben auf einem
+   390-px-Gerät rund 18 Zeichen je Zeile — das ist keine Spalte mehr. Dort
+   steht das Einzelbild über die volle Breite. */
 @media (min-width: 768px) {
-  .bildreihe {
-    flex-direction: row;
-    justify-content: center;
-    align-items: flex-start;
-    --h: 360px;
+  .bildumfluss.rechts {
+    float: right;
+    margin-left: 1.75rem;
   }
-  .bildreihe.stufe-s {
-    --h: 220px;
+  .bildumfluss.links {
+    float: left;
+    margin-right: 1.75rem;
   }
-  .bildreihe.stufe-m {
-    --h: 360px;
+}
+@media (max-width: 767px) {
+  .bildumfluss {
+    width: 100%;
   }
-  /* 78vh deckelt die größte Stufe: kein Bild wird je höher als der Bildschirm.
-     Es ist die einzige Zahl, die das verhindert — und sie steht hier, nicht
-     verteilt über die Aufrufer. */
-  .bildreihe.stufe-l {
-    --h: min(560px, 78vh);
-  }
-  .bildreihe > img {
-    flex: 0 1 calc(var(--ar) * var(--h));
-    width: auto;
-  }
-  /* Nur die Galerie bricht um; im Text ist eine Reihe genau eine Zeile. */
-  .bildreihe.umbruch {
-    flex-wrap: wrap;
-  }
+}
+
+/* ------------------------------------------------------------------------
+   GALERIE — gleich hohe Kacheln mit Umbruch.
+
+   Bewusst OHNE flex-grow: Wüchsen die Bilder in die Zeile hinein, hinge die
+   Breite jedes Bildes davon ab, welche Bilder mit ihm in eine Zeile geraten —
+   und wäre damit im `sizes`-Attribut nicht mehr ausrechenbar. Genau das hat
+   der Auslieferungs-Guardrail gefangen: 241 px gerendert, 480er-Variante
+   geladen. Feste Zeilenhöhe heißt: eine Zahl je Bild, alle Kacheln gleich
+   hoch, jede Zeile beginnt auf der linken Textkante. */
+.bildgalerie {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.bildgalerie > img {
+  flex: 0 1 calc(var(--ar) * 220px);
+  min-width: 0;
+  max-width: 100%;
+  height: auto;
 }
 
 /* Zutatenzeile im Rezept-Editor: auf schmalen Bildschirmen (Handy hochkant)

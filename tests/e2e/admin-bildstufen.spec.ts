@@ -36,58 +36,55 @@ test.beforeEach(async ({ context }) => {
   ]);
 });
 
-test("zeigt je Bildblock seine Rolle in der Reihe", async ({ page }) => {
+test("zeigt je Bildblock seine Rolle", async ({ page }) => {
   await page.goto(editorUrl);
   const bloecke = bildBloecke(page);
   await expect(bloecke).toHaveCount(3);
 
-  // 1. Bild: führt die Reihe an — M gedrückt, alle drei Knöpfe bedienbar.
-  const ersteGruppe = bloecke.nth(0).getByRole("group", { name: d.blockHeight });
-  await expect(ersteGruppe.getByRole("button", { name: "M" })).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-  for (const s of ["S", "M", "L"]) {
-    await expect(ersteGruppe.getByRole("button", { name: s })).toBeEnabled();
+  // 1. + 2. Bild sind Nachbarn → Reihe. Die Höhe wirkt dort nicht, also
+  // stehen S und M still; L bleibt wählbar (es löst das Bild heraus).
+  for (const nr of [0, 1]) {
+    const gruppe = bloecke.nth(nr).getByRole("group", { name: d.blockHeight });
+    await expect(gruppe.getByRole("button", { name: "S" })).toBeDisabled();
+    await expect(gruppe.getByRole("button", { name: "M" })).toBeDisabled();
+    await expect(gruppe.getByRole("button", { name: "L" })).toBeEnabled();
+    await expect(bloecke.nth(nr).getByText(d.blockInRow)).toBeVisible();
   }
-  await expect(bloecke.nth(0).getByText(d.blockRowWithNext)).toBeVisible();
 
-  // 2. Bild: folgt der Reihe — erbt die Höhe, S und M stehen still, L nicht.
-  const zweiteGruppe = bloecke.nth(1).getByRole("group", { name: d.blockHeight });
-  await expect(zweiteGruppe.getByRole("button", { name: "S" })).toBeDisabled();
-  await expect(zweiteGruppe.getByRole("button", { name: "M" })).toBeDisabled();
-  await expect(zweiteGruppe.getByRole("button", { name: "L" })).toBeEnabled();
-  await expect(bloecke.nth(1).getByText(d.blockRowInherits)).toBeVisible();
-
-  // 3. Bild: L steht allein — kein Reihen-Hinweis.
-  const dritteGruppe = bloecke.nth(2).getByRole("group", { name: d.blockHeight });
-  await expect(dritteGruppe.getByRole("button", { name: "L" })).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-  await expect(bloecke.nth(2).getByText(d.blockRowWithNext)).toHaveCount(0);
-  await expect(bloecke.nth(2).getByText(d.blockRowInherits)).toHaveCount(0);
+  // 3. Bild ist L → Vollbild über die ganze Spalte.
+  await expect(bloecke.nth(2).getByText(d.blockFullWidth)).toBeVisible();
 });
 
-test("L löst ein folgendes Bild aus der Reihe — sofort sichtbar", async ({
+test("ein Einzelbild bekommt eine Seite, und die wechselt automatisch", async ({
   page,
 }) => {
   await page.goto(editorUrl);
   const bloecke = bildBloecke(page);
 
-  // Das zweite Bild auf L stellen: es verlässt die Reihe …
+  // Das zweite Bild auf L stellen: die Reihe zerfällt, beide werden Einzelbilder.
   await bloecke
     .nth(1)
     .getByRole("group", { name: d.blockHeight })
     .getByRole("button", { name: "L" })
     .click();
 
-  // … damit steht das erste Bild allein (kein Reihen-Hinweis mehr) …
-  await expect(bloecke.nth(0).getByText(d.blockRowWithNext)).toHaveCount(0);
-  // … und das zweite ist frei einstellbar statt erbend.
-  const zweiteGruppe = bloecke.nth(1).getByRole("group", { name: d.blockHeight });
-  await expect(zweiteGruppe.getByRole("button", { name: "S" })).toBeEnabled();
-  await expect(bloecke.nth(1).getByText(d.blockRowInherits)).toHaveCount(0);
+  // Das erste ist jetzt allein → wird umflossen, und zwar rechts (das erste).
+  await expect(bloecke.nth(0).getByText(d.blockFloatRight)).toBeVisible();
+  await expect(
+    bloecke.nth(0).getByRole("group", { name: d.blockHeight }).getByRole("button", { name: "S" }),
+  ).toBeEnabled();
+});
+
+test("L löst ein Bild aus der Reihe — sofort sichtbar", async ({ page }) => {
+  await page.goto(editorUrl);
+  const bloecke = bildBloecke(page);
+  await bloecke
+    .nth(1)
+    .getByRole("group", { name: d.blockHeight })
+    .getByRole("button", { name: "L" })
+    .click();
+  await expect(bloecke.nth(1).getByText(d.blockFullWidth)).toBeVisible();
+  await expect(bloecke.nth(1).getByText(d.blockInRow)).toHaveCount(0);
 });
 
 test("die eingestellte Höhe überlebt das Speichern und kommt im Bericht an", async ({
@@ -96,7 +93,13 @@ test("die eingestellte Höhe überlebt das Speichern und kommt im Bericht an", a
   await page.goto(editorUrl);
   const bloecke = bildBloecke(page);
 
-  // Erstes Bild auf S — die ganze Reihe wird damit kleiner.
+  // Erst die Reihe auflösen (zweites Bild auf L), dann das erste — jetzt ein
+  // umflossenes Einzelbild — auf S stellen.
+  await bloecke
+    .nth(1)
+    .getByRole("group", { name: d.blockHeight })
+    .getByRole("button", { name: "L" })
+    .click();
   await bloecke
     .nth(0)
     .getByRole("group", { name: d.blockHeight })
@@ -114,13 +117,11 @@ test("die eingestellte Höhe überlebt das Speichern und kommt im Bericht an", a
       .getByRole("button", { name: "S" }),
   ).toHaveAttribute("aria-pressed", "true");
 
-  // … und in der Vorschau als S-Reihe gerendert (die Reihe erbt die Stufe des
-  // ersten Bildes, das zweite steht weiter darin).
+  // … und in der Vorschau als umflossenes S-Bild gerendert.
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto(`/admin/reisen/${session.travelId}/vorschau`);
-  const reihe = page.locator("article .bildreihe.stufe-s");
-  await expect(reihe).toHaveCount(1);
-  await expect(reihe.locator("img")).toHaveCount(2);
-  const kasten = (await reihe.locator("img").first().boundingBox())!;
+  const umfluss = page.locator("article img.bildumfluss.stufe-s");
+  await expect(umfluss).toHaveCount(1);
+  const kasten = (await umfluss.boundingBox())!;
   expect(kasten.height).toBeLessThan(230); // Stufe S = 220 px, nicht 360
 });

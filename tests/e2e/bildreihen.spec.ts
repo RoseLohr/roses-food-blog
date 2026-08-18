@@ -1,116 +1,147 @@
 import { test, expect, type Locator } from "@playwright/test";
 
 /**
- * Die Bildreihe im Reisebericht — GEMESSEN, nicht behauptet.
+ * Bilder im Reisebericht — GEMESSEN, nicht behauptet.
  *
- * Die Regel (src/lib/bildreihen.ts) verspricht drei Dinge, die man nur am
- * echten Layout prüfen kann: gleich hoch, unten bündig, nie beschnitten. Der
- * geseedete Sizilien-Bericht enthält dafür bewusst gemischte Formate — ein
- * Hochbild 2:3 neben einem Querbild 3:2 (Stufe M), darunter ein L-Querbild,
- * am Ende eine Galerie aus quadratisch/quer/hoch.
+ * Die Regel (src/lib/bildreihen.ts) verspricht Dinge, die man nur am echten
+ * Layout prüfen kann: dass jede Bildkante auf einer Textkante sitzt, dass eine
+ * Reihe die Spalte exakt füllt und unten bündig abschließt, und dass ein
+ * einzelnes Bild im Text steht statt ihn zu unterbrechen. Der geseedete
+ * Bericht enthält dafür alle drei Fälle mit gemischten Formaten: ein
+ * umflossenes Hochbild 2:3, eine Reihe aus 3:2 und 16:9, ein Vollbild.
  *
- * Ebenfalls hier festgenagelt: die GRENZE. Die Gerichtsfotos der
- * Restaurant-Karten behalten ihren Streifen (Regel C) — sie sind keine
- * Bildreihe und sollen keine werden. Ohne diesen Test wanderte das neue
- * Layout irgendwann unbemerkt dorthin.
+ * Ebenfalls festgenagelt: die GRENZE. Die Gerichtsfotos der Restaurant-Karten
+ * behalten ihren Streifen (Regel C) — sie sind keine Bildreihe.
  */
 const REPORT = "/reisen/streetfood-und-trattorien-in-sizilien";
 
-/** Kästen aller Bilder einer Reihe, in DOM-Reihenfolge. */
-async function bilderKaesten(reihe: Locator) {
-  const bilder = reihe.locator("img");
+/** Kästen aller Bilder eines Containers, in DOM-Reihenfolge. */
+async function bilderKaesten(wurzel: Locator) {
+  const bilder = wurzel.locator("img");
   const anzahl = await bilder.count();
   const kaesten = [];
-  for (let i = 0; i < anzahl; i++) {
-    kaesten.push((await bilder.nth(i).boundingBox())!);
-  }
+  for (let i = 0; i < anzahl; i++) kaesten.push((await bilder.nth(i).boundingBox())!);
   return kaesten;
 }
 
-test.describe("Reisebericht: Bildreihen", () => {
-  test("Nachbarn stehen gleich hoch und unten bündig — bei verschiedenen Formaten", async ({
-    page,
-  }) => {
+/**
+ * Linke und rechte Kante der Inhaltsspalte. Gemessen am Blockcontainer
+ * (`flow-root`), NICHT an einem beliebigen Absatz: Restaurant-Karten haben
+ * eigene Innenabstände, ihr Text steht also gar nicht auf der Spaltenkante.
+ */
+async function textkanten(page: import("@playwright/test").Page) {
+  const spalte = page.locator("article .flow-root").first();
+  const box = (await spalte.boundingBox())!;
+  return { links: box.x, rechts: box.x + box.width };
+}
+
+test.describe("Reisebericht: Bilder im Textfluss", () => {
+  test("die Reihe füllt die Spalte und schließt unten bündig ab", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto(REPORT);
 
     const reihe = page.locator("article .bildreihe").first();
     await expect(reihe.locator("img")).toHaveCount(2);
-    const [hoch, quer] = await bilderKaesten(reihe);
+    const [a, b] = await bilderKaesten(reihe);
 
-    // Gleiche Höhe und dieselbe Unterkante — das ist die eigentliche Zusage.
-    expect(Math.abs(hoch.height - quer.height)).toBeLessThan(1.5);
-    expect(Math.abs(hoch.y + hoch.height - (quer.y + quer.height))).toBeLessThan(1.5);
+    // Gleich hoch und dieselbe Unterkante — ohne Zuschnitt.
+    expect(Math.abs(a.height - b.height)).toBeLessThan(1.5);
+    expect(Math.abs(a.y + a.height - (b.y + b.height))).toBeLessThan(1.5);
 
-    // Und trotzdem verschieden breit: die Breite folgt dem Bild, es wird
-    // nichts auf ein gemeinsames Seitenverhältnis beschnitten.
-    expect(quer.width).toBeGreaterThan(hoch.width * 1.8);
+    // Beide Kanten sitzen auf der Textspalte: die Reihe füllt sie exakt.
+    const kanten = await textkanten(page);
+    expect(Math.abs(a.x - kanten.links)).toBeLessThan(2);
+    expect(Math.abs(b.x + b.width - kanten.rechts)).toBeLessThan(2);
 
-    // Nichts ist verzerrt: die Anzeige hält das natürliche Seitenverhältnis.
-    for (const bild of [hoch, quer]) {
-      const natur = await reihe
-        .locator("img")
-        .nth([hoch, quer].indexOf(bild))
-        .evaluate((el: HTMLImageElement) => el.naturalWidth / el.naturalHeight);
-      expect(Math.abs(bild.width / bild.height - natur)).toBeLessThan(0.02);
-    }
+    // Verschieden breit, weil die Breite dem Format folgt (3:2 vs 16:9).
+    expect(Math.abs(a.width - b.width)).toBeGreaterThan(20);
   });
 
-  test("L steht allein und füllt die Inhaltsspalte (816 px)", async ({ page }) => {
+  test("ein einzelnes Bild steht IM Text und wird umflossen", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto(REPORT);
 
-    const lReihe = page.locator("article .bildreihe.stufe-l");
-    await expect(lReihe).toHaveCount(1);
-    await expect(lReihe.locator("img")).toHaveCount(1);
-    const [bild] = await bilderKaesten(lReihe);
-    expect(Math.round(bild.width)).toBe(816);
+    const bild = page.locator("article img.bildumfluss").first();
+    await expect(bild).toBeVisible();
+    const box = (await bild.boundingBox())!;
+    const kanten = await textkanten(page);
+
+    // Das erste umflossene Bild steht RECHTS: rechte Kante auf der Textkante.
+    expect(Math.abs(box.x + box.width - kanten.rechts)).toBeLessThan(2);
+    expect(await bild.evaluate((el) => getComputedStyle(el).float)).toBe("right");
+
+    // Höchstens die halbe Spalte, sonst bliebe daneben keine lesbare Zeile.
+    expect(box.width).toBeLessThanOrEqual((kanten.rechts - kanten.links) / 2 + 1);
+
+    // Und daneben steht wirklich Text: irgendein Absatz überlappt das Bild auf
+    // halber Höhe und liegt LINKS davon. Genau das ist der Unterschied zwischen
+    // „steht im Text" und „unterbricht den Text".
+    const textDaneben = await page.evaluate(
+      ({ oberkante, unterkante, bildLinks }) =>
+        [...document.querySelectorAll("article .prose-content p")].some((p) => {
+          const r = p.getBoundingClientRect();
+          const oben = r.top + window.scrollY;
+          const unten = r.bottom + window.scrollY;
+          // Überlappung der senkrechten Bereiche: mindestens eine Zeile steht
+          // auf gleicher Höhe wie das Bild und beginnt links davon.
+          return oben < unterkante && unten > oberkante && r.left < bildLinks;
+        }),
+      { oberkante: box.y, unterkante: box.y + box.height, bildLinks: box.x },
+    );
+    expect(textDaneben).toBe(true);
   });
 
-  test("kein Bild läuft über die Inhaltsspalte hinaus", async ({ page }) => {
+  test("ein L-Bild steht allein über die volle Spalte", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto(REPORT);
-    const spalte = (await page.locator("article nav").first().boundingBox())!;
-    for (const reihe of await page.locator("article .bildreihe").all()) {
-      const kasten = (await reihe.boundingBox())!;
-      expect(kasten.width).toBeLessThanOrEqual(817);
-      expect(kasten.x).toBeGreaterThanOrEqual(spalte.x - 1);
+    const kanten = await textkanten(page);
+    const voll = page.locator("article img.bildvoll");
+    await expect(voll).toHaveCount(1);
+    const box = (await voll.boundingBox())!;
+    expect(Math.round(box.width)).toBe(Math.round(kanten.rechts - kanten.links));
+  });
+
+  test("kein Bild läuft über die Textspalte hinaus", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto(REPORT);
+    const kanten = await textkanten(page);
+    for (const bild of await page.locator("article .prose-content ~ img, article .bildreihe img, article .bildgalerie img").all()) {
+      const box = await bild.boundingBox();
+      if (!box) continue;
+      expect(box.x).toBeGreaterThanOrEqual(kanten.links - 1);
+      expect(box.x + box.width).toBeLessThanOrEqual(kanten.rechts + 1);
     }
   });
 
-  test("auf dem Handy steht ein Bild je Zeile, mittig und gedeckelt", async ({
+  test("auf dem Handy gibt es keinen Umfluss, aber Reihen bleiben Reihen", async ({
     page,
   }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(REPORT);
 
+    // Einzelbild: volle Breite, kein Float.
+    const einzel = page.locator("article img.bildumfluss").first();
+    expect(await einzel.evaluate((el) => getComputedStyle(el).float)).toBe("none");
+    const einzelBox = (await einzel.boundingBox())!;
+    const kanten = await textkanten(page);
+    expect(Math.abs(einzelBox.width - (kanten.rechts - kanten.links))).toBeLessThan(2);
+
+    // Reihe: die beiden Bilder stehen weiterhin NEBENEINANDER.
     const reihe = page.locator("article .bildreihe").first();
-    const [erstes, zweites] = await bilderKaesten(reihe);
-    // Untereinander statt nebeneinander: das zweite beginnt unter dem ersten.
-    expect(zweites.y).toBeGreaterThanOrEqual(erstes.y + erstes.height - 1);
-    // Gedeckelt auf die Spalte (390 − 2rem Layout − 3rem Artikel = 310 px).
-    const reihenKasten = (await reihe.boundingBox())!;
-    for (const bild of [erstes, zweites]) {
-      expect(bild.width).toBeLessThanOrEqual(reihenKasten.width + 1);
-      // mittig: gleicher Abstand links wie rechts (±2 px Rundung)
-      const links = bild.x - reihenKasten.x;
-      const rechts = reihenKasten.x + reihenKasten.width - (bild.x + bild.width);
-      expect(Math.abs(links - rechts)).toBeLessThan(2);
-    }
+    const [a, b] = await bilderKaesten(reihe);
+    expect(b.x).toBeGreaterThan(a.x + a.width - 1);
+    expect(Math.abs(a.height - b.height)).toBeLessThan(1.5);
   });
 
-  test("Galerie: jede Zeile schließt unten bündig ab, keine Lücke", async ({
-    page,
-  }) => {
+  test("Galerie: jede Zeile schließt unten bündig ab", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto(REPORT);
 
-    const galerie = page.locator("article .bildreihe.umbruch");
+    const galerie = page.locator("article .bildgalerie");
     await expect(galerie).toHaveCount(1);
     const kaesten = await bilderKaesten(galerie);
     expect(kaesten.length).toBe(3);
 
-    // Bilder derselben Zeile (gleiche Oberkante) haben dieselbe Unterkante.
     const zeilen = new Map<number, typeof kaesten>();
     for (const k of kaesten) {
       const schluessel = Math.round(k.y / 5);
@@ -122,17 +153,12 @@ test.describe("Reisebericht: Bildreihen", () => {
     }
   });
 
-  test("Grenze: die Gerichtsfotos bleiben beim Streifen, keine Bildreihe in der Karte", async ({
-    page,
-  }) => {
+  test("Grenze: die Gerichtsfotos bleiben beim Streifen", async ({ page }) => {
     await page.goto(REPORT);
-
     const karten = page.locator('div[id^="restaurant-"]');
     await expect(karten.first()).toBeVisible();
-    // Kein einziges .bildreihe innerhalb einer Restaurant-Karte.
-    await expect(karten.locator(".bildreihe")).toHaveCount(0);
+    await expect(karten.locator(".bildreihe, .bildumfluss, .bildgalerie")).toHaveCount(0);
 
-    // Und der Streifen steht weiter: „Pasta alla Norma" hat seine drei Fotos.
     const gericht = page
       .locator("li")
       .filter({ has: page.getByRole("heading", { name: "Pasta alla Norma" }) });

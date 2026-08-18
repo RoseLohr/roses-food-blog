@@ -9,11 +9,12 @@ import Link from "next/link";
 import type { FullDish, FullRestaurant, FullTravelPost } from "@/lib/travel";
 import type { MediaImage } from "@/lib/recipes";
 import {
-  bildSizes,
+  galerieSizes,
   reihenSizes,
   seitenverhaeltnis,
+  umflussSizes,
+  vollbildSizes,
   zuRenderBloecken,
-  type BildStufe,
 } from "@/lib/bildreihen";
 import { extractHeadings, renderMarkdown } from "@/lib/markdown";
 import { getSimilarRecipesByDish } from "@/lib/similar-recipes";
@@ -91,51 +92,37 @@ const STREIFEN_ZWEISPALTIG =
 const STREIFEN_DREISPALTIG =
   "(max-width: 639px) calc(50vw - 5.375rem), (max-width: 767px) calc(33.33vw - 3.75rem), (max-width: 928px) calc(33.33vw - 4.75rem), 233px";
 
+/** Seitenverhältnis eines Bildes als Inline-Custom-Property. Es ist eine
+ *  Eigenschaft des BILDES, keine des Layouts — deshalb inline und nicht als
+ *  Klasse. Auf 4 Stellen gerundet: mehr ändert unter einem Pixel nichts. */
+function arStil(img: MediaImage): React.CSSProperties {
+  return {
+    "--ar": seitenverhaeltnis(img.width, img.height).toFixed(4),
+  } as React.CSSProperties;
+}
+
 /**
- * Eine Bildreihe: gleich hohe Bilder nebeneinander, unten bündig, mittig — die
- * Regel steht in `src/lib/bildreihen.ts`, das Layout in `globals.css`, hier
- * wird nur beides zusammengeführt.
- *
- * `--ar` (Seitenverhältnis) muss je Bild inline stehen: es ist eine Eigenschaft
- * des Bildes, keine des Layouts. `sizes` kommt aus der Reihe — im Text exakt
- * gerechnet, in der umbrechenden Galerie als Obergrenze (siehe `bildSizes`).
- *
- * Nicht zuständig für die Gerichtsfotos der Restaurant-Karten: die behalten
- * ihren Streifen (Regel C) und ihr eigenes Maß. Die Grenze ist gewollt und
- * durch `tests/bildreihen-grenze.test.ts` festgenagelt.
+ * Zwei oder mehr Nachbarn: justierte Reihe. Breiten im Verhältnis der
+ * Seitenverhältnisse, Summe genau die Spalte — dadurch gleich hoch, unten
+ * bündig und an beiden Kanten bündig mit dem Text. Die Stufe wirkt hier
+ * bewusst NICHT; die Höhe ergibt sich aus den Formaten (siehe lib/bildreihen).
  */
 function Bildreihe({
   images,
-  stufe,
-  umbruch = false,
   className = "",
 }: {
   images: MediaImage[];
-  stufe: BildStufe;
-  /** Galerie: Reihe mit Zeilenumbruch statt genau einer Zeile. */
-  umbruch?: boolean;
   className?: string;
 }) {
   if (images.length === 0) return null;
-  const verhaeltnisse = images.map((img) =>
-    seitenverhaeltnis(img.width, img.height),
+  const sizes = reihenSizes(
+    images.map((img) => seitenverhaeltnis(img.width, img.height)),
   );
-  const sizes = umbruch
-    ? verhaeltnisse.map((ar) => bildSizes(ar, stufe))
-    : reihenSizes(verhaeltnisse, stufe);
   return (
-    <div
-      className={`bildreihe stufe-${stufe}${umbruch ? " umbruch" : ""}${className ? ` ${className}` : ""}`}
-    >
+    <div className={`bildreihe${className ? ` ${className}` : ""}`}>
       {images.map((img, i) => (
-        <ResponsiveImg
-          // Dasselbe Bild darf zweimal in einer Reihe stehen — der Index gehört
-          // deshalb in den Key.
-          key={`${img.id}-${i}`}
-          image={img}
-          sizes={sizes[i]}
-          style={{ "--ar": verhaeltnisse[i].toFixed(4) } as React.CSSProperties}
-        />
+        // Dasselbe Bild darf zweimal in einer Reihe stehen — Index in den Key.
+        <ResponsiveImg key={`${img.id}-${i}`} image={img} sizes={sizes[i]} style={arStil(img)} />
       ))}
     </div>
   );
@@ -750,23 +737,45 @@ export async function TravelView({
                     />
                   );
                 }
-                if (b.art === "bildreihe") {
+                if (b.art === "umfluss") {
+                  const img = full.blockImages[b.imageId];
+                  // Der Umfluss ist KEIN eigener Block im Fluss: das Bild steht
+                  // im Text, der ihm folgt. Deshalb ohne clear-left — es trägt
+                  // sein eigenes `clear: both` und beginnt damit ohnehin
+                  // unterhalb des Verzeichnisses.
+                  return img ? (
+                    <ResponsiveImg
+                      key={i}
+                      image={img}
+                      sizes={umflussSizes(
+                        seitenverhaeltnis(img.width, img.height),
+                        b.stufe,
+                      )}
+                      style={arStil(img)}
+                      className={`bildumfluss stufe-${b.stufe} ${b.seite}`}
+                    />
+                  ) : null;
+                }
+                if (b.art === "vollbild") {
+                  const img = full.blockImages[b.imageId];
+                  return img ? (
+                    <ResponsiveImg
+                      key={i}
+                      image={img}
+                      sizes={vollbildSizes()}
+                      className="bildvoll w-full md:clear-both"
+                    />
+                  ) : null;
+                }
+                if (b.art === "reihe") {
                   const bilder = b.imageIds
                     .map((id) => full.blockImages[id])
                     .filter((img) => img !== undefined);
-                  return (
-                    <Bildreihe
-                      key={i}
-                      images={bilder}
-                      stufe={b.stufe}
-                      // clear-left: Eine Bildreihe ist ein Block. Neben einem
-                      // Float weichen nur die ZEILEN aus, nicht die Blockkante —
-                      // die Reihe liefe sonst unter dem Verzeichnis durch und
-                      // überdeckte es. Mit clear beginnt sie darunter und hat
-                      // dafür die volle Blattbreite statt der Restbreite.
-                      className="md:clear-left"
-                    />
-                  );
+                  // clear-both: Eine Reihe ist ein Block. Neben einem Float
+                  // weichen nur die ZEILEN aus, nicht die Blockkante — die
+                  // Reihe liefe sonst unter dem Verzeichnis oder einem
+                  // umflossenen Bild durch.
+                  return <Bildreihe key={i} images={bilder} className="md:clear-both" />;
                 }
                 const r = full.restaurants[b.index];
                 return r ? (
@@ -784,12 +793,16 @@ export async function TravelView({
               aus den Bildern; hier bezieht jede Zeile ihre Höhe aus ihrem
               Inhalt und ist deshalb immer voll. */}
           {full.images.length > 0 && (
-            <Bildreihe
-              images={full.images}
-              stufe="s"
-              umbruch
-              className="md:clear-left"
-            />
+            <div className="bildgalerie md:clear-both">
+              {full.images.map((img) => (
+                <ResponsiveImg
+                  key={img.id}
+                  image={img}
+                  sizes={galerieSizes(seitenverhaeltnis(img.width, img.height))}
+                  style={arStil(img)}
+                />
+              ))}
+            </div>
           )}
 
           {remainingRestaurants.length > 0 && (
