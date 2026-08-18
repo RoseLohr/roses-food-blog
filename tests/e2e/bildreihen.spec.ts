@@ -168,10 +168,21 @@ test.describe("Reisebericht: Bilder im Textfluss", () => {
       .first();
     await expect(kachel).toBeVisible();
 
-    // Volle Breite der Gerichts-Bühne: die Kachel ist so breit wie ihr Raster.
-    const raster = (await kachel.locator("xpath=..").boundingBox())!;
+    // Volle Breite: die Kachel füllt den INHALTSBEREICH ihres Elternelements.
+    // Gemessen mit Innenabstand-Abzug, nicht gegen dessen Rahmenkasten: Bei
+    // genau einem Eintrag entfällt das Raster-`div`, Elternteil ist dann die
+    // ausgerückte Fläche selbst — und die trägt Innenabstand.
     const box = (await kachel.boundingBox())!;
-    expect(Math.abs(box.width - raster.width)).toBeLessThan(2);
+    const elternInhalt = await kachel.evaluate((el) => {
+      const p = el.parentElement!;
+      const stil = getComputedStyle(p);
+      return (
+        p.getBoundingClientRect().width -
+        parseFloat(stil.paddingLeft) -
+        parseFloat(stil.paddingRight)
+      );
+    });
+    expect(Math.abs(box.width - elternInhalt)).toBeLessThan(2);
 
     // Und nichts läuft über die Kante: die Kachel trägt `overflow-hidden`,
     // ein zu langes Wort würde also unsichtbar abgeschnitten statt umbrochen.
@@ -179,6 +190,82 @@ test.describe("Reisebericht: Bilder im Textfluss", () => {
       [...el.querySelectorAll("p, h3")].some((k) => k.scrollWidth > k.clientWidth + 1),
     );
     expect(ueberlauf).toBe(false);
+  });
+
+  test("„Ähnliche Rezepte“: der Bereich rückt aus, der Trenner spannt darüber", async ({
+    page,
+  }) => {
+    await page.goto(REPORT);
+
+    const bereich = page
+      .getByRole("heading", { name: t().travelList.similarTitle })
+      .first()
+      .locator("xpath=..");
+    await expect(bereich).toBeVisible();
+
+    // Der Bereich ist so breit wie der KARTENINHALT: Er rückt links um die
+    // Stationsschiene samt Abstand aus (36 + 16 px), während die Gericht-Spalte
+    // eingerückt bleibt. Gemessen gegen den gepolsterten Kartenkörper.
+    const masse = await bereich.evaluate((el) => {
+      const b = el.getBoundingClientRect();
+      const koerper = el.closest("li")!.parentElement!.parentElement!;
+      const k = koerper.getBoundingClientRect();
+      const stil = getComputedStyle(koerper);
+      const inhaltLinks = k.left + parseFloat(stil.paddingLeft);
+      const inhaltRechts = k.right - parseFloat(stil.paddingRight);
+      const gericht = el.closest("li")!.getBoundingClientRect();
+      return {
+        breite: b.width,
+        inhaltBreite: inhaltRechts - inhaltLinks,
+        // Positiv = der Bereich beginnt LINKS von der Gericht-Spalte.
+        versatz: gericht.left + 52 - b.left,
+      };
+    });
+    expect(Math.abs(masse.breite - masse.inhaltBreite)).toBeLessThan(1.5);
+    expect(masse.versatz).toBeCloseTo(52, 0);
+
+    // Der Trenner spannt über die AUSGERÜCKTE Breite, nicht über die
+    // Gericht-Spalte — genau daran fällt der Versatz auf.
+    const trenner = bereich.locator("div").first();
+    const tb = (await trenner.boundingBox())!;
+    const bb = (await bereich.boundingBox())!;
+    expect(tb.x).toBeGreaterThan(bb.x - 1);
+    expect(bb.x + bb.width - (tb.x + tb.width)).toBeLessThan(21);
+  });
+
+  test("„Ähnliche Rezepte“: ein einzelner Eintrag steht als Zeile über die volle Breite", async ({
+    page,
+  }) => {
+    await page.goto(REPORT);
+
+    const bereich = page
+      .getByRole("heading", { name: t().travelList.similarTitle })
+      .first()
+      .locator("xpath=..");
+    const kacheln = bereich.locator("article");
+    // Der geseedete Bericht trifft genau EIN ähnliches Rezept — nur dann gilt
+    // die Zeilenform. Kämen mehr dazu, prüfte dieser Test stillschweigend
+    // nichts mehr, deshalb hart festgenagelt.
+    await expect(kacheln).toHaveCount(1);
+
+    const masse = await kacheln.first().evaluate((el) => {
+      const k = el.getBoundingClientRect();
+      const flaeche = el.parentElement!.getBoundingClientRect();
+      const stil = getComputedStyle(el.parentElement!);
+      const innen =
+        flaeche.width -
+        parseFloat(stil.paddingLeft) -
+        parseFloat(stil.paddingRight);
+      const foto = el.querySelector("img")!.getBoundingClientRect();
+      const leib = el.querySelector("h3")!.getBoundingClientRect();
+      return { breite: k.width, innen, fotoBreite: foto.width, fotoRechts: foto.right, textLinks: leib.left };
+    });
+
+    // Volle Breite der Fläche statt eines Drittels im Raster.
+    expect(Math.abs(masse.breite - masse.innen)).toBeLessThan(1.5);
+    // Foto links, Text rechts daneben — nicht darunter.
+    expect(masse.fotoBreite).toBeCloseTo(240, 0);
+    expect(masse.textLinks).toBeGreaterThan(masse.fotoRechts);
   });
 
   test("Grenze: die Gerichtsfotos bleiben beim Streifen", async ({ page }) => {
