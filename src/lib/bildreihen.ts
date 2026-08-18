@@ -17,7 +17,9 @@
  *   REIHE     Zwei oder mehr Nachbarn teilen die Spalte nach Seitenverhältnis
  *             auf; die Summe ist genau die Spaltenbreite. Gleiche Höhen, unten
  *             bündig, beide Kanten sitzen. Die Stufe wirkt hier NICHT — die
- *             Höhe ergibt sich aus den Formaten.
+ *             Höhe ergibt sich aus den Formaten. Höchstens drei Bilder je
+ *             Reihe (REIHEN_MAX); mehr Nachbarn werden gleichmäßig auf
+ *             mehrere Reihen verteilt.
  *   VOLLBILD  Stufe L: volle Spalte, kein Umfluss, steht allein.
  *
  * Auf dem Handy gibt es keinen Umfluss: neben einem halbbreiten Bild blieben
@@ -34,6 +36,30 @@ const UMFLUSS_HOEHE: Record<Exclude<BildStufe, "l">, number> = { s: 220, m: 360 
 
 /** Abstand zwischen zwei Bildern einer Reihe (gap-4 = 16 px). */
 const ABSTAND = 16;
+
+/**
+ * Höchstzahl der Bilder EINER Reihe. Mehr benachbarte Bilder ergeben mehrere
+ * Reihen untereinander.
+ *
+ * Warum überhaupt eine Grenze: Die Bilder einer Reihe schrumpfen mit `flex`,
+ * die Abstände dazwischen NICHT. Bei n Bildern kosten sie 16 × (n − 1) px, und
+ * das wächst linear, während die Spalte fest ist. Auf einem 360-px-Telefon ist
+ * die Spalte 280 px breit; ab 21 Bildern wären allein die Abstände 320 px —
+ * die Reihe liefe über den Rand hinaus, selbst wenn jedes Bild auf null
+ * schrumpft. `reihenSizes` deklarierte dann `calc((100vw − 5rem − 320px) × …)`,
+ * also eine NEGATIVE Quellbreite; damit ist das ganze `sizes`-Attribut
+ * ungültig und der Browser fällt auf 100vw zurück — er lädt die schwerste
+ * Variante für ein Bild von wenigen Pixeln Breite.
+ *
+ * Der Überlauf ist dabei nur das Ende einer Reihe, die lange vorher aufhört,
+ * eine Reihe zu sein: Bei sechs Bildern blieben auf dem Telefon je ~30 px.
+ * Drei ist die Zahl, die auch der Gerichte-Streifen benutzt („gedeckelt bei
+ * drei"), und bei drei bleiben auf demselben Telefon (280 − 32) / 3 ≈ 83 px je
+ * Bild. Ein Haus, eine Zahl.
+ *
+ * (Befund des Cross-Vendor-Panels zu PR #80, Pflicht-Approver gpt-5.6-sol.)
+ */
+const REIHEN_MAX = 3;
 
 /**
  * Breite des Inhaltsbereichs — dieselbe Kette wie in travel-view.tsx:
@@ -97,7 +123,20 @@ export function zuRenderBloecken(blocks: TravelBlock[]): RenderBlock[] {
       });
       umflussZaehler++;
     } else {
-      out.push({ art: "reihe", imageIds: gruppe.map((b) => b.imageId) });
+      // Gleichmäßig aufteilen statt vorne aufzufüllen: 4 → 2+2 (nicht 3+1),
+      // 7 → 3+2+2. Ein Rest von EINEM wäre das schlechteste Ergebnis — aus
+      // dem Bild würde ein umflossenes Einzelbild, also eine ganz andere
+      // Darstellung als die Nachbarn unmittelbar darüber.
+      const ids = gruppe.map((b) => b.imageId);
+      const reihen = Math.ceil(ids.length / REIHEN_MAX);
+      const grundlaenge = Math.floor(ids.length / reihen);
+      const eineMehr = ids.length % reihen;
+      let ab = 0;
+      for (let r = 0; r < reihen; r++) {
+        const laenge = grundlaenge + (r < eineMehr ? 1 : 0);
+        out.push({ art: "reihe", imageIds: ids.slice(ab, ab + laenge) });
+        ab += laenge;
+      }
     }
     gruppe = [];
   };
