@@ -169,6 +169,45 @@ describe("EXIF-gedrehte Uploads", () => {
   );
 
   it(
+    "zieht auch nach, wenn die größte Variante fehlt",
+    { timeout: LANGLAEUFER },
+    async () => {
+      // Für die LAGE eines Bildes taugt jede Variante gleich gut — sie zeigen
+      // alle dasselbe Bild. Nur an der größten zu hängen, hieße: fehlt gerade
+      // diese Datei (abgebrochener Upload, unvollständige Sicherung), behielte
+      // das Bild seine vertauschten Maße für immer, obwohl die Antwort direkt
+      // daneben liegt.
+      const { storeImage, uploadsDir } = await import("@/lib/media");
+      const stored = await storeImage(
+        await fotoMitDrehung(2000, 1500, 6),
+        "luecke.jpg",
+      );
+      const dir = path.join(uploadsDir(), stored.fileKey);
+      fs.rmSync(path.join(dir, `w${Math.max(...stored.variantWidths)}.webp`));
+
+      const { default: Database } = await import("better-sqlite3");
+      const db = new Database(path.join(tmp, "app.db"));
+      db.prepare("UPDATE media_image SET width = ?, height = ? WHERE id = ?").run(
+        2000,
+        1500,
+        stored.id,
+      );
+      db.close();
+
+      execSync("node scripts/regenerate-variants.mjs", {
+        env: { ...process.env, DATA_DIR: tmp },
+      });
+
+      const db2 = new Database(path.join(tmp, "app.db"));
+      const row = db2
+        .prepare("SELECT width, height FROM media_image WHERE id = ?")
+        .get(stored.id) as { width: number; height: number };
+      db2.close();
+      expect(row).toEqual({ width: 1500, height: 2000 });
+    },
+  );
+
+  it(
     "lässt ungedrehte Bilder unverändert",
     { timeout: LANGLAEUFER },
     async () => {

@@ -149,10 +149,18 @@ async function zieheMasseNach(images) {
   for (const img of images) {
     try {
       const dir = path.join(uploads, img.fileKey);
-      const breiten = variantsFor.all(img.id).map((r) => r.width);
-      if (breiten.length === 0) continue;
-      const quelle = path.join(dir, `w${Math.max(...breiten)}.webp`);
-      if (!fs.existsSync(quelle)) continue;
+      // JEDE Variante zeigt dasselbe Bild, also taugt jede zur Lagebestimmung.
+      // Deshalb die größte VORHANDENE statt der größten deklarierten: fehlt
+      // gerade deren Datei (abgebrochener Upload, unvollständige Sicherung),
+      // behielte das Bild sonst für immer die vertauschten Maße, obwohl die
+      // Antwort direkt daneben liegt. Der Kodier-Lauf weiter unten braucht
+      // dagegen zwingend die größte — er kann nicht hochskalieren.
+      const quelle = variantsFor
+        .all(img.id)
+        .map((r) => path.join(dir, `w${r.width}.webp`))
+        .reverse()
+        .find((f) => fs.existsSync(f));
+      if (!quelle) continue;
       const datei = await sharp(quelle).metadata();
       if (!datei.width || !datei.height) continue;
       const dbQuer = img.width >= img.height;
