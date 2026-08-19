@@ -37,9 +37,11 @@ export default async function TravelListPage() {
       </h2>
       <TravelMap pins={mapPins} />
 
+      {/* Bewusst OHNE max-w-2xl: Der Text unter der Weltkarte läuft über die
+          volle Inhaltsbreite (abgestimmt). */}
       {textUnten && (
         <div
-          className="prose-content mt-6 max-w-2xl text-ink-soft"
+          className="prose-content mt-6 text-ink-soft"
           dangerouslySetInnerHTML={{ __html: renderMarkdown(textUnten) }}
         />
       )}

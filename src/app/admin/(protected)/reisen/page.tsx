@@ -6,6 +6,7 @@ import { requireAdmin } from "@/lib/auth";
 import { getReisenTextUnten } from "@/lib/settings";
 import { t } from "@/i18n/de";
 import { deleteTravelAction, saveReisenTexteAction } from "./actions";
+import { RichTextEditor } from "@/components/admin/rich-text-editor";
 
 const dict = t();
 
@@ -48,15 +49,14 @@ export default async function TravelAdminPage(props: {
       >
         <h2 className="text-lg font-semibold">{dict.admin.travel.pageTexts}</h2>
         <p className="text-sm text-ink-soft">{dict.admin.travel.pageTextsHint}</p>
-        <label className="text-sm font-medium" htmlFor="reisen-text-unten">
-          {dict.admin.travel.textBelow}
-        </label>
-        <textarea
-          id="reisen-text-unten"
+        {/* Derselbe WYSIWYG-Editor wie bei Seiten, Rezepten und Kampagnen:
+            Fett, Kursiv, Überschriften, Listen, Zitat, Link. Gespeichert wird
+            weiterhin Markdown im gleichnamigen versteckten Feld — die Server
+            Action und der Einstellungs-Store bleiben unangetastet. */}
+        <RichTextEditor
           name="textUnten"
-          rows={4}
-          defaultValue={textUnten}
-          className="border border-ink-soft/30 px-3 py-2 text-sm"
+          label={dict.admin.travel.textBelow}
+          initialMarkdown={textUnten}
         />
         <button
           type="submit"
