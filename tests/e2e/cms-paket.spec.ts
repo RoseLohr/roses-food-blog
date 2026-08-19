@@ -49,10 +49,21 @@ test("Saisonkalender: Referenznummer nur am aufgeklappten Produkt", async ({ pag
 test("Reisen: Admin-Texte erscheinen vor und nach der Weltkarte", async ({ page }) => {
   await alsAdmin(page);
 
-  // Texte im Admin speichern.
+  // Texte im Admin speichern. Die beiden Felder sind seit 08/2026 derselbe
+  // WYSIWYG-Editor wie bei Seiten und Rezepten (contentEditable + verstecktes
+  // Markdown-Feld), kein nacktes <textarea> mehr.
   await page.goto("/admin/reisen");
-  await page.locator("#reisen-text-oben").fill("E2E-Text VOR der Weltkarte.");
-  await page.locator("#reisen-text-unten").fill("E2E-Text NACH der Weltkarte.");
+  const seitentext = (name: string) =>
+    page.locator(`div:has(> textarea[name="${name}"]) [contenteditable="true"]`);
+  for (const [name, text] of [
+    ["textOben", "E2E-Text VOR der Weltkarte."],
+    ["textUnten", "E2E-Text NACH der Weltkarte."],
+  ] as const) {
+    await seitentext(name).click();
+    await page.keyboard.press("Control+A");
+    await page.keyboard.press("Delete");
+    await page.keyboard.type(text);
+  }
   await page
     .locator("form", { hasText: "Texte der Reisen-Seite" })
     .getByRole("button", { name: "Speichern" })

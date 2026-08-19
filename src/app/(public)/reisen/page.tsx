@@ -42,9 +42,13 @@ export default async function TravelListPage() {
       {/* Weltkarte der Restaurant-Standorte (aus den Gericht-Foto-GPS-Daten) */}
       <TravelMap pins={mapPins} />
 
+      {/* Bewusst OHNE max-w-2xl: Der Text unter der Weltkarte läuft über die
+          volle Inhaltsbreite (abgestimmt). Die Einleitung ÜBER der Karte bleibt
+          schmal — sie steht als Fließtext neben der Überschrift und liest sich
+          in Zeilenlänge ~65 Zeichen besser. */}
       {texte.unten && (
         <div
-          className="prose-content mt-6 max-w-2xl text-ink-soft"
+          className="prose-content mt-6 text-ink-soft"
           dangerouslySetInnerHTML={{ __html: renderMarkdown(texte.unten) }}
         />
       )}
