@@ -6,15 +6,15 @@ import path from "node:path";
  * E2E fürs CMS-Paket:
  * 1. Saisonkalender: Referenznummern (Fußnoten-Sup) NUR am aufgeklappten
  *    Produkt — zugeklappte Zeilen sind nummernfrei.
- * 2. Reisen-Seite: im Admin bearbeitbare Texte erscheinen öffentlich in der
- *    Reihenfolge Text-oben → Weltkarte → Text-unten → Reiseliste — samt
- *    Formatierung aus dem WYSIWYG-Editor und voller Breite unter der Karte.
+ * 2. Reisen-Seite: fester Titel → Weltkarte → im Admin bearbeitbarer Text →
+ *    Reiseliste. Der Text darunter wird im WYSIWYG-Editor gepflegt (seine
+ *    Formatierung muss bis auf die öffentliche Seite durchkommen) und läuft
+ *    dort über die volle Inhaltsbreite.
  *
- *    Diese Prüfungen liegen BEWUSST in EINEM Test: Die beiden Seitentexte sind
- *    globale Einstellungen. Ein zweiter Test, der sie ebenfalls schreibt,
+ *    Diese Prüfungen liegen BEWUSST in EINEM Test: Der Seitentext ist eine
+ *    globale Einstellung. Ein zweiter Test, der sie ebenfalls schreibt,
  *    koppelt sich über eine gemeinsame veränderliche Ressource an diesen hier —
- *    heute nur durch `workers: 1` unauffällig, morgen eine Flake-Quelle. Also
- *    genau ein Besitzer statt Sperren oder Momentaufnahme-und-Zurücksetzen.
+ *    heute nur durch `workers: 1` unauffällig, morgen eine Flake-Quelle.
  * 3. Bild-Fokuspunkt: im Admin (Medien) gesetzter Ausschnitt wirkt öffentlich
  *    als object-position (Slider-Hero) und bleibt nachträglich anpassbar.
  * 4. Rezept-Desktop: der Artikel ist schmaler als das Layout (max-w-4xl)
@@ -53,96 +53,69 @@ test("Saisonkalender: Referenznummer nur am aufgeklappten Produkt", async ({ pag
   await expect(page.locator("button.sk-prow .sk-pname sup.sk-fn")).toHaveCount(0);
 });
 
-test("Reisen: Admin-Texte — Editor, Formatierung, Reihenfolge, volle Breite", async ({ page }) => {
+test("Reisen: Titel, Editor, Formatierung, Reihenfolge und volle Breite", async ({
+  page,
+}) => {
   await alsAdmin(page);
 
-  // Texte im Admin speichern. Die beiden Felder sind seit 08/2026 derselbe
-  // WYSIWYG-Editor wie bei Seiten und Rezepten (contentEditable + verstecktes
-  // Markdown-Feld), kein nacktes <textarea> mehr.
+  // Über der Weltkarte gibt es NICHTS mehr einzustellen — das Feld ist weg,
+  // nicht bloß versteckt.
   await page.goto("/admin/reisen");
-  const seitentext = (name: string) =>
-    page.locator(`div:has(> textarea[name="${name}"]) [contenteditable="true"]`);
-  for (const [name, text] of [
-    ["textOben", "E2E-Text VOR der Weltkarte."],
-    ["textUnten", "E2E-Text NACH der Weltkarte."],
-  ] as const) {
-    await seitentext(name).click();
-    await page.keyboard.press("Control+A");
-    await page.keyboard.press("Delete");
-    await page.keyboard.type(text);
+  await expect(page.locator("#reisen-text-oben")).toHaveCount(0);
+  await expect(page.getByText("Text vor der Weltkarte")).toHaveCount(0);
+
+  // Das verbliebene Feld ist seit 08/2026 derselbe WYSIWYG-Editor wie bei
+  // Seiten und Rezepten (contentEditable + verstecktes Markdown-Feld).
+  const seitentext = page.locator(
+    'div:has(> textarea[name="textUnten"]) [contenteditable="true"]',
+  );
+  const kasten = page.locator('div:has(> textarea[name="textUnten"])');
+  for (const knopf of ["Fett", "Kursiv", "Überschrift", "Aufzählung", "Link"]) {
+    await expect(
+      // exact: „Überschrift" steckt sonst auch in „Unterüberschrift".
+      kasten.getByRole("button", { name: knopf, exact: true }),
+      `Knopf „${knopf}" fehlt`,
+    ).toBeVisible();
   }
 
-  // Die Werkzeugleiste steht an BEIDEN Feldern (vorher waren es nackte
-  // <textarea>, in denen man Markdown von Hand tippen musste).
-  for (const name of ["textOben", "textUnten"] as const) {
-    const kasten = page.locator(`div:has(> textarea[name="${name}"])`);
-    for (const knopf of ["Fett", "Kursiv", "Überschrift", "Aufzählung", "Link"]) {
-      await expect(
-        kasten.getByRole("button", { name: knopf, exact: true }),
-        `${name}: Knopf „${knopf}" fehlt`,
-      ).toBeVisible();
-    }
-  }
-
-  // Den unteren Text fett setzen — die Formatierung muss den ganzen Weg bis in
-  // die öffentliche Seite überstehen.
-  await seitentext("textUnten").click();
+  await seitentext.click();
   await page.keyboard.press("Control+A");
-  await page
-    .locator('div:has(> textarea[name="textUnten"])')
-    .getByRole("button", { name: "Fett", exact: true })
-    .click();
-  // Der Editor schreibt Markdown ins versteckte Feld — schon vor dem Absenden.
+  await page.keyboard.press("Delete");
+  await page.keyboard.type("E2E-Text NACH der Weltkarte.");
+  // Fett setzen — die Formatierung muss den ganzen Weg überstehen.
+  await page.keyboard.press("Control+A");
+  await kasten.getByRole("button", { name: "Fett", exact: true }).click();
+  // Der Editor schreibt Markdown ins versteckte Feld, schon vor dem Absenden.
   await expect(page.locator('textarea[name="textUnten"]')).toHaveValue(
     /\*\*E2E-Text NACH der Weltkarte\.\*\*/,
   );
 
   await page
-    .locator("form", { hasText: "Texte der Reisen-Seite" })
+    .locator("form", { hasText: "Text der Reisen-Seite" })
     .getByRole("button", { name: "Speichern" })
     .click();
   await page.waitForURL(/meldung=/);
 
-  // Öffentlich prüfen: Inhalte + Dokumentreihenfolge oben → Karte → unten.
+  // Öffentlich prüfen: Titel → Karte → Text, in dieser Dokumentreihenfolge.
   await page.goto("/reisen");
-  // .first(): Der untere Text steckt jetzt zusätzlich in einem <strong>, der
-  // Treffer wäre sonst mehrdeutig.
-  const oben = page.getByText("E2E-Text VOR der Weltkarte.").first();
+  const titel = page.getByRole("heading", { name: "Die kulinarische Welt" });
   const unten = page.getByText("E2E-Text NACH der Weltkarte.").first();
-  await expect(oben).toBeVisible();
+  await expect(titel).toBeVisible();
   await expect(unten).toBeVisible();
 
-  // Die Formatierung aus dem Editor ist angekommen.
-  const untenBlock = page
-    .locator(".prose-content", { hasText: "E2E-Text NACH der Weltkarte." })
-    .first();
-  await expect(untenBlock.locator("strong")).toHaveText(
-    "E2E-Text NACH der Weltkarte.",
-  );
-
-  // Und der Block läuft über die volle Inhaltsbreite (vorher max-w-2xl =
-  // 672 px), also genauso breit wie die Überschrift darüber.
-  const breiteText = (await untenBlock.boundingBox())!.width;
-  const breiteUeberschrift = (await page.locator("h1").first().boundingBox())!.width;
-  expect(
-    breiteText,
-    `Text unter der Weltkarte ist nur ${breiteText} px breit — noch eingeschnürt`,
-  ).toBeGreaterThan(672);
-  expect(Math.abs(breiteText - breiteUeberschrift)).toBeLessThan(2);
-
   const reihenfolgeOk = await page.evaluate(() => {
-    const findeText = (t: string) =>
-      Array.from(document.querySelectorAll("main p")).find((el) =>
-        el.textContent?.includes(t),
-      );
-    const oben = findeText("E2E-Text VOR der Weltkarte.");
-    const unten = findeText("E2E-Text NACH der Weltkarte.");
+    const titel = Array.from(document.querySelectorAll("main h2")).find((el) =>
+      el.textContent?.includes("Die kulinarische Welt"),
+    );
+    const unten = Array.from(document.querySelectorAll("main p")).find((el) =>
+      el.textContent?.includes("E2E-Text NACH der Weltkarte."),
+    );
     const karte = document.querySelector(
       'section[aria-label="Weltkarte der Restaurants"]',
     );
-    if (!oben || !unten || !karte) return "fehlt";
+    if (!titel || !unten || !karte) return "fehlt";
     const vorKarte = !!(
-      oben.compareDocumentPosition(karte) & Node.DOCUMENT_POSITION_FOLLOWING
+      titel.compareDocumentPosition(karte) & Node.DOCUMENT_POSITION_FOLLOWING
     );
     const nachKarte = !!(
       karte.compareDocumentPosition(unten) & Node.DOCUMENT_POSITION_FOLLOWING
@@ -150,6 +123,22 @@ test("Reisen: Admin-Texte — Editor, Formatierung, Reihenfolge, volle Breite", 
     return vorKarte && nachKarte ? "ok" : "falsch";
   });
   expect(reihenfolgeOk).toBe("ok");
+
+  // Die Formatierung aus dem Editor ist angekommen …
+  const block = page
+    .locator(".prose-content", { hasText: "E2E-Text NACH der Weltkarte." })
+    .first();
+  await expect(block.locator("strong")).toHaveText("E2E-Text NACH der Weltkarte.");
+
+  // … und der Block läuft über die volle Inhaltsbreite (vorher max-w-2xl =
+  // 672 px), also genauso breit wie die Überschrift darüber.
+  const breiteText = (await block.boundingBox())!.width;
+  const breiteUeberschrift = (await page.locator("h1").first().boundingBox())!.width;
+  expect(
+    breiteText,
+    `Text unter der Weltkarte ist nur ${breiteText} px breit — noch eingeschnürt`,
+  ).toBeGreaterThan(672);
+  expect(Math.abs(breiteText - breiteUeberschrift)).toBeLessThan(2);
 });
 
 test("Bild-Fokuspunkt: im Admin gesetzt, öffentlich als object-position wirksam", async ({

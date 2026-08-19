@@ -129,24 +129,30 @@ function Bildplatz({
   // Bei `l` gibt es keine Seite — die Klasse entfällt, damit im CSS gar nicht
   // erst eine Float-Regel greifen kann, die dann wieder aufgehoben werden müsste.
   const klassen = `bildplatz gr-${groesse}${groesse === "l" ? "" : ` pl-${platz}`}`;
-  if (images.length === 1) {
-    return (
-      <ResponsiveImg image={images[0]} sizes={sizes[0]} className={klassen} />
-    );
-  }
-  return (
-    <div className={klassen}>
-      <div className="bildpaar">
-        {images.map((img, i) => (
-          <ResponsiveImg
-            key={img.id}
-            image={img}
-            sizes={sizes[i]}
-            style={arStil(img)}
-          />
-        ))}
-      </div>
-    </div>
+
+  // Ein einzelnes Bild: Der Klick-Rahmen IST der Bildplatz — er schwebt im
+  // Text, also trägt er die Layout-Klassen. Ein Paar: Der Bildplatz bleibt der
+  // Kasten außen herum, die beiden Rahmen sind seine Flex-Kinder und tragen
+  // je ihr Seitenverhältnis. Beide Male gehören die Bilder zu EINER Galerie —
+  // im Pop-up blättert man deshalb durch das Paar.
+  const galerie = images.map((img, i) => ({
+    ...img,
+    thumb:
+      images.length === 1
+        ? { sizes: sizes[i], frameClassName: klassen }
+        : { sizes: sizes[i], frameStyle: arStil(img) },
+  }));
+  const lightbox = (
+    <GalleryLightbox
+      images={galerie}
+      thumbSizes={sizes[0]}
+      groupClassName={images.length === 1 ? undefined : "bildpaar"}
+    />
+  );
+  return images.length === 1 ? (
+    lightbox
+  ) : (
+    <div className={klassen}>{lightbox}</div>
   );
 }
 
@@ -915,16 +921,17 @@ export async function TravelView({
               aus den Bildern; hier bezieht jede Zeile ihre Höhe aus ihrem
               Inhalt und ist deshalb immer voll. */}
           {full.images.length > 0 && (
-            <div className="bildgalerie md:clear-both">
-              {full.images.map((img) => (
-                <ResponsiveImg
-                  key={img.id}
-                  image={img}
-                  sizes={galerieSizes(seitenverhaeltnis(img.width, img.height))}
-                  style={arStil(img)}
-                />
-              ))}
-            </div>
+            <GalleryLightbox
+              images={full.images.map((img) => ({
+                ...img,
+                thumb: {
+                  sizes: galerieSizes(seitenverhaeltnis(img.width, img.height)),
+                  frameStyle: arStil(img),
+                },
+              }))}
+              thumbSizes={vollbildSizes()}
+              groupClassName="bildgalerie md:clear-both"
+            />
           )}
 
           {remainingRestaurants.length > 0 && (

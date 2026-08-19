@@ -149,6 +149,8 @@ export const de = {
     intro:
       "Reiseberichte übers Essen in aller Welt — mit den besten Restaurants und Gerichten.",
     empty: "Noch keine Reiseberichte vorhanden.",
+    /** Fester Titel über der Weltkarte (früher ein bearbeitbarer Seitentext). */
+    mapTitle: "Die kulinarische Welt",
     mapLabel: "Weltkarte der Restaurants",
     mapOpenInMaps: "In Google Maps öffnen",
     mapPrevDish: "Vorheriges Gericht",
@@ -912,12 +914,11 @@ export const de = {
       saved: "Reisebericht gespeichert.",
       deleted: "Reisebericht gelöscht.",
       invalid: "Bitte alle Pflichtfelder korrekt ausfüllen.",
-      pageTexts: "Texte der Reisen-Seite",
+      pageTexts: "Text der Reisen-Seite",
       pageTextsHint:
-        "Diese Texte (Markdown) erscheinen auf der öffentlichen Reisen-Seite: der obere vor der Weltkarte, der untere zwischen Weltkarte und Reiseliste. Leerer oberer Text = Standard-Einleitung.",
-      textAbove: "Text vor der Weltkarte",
+        "Dieser Text (Markdown) erscheint auf der öffentlichen Reisen-Seite zwischen Weltkarte und Reiseliste. Über der Weltkarte steht ein fester Titel.",
       textBelow: "Text nach der Weltkarte",
-      pageTextsSaved: "Texte der Reisen-Seite gespeichert.",
+      pageTextsSaved: "Text der Reisen-Seite gespeichert.",
       previewBanner:
         "Vorschau — dieser Stand ist für Besucher erst nach Veröffentlichung sichtbar.",
     },

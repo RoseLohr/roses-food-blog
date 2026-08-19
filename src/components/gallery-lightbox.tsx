@@ -41,6 +41,27 @@ export interface GalleryImage {
   /** Fokuspunkt in Prozent (0–100) für beschnittene Thumbnails. */
   focusX?: number | null;
   focusY?: number | null;
+  /**
+   * Darstellung DIESES Thumbnails, wenn die Gruppe nicht einheitlich ist.
+   *
+   * Gebraucht von den Bildern im Fließtext des Reiseberichts: Dort nimmt der
+   * KLICK-RAHMEN selbst am Layout teil (er schwebt als Bildplatz im Text oder
+   * ist Flex-Kind eines Paares), und jedes Bild hat seine eigene Breite —
+   * also auch seine eigene Breitenangabe. `sizes` gehört deshalb neben die
+   * Klasse: So kann kein Aufrufer die Breite ändern und die Angabe vergessen,
+   * was wieder eine gelogene Breitenangabe wäre.
+   *
+   * Reine Daten (kein Callback) — die Komponente läuft im Client, die
+   * Aufrufer sind Server-Komponenten.
+   */
+  thumb?: {
+    /** Breitenangabe nur für dieses Bild (statt `thumbSizes` der Gruppe). */
+    sizes?: string;
+    /** Klassen des Klick-Rahmens (Float, Anteil der Spalte, Flex-Kind). */
+    frameClassName?: string;
+    /** Inline-Stile des Rahmens — z. B. `--ar` für die Verteilung im Paar. */
+    frameStyle?: React.CSSProperties;
+  };
 }
 
 export function GalleryLightbox({
@@ -165,7 +186,10 @@ export function GalleryLightbox({
           openerRef.current = e.currentTarget;
           setOpenIndex(i);
         }}
-        className="block w-full cursor-zoom-in"
+        // Bringt das Bild eigene Rahmen-Klassen mit, bestimmen SIE die Breite —
+        // `w-full` würde ihnen sonst ins Layout reden.
+        className={`block cursor-zoom-in ${im.thumb?.frameClassName ?? "w-full"}`}
+        style={im.thumb?.frameStyle}
         aria-label={`${label ? `${label}: ` : ""}${im.altText || ""} – ${dict.gallery.zoom}`
           .replace(/\s+–/, " –")
           .trim()}
@@ -177,7 +201,7 @@ export function GalleryLightbox({
           // Originalmaße (Seitenverhältnis fürs Layout, CSS steuert die Größe).
           src={imageUrl(im.fileKey, optimalVariant(widths, 640))}
           srcSet={srcset(im.fileKey, widths)}
-          sizes={istBuehne ? lead.sizes : thumbSizes}
+          sizes={im.thumb?.sizes ?? (istBuehne ? lead.sizes : thumbSizes)}
           alt={im.altText}
           width={im.width}
           height={im.height}

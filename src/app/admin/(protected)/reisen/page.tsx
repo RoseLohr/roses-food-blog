@@ -3,7 +3,7 @@ import Link from "next/link";
 import { desc } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { requireAdmin } from "@/lib/auth";
-import { getReisenTexte } from "@/lib/settings";
+import { getReisenTextUnten } from "@/lib/settings";
 import { t } from "@/i18n/de";
 import { deleteTravelAction, saveReisenTexteAction } from "./actions";
 import { RichTextEditor } from "@/components/admin/rich-text-editor";
@@ -23,7 +23,7 @@ export default async function TravelAdminPage(props: {
     .select()
     .from(schema.travelPost)
     .orderBy(desc(schema.travelPost.updatedAt));
-  const texte = getReisenTexte();
+  const textUnten = getReisenTextUnten();
 
   return (
     <>
@@ -42,7 +42,7 @@ export default async function TravelAdminPage(props: {
         </p>
       )}
 
-      {/* Texte der öffentlichen Reisen-Seite (vor/nach der Weltkarte) */}
+      {/* Text der öffentlichen Reisen-Seite (nach der Weltkarte) */}
       <form
         action={saveReisenTexteAction}
         className="mb-8 flex flex-col gap-3 bg-white p-5 shadow-sm"
@@ -51,16 +51,12 @@ export default async function TravelAdminPage(props: {
         <p className="text-sm text-ink-soft">{dict.admin.travel.pageTextsHint}</p>
         {/* Derselbe WYSIWYG-Editor wie bei Seiten, Rezepten und Kampagnen:
             Fett, Kursiv, Überschriften, Listen, Zitat, Link. Gespeichert wird
-            weiterhin Markdown — die Server Action bleibt unverändert. */}
-        <RichTextEditor
-          name="textOben"
-          label={dict.admin.travel.textAbove}
-          initialMarkdown={texte.oben}
-        />
+            weiterhin Markdown im gleichnamigen versteckten Feld — die Server
+            Action und der Einstellungs-Store bleiben unangetastet. */}
         <RichTextEditor
           name="textUnten"
           label={dict.admin.travel.textBelow}
-          initialMarkdown={texte.unten}
+          initialMarkdown={textUnten}
         />
         <button
           type="submit"

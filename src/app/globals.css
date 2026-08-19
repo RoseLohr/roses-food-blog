@@ -114,6 +114,12 @@ html {
   margin-bottom: 0.875rem;
   height: auto;
 }
+/* Das Bild füllt seinen Platz aus — den Anteil der Spalte bestimmt der Platz
+   selbst (bzw. beim Paar dessen Flex-Kinder). */
+.bildplatz img {
+  width: 100%;
+  height: auto;
+}
 
 /* Unter 768 px kein Umfluss: Die Spalte ist dort 310 px breit, ein Drittel
    davon wären 103 px, und daneben blieben rund fünfzehn Zeichen je Zeile —
@@ -159,9 +165,15 @@ html {
   gap: 12px;
   align-items: flex-start;
 }
-.bildpaar > img {
+/* Flex-Kind ist der KLICK-RAHMEN, nicht das Bild: Jedes Bild lässt sich zum
+   Vergrößern anklicken, und der Rahmen darum nimmt am Layout teil. Das Bild
+   füllt ihn aus, die Höhe folgt dem Foto — die Rechnung oben bleibt dieselbe. */
+.bildpaar > * {
   flex: var(--ar) 1 0;
   min-width: 0;
+}
+.bildpaar img {
+  width: 100%;
   height: auto;
 }
 
@@ -179,10 +191,13 @@ html {
   flex-wrap: wrap;
   gap: 16px;
 }
-.bildgalerie > img {
+.bildgalerie > * {
   flex: 0 1 calc(var(--ar) * 220px);
   min-width: 0;
   max-width: 100%;
+}
+.bildgalerie img {
+  width: 100%;
   height: auto;
 }
 

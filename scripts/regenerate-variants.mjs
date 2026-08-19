@@ -117,7 +117,7 @@ db.pragma("journal_mode = WAL");
 db.pragma("foreign_keys = ON");
 
 const images = db
-  .prepare("SELECT id, file_key AS fileKey, width FROM media_image")
+  .prepare("SELECT id, file_key AS fileKey, width, height FROM media_image")
   .all();
 const variantsFor = db.prepare(
   "SELECT width FROM media_variant WHERE image_id = ? ORDER BY width",
@@ -125,6 +125,63 @@ const variantsFor = db.prepare(
 const insertVariant = db.prepare(
   "INSERT OR IGNORE INTO media_variant (image_id, width) VALUES (?, ?)",
 );
+
+/**
+ * Maße nachziehen: Bis 08/2026 schrieb die Aufnahme die Maße der UNGEDREHTEN
+ * Pixelmatrix in die Datenbank (`metadata()`), obwohl die Varianten aus dem
+ * gedrehten Bild entstehen (`.rotate()`). Bei hochkant fotografierten Bildern
+ * beschrieb die Datenbank damit ein anderes Bild als das ausgelieferte — und
+ * das Layout rechnet mit genau diesen Zahlen (`--ar`, `sizes`).
+ *
+ * Der Fix am Aufnahmepfad erreicht Bestandsbilder nicht; ihr Original wird aus
+ * Datenschutzgründen nicht aufbewahrt. Die einzige verbliebene Wahrheit ist
+ * die abgelegte Variante: Stimmt ihre Hoch-/Querlage nicht mit der Datenbank
+ * überein, waren Breite und Höhe vertauscht — dann werden sie getauscht.
+ * Getauscht wird NUR, nie geraten; läuft unabhängig vom Encoder-Marker und ist
+ * idempotent (beim zweiten Lauf stimmt die Lage bereits).
+ */
+async function zieheMasseNach(images) {
+  const sharp = (await import("sharp")).default;
+  const setzeMasse = db.prepare(
+    "UPDATE media_image SET width = ?, height = ? WHERE id = ?",
+  );
+  let getauscht = 0;
+  for (const img of images) {
+    try {
+      const dir = path.join(uploads, img.fileKey);
+      // JEDE Variante zeigt dasselbe Bild, also taugt jede zur Lagebestimmung.
+      // Deshalb die größte VORHANDENE statt der größten deklarierten: fehlt
+      // gerade deren Datei (abgebrochener Upload, unvollständige Sicherung),
+      // behielte das Bild sonst für immer die vertauschten Maße, obwohl die
+      // Antwort direkt daneben liegt. Der Kodier-Lauf weiter unten braucht
+      // dagegen zwingend die größte — er kann nicht hochskalieren.
+      const quelle = variantsFor
+        .all(img.id)
+        .map((r) => path.join(dir, `w${r.width}.webp`))
+        .reverse()
+        .find((f) => fs.existsSync(f));
+      if (!quelle) continue;
+      const datei = await sharp(quelle).metadata();
+      if (!datei.width || !datei.height) continue;
+      const dbQuer = img.width >= img.height;
+      const dateiQuer = datei.width >= datei.height;
+      if (dbQuer === dateiQuer) continue;
+      setzeMasse.run(img.height, img.width, img.id);
+      // Der Lauf danach arbeitet mit der korrigierten Breite weiter.
+      const alt = img.width;
+      img.width = img.height;
+      img.height = alt;
+      getauscht++;
+    } catch (err) {
+      console.error(`[bilder] ${img.fileKey}: Maße nicht prüfbar — ${err.message}`);
+    }
+  }
+  if (getauscht > 0) {
+    console.log(`[bilder] ${getauscht} Bild(er): Breite/Höhe nachgezogen.`);
+  }
+}
+
+await zieheMasseNach(images);
 
 let aktuell = 0;
 let regeneriert = 0;
