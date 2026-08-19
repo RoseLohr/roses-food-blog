@@ -123,6 +123,44 @@ test.describe("Reisebericht: Foto-Galerie / Lightbox", () => {
     await expect(caption).toHaveText(alt2 ?? "");
   });
 
+  test("Bilder im Fließtext: Einzelbild, Paar und Galerie öffnen groß", async ({
+    page,
+  }) => {
+    await page.goto(REPORT);
+
+    // Einzelnes Bild im Text: ein Klick, ein großes Bild, kein Blättern.
+    const einzel = page.locator("article .bildplatz.gr-s").first();
+    await expect(einzel).toBeVisible();
+    await einzel.click();
+    const dialog = page.getByRole("dialog", { name: G.dialogLabel });
+    await expect(dialog).toBeVisible();
+    await expect(page.getByRole("button", { name: G.next })).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+
+    // Ein Paar gehört zusammen — im Pop-up wird zwischen beiden geblättert.
+    const paar = page.locator("article .bildpaar").first();
+    await expect(paar.locator("img")).toHaveCount(2);
+    await paar.locator("button:has(img)").first().click();
+    await expect(dialog).toBeVisible();
+    await expect(page.getByText(G.counter(1, 2))).toBeVisible();
+    await page.getByRole("button", { name: G.next }).click();
+    await expect(page.getByText(G.counter(2, 2))).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+
+    // Die Bildergalerie des Berichts ebenso — alle Bilder EINER Reihe.
+    const galerie = page.locator("article .bildgalerie");
+    const kacheln = galerie.locator("button:has(img)");
+    const anzahl = await kacheln.count();
+    expect(anzahl).toBeGreaterThan(1);
+    await kacheln.first().click();
+    await expect(dialog).toBeVisible();
+    await expect(page.getByText(G.counter(1, anzahl))).toBeVisible();
+    await page.getByRole("button", { name: G.close }).click();
+    await expect(dialog).toBeHidden();
+  });
+
   test("Restaurant mit einem Foto: öffnet groß, keine Blätter-Pfeile", async ({
     page,
   }) => {
