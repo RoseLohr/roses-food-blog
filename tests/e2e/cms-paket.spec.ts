@@ -46,39 +46,44 @@ test("Saisonkalender: Referenznummer nur am aufgeklappten Produkt", async ({ pag
   await expect(page.locator("button.sk-prow .sk-pname sup.sk-fn")).toHaveCount(0);
 });
 
-test("Reisen: Admin-Texte erscheinen vor und nach der Weltkarte", async ({ page }) => {
+test("Reisen: fester Titel über der Weltkarte, Admin-Text darunter", async ({
+  page,
+}) => {
   await alsAdmin(page);
 
-  // Texte im Admin speichern.
+  // Über der Weltkarte gibt es NICHTS mehr einzustellen — das Feld ist weg,
+  // nicht bloß versteckt.
   await page.goto("/admin/reisen");
-  await page.locator("#reisen-text-oben").fill("E2E-Text VOR der Weltkarte.");
+  await expect(page.locator("#reisen-text-oben")).toHaveCount(0);
+  await expect(page.getByText("Text vor der Weltkarte")).toHaveCount(0);
+
   await page.locator("#reisen-text-unten").fill("E2E-Text NACH der Weltkarte.");
   await page
-    .locator("form", { hasText: "Texte der Reisen-Seite" })
+    .locator("form", { hasText: "Text der Reisen-Seite" })
     .getByRole("button", { name: "Speichern" })
     .click();
   await page.waitForURL(/meldung=/);
 
-  // Öffentlich prüfen: Inhalte + Dokumentreihenfolge oben → Karte → unten.
+  // Öffentlich prüfen: Titel → Karte → Text, in dieser Dokumentreihenfolge.
   await page.goto("/reisen");
-  const oben = page.getByText("E2E-Text VOR der Weltkarte.");
+  const titel = page.getByRole("heading", { name: "Die kulinarische Welt" });
   const unten = page.getByText("E2E-Text NACH der Weltkarte.");
-  await expect(oben).toBeVisible();
+  await expect(titel).toBeVisible();
   await expect(unten).toBeVisible();
 
   const reihenfolgeOk = await page.evaluate(() => {
-    const findeText = (t: string) =>
-      Array.from(document.querySelectorAll("main p")).find((el) =>
-        el.textContent?.includes(t),
-      );
-    const oben = findeText("E2E-Text VOR der Weltkarte.");
-    const unten = findeText("E2E-Text NACH der Weltkarte.");
+    const titel = Array.from(document.querySelectorAll("main h2")).find((el) =>
+      el.textContent?.includes("Die kulinarische Welt"),
+    );
+    const unten = Array.from(document.querySelectorAll("main p")).find((el) =>
+      el.textContent?.includes("E2E-Text NACH der Weltkarte."),
+    );
     const karte = document.querySelector(
       'section[aria-label="Weltkarte der Restaurants"]',
     );
-    if (!oben || !unten || !karte) return "fehlt";
+    if (!titel || !unten || !karte) return "fehlt";
     const vorKarte = !!(
-      oben.compareDocumentPosition(karte) & Node.DOCUMENT_POSITION_FOLLOWING
+      titel.compareDocumentPosition(karte) & Node.DOCUMENT_POSITION_FOLLOWING
     );
     const nachKarte = !!(
       karte.compareDocumentPosition(unten) & Node.DOCUMENT_POSITION_FOLLOWING
