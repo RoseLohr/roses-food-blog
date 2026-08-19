@@ -1,6 +1,9 @@
 import { test, expect, type Page } from "@playwright/test";
 import fs from "node:fs";
 import path from "node:path";
+import { t } from "../../src/i18n/de";
+
+const dict = t();
 
 /**
  * E2E fürs CMS-Paket:
@@ -96,16 +99,16 @@ test("Reisen: Titel, Editor, Formatierung, Reihenfolge und volle Breite", async 
     .click();
   await page.waitForURL(/meldung=/);
 
-  // Öffentlich prüfen: Titel → Karte → Text, in dieser Dokumentreihenfolge.
+  // Öffentlich prüfen: Einleitung → Karte → Text, in dieser Dokumentreihenfolge.
   await page.goto("/reisen");
-  const titel = page.getByRole("heading", { name: "Die kulinarische Welt" });
+  const einleitung = page.getByText(dict.travelList.intro);
   const unten = page.getByText("E2E-Text NACH der Weltkarte.").first();
-  await expect(titel).toBeVisible();
+  await expect(einleitung).toBeVisible();
   await expect(unten).toBeVisible();
 
-  const reihenfolgeOk = await page.evaluate(() => {
-    const titel = Array.from(document.querySelectorAll("main h2")).find((el) =>
-      el.textContent?.includes("Die kulinarische Welt"),
+  const reihenfolgeOk = await page.evaluate((einleitungstext) => {
+    const titel = Array.from(document.querySelectorAll("main p")).find((el) =>
+      el.textContent?.includes(einleitungstext),
     );
     const unten = Array.from(document.querySelectorAll("main p")).find((el) =>
       el.textContent?.includes("E2E-Text NACH der Weltkarte."),
@@ -121,7 +124,7 @@ test("Reisen: Titel, Editor, Formatierung, Reihenfolge und volle Breite", async 
       karte.compareDocumentPosition(unten) & Node.DOCUMENT_POSITION_FOLLOWING
     );
     return vorKarte && nachKarte ? "ok" : "falsch";
-  });
+  }, dict.travelList.intro);
   expect(reihenfolgeOk).toBe("ok");
 
   // Die Formatierung aus dem Editor ist angekommen …

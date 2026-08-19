@@ -149,8 +149,6 @@ export const de = {
     intro:
       "Reiseberichte übers Essen in aller Welt — mit den besten Restaurants und Gerichten.",
     empty: "Noch keine Reiseberichte vorhanden.",
-    /** Fester Titel über der Weltkarte (früher ein bearbeitbarer Seitentext). */
-    mapTitle: "Die kulinarische Welt",
     mapLabel: "Weltkarte der Restaurants",
     mapOpenInMaps: "In Google Maps öffnen",
     mapPrevDish: "Vorheriges Gericht",
