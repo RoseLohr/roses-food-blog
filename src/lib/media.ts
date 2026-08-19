@@ -192,8 +192,36 @@ interface Probe {
   format: string;
 }
 
+/**
+ * EXIF-Orientierungen, bei denen Breite und Höhe vertauscht sind (Drehung um
+ * 90° bzw. 270°, mit und ohne Spiegelung). Die Werte 1–4 lassen die Achsen
+ * stehen.
+ */
+const GEDREHTE_ORIENTIERUNGEN = new Set([5, 6, 7, 8]);
+
+/**
+ * Maße, wie das Bild ANGEZEIGT wird — die EXIF-Drehung ist bereits angewendet.
+ *
+ * Ein Handy legt ein Hochformat oft als querformatige Pixelmatrix plus dem
+ * Vermerk „beim Anzeigen um 90° drehen" ab. `metadata()` meldet die Matrix;
+ * die Varianten entstehen aber aus dem GEDREHTEN Bild (`.rotate()`). Ohne
+ * dieses Tauschen beschriebe die Datenbank ein anderes Bild als das
+ * ausgelieferte — und das Layout rechnet mit genau diesen Zahlen (`--ar`,
+ * `sizes`, die Variantenleiter).
+ */
+function angezeigteMasse(
+  width: number,
+  height: number,
+  orientation: number | undefined,
+): { width: number; height: number } {
+  return orientation !== undefined && GEDREHTE_ORIENTIERUNGEN.has(orientation)
+    ? { width: height, height: width }
+    : { width, height };
+}
+
 interface ImageBackend {
-  /** Metadaten lesen; wirft bei ungültigen Bilddaten. */
+  /** Metadaten lesen; wirft bei ungültigen Bilddaten. Die Maße sind die des
+   *  ANGEZEIGTEN Bildes (EXIF-Drehung angewendet), nicht die der Rohmatrix. */
   probe(file: string, buffer: Buffer): Promise<Probe>;
   /** Auf Zielbreite skalieren und als WebP schreiben (EXIF entfernt). */
   resizeToWebp(
@@ -218,7 +246,10 @@ const sharpBackend: ImageBackend = {
     if (!meta.width || !meta.height || !meta.format) {
       throw new Error("Datei ist kein gültiges Bild.");
     }
-    return { width: meta.width, height: meta.height, format: meta.format };
+    return {
+      ...angezeigteMasse(meta.width, meta.height, meta.orientation),
+      format: meta.format,
+    };
   },
   async resizeToWebp(_file, buffer, outFile, targetWidth) {
     const sharp = (await import("sharp")).default;
