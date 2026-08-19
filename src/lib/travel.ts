@@ -263,7 +263,13 @@ export async function getFullTravelPost(
       blocks.push({ type: "text", markdown: b.markdown });
     } else if (b.type === "bild") {
       if (b.imageId != null)
-        blocks.push({ type: "bild", imageId: b.imageId, groesse: b.groesse });
+        blocks.push({
+          type: "bild",
+          imageId: b.imageId,
+          groesse: b.groesse,
+          platz: b.platz,
+          mitVorherigem: b.mitVorherigem,
+        });
     } else {
       const idx =
         b.restaurantId != null ? restaurantIndexById.get(b.restaurantId) : undefined;

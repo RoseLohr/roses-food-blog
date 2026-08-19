@@ -371,6 +371,8 @@ export async function saveTravelFromForm(
             type: "bild",
             imageId: b.imageId,
             groesse: b.groesse,
+            platz: b.platz,
+            mitVorherigem: b.mitVorherigem,
           });
         }
       } else {

@@ -1,0 +1,24 @@
+-- Platz und Paarung eines Bild-Blocks (siehe src/lib/bildreihen.ts).
+--
+-- Der Umbau dreht die Bedeutung von `groesse` von HÖHE auf BREITE (Anteil der
+-- Spalte) und macht die beiden bisher stillen Entscheidungen zu Feldern:
+--   platz           links oder rechts — vorher zählte ein Zähler automatisch ab
+--   mit_vorherigem  „neben dem Bild darüber" — vorher entstand das
+--                   Nebeneinander allein daraus, dass zwei Bildblöcke in der
+--                   Blockliste benachbart waren
+--
+-- Bestandsblöcke bekommen die Vorgaben 'rechts' und 0 und stehen damit einzeln
+-- rechts im Text. Sie werden NICHT auf die alte Optik zurückgerechnet: Die
+-- veröffentlichten Berichte werden von Hand nachgezogen (so abgestimmt), und
+-- eine Umrechnung hätte für jeden Block raten müssen, was gemeint war.
+--
+-- Bewusst als ADD COLUMN statt als Tabellen-Neubau, den drizzle-kit für die
+-- geänderte CHECK-Liste erzeugt: Dessen Neubau kopiert per
+-- `INSERT INTO __new_travel_block(… "platz", "mit_vorherigem" …) SELECT …,
+-- "platz", "mit_vorherigem", … FROM travel_block` — also genau die Spalten, die
+-- es in der alten Tabelle noch gar nicht gibt. Auf einer Bestandsdatenbank
+-- schlägt das fehl. ADD COLUMN mit benanntem CHECK leistet dasselbe und ist
+-- ausführbar (gegen eine Datenbank im Stand 0007 verifiziert).
+ALTER TABLE `travel_block` ADD `platz` text DEFAULT 'rechts' NOT NULL CONSTRAINT "travel_block_platz_check" CHECK("travel_block"."platz" IN ('links','rechts'));
+--> statement-breakpoint
+ALTER TABLE `travel_block` ADD `mit_vorherigem` integer DEFAULT 0 NOT NULL;

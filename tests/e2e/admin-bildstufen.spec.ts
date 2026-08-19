@@ -4,14 +4,18 @@ import path from "node:path";
 import { t } from "../../src/i18n/de";
 
 /**
- * Der Stufenschalter im Blockeditor — am echten Editor durchgespielt.
+ * Größe, Platz und Paarung im Blockeditor — am echten Editor durchgespielt.
  *
- * Die Regel (src/lib/bildreihen.ts) sagt: „eine Reihe, eine Höhe — die Stufe
- * des ersten Bildes gilt". Im Editor muss das SICHTBAR sein, sonst stellt man
- * eine Höhe ein, die nirgends ankommt. Geprüft wird deshalb die Rolle jedes
- * Bildblocks (führend / folgend / allein), dass ein folgendes Bild seine Höhe
- * nur über L verlassen kann — und dass die Einstellung den Speicherweg
- * überlebt und im Bericht ankommt.
+ * Die Regel (src/lib/bildreihen.ts) sagt: Die BREITE ist der Regler, der Platz
+ * wird gewählt, und „neben dem Bild darüber" ist die einzige Beziehung zwischen
+ * zwei Blöcken. Im Editor muss all das SICHTBAR und bedienbar sein — vorher
+ * stellte man eine Höhe ein, aus der die Seite drei Dinge ableitete, die auf
+ * dem Schalter nicht standen.
+ *
+ * Geprüft wird: dass beide Schalter wirken, dass das Häkchen nur dort angeboten
+ * wird, wo es etwas bedeuten kann, dass es die abhängigen Schalter stilllegt —
+ * und dass die Einstellung den Speicherweg überlebt und im Bericht in der
+ * gemessenen Breite ankommt.
  *
  * Läuft gegen einen EIGENEN Entwurfsbericht (scripts/e2e-admin.ts), damit der
  * öffentliche Beispielbericht und die Tests darauf unberührt bleiben.
@@ -27,8 +31,15 @@ const d = t().admin.travel;
 /** Die Bildblöcke des Editors, in Reihenfolge. */
 const bildBloecke = (page: import("@playwright/test").Page) =>
   page.locator(`div:has(> div > span:text-is("${d.blockImage}"))`).filter({
-    has: page.getByRole("group", { name: d.blockHeight }),
+    has: page.getByRole("group", { name: d.blockSize }),
   });
+
+const groesse = (block: ReturnType<typeof bildBloecke>) =>
+  block.getByRole("group", { name: d.blockSize });
+const platz = (block: ReturnType<typeof bildBloecke>) =>
+  block.getByRole("group", { name: d.blockPlace });
+const haken = (block: ReturnType<typeof bildBloecke>) =>
+  block.getByRole("checkbox", { name: d.blockWithPrevious });
 
 test.beforeEach(async ({ context }) => {
   await context.addCookies([
@@ -36,92 +47,92 @@ test.beforeEach(async ({ context }) => {
   ]);
 });
 
-test("zeigt je Bildblock seine Rolle", async ({ page }) => {
-  await page.goto(editorUrl);
-  const bloecke = bildBloecke(page);
-  await expect(bloecke).toHaveCount(3);
-
-  // 1. + 2. Bild sind Nachbarn → Reihe. Die Höhe wirkt dort nicht, also
-  // stehen S und M still; L bleibt wählbar (es löst das Bild heraus).
-  for (const nr of [0, 1]) {
-    const gruppe = bloecke.nth(nr).getByRole("group", { name: d.blockHeight });
-    await expect(gruppe.getByRole("button", { name: "S" })).toBeDisabled();
-    await expect(gruppe.getByRole("button", { name: "M" })).toBeDisabled();
-    await expect(gruppe.getByRole("button", { name: "L" })).toBeEnabled();
-    await expect(bloecke.nth(nr).getByText(d.blockInRow)).toBeVisible();
-  }
-
-  // 3. Bild ist L → Vollbild über die ganze Spalte.
-  await expect(bloecke.nth(2).getByText(d.blockFullWidth)).toBeVisible();
-});
-
-test("ein Einzelbild bekommt eine Seite, und die wechselt automatisch", async ({
+test("beide Schalter wirken, und der Hinweis nennt die fertige Größe", async ({
   page,
 }) => {
   await page.goto(editorUrl);
-  const bloecke = bildBloecke(page);
+  const erster = bildBloecke(page).nth(0);
+  await expect(bildBloecke(page)).toHaveCount(3);
 
-  // Das zweite Bild auf L stellen: die Reihe zerfällt, beide werden Einzelbilder.
-  await bloecke
-    .nth(1)
-    .getByRole("group", { name: d.blockHeight })
-    .getByRole("button", { name: "L" })
-    .click();
+  // Der Platz ist wählbar — vorher bestimmte ihn ein Zähler über den ganzen
+  // Bericht, und der Redakteur konnte ihn gar nicht angeben.
+  await platz(erster).getByRole("button", { name: d.blockPlaceOptions.links.label }).click();
+  await expect(erster.getByText(d.blockFloatLeft)).toBeVisible();
 
-  // Das erste ist jetzt allein → wird umflossen, und zwar rechts (das erste).
-  await expect(bloecke.nth(0).getByText(d.blockFloatRight)).toBeVisible();
+  // Die Größe wirkt sofort, und die Pixelzeile beantwortet die Frage, die der
+  // alte Höhen-Schalter offenließ: wie groß wird das jetzt?
+  await groesse(erster).getByRole("button", { name: d.blockSizeOptions.s.label }).click();
+  await expect(erster.getByText(/272 × \d+ px/)).toBeVisible();
+  await groesse(erster).getByRole("button", { name: d.blockSizeOptions.m.label }).click();
+  await expect(erster.getByText(/408 × \d+ px/)).toBeVisible();
+});
+
+test("bei L gibt es keine Seite", async ({ page }) => {
+  await page.goto(editorUrl);
+  const erster = bildBloecke(page).nth(0);
+  await groesse(erster).getByRole("button", { name: d.blockSizeOptions.l.label }).click();
+  await expect(erster.getByText(d.blockFullWidth)).toBeVisible();
+  // Die ganze Spalte hat keine Seite — der Schalter steht still statt zu lügen.
   await expect(
-    bloecke.nth(0).getByRole("group", { name: d.blockHeight }).getByRole("button", { name: "S" }),
-  ).toBeEnabled();
+    platz(erster).getByRole("button", { name: d.blockPlaceOptions.links.label }),
+  ).toBeDisabled();
 });
 
-test("L löst ein Bild aus der Reihe — sofort sichtbar", async ({ page }) => {
-  await page.goto(editorUrl);
-  const bloecke = bildBloecke(page);
-  await bloecke
-    .nth(1)
-    .getByRole("group", { name: d.blockHeight })
-    .getByRole("button", { name: "L" })
-    .click();
-  await expect(bloecke.nth(1).getByText(d.blockFullWidth)).toBeVisible();
-  await expect(bloecke.nth(1).getByText(d.blockInRow)).toHaveCount(0);
-});
-
-test("die eingestellte Höhe überlebt das Speichern und kommt im Bericht an", async ({
+test("das Häkchen gibt es nur, wo darüber ein einzelnes Bild steht", async ({
   page,
 }) => {
   await page.goto(editorUrl);
   const bloecke = bildBloecke(page);
 
-  // Erst die Reihe auflösen (zweites Bild auf L), dann das erste — jetzt ein
-  // umflossenes Einzelbild — auf S stellen.
-  await bloecke
-    .nth(1)
-    .getByRole("group", { name: d.blockHeight })
-    .getByRole("button", { name: "L" })
-    .click();
-  await bloecke
-    .nth(0)
-    .getByRole("group", { name: d.blockHeight })
-    .getByRole("button", { name: "S" })
-    .click();
+  // Erster Bildblock: darüber steht Text — es gibt nichts, wozu er sich
+  // stellen könnte.
+  await expect(haken(bloecke.nth(0))).toBeDisabled();
+  // Zweiter: darüber ein einzelnes Bild → anbietbar.
+  await expect(haken(bloecke.nth(1))).toBeEnabled();
+
+  // Angehakt: Größe und Platz kommen jetzt vom Partner, die eigenen Schalter
+  // haben nichts mehr zu sagen und stehen still.
+  await haken(bloecke.nth(1)).check();
+  await expect(bloecke.nth(1).getByText(d.blockPairedWith)).toBeVisible();
+  await expect(
+    groesse(bloecke.nth(1)).getByRole("button", { name: d.blockSizeOptions.s.label }),
+  ).toBeDisabled();
+  await expect(
+    platz(bloecke.nth(1)).getByRole("button", { name: d.blockPlaceOptions.links.label }),
+  ).toBeDisabled();
+
+  // Und der dritte wäre das dritte Bild im Paar — das gibt es nicht.
+  await expect(haken(bloecke.nth(2))).toBeDisabled();
+});
+
+test("Größe und Platz überleben das Speichern und kommen im Bericht an", async ({
+  page,
+}) => {
+  await page.goto(editorUrl);
+  const erster = bildBloecke(page).nth(0);
+  await groesse(erster).getByRole("button", { name: d.blockSizeOptions.s.label }).click();
+  await platz(erster).getByRole("button", { name: d.blockPlaceOptions.links.label }).click();
   await page.getByRole("button", { name: /Speichern/i }).click();
   await page.waitForURL(/meldung=/);
 
   // Im Editor wieder gedrückt …
   await page.goto(editorUrl);
+  const wieder = bildBloecke(page).nth(0);
   await expect(
-    bildBloecke(page)
-      .nth(0)
-      .getByRole("group", { name: d.blockHeight })
-      .getByRole("button", { name: "S" }),
+    groesse(wieder).getByRole("button", { name: d.blockSizeOptions.s.label }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    platz(wieder).getByRole("button", { name: d.blockPlaceOptions.links.label }),
   ).toHaveAttribute("aria-pressed", "true");
 
-  // … und in der Vorschau als umflossenes S-Bild gerendert.
+  // … und in der Vorschau als linkes Drittel gerendert — GEMESSEN, nicht am
+  // Klassennamen abgelesen.
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto(`/admin/reisen/${session.travelId}/vorschau`);
-  const umfluss = page.locator("article img.bildumfluss.stufe-s");
-  await expect(umfluss).toHaveCount(1);
-  const kasten = (await umfluss.boundingBox())!;
-  expect(kasten.height).toBeLessThan(230); // Stufe S = 220 px, nicht 360
+  const bild = page.locator("article .bildplatz.gr-s.pl-links").first();
+  await expect(bild).toBeVisible();
+  const spalte = (await page.locator("article .flow-root").first().boundingBox())!;
+  const kasten = (await bild.boundingBox())!;
+  expect(Math.abs(kasten.width - spalte.width / 3)).toBeLessThan(1.5);
+  expect(Math.abs(kasten.x - spalte.x)).toBeLessThan(1.5);
 });

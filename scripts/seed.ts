@@ -411,13 +411,14 @@ async function main() {
       type: "text",
       markdown: travelText,
     },
-    // Einzelbild → steht im Text und wird umflossen (das erste rechts).
+    // S links: ein Drittel der Spalte, der Text fließt rechts daneben.
     {
       travelPostId: travel.id,
       sortOrder: 1,
       type: "bild",
       imageId: bildGasse,
-      groesse: "m",
+      groesse: "s",
+      platz: "links",
     },
     {
       travelPostId: travel.id,
@@ -434,15 +435,23 @@ async function main() {
         "mit Auberginen. Wir haben uns durch vier Stände gegessen und keinen " +
         "davon bereut.\n\n" +
         "Zum Abschluss eine Granita mit Brioche, im Stehen, weil drinnen kein " +
-        "Platz mehr war — und das ist ohnehin die bessere Aussicht.",
+        "Platz mehr war — und das ist ohnehin die bessere Aussicht.\n\n" +
+        "Wer den Markt am Vormittag verpasst, findet abends dieselben Gassen " +
+        "wieder, nur leiser: Die Stände sind abgebaut, die Kisten gestapelt, " +
+        "und zwischen den Rollläden stehen Tische, die tagsüber nirgends " +
+        "waren. Man setzt sich dazu, ohne zu fragen, und bekommt, was gerade " +
+        "fertig ist.",
     },
-    // Zwei Nachbarn → justierte Reihe: gleich hoch, unten bündig, füllt die Spalte.
+    // Ein PAAR: das zweite Bild trägt das Häkchen und teilt sich mit dem
+    // ersten dessen halbe Spalte — gleich hoch, unten bündig. Nachbarschaft
+    // allein reicht dafür nicht mehr, das Häkchen ist die Ansage.
     {
       travelPostId: travel.id,
       sortOrder: 3,
       type: "bild",
       imageId: bildMarkt,
       groesse: "m",
+      platz: "rechts",
     },
     {
       travelPostId: travel.id,
@@ -450,6 +459,8 @@ async function main() {
       type: "bild",
       imageId: bildHafen,
       groesse: "m",
+      platz: "rechts",
+      mitVorherigem: true,
     },
     {
       travelPostId: travel.id,
@@ -459,7 +470,7 @@ async function main() {
         "Nachmittags wird es an der Küste windig. Dann lohnt der Weg ins " +
         "Landesinnere, wo die Salinen liegen und es plötzlich ganz still ist.",
     },
-    // L → Vollbild über die ganze Spalte, steht allein.
+    // L → über die ganze Spalte, kein Text daneben, keine Seite.
     {
       travelPostId: travel.id,
       sortOrder: 6,

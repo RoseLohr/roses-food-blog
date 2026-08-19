@@ -57,6 +57,13 @@
       "when": 1786950000000,
       "tag": "0007_bildstufen",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1787082206304,
+      "tag": "0008_bildplatz",
+      "breakpoints": true
     }
   ]
 }

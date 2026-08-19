@@ -411,7 +411,17 @@ export async function importBundle(
       } else if (b.type === "bild") {
         const imgId = await importImage(b.image);
         if (imgId != null)
-          blocks.push({ type: "bild", imageId: imgId, groesse: b.groesse });
+          blocks.push({
+            type: "bild",
+            imageId: imgId,
+            groesse: b.groesse,
+            // Ein Export von vor dem Umbau kennt Platz und Paarung nicht; die
+            // Vorgaben stellen jedes Bild einzeln nach rechts. Die Berichte
+            // werden danach von Hand nachgezogen (so abgestimmt) — raten wäre
+            // schlechter als eine sichtbare, einheitliche Ausgangslage.
+            platz: "rechts",
+            mitVorherigem: false,
+          });
       } else if (b.index < tv.restaurants.length) {
         blocks.push({ type: "restaurant", index: b.index });
       }

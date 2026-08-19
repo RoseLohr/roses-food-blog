@@ -1,65 +1,54 @@
 /**
- * Bilder im Reisebericht — Position vor Größe.
+ * Bilder im Reisebericht — die BREITE ist der Regler.
  *
- * Die erste Fassung bemaß Bilder gut und stellte sie falsch: jede Reihe stand
- * MITTIG in der Textspalte und erfand damit zwei senkrechte Kanten, die zu
- * keinem anderen Element der Seite gehören. Eine Textspalte kennt genau drei
- * erlaubte Kanten — linker Rand, rechter Rand, und beim Umfluss die Innenkante,
- * an der der Text weiterläuft. Alles, was ein Bild an Kanten mitbringt, muss
- * auf einer davon liegen. Daraus folgen drei Fälle:
+ * Vorher stellte der Admin die HÖHE ein, und daraus ergaben sich drei Dinge,
+ * die auf dem Schalter nicht standen: die Breite (Höhe × Seitenverhältnis, also
+ * je Foto anders), das Nebeneinander (entstand aus der Nachbarschaft zweier
+ * Bildblöcke) und die Seite (ein Zähler wechselte automatisch ab). Dazu eine
+ * vierte Regel, die die erste aufhob: In einer Reihe wirkte die Höhe gar nicht.
+ * Vier Mechanismen für ein Bild — und keinen davon konnte man ansehen.
  *
- *   UMFLUSS   Ein Bild, das allein steht, steht IM Text. Höhe nach Stufe
- *             (S 220, M 360 px), Breite folgt dem Format, gedeckelt auf die
- *             halbe Spalte — was mehr nimmt, lässt daneben keine lesbare Zeile.
- *             Die Seite wechselt automatisch: das erste Bild rechts, das
- *             nächste links. Rechts zuerst, weil das Inhaltsverzeichnis links
- *             steht und die beiden sich sonst im Kopf des Berichts begegnen.
- *   REIHE     Zwei oder mehr Nachbarn teilen die Spalte nach Seitenverhältnis
- *             auf; die Summe ist genau die Spaltenbreite. Gleiche Höhen, unten
- *             bündig, beide Kanten sitzen. Die Stufe wirkt hier NICHT — die
- *             Höhe ergibt sich aus den Formaten. Höchstens drei Bilder je
- *             Reihe (REIHEN_MAX); mehr Nachbarn werden gleichmäßig auf
- *             mehrere Reihen verteilt.
- *   VOLLBILD  Stufe L: volle Spalte, kein Umfluss, steht allein.
+ * Jetzt gilt:
  *
- * Auf dem Handy gibt es keinen Umfluss: neben einem halbbreiten Bild blieben
- * rund 18 Zeichen je Zeile übrig — das ist keine Spalte mehr. Dort steht ein
- * einzelnes Bild über die volle Breite; Reihen bleiben Reihen.
+ *   GRÖSSE   Breite als Anteil der Inhaltsspalte.
+ *            S = ein Drittel (272 px), M = die Hälfte (408 px),
+ *            L = die ganze Spalte (816 px). Die Höhe folgt dem Foto — die Form
+ *            des Fotos ist Sache des Fotos.
+ *   PLATZ    links oder rechts; der Text fließt daneben weiter. Bei L gibt es
+ *            keinen Platz, die ganze Spalte hat keine Seite.
+ *   PAAR     Ein Bild kann „neben dem Bild darüber" stehen. Beide bilden dann
+ *            EINEN schwebenden Block in der Größe des ersten und teilen ihn
+ *            nach Seitenverhältnis — dadurch gleich hoch und bündig. Das ist
+ *            dieselbe Rechnung wie in der alten Reihe, aber sie greift nur
+ *            dort, wo jemand sie ausdrücklich bestellt hat.
+ *
+ * Damit wird „passt nebeneinander" zu einer Rechnung, die man im Kopf macht,
+ * und `sizes` zu einer Zahl statt einer Vorhersage.
+ *
+ * Auf dem Handy ist die Spalte 310 px breit; ein Drittel davon wären 103 px und
+ * daneben blieben rund fünfzehn Zeichen je Zeile. Dort stehen Einzelbilder
+ * deshalb über die volle Breite. Ein Paar bleibt nebeneinander — es ist der
+ * einzige Fall, in dem zwei Bilder eine Zeile teilen, und der einzige, in dem
+ * das jemand ausdrücklich so bestellt hat.
  */
 import type { TravelBlock } from "@/lib/travel-blocks";
 
-export const BILD_STUFEN = ["s", "m", "l"] as const;
-export type BildStufe = (typeof BILD_STUFEN)[number];
+/** Breite eines Bildes als Anteil der Inhaltsspalte. */
+export const BILD_GROESSEN = ["s", "m", "l"] as const;
+export type BildGroesse = (typeof BILD_GROESSEN)[number];
 
-/** Höhe eines umflossenen Einzelbildes je Stufe (ab 768 px). */
-const UMFLUSS_HOEHE: Record<Exclude<BildStufe, "l">, number> = { s: 220, m: 360 };
+/** Seite, an der ein Bild steht und der Text daneben weiterläuft. */
+export const BILD_PLAETZE = ["links", "rechts"] as const;
+export type BildPlatz = (typeof BILD_PLAETZE)[number];
 
-/** Abstand zwischen zwei Bildern einer Reihe (gap-4 = 16 px). */
-const ABSTAND = 16;
+/** Anteil der Inhaltsspalte je Größe. */
+const ANTEIL: Record<BildGroesse, number> = { s: 1 / 3, m: 1 / 2, l: 1 };
 
-/**
- * Höchstzahl der Bilder EINER Reihe. Mehr benachbarte Bilder ergeben mehrere
- * Reihen untereinander.
- *
- * Warum überhaupt eine Grenze: Die Bilder einer Reihe schrumpfen mit `flex`,
- * die Abstände dazwischen NICHT. Bei n Bildern kosten sie 16 × (n − 1) px, und
- * das wächst linear, während die Spalte fest ist. Auf einem 360-px-Telefon ist
- * die Spalte 280 px breit; ab 21 Bildern wären allein die Abstände 320 px —
- * die Reihe liefe über den Rand hinaus, selbst wenn jedes Bild auf null
- * schrumpft. `reihenSizes` deklarierte dann `calc((100vw − 5rem − 320px) × …)`,
- * also eine NEGATIVE Quellbreite; damit ist das ganze `sizes`-Attribut
- * ungültig und der Browser fällt auf 100vw zurück — er lädt die schwerste
- * Variante für ein Bild von wenigen Pixeln Breite.
- *
- * Der Überlauf ist dabei nur das Ende einer Reihe, die lange vorher aufhört,
- * eine Reihe zu sein: Bei sechs Bildern blieben auf dem Telefon je ~30 px.
- * Drei ist die Zahl, die auch der Gerichte-Streifen benutzt („gedeckelt bei
- * drei"), und bei drei bleiben auf demselben Telefon (280 − 32) / 3 ≈ 83 px je
- * Bild. Ein Haus, eine Zahl.
- *
- * (Befund des Cross-Vendor-Panels zu PR #80, Pflicht-Approver gpt-5.6-sol.)
- */
-const REIHEN_MAX = 3;
+/** Nenner für den CSS-Ausdruck — exakt statt gerundet (`/ 3` statt `* 0.3333`). */
+const NENNER: Record<BildGroesse, number> = { s: 3, m: 2, l: 1 };
+
+/** Abstand zwischen den beiden Bildern eines Paares (gap-3 = 12 px). */
+const PAAR_ABSTAND = 12;
 
 /**
  * Breite des Inhaltsbereichs — dieselbe Kette wie in travel-view.tsx:
@@ -81,87 +70,134 @@ export function seitenverhaeltnis(breite: number, hoehe: number): number {
   return breite / hoehe;
 }
 
-export type Umflussseite = "links" | "rechts";
-
-/** Blockfolge, wie sie gerendert wird — Position bereits entschieden. */
+/** Blockfolge, wie sie gerendert wird — Größe und Platz bereits entschieden. */
 export type RenderBlock =
   | { art: "text"; markdown: string }
   | { art: "restaurant"; index: number }
-  /** Einzelbild im Text, umflossen. */
-  | { art: "umfluss"; imageId: number; stufe: Exclude<BildStufe, "l">; seite: Umflussseite }
-  /** Einzelbild über die volle Spalte (Stufe L). */
-  | { art: "vollbild"; imageId: number }
-  /** Zwei oder mehr Nachbarn, justiert über die Spalte. */
-  | { art: "reihe"; imageIds: number[] };
+  /**
+   * Ein Bildplatz: ein Bild, oder zwei als Paar. Größe und Platz gelten für
+   * den ganzen Block; beim Paar kommen sie vom ERSTEN Bild.
+   */
+  | {
+      art: "bild";
+      imageIds: number[];
+      groesse: BildGroesse;
+      platz: BildPlatz;
+    };
 
 /**
- * Fasst die Blockfolge des Editors zu Renderblöcken zusammen und vergibt dabei
- * die Umflussseiten.
+ * Fasst die Blockfolge des Editors zu Renderblöcken zusammen.
  *
- * Gezählt wird NUR über umflossene Einzelbilder: eine Reihe und ein Vollbild
- * nehmen die ganze Spalte ein, haben also keine Seite und verbrauchen keinen
- * Wechsel. Nach einer Reihe geht es dort weiter, wo der Wechsel vorher stand.
- * Der Zähler läuft durch den ganzen Bericht — ein Neustart je Abschnitt ließe
- * zwei Bilder über die Abschnittsgrenze hinweg auf derselben Seite landen,
- * also genau das, was der Wechsel verhindern soll.
+ * Die einzige Beziehung zwischen zwei Blöcken ist `mitVorherigem` — und die
+ * wird gesagt, nicht erraten. Sie greift nur, wenn direkt darüber ein Bildplatz
+ * steht, der noch allein ist: Ein Paar bleibt bei zwei Bildern (drei
+ * nebeneinander wären bei 816 px je 264 px, das ist keine Darstellung mehr sondern
+ * ein Streifen), und über einem Text- oder Restaurant-Block gibt es nichts, wozu
+ * sich etwas stellen könnte. In beiden Fällen wird das Häkchen ignoriert und
+ * das Bild steht für sich — der Editor graut es dort aus, sodass der Fall gar
+ * nicht erst entsteht.
  */
 export function zuRenderBloecken(blocks: TravelBlock[]): RenderBlock[] {
   const out: RenderBlock[] = [];
-  let umflussZaehler = 0;
-  // Offene Gruppe benachbarter Bilder (ohne L — L steht immer allein).
-  let gruppe: Array<{ imageId: number; stufe: Exclude<BildStufe, "l"> }> = [];
-
-  const gruppeSchliessen = () => {
-    if (gruppe.length === 0) return;
-    if (gruppe.length === 1) {
-      const [b] = gruppe;
-      out.push({
-        art: "umfluss",
-        imageId: b.imageId,
-        stufe: b.stufe,
-        seite: umflussZaehler % 2 === 0 ? "rechts" : "links",
-      });
-      umflussZaehler++;
-    } else {
-      // Gleichmäßig aufteilen statt vorne aufzufüllen: 4 → 2+2 (nicht 3+1),
-      // 7 → 3+2+2. Ein Rest von EINEM wäre das schlechteste Ergebnis — aus
-      // dem Bild würde ein umflossenes Einzelbild, also eine ganz andere
-      // Darstellung als die Nachbarn unmittelbar darüber.
-      const ids = gruppe.map((b) => b.imageId);
-      const reihen = Math.ceil(ids.length / REIHEN_MAX);
-      const grundlaenge = Math.floor(ids.length / reihen);
-      const eineMehr = ids.length % reihen;
-      let ab = 0;
-      for (let r = 0; r < reihen; r++) {
-        const laenge = grundlaenge + (r < eineMehr ? 1 : 0);
-        out.push({ art: "reihe", imageIds: ids.slice(ab, ab + laenge) });
-        ab += laenge;
-      }
-    }
-    gruppe = [];
-  };
 
   for (const b of blocks) {
     if (b.type === "text") {
-      gruppeSchliessen();
       out.push({ art: "text", markdown: b.markdown });
-    } else if (b.type === "restaurant") {
-      gruppeSchliessen();
-      out.push({ art: "restaurant", index: b.index });
-    } else if (b.groesse === "l") {
-      gruppeSchliessen();
-      out.push({ art: "vollbild", imageId: b.imageId });
-    } else {
-      gruppe.push({ imageId: b.imageId, stufe: b.groesse });
+      continue;
     }
+    if (b.type === "restaurant") {
+      out.push({ art: "restaurant", index: b.index });
+      continue;
+    }
+
+    const davor = out[out.length - 1];
+    const anschlussfaehig =
+      b.mitVorherigem &&
+      davor !== undefined &&
+      davor.art === "bild" &&
+      davor.imageIds.length === 1;
+    if (anschlussfaehig) {
+      // Größe und Platz kommen vom ersten Bild — das zweite hat dazu nichts
+      // mehr zu sagen, und der Editor blendet seine Knöpfe entsprechend ab.
+      (davor as Extract<RenderBlock, { art: "bild" }>).imageIds.push(b.imageId);
+      continue;
+    }
+
+    out.push({
+      art: "bild",
+      imageIds: [b.imageId],
+      groesse: b.groesse,
+      // Bei L ist der Platz bedeutungslos; er wird trotzdem mitgeführt, damit
+      // ein Wechsel L → M die vorher gewählte Seite nicht verliert.
+      platz: b.platz,
+    });
   }
-  gruppeSchliessen();
+
   return out;
 }
 
 /** Anteil als kürzest mögliche Zahl (0.5 statt 0.5000) für den CSS-Faktor. */
 function faktorText(anteil: number): string {
   return String(Number(anteil.toFixed(4)));
+}
+
+/**
+ * Breite des Bildplatzes als CSS-Ausdruck OHNE `calc()`-Hülle, je Breakpoint.
+ * Der Aufrufer setzt die Hülle — so bleibt der Ausdruck flach, statt ein
+ * `calc()` in ein `calc()` zu schachteln.
+ *
+ * Auf dem Handy (<768) füllt JEDER Bildplatz die Spalte — dort gibt es keinen
+ * Umfluss, also auch keine Anteile. Darüber gilt der Anteil der Größe.
+ */
+function platzBreite(groesse: BildGroesse, bp: "handy" | "mittel"): string {
+  if (bp === "handy") return `100vw - ${SPALTE_HANDY_ABZUG / 16}rem`;
+  const spalte = `100vw - ${SPALTE_MITTEL_ABZUG / 16}rem`;
+  const n = NENNER[groesse];
+  return n === 1 ? spalte : `(${spalte}) / ${n}`;
+}
+
+/** Dasselbe für den festen Breakpoint ab 929 px, in Pixeln. */
+function platzBreiteGross(groesse: BildGroesse): number {
+  return Math.round(SPALTE_GROSS * ANTEIL[groesse]);
+}
+
+/**
+ * `sizes` je Bild eines Bildplatzes — eine Angabe je Bild, in DOM-Reihenfolge.
+ *
+ * Einzelbild: der Bildplatz selbst.
+ * Paar: der Bildplatz minus den Abstand, geteilt im Verhältnis der
+ * Seitenverhältnisse. Dieselbe Rechnung, die das CSS über `flex: var(--ar) 1 0`
+ * ausführt — deshalb stimmt die Deklaration mit dem Gerenderten überein und
+ * nicht nur ungefähr.
+ */
+export function bildSizes(
+  groesse: BildGroesse,
+  seitenverhaeltnisse: number[],
+): string[] {
+  const anzahl = seitenverhaeltnisse.length;
+  if (anzahl === 0) return [];
+
+  if (anzahl === 1) {
+    return [
+      [
+        `(max-width: 767px) calc(${platzBreite(groesse, "handy")})`,
+        `(max-width: 928px) calc(${platzBreite(groesse, "mittel")})`,
+        `${platzBreiteGross(groesse)}px`,
+      ].join(", "),
+    ];
+  }
+
+  const summe = seitenverhaeltnisse.reduce((a, b) => a + b, 0);
+  const rest = PAAR_ABSTAND * (anzahl - 1);
+  return seitenverhaeltnisse.map((ar) => {
+    const anteil = faktorText(ar / summe);
+    const gross = Math.round(((platzBreiteGross(groesse) - rest) * ar) / summe);
+    return [
+      `(max-width: 767px) calc((${platzBreite(groesse, "handy")} - ${rest}px) * ${anteil})`,
+      `(max-width: 928px) calc((${platzBreite(groesse, "mittel")} - ${rest}px) * ${anteil})`,
+      `${gross}px`,
+    ].join(", ");
+  });
 }
 
 /**
@@ -196,66 +232,9 @@ function gedeckeltSizes(wunsch: number): string {
   return teile.join(", ");
 }
 
-/** `sizes` eines Bildes über die volle Inhaltsspalte (Vollbild, Restaurant-Band). */
+/** `sizes` eines Bildes über die volle Inhaltsspalte (Restaurant-Band, Titelbild). */
 export function vollbildSizes(): string {
-  return "(max-width: 767px) calc(100vw - 5rem), (max-width: 928px) calc(100vw - 7rem), 816px";
-}
-
-/**
- * `sizes` eines umflossenen Einzelbildes. Ab 768 px ist es
- * `min(Stufenhöhe × Format, halbe Spalte)`; darunter gibt es keinen Umfluss,
- * dort füllt das Bild die Spalte.
- */
-export function umflussSizes(
-  seitenverhaeltnisWert: number,
-  stufe: Exclude<BildStufe, "l">,
-): string {
-  const wunsch = Math.round(UMFLUSS_HOEHE[stufe] * seitenverhaeltnisWert);
-  const teile = ["(max-width: 767px) calc(100vw - 5rem)"];
-  // Halbe Spalte im Mittelbereich: (100vw − 7rem) / 2. Der Wunsch greift erst,
-  // wenn er hineinpasst — also ab 2 × Wunsch + 7rem Fensterbreite.
-  const kipp = 2 * wunsch + SPALTE_MITTEL_ABZUG;
-  const halbeSpalte = "calc((100vw - 7rem) / 2)";
-  if (kipp > 928) {
-    teile.push(`(max-width: 928px) ${halbeSpalte}`);
-  } else if (kipp > 768) {
-    teile.push(`(max-width: ${kipp}px) ${halbeSpalte}`);
-    teile.push(`(max-width: 928px) ${wunsch}px`);
-  } else {
-    teile.push(`(max-width: 928px) ${wunsch}px`);
-  }
-  const gross = `${Math.min(wunsch, SPALTE_GROSS / 2)}px`;
-  if (teile[teile.length - 1] === `(max-width: 928px) ${gross}`) teile.pop();
-  teile.push(gross);
-  return teile.join(", ");
-}
-
-/**
- * `sizes` je Bild einer justierten Reihe — AUSGERECHNET, nicht geschätzt.
- *
- * Die Reihe füllt die Spalte exakt, die Breiten stehen im Verhältnis der
- * Seitenverhältnisse:
- *
- *   Breite_i = (Spalte − Abstände) × Format_i / Σ Formate
- *
- * Damit sind alle Bilder einer Reihe gleich hoch (Breite_i / Format_i ist für
- * alle derselbe Wert) — das ist der Grund, warum die Reihe unten bündig
- * abschließt, ohne dass irgendetwas beschnitten wird.
- */
-export function reihenSizes(seitenverhaeltnisse: number[]): string[] {
-  const anzahl = seitenverhaeltnisse.length;
-  if (anzahl === 0) return [];
-  const abstaende = ABSTAND * (anzahl - 1);
-  const summe = seitenverhaeltnisse.reduce((a, b) => a + b, 0);
-  return seitenverhaeltnisse.map((ar) => {
-    const anteil = faktorText(ar / summe);
-    const gross = Math.round(((SPALTE_GROSS - abstaende) * ar) / summe);
-    return [
-      `(max-width: 767px) calc((100vw - 5rem - ${abstaende}px) * ${anteil})`,
-      `(max-width: 928px) calc((100vw - 7rem - ${abstaende}px) * ${anteil})`,
-      `${gross}px`,
-    ].join(", ");
-  });
+  return gedeckeltSizes(SPALTE_GROSS);
 }
 
 /**
@@ -272,9 +251,7 @@ export function reihenSizes(seitenverhaeltnisse: number[]): string[] {
  *
  * Mit fester Zeilenhöhe ist die Breite wieder eine Zahl — und die Galerie wird
  * nebenbei ruhiger: ALLE Bilder sind gleich hoch, die Zeilen brechen um, jede
- * beginnt auf der linken Textkante. Der Preis ist ein offener rechter Rand am
- * Zeilenende; im Fließtext, wo es zählt, füllen die Reihen die Spalte weiterhin
- * exakt.
+ * beginnt auf der linken Textkante.
  */
 export function galerieSizes(seitenverhaeltnisWert: number): string {
   return gedeckeltSizes(Math.round(GALERIE_HOEHE * seitenverhaeltnisWert));

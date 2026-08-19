@@ -844,24 +844,40 @@ export const de = {
         "Der Inhalt besteht aus Blöcken (Text, Bild, Restaurant), die sich mit ↑/↓ anordnen lassen — die Reihenfolge bestimmt die Anzeige im Beitrag. Restaurants ohne eigenen Block erscheinen wie bisher gesammelt unter dem Inhalt.",
       blockText: "Text",
       blockImage: "Bild",
-      blockHeight: "Höhe",
-      /** Der einzige Regler eines Bildes (siehe lib/bildreihen.ts). */
-      blockHeightOptions: {
+      blockSize: "Größe",
+      /** Breite als Anteil der Inhaltsspalte (siehe lib/bildreihen.ts). */
+      blockSizeOptions: {
         s: {
-          label: "S",
-          title: "Klein — für Belege und Details; mehrere passen nebeneinander",
+          label: "S · Drittel",
+          title: "Ein Drittel der Spalte — 272 px, daneben bleiben rund 78 Zeichen Text je Zeile",
         },
-        m: { label: "M", title: "Normal — der Standard beim Einfügen" },
-        l: { label: "L", title: "Groß — steht allein in seiner Reihe" },
+        m: {
+          label: "M · Hälfte",
+          title: "Die halbe Spalte — 408 px, daneben bleiben rund 57 Zeichen Text je Zeile",
+        },
+        l: {
+          label: "L · ganze Spalte",
+          title: "Die ganze Spalte — 816 px, kein Text daneben",
+        },
       },
-      blockInRow:
-        "Steht in einer Reihe mit dem Nachbarbild: Die Breiten teilen sich nach Seitenverhältnis und füllen die Spalte, alle Bilder werden gleich hoch. Die Höhe wirkt hier nicht — „L“ löst das Bild aus der Reihe.",
+      blockPlace: "Platz",
+      blockPlaceOptions: {
+        links: { label: "links", title: "Bild links, der Text fließt rechts daneben" },
+        rechts: { label: "rechts", title: "Bild rechts, der Text fließt links daneben" },
+      },
+      blockWithPrevious: "neben dem Bild darüber",
+      blockWithPreviousOff:
+        "Nur möglich, wenn direkt darüber ein einzelnes Bild steht — zu dritt bliebe je Bild ein Streifen.",
+      blockPairedWith:
+        "Steht neben dem Bild darüber, beide teilen sich dessen Breite nach Seitenverhältnis und werden gleich hoch. Größe und Platz kommen von dort.",
       blockFloatRight:
-        "Steht rechts im Text, der Text fließt links daneben. Das nächste einzelne Bild steht links.",
+        "Steht rechts im Text, der Text fließt links daneben. Auf dem Handy über die volle Breite.",
       blockFloatLeft:
-        "Steht links im Text, der Text fließt rechts daneben. Das nächste einzelne Bild steht rechts.",
+        "Steht links im Text, der Text fließt rechts daneben. Auf dem Handy über die volle Breite.",
       blockFullWidth:
-        "Steht allein über die volle Breite des Inhalts — kein Text daneben.",
+        "Steht über die ganze Breite des Inhalts — kein Text daneben, keine Seite.",
+      /** „272 × 181 px“ — die fertige Größe, die der alte Höhen-Schalter offenließ. */
+      blockRendered: (breite: number, hoehe: number) => `${breite} × ${hoehe} px`,
       blockRestaurant: "Restaurant",
       blockUp: "Nach oben",
       blockDown: "Nach unten",
