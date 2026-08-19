@@ -25,14 +25,13 @@ export async function saveTravelAction(
   );
 }
 
-/** Speichert die bearbeitbaren Texte der öffentlichen Reisen-Seite
- *  (vor/nach der Weltkarte, Markdown) als Einstellungen. */
+/** Speichert den bearbeitbaren Text der öffentlichen Reisen-Seite
+ *  (nach der Weltkarte, Markdown) als Einstellung. */
 export async function saveReisenTexteAction(
   formData: FormData,
 ): Promise<void> {
   await requireAdmin();
   setSettings({
-    reisen_text_oben: String(formData.get("textOben") ?? "").trim(),
     reisen_text_unten: String(formData.get("textUnten") ?? "").trim(),
   });
   revalidatePath("/reisen");

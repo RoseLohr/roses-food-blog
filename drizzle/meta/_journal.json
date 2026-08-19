@@ -64,6 +64,13 @@
       "when": 1787082206304,
       "tag": "0008_bildplatz",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1787500000000,
+      "tag": "0009_reisen_text_oben",
+      "breakpoints": true
     }
   ]
 }
