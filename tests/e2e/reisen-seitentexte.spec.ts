@@ -24,10 +24,49 @@ const session = JSON.parse(
 const PORT = Number(process.env.PW_PORT ?? 3333);
 const feld = (name: string) => `div:has(> textarea[name="${name}"]) [contenteditable="true"]`;
 
+/**
+ * Die beiden Texte sind GLOBALE Einstellungen — andere Specs (cms-paket)
+ * arbeiten auf denselben Werten. Wer sie anfasst, muss sie zurückgeben, und
+ * zwar auch dann, wenn die Prüfung mittendrin scheitert. Deshalb merkt sich
+ * der Test den Ausgangsstand in `ausgangsstand` und afterEach stellt ihn
+ * BEDINGUNGSLOS wieder her — ein Restore am Ende des Testkörpers liefe bei
+ * jedem Fehlschlag nicht und hinterließe Testdaten in der Datenbank.
+ */
+let ausgangsstand: { oben: string; unten: string } | null = null;
+
+/** Beide Felder setzen und speichern. */
+async function setzeTexte(
+  page: import("@playwright/test").Page,
+  werte: { oben: string; unten: string },
+): Promise<void> {
+  await page.goto("/admin/reisen");
+  for (const [name, wert] of [
+    ["textOben", werte.oben],
+    ["textUnten", werte.unten],
+  ] as const) {
+    await page.locator(feld(name)).click();
+    await page.keyboard.press("Control+A");
+    await page.keyboard.press("Delete");
+    if (wert) await page.keyboard.type(wert);
+  }
+  await page
+    .locator('form:has(textarea[name="textUnten"])')
+    .getByRole("button", { name: dict.common.save })
+    .click();
+  await page.waitForURL(/\/admin\/reisen\?meldung=/);
+}
+
 test.beforeEach(async ({ context }) => {
   await context.addCookies([
     { name: "session", value: session.token, url: `http://localhost:${PORT}` },
   ]);
+});
+
+test.afterEach(async ({ page }) => {
+  if (!ausgangsstand) return;
+  const wiederher = ausgangsstand;
+  ausgangsstand = null;
+  await setzeTexte(page, wiederher);
 });
 
 test("Backend: beide Seitentexte haben den Formatierungs-Editor", async ({ page }) => {
@@ -51,9 +90,12 @@ test("Formatierung überlebt bis in die öffentliche Seite, Text läuft voll bre
 }) => {
   await page.goto("/admin/reisen");
 
-  // Ausgangszustand merken, um ihn am Ende wiederherzustellen.
-  const vorherOben = await page.locator('textarea[name="textOben"]').inputValue();
-  const vorherUnten = await page.locator('textarea[name="textUnten"]').inputValue();
+  // Ausgangszustand merken — afterEach gibt ihn bedingungslos zurück, auch
+  // wenn eine der Prüfungen unten fehlschlägt.
+  ausgangsstand = {
+    oben: await page.locator('textarea[name="textOben"]').inputValue(),
+    unten: await page.locator('textarea[name="textUnten"]').inputValue(),
+  };
 
   const marke = `Volle Breite ${Date.now()}`;
   const editor = page.locator(feld("textUnten"));
@@ -98,21 +140,5 @@ test("Formatierung überlebt bis in die öffentliche Seite, Text läuft voll bre
   ).toBeGreaterThan(672);
   expect(Math.abs(breiteText - breiteUeberschrift)).toBeLessThan(2);
 
-  // Ausgangszustand wiederherstellen, damit spätere Tests unberührt bleiben.
-  await page.goto("/admin/reisen");
-  for (const [name, wert] of [
-    ["textOben", vorherOben],
-    ["textUnten", vorherUnten],
-  ] as const) {
-    const ce = page.locator(feld(name));
-    await ce.click();
-    await page.keyboard.press("Control+A");
-    await page.keyboard.press("Delete");
-    if (wert) await page.keyboard.type(wert);
-  }
-  await page
-    .locator('form:has(textarea[name="textUnten"])')
-    .getByRole("button", { name: dict.common.save })
-    .click();
-  await page.waitForURL(/\/admin\/reisen\?meldung=/);
+  // Aufräumen macht afterEach — bedingungslos, auch bei Fehlschlag oben.
 });
