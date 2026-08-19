@@ -23,7 +23,7 @@ export default async function TravelListPage() {
   const mapPins = await getTravelMapPins();
   const posts = await publishedTravelCards();
   // Im Admin (Reiseberichte) bearbeitbarer Seitentext zwischen Weltkarte und
-  // Reiseliste. Über der Karte steht ein fester Titel — kein Textfeld.
+  // Reiseliste. Über der Karte steht der feste Einleitungssatz — kein Textfeld.
   const textUnten = getReisenTextUnten();
 
   return (
@@ -31,10 +31,11 @@ export default async function TravelListPage() {
       <PageTracker contentType="seite" path="/reisen" />
       <h1 className="font-display text-3xl font-bold md:text-4xl">{d.title}</h1>
 
+      {/* Einleitung unter der Überschrift: bewusst schmal (max-w-2xl) — hier
+          liest sich eine Zeilenlänge um 65 Zeichen besser als die volle Breite. */}
+      <p className="mt-2 max-w-2xl text-ink-soft">{d.intro}</p>
+
       {/* Weltkarte der Restaurant-Standorte (aus den Gericht-Foto-GPS-Daten) */}
-      <h2 className="mt-8 font-display text-2xl font-bold md:text-3xl">
-        {d.mapTitle}
-      </h2>
       <TravelMap pins={mapPins} />
 
       {/* Bewusst OHNE max-w-2xl: Der Text unter der Weltkarte läuft über die
