@@ -404,6 +404,14 @@ async function main() {
   const bildMarkt = await placeholder("Ballarò", "#c0392b", 1280, 850); // quer 3:2
   const bildHafen = await placeholder("Hafen", "#1f6f8b", 1280, 720); // quer 16:9
   const bildSalz = await placeholder("Salzsee", "#7a8b6f", 1280, 850); // quer 3:2
+  // Formate für die mehrspaltigen Zeilen — bewusst verschieden, damit sichtbar
+  // wird, dass die Breite dem Format folgt und die Höhe trotzdem gleich bleibt.
+  const bildZeile = [
+    await placeholder("Piazza", "#b5651d", 900, 1200), // hoch 3:4
+    await placeholder("Palme", "#3d7a4e", 1000, 1000), // quadratisch
+    await placeholder("Dom", "#2f6f8f", 1280, 720), // quer 16:9
+    await placeholder("Balkon", "#8f6f2f", 1280, 850), // quer 3:2
+  ];
   await db.insert(schema.travelBlock).values([
     {
       travelPostId: travel.id,
@@ -442,9 +450,7 @@ async function main() {
         "waren. Man setzt sich dazu, ohne zu fragen, und bekommt, was gerade " +
         "fertig ist.",
     },
-    // Ein PAAR: das zweite Bild trägt das Häkchen und teilt sich mit dem
-    // ersten dessen halbe Spalte — gleich hoch, unten bündig. Nachbarschaft
-    // allein reicht dafür nicht mehr, das Häkchen ist die Ansage.
+    // M allein: die halbe Spalte, der Text fließt links daneben.
     {
       travelPostId: travel.id,
       sortOrder: 3,
@@ -456,15 +462,35 @@ async function main() {
     {
       travelPostId: travel.id,
       sortOrder: 4,
+      type: "text",
+      markdown:
+        "Der Fischmarkt beginnt vor sechs und ist gegen zehn vorbei. Wer " +
+        "später kommt, findet leere Kisten und nasses Kopfsteinpflaster — und " +
+        "die Cafés ringsum voll mit Leuten, die schon fertig sind.",
+    },
+    // Eine ZEILE aus zwei S: die Anteile addieren sich zu zwei Dritteln, der
+    // Text fließt weiter daneben. Nachbarschaft allein reicht dafür nicht —
+    // das Häkchen am zweiten Bild ist die Ansage.
+    {
+      travelPostId: travel.id,
+      sortOrder: 5,
       type: "bild",
       imageId: bildHafen,
-      groesse: "m",
-      platz: "rechts",
+      groesse: "s",
+      platz: "links",
+    },
+    {
+      travelPostId: travel.id,
+      sortOrder: 6,
+      type: "bild",
+      imageId: bildZeile[3],
+      groesse: "s",
+      platz: "links",
       mitVorherigem: true,
     },
     {
       travelPostId: travel.id,
-      sortOrder: 5,
+      sortOrder: 7,
       type: "text",
       markdown:
         "Nachmittags wird es an der Küste windig. Dann lohnt der Weg ins " +
@@ -473,10 +499,47 @@ async function main() {
     // L → über die ganze Spalte, kein Text daneben, keine Seite.
     {
       travelPostId: travel.id,
-      sortOrder: 6,
+      sortOrder: 8,
       type: "bild",
       imageId: bildSalz,
       groesse: "l",
+    },
+    // Drei S nebeneinander: Die Anteile addieren sich zur ganzen Spalte, die
+    // Zeile wird nach Seitenverhältnis verteilt (gleich hoch, unten bündig).
+    {
+      travelPostId: travel.id,
+      sortOrder: 9,
+      type: "bild",
+      imageId: bildZeile[0],
+      groesse: "s",
+      platz: "links",
+    },
+    {
+      travelPostId: travel.id,
+      sortOrder: 10,
+      type: "bild",
+      imageId: bildZeile[1],
+      groesse: "s",
+      platz: "links",
+      mitVorherigem: true,
+    },
+    {
+      travelPostId: travel.id,
+      sortOrder: 11,
+      type: "bild",
+      imageId: bildZeile[2],
+      groesse: "s",
+      platz: "links",
+      mitVorherigem: true,
+    },
+    {
+      travelPostId: travel.id,
+      sortOrder: 12,
+      type: "text",
+      markdown:
+        "Drei Bilder nebeneinander: Jedes bringt sein Drittel mit, zusammen " +
+        "füllen sie die Zeile. Die Breite verteilt sich nach Format, deshalb " +
+        "sind alle drei exakt gleich hoch.",
     },
   ]);
 

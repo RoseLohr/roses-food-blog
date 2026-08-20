@@ -78,7 +78,7 @@ test("bei L gibt es keine Seite", async ({ page }) => {
   ).toBeDisabled();
 });
 
-test("das Häkchen gibt es nur, wo darüber ein einzelnes Bild steht", async ({
+test("das Häkchen gibt es, solange das Bild noch in die Zeile passt", async ({
   page,
 }) => {
   await page.goto(editorUrl);
@@ -87,21 +87,37 @@ test("das Häkchen gibt es nur, wo darüber ein einzelnes Bild steht", async ({
   // Erster Bildblock: darüber steht Text — es gibt nichts, wozu er sich
   // stellen könnte.
   await expect(haken(bloecke.nth(0))).toBeDisabled();
-  // Zweiter: darüber ein einzelnes Bild → anbietbar.
+  // Zweiter: darüber ein Bild → anbietbar.
   await expect(haken(bloecke.nth(1))).toBeEnabled();
 
-  // Angehakt: Größe und Platz kommen jetzt vom Partner, die eigenen Schalter
-  // haben nichts mehr zu sagen und stehen still.
+  // Alle drei auf S: dann tragen sie zusammen genau eine Zeile.
+  for (const n of [0, 1, 2]) {
+    await groesse(bloecke.nth(n))
+      .getByRole("button", { name: d.blockSizeOptions.s.label })
+      .click();
+  }
   await haken(bloecke.nth(1)).check();
-  await expect(bloecke.nth(1).getByText(d.blockPairedWith)).toBeVisible();
+  await expect(bloecke.nth(1).getByText(d.blockInRow(2))).toBeVisible();
+
+  // Die GRÖSSE bleibt bedienbar — sie ist der Anteil dieses Bildes an der
+  // Zeile. Nur die Seite kommt vom ersten Bild und steht still.
   await expect(
-    groesse(bloecke.nth(1)).getByRole("button", { name: d.blockSizeOptions.s.label }),
-  ).toBeDisabled();
+    groesse(bloecke.nth(1)).getByRole("button", { name: d.blockSizeOptions.m.label }),
+  ).toBeEnabled();
   await expect(
     platz(bloecke.nth(1)).getByRole("button", { name: d.blockPlaceOptions.links.label }),
   ).toBeDisabled();
 
-  // Und der dritte wäre das dritte Bild im Paar — das gibt es nicht.
+  // Das dritte S passt noch dazu — S+S+S ist genau eine Zeile.
+  await expect(haken(bloecke.nth(2))).toBeEnabled();
+  await haken(bloecke.nth(2)).check();
+  await expect(bloecke.nth(2).getByText(d.blockInRow(3))).toBeVisible();
+
+  // Wird das erste Bild größer, passt das dritte nicht mehr: M+S+S wäre mehr
+  // als eine Spalte. Das Häkchen steht dann still, statt zu lügen.
+  await groesse(bloecke.nth(0))
+    .getByRole("button", { name: d.blockSizeOptions.m.label })
+    .click();
   await expect(haken(bloecke.nth(2))).toBeDisabled();
 });
 
@@ -129,7 +145,7 @@ test("Größe und Platz überleben das Speichern und kommen im Bericht an", asyn
   // Klassennamen abgelesen.
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto(`/admin/reisen/${session.travelId}/vorschau`);
-  const bild = page.locator("article .bildplatz.gr-s.pl-links").first();
+  const bild = page.locator("article .bildplatz.br-1-3.pl-links").first();
   await expect(bild).toBeVisible();
   const spalte = (await page.locator("article .flow-root").first().boundingBox())!;
   const kasten = (await bild.boundingBox())!;

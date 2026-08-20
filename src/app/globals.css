@@ -121,16 +121,27 @@ html {
   height: auto;
 }
 
-/* Unter 768 px kein Umfluss: Die Spalte ist dort 310 px breit, ein Drittel
+/* Die Breite einer ZEILE ist die Summe der Anteile ihrer Bilder: S+S = zwei
+   Drittel, S+S+S oder M+M = die ganze Spalte, M+S fünf Sechstel. Der Renderer
+   vergibt die Klasse als gekürzten Bruch (`br-2-3`), damit im DOM steht, was
+   gerechnet wurde.
+
+   Unter 768 px kein Umfluss: Die Spalte ist dort 310 px breit, ein Drittel
    davon wären 103 px, und daneben blieben rund fünfzehn Zeichen je Zeile —
    das ist keine Spalte mehr, sondern ein Rand. Einzelbilder stehen dort über
-   die volle Breite; ein PAAR bleibt nebeneinander (siehe unten). */
+   die volle Breite; eine ZEILE bleibt nebeneinander (siehe unten). */
 @media (min-width: 768px) {
-  .bildplatz.gr-s {
+  .bildplatz.br-1-3 {
     width: 33.3333%;
   }
-  .bildplatz.gr-m {
+  .bildplatz.br-1-2 {
     width: 50%;
+  }
+  .bildplatz.br-2-3 {
+    width: 66.6667%;
+  }
+  .bildplatz.br-5-6 {
+    width: 83.3333%;
   }
   .bildplatz.pl-links {
     float: left;
@@ -141,8 +152,9 @@ html {
     margin-left: 1.5rem;
   }
 }
-/* `l` hat keine Seite — der Renderer vergibt dort gar keine pl-Klasse. */
-.bildplatz.gr-l {
+/* Die volle Spalte hat keine Seite — der Renderer vergibt dort gar keine
+   pl-Klasse, ebenso ab fünf Sechsteln (daneben bliebe nur noch ein Rand). */
+.bildplatz.br-1-1 {
   width: 100%;
 }
 

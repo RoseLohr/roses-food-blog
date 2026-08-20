@@ -16,6 +16,12 @@ import { RichTextEditor } from "@/components/admin/rich-text-editor";
 import {
   BILD_GROESSEN,
   BILD_PLAETZE,
+  bildBreitenGross,
+  fliesstText,
+  passtInZeile,
+  seitenverhaeltnis,
+  zeilenBreite,
+  zeilenIndizes,
   type BildGroesse,
   type BildPlatz,
 } from "@/lib/bildreihen";
@@ -99,34 +105,82 @@ const btnSecondary =
   "rounded-lg border border-ink/20 px-3 py-1.5 text-sm hover:bg-cream";
 
 /**
- * Darf dieses Bild „neben dem Bild darüber" stehen?
- *
- * Dieselbe Bedingung wie im Renderer (`zuRenderBloecken`): Direkt darüber muss
- * ein Bildblock stehen, der noch allein ist. Über einem Text- oder
- * Restaurant-Block gibt es nichts, wozu sich etwas stellen könnte, und ein
- * bereits gepaartes Bild bleibt bei zweien — zu dritt bliebe bei 816 px je Bild
- * ein 264-px-Streifen.
- *
- * Die Regel steht hier ein zweites Mal, weil der Editor sie ANZEIGEN muss,
- * bevor gespeichert wird. Damit sie nicht auseinanderlaufen kann, prüft ein
- * Test beide Seiten gegen dieselben Fälle.
+ * Was der Editor über die Zeilen wissen muss — abgeleitet aus DERSELBEN
+ * Gruppierung, die auch der Renderer benutzt (`zeilenIndizes`). Die Regel wird
+ * hier also nicht ein zweites Mal formuliert, sondern nur angezeigt.
  */
-function paarFaehig(blocks: EditorBlock[], i: number): boolean {
-  const davor = blocks[i - 1];
-  if (davor === undefined || davor.type !== "bild") return false;
-  // Ist das Bild darüber selbst schon angehängt, wäre dieses hier das dritte.
-  return !davor.mitVorherigem;
+interface Zeilenwissen {
+  /** Blockindizes der Zeile, zu der dieser Block gehört. */
+  zeile: number[];
+  /** Greift das Häkchen bei diesem Block wirklich (er ist nicht der erste)? */
+  angehaengt: boolean;
+  /** Darf das Häkchen überhaupt angeboten werden — passt das Bild daneben? */
+  anbietbar: boolean;
 }
 
-/** Fertige Anzeigegröße eines Bildes in Pixeln — die Antwort auf die Frage,
- *  die der alte Höhen-Schalter offenließ. Spalte 816 px ab 929 px Fenster. */
+function zeilenwissen(blocks: EditorBlock[]): Map<number, Zeilenwissen> {
+  const zeilen = zeilenIndizes(blocks);
+  const zeileVon = new Map<number, number[]>();
+  for (const z of zeilen) for (const i of z) zeileVon.set(i, z);
+
+  const wissen = new Map<number, Zeilenwissen>();
+  for (const [i, zeile] of zeileVon) {
+    const block = blocks[i];
+    if (block.type !== "bild") continue;
+    // Anbietbar ist das Häkchen, wenn direkt darüber ein Bild steht und dieses
+    // Bild noch in dessen Zeile passt — also die Summe der Anteile die Spalte
+    // nicht überschreitet. Steht der Block schon in einer Zeile mit anderen,
+    // ist die Frage schon beantwortet.
+    const davor = zeileVon.get(i - 1);
+    const davorGroessen = (davor ?? [])
+      .filter((k) => k !== i)
+      .map((k) => blocks[k])
+      .filter((b) => b.type === "bild")
+      .map((b) => b.groesse);
+    wissen.set(i, {
+      zeile,
+      angehaengt: zeile[0] !== i,
+      anbietbar:
+        davor !== undefined &&
+        davorGroessen.length > 0 &&
+        passtInZeile(davorGroessen, block.groesse),
+    });
+  }
+  return wissen;
+}
+
+/**
+ * Fertige Anzeigegröße eines Bildes in Pixeln — die Antwort auf die Frage,
+ * die der alte Höhen-Schalter offenließ. Spalte 816 px ab 929 px Fenster.
+ *
+ * Steht das Bild in einer Zeile mit anderen, hängt seine Breite von DEREN
+ * Formaten ab (die Zeile wird nach Seitenverhältnis verteilt). Gerechnet wird
+ * deshalb mit derselben Funktion wie im Frontend, nicht mit einer Näherung.
+ */
 function fertigeGroesse(
-  groesse: BildGroesse,
-  bild: { width?: number; height?: number } | undefined,
+  blocks: EditorBlock[],
+  zeile: number[],
+  i: number,
+  bildZu: (id: number) => { width?: number; height?: number } | undefined,
 ): { breite: number; hoehe: number } | null {
-  if (!bild?.width || !bild.height) return null;
-  const breite = Math.round(816 * (groesse === "s" ? 1 / 3 : groesse === "m" ? 1 / 2 : 1));
-  return { breite, hoehe: Math.round((breite * bild.height) / bild.width) };
+  const bilder = zeile
+    .map((k) => blocks[k])
+    .filter((b) => b.type === "bild")
+    .map((b) => ({ block: b, bild: bildZu(b.imageId) }));
+  if (bilder.some((x) => !x.bild?.width || !x.bild.height)) return null;
+
+  const breiten = bildBreitenGross(
+    zeilenBreite(bilder.map((x) => x.block.groesse)),
+    bilder.map((x) => seitenverhaeltnis(x.bild!.width!, x.bild!.height!)),
+  );
+  const pos = zeile.indexOf(i);
+  const eigen = bilder[pos];
+  const breite = breiten[pos];
+  if (breite === undefined || eigen === undefined) return null;
+  return {
+    breite,
+    hoehe: Math.round((breite * eigen.bild!.height!) / eigen.bild!.width!),
+  };
 }
 
 function GroessenSchalter({
@@ -248,6 +302,10 @@ export function TravelEditor({
       : [{ type: "text", markdown: "" } as EditorBlockData]
     ).map((b) => ({ ...b, key: nextBlockKey() })),
   );
+
+  // Zeilen einmal je Rendervorgang bestimmen — aus derselben Gruppierung, die
+  // beim Speichern das Frontend baut.
+  const wissen = zeilenwissen(blocks);
 
   const updateBlock = (i: number, patch: Partial<EditorBlockData>) =>
     setBlocks((prev) =>
@@ -506,9 +564,27 @@ export function TravelEditor({
                   )}
                   {b.type === "bild" &&
                     (() => {
-                      const gepaart = b.mitVorherigem && paarFaehig(blocks, i);
-                      const bild = images.find((x) => x.id === b.imageId);
-                      const fertig = fertigeGroesse(b.groesse, bild);
+                      const w = wissen.get(i);
+                      const gepaart = w?.angehaengt ?? false;
+                      const anbietbar = w?.anbietbar ?? false;
+                      const zeile = w?.zeile ?? [i];
+                      const zeilenGroessen = zeile
+                        .map((k) => blocks[k])
+                        .filter((x) => x.type === "bild")
+                        .map((x) => x.groesse);
+                      // Seite und Umfluss gelten für die ganze Zeile und kommen
+                      // vom ersten Bild — dieselbe Regel wie im Frontend.
+                      const erstes = blocks[zeile[0]];
+                      const zeilenPlatz =
+                        erstes?.type === "bild" && fliesstText(zeilenGroessen)
+                          ? erstes.platz
+                          : null;
+                      const fertig = fertigeGroesse(
+                        blocks,
+                        zeile,
+                        i,
+                        (id) => images.find((x) => x.id === id),
+                      );
                       return (
                         <>
                           <ImagePicker
@@ -523,9 +599,12 @@ export function TravelEditor({
                           <div className="mt-3 flex flex-wrap items-end gap-x-6 gap-y-3">
                             <div>
                               <span className={labelCls}>{d.blockSize}</span>
+                              {/* Auch in einer Zeile behält jedes Bild seine
+                                  eigene Größe — sie ist sein Anteil an der
+                                  Zeile. Nur die SEITE kommt vom ersten Bild. */}
                               <GroessenSchalter
                                 wert={b.groesse}
-                                gesperrt={gepaart}
+                                gesperrt={false}
                                 onChange={(g) => updateBlock(i, { groesse: g })}
                               />
                             </div>
@@ -540,17 +619,15 @@ export function TravelEditor({
                           </div>
                           <label
                             className={`mt-3 flex items-start gap-2 text-sm ${
-                              paarFaehig(blocks, i) ? "" : "opacity-50"
+                              anbietbar ? "" : "opacity-50"
                             }`}
-                            title={
-                              paarFaehig(blocks, i) ? undefined : d.blockWithPreviousOff
-                            }
+                            title={anbietbar ? undefined : d.blockWithPreviousOff}
                           >
                             <input
                               type="checkbox"
                               className="mt-1 h-4 w-4 accent-leaf"
                               checked={gepaart}
-                              disabled={!paarFaehig(blocks, i)}
+                              disabled={!anbietbar}
                               onChange={(e) =>
                                 updateBlock(i, { mitVorherigem: e.target.checked })
                               }
@@ -558,14 +635,17 @@ export function TravelEditor({
                             <span>{d.blockWithPrevious}</span>
                           </label>
                           <p className="mt-2 border-l-2 border-leaf bg-leaf/[0.06] px-3 py-1.5 text-xs text-ink-soft">
-                            {gepaart
-                              ? d.blockPairedWith
-                              : b.groesse === "l"
+                            {zeilenPlatz === null
+                              ? zeilenBreite(zeilenGroessen).n === 1
                                 ? d.blockFullWidth
-                                : b.platz === "rechts"
-                                  ? d.blockFloatRight
-                                  : d.blockFloatLeft}
-                            {!gepaart && fertig && (
+                                : d.blockNoFlow
+                              : zeilenPlatz === "rechts"
+                                ? d.blockFloatRight
+                                : d.blockFloatLeft}
+                            {zeilenGroessen.length > 1 && (
+                              <> {d.blockInRow(zeilenGroessen.length)}</>
+                            )}
+                            {fertig && (
                               <>
                                 {" "}
                                 <b className="font-semibold text-ink">

@@ -8,7 +8,7 @@
 import Link from "next/link";
 import type { FullDish, FullRestaurant, FullTravelPost } from "@/lib/travel";
 import type { MediaImage } from "@/lib/recipes";
-import type { BildGroesse, BildPlatz } from "@/lib/bildreihen";
+import type { BildPlatz, Bruch } from "@/lib/bildreihen";
 import {
   bildSizes,
   galerieSizes,
@@ -103,38 +103,39 @@ function arStil(img: MediaImage): React.CSSProperties {
 }
 
 /**
- * Ein BILDPLATZ: ein Bild oder zwei als Paar, in der eingestellten Breite und
- * an der eingestellten Seite. Der Text fließt daneben weiter.
+ * Eine BILDZEILE: ein Bild oder mehrere nebeneinander, in der Summe ihrer
+ * Anteile und an der gewählten Seite. Der Text fließt daneben weiter, solange
+ * die Zeile höchstens zwei Drittel der Spalte einnimmt (sonst `platz === null`).
  *
- * Beim Paar teilen sich die beiden Bilder die Breite über
+ * Innerhalb der Zeile teilen sich die Bilder die Breite über
  * `flex: var(--ar) 1 0` im Verhältnis ihrer Seitenverhältnisse. Die gesamte
  * Breite ist freier Platz, der proportional zum Format verteilt wird — dadurch
- * ist Breite_i / Format_i für beide gleich, also sind sie exakt gleich hoch und
+ * ist Breite_i / Format_i für alle gleich, sie sind also exakt gleich hoch und
  * schließen unten bündig ab, ohne Zuschnitt und ohne eine Zeile JavaScript.
  */
-function Bildplatz({
+function Bildzeile({
   images,
-  groesse,
+  breite,
   platz,
 }: {
   images: MediaImage[];
-  groesse: BildGroesse;
-  platz: BildPlatz;
+  breite: Bruch;
+  platz: BildPlatz | null;
 }) {
   if (images.length === 0) return null;
   const sizes = bildSizes(
-    groesse,
+    breite,
     images.map((img) => seitenverhaeltnis(img.width, img.height)),
   );
-  // Bei `l` gibt es keine Seite — die Klasse entfällt, damit im CSS gar nicht
-  // erst eine Float-Regel greifen kann, die dann wieder aufgehoben werden müsste.
-  const klassen = `bildplatz gr-${groesse}${groesse === "l" ? "" : ` pl-${platz}`}`;
+  // Ohne Seite entfällt die pl-Klasse, damit im CSS gar nicht erst eine
+  // Float-Regel greift, die dann wieder aufgehoben werden müsste.
+  const klassen = `bildplatz br-${breite.z}-${breite.n}${platz === null ? "" : ` pl-${platz}`}`;
 
-  // Ein einzelnes Bild: Der Klick-Rahmen IST der Bildplatz — er schwebt im
-  // Text, also trägt er die Layout-Klassen. Ein Paar: Der Bildplatz bleibt der
-  // Kasten außen herum, die beiden Rahmen sind seine Flex-Kinder und tragen
-  // je ihr Seitenverhältnis. Beide Male gehören die Bilder zu EINER Galerie —
-  // im Pop-up blättert man deshalb durch das Paar.
+  // Ein einzelnes Bild: Der Klick-Rahmen IST die Zeile — er schwebt im Text,
+  // also trägt er die Layout-Klassen. Mehrere: Die Zeile bleibt der Kasten
+  // außen herum, die Rahmen sind ihre Flex-Kinder und tragen je ihr
+  // Seitenverhältnis. Beide Male gehören die Bilder zu EINER Galerie — im
+  // Pop-up blättert man deshalb durch die ganze Zeile.
   const galerie = images.map((img, i) => ({
     ...img,
     thumb:
@@ -885,9 +886,9 @@ export async function TravelView({
                     if (mitText) i++; // wird hier mitgerendert
                     ausgabe.push(
                       <div key={i} className="bildlauf">
-                        <Bildplatz
+                        <Bildzeile
                           images={bilder}
-                          groesse={b.groesse}
+                          breite={b.breite}
                           platz={b.platz}
                         />
                         {mitText && (
