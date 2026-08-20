@@ -442,8 +442,16 @@ export const restaurant = sqliteTable(
     city: text("city").notNull().default(""),
     /** Markdown */
     description: text("description").notNull().default(""),
-    /** Optionales Foto des Restaurants */
+    /** Erstes Foto des Restaurants (optional). Allein steht es über die ganze
+     *  Kartenbreite. */
     imageId: integer("image_id").references(() => mediaImage.id, {
+      onDelete: "set null",
+    }),
+    /** Zweites Foto (optional). Zu zweit stehen sie kleiner nebeneinander.
+     *  Bewusst eine zweite SPALTE statt einer Verknüpfungstabelle: Die Regel
+     *  nennt eine Obergrenze („eines oder zwei"), keine offene Liste, und eine
+     *  Tabelle bräuchte für dieselbe Grenze einen Trigger. */
+    imageId2: integer("image_id_2").references(() => mediaImage.id, {
       onDelete: "set null",
     }),
     /** Manueller Koordinaten-Override; Fallback-Kette: diese Werte →
@@ -452,7 +460,16 @@ export const restaurant = sqliteTable(
     lng: real("lng"),
     sortOrder: integer("sort_order").notNull().default(0),
   },
-  (t) => [index("restaurant_travel_idx").on(t.travelPostId)],
+  (t) => [
+    index("restaurant_travel_idx").on(t.travelPostId),
+    /* Zweimal dasselbe Foto wäre kein Paar, sondern ein Fehler: Der Renderer
+       gäbe zwei Kacheln mit demselben Schlüssel aus, und im Pop-up stünde
+       dasselbe Bild zweimal. Die Datenbank lässt es gar nicht erst zu. */
+    check(
+      "restaurant_image_2_check",
+      sql`${t.imageId2} IS NULL OR ${t.imageId2} <> ${t.imageId}`,
+    ),
+  ],
 );
 
 /** Inhalts-Blockfolge des Reiseberichts (ersetzt das contentBlocks-JSON).

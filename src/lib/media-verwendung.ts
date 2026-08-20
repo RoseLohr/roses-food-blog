@@ -86,10 +86,20 @@ const QUELLEN: Array<{ bereich: string; ids: () => Promise<(number | null)[]> }>
   },
   {
     bereich: "Restaurant",
+    // BEIDE Fotoplätze. Ein Restaurant trägt eines über die ganze Kartenbreite
+    // oder zwei kleinere nebeneinander (RESTAURANT_FOTOS_MAX). Fehlte hier der
+    // zweite Platz, hielte die Mediathek dessen Foto für unbenutzt: Das Löschen
+    // ginge ohne Warnung durch, ON DELETE SET NULL leerte die Spalte, und aus
+    // dem Paar würde still ein Einzelband.
     ids: async () =>
       (
-        await db.select({ id: schema.restaurant.imageId }).from(schema.restaurant)
-      ).map((r) => r.id),
+        await db
+          .select({
+            id: schema.restaurant.imageId,
+            id2: schema.restaurant.imageId2,
+          })
+          .from(schema.restaurant)
+      ).flatMap((r) => [r.id, r.id2]),
   },
   {
     bereich: "Gericht",

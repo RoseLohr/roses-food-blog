@@ -12,6 +12,7 @@ import type { BildPlatz, Bruch } from "@/lib/bildreihen";
 import {
   bildSizes,
   galerieSizes,
+  restaurantPaarSizes,
   seitenverhaeltnis,
   vollbildSizes,
   zuRenderBloecken,
@@ -178,8 +179,10 @@ function restaurantCoords(
       }
     }
   }
-  if (r.image && r.image.lat != null && r.image.lng != null) {
-    return { lat: r.image.lat, lng: r.image.lng };
+  // Wie bei den Gericht-Fotos: das ERSTE Foto, das Koordinaten trägt.
+  const mitGeo = r.images.find((i) => i.lat != null && i.lng != null);
+  if (mitGeo && mitGeo.lat != null && mitGeo.lng != null) {
+    return { lat: mitGeo.lat, lng: mitGeo.lng };
   }
   return null;
 }
@@ -584,15 +587,32 @@ function RestaurantCard({
         </h3>
       </div>
 
-      {r.image && (
-        // Restaurant-Foto klickbar: öffnet sich groß im Pop-up. Als Band ohne
-        // Innenabstand ist es exakt so breit wie die Karte, also wie die
-        // Inhaltsspalte.
+      {r.images.length > 0 && (
+        // Das Band: EIN Foto steht über die ganze Kartenbreite, ZWEI stehen
+        // kleiner nebeneinander. Beide Male ohne Innenabstand, also exakt so
+        // breit wie die Karte; beide Male klickbar, und zu zweit blättert das
+        // Pop-up zwischen ihnen.
+        //
+        // Der Zuschnitt (aspect + object-cover) bleibt wie beim Einzelband und
+        // folgt der Regel der Gericht-Paare: Er macht die Kacheln ohne jede
+        // Rechnung exakt gleich hoch und lässt den im Admin gesetzten
+        // Fokuspunkt weiter wirken. Deshalb hier BEWUSST nicht die Bildzeile
+        // des Fließtexts (.bildpaar), die nach Seitenverhältnis verteilt und
+        // nicht zuschneidet.
         <GalleryLightbox
-          images={[r.image]}
+          images={r.images}
           label={`${dict.travelList.restaurantWord} ${r.name}`}
-          thumbSizes={MASSE.inhalt}
-          thumbClassName="aspect-[3/2] w-full object-cover"
+          thumbSizes={
+            r.images.length === 1 ? MASSE.inhalt : restaurantPaarSizes()
+          }
+          thumbClassName={
+            r.images.length === 1
+              ? "aspect-[3/2] w-full object-cover"
+              : "aspect-[4/3] w-full object-cover"
+          }
+          groupClassName={
+            r.images.length === 1 ? undefined : "grid grid-cols-2 gap-2"
+          }
         />
       )}
 
