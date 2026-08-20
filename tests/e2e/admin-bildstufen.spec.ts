@@ -152,3 +152,49 @@ test("Größe und Platz überleben das Speichern und kommen im Bericht an", asyn
   expect(Math.abs(kasten.width - spalte.width / 3)).toBeLessThan(1.5);
   expect(Math.abs(kasten.x - spalte.x)).toBeLessThan(1.5);
 });
+
+test("drei Bilder im Editor nebeneinander stellen — und sie stehen es auch", async ({
+  page,
+}) => {
+  // Der Weg, den der Redakteur wirklich geht: drei Bildblöcke auf S stellen,
+  // bei den beiden unteren „neben dem Bild darüber" anhaken, speichern — und
+  // dann steht die Zeile. Die geseedeten Daten beweisen nur den Renderer;
+  // dieser Test beweist die Kette vom Häkchen bis zum gerenderten Pixel.
+  await page.goto(editorUrl);
+  const bloecke = bildBloecke(page);
+  await expect(bloecke).toHaveCount(3);
+
+  for (const n of [0, 1, 2]) {
+    await groesse(bloecke.nth(n))
+      .getByRole("button", { name: d.blockSizeOptions.s.label })
+      .click();
+  }
+  await haken(bloecke.nth(1)).check();
+  await haken(bloecke.nth(2)).check();
+  await expect(bloecke.nth(2).getByText(d.blockInRow(3))).toBeVisible();
+
+  await page.getByRole("button", { name: /Speichern/i }).click();
+  await page.waitForURL(/meldung=/);
+
+  // Das Häkchen hat das Speichern überlebt …
+  await page.goto(editorUrl);
+  await expect(haken(bildBloecke(page).nth(2))).toBeChecked();
+
+  // … und in der Vorschau stehen die drei nebeneinander, GEMESSEN.
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(`/admin/reisen/${session.travelId}/vorschau`);
+  const zeile = page.locator("article .bildplatz.br-1-1:has(.bildpaar)");
+  await expect(zeile).toHaveCount(1);
+  const kaesten = await zeile.locator("img").evaluateAll((els) =>
+    els.map((el) => {
+      const r = el.getBoundingClientRect();
+      return { x: r.x, breite: r.width, hoehe: r.height, oben: r.y };
+    }),
+  );
+  expect(kaesten.length).toBe(3);
+  // Nebeneinander: jedes beginnt rechts vom vorigen, alle auf gleicher Höhe.
+  expect(kaesten[1].x).toBeGreaterThan(kaesten[0].x + kaesten[0].breite - 1);
+  expect(kaesten[2].x).toBeGreaterThan(kaesten[1].x + kaesten[1].breite - 1);
+  const hoehen = kaesten.map((k) => k.hoehe);
+  expect(Math.max(...hoehen) - Math.min(...hoehen)).toBeLessThan(1.5);
+});
