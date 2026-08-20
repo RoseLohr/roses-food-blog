@@ -860,6 +860,9 @@ export const de = {
           title: "Die ganze Spalte — 816 px, kein Text daneben",
         },
       },
+      /** Die Anteile addieren sich: S+S+S oder M+M füllen eine Zeile. */
+      blockSizeSumHint:
+        "Mehrere Bilder nebeneinander addieren ihre Anteile: S+S+S oder M+M füllen die Zeile, M+S kommt auf fünf Sechstel.",
       blockPlace: "Platz",
       blockPlaceOptions: {
         links: { label: "links", title: "Bild links, der Text fließt rechts daneben" },
@@ -867,15 +870,19 @@ export const de = {
       },
       blockWithPrevious: "neben dem Bild darüber",
       blockWithPreviousOff:
-        "Nur möglich, wenn direkt darüber ein einzelnes Bild steht — zu dritt bliebe je Bild ein Streifen.",
-      blockPairedWith:
-        "Steht neben dem Bild darüber, beide teilen sich dessen Breite nach Seitenverhältnis und werden gleich hoch. Größe und Platz kommen von dort.",
+        "Nur möglich, wenn direkt darüber ein Bild steht und beide zusammen noch in eine Zeile passen — drei Drittel füllen sie bereits.",
+      /** Zusatz im Hinweis, sobald mehrere Bilder eine Zeile teilen. */
+      blockInRow: (anzahl: number) =>
+        `Teilt sich die Zeile mit ${anzahl - 1} weiteren Bild${anzahl === 2 ? "" : "ern"} — alle gleich hoch, unten bündig. Die Seite kommt vom ersten Bild der Zeile.`,
       blockFloatRight:
         "Steht rechts im Text, der Text fließt links daneben. Auf dem Handy über die volle Breite.",
       blockFloatLeft:
         "Steht links im Text, der Text fließt rechts daneben. Auf dem Handy über die volle Breite.",
       blockFullWidth:
         "Steht über die ganze Breite des Inhalts — kein Text daneben, keine Seite.",
+      /** Ab fünf Sechsteln bliebe daneben nur noch ein Rand statt einer Spalte. */
+      blockNoFlow:
+        "Zu breit für Text daneben — die Zeile steht für sich, ohne Umfluss.",
       /** „272 × 181 px“ — die fertige Größe, die der alte Höhen-Schalter offenließ. */
       blockRendered: (breite: number, hoehe: number) => `${breite} × ${hoehe} px`,
       blockRestaurant: "Restaurant",

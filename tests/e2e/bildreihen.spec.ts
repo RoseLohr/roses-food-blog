@@ -49,14 +49,14 @@ test.describe("Reisebericht: Bilder im Textfluss", () => {
     const spalte = kanten.rechts - kanten.links;
 
     // S = ein Drittel, links: die linke Kante sitzt auf der Textkante.
-    const klein = page.locator("article .bildplatz.gr-s").first();
+    const klein = page.locator("article .bildplatz.br-1-3").first();
     const kb = (await klein.boundingBox())!;
     expect(Math.abs(kb.width - spalte / 3)).toBeLessThan(1.5);
     expect(Math.abs(kb.x - kanten.links)).toBeLessThan(2);
     expect(await klein.evaluate((el) => getComputedStyle(el).float)).toBe("left");
 
     // M = die Hälfte, rechts: die rechte Kante sitzt auf der Textkante.
-    const halb = page.locator("article .bildplatz.gr-m").first();
+    const halb = page.locator("article .bildplatz.br-1-2").first();
     const hb = (await halb.boundingBox())!;
     expect(Math.abs(hb.width - spalte / 2)).toBeLessThan(1.5);
     expect(Math.abs(hb.x + hb.width - kanten.rechts)).toBeLessThan(2);
@@ -112,20 +112,20 @@ test.describe("Reisebericht: Bilder im Textfluss", () => {
     }
   });
 
-  test("ein Paar füllt seinen Platz exakt und ist gleich hoch", async ({ page }) => {
+  test("eine Zeile füllt ihre Breite exakt und ist gleich hoch", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto(REPORT);
 
-    const paar = page.locator("article .bildpaar").first();
-    await expect(paar.locator("img")).toHaveCount(2);
-    const [a, b] = await bilderKaesten(paar);
-    const platz = (await paar.boundingBox())!;
+    const zeile = page.locator("article .bildplatz.br-2-3 .bildpaar");
+    await expect(zeile.locator("img")).toHaveCount(2);
+    const [a, b] = await bilderKaesten(zeile);
+    const platz = (await zeile.boundingBox())!;
 
     // Gleich hoch und dieselbe Unterkante — ohne Zuschnitt.
     expect(Math.abs(a.height - b.height)).toBeLessThan(1.5);
     expect(Math.abs(a.y + a.height - (b.y + b.height))).toBeLessThan(1.5);
 
-    // Beide Kanten sitzen auf dem Platz: das Paar füllt ihn exakt.
+    // Beide Kanten sitzen auf der Zeile: sie füllen sie exakt.
     expect(Math.abs(a.x - platz.x)).toBeLessThan(1.5);
     expect(Math.abs(b.x + b.width - (platz.x + platz.width))).toBeLessThan(1.5);
 
@@ -133,17 +133,51 @@ test.describe("Reisebericht: Bilder im Textfluss", () => {
     expect(Math.abs(a.width - b.width)).toBeGreaterThan(10);
   });
 
+  test("drei S stehen nebeneinander und füllen die Spalte", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto(REPORT);
+    const kanten = await textkanten(page);
+
+    // Das ist der Kern der Regel: Die Anteile ADDIEREN sich. Vorher teilten
+    // sich zwei Bilder EIN Drittel und ein drittes fiel ganz heraus.
+    const zeile = page.locator("article .bildplatz.br-1-1:has(.bildpaar)");
+    await expect(zeile).toHaveCount(1);
+    const kaesten = await bilderKaesten(zeile);
+    expect(kaesten.length).toBe(3);
+
+    // Von Textkante zu Textkante, lückenlos.
+    expect(Math.abs(kaesten[0].x - kanten.links)).toBeLessThan(1.5);
+    const rechteKante = kaesten[2].x + kaesten[2].width;
+    expect(Math.abs(rechteKante - kanten.rechts)).toBeLessThan(1.5);
+
+    // Alle drei gleich hoch und unten bündig — trotz dreier Formate.
+    const hoehen = kaesten.map((k) => k.height);
+    expect(Math.max(...hoehen) - Math.min(...hoehen)).toBeLessThan(1.5);
+    const unterkanten = kaesten.map((k) => k.y + k.height);
+    expect(Math.max(...unterkanten) - Math.min(...unterkanten)).toBeLessThan(1.5);
+
+    // Verschieden breit: hoch, quadratisch, quer teilen sich nach Format.
+    expect(kaesten[2].width).toBeGreaterThan(kaesten[0].width + 10);
+
+    // Die volle Zeile hat keine Seite — daneben ist kein Text mehr.
+    expect(await zeile.evaluate((el) => getComputedStyle(el).float)).toBe("none");
+  });
+
   test("ein L-Bild steht allein über die volle Spalte", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto(REPORT);
     const kanten = await textkanten(page);
-    const voll = page.locator("article .bildplatz.gr-l");
+    // Volle Breite hat auch eine gefüllte Zeile (S+S+S) — gemeint ist hier das
+    // EINZELNE L-Bild, also der Rahmen ohne Zeilen-Kasten darin.
+    const voll = page.locator("article .bildplatz.br-1-1:not(:has(.bildpaar))");
     await expect(voll).toHaveCount(1);
     const box = (await voll.boundingBox())!;
     expect(Math.round(box.width)).toBe(Math.round(kanten.rechts - kanten.links));
     // Die ganze Spalte hat keine Seite — kein Float, keine pl-Klasse.
     expect(await voll.evaluate((el) => getComputedStyle(el).float)).toBe("none");
-    await expect(page.locator("article .bildplatz.gr-l.pl-links, article .bildplatz.gr-l.pl-rechts")).toHaveCount(0);
+    await expect(
+      page.locator("article .bildplatz.br-1-1.pl-links, article .bildplatz.br-1-1.pl-rechts"),
+    ).toHaveCount(0);
   });
 
   test("kein Bild läuft über die Textspalte hinaus", async ({ page }) => {
@@ -169,13 +203,13 @@ test.describe("Reisebericht: Bilder im Textfluss", () => {
 
     // Einzelbild: volle Breite, kein Float — ein Drittel wären hier 103 px,
     // und daneben blieben rund fünfzehn Zeichen je Zeile.
-    const einzel = page.locator("article .bildplatz.gr-s").first();
+    const einzel = page.locator("article .bildplatz.br-1-3").first();
     expect(await einzel.evaluate((el) => getComputedStyle(el).float)).toBe("none");
     const einzelBox = (await einzel.boundingBox())!;
     expect(Math.abs(einzelBox.width - (kanten.rechts - kanten.links))).toBeLessThan(2);
 
-    // Paar: die beiden Bilder stehen weiterhin NEBENEINANDER — es ist der
-    // einzige Fall, in dem das jemand ausdrücklich bestellt hat.
+    // Zeile: die Bilder stehen weiterhin NEBENEINANDER — es ist der einzige
+    // Fall, in dem das jemand ausdrücklich bestellt hat.
     const paar = page.locator("article .bildpaar").first();
     const [a, b] = await bilderKaesten(paar);
     expect(b.x).toBeGreaterThan(a.x + a.width - 1);

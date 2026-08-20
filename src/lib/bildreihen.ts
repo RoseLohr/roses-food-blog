@@ -16,20 +16,24 @@
  *            des Fotos ist Sache des Fotos.
  *   PLATZ    links oder rechts; der Text fließt daneben weiter. Bei L gibt es
  *            keinen Platz, die ganze Spalte hat keine Seite.
- *   PAAR     Ein Bild kann „neben dem Bild darüber" stehen. Beide bilden dann
- *            EINEN schwebenden Block in der Größe des ersten und teilen ihn
- *            nach Seitenverhältnis — dadurch gleich hoch und bündig. Das ist
- *            dieselbe Rechnung wie in der alten Reihe, aber sie greift nur
- *            dort, wo jemand sie ausdrücklich bestellt hat.
+ *   ZEILE    Ein Bild kann „neben dem Bild darüber" stehen. Die Bilder bilden
+ *            dann EINE Zeile, und deren Breite ist die SUMME ihrer Anteile:
+ *            S+S+S ergibt die ganze Spalte, M+S fünf Sechstel, S+S zwei
+ *            Drittel. Was nicht mehr hineinpasst, beginnt eine neue Zeile.
+ *            Innerhalb der Zeile wird die Breite nach Seitenverhältnis
+ *            verteilt — dadurch sind die Bilder exakt gleich hoch und
+ *            schließen unten bündig ab.
  *
  * Damit wird „passt nebeneinander" zu einer Rechnung, die man im Kopf macht,
  * und `sizes` zu einer Zahl statt einer Vorhersage.
  *
- * Auf dem Handy ist die Spalte 310 px breit; ein Drittel davon wären 103 px und
- * daneben blieben rund fünfzehn Zeichen je Zeile. Dort stehen Einzelbilder
- * deshalb über die volle Breite. Ein Paar bleibt nebeneinander — es ist der
- * einzige Fall, in dem zwei Bilder eine Zeile teilen, und der einzige, in dem
- * das jemand ausdrücklich so bestellt hat.
+ * Text fließt nur neben einer Zeile weiter, die höchstens ZWEI DRITTEL der
+ * Spalte einnimmt. Bei fünf Sechsteln blieben daneben 136 px — das ist keine
+ * Spalte mehr, sondern ein Rand; dieselbe Überlegung, aus der auf dem Handy
+ * gar kein Umfluss stattfindet (dort wäre ein Drittel 103 px breit).
+ * Einzelbilder stehen auf dem Handy deshalb über die volle Breite; eine Zeile
+ * bleibt nebeneinander — sie ist der einzige Fall, in dem sich mehrere Bilder
+ * eine Zeile teilen, und der einzige, in dem das jemand bestellt hat.
  */
 import type { TravelBlock } from "@/lib/travel-blocks";
 
@@ -41,14 +45,77 @@ export type BildGroesse = (typeof BILD_GROESSEN)[number];
 export const BILD_PLAETZE = ["links", "rechts"] as const;
 export type BildPlatz = (typeof BILD_PLAETZE)[number];
 
-/** Anteil der Inhaltsspalte je Größe. */
-const ANTEIL: Record<BildGroesse, number> = { s: 1 / 3, m: 1 / 2, l: 1 };
+/**
+ * Anteil der Inhaltsspalte je Größe, in SECHSTELN gerechnet.
+ *
+ * Sechstel, weil sich damit alle drei Größen ganzzahlig addieren lassen
+ * (S = 2, M = 3, L = 6). Die Summe einer Zeile ist deshalb eine ganze Zahl —
+ * kein Gleitkomma-Vergleich entscheidet, ob ein Bild „noch passt".
+ */
+const SECHSTEL: Record<BildGroesse, number> = { s: 2, m: 3, l: 6 };
 
-/** Nenner für den CSS-Ausdruck — exakt statt gerundet (`/ 3` statt `* 0.3333`). */
-const NENNER: Record<BildGroesse, number> = { s: 3, m: 2, l: 1 };
+/** Eine volle Zeile. */
+const ZEILE = 6;
 
-/** Abstand zwischen den beiden Bildern eines Paares (gap-3 = 12 px). */
-const PAAR_ABSTAND = 12;
+/**
+ * Bis hierhin fließt der Text neben der Zeile weiter (zwei Drittel).
+ * Darüber blieben bei 816 px Spalte höchstens 136 px daneben — ein Rand,
+ * keine Spalte.
+ */
+const UMFLUSS_MAX = 4;
+
+/** Breite als gekürzter Bruch der Inhaltsspalte. */
+export interface Bruch {
+  z: number;
+  n: number;
+}
+
+function ggt(a: number, b: number): number {
+  return b === 0 ? a : ggt(b, a % b);
+}
+
+/** Sechstel als gekürzten Bruch. */
+function alsBruch(sechstel: number): Bruch {
+  const t = ggt(sechstel, ZEILE);
+  return { z: sechstel / t, n: ZEILE / t };
+}
+
+/** Summe der Anteile einer Zeile, in Sechsteln. */
+function summeSechstel(groessen: BildGroesse[]): number {
+  return groessen.reduce((s, g) => s + SECHSTEL[g], 0);
+}
+
+/**
+ * Fließt neben dieser Zeile noch Text weiter?
+ *
+ * Nur bis zwei Drittel der Spalte. Bei fünf Sechsteln blieben daneben 136 px —
+ * das ist keine Spalte mehr, sondern ein Rand.
+ */
+export function fliesstText(groessen: BildGroesse[]): boolean {
+  return summeSechstel(groessen) <= UMFLUSS_MAX;
+}
+
+/** Breite einer Zeile als Anteil der Spalte. */
+export function zeilenBreite(groessen: BildGroesse[]): Bruch {
+  return alsBruch(Math.min(summeSechstel(groessen), ZEILE));
+}
+
+/**
+ * Passt ein weiteres Bild neben die bestehende Zeile?
+ *
+ * Die Frage stellt der Renderer (darf das Häkchen greifen?) und der Editor
+ * (darf das Häkchen überhaupt angeboten werden?) — beide über DIESE Funktion,
+ * damit sie nicht auseinanderlaufen können.
+ */
+export function passtInZeile(
+  zeile: BildGroesse[],
+  weiteres: BildGroesse,
+): boolean {
+  return summeSechstel(zeile) + SECHSTEL[weiteres] <= ZEILE;
+}
+
+/** Abstand zwischen zwei Bildern einer Zeile (gap-3 = 12 px). */
+const BILD_ABSTAND = 12;
 
 /**
  * Breite des Inhaltsbereichs — dieselbe Kette wie in travel-view.tsx:
@@ -75,65 +142,91 @@ export type RenderBlock =
   | { art: "text"; markdown: string }
   | { art: "restaurant"; index: number }
   /**
-   * Ein Bildplatz: ein Bild, oder zwei als Paar. Größe und Platz gelten für
-   * den ganzen Block; beim Paar kommen sie vom ERSTEN Bild.
+   * Eine Bildzeile: ein Bild oder mehrere nebeneinander. Die Breite ist die
+   * Summe der Anteile; der Platz kommt vom ERSTEN Bild und ist `null`, wenn
+   * daneben kein Text mehr Platz hätte (mehr als zwei Drittel der Spalte).
    */
   | {
       art: "bild";
       imageIds: number[];
-      groesse: BildGroesse;
-      platz: BildPlatz;
+      groessen: BildGroesse[];
+      breite: Bruch;
+      platz: BildPlatz | null;
     };
 
+/** Eine Bildzeile im Renderbaum. */
+type Zeile = Extract<RenderBlock, { art: "bild" }>;
+
 /**
- * Fasst die Blockfolge des Editors zu Renderblöcken zusammen.
+ * Gruppiert die Blockfolge: je Eintrag entweder ein Nicht-Bildblock oder eine
+ * Bildzeile mit den Blockindizes, die zu ihr gehören.
  *
  * Die einzige Beziehung zwischen zwei Blöcken ist `mitVorherigem` — und die
- * wird gesagt, nicht erraten. Sie greift nur, wenn direkt darüber ein Bildplatz
- * steht, der noch allein ist: Ein Paar bleibt bei zwei Bildern (drei
- * nebeneinander wären bei 816 px je 264 px, das ist keine Darstellung mehr sondern
- * ein Streifen), und über einem Text- oder Restaurant-Block gibt es nichts, wozu
- * sich etwas stellen könnte. In beiden Fällen wird das Häkchen ignoriert und
- * das Bild steht für sich — der Editor graut es dort aus, sodass der Fall gar
- * nicht erst entsteht.
+ * wird gesagt, nicht erraten. Sie greift nur, wenn direkt darüber eine
+ * Bildzeile steht, in die das Bild noch HINEINPASST: Die Summe der Anteile
+ * darf die Spalte nicht überschreiten (drei S füllen sie genau, ein viertes
+ * beginnt eine neue Zeile). Über einem Text- oder Restaurant-Block gibt es
+ * nichts, wozu sich etwas stellen könnte.
+ *
+ * Renderer UND Editor bauen auf diesem einen Durchlauf auf — der Editor muss
+ * die Regel anzeigen, bevor gespeichert wird, und beide dürfen dabei nicht
+ * auseinanderlaufen.
  */
-export function zuRenderBloecken(blocks: TravelBlock[]): RenderBlock[] {
-  const out: RenderBlock[] = [];
+function gruppiere(
+  blocks: TravelBlock[],
+): Array<{ block: TravelBlock; indizes: number[] }> {
+  const out: Array<{ block: TravelBlock; indizes: number[] }> = [];
+  // Die zuletzt geöffnete Bildzeile: ihre Größen und ihre Blockindizes.
+  let offen: { groessen: BildGroesse[]; indizes: number[] } | null = null;
 
-  for (const b of blocks) {
-    if (b.type === "text") {
-      out.push({ art: "text", markdown: b.markdown });
-      continue;
+  blocks.forEach((b, i) => {
+    if (b.type !== "bild") {
+      out.push({ block: b, indizes: [i] });
+      offen = null;
+      return;
     }
-    if (b.type === "restaurant") {
-      out.push({ art: "restaurant", index: b.index });
-      continue;
+    if (b.mitVorherigem && offen !== null && passtInZeile(offen.groessen, b.groesse)) {
+      offen.groessen.push(b.groesse);
+      offen.indizes.push(i);
+      return;
     }
-
-    const davor = out[out.length - 1];
-    const anschlussfaehig =
-      b.mitVorherigem &&
-      davor !== undefined &&
-      davor.art === "bild" &&
-      davor.imageIds.length === 1;
-    if (anschlussfaehig) {
-      // Größe und Platz kommen vom ersten Bild — das zweite hat dazu nichts
-      // mehr zu sagen, und der Editor blendet seine Knöpfe entsprechend ab.
-      (davor as Extract<RenderBlock, { art: "bild" }>).imageIds.push(b.imageId);
-      continue;
-    }
-
-    out.push({
-      art: "bild",
-      imageIds: [b.imageId],
-      groesse: b.groesse,
-      // Bei L ist der Platz bedeutungslos; er wird trotzdem mitgeführt, damit
-      // ein Wechsel L → M die vorher gewählte Seite nicht verliert.
-      platz: b.platz,
-    });
-  }
+    offen = { groessen: [b.groesse], indizes: [i] };
+    out.push({ block: b, indizes: offen.indizes });
+  });
 
   return out;
+}
+
+/**
+ * Blockindizes je Bildzeile, in Reihenfolge — für den Editor, der zeigen muss,
+ * was beim Speichern herauskäme. Nicht-Bildblöcke kommen nicht vor.
+ */
+export function zeilenIndizes(blocks: TravelBlock[]): number[][] {
+  return gruppiere(blocks)
+    .filter((g) => g.block.type === "bild")
+    .map((g) => g.indizes);
+}
+
+/** Fasst die Blockfolge des Editors zu Renderblöcken zusammen. */
+export function zuRenderBloecken(blocks: TravelBlock[]): RenderBlock[] {
+  return gruppiere(blocks).map(({ block, indizes }) => {
+    if (block.type === "text") return { art: "text", markdown: block.markdown };
+    if (block.type === "restaurant") return { art: "restaurant", index: block.index };
+
+    const teile = indizes.map((i) => blocks[i]).filter((b) => b.type === "bild");
+    const groessen = teile.map((b) => b.groesse);
+    const zeile: Zeile = {
+      art: "bild",
+      imageIds: teile.map((b) => b.imageId),
+      groessen,
+      breite: zeilenBreite(groessen),
+      // Der Platz kommt vom ERSTEN Bild der Zeile; bei L ist er bedeutungslos,
+      // wird aber mitgeführt, damit ein Wechsel L → M ihn nicht verliert.
+      // Ab fünf Sechsteln bliebe daneben kein Text mehr — dann keine Seite.
+      platz: fliesstText(groessen) ? block.platz : null,
+    };
+    return zeile;
+  });
 }
 
 /** Anteil als kürzest mögliche Zahl (0.5 statt 0.5000) für den CSS-Faktor. */
@@ -142,60 +235,86 @@ function faktorText(anteil: number): string {
 }
 
 /**
- * Breite des Bildplatzes als CSS-Ausdruck OHNE `calc()`-Hülle, je Breakpoint.
+ * Breite einer Bildzeile als CSS-Ausdruck OHNE `calc()`-Hülle, je Breakpoint.
  * Der Aufrufer setzt die Hülle — so bleibt der Ausdruck flach, statt ein
  * `calc()` in ein `calc()` zu schachteln.
  *
- * Auf dem Handy (<768) füllt JEDER Bildplatz die Spalte — dort gibt es keinen
- * Umfluss, also auch keine Anteile. Darüber gilt der Anteil der Größe.
+ * Der Bruch wird als `* z / n` ausgeschrieben statt als Kommazahl: `* 2 / 3`
+ * ist exakt, `* 0.6667` wäre gerundet — und die Rundung stünde ausgerechnet in
+ * der Angabe, mit der der Browser die Variante wählt.
+ *
+ * Auf dem Handy (<768) füllt JEDE Bildzeile die Spalte — dort gibt es keinen
+ * Umfluss, also auch keine Anteile.
  */
-function platzBreite(groesse: BildGroesse, bp: "handy" | "mittel"): string {
+function zeilenBreiteCss(breite: Bruch, bp: "handy" | "mittel"): string {
   if (bp === "handy") return `100vw - ${SPALTE_HANDY_ABZUG / 16}rem`;
   const spalte = `100vw - ${SPALTE_MITTEL_ABZUG / 16}rem`;
-  const n = NENNER[groesse];
-  return n === 1 ? spalte : `(${spalte}) / ${n}`;
+  if (breite.n === 1) return spalte;
+  if (breite.z === 1) return `(${spalte}) / ${breite.n}`;
+  return `(${spalte}) * ${breite.z} / ${breite.n}`;
 }
 
 /** Dasselbe für den festen Breakpoint ab 929 px, in Pixeln. */
-function platzBreiteGross(groesse: BildGroesse): number {
-  return Math.round(SPALTE_GROSS * ANTEIL[groesse]);
+function zeilenBreiteGross(breite: Bruch): number {
+  return Math.round((SPALTE_GROSS * breite.z) / breite.n);
 }
 
 /**
- * `sizes` je Bild eines Bildplatzes — eine Angabe je Bild, in DOM-Reihenfolge.
+ * Breite JEDES Bildes einer Zeile in Pixeln, bei 816 px Spalte.
  *
- * Einzelbild: der Bildplatz selbst.
- * Paar: der Bildplatz minus den Abstand, geteilt im Verhältnis der
- * Seitenverhältnisse. Dieselbe Rechnung, die das CSS über `flex: var(--ar) 1 0`
- * ausführt — deshalb stimmt die Deklaration mit dem Gerenderten überein und
- * nicht nur ungefähr.
+ * Ein Bild allein: die Zeile selbst. Mehrere: die Zeile minus die Abstände,
+ * verteilt im Verhältnis der Seitenverhältnisse — dadurch ist Breite/Format
+ * für alle gleich, sie sind also exakt gleich hoch und schließen bündig ab.
+ *
+ * Dieselbe Rechnung führt das CSS über `flex: var(--ar) 1 0` aus. Sie steht
+ * hier EINMAL und versorgt beides: die `sizes`-Angabe und den Hinweis im
+ * Editor, der die fertige Größe nennt.
+ */
+export function bildBreitenGross(
+  breite: Bruch,
+  seitenverhaeltnisse: number[],
+): number[] {
+  const anzahl = seitenverhaeltnisse.length;
+  if (anzahl === 0) return [];
+  const gesamt = zeilenBreiteGross(breite);
+  if (anzahl === 1) return [gesamt];
+  const summe = seitenverhaeltnisse.reduce((a, b) => a + b, 0);
+  const frei = gesamt - BILD_ABSTAND * (anzahl - 1);
+  return seitenverhaeltnisse.map((ar) => Math.round((frei * ar) / summe));
+}
+
+/**
+ * `sizes` je Bild einer Bildzeile — eine Angabe je Bild, in DOM-Reihenfolge.
+ *
+ * Die Pixelangabe für den festen Breakpoint kommt aus `bildBreitenGross`,
+ * damit Deklaration und Rechnung nicht auseinanderlaufen können.
  */
 export function bildSizes(
-  groesse: BildGroesse,
+  breite: Bruch,
   seitenverhaeltnisse: number[],
 ): string[] {
   const anzahl = seitenverhaeltnisse.length;
   if (anzahl === 0) return [];
+  const gross = bildBreitenGross(breite, seitenverhaeltnisse);
 
   if (anzahl === 1) {
     return [
       [
-        `(max-width: 767px) calc(${platzBreite(groesse, "handy")})`,
-        `(max-width: 928px) calc(${platzBreite(groesse, "mittel")})`,
-        `${platzBreiteGross(groesse)}px`,
+        `(max-width: 767px) calc(${zeilenBreiteCss(breite, "handy")})`,
+        `(max-width: 928px) calc(${zeilenBreiteCss(breite, "mittel")})`,
+        `${gross[0]}px`,
       ].join(", "),
     ];
   }
 
   const summe = seitenverhaeltnisse.reduce((a, b) => a + b, 0);
-  const rest = PAAR_ABSTAND * (anzahl - 1);
-  return seitenverhaeltnisse.map((ar) => {
+  const rest = BILD_ABSTAND * (anzahl - 1);
+  return seitenverhaeltnisse.map((ar, i) => {
     const anteil = faktorText(ar / summe);
-    const gross = Math.round(((platzBreiteGross(groesse) - rest) * ar) / summe);
     return [
-      `(max-width: 767px) calc((${platzBreite(groesse, "handy")} - ${rest}px) * ${anteil})`,
-      `(max-width: 928px) calc((${platzBreite(groesse, "mittel")} - ${rest}px) * ${anteil})`,
-      `${gross}px`,
+      `(max-width: 767px) calc((${zeilenBreiteCss(breite, "handy")} - ${rest}px) * ${anteil})`,
+      `(max-width: 928px) calc((${zeilenBreiteCss(breite, "mittel")} - ${rest}px) * ${anteil})`,
+      `${gross[i]}px`,
     ].join(", ");
   });
 }

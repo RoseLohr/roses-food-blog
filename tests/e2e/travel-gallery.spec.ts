@@ -129,7 +129,7 @@ test.describe("Reisebericht: Foto-Galerie / Lightbox", () => {
     await page.goto(REPORT);
 
     // Einzelnes Bild im Text: ein Klick, ein großes Bild, kein Blättern.
-    const einzel = page.locator("article .bildplatz.gr-s").first();
+    const einzel = page.locator("article .bildplatz.br-1-3").first();
     await expect(einzel).toBeVisible();
     await einzel.click();
     const dialog = page.getByRole("dialog", { name: G.dialogLabel });
