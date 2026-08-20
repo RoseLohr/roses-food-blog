@@ -192,9 +192,20 @@ test("drei Bilder im Editor nebeneinander stellen — und sie stehen es auch", a
     }),
   );
   expect(kaesten.length).toBe(3);
-  // Nebeneinander: jedes beginnt rechts vom vorigen, alle auf gleicher Höhe.
+
+  // Nebeneinander: jedes beginnt rechts vom vorigen …
   expect(kaesten[1].x).toBeGreaterThan(kaesten[0].x + kaesten[0].breite - 1);
   expect(kaesten[2].x).toBeGreaterThan(kaesten[1].x + kaesten[1].breite - 1);
+
+  // … und zwar in DERSELBEN Zeile. Ohne diese Prüfung bestünden auch drei
+  // gleich hohe Bilder, die versetzt untereinander stehen — genau der
+  // Zustand, den der Nutzer gemeldet hat (Befund des Cross-Vendor-Panels).
+  const oben = kaesten.map((k) => k.oben);
+  expect(Math.max(...oben) - Math.min(...oben)).toBeLessThan(1.5);
+
+  // Gleich hoch und damit unten bündig.
   const hoehen = kaesten.map((k) => k.hoehe);
   expect(Math.max(...hoehen) - Math.min(...hoehen)).toBeLessThan(1.5);
+  const unten = kaesten.map((k) => k.oben + k.hoehe);
+  expect(Math.max(...unten) - Math.min(...unten)).toBeLessThan(1.5);
 });
