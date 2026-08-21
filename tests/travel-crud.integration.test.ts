@@ -251,12 +251,13 @@ describe("Reise-CRUD", () => {
     expect(full!.blocks).toEqual([{ type: "text", markdown: code }]);
   });
 
-  it("streicht eine Paarung, die nach dem Aussortieren nicht mehr wirken kann", async () => {
-    // `mitVorherigem` heißt „neben dem Bild DARÜBER" — das ist eine Aussage
-    // über die POSITION. Fällt der Block darüber beim Speichern weg (hier: ein
-    // Bild, dessen Foto es nicht gibt), zeigt die Flagge auf etwas anderes als
-    // das, was der Redakteur gesehen hat. Gespeichert wird deshalb nur, was
-    // auch wirkt.
+  it("behält eine Paarung, auch wenn der Block darüber aussortiert wird", async () => {
+    // `mitVorherigem` ist eine ABSICHT und wird beim Speichern nicht
+    // angetastet. Fällt der Block darüber weg (hier: ein Bild, dessen Foto es
+    // nicht gibt), rückt das Bild eine Stelle nach oben — und die Absicht
+    // „neben dem Bild darüber" gilt dann eben für das nächste. Wo sie WIRKT,
+    // entscheidet `gruppiere()` beim Rendern. Sie hier zu streichen hieße, aus
+    // einem vorübergehenden Zustand einen dauerhaften Verlust zu machen.
     const { saveTravelFromForm } = await import("@/lib/travel-save");
     const { getFullTravelPost } = await import("@/lib/travel");
     const { db, schema } = await import("@/db");
@@ -290,7 +291,7 @@ describe("Reise-CRUD", () => {
       id: (result as { travelId: number }).travelId,
     });
     expect(full!.blocks).toEqual([
-      { type: "bild", imageId: img.id, groesse: "s", platz: "rechts", mitVorherigem: false },
+      { type: "bild", imageId: img.id, groesse: "s", platz: "rechts", mitVorherigem: true },
     ]);
   });
 

@@ -117,11 +117,34 @@ test("das Häkchen gibt es, solange das Bild noch in die Zeile passt", async ({
   await expect(bloecke.nth(2).getByText(d.blockInRow(3))).toBeVisible();
 
   // Wird das erste Bild größer, passt das dritte nicht mehr: M+S+S wäre mehr
-  // als eine Spalte. Das Häkchen steht dann still, statt zu lügen.
+  // als eine Spalte.
   await groesse(bloecke.nth(0))
     .getByRole("button", { name: d.blockSizeOptions.m.label })
     .click();
-  await expect(haken(bloecke.nth(2))).toBeDisabled();
+
+  // Das Häkchen bleibt gesetzt und bedienbar — und der Editor sagt, warum es
+  // hier gerade nichts bewirkt.
+  //
+  // Früher wurde es an dieser Stelle gesperrt. Das war zweifach falsch: Ein
+  // Häkchen, das man nicht mehr abwählen kann, ist eine Falle — und die
+  // Absicht („neben dem Bild darüber") gilt weiter, sie greift nur im Moment
+  // nicht. Verkleinert man das obere Bild wieder, steht die Zeile ohne
+  // weiteres Zutun. Wer die Flagge hier streicht, macht aus einem
+  // vorübergehenden Zustand einen dauerhaften Verlust — genau der Fehler, den
+  // die unabhängige Prüfung an drei Stellen gefunden hat.
+  await expect(haken(bloecke.nth(2))).toBeChecked();
+  await expect(haken(bloecke.nth(2))).toBeEnabled();
+  await expect(
+    bloecke.nth(2).getByText(d.blockWithPreviousNoFit(["m", "s"], "s")),
+  ).toBeVisible();
+  await expect(bloecke.nth(2).getByText(d.blockInRow(3))).toBeHidden();
+
+  // Und zurück auf S: die Zeile steht wieder, ohne dass jemand etwas anhaken
+  // musste.
+  await groesse(bloecke.nth(0))
+    .getByRole("button", { name: d.blockSizeOptions.s.label })
+    .click();
+  await expect(bloecke.nth(2).getByText(d.blockInRow(3))).toBeVisible();
 });
 
 test("Größe und Platz überleben das Speichern und kommen im Bericht an", async ({

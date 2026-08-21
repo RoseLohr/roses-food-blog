@@ -8,7 +8,6 @@ import { eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db, schema } from "@/db";
 import { hatSichtbarenInhalt } from "@/lib/sichtbarer-inhalt";
-import { normalisiereZeilen } from "@/lib/bildreihen";
 import { restaurantWirdGespeichert } from "@/lib/travel-wirksam";
 import { slugify, uniqueSlug } from "@/lib/slug";
 import type { TaxonomyType } from "@/lib/taxonomies";
@@ -379,14 +378,19 @@ export async function saveTravelFromForm(
     // die Nachbarschaft. Eine `mitVorherigem`-Flagge darunter zeigte sonst auf
     // ein anderes Bild als das, neben dem der Redakteur sie gesetzt hat, oder
     // ins Leere. Was gespeichert wird, muss auch wirken.
-    const behalten = normalisiereZeilen(
-      blocks.filter((b) =>
-        b.type === "bild"
-          ? validBlockImageIds.has(b.imageId)
-          : b.type === "restaurant"
-            ? restaurantIdByIndex[b.index] !== undefined
-            : true,
-      ),
+    //
+    // OHNE Normalisieren: Die Zeilenzugehörigkeit ist eine ABSICHT und wird
+    // hier nicht angetastet. Wo sie wirkt, entscheidet `gruppiere()` beim
+    // Rendern — auf genau dieser Folge. Eine Flagge, die im Moment nichts
+    // bewirkt, ist kein Müll: Fällt der Block dazwischen später weg, greift
+    // sie wieder. Wer sie beim Speichern streicht, macht aus einem
+    // vorübergehenden Zustand einen dauerhaften Verlust.
+    const behalten = blocks.filter((b) =>
+      b.type === "bild"
+        ? validBlockImageIds.has(b.imageId)
+        : b.type === "restaurant"
+          ? restaurantIdByIndex[b.index] !== undefined
+          : true,
     );
     const blockValues: (typeof schema.travelBlock.$inferInsert)[] = behalten.map(
       (b, i) => {

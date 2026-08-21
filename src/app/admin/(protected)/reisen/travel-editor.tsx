@@ -18,7 +18,6 @@ import {
   BILD_PLAETZE,
   bildBreitenGross,
   fliesstText,
-  normalisiereZeilen,
   passtInZeile,
   tauscheBloecke,
   seitenverhaeltnis,
@@ -204,31 +203,6 @@ function wirksameIndizes(
 }
 
 /**
- * Zeilenzugehörigkeit normalisieren — über die WIRKSAME Folge, das Ergebnis an
- * die ursprünglichen Stellen zurückgeschrieben.
- *
- * Über der ganzen Folge normalisiert zu haben war der Fehler: Ein Block, den
- * der Server verwirft, hätte dabei eine Flagge gestrichen, die nach dem
- * Speichern sehr wohl gewirkt hätte.
- */
-function normalisiereWirksam(
-  blocks: EditorBlock[],
-  restaurants: EditorRestaurant[],
-): EditorBlock[] {
-  const wirksam = wirksameIndizes(blocks, restaurants);
-  const folge = normalisiereZeilen(wirksam.map((i) => blocks[i]));
-  let geaendert = false;
-  const out = [...blocks];
-  wirksam.forEach((i, e) => {
-    if (out[i] !== folge[e]) {
-      out[i] = folge[e];
-      geaendert = true;
-    }
-  });
-  return geaendert ? out : blocks;
-}
-
-/**
  * Fertige Anzeigegröße eines Bildes in Pixeln — die Antwort auf die Frage,
  * die der alte Höhen-Schalter offenließ. Spalte 816 px ab 929 px Fenster.
  *
@@ -381,13 +355,10 @@ export function TravelEditor({
     // sein Foto fehlt und der Block deshalb übersprungen wird. Ungeräumt
     // stünden sie im Editor unsichtbar da und würden beim Speichern
     // zurückgeschrieben.
-    normalisiereWirksam(
-      (initial.blocks.length
-        ? initial.blocks
-        : [{ type: "text", markdown: "" } as EditorBlockData]
-      ).map((b) => ({ ...b, key: nextBlockKey() })),
-      initial.restaurants,
-    ),
+    (initial.blocks.length
+      ? initial.blocks
+      : [{ type: "text", markdown: "" } as EditorBlockData]
+    ).map((b) => ({ ...b, key: nextBlockKey() })),
   );
 
   // Zeilen einmal je Rendervorgang bestimmen — aus derselben Gruppierung, die
@@ -396,50 +367,47 @@ export function TravelEditor({
   const wissen = zeilenwissen(blocks, wirksam);
   const wirksamSet = new Set(wirksam);
 
-  // Jede Änderung an der Folge läuft durch normalisiereZeilen: Eine Flagge
-  // steht nur dort, wo sie auch wirkt. Sonst zeigte das Häkchen etwas anderes
-  // an, als gespeichert wird — und eine spätere Größenänderung ließe eine
-  // längst vergessene Flagge plötzlich greifen.
+  // Der Editor STREICHT keine Zeilenzugehörigkeit mehr.
+  //
+  // Vorher tat er es: Er rechnete aus, welche Blöcke das Speichern behalten
+  // würde, und löschte jede Flagge, die in dieser Folge nicht wirken könnte.
+  // Das war eine VERMUTUNG über den Server — und jede Vermutung ist eine
+  // Stelle, an der beide auseinandergehen. Die unabhängige Prüfung hat drei
+  // davon gefunden: ein Restaurant ohne Namen, ein leerer Textblock, und ein
+  // Altbestand-Block, der nur aus `&#8203;` besteht. In allen drei Fällen
+  // strich der Editor eine Flagge, der Server warf danach den Block weg — und
+  // die Bildzeile blieb zerrissen, obwohl nichts mehr dazwischenstand.
+  //
+  // Die Absicht bleibt jetzt stehen, und WO sie wirkt, entscheidet erst
+  // `gruppiere()` beim Rendern — auf der endgültigen, gespeicherten Folge. Ein
+  // Häkchen, das gerade nicht greift, ist kein Fehler: Es ist eine Absicht, die
+  // wieder greift, sobald nichts mehr dazwischensteht. Der Editor zeigt es
+  // angehakt und sagt dazu, warum es hier gerade nichts bewirkt.
   const updateBlock = (i: number, patch: Partial<EditorBlockData>) =>
     setBlocks((prev) =>
-      normalisiereWirksam(
-        prev.map((b, idx) => (idx === i ? ({ ...b, ...patch } as EditorBlock) : b)),
-        restaurants,
-      ),
+      prev.map((b, idx) => (idx === i ? ({ ...b, ...patch } as EditorBlock) : b)),
     );
   const moveBlock = (i: number, dir: -1 | 1) =>
-    // Tauschen (Flaggen bleiben an ihrer Position) und über die WIRKSAME Folge
-    // normalisieren — deshalb hier tauscheBloecke statt verschiebeBlock.
-    setBlocks((prev) => normalisiereWirksam(tauscheBloecke(prev, i, dir), restaurants));
+    // Beim Tauschen bleiben die Flaggen an ihrer POSITION — sonst zerfiele eine
+    // Zeile, in der jemand nur die Reihenfolge geändert hat.
+    setBlocks((prev) => tauscheBloecke(prev, i, dir));
   const removeBlock = (i: number) =>
-    setBlocks((prev) =>
-      normalisiereWirksam(
-        prev.filter((_, idx) => idx !== i),
-        restaurants,
-      ),
-    );
+    setBlocks((prev) => prev.filter((_, idx) => idx !== i));
   const addBlock = (b: EditorBlockData) =>
     setBlocks((prev) => [...prev, { ...b, key: nextBlockKey() }]);
 
   // Restaurant entfernen: Blöcke auf spätere Restaurants nachziehen,
   // Blöcke auf das entfernte Restaurant mit entfernen.
   const removeRestaurant = (ri: number) => {
-    const danach = restaurants.filter((_, idx) => idx !== ri);
-    setRestaurants(danach);
+    setRestaurants((prev) => prev.filter((_, idx) => idx !== ri));
     setBlocks((prev) =>
-      // Fällt ein Restaurant-Block zwischen zwei Bildern weg, rücken die Bilder
-      // zusammen — dann kann eine Flagge greifen, die vorher ins Leere zeigte.
-      // Umgekehrt gilt dasselbe; normalisiereZeilen streicht nur, setzt nie.
-      normalisiereWirksam(
-        prev
-          .filter((b) => b.type !== "restaurant" || b.index !== ri)
-          .map((b) =>
-            b.type === "restaurant" && b.index > ri
-              ? { ...b, index: b.index - 1 }
-              : b,
-          ),
-        danach,
-      ),
+      prev
+        .filter((b) => b.type !== "restaurant" || b.index !== ri)
+        .map((b) =>
+          b.type === "restaurant" && b.index > ri
+            ? { ...b, index: b.index - 1 }
+            : b,
+        ),
     );
   };
 
@@ -486,22 +454,10 @@ export function TravelEditor({
     })),
   );
 
-  const updateRestaurant = (i: number, patch: Partial<EditorRestaurant>) => {
-    // Ein Restaurant OHNE Namen wird nicht gespeichert — Blöcke, die darauf
-    // zeigen, also auch nicht. Bekommt es einen Namen (oder verliert ihn),
-    // ändert sich damit die wirksame Blockfolge, und die Zeilen sind neu zu
-    // rechnen. Ohne das zeigte der Editor eine Zeile, die das Speichern
-    // anders zusammensetzt.
-    if (patch.name !== undefined) {
-      const danach = restaurants.map((r, idx) =>
-        idx === i ? { ...r, ...patch } : r,
-      );
-      setBlocks((prev) => normalisiereWirksam(prev, danach));
-    }
-    return setRestaurants((prev) =>
+  const updateRestaurant = (i: number, patch: Partial<EditorRestaurant>) =>
+    setRestaurants((prev) =>
       prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)),
     );
-  };
   const updateDish = (ri: number, di: number, patch: Partial<EditorDish>) =>
     setRestaurants((prev) =>
       prev.map((r, idx) =>
@@ -766,7 +722,13 @@ export function TravelEditor({
                                  gespeicherte Flagge unangekreuzt danebenstehen
                                  und später still greifen. */
                               checked={b.mitVorherigem}
-                              disabled={!anbietbar}
+                              /* Nur gesperrt, wenn darüber gar kein Bild
+                                 steht. Passt es dort MOMENTAN nicht hinein,
+                                 bleibt das Häkchen bedienbar: Es ist eine
+                                 Absicht, die wieder greift, sobald Platz ist —
+                                 und ein Häkchen, das man nicht mehr abwählen
+                                 kann, wäre eine Falle. */
+                              disabled={davor.length === 0}
                               onChange={(e) =>
                                 updateBlock(i, { mitVorherigem: e.target.checked })
                               }
