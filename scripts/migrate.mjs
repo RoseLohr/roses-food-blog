@@ -81,6 +81,7 @@ const migrations = journal.entries.map((entry) => {
   const file = path.join(migrationsDir, `${entry.tag}.sql`);
   const query = fs.readFileSync(file, "utf8");
   return {
+    tag: entry.tag,
     statements: query.split("--> statement-breakpoint"),
     folderMillis: entry.when,
     hash: crypto.createHash("sha256").update(query).digest("hex"),
@@ -111,24 +112,33 @@ const insertMigration = sqlite.prepare(
 // Fehlermeldung, die Spalte entsteht nie, und die Anwendung läuft gegen ein
 // Schema, das es nicht gibt.
 //
-// Gezählt statt gehasht: Ob eine Migration angewendet wurde, steht in der
-// Zeilenzahl. Ein Hash-Vergleich schlüge auch dann an, wenn eine längst
-// angewendete Datei später noch einmal angefasst wurde — das wäre ein
-// Fehlalarm, der den Start verhindert.
+// Geprüft wird die IDENTITÄT, nicht die Anzahl. Zählen wäre zu schwach: Eine
+// Historie mit A, B, X und Dateien A, B, C ergibt drei gegen drei — und C liefe
+// nie. Die Kennung ist der Zeitstempel und nicht der Hash: `created_at` steht
+// so in der Tabelle, wie es im Journal steht, und ändert sich nicht, wenn
+// jemand eine längst angewendete Datei später noch einmal anfasst. Ein
+// Hash-Vergleich hielte das für eine fehlende Migration und verhinderte den
+// Start.
 {
-  const { n: angewendet } = sqlite
-    .prepare("SELECT COUNT(*) AS n FROM __drizzle_migrations")
-    .get();
-  const uebersprungen = migrations.filter(
-    (m) => lastAppliedAt !== null && lastAppliedAt >= m.folderMillis,
+  const angewendet = new Set(
+    sqlite
+      .prepare("SELECT created_at FROM __drizzle_migrations")
+      .all()
+      .map((r) => Number(r.created_at)),
   );
-  if (uebersprungen.length > angewendet) {
+  const verschluckt = migrations.filter(
+    (m) =>
+      lastAppliedAt !== null &&
+      lastAppliedAt >= m.folderMillis &&
+      !angewendet.has(m.folderMillis),
+  );
+  if (verschluckt.length) {
     console.error(
-      `[migrate] ${uebersprungen.length} Migration(en) liegen unter dem ` +
-        `Wasserstand (${lastAppliedAt}), angewendet sind aber nur ${angewendet}. ` +
-        "Mindestens eine würde still übersprungen — vermutlich zwei Zweige mit " +
-        "derselben Nummer. Das Journal muss streng aufsteigend sein " +
-        "(scripts/regime/migrations-order.mjs).",
+      `[migrate] ${verschluckt.length} Migration(en) würden still übersprungen: ` +
+        verschluckt.map((m) => `${m.tag} (when=${m.folderMillis})`).join(", ") +
+        `. Sie liegen unter dem Wasserstand (${lastAppliedAt}), wurden aber nie ` +
+        "angewendet — vermutlich zwei Zweige mit derselben Nummer. Das Journal " +
+        "muss streng aufsteigend sein (scripts/regime/migrations-order.mjs).",
     );
     process.exit(1);
   }

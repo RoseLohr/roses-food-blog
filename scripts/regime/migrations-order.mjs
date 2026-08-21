@@ -41,6 +41,24 @@ function pruefe(journal, dateien) {
   const fehler = [];
   const entries = journal.entries ?? [];
 
+  // Erst die Form, dann die Ordnung. Ein fehlendes oder unbrauchbares `when`
+  // rutschte sonst durch jeden Vergleich: `undefined <= 100` ist falsch, also
+  // sähe die Reihenfolge „aufsteigend" aus — und der Migrator rechnete später
+  // mit NaN. Ein Gate, das bei kaputten Daten grün meldet, ist schlimmer als
+  // keines (Befund des Prüfpanels).
+  entries.forEach((e, i) => {
+    if (!Number.isInteger(e?.when) || e.when <= 0) {
+      fehler.push(`Eintrag ${i} („${e?.tag ?? "?"}") hat kein brauchbares „when": ${JSON.stringify(e?.when)}.`);
+    }
+    if (!Number.isInteger(e?.idx) || e.idx < 0) {
+      fehler.push(`Eintrag ${i} („${e?.tag ?? "?"}") hat kein brauchbares „idx": ${JSON.stringify(e?.idx)}.`);
+    }
+    if (typeof e?.tag !== "string" || e.tag === "") {
+      fehler.push(`Eintrag ${i} hat kein brauchbares „tag": ${JSON.stringify(e?.tag)}.`);
+    }
+  });
+  if (fehler.length) return fehler; // ohne saubere Form ist jeder Vergleich sinnlos
+
   let vorher = null;
   for (const e of entries) {
     if (vorher !== null && e.when <= vorher.when) {
@@ -98,12 +116,17 @@ if (process.argv.includes("--selftest")) {
     console.error("   ✗ Selbsttest: Datei ohne Journal-Eintrag NICHT gefangen.");
     process.exit(1);
   }
+  const ohneWhen = pruefe({ entries: [{ idx: 0, tag: "a" }, { idx: 1, tag: "b", when: 5 }] }, ["a", "b"]);
+  if (!ohneWhen.some((f) => f.includes("brauchbares"))) {
+    console.error("   ✗ Selbsttest: fehlendes `when` NICHT gefangen.");
+    process.exit(1);
+  }
   if (pruefe({ entries: [{ idx: 0, tag: "a", when: 1 }] }, ["a"]).length !== 0) {
     console.error("   ✗ Selbsttest: sauberes Journal fälschlich beanstandet.");
     process.exit(1);
   }
   console.log(
-    "   ✓ Selbsttest: Rückwärtssprung, doppelter idx und verwaiste Datei gefangen; sauberes Journal durchgelassen.",
+    "   ✓ Selbsttest: Rückwärtssprung, doppelter idx, verwaiste Datei und fehlendes `when` gefangen; sauberes Journal durchgelassen.",
   );
   process.exit(0);
 }
