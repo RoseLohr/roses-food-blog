@@ -60,10 +60,24 @@ done
 case "$EBENE" in rand|ursprung) ;; *) echo "FEHLER: --ebene muss rand oder ursprung sein." >&2; exit 2 ;; esac
 BASIS="${BASIS%/}"
 
-HOST="${BASIS#*://}"; HOST="${HOST%%/*}"; HOST="${HOST%%:*}"
+# Name UND Port aus der Basis lesen. Die erste Fassung setzte `--resolve` fest
+# auf 80 und 443 — bei einer Basis mit abweichendem Port (`https://host:8443`)
+# griff die Angabe dann NICHT, curl löste über DNS auf, und die Prüfung „am
+# Ursprung" maß in Wahrheit das CDN. Nachgemessen: eine --resolve-Angabe für
+# 443 ist für Port 8791 wirkungslos, die Verbindung geht dorthin, wohin der
+# Name zeigt. (Befund des Pflicht-Approvers, PR #102.)
+SCHEMA="${BASIS%%://*}"
+HOSTPORT="${BASIS#*://}"; HOSTPORT="${HOSTPORT%%/*}"
+case "$SCHEMA" in https) PORT_VORGABE=443 ;; *) PORT_VORGABE=80 ;; esac
+case "$HOSTPORT" in
+  \[*\]:*) HOST="${HOSTPORT%%]*}"; HOST="${HOST#[}"; PORT="${HOSTPORT##*:}" ;;
+  \[*\])   HOST="${HOSTPORT#[}"; HOST="${HOST%]}"; PORT="$PORT_VORGABE" ;;
+  *:*)     HOST="${HOSTPORT%%:*}"; PORT="${HOSTPORT##*:}" ;;
+  *)       HOST="$HOSTPORT"; PORT="$PORT_VORGABE" ;;
+esac
 CURL=(curl -sS --max-time 25 --connect-timeout 8)
 if [ -n "$AUFLOESEN" ]; then
-  CURL+=(--resolve "$HOST:443:$AUFLOESEN" --resolve "$HOST:80:$AUFLOESEN")
+  CURL+=(--resolve "$HOST:$PORT:$AUFLOESEN")
 fi
 # Ein gesetztes HTTP(S)_PROXY würde die Messung auf den Proxy lenken statt auf
 # den Server — man misst dann fremde Kompression. Für jedes lokale Ziel und für
@@ -72,6 +86,21 @@ case "${AUFLOESEN}${HOST}" in
   *127.0.0.1*|*localhost*|*::1*) CURL+=(--noproxy '*') ;;
   *) [ -n "$AUFLOESEN" ] && CURL+=(--noproxy '*') ;;
 esac
+
+# Und weil eine still wirkungslose Auflösung genau der Fehler wäre, den diese
+# Datei verhindern soll: nachsehen, ob sie wirklich gegriffen hat. Ein
+# `--resolve` greift zum Beispiel auch dann nicht, wenn die Basis bereits eine
+# IP-Adresse statt eines Namens trägt. Ohne diese Nachfrage könnte das
+# Ursprungs-Gate grün melden, während es das CDN vermessen hat.
+if [ -n "$AUFLOESEN" ]; then
+  ZIEL_IP=$("${CURL[@]}" -o /dev/null -w '%{remote_ip}' "$BASIS/" 2>/dev/null) || ZIEL_IP=""
+  if [ "$ZIEL_IP" != "$AUFLOESEN" ]; then
+    echo "FEHLER: --aufloesen $AUFLOESEN blieb wirkungslos — verbunden wurde mit '${ZIEL_IP:-unbekannt}'" >&2
+    echo "        (Name $HOST, Port $PORT). Diese Prüfung würde nicht den Ursprung messen," >&2
+    echo "        sondern das, wohin der Name zeigt. Deshalb hier Abbruch statt Messung." >&2
+    exit 1
+  fi
+fi
 
 MAENGEL=()
 LETZTE_CACHE=""

@@ -111,9 +111,11 @@ function starten(v: Verhalten): Promise<string> {
   });
 }
 
-async function pruefen(basis: string, ebene: "rand" | "ursprung") {
+async function pruefen(basis: string, ebene: "rand" | "ursprung", aufloesen?: string) {
+  const argumente = ["--basis", basis, "--ebene", ebene];
+  if (aufloesen) argumente.push("--aufloesen", aufloesen);
   try {
-    const { stdout } = await ausfuehren(SKRIPT, ["--basis", basis, "--ebene", ebene], { timeout: 60_000 });
+    const { stdout } = await ausfuehren(SKRIPT, argumente, { timeout: 60_000 });
     return { code: 0, ausgabe: stdout };
   } catch (fehler) {
     const f = fehler as { code?: number; stdout?: string; stderr?: string };
@@ -218,6 +220,32 @@ describe("Kompressionsprüfung", () => {
     // Der Beweis, dass es nicht einfach abgebrochen ist: Die übrigen
     // Ressourcen wurden weiterhin gemessen und der Mängelbericht kam.
     expect(ausgabe).toMatch(/MÄNGEL auf Ebene/);
+  });
+
+  it("bricht ab, wenn --aufloesen wirkungslos bleibt", async () => {
+    // DER FEHLER, DEN DAS VERHINDERT: `--resolve` stand fest auf Port 80/443.
+    // Bei einer Basis mit abweichendem Port griff die Angabe nicht, curl löste
+    // über DNS auf — und das Gate „am Ursprung" vermaß in Wahrheit das CDN,
+    // ohne dass irgendetwas rot geworden wäre. (Befund des Pflicht-Approvers,
+    // PR #102; nachgemessen: eine --resolve-Angabe für 443 ist für Port 8791
+    // wirkungslos.)
+    //
+    // Hier verlangt der Aufruf eine andere Adresse als die, unter der der
+    // Prüfstand wirklich läuft. Stillschweigend weitermessen wäre der Fehler.
+    const basis = await starten({ komprimiert: ALLES });
+    const { code, ausgabe } = await pruefen(basis, "ursprung", "127.0.0.2");
+    expect(code, ausgabe).not.toBe(0);
+    expect(ausgabe).toMatch(/blieb wirkungslos/);
+  });
+
+  it("misst mit --aufloesen auf dem tatsächlichen Port weiter", async () => {
+    // Die Gegenprobe zur Prüfung darüber: Stimmt die Adresse, muss gemessen
+    // werden — sonst wäre der Abbruch oben nur Zufall. Der Prüfstand lauscht
+    // auf einem zufälligen Port, genau der Fall, an dem die feste 443 scheiterte.
+    const basis = await starten({ komprimiert: ALLES });
+    const { code, ausgabe } = await pruefen(basis, "ursprung", "127.0.0.1");
+    expect(code, ausgabe).toBe(0);
+    expect(ausgabe).toMatch(/in Ordnung/);
   });
 
   it("misst nichts auf einer Fehlerseite mit Status 200", async () => {
