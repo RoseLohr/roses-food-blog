@@ -11,7 +11,7 @@
  */
 import { Marked, type Tokens } from "marked";
 import { slugify } from "@/lib/slug";
-import { sichtbar } from "@/lib/sichtbarkeit.mjs";
+import { ohneEntitaeten, sichtbar } from "@/lib/sichtbarkeit.mjs";
 
 const SAFE_HREF = /^(https?:\/\/|mailto:|\/|#)/i;
 
@@ -116,5 +116,7 @@ export function hatSichtbarenInhalt(markdown: string): boolean {
   const html = renderMarkdown(markdown);
   // Bild und Trenner zeigen ohne Text etwas.
   if (/<(?:img|hr)\b/.test(html)) return true;
-  return sichtbar(html.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " "));
+  // Entitäten auflösen, BEVOR gezählt wird: `&#8203;` sind acht Zeichen im
+  // Quelltext und nichts auf dem Schirm.
+  return sichtbar(ohneEntitaeten(html.replace(/<[^>]*>/g, "")));
 }

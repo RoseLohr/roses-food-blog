@@ -12,27 +12,78 @@
  */
 
 /**
- * Zeichen, die im Browser nichts zeigen — Leerraum in allen Formen,
- * geschütztes Leerzeichen, Nullbreiten-Leerzeichen, Wortverbinder,
- * Byte-Order-Mark.
+ * Zeichen, die im Browser nichts zeigen.
+ *
+ * Nicht als Handliste, sondern über die Unicode-Kategorie: `\s` deckt allen
+ * Leerraum ab (samt geschütztem Leerzeichen und Zeilentrennern), `\p{Cf}` die
+ * Formatzeichen — Nullbreiten-Leerzeichen, Nullbreiten-Nichtverbinder und
+ * -Verbinder, Wortverbinder, weiches Trennzeichen, Byte-Order-Mark,
+ * Richtungssteuerung. Eine Handliste war schon einmal unvollständig: U+200C
+ * und U+200D fehlten und galten als sichtbar (Befund des Prüfpanels). Eine
+ * Kategorie kann nicht unvollständig sein.
  */
-export const UNSICHTBAR = /[\s\u00a0\u200b\u2060\ufeff]+/g;
+export const UNSICHTBAR = /[\s\p{Cf}]+/gu;
 
-/**
- * Bleibt nach dem Entfernen unsichtbarer Zeichen noch etwas übrig?
- * @param {string} s
- * @returns {boolean}
- */
+/** Bleibt nach dem Entfernen unsichtbarer Zeichen noch etwas übrig? */
 export function sichtbar(s) {
   return s.replace(UNSICHTBAR, "") !== "";
 }
 
 /**
- * Zeigt dieses Markdown im Bericht etwas?
+ * Benannte HTML-Entitäten, die für ein UNSICHTBARES Zeichen stehen.
  *
- * @param {string} markdown
- * @returns {boolean}
+ * Nur diese sind nötig: Jede andere benannte Entität steht für ein sichtbares
+ * Zeichen, und die bleibt unentschlüsselt als Text stehen — also ebenfalls
+ * sichtbar. Der Irrtum ginge damit in die harmlose Richtung (ein Block bleibt
+ * stehen), nicht in die löschende.
  */
+const UNSICHTBARE_ENTITAETEN = {
+  nbsp: 0x00a0,
+  shy: 0x00ad,
+  ensp: 0x2002,
+  emsp: 0x2003,
+  numsp: 0x2007,
+  puncsp: 0x2008,
+  thinsp: 0x2009,
+  hairsp: 0x200a,
+  ZeroWidthSpace: 0x200b,
+  zwnj: 0x200c,
+  zwj: 0x200d,
+  lrm: 0x200e,
+  rlm: 0x200f,
+  NoBreak: 0x2060,
+  MediumSpace: 0x205f,
+};
+
+/**
+ * HTML-Entitäten in ihre Zeichen auflösen.
+ *
+ * Der Browser zeigt `&#8203;` als Nullbreiten-Leerzeichen — also als nichts.
+ * Wer den gerenderten HTML-Text ansieht, ohne aufzulösen, hält die acht
+ * Zeichen der Entität für Inhalt und lässt einen unsichtbaren Block stehen,
+ * der die Bildzeile bricht (Befund des Prüfpanels).
+ *
+ * @param {string} html
+ * @returns {string}
+ */
+export function ohneEntitaeten(html) {
+  return html
+    .replace(/&#(\d{1,7});/g, (ganz, zahl) => codepunkt(Number(zahl), ganz))
+    .replace(/&#x([0-9a-f]{1,6});/gi, (ganz, hex) =>
+      codepunkt(parseInt(hex, 16), ganz),
+    )
+    .replace(/&([a-zA-Z][a-zA-Z0-9]*);/g, (ganz, name) => {
+      const cp = UNSICHTBARE_ENTITAETEN[name];
+      return cp === undefined ? ganz : String.fromCodePoint(cp);
+    });
+}
+
+/** Zahl → Zeichen; unbrauchbare Werte bleiben, wie sie dastehen. */
+function codepunkt(wert, ganz) {
+  if (!Number.isInteger(wert) || wert < 0 || wert > 0x10ffff) return ganz;
+  return String.fromCodePoint(wert);
+}
+
 /**
  * Eine Zeile, die nur aus einem Blockmarker besteht — und aus sonst nichts.
  *

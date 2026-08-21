@@ -210,22 +210,69 @@ describe("hatSichtbarenInhalt stimmt mit dem Renderer überein", () => {
  * Trennzeichen, ein Rückstrich-Lauf der falschen Länge —, und beide hätte
  * dieser Durchlauf gefunden, ohne dass mir der Fall einfallen muss.
  */
+/**
+ * Entitäten und Formatzeichen — die Zeichen, die im Quelltext Platz brauchen
+ * und auf dem Schirm keinen.
+ *
+ * Aus dem dritten Panel-Veto: `&#8203;` ist im HTML acht Zeichen lang und im
+ * Browser nichts. Wer den gerenderten Text ansieht, ohne aufzulösen, lässt so
+ * einen Block stehen — und der bricht die Bildzeile. Die Erwartungen stehen
+ * hier von Hand, nicht aus derselben Funktion: Sonst prüfte sich der
+ * Auflöser gegen sich selbst.
+ */
+describe("hatSichtbarenInhalt löst auf, was der Browser auflöst", () => {
+  it.each([
+    ["&#8203;", false], // Nullbreiten-Leerzeichen, dezimal
+    ["&#x200b;", false], // dasselbe, hexadezimal
+    ["&#x200B;", false], // Großschreibung im Hex
+    ["&zwnj;", false], // Nullbreiten-Nichtverbinder
+    ["&zwj;", false],
+    ["&shy;", false], // weiches Trennzeichen
+    ["&thinsp;", false],
+    ["&nbsp;", false],
+    ["‌", false], // U+200C direkt
+    ["‍", false], // U+200D direkt
+    ["­", false], // U+00AD direkt
+    ["&amp;", true], // zeigt ein Kaufmanns-Und
+    ["&#65;", true], // zeigt ein A
+    ["&lt;", true], // zeigt eine spitze Klammer
+    ["&#8203;x", true], // unsichtbar PLUS ein sichtbares Zeichen
+    ["&kaputt;", true], // keine Entität — steht als Text da
+    ["&#99999999;", true], // kein gültiger Codepunkt — steht als Text da
+  ])("%j → %s", (md, erwartet) => {
+    expect(hatSichtbarenInhalt(md as string)).toBe(erwartet);
+  });
+});
+
 describe("hatSichtbarenInhalt hält den Renderer über alle Kombinationen aus", () => {
   const MARKER = [
     "", "#", "##", "######", "#######", ">", ">>", "-", "*", "+",
     "1.", "12)", "```", "~~~", "`", "``", "---", "***",
   ];
-  const TRENNER = ["", " ", "\t", "\u00a0", "\u200b"];
-  const INHALT = ["", "x", "*", ".", "\u200b", "![](/a.jpg)", "[](/x)", "[a](/x)", "`y`"];
+  const TRENNER = ["", " ", "\t", "\u00a0", "\u200b", "\u200c", "\u00ad"];
+  const INHALT = [
+    "", "x", "*", ".", "\u200b", "\u200d", "&#8203;", "&nbsp;", "&amp;",
+    "![](/a.jpg)", "[](/x)", "[a](/x)", "`y`",
+  ];
 
   it("stimmt in jeder Kombination mit dem Renderer überein", () => {
-    /** Wie oben — die Linie ist der Inhalt, nicht der Schmuck. */
+    /**
+     * Wie oben — die Linie ist der Inhalt, nicht der Schmuck. Entitäten löst
+     * der Browser auf, also löst dieses Orakel sie auch auf: unabhängig
+     * geschrieben, mit einer eigenen kleinen Tabelle.
+     */
+    const ENTITAET: Record<string, string> = {
+      "&nbsp;": "\u00a0", "&shy;": "\u00ad", "&thinsp;": "\u2009",
+      "&zwnj;": "\u200c", "&zwj;": "\u200d", "&amp;": "&", "&lt;": "<", "&gt;": ">",
+    };
     const zeigtEtwas = (html: string) =>
       /<(?:img|hr)\b/.test(html) ||
       html
         .replace(/<[^>]*>/g, "")
-        .replace(/&nbsp;/g, " ")
-        .replace(/[\s\u00a0\u200b\u2060\ufeff]+/g, "") !== "";
+        .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
+        .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+        .replace(/&[a-zA-Z]+;/g, (e) => ENTITAET[e] ?? e)
+        .replace(/[\s\p{Cf}]+/gu, "") !== "";
 
     const abweichungen: string[] = [];
     for (const m of MARKER) {
