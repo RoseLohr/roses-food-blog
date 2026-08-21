@@ -93,29 +93,28 @@ jobs:
             exit 1
           fi
 
-      # Auslieferungs-Header der statischen Dateien. Prüft, was der Besucher
-      # wirklich bekommt — nicht, was die Konfiguration behauptet.
-      - name: Auslieferung der statischen Dateien
-        run: |
-          set -euo pipefail
-          # Chunk-URL aus dem GEPRÜFTEN HTML des vorigen Schritts, nicht aus
-          # einem neuen, ungeprüften Abruf.
-          datei=$(grep -oE '/_next/static/[^"]+\.js' /tmp/start.html | head -1)
-          test -n "$datei" || { echo "Keine Chunk-URL im HTML gefunden."; exit 1; }
-          echo "Prüfe $datei"
-          kopf=$(curl -sSI --max-time 20 -H 'Accept-Encoding: br,gzip' "$ZIEL$datei")
-          echo "$kopf"
-          echo "$kopf" | grep -qiE '^content-encoding: (br|gzip)' \
-            || { echo "Statische Datei wird UNKOMPRIMIERT ausgeliefert."; exit 1; }
-          echo "$kopf" | grep -qi 'immutable' \
-            || { echo "Kein immutable-Cache auf der statischen Datei."; exit 1; }
-          # Gegenprobe: ohne Accept-Encoding darf keine Kompression gemeldet
-          # werden — sonst prüft der Schritt oben nichts.
-          ohne=$(curl -sSI --max-time 20 -H 'Accept-Encoding: identity' "$ZIEL$datei")
-          if echo "$ohne" | grep -qiE '^content-encoding: (br|gzip)'; then
-            echo "Server komprimiert auch ohne Accept-Encoding — die Prüfung oben ist wertlos."
-            exit 1
-          fi
+      # Auslieferung — was der Besucher WIRKLICH bekommt, nicht was die
+      # Konfiguration behauptet.
+      #
+      # WAS SICH HIER GEÄNDERT HAT UND WARUM (Erhebung 2026-08-21,
+      # audit/11-infrastruktur-befund.md): Vorher stand hier eine Inline-Prüfung
+      # auf EINE Chunk-Datei. Sie war vier Wochen lang grün, während der
+      # Ursprung CSS und JavaScript vollständig unkomprimiert auslieferte —
+      # denn sie maß gegen $ZIEL, also gegen Cloudflare, und das CDN
+      # komprimierte nach. Eine Messung, die bei kaputter eigener
+      # Konfiguration grün bleibt, prüft nichts.
+      #
+      # Das Skript prüft dieselbe Ebene wie bisher (den Rand), aber gründlicher:
+      # HTML, CSS und JS statt nur JS, Größen statt Kopfzeilen, und die
+      # Gegenprobe an einer Schrift, die NICHT komprimiert sein darf.
+      #
+      # Die Ebene „ursprung" lässt sich von hier aus NICHT messen: Dafür müsste
+      # die Adresse des Ursprungsservers in diesem öffentlichen Repository
+      # stehen — und genau die soll nach audit/11 §B7 gerade nicht öffentlich
+      # sein. Dieselbe Prüfung läuft deshalb auf dem Server selbst, bei jedem
+      # Deployment (deploy.sh, Abschnitt 6b).
+      - name: Auslieferung am Rand (Cloudflare)
+        run: ./scripts/regime/kompression-pruefen.sh --basis "$ZIEL" --ebene rand
 
       - uses: actions/setup-node@v4
         with:
