@@ -1162,6 +1162,17 @@ export const de = {
       fileNameHint: "Nur Kleinbuchstaben, Ziffern und Bindestriche, z. B. pasta-alla-norma.",
       uploaded: "Bild hochgeladen.",
       deleted: "Bild gelöscht.",
+      /**
+       * Ein Foto zu löschen, das noch irgendwo steckt, hinterließ dort eine
+       * leere Hülle: Der Bildblock blieb stehen, wurde beim Lesen übersprungen
+       * — und die Bildzeile, in der er stand, zerfiel ohne sichtbare Ursache.
+       * Deshalb wird jetzt verweigert, und zwar unter Nennung der Fundstelle:
+       * „geht nicht" allein wäre keine Auskunft.
+       */
+      stillUsed: (stellen: Array<{ bereich: string; anzahl: number }>) =>
+        `Nicht gelöscht — das Foto wird noch verwendet: ${stellen
+          .map((s) => `${s.bereich} (${s.anzahl}×)`)
+          .join(", ")}. Erst dort entfernen, dann löschen.`,
       inUse: "Wird verwendet",
       dimensions: "Maße",
       uploadedOn: "Hochgeladen",
