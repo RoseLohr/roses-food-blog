@@ -8,6 +8,7 @@ import type { MediaImage } from "@/lib/recipes";
 import { variantWidthsByImage } from "@/lib/media";
 import { dishTaxonomiesByDish, type TaxonomyRef } from "@/lib/taxonomies";
 import type { TravelBlock } from "@/lib/travel-blocks";
+import { hatSichtbarenInhalt } from "@/lib/sichtbarer-inhalt";
 
 export type TravelPost = typeof schema.travelPost.$inferSelect;
 export type { TaxonomyRef };
@@ -157,8 +158,15 @@ export async function publishedTravelCards(filter?: {
 }
 
 
+/**
+ * @param wie `"bericht"` (Standard) liefert die Blockfolge, aus der der Bericht
+ *   entsteht: Was nichts anzeigt, ist darin kein Block. `"roh"` liefert sie
+ *   unverändert — das braucht der Editor, denn wer einen Block loswerden soll,
+ *   muss ihn sehen können.
+ */
 export async function getFullTravelPost(
   where: { id: number } | { slug: string },
+  wie: "bericht" | "roh" = "bericht",
 ): Promise<FullTravelPost | null> {
   const rows = await db
     .select()
@@ -260,7 +268,27 @@ export async function getFullTravelPost(
   const blocks: TravelBlock[] = [];
   for (const b of blockRows) {
     if (b.type === "text") {
-      blocks.push({ type: "text", markdown: b.markdown });
+      // Dieselbe Invariante, die zwei Zeilen tiefer für Bildblöcke längst gilt:
+      // Was der Bericht nicht anzeigt, darf ihn auch nicht gliedern. Für
+      // Textblöcke fehlte sie — und genau daran zerbrach die Bildzeile.
+      //
+      // `gruppiere()` (src/lib/bildreihen.ts) schließt eine offene Bildzeile bei
+      // JEDEM Nicht-Bildblock. Ein Textblock, der nichts zeigt, ist trotzdem ein
+      // Block: Steht er zwischen dem zweiten und dritten Bild, werden aus einer
+      // Zeile über die volle Spalte (br-1-1, ohne Float) zwei schwebende Zeilen
+      // (br-2-3 + br-1-3) — zwei Bilder nebeneinander, das dritte darunter, und
+      // beide plötzlich links ausgerichtet. Der Verursacher ist dabei nirgends
+      // zu sehen: travel-view.tsx zieht den folgenden Textblock in denselben
+      // `.bildlauf`, es bleibt nicht einmal eine Lücke.
+      //
+      // Die Schreibwege prüfen das seit 63429b1 bereits (travel-save.ts,
+      // data-transfer/import.ts). Das genügt aber nur für das, was ÜBER sie
+      // hereinkommt — nicht für Altbestand, eine Wiederherstellung oder einen
+      // künftigen Weg, den es heute noch nicht gibt. Die Invariante gehört
+      // deshalb dorthin, wo der Renderbaum ENTSTEHT.
+      if (wie === "roh" || hatSichtbarenInhalt(b.markdown)) {
+        blocks.push({ type: "text", markdown: b.markdown });
+      }
     } else if (b.type === "bild") {
       if (b.imageId != null)
         blocks.push({

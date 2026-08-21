@@ -65,7 +65,11 @@ export async function buildTravelEditorProps(
 
   if (travelId === null) return base;
 
-  const full = await getFullTravelPost({ id: travelId });
+  // „roh": Der Editor bekommt die Blockfolge unverändert. Ein Block, der im
+  // Bericht nichts zeigt, wird dort zwar nicht mehr mitgerechnet — aber wer ihn
+  // löschen soll, muss ihn sehen. Beim nächsten Speichern verschwindet er
+  // ohnehin (travel-save.ts prüft dieselbe Frage).
+  const full = await getFullTravelPost({ id: travelId }, "roh");
   if (!full) return null;
 
   return {
