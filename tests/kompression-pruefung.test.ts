@@ -52,13 +52,23 @@ type Verhalten = {
   luegt?: boolean;
   /** Sendet Vary: Accept-Encoding an komprimierten Antworten. */
   vary?: boolean;
+  /** Setzt einen anderen Wert als „gzip" in den Kopf, z. B. „identity". */
+  etikett?: string;
+  /** Schneidet den gzip-Rumpf ab: klein, richtig etikettiert, unbrauchbar. */
+  abgeschnitten?: boolean;
+  /** Startseite ohne CSS-Verweis. */
+  ohneCss?: boolean;
 };
 
 let server: Server | undefined;
 
 function starten(v: Verhalten): Promise<string> {
   const inhalte: Record<string, { koerper: Buffer; typ: string; unveraenderlich: boolean }> = {
-    "/": { koerper: Buffer.from(STARTSEITE), typ: "text/html; charset=utf-8", unveraenderlich: false },
+    "/": {
+      koerper: Buffer.from(v.ohneCss ? STARTSEITE.replace(/<link rel="stylesheet"[^>]*>/, "") : STARTSEITE),
+      typ: "text/html; charset=utf-8",
+      unveraenderlich: false,
+    },
     "/_next/static/haupt.css": { koerper: Buffer.from(CSS), typ: "text/css", unveraenderlich: true },
     "/_next/static/haupt.js": { koerper: Buffer.from(JS), typ: "application/javascript", unveraenderlich: true },
     "/fonts/raleway.woff2": { koerper: FONT, typ: "font/woff2", unveraenderlich: true },
@@ -78,10 +88,14 @@ function starten(v: Verhalten): Promise<string> {
 
     let koerper = eintrag.koerper;
     if (sollKomprimieren) {
-      kopf["Content-Encoding"] = "gzip";
+      kopf["Content-Encoding"] = v.etikett ?? "gzip";
       // Die Lüge: Kopf gesetzt, Inhalt unverändert. Nur eine Größenprüfung
       // findet das — eine Kopfzeilenprüfung nicht.
       if (!v.luegt) koerper = gzipSync(eintrag.koerper);
+      // Der abgeschnittene Rumpf: klein genug für jede Größenprüfung, richtig
+      // etikettiert — und im Browser trotzdem Schrott. Nur der Versuch, ihn
+      // wirklich zu entpacken, findet das.
+      if (v.abgeschnitten) koerper = koerper.subarray(0, Math.floor(koerper.length / 2));
       if (v.vary !== false) kopf["Vary"] = "Accept-Encoding";
     }
     kopf["Content-Length"] = String(koerper.length);
@@ -172,6 +186,38 @@ describe("Kompressionsprüfung", () => {
     const { code, ausgabe } = await pruefen(basis, "ursprung");
     expect(code, ausgabe).not.toBe(0);
     expect(ausgabe).toMatch(/nochmals komprimiert/);
+  });
+
+  it("entlarvt „Content-Encoding: identity\" als Kompressionsnachweis", async () => {
+    // identity heißt ausdrücklich: NICHT komprimiert. Die erste Fassung nahm
+    // jeden nichtleeren Kopfwert als Erfolg, solange die Größe stimmte.
+    // (Befund des Pflicht-Approvers im Cross-Vendor-Gate, PR #102.)
+    const basis = await starten({ komprimiert: ALLES, etikett: "identity" });
+    const { code, ausgabe } = await pruefen(basis, "ursprung");
+    expect(code, ausgabe).not.toBe(0);
+    expect(ausgabe).toMatch(/kein Kompressionsverfahren/);
+  });
+
+  it("entlarvt einen abgeschnittenen gzip-Rumpf", async () => {
+    // Richtiger Kopf, plausible Größe — und im Browser unbrauchbar. Findet nur,
+    // wer wirklich zu entpacken versucht.
+    const basis = await starten({ komprimiert: ALLES, abgeschnitten: true });
+    const { code, ausgabe } = await pruefen(basis, "ursprung");
+    expect(code, ausgabe).not.toBe(0);
+    expect(ausgabe).toMatch(/nicht entpacken|passt nicht zum Kopf/);
+  });
+
+  it("meldet eine fehlende CSS-Datei, statt wortlos zu enden", async () => {
+    // Dieser Zweig war UNERREICHBAR: `grep … | head -1` in einer Zuweisung
+    // beendet unter `set -e -o pipefail` das ganze Skript, sobald grep nichts
+    // findet. Nachgemessen, ebenso der SIGPIPE-Fall bei vielen Treffern.
+    const basis = await starten({ komprimiert: ALLES, ohneCss: true });
+    const { code, ausgabe } = await pruefen(basis, "ursprung");
+    expect(code, ausgabe).not.toBe(0);
+    expect(ausgabe).toMatch(/Keine CSS-Datei/);
+    // Der Beweis, dass es nicht einfach abgebrochen ist: Die übrigen
+    // Ressourcen wurden weiterhin gemessen und der Mängelbericht kam.
+    expect(ausgabe).toMatch(/MÄNGEL auf Ebene/);
   });
 
   it("misst nichts auf einer Fehlerseite mit Status 200", async () => {

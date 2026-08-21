@@ -87,10 +87,15 @@ abrufen() {
     FEHLERTEXT=$(printf '%s' "$roh" | head -2 | tr '\n' ' ')
     return 1
   fi
-  CODE=$(printf '%s' "$roh"  | grep -o 'ZKOMPRESSIONSCODE=[0-9]*'  | tail -1 | cut -d= -f2)
-  BYTES=$(printf '%s' "$roh" | grep -o 'ZKOMPRESSIONSBYTES=[0-9]*' | tail -1 | cut -d= -f2)
+  # Auch hier keine ungeschützte Pipe in der Zuweisung: Fände grep die Marke
+  # nicht, endete das Skript wortlos statt einen Mangel zu melden.
+  CODE=$(printf '%s' "$roh"  | grep -o 'ZKOMPRESSIONSCODE=[0-9]*'  | tail -1 | cut -d= -f2) || CODE=""
+  BYTES=$(printf '%s' "$roh" | grep -o 'ZKOMPRESSIONSBYTES=[0-9]*' | tail -1 | cut -d= -f2) || BYTES=""
   local kopfteil; kopfteil=$(printf '%s\n' "$roh" | tr -d '\r')
-  ENCODING=$(printf '%s\n' "$kopfteil" | awk 'tolower($1)=="content-encoding:"{print tolower($2)}' | tail -1)
+  # Nachgestelltes Komma abstreifen: Ein Kopf „content-encoding: gzip, br"
+  # ergäbe sonst „gzip," und fiele durch die Verfahrensliste unten — ein
+  # gemeldeter Mangel, wo keiner ist.
+  ENCODING=$(printf '%s\n' "$kopfteil" | awk 'tolower($1)=="content-encoding:"{print tolower($2)}' | tail -1 | tr -d ' ,') || ENCODING=""
   VARY=$(printf '%s\n'     "$kopfteil" | awk 'tolower($1)=="vary:"{$1="";print tolower($0)}' | tr -d ' \t' | paste -sd, -)
   CACHE=$(printf '%s\n'    "$kopfteil" | awk 'tolower($1)=="cache-control:"{$1="";print tolower($0)}' | tail -1)
   return 0
@@ -119,11 +124,51 @@ textressource() {
 
   if [ -z "$komp_enc" ]; then
     maengel "$name: wird UNKOMPRIMIERT ausgeliefert ($roh_bytes Bytes)."
+  elif ! printf '%s' "$komp_enc" | grep -qE '^(gzip|br|zstd|deflate|x-gzip)$'; then
+    # `identity` ist KEINE Kompression, sondern die ausdrückliche Aussage, dass
+    # nicht komprimiert wurde. Ohne diese Zeile zählte jeder beliebige Wert im
+    # Kopf als Erfolg, solange nur die Größe stimmte.
+    maengel "$name: meldet Content-Encoding '$komp_enc' — das ist kein Kompressionsverfahren."
   else
     # Gegenprobe 1: der Kopf allein beweist nichts, die Größe muss es belegen.
     anteil=$(awk -v k="$komp_bytes" -v r="$roh_bytes" 'BEGIN{ if (r+0==0) print 999; else printf "%d", (k*100)/r }')
     if [ "$anteil" -gt 60 ]; then
       maengel "$name: meldet '$komp_enc', überträgt aber $komp_bytes von $roh_bytes Bytes (${anteil} %) — das ist keine Kompression."
+    fi
+    # Gegenprobe 1b — die eigentliche Frage: Kann der Browser das WIEDER
+    # HERSTELLEN? Ein abgeschnittener oder falsch etikettierter Rumpf ist klein
+    # und trägt den richtigen Kopf; beides oben käme durch, die Seite bliebe
+    # trotzdem kaputt. curl --compressed entpackt wie ein Browser: Es muss
+    # gelingen UND exakt die unkomprimierte Größe ergeben.
+    # ACHTUNG, hier lag der erste Entwurf falsch: `%{size_download}` zählt die
+    # Bytes AUF DER LEITUNG, auch mit --compressed. Damit maß die Prüfung
+    # nochmals die komprimierte Größe und schlug bei jedem korrekten Server an.
+    # Die entpackte Größe gibt es nur, indem man den Rumpf wirklich schreibt.
+    local entpackt entpackt_datei
+    entpackt_datei="$(mktemp)"
+    if "${CURL[@]}" --compressed -o "$entpackt_datei" "$url" >/dev/null 2>&1; then
+      entpackt=$(wc -c < "$entpackt_datei" | tr -d ' ')
+    else
+      entpackt="fehler"
+    fi
+    rm -f "$entpackt_datei"
+    if [ "$entpackt" = fehler ]; then
+      maengel "$name: meldet '$komp_enc', lässt sich aber nicht entpacken — ein Browser bekäme hier nichts Brauchbares."
+    elif [ "$entpackt" = 0 ]; then
+      maengel "$name: meldet '$komp_enc', entpackt aber zu 0 Bytes."
+    else
+      # Der EXAKTE Größenvergleich nur dort, wo der Server selbst zusichert,
+      # dass sich der Inhalt nicht ändert (`immutable` auf einer Adresse mit
+      # Inhaltshash). Auf der Startseite wäre er flatterig: Sie ist dynamisch,
+      # und ein zwischen zwei Abrufen veröffentlichtes Rezept ließe die
+      # Prüfung falsch anschlagen. Bei unveränderlichen Dateien gibt es dieses
+      # Fenster nicht — dort ist Gleichheit die richtige, harte Aussage.
+      case "$komp_cache" in
+        *immutable*)
+          if [ "$entpackt" != "$roh_bytes" ]; then
+            maengel "$name: entpackt $entpackt Bytes, unkomprimiert sind es $roh_bytes — der Rumpf passt nicht zum Kopf."
+          fi ;;
+      esac
     fi
     if [ "$EBENE" = ursprung ]; then
       case "$komp_vary" in
@@ -192,9 +237,23 @@ if ! grep -qa 'featured-slider' "$SEITE_TMP"; then
   exit 1
 fi
 
-CSS=$(grep -oaE  '/_next/static/[^"]+\.css' "$SEITE_TMP" | head -1)
-JS=$(grep -oaE   '/_next/static/[^"]+\.js'  "$SEITE_TMP" | head -1)
-FONT=$(grep -oaE '/fonts/[^"]+\.woff2[^"]*' "$SEITE_TMP" | head -1)
+# KEIN `grep … | head -1` in einer Zuweisung. Unter `set -e -o pipefail` ist
+# das zweifach tödlich, und beides ist nachgemessen:
+#   - findet grep nichts, scheitert die Zuweisung und das Skript endet SOFORT.
+#     Der Zweig „keine CSS-Datei gefunden" weiter unten war damit unerreichbar.
+#   - findet grep viel, schließt `head -1` die Pipe früh; grep stirbt an
+#     SIGPIPE (exit 141), pipefail reicht das durch. In 5 von 5 Läufen gegen
+#     eine Datei mit vielen Treffern endete das Skript hier — die Startseite
+#     dieser Anwendung trägt 84 Unterressourcen.
+# Ohne Pipe kann keines von beidem passieren; die erste Zeile holt die
+# Parametererweiterung.
+erste_zeile() { printf '%s' "${1%%$'\n'*}"; }
+TREFFER=$(grep -oaE '/_next/static/[^"]+\.css' "$SEITE_TMP") || TREFFER=""
+CSS=$(erste_zeile "$TREFFER")
+TREFFER=$(grep -oaE '/_next/static/[^"]+\.js' "$SEITE_TMP") || TREFFER=""
+JS=$(erste_zeile "$TREFFER")
+TREFFER=$(grep -oaE '/fonts/[^"]+\.woff2[^"]*' "$SEITE_TMP") || TREFFER=""
+FONT=$(erste_zeile "$TREFFER")
 
 printf '  %-8s %-52s %8s   %-8s %-5s %s\n' "Ebene" "Ressource" "roh" "kompr." "Kod." "Cache-Control"
 printf '  %s\n' "$(printf '%.0s-' $(seq 1 110))"
