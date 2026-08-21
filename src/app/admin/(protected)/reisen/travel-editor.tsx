@@ -13,6 +13,7 @@ import {
   type Option as TaxonomyOption,
 } from "@/components/admin/quick-add-checkboxes";
 import { RichTextEditor } from "@/components/admin/rich-text-editor";
+import { RESTAURANT_FOTOS_MAX } from "@/lib/restaurant-fotos";
 import {
   BILD_GROESSEN,
   BILD_PLAETZE,
@@ -52,7 +53,7 @@ interface EditorRestaurant {
   name: string;
   city: string;
   description: string;
-  imageId: number | null;
+  imageIds: number[];
   /** Koordinaten-Override als Eingabe-Strings ("" = keine Angabe) */
   lat: string;
   lng: string;
@@ -333,7 +334,7 @@ function emptyRestaurant(): EditorRestaurant {
     name: "",
     city: "",
     description: "",
-    imageId: null,
+    imageIds: [],
     lat: "",
     lng: "",
     dishes: [emptyDish()],
@@ -443,7 +444,7 @@ export function TravelEditor({
       name: r.name,
       city: r.city,
       description: r.description,
-      imageId: r.imageId,
+      imageIds: r.imageIds,
       lat: parseCoord(r.lat),
       lng: parseCoord(r.lng),
       dishes: r.dishes.map((dish) => ({
@@ -915,12 +916,14 @@ export function TravelEditor({
                   <ImagePicker
                     legend={d.restaurantImage}
                     options={images}
-                    multiple={false}
-                    value={r.imageId ? [r.imageId] : []}
-                    onChange={(ids) =>
-                      updateRestaurant(ri, { imageId: ids[0] ?? null })
-                    }
+                    multiple
+                    max={RESTAURANT_FOTOS_MAX}
+                    value={r.imageIds}
+                    onChange={(ids) => updateRestaurant(ri, { imageIds: ids })}
                   />
+                  <p className="mt-1 text-xs text-ink-soft">
+                    {d.restaurantImageHint}
+                  </p>
                 </div>
               </div>
 

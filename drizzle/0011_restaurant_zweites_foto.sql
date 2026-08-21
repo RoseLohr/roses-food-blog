@@ -1,0 +1,25 @@
+-- Ein Restaurant kann ein zweites Foto tragen.
+--
+-- Eines steht wie bisher über die ganze Kartenbreite; zwei stehen kleiner
+-- nebeneinander. Bewusst eine zweite SPALTE statt einer Verknüpfungstabelle
+-- (dish_image, travel_post_image): Die Regel nennt eine Obergrenze — „eines
+-- oder zwei" —, keine offene Liste. Eine Tabelle könnte diese Grenze gar nicht
+-- halten: SQLite kennt keinen CHECK über die Zeilenzahl, es bräuchte einen
+-- Trigger, und der schriebe eine Darstellungsentscheidung in die Datenbank.
+--
+-- Der CHECK verhindert dasselbe Foto in beiden Plätzen. Ohne ihn gäbe der
+-- Renderer zwei Kacheln mit demselben Schlüssel aus und das Pop-up zeigte
+-- dasselbe Bild zweimal. NULL bleibt erlaubt (kein Foto, ein Foto).
+--
+-- BEWUSST KEIN CHECK „kein zweites ohne erstes": Wird das Medium des ersten
+-- Fotos gelöscht, setzt ON DELETE SET NULL dessen Spalte auf NULL, während das
+-- zweite stehen bleibt. Ein solcher CHECK würde genau dann zuschlagen und das
+-- Löschen des Bildes scheitern lassen. Verdichtet wird stattdessen beim Lesen,
+-- an einer Stelle: restaurantFotoIds() in src/lib/travel-blocks.ts.
+--
+-- ADD COLUMN von Hand statt drizzle-kit-Tabellenneubau: Dessen Neubau kopiert
+-- per INSERT … SELECT Spalten, die es in der alten Tabelle noch nicht gibt,
+-- und räumt unter `foreign_keys = ON` per CASCADE die abhängigen Tabellen leer
+-- (gemessen). ADD COLUMN mit benanntem CHECK leistet dasselbe und ist
+-- ausführbar (gegen eine Datenbank im Stand 0009 verifiziert).
+ALTER TABLE `restaurant` ADD `image_id_2` integer REFERENCES media_image(id) ON DELETE SET NULL CONSTRAINT "restaurant_image_2_check" CHECK("restaurant"."image_id_2" IS NULL OR "restaurant"."image_id_2" <> "restaurant"."image_id");

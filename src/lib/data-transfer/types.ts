@@ -125,6 +125,9 @@ const restaurantSchema = z.object({
   city: z.string().default(""),
   description: z.string().default(""),
   image: z.string().nullable().default(null),
+  /** Zweites Foto — ADDITIV: Archive ohne dieses Feld bleiben lesbar (Default
+   *  null), deshalb steigt EXPORT_VERSION nicht. */
+  image2: z.string().nullable().default(null),
   /** Manueller Koordinaten-Override (Vorrang vor Foto-EXIF) */
   lat: z.number().min(-90).max(90).nullable().default(null),
   lng: z.number().min(-180).max(180).nullable().default(null),

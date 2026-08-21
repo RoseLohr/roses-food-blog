@@ -84,11 +84,26 @@ const QUELLEN: Array<{ bereich: string; ids: () => Promise<(number | null)[]> }>
         await db.select({ id: schema.travelBlock.imageId }).from(schema.travelBlock)
       ).map((r) => r.id),
   },
+  // Die beiden Fotoplätze eines Restaurants stehen BEWUSST als zwei Einträge
+  // da, nicht als einer mit zwei Spalten. Die Fangregel in
+  // tests/bild-ohne-foto.integration.test.ts zählt Einträge gegen
+  // Fremdschlüsselspalten: Nur so fällt auf, wenn eine Spalte dazukommt und
+  // hier vergessen wird — und der Redakteur erfährt, WELCHES der beiden Fotos
+  // dem Löschen im Weg steht, statt nur „Restaurant".
   {
-    bereich: "Restaurant",
+    bereich: "Restaurant (erstes Foto)",
     ids: async () =>
       (
         await db.select({ id: schema.restaurant.imageId }).from(schema.restaurant)
+      ).map((r) => r.id),
+  },
+  {
+    bereich: "Restaurant (zweites Foto)",
+    ids: async () =>
+      (
+        await db
+          .select({ id: schema.restaurant.imageId2 })
+          .from(schema.restaurant)
       ).map((r) => r.id),
   },
   {
