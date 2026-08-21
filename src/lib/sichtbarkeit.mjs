@@ -1,26 +1,14 @@
 /**
- * „Zeigt dieser Textblock im Bericht überhaupt etwas?" — die Regel, EINMAL.
+ * Unsichtbare Zeichen und der Altbestand leerer Blöcke.
  *
- * Sie wird an drei Stellen gebraucht: im Editor (ein leerer Block darf gar
- * kein Markdown erzeugen), im Speicherweg und in der Datenübernahme (der
- * Browser ist nicht der einzige Schreiber), und beim Aufräumen des
- * Altbestands, das `scripts/migrate.mjs` fährt.
+ * Die eigentliche Frage — „zeigt dieser Textblock im Bericht etwas?" —
+ * beantwortet `hatSichtbarenInhalt` in src/lib/rich-text.ts, und zwar indem es
+ * den Bericht BAUT und ansieht. Hier steht nur, was ohne den Renderer
+ * auskommen muss: das Aufräumen des Altbestands, das `scripts/migrate.mjs` im
+ * Standalone-Image fährt, wo es weder TypeScript noch die Anwendungsmodule
+ * gibt.
  *
- * Deshalb steht sie als reines JavaScript hier und nicht in einer der drei
- * Stellen: `migrate.mjs` läuft im Standalone-Image ohne TypeScript und ohne
- * gebündelte Anwendungsmodule — es kann nur eine echte Datei laden. Der erste
- * Anlauf formulierte die Regel deshalb ZWEIMAL, einmal in TypeScript und
- * einmal als SQL-Prädikat. Die unabhängige Prüfung hat gezeigt, wohin das
- * führt: Die SQL-Fassung löschte `.`, `...` und ein Sternchen in
- * Code-Auszeichnung als „leer", die
- * TypeScript-Fassung nicht. Zwei Fassungen einer Regel bleiben nicht gleich —
- * und diese Regel entscheidet über das LÖSCHEN von Inhalten.
- *
- * Gefragt wird, was der Renderer ZEIGEN würde, nicht welche Zeichen wie
- * Auszeichnung AUSSEHEN. Auszeichnung zählt nur dort nicht, wo sie an ihrem
- * Platz WIRKT: am Zeilenanfang oder als Paar um einen Inhalt. Verankert ist
- * das in tests/leere-bloecke.test.ts, wo jeder Fall gegen den echten
- * Markdown-Renderer gehalten wird.
+ * Deshalb ist alles hier bewusst arm an Regeln — geraten wird nichts mehr.
  */
 
 /**
@@ -45,25 +33,51 @@ export function sichtbar(s) {
  * @param {string} markdown
  * @returns {boolean}
  */
-export function hatSichtbarenInhalt(markdown) {
-  const rest = markdown
-    // Was für sich selbst sichtbar ist, zählt sofort — vor jedem Abzug.
-    .replace(/^[ \t]*(?:---+|\*\*\*+|___+)[ \t]*$/gm, "SICHTBAR") // Trenner
-    .replace(/!\[[^\]]*\]\([^)]*\)/g, "SICHTBAR") // Bild, auch ohne Alt-Text
-    // Code: die Zäune sind Auszeichnung, ihr INHALT ist Text. Beides zusammen
-    // behandelt, damit ein Sternchen im Code nicht später als Listenzeichen
-    // durchgeht. Der Inhalt muss mindestens EIN Zeichen haben: zwei
-    // Rückstriche ohne etwas dazwischen sind kein Code, sondern zeigen sich.
-    .replace(/(`+)([\s\S]+?)\1/g, (_, __, inhalt) =>
-      sichtbar(inhalt) ? "SICHTBAR" : "",
-    )
-    .replace(/(~{3,})([\s\S]+?)\1/g, (_, __, inhalt) =>
-      sichtbar(inhalt) ? "SICHTBAR" : "",
-    )
-    // Verweis ohne Beschriftung: rendert ein leeres <a> — nichts zu sehen.
-    .replace(/\[[ \t]*\]\([^)]*\)/g, "")
-    // Marker, die NUR am Zeilenanfang Auszeichnung sind.
-    .replace(/^[ \t]*(?:#{1,6}|>+|[-*+]|\d{1,9}[.)])[ \t]*/gm, "")
-    .replace(/&nbsp;/g, " ");
-  return sichtbar(rest);
+/**
+ * Eine Zeile, die nur aus einem Blockmarker besteht — und aus sonst nichts.
+ *
+ * Der Marker muss die Zeile ausfüllen: `#` gefolgt von einem
+ * Nullbreiten-Leerzeichen fällt NICHT darunter, denn das ist keine
+ * Überschrift, sondern ein Absatz, der eine Raute zeigt. Genau daran ist der
+ * zweite Anlauf gescheitert (Befund des Prüfpanels), und die Richtung des
+ * Irrtums war die schlimme: gelöscht hätte er.
+ *
+ * Zäune eines Codeblocks stehen bewusst NICHT hier: Zwischen zwei Zäunen ist
+ * jede Zeile Text, auch eine, die aus einem Strich besteht. Das leere
+ * Zaunpaar steht deshalb als ganze Form in LEERE_BLOCKFORMEN.
+ */
+const ZEILE_OHNE_INHALT = /^(?:#{1,6}|>+|[-*+]|\d{1,9}[.)])?[ \t]*$/;
+
+/**
+ * Ganze Blockformen ohne Inhalt, die sich nicht Zeile für Zeile beschreiben
+ * lassen. Jeder Eintrag ist in tests/leere-bloecke.test.ts gegen den echten
+ * Renderer gehalten.
+ */
+export const LEERE_BLOCKFORMEN = Object.freeze(["```\n\n```", "~~~\n\n~~~"]);
+
+/**
+ * Ist dieser gespeicherte Textblock ein leerer Block aus der Zeit vor der
+ * Korrektur?
+ *
+ * Diese Frage stellt nur das Aufräumen des Altbestands — im Standalone-Image,
+ * wo es den Markdown-Renderer nicht gibt. Überall sonst wird der Bericht
+ * gebaut und angesehen (`hatSichtbarenInhalt` in src/lib/rich-text.ts).
+ *
+ * Die Regel ist deshalb bewusst ENGER als die Wahrheit: Sie räumt, was
+ * zweifelsfrei nur aus Auszeichnung besteht, und lässt alles andere stehen.
+ * Was übrig bleibt, verschwindet beim nächsten Speichern des Berichts — dort
+ * gibt es den Renderer. Zu wenig zu räumen kostet einen weiteren Handgriff;
+ * zu viel zu räumen kostet Inhalt.
+ *
+ * @param {string} markdown
+ * @returns {boolean}
+ */
+export function istLeererAltblock(markdown) {
+  // Kein einziges sichtbares Zeichen — davon gibt es keine Schreibweise, die
+  // etwas zeigen könnte.
+  if (!sichtbar(markdown)) return true;
+  if (LEERE_BLOCKFORMEN.includes(markdown)) return true;
+  // Sonst: JEDE Zeile ist ein Marker ohne Inhalt. Eine leere Aufzählung mit
+  // drei Punkten ist genauso leer wie eine mit einem.
+  return markdown.split("\n").every((zeile) => ZEILE_OHNE_INHALT.test(zeile));
 }

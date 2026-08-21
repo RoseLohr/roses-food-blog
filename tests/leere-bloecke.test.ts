@@ -23,8 +23,8 @@
  */
 import { describe, expect, it } from "vitest";
 import { htmlToMarkdown } from "@/lib/rich-text";
-import { hatSichtbarenInhalt } from "@/lib/rich-text";
-import { renderMarkdown } from "@/lib/markdown";
+import { hatSichtbarenInhalt, renderMarkdown } from "@/lib/markdown";
+import { LEERE_BLOCKFORMEN, istLeererAltblock } from "@/lib/sichtbarkeit.mjs";
 
 /** Minimaler DOM-Nachbau — dieselbe Form, die der Editor durchreicht. */
 type Knoten = {
@@ -164,7 +164,16 @@ describe("htmlToMarkdown — Verweis ohne Beschriftung", () => {
  * Eigenschaft prüft sich selbst.
  */
 describe("hatSichtbarenInhalt stimmt mit dem Renderer überein", () => {
-  /** Zeigt dieses HTML etwas? Bild und Trenner zeigen ohne Text etwas. */
+  /**
+   * Zeigt dieses HTML etwas?
+   *
+   * Die Linie ist bewusst der INHALT, nicht das Pixel: Text, ein Bild oder ein
+   * Trenner zeigen etwas. Was ein leerer Block an Schmuck mitbringt — der
+   * cremefarbene Kasten eines leeren Code-Elements, der Balken eines leeren
+   * Zitats, der Punkt eines leeren Aufzählungseintrags — ist kein Inhalt,
+   * sondern der Rest einer Auszeichnung ohne Aussage. Genau solche Blöcke
+   * sollen verschwinden; sie sind der gemeldete Fehler.
+   */
   function zeigtEtwas(html: string): boolean {
     if (/<(?:img|hr)\b/.test(html)) return true;
     const text = html.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ");
@@ -176,6 +185,13 @@ describe("hatSichtbarenInhalt stimmt mit dem Renderer überein", () => {
     "", "   ", "##", "######", ">", ">>", "-", "*", "+", "1.", "12)", "&nbsp;",
     "​", "⁠", "﻿", "\f", "\v", "\u2028", "```\n\n```", "~~~\n\n~~~",
     "[](/reisen)", "[ ](/reisen)", "``",
+    // Aus dem zweiten Panel-Veto: Ein Blockmarker ist nur dann Auszeichnung,
+    // wenn ein Trennzeichen folgt. `#` mit einem Nullbreiten-Leerzeichen
+    // dahinter ist KEINE Überschrift — der Renderer zeigt die Raute.
+    "#​", "##​", "-​", "*​", "+​", "1.​", "12)​", ">​", "#x", "-x", "1.x",
+    // Rückstrich-Läufe: der schließende Lauf muss so lang sein wie der
+    // öffnende, sonst ist es Text.
+    "`", "```", "````", "`` ``", "``a`", "`a``", "`` `` ``", "``​``",
     // sichtbar im Bericht
     "Text", "## Überschrift", "> Zitat", "- eins", "1. eins", "---", "***", "___",
     "![Bild](/a.jpg)", "![](/a.jpg)", "[Reisen](/reisen)", "`*`", "```\n*\n```",
@@ -186,3 +202,144 @@ describe("hatSichtbarenInhalt stimmt mit dem Renderer überein", () => {
     expect(hatSichtbarenInhalt(md)).toBe(zeigtEtwas(renderMarkdown(md)));
   });
 });
+
+/**
+ * Dieselbe Eigenschaft, aber nicht mehr an meiner Handauswahl: Marker,
+ * Trennzeichen und Inhalte werden systematisch gekreuzt. Die beiden Vetos des
+ * Prüfpanels betrafen genau solche Kombinationen — ein Marker ohne folgendes
+ * Trennzeichen, ein Rückstrich-Lauf der falschen Länge —, und beide hätte
+ * dieser Durchlauf gefunden, ohne dass mir der Fall einfallen muss.
+ */
+describe("hatSichtbarenInhalt hält den Renderer über alle Kombinationen aus", () => {
+  const MARKER = [
+    "", "#", "##", "######", "#######", ">", ">>", "-", "*", "+",
+    "1.", "12)", "```", "~~~", "`", "``", "---", "***",
+  ];
+  const TRENNER = ["", " ", "\t", "\u00a0", "\u200b"];
+  const INHALT = ["", "x", "*", ".", "\u200b", "![](/a.jpg)", "[](/x)", "[a](/x)", "`y`"];
+
+  it("stimmt in jeder Kombination mit dem Renderer überein", () => {
+    /** Wie oben — die Linie ist der Inhalt, nicht der Schmuck. */
+    const zeigtEtwas = (html: string) =>
+      /<(?:img|hr)\b/.test(html) ||
+      html
+        .replace(/<[^>]*>/g, "")
+        .replace(/&nbsp;/g, " ")
+        .replace(/[\s\u00a0\u200b\u2060\ufeff]+/g, "") !== "";
+
+    const abweichungen: string[] = [];
+    for (const m of MARKER) {
+      for (const t of TRENNER) {
+        for (const i of INHALT) {
+          const md = `${m}${t}${i}`;
+          const gesagt = hatSichtbarenInhalt(md);
+          const gezeigt = zeigtEtwas(renderMarkdown(md));
+          if (gesagt !== gezeigt) {
+            abweichungen.push(
+              `${JSON.stringify(md)}: Prädikat ${gesagt ? "sichtbar" : "leer"}, ` +
+                `Renderer ${gezeigt ? "sichtbar" : "leer"}`,
+            );
+          }
+        }
+      }
+    }
+    expect(abweichungen, abweichungen.join("\n")).toEqual([]);
+  });
+});
+
+/**
+ * Der Sicherheitsbeweis für das Aufräumen des Altbestands.
+ *
+ * `scripts/leere-bloecke-raeumen.mjs` läuft im Standalone-Image, wo es den
+ * Markdown-Renderer nicht gibt — es kann also nicht fragen, sondern muss
+ * WISSEN. Was es löscht, muss der Renderer als leer bestätigen; was es stehen
+ * lässt, ist bloß ein Handgriff mehr. Die Richtung ist der Punkt: Zu wenig zu
+ * räumen kostet Mühe, zu viel zu räumen kostet Inhalt.
+ *
+ * Bewiesen wird das nicht an einer Handauswahl, sondern erzeugend: Aus einem
+ * Vorrat an Markern werden alle Blöcke bis zu drei Zeilen gebaut, und für
+ * JEDEN, den das Aufräumen löschen würde, muss der echte Renderer bestätigen,
+ * dass er nichts zeigt.
+ */
+describe("Räumen des Altbestands löscht nichts Sichtbares", () => {
+  it.each([...LEERE_BLOCKFORMEN])("%j zeigt im Bericht nichts", (md) => {
+    expect(hatSichtbarenInhalt(md)).toBe(false);
+  });
+
+  it("löscht in keiner Zeilenkombination etwas, das der Bericht zeigt", () => {
+    const VORRAT = [
+      "", " ", "#", "##", "######", "#######", ">", ">>", "-", "--", "---",
+      "*", "+", "1.", "12)", "#​", "-​", "1.​", "# Titel", "Text", ".", "`*`",
+      "```", "~~~", "![](/a.jpg)", "[](/x)", "***", "___", "===",
+    ];
+    const geloescht: string[] = [];
+    const falsch: string[] = [];
+    for (const a of VORRAT) {
+      for (const b of VORRAT) {
+        for (const c of ["", ...VORRAT]) {
+          const md = c === "" ? `${a}\n${b}` : `${a}\n${b}\n${c}`;
+          if (!istLeererAltblock(md)) continue;
+          geloescht.push(md);
+          if (hatSichtbarenInhalt(md)) falsch.push(JSON.stringify(md));
+        }
+      }
+    }
+    expect(falsch, `Diese würden gelöscht, zeigen aber etwas:\n${falsch.join("\n")}`)
+      .toEqual([]);
+    // Die Kontrolle muss überhaupt etwas geprüft haben, sonst ist sie blind.
+    expect(geloescht.length).toBeGreaterThan(50);
+  });
+
+  it("räumt, was der alte Editor für einen leeren Block erzeugte", () => {
+    // Nicht aus dem Gedächtnis, sondern aus dem Erzeuger: Das ist genau die
+    // Form, in der solche Blöcke in der Datenbank stehen.
+    const leereBloecke = [
+      el("H1", [br()]), el("H2", [br()]), el("H3", [br()]), el("H4", [br()]),
+      el("BLOCKQUOTE", [br()]),
+      el("UL", [el("LI", [br()])]),
+      el("OL", [el("LI", [br()])]),
+      el("P", [text("​")]),
+    ];
+    for (const knoten of leereBloecke) {
+      const alt = altesMarkdown(knoten);
+      expect(
+        istLeererAltblock(alt),
+        `„${alt}" aus <${knoten.nodeName}> muss geräumt werden`,
+      ).toBe(true);
+    }
+    // Auch die mehrzeilige leere Aufzählung — zweimal Enter in einer Liste.
+    expect(istLeererAltblock("- \n- \n-")).toBe(true);
+    expect(istLeererAltblock("1. \n2. \n3.")).toBe(true);
+  });
+
+  it("räumt nicht, was nur so AUSSIEHT wie leere Auszeichnung", () => {
+    for (const md of ["#​", "-​", "1.​", "#x", ".", "...", "`*`", "--", "# Titel", "---"]) {
+      expect(istLeererAltblock(md), `„${md}" muss stehen bleiben`).toBe(false);
+    }
+  });
+});
+
+/**
+ * Der alte block() — nur hier, nur als Nachbau des Erzeugers, gegen den die
+ * Räumregel geprüft wird. Er darf NICHT in den Quelltext zurück; genau diese
+ * Ausgaben sind ja der Fehler.
+ */
+function altesMarkdown(el: Knoten): string {
+  const name = el.nodeName.toUpperCase();
+  const inhalt = (el.childNodes ?? [])
+    .map((k) => (k.nodeType === 3 ? (k.textContent ?? "") : k.nodeName === "BR" ? "\n" : ""))
+    .join("")
+    .replace(/\n{2,}/g, "\n")
+    .trim();
+  const md =
+    name === "H1" ? `# ${inhalt}`
+    : name === "H2" ? `## ${inhalt}`
+    : name === "H3" ? `### ${inhalt}`
+    : name === "H4" ? `#### ${inhalt}`
+    : name === "BLOCKQUOTE" ? `> ${inhalt}`.trimEnd()
+    : name === "UL" ? `- ${inhalt}`
+    : name === "OL" ? `1. ${inhalt}`
+    : inhalt;
+  // htmlToMarkdown() fügte die Blöcke und trimmte am Ende.
+  return md.trim();
+}

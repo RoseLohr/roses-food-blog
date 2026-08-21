@@ -10,15 +10,7 @@
  * damit die Logik ohne echtes DOM testbar ist. Ein echtes HTMLElement erfüllt
  * diese Schnittstelle strukturell.
  */
-import { hatSichtbarenInhalt, sichtbar } from "@/lib/sichtbarkeit.mjs";
-
-/**
- * Dieselbe Regel wie im Editor, für alle anderen Schreiber (Speicherweg,
- * Datenübernahme, Aufräumen des Altbestands). Sie steht in
- * `sichtbarkeit.mjs`, weil `scripts/migrate.mjs` sie ebenfalls braucht und
- * dort kein TypeScript läuft — EINE Fassung statt zweier, die auseinanderlaufen.
- */
-export { hatSichtbarenInhalt };
+import { sichtbar } from "@/lib/sichtbarkeit.mjs";
 
 export interface MinimalNode {
   nodeType: number;

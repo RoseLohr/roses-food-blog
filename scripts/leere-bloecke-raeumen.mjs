@@ -12,18 +12,25 @@
  * nebeneinander, das dritte darunter, dazwischen eine weiße Fläche. Weder im
  * Editor noch im Bericht war zu sehen, woran es lag.
  *
- * WARUM HIER UND NICHT ALS SQL-MIGRATION: Das Prädikat („zeigt der Bericht
- * etwas?") gibt es genau einmal — in src/lib/sichtbarkeit.mjs, gemeinsam mit
- * Editor, Speicherweg und Datenübernahme. Als SQL nachgebaut lief es sofort
- * auseinander: die SQL-Fassung hielt `.`, `...` und ein Sternchen in
- * Code-Auszeichnung für leer und hätte sie gelöscht. Bei einer Operation,
- * die Inhalte LÖSCHT, ist eine zweite Fassung der Regel kein Detail,
- * sondern der Fehler selbst.
+ * WARUM HIER UND NICHT ALS SQL-MIGRATION: Als SQL nachgebaut lief die Regel
+ * sofort auseinander — die SQL-Fassung hielt `.`, `...` und ein Sternchen in
+ * Code-Auszeichnung für leer und hätte sie gelöscht. Bei einer Operation, die
+ * Inhalte LÖSCHT, ist eine zweite Fassung der Regel kein Detail, sondern der
+ * Fehler selbst.
+ *
+ * WARUM HIER TROTZDEM NICHT GEFRAGT WIRD: Dieses Skript läuft im
+ * Standalone-Image, wo es den Markdown-Renderer nicht gibt. Es kann also nicht
+ * fragen „zeigt der Bericht etwas?" — das tut der Speicherweg
+ * (`hatSichtbarenInhalt` in src/lib/markdown.ts, das den Bericht baut und
+ * ansieht). Hier wird stattdessen nur geräumt, was ZWEIFELSFREI aus
+ * Auszeichnung besteht (`istLeererAltblock`). Was übrig bleibt, verschwindet
+ * beim nächsten Speichern des Berichts. Zu wenig zu räumen kostet einen
+ * Handgriff; zu viel zu räumen kostet Inhalt.
  *
  * Läuft bei jedem `db:migrate` und ist idempotent: Was der Speicherweg
  * ohnehin nicht mehr schreibt, findet sich beim nächsten Lauf nicht wieder.
  */
-import { hatSichtbarenInhalt } from "../src/lib/sichtbarkeit.mjs";
+import { istLeererAltblock } from "../src/lib/sichtbarkeit.mjs";
 
 /**
  * @param {{ prepare: (sql: string) => any, transaction: (fn: any) => any }} sqlite
@@ -39,7 +46,7 @@ export function raeumeLeereTextbloecke(sqlite) {
   const zeilen = sqlite
     .prepare("SELECT id, markdown FROM travel_block WHERE type = 'text'")
     .all();
-  const weg = zeilen.filter((z) => !hatSichtbarenInhalt(z.markdown ?? ""));
+  const weg = zeilen.filter((z) => istLeererAltblock(z.markdown ?? ""));
   if (weg.length === 0) return 0;
 
   const loeschen = sqlite.prepare("DELETE FROM travel_block WHERE id = ?");
