@@ -131,8 +131,10 @@ abrufen() {
 }
 
 # textressource NAME URL — muss komprimiert werden
+# textressource NAME URL [MUSS_ENTHALTEN]
 textressource() {
-  local name="$1" url="$2" roh_bytes komp_bytes komp_enc komp_vary komp_cache anteil
+  local name="$1" url="$2" muss_enthalten="${3:-}"
+  local roh_bytes komp_bytes komp_enc komp_vary komp_cache anteil
   # Zurücksetzen, BEVOR irgendein Zweig früh aussteigt: sonst prüfte der
   # immutable-Test unten den Cache-Control-Wert der VORIGEN Ressource.
   LETZTE_CACHE=""
@@ -150,6 +152,13 @@ textressource() {
     maengel "$name: nicht abrufbar (${FEHLERTEXT:-unbekannt})"; return 0
   fi
   komp_bytes="$BYTES"; komp_enc="$ENCODING"; komp_vary="$VARY"; komp_cache="$CACHE"
+  # Auch der ZWEITE Abruf muss 200 sein. Ohne diese Zeile käme eine
+  # gzip-kodierte Fehlerseite durch: klein, richtig etikettiert, und die
+  # Größenrelation sähe nach hervorragender Kompression aus.
+  if [ "$CODE" != "200" ]; then
+    maengel "$name: liefert unter Accept-Encoding HTTP $CODE statt 200 — unkomprimiert war es 200."
+    return 0
+  fi
 
   if [ -z "$komp_enc" ]; then
     maengel "$name: wird UNKOMPRIMIERT ausgeliefert ($roh_bytes Bytes)."
@@ -169,13 +178,22 @@ textressource() {
     # und trägt den richtigen Kopf; beides oben käme durch, die Seite bliebe
     # trotzdem kaputt. curl --compressed entpackt wie ein Browser: Es muss
     # gelingen UND exakt die unkomprimierte Größe ergeben.
+    # ALLE Folgeproben nageln `Accept-Encoding` auf die Kodierung fest, die
+    # oben tatsächlich gemessen wurde. Vorher fragte der Messabruf „br, gzip",
+    # die Entpackprobe `--compressed` (curls eigene Liste) und die
+    # Strukturprüfung „gzip" — drei verschiedene Verhandlungen. Ein Server, der
+    # ein DEFEKTES br und ein intaktes gzip vorhält, wurde damit auf br
+    # gemessen und auf gzip für gültig erklärt. Nachgemessen: ein explizites
+    # `Accept-Encoding` gewinnt gegenüber `--compressed`, curl entpackt
+    # trotzdem.
+    #
     # ACHTUNG, hier lag der erste Entwurf falsch: `%{size_download}` zählt die
     # Bytes AUF DER LEITUNG, auch mit --compressed. Damit maß die Prüfung
     # nochmals die komprimierte Größe und schlug bei jedem korrekten Server an.
     # Die entpackte Größe gibt es nur, indem man den Rumpf wirklich schreibt.
     local entpackt entpackt_datei
     entpackt_datei="$(mktemp)"
-    if "${CURL[@]}" --compressed -o "$entpackt_datei" "$url" >/dev/null 2>&1; then
+    if "${CURL[@]}" -H "Accept-Encoding: $komp_enc" --compressed -o "$entpackt_datei" "$url" >/dev/null 2>&1; then
       entpackt=$(wc -c < "$entpackt_datei" | tr -d ' ')
     else
       entpackt="fehler"
@@ -194,7 +212,7 @@ textressource() {
     if [ "$komp_enc" = gzip ] || [ "$komp_enc" = x-gzip ]; then
       local roh_gz
       roh_gz="$(mktemp)"
-      if "${CURL[@]}" -H 'Accept-Encoding: gzip' -o "$roh_gz" "$url" >/dev/null 2>&1; then
+      if "${CURL[@]}" -H "Accept-Encoding: $komp_enc" -o "$roh_gz" "$url" >/dev/null 2>&1; then
         if ! gzip -t "$roh_gz" 2>/dev/null; then
           maengel "$name: der gzip-Strom ist unvollständig oder beschädigt (gzip -t schlägt fehl) — ein Browser bricht das Dekodieren ab."
         fi
@@ -218,6 +236,14 @@ textressource() {
       # Browser bekäme dann eine intakte, aber falsche Datei, und gerade bei
       # `immutable` behielte er sie ein Jahr. Beide Rümpfe liegen ohnehin vor;
       # sie zu vergleichen kostet nichts gegenüber ihrem Abruf.
+      # Bei einer DYNAMISCHEN Antwort ist Bytegleichheit nicht zu haben — zwei
+      # Abrufe dürfen sich legitim unterscheiden. Prüfbar ist trotzdem, ob das
+      # Entpackte die Seite überhaupt noch IST: Ein kurzer, gültig gepackter
+      # Fremdrumpf käme sonst mit 200 und Vary durch, und die Seite im Browser
+      # wäre leer.
+      if [ -n "$muss_enthalten" ] && ! grep -qa -- "$muss_enthalten" "$entpackt_datei"; then
+        maengel "$name: das Entpackte enthält '$muss_enthalten' nicht — der komprimierte Rumpf ist nicht die Seite, die unkomprimiert ausgeliefert wird."
+      fi
       case "$komp_cache" in
         *immutable*)
           local roh_datei
@@ -321,7 +347,9 @@ FONT=$(erste_zeile "$TREFFER")
 printf '  %-8s %-52s %8s   %-8s %-5s %s\n' "Ebene" "Ressource" "roh" "kompr." "Kod." "Cache-Control"
 printf '  %s\n' "$(printf '%.0s-' $(seq 1 110))"
 
-textressource "HTML" "$BASIS/"
+# Beim HTML wird zusätzlich verlangt, dass das Entpackte die Bühne der
+# Startseite noch trägt — dieselbe Marke, an der die Seite oben erkannt wurde.
+textressource "HTML" "$BASIS/" "featured-slider"
 if [ -n "$CSS" ]; then textressource "CSS" "$BASIS$CSS"
   case "$LETZTE_CACHE" in *immutable*) ;; *) maengel "CSS: kein 'immutable' im Cache-Control ($LETZTE_CACHE)" ;; esac
 else maengel "Keine CSS-Datei in der Startseite gefunden — die Prüfung wäre unvollständig."; fi

@@ -21,7 +21,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { execFile } from "node:child_process";
 import { createServer, type Server } from "node:http";
-import { gzipSync } from "node:zlib";
+import { deflateSync, gzipSync } from "node:zlib";
 import path from "node:path";
 import { promisify } from "node:util";
 
@@ -60,6 +60,12 @@ type Verhalten = {
   ohneCss?: boolean;
   /** Gültiges gzip — aber von FREMDEM Inhalt gleicher Länge. */
   fremdinhalt?: boolean;
+  /** Antwortet auf den komprimierten Abruf mit einem Fehlerstatus. */
+  fehlerBeiKomprimiert?: boolean;
+  /** Kurzer, gültig gepackter Fremdrumpf statt der Seite. */
+  kurzerRumpf?: boolean;
+  /** Defektes br, wenn br angefragt wird — intaktes gzip, wenn nur gzip. */
+  brDefekt?: boolean;
 };
 
 let server: Server | undefined;
@@ -85,6 +91,45 @@ function starten(v: Verhalten): Promise<string> {
     const darfKomprimieren = v.immer === true || /gzip|br/.test(gewuenscht);
     const sollKomprimieren = v.komprimiert.has(eintrag.typ.split(";")[0]) && darfKomprimieren;
 
+    // Ein Server, der je nach angebotener Liste eine ANDERE Variante wählt:
+    // intaktes deflate für curls eigene Liste (--compressed bietet deflate an),
+    // defektes br für den Messabruf („br, gzip", ohne deflate).
+    //
+    // Die Reihenfolge hier ist der ganze Punkt. Mit br zuerst bekäme auch
+    // curls Liste das defekte br, und die Prüfung liefe für die alte wie für
+    // die neue Fassung rot — sie belegte dann nichts. Gegengeprüft: gegen
+    // diesen Prüfstand meldet die Fassung ohne Festnagelung „in Ordnung".
+    if (v.brDefekt && sollKomprimieren) {
+      const kopf: Record<string, string> = {
+        "Content-Type": eintrag.typ,
+        Vary: "Accept-Encoding",
+        ...(eintrag.unveraenderlich ? { "Cache-Control": "public, max-age=31536000, immutable" } : {}),
+      };
+      if (/deflate/.test(gewuenscht)) {
+        const gut = deflateSync(eintrag.koerper);
+        antwort.writeHead(200, { ...kopf, "Content-Encoding": "deflate", "Content-Length": String(gut.length) }).end(gut);
+        return;
+      }
+      if (/\bbr\b/.test(gewuenscht)) {
+        const muell = Buffer.from("kein gueltiges brotli");
+        antwort.writeHead(200, { ...kopf, "Content-Encoding": "br", "Content-Length": String(muell.length) }).end(muell);
+        return;
+      }
+    }
+
+    if (v.fehlerBeiKomprimiert && sollKomprimieren) {
+      const seite = gzipSync(Buffer.from("<html><body>Fehler</body></html>"));
+      antwort
+        .writeHead(500, {
+          "Content-Type": eintrag.typ,
+          "Content-Encoding": "gzip",
+          Vary: "Accept-Encoding",
+          "Content-Length": String(seite.length),
+        })
+        .end(seite);
+      return;
+    }
+
     const kopf: Record<string, string> = { "Content-Type": eintrag.typ };
     if (eintrag.unveraenderlich) kopf["Cache-Control"] = "public, max-age=31536000, immutable";
 
@@ -97,6 +142,10 @@ function starten(v: Verhalten): Promise<string> {
       // Gültig komprimiert, entpackt exakt gleich lang — aber anderer Inhalt.
       // Eine Prüfung, die nur Längen vergleicht, sieht hier nichts.
       if (v.fremdinhalt) koerper = gzipSync(Buffer.alloc(eintrag.koerper.length, 0x58));
+      // Kurz, gültig gepackt — und einfach nicht die Seite.
+      if (v.kurzerRumpf && eintrag.typ.startsWith("text/html")) {
+        koerper = gzipSync(Buffer.from("<html><body>nichts</body></html>"));
+      }
       // Der abgeschnittene Rumpf: klein genug für jede Größenprüfung, richtig
       // etikettiert — und im Browser trotzdem Schrott. Nur der Versuch, ihn
       // wirklich zu entpacken, findet das.
@@ -268,6 +317,38 @@ describe("Kompressionsprüfung", () => {
     const { code, ausgabe } = await pruefen(basis, "ursprung");
     expect(code, ausgabe).not.toBe(0);
     expect(ausgabe).toMatch(/ANDERE Bytes/);
+  });
+
+  it("meldet einen Fehlerstatus auf dem komprimierten Abruf", async () => {
+    // Unkomprimiert 200, komprimiert 500 — eine gzip-kodierte Fehlerseite ist
+    // klein und richtig etikettiert, die Größenrelation sähe nach glänzender
+    // Kompression aus. Der zweite Abruf hatte keine Statusprüfung.
+    // (Befund des Pflicht-Approvers, PR #102.)
+    const basis = await starten({ komprimiert: ALLES, fehlerBeiKomprimiert: true });
+    const { code, ausgabe } = await pruefen(basis, "ursprung");
+    expect(code, ausgabe).not.toBe(0);
+    expect(ausgabe).toMatch(/HTTP 500 statt 200/);
+  });
+
+  it("entlarvt einen kurzen Fremdrumpf auf der dynamischen Seite", async () => {
+    // Bei der Startseite ist Bytegleichheit nicht zu haben — sie ist dynamisch.
+    // Prüfbar ist trotzdem, ob das Entpackte die Seite überhaupt noch IST.
+    const basis = await starten({ komprimiert: ALLES, kurzerRumpf: true });
+    const { code, ausgabe } = await pruefen(basis, "ursprung");
+    expect(code, ausgabe).not.toBe(0);
+    expect(ausgabe).toMatch(/enthält 'featured-slider' nicht/);
+  });
+
+  it("prüft die Variante, die es gemessen hat — nicht eine andere", async () => {
+    // Der Server hält ein DEFEKTES br und ein intaktes gzip vor. Solange der
+    // Messabruf „br, gzip" fragte, die Entpackprobe curls eigene Liste und die
+    // Strukturprüfung „gzip", wurde auf br gemessen und auf gzip für gut
+    // erklärt. (Befund des Pflicht-Approvers, PR #102.)
+    const basis = await starten({ komprimiert: ALLES, brDefekt: true });
+    const { code, ausgabe } = await pruefen(basis, "ursprung");
+    expect(code, ausgabe).not.toBe(0);
+    // Und zwar aus dem RICHTIGEN Grund: das gemessene br ist defekt.
+    expect(ausgabe).toMatch(/meldet 'br', lässt sich aber nicht entpacken/);
   });
 
   it("misst nichts auf einer Fehlerseite mit Status 200", async () => {
