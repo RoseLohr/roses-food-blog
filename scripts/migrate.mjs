@@ -149,8 +149,11 @@ if (unlesbar.length) {
 // der Formprüfung sind alle Werte endliche Zahlen, damit ist das Maximum
 // eindeutig — während SQLites DESC-Sortierung zuerst über Speicherklassen
 // ginge und damit genau die Falle von oben offen ließe.
+// `reduce` statt `Math.max(...)`: Der Spread übergibt JEDE Zeile als eigenes
+// Argument und läuft bei genügend Zeilen in einen RangeError — ausgerechnet im
+// Migrator, der beim Deploy als Erstes läuft. Ein Maximum braucht keinen Stack.
 const lastAppliedAt = buchfuehrung.length
-  ? Math.max(...buchfuehrung.map((r) => r.created_at))
+  ? buchfuehrung.reduce((m, r) => (r.created_at > m ? r.created_at : m), -Infinity)
   : null;
 
 const insertMigration = sqlite.prepare(
@@ -165,13 +168,25 @@ const insertMigration = sqlite.prepare(
 // Fehlermeldung, die Spalte entsteht nie, und die Anwendung läuft gegen ein
 // Schema, das es nicht gibt.
 //
-// Geprüft wird die IDENTITÄT, nicht die Anzahl. Zählen wäre zu schwach: Eine
-// Historie mit A, B, X und Dateien A, B, C ergibt drei gegen drei — und C liefe
-// nie. Die Kennung ist der Zeitstempel und nicht der Hash: `created_at` steht
-// so in der Tabelle, wie es im Journal steht, und ändert sich nicht, wenn
-// jemand eine längst angewendete Datei später noch einmal anfasst. Ein
-// Hash-Vergleich hielte das für eine fehlende Migration und verhinderte den
-// Start.
+// Geprüft wird die IDENTITÄT — und ZUSÄTZLICH die Anzahl. Keins von beidem
+// genügt allein:
+//
+//   Zählen allein ist zu schwach: Eine Historie mit A, B, X und Dateien A, B, C
+//   ergibt drei gegen drei — und C liefe nie.
+//
+//   Identität allein ist ebenfalls zu schwach, und das ist subtiler: Eine
+//   ZUSÄTZLICHE Zeile mit dem Zeitstempel von C — verdoppelt oder fremd
+//   eingetragen — lässt C als erledigt gelten, obwohl es nie lief. Die Menge
+//   der Zeitstempel stimmt dann, die Anzahl nicht. Unter dem Wasserstand muss
+//   deshalb Zeile für Zeile genau eine Migration stehen.
+//
+// Die Kennung ist der Zeitstempel und NICHT der Hash: `created_at` steht so in
+// der Tabelle, wie es im Journal steht, und ändert sich nicht, wenn jemand eine
+// längst angewendete Datei später noch einmal anfasst. Ein Hash-Vergleich
+// hielte genau das für eine fehlende Migration und verhinderte den Start der
+// Seite — im schlechtesten Moment, nämlich beim Deploy. Dass ausgelieferte
+// Migrationen nicht mehr angefasst werden, sichert stattdessen
+// scripts/regime/migrations-order.mjs beim Pull Request, wo es reparierbar ist.
 {
   const angewendet = new Set(buchfuehrung.map((r) => r.created_at));
   const verschluckt = migrations.filter(
@@ -180,6 +195,26 @@ const insertMigration = sqlite.prepare(
       lastAppliedAt >= m.folderMillis &&
       !angewendet.has(m.folderMillis),
   );
+
+  // Anzahl-Abgleich: unter dem Wasserstand eine Zeile je Migration.
+  const erledigt = migrations.filter(
+    (m) => lastAppliedAt !== null && lastAppliedAt >= m.folderMillis,
+  );
+  if (lastAppliedAt !== null && buchfuehrung.length !== erledigt.length) {
+    const zuViel = buchfuehrung.length - erledigt.length;
+    console.error(
+      `[migrate] Die Buchführung hat ${buchfuehrung.length} Zeile(n), unter dem ` +
+        `Wasserstand (${lastAppliedAt}) liegen aber ${erledigt.length} Migration(en). ` +
+        (zuViel > 0
+          ? `${zuViel} Zeile(n) zu viel: Ein doppelt oder fremd eingetragener ` +
+            "Zeitstempel lässt eine nie gelaufene Migration als erledigt gelten. " +
+            "Möglich ist auch, dass eine ausgelieferte Migrationsdatei aus dem " +
+            "Repository entfernt wurde — dann gehört sie zurück, nicht die Zeile weg."
+          : `${-zuViel} Zeile(n) zu wenig — die Buchführung ist unvollständig.`) +
+        " Es wird nicht weitergemacht, solange nicht klar ist, welche.",
+    );
+    process.exit(1);
+  }
   if (verschluckt.length) {
     console.error(
       `[migrate] ${verschluckt.length} Migration(en) würden still übersprungen: ` +

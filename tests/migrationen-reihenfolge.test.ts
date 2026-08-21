@@ -126,6 +126,28 @@ describe("Migrator", () => {
     verbindung2.close();
   });
 
+  it("bricht ab, wenn eine ZUSÄTZLICHE Zeile einen Zeitstempel doppelt trägt", () => {
+    expect(migriere().code).toBe(0);
+    const vorher = tabellen();
+
+    // Der Fall, den die Mengenprüfung allein nicht sieht: Die MENGE der
+    // Zeitstempel bleibt vollständig, es kommt nur eine Zeile dazu. Genau so
+    // gälte eine nie gelaufene Migration als erledigt.
+    const verbindung = db();
+    const hoechster = verbindung
+      .prepare("SELECT max(created_at) AS m FROM __drizzle_migrations")
+      .get() as { m: number };
+    verbindung
+      .prepare("INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)")
+      .run("fremder-hash", hoechster.m);
+    verbindung.close();
+
+    const lauf = migriere();
+    expect(lauf.code).toBe(1);
+    expect(lauf.ausgabe).toContain("Zeile(n) zu viel");
+    expect(tabellen()).toEqual(vorher);
+  });
+
   it.each([
     ["NULL", null],
     ["Text", "kaputt"],

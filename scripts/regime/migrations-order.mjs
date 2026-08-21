@@ -136,7 +136,12 @@ export function pruefe(journal, dateien, basis, inhalte = null) {
     );
   } else {
     const bekannt = new Map(basis.entries.map((e) => [e.tag, e]));
-    const hoechster = Math.max(...basis.entries.map((e) => e.when));
+    // `reduce` statt `Math.max(...)`: Der Spread übergibt jeden Eintrag als
+    // eigenes Argument und liefe bei genügend Einträgen in einen RangeError.
+    const hoechster = basis.entries.reduce(
+      (m, e) => (e.when > m ? e.when : m),
+      -Infinity,
+    );
 
     // (A) Neues muss später sein als alles Ausgelieferte.
     for (const e of entries) {
