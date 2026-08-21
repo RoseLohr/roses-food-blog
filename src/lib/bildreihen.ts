@@ -240,7 +240,11 @@ export function normalisiereZeilen<T extends TravelBlock>(blocks: T[]): T[] {
 }
 
 /**
- * Einen Block eine Stelle nach oben oder unten schieben.
+ * Zwei benachbarte Blöcke tauschen — OHNE zu normalisieren.
+ *
+ * Getrennt vom Normalisieren, weil der Editor über die WIRKSAME Folge
+ * normalisiert (Blöcke, die der Server ohnehin verwirft, dürfen keine Zeile
+ * brechen) und der Rest über die ganze.
  *
  * Die Zeilenzugehörigkeit bleibt dabei an ihrer POSITION: Tauschen zwei Bilder
  * die Plätze, behält jede Stelle ihre Flagge. Sonst zerfiele eine Zeile, in der
@@ -252,7 +256,7 @@ export function normalisiereZeilen<T extends TravelBlock>(blocks: T[]): T[] {
  * ändert sich die Nachbarschaft wirklich, und `normalisiereZeilen` räumt auf,
  * was danach nicht mehr wirken kann.
  */
-export function verschiebeBlock<T extends TravelBlock>(
+export function tauscheBloecke<T extends TravelBlock>(
   blocks: T[],
   i: number,
   richtung: -1 | 1,
@@ -267,7 +271,17 @@ export function verschiebeBlock<T extends TravelBlock>(
     next[i] = { ...next[i], mitVorherigem: a.mitVorherigem };
     next[j] = { ...next[j], mitVorherigem: b.mitVorherigem };
   }
-  return normalisiereZeilen(next);
+  return next;
+}
+
+/** Tauschen und anschließend normalisieren — der übliche Weg. */
+export function verschiebeBlock<T extends TravelBlock>(
+  blocks: T[],
+  i: number,
+  richtung: -1 | 1,
+): T[] {
+  const getauscht = tauscheBloecke(blocks, i, richtung);
+  return getauscht === blocks ? blocks : normalisiereZeilen(getauscht);
 }
 
 /** Einen Block entfernen — ohne eine Flagge zurückzulassen, die ins Leere zeigt. */

@@ -266,3 +266,78 @@ test("die Reihenfolge in einer Zeile ändern zerreißt die Zeile nicht", async (
   const oben = kaesten.map((k) => k.oben);
   expect(Math.max(...oben) - Math.min(...oben)).toBeLessThan(1.5);
 });
+
+test("ein Block, der nicht gespeichert wird, bricht die Zeile nicht", async ({
+  page,
+}) => {
+  // Der dritte Weg zum gemeldeten Bild, am echten Editor: Ein Restaurant ohne
+  // Namen wird nicht gespeichert — ein Block darauf also auch nicht. Steht er
+  // trotzdem zwischen zwei Bildern einer Zeile, riss er sie vorher
+  // auseinander: Der Editor strich die Zeilenzugehörigkeit, der Server warf
+  // den Block weg, und übrig blieben zwei Bilder nebeneinander und eines
+  // darunter — ohne dass dazwischen etwas zu sehen wäre.
+  await page.goto(editorUrl);
+  const bloecke = bildBloecke(page);
+  await expect(bloecke).toHaveCount(3);
+
+  for (const n of [0, 1, 2]) {
+    await groesse(bloecke.nth(n))
+      .getByRole("button", { name: d.blockSizeOptions.s.label })
+      .click();
+  }
+  await haken(bloecke.nth(1)).check();
+  await haken(bloecke.nth(2)).check();
+  await expect(bloecke.nth(2).getByText(d.blockInRow(3))).toBeVisible();
+
+  // Ein Restaurant anlegen und NICHT benennen.
+  await page.getByRole("button", { name: `+ ${d.addRestaurant}` }).click();
+  const namenlos = await page
+    .getByRole("textbox", { name: d.restaurantName })
+    .count();
+  // Dann einen Block darauf.
+  await page
+    .getByRole("button", { name: `+ ${d.blockRestaurant}`, exact: true })
+    .click();
+
+  const blockAuswahl = page.getByRole("combobox", { name: d.blockRestaurant });
+  // Der Kasten dieses Blocks — daran hängen seine Pfeilknöpfe.
+  const restaurantBlock = page
+    .locator("div.border.p-3")
+    .filter({ has: blockAuswahl });
+  // Auf das NAMENLOSE Restaurant zeigen (Platzhalter „Restaurant N").
+  await blockAuswahl.selectOption({
+    label: `${d.blockRestaurant} ${namenlos}`,
+  });
+
+  // Der Block sagt selbst, dass er nicht gespeichert wird.
+  await expect(
+    page.getByText(d.blockNichtGespeichert.restaurant),
+  ).toBeVisible();
+
+  // Zwischen Bild 2 und Bild 3 schieben (ein Mal nach oben).
+  await restaurantBlock.getByRole("button", { name: d.blockUp }).click();
+
+  // Die Zeile steht weiterhin — der Block zählt nicht mit.
+  await expect(bildBloecke(page).nth(2).getByText(d.blockInRow(3))).toBeVisible();
+  await expect(haken(bildBloecke(page).nth(2))).toBeChecked();
+
+  await page.getByRole("button", { name: /Speichern/i }).click();
+  await page.waitForURL(/meldung=/);
+
+  // Und in der Vorschau stehen die drei GEMESSEN nebeneinander.
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(`/admin/reisen/${session.travelId}/vorschau`);
+  const zeile = page.locator("article .bildplatz.br-1-1:has(.bildpaar)");
+  await expect(zeile).toHaveCount(1);
+  const kaesten = await zeile.locator("img").evaluateAll((els) =>
+    els.map((el) => {
+      const r = el.getBoundingClientRect();
+      return { x: r.x, breite: r.width, oben: r.y };
+    }),
+  );
+  expect(kaesten.length).toBe(3);
+  expect(kaesten[1].x).toBeGreaterThan(kaesten[0].x + kaesten[0].breite - 1);
+  expect(kaesten[2].x).toBeGreaterThan(kaesten[1].x + kaesten[1].breite - 1);
+  const oben = kaesten.map((k) => k.oben);
+  expect(Math.max(...oben) - Math.min(...oben)).toBeLessThan(1.5);
+});

@@ -136,3 +136,72 @@ describe("normalisiereZeilen — eine Flagge steht nur da, wo sie wirkt", () => 
     expect(zeilen(blocks)).toEqual([[1], [2], [3]]);
   });
 });
+
+/**
+ * Der dritte Weg zu demselben Bild — gefunden, nachdem der Nutzer die Seite
+ * live gezeigt hat.
+ *
+ * Ein Block, den das Speichern verwirft, brach im Editor trotzdem die
+ * Bildzeile: Der Editor entschied bei einem Restaurant-Block nach dem INDEX
+ * („gibt es dieses Restaurant?"), der Server nach dem NAMEN („ist es benannt?").
+ * Legt man ein Restaurant an, ohne es zu benennen, und schiebt einen Block
+ * darauf zwischen zwei Bilder einer Zeile, dann strich der Editor die
+ * Zeilenzugehörigkeit des unteren Bildes — und der Server warf den Block
+ * danach ersatzlos weg. Übrig blieben zwei Bilder nebeneinander und eines
+ * darunter, ohne dass dazwischen etwas zu sehen wäre. Dasselbe mit einem
+ * leeren Textblock.
+ *
+ * Bitter daran: Vor der Normalisierung überlebte die Zeile aus VERSEHEN — die
+ * Flagge blieb stehen und griff nach dem Wegwerfen wieder. Die Normalisierung
+ * hat aus einem Zufall einen dauerhaften Verlust gemacht. Deshalb rechnet der
+ * Editor jetzt auf der Folge, die WIRKLICH GESPEICHERT wird.
+ */
+describe("Blöcke, die das Speichern verwirft, brechen keine Zeile", () => {
+  /** Was der Server behält — hier als Prädikat nachgestellt. */
+  const wirksam = (bs: TravelBlock[]) =>
+    bs.filter(
+      (b) =>
+        (b.type !== "text" || b.markdown.trim() !== "") &&
+        (b.type !== "restaurant" || false), // Restaurant ohne Namen: fällt weg
+    );
+
+  it("hält die Zeile über einen Restaurant-Block auf ein namenloses Restaurant", () => {
+    const editor = [bild(1), bild(2, "s", true), bild(3, "s", true)];
+    // Der Block auf das namenlose Restaurant steht zwischen Bild 2 und 3 —
+    // in der WIRKSAMEN Folge kommt er nicht vor.
+    const mitBlock: TravelBlock[] = [
+      editor[0],
+      editor[1],
+      { type: "restaurant", index: 0 },
+      editor[2],
+    ];
+    const gerechnet = normalisiereZeilen(wirksam(mitBlock));
+    expect(flaggen(gerechnet)).toEqual([false, true, true]);
+    expect(zeilen(gerechnet), "die drei Bilder bleiben EINE Zeile").toEqual([
+      [1, 2, 3],
+    ]);
+  });
+
+  it("hält die Zeile über einen leeren Textblock", () => {
+    const mitLeerem: TravelBlock[] = [
+      bild(1),
+      bild(2, "s", true),
+      { type: "text", markdown: "   " },
+      bild(3, "s", true),
+    ];
+    const gerechnet = normalisiereZeilen(wirksam(mitLeerem));
+    expect(zeilen(gerechnet)).toEqual([[1, 2, 3]]);
+  });
+
+  it("bricht die Zeile weiterhin an einem Block MIT Inhalt", () => {
+    const mitText: TravelBlock[] = [
+      bild(1),
+      bild(2, "s", true),
+      { type: "text", markdown: "Ein Absatz." },
+      bild(3, "s", true),
+    ];
+    const gerechnet = normalisiereZeilen(wirksam(mitText));
+    expect(flaggen(gerechnet)).toEqual([false, true, null, false]);
+    expect(zeilen(gerechnet)).toEqual([[1, 2], [3]]);
+  });
+});

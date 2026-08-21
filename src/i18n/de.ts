@@ -875,6 +875,18 @@ export const de = {
        * Größe kleiner werden. Deshalb je eine eigene Meldung — und die zweite
        * nennt die Rechnung, statt sie den Redakteur suchen zu lassen.
        */
+      /**
+       * Ein Block, den das Speichern verwirft, darf das nicht verschweigen:
+       * Vorher verschwand er stillschweigend — und riss dabei die Bildzeile
+       * auseinander, in der er stand.
+       */
+      blockNichtGespeichertKurz: "wird nicht gespeichert",
+      blockNichtGespeichert: {
+        bild: "Ohne Foto wird dieser Block nicht gespeichert — er zählt auch nicht für die Bildzeile.",
+        restaurant:
+          "Das gewählte Restaurant hat keinen Namen und wird nicht gespeichert — dieser Block deshalb auch nicht.",
+        text: "Ohne Inhalt wird dieser Block nicht gespeichert — er zählt auch nicht für die Bildzeile.",
+      },
       blockWithPreviousOff: "Darüber steht kein Bild, neben das dieses treten könnte.",
       blockWithPreviousNoFit: (zeile: string[], eigen: string) =>
         `Die Zeile darüber ist mit ${zeile.map((g) => g.toUpperCase()).join(" + ")} schon voll — für ein weiteres ${eigen.toUpperCase()} ist kein Platz. Eine der Größen verkleinern.`,
