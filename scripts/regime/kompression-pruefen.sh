@@ -180,25 +180,59 @@ textressource() {
     else
       entpackt="fehler"
     fi
-    rm -f "$entpackt_datei"
+    # STRUKTURPRÜFUNG des Stroms selbst. Nötig, weil `curl --compressed` an
+    # einem ABGESCHNITTENEN gzip-Strom NICHT scheitert: Es liefert, was es
+    # entpacken konnte, und meldet Erfolg (nachgemessen). Ohne diese Prüfung
+    # fiele eine unvollständige Auslieferung nur bei unveränderlichen Dateien
+    # auf, wo unten Byte für Byte verglichen wird — auf der dynamischen
+    # Startseite gar nicht.
+    #
+    # `gzip -t` erkennt genau das („unexpected end of file", exit 1). Für br
+    # gibt es diese Prüfung hier nicht: Auf den beteiligten Hosts ist kein
+    # brotli-Entpacker installiert (Erhebung 2026-08-21), und eine Prüfung
+    # vorzutäuschen, die nicht läuft, wäre schlimmer als ihr Fehlen.
+    if [ "$komp_enc" = gzip ] || [ "$komp_enc" = x-gzip ]; then
+      local roh_gz
+      roh_gz="$(mktemp)"
+      if "${CURL[@]}" -H 'Accept-Encoding: gzip' -o "$roh_gz" "$url" >/dev/null 2>&1; then
+        if ! gzip -t "$roh_gz" 2>/dev/null; then
+          maengel "$name: der gzip-Strom ist unvollständig oder beschädigt (gzip -t schlägt fehl) — ein Browser bricht das Dekodieren ab."
+        fi
+      fi
+      rm -f "$roh_gz"
+    fi
+
     if [ "$entpackt" = fehler ]; then
       maengel "$name: meldet '$komp_enc', lässt sich aber nicht entpacken — ein Browser bekäme hier nichts Brauchbares."
     elif [ "$entpackt" = 0 ]; then
       maengel "$name: meldet '$komp_enc', entpackt aber zu 0 Bytes."
     else
-      # Der EXAKTE Größenvergleich nur dort, wo der Server selbst zusichert,
-      # dass sich der Inhalt nicht ändert (`immutable` auf einer Adresse mit
-      # Inhaltshash). Auf der Startseite wäre er flatterig: Sie ist dynamisch,
-      # und ein zwischen zwei Abrufen veröffentlichtes Rezept ließe die
-      # Prüfung falsch anschlagen. Bei unveränderlichen Dateien gibt es dieses
-      # Fenster nicht — dort ist Gleichheit die richtige, harte Aussage.
+      # Der harte Vergleich nur dort, wo der Server selbst zusichert, dass sich
+      # der Inhalt nicht ändert (`immutable` auf einer Adresse mit Inhaltshash).
+      # Auf der Startseite wäre er flatterig: Sie ist dynamisch, und ein
+      # zwischen zwei Abrufen veröffentlichtes Rezept ließe ihn falsch
+      # anschlagen. Bei unveränderlichen Dateien gibt es dieses Fenster nicht.
+      #
+      # UND DORT DANN BYTE FÜR BYTE, nicht nur die Länge. Die Länge allein
+      # lässt gültig komprimierten, gleich langen FREMDINHALT durch — der
+      # Browser bekäme dann eine intakte, aber falsche Datei, und gerade bei
+      # `immutable` behielte er sie ein Jahr. Beide Rümpfe liegen ohnehin vor;
+      # sie zu vergleichen kostet nichts gegenüber ihrem Abruf.
       case "$komp_cache" in
         *immutable*)
-          if [ "$entpackt" != "$roh_bytes" ]; then
-            maengel "$name: entpackt $entpackt Bytes, unkomprimiert sind es $roh_bytes — der Rumpf passt nicht zum Kopf."
-          fi ;;
+          local roh_datei
+          roh_datei="$(mktemp)"
+          if "${CURL[@]}" -H 'Accept-Encoding: identity' -o "$roh_datei" "$url" >/dev/null 2>&1; then
+            if ! cmp -s "$roh_datei" "$entpackt_datei"; then
+              maengel "$name: entpackt ergibt ANDERE Bytes als die unkomprimierte Auslieferung ($entpackt gegenüber $roh_bytes Bytes). Bei einer unveränderlichen Adresse müssen beide identisch sein."
+            fi
+          else
+            maengel "$name: unkomprimierte Fassung für den Bytevergleich nicht abrufbar."
+          fi
+          rm -f "$roh_datei" ;;
       esac
     fi
+    rm -f "$entpackt_datei"
     if [ "$EBENE" = ursprung ]; then
       case "$komp_vary" in
         *accept-encoding*) ;;

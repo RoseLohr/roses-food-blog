@@ -58,6 +58,8 @@ type Verhalten = {
   abgeschnitten?: boolean;
   /** Startseite ohne CSS-Verweis. */
   ohneCss?: boolean;
+  /** Gültiges gzip — aber von FREMDEM Inhalt gleicher Länge. */
+  fremdinhalt?: boolean;
 };
 
 let server: Server | undefined;
@@ -92,6 +94,9 @@ function starten(v: Verhalten): Promise<string> {
       // Die Lüge: Kopf gesetzt, Inhalt unverändert. Nur eine Größenprüfung
       // findet das — eine Kopfzeilenprüfung nicht.
       if (!v.luegt) koerper = gzipSync(eintrag.koerper);
+      // Gültig komprimiert, entpackt exakt gleich lang — aber anderer Inhalt.
+      // Eine Prüfung, die nur Längen vergleicht, sieht hier nichts.
+      if (v.fremdinhalt) koerper = gzipSync(Buffer.alloc(eintrag.koerper.length, 0x58));
       // Der abgeschnittene Rumpf: klein genug für jede Größenprüfung, richtig
       // etikettiert — und im Browser trotzdem Schrott. Nur der Versuch, ihn
       // wirklich zu entpacken, findet das.
@@ -206,7 +211,13 @@ describe("Kompressionsprüfung", () => {
     const basis = await starten({ komprimiert: ALLES, abgeschnitten: true });
     const { code, ausgabe } = await pruefen(basis, "ursprung");
     expect(code, ausgabe).not.toBe(0);
-    expect(ausgabe).toMatch(/nicht entpacken|passt nicht zum Kopf/);
+    // Gefangen wird das von der Strukturprüfung, NICHT vom Entpacken:
+    // `curl --compressed` scheitert an einem abgeschnittenen gzip-Strom nicht,
+    // es liefert das Teilstück und meldet Erfolg (nachgemessen). Ohne
+    // `gzip -t` fiele der Fall auf der dynamischen Startseite durch, wo es
+    // keinen Bytevergleich gibt — deshalb wird hier ausdrücklich das HTML
+    // erwartet, nicht bloß irgendein Mangel.
+    expect(ausgabe).toMatch(/HTML: der gzip-Strom ist unvollständig/);
   });
 
   it("meldet eine fehlende CSS-Datei, statt wortlos zu enden", async () => {
@@ -246,6 +257,17 @@ describe("Kompressionsprüfung", () => {
     const { code, ausgabe } = await pruefen(basis, "ursprung", "127.0.0.1");
     expect(code, ausgabe).toBe(0);
     expect(ausgabe).toMatch(/in Ordnung/);
+  });
+
+  it("entlarvt gleich langen Fremdinhalt hinter gültigem gzip", async () => {
+    // Der Rumpf ist echtes gzip, entpackt exakt so lang wie das Original —
+    // und trotzdem eine andere Datei. Ein Längenvergleich sieht hier nichts.
+    // Bei `immutable` wiegt das besonders schwer: Der Browser behielte die
+    // falsche Datei ein Jahr. (Befund des Pflicht-Approvers, PR #102.)
+    const basis = await starten({ komprimiert: ALLES, fremdinhalt: true });
+    const { code, ausgabe } = await pruefen(basis, "ursprung");
+    expect(code, ausgabe).not.toBe(0);
+    expect(ausgabe).toMatch(/ANDERE Bytes/);
   });
 
   it("misst nichts auf einer Fehlerseite mit Status 200", async () => {
