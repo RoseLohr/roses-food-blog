@@ -24,6 +24,7 @@
 import { describe, expect, it } from "vitest";
 import { htmlToMarkdown } from "@/lib/rich-text";
 import { hatSichtbarenInhalt } from "@/lib/rich-text";
+import { renderMarkdown } from "@/lib/markdown";
 
 /** Minimaler DOM-Nachbau — dieselbe Form, die der Editor durchreicht. */
 type Knoten = {
@@ -31,6 +32,7 @@ type Knoten = {
   nodeName: string;
   textContent: string | null;
   childNodes: Knoten[];
+  getAttribute?: (name: string) => string | null;
 };
 const text = (s: string): Knoten => ({
   nodeType: 3,
@@ -91,7 +93,7 @@ describe("htmlToMarkdown — kein Markdown ohne sichtbaren Inhalt", () => {
 
 describe("hatSichtbarenInhalt — dasselbe Prädikat für den Speicherweg", () => {
   it("verwirft, was im Bericht nichts zeigt", () => {
-    for (const md of ["", "   ", "\n\n", "##", "###", ">", "-", "1.", "&nbsp;", "​", "```\n\n```"]) {
+    for (const md of ["", "   ", "\n\n", "##", "###", ">", "-", "*", "1.", "&nbsp;", "​", "```\n\n```"]) {
       expect(hatSichtbarenInhalt(md), `„${md}" sollte als leer gelten`).toBe(false);
     }
   });
@@ -100,5 +102,87 @@ describe("hatSichtbarenInhalt — dasselbe Prädikat für den Speicherweg", () =
     for (const md of ["Text", "## Überschrift", "> Zitat", "- eins", "---", "![Bild](/a.jpg)"]) {
       expect(hatSichtbarenInhalt(md), `„${md}" sollte als Inhalt gelten`).toBe(true);
     }
+  });
+
+  /**
+   * Aus der unabhängigen Prüfung (Panel-Veto zu PR #97): Die erste Fassung zog
+   * Auszeichnungszeichen PAUSCHAL ab (`[*_\`~]` überall im Text). Damit galt
+   * ein Block, dessen einziger sichtbarer Inhalt eines dieser Zeichen IST,
+   * als leer — und der Speicherweg hätte ihn gelöscht. Ein Prädikat, das
+   * Inhalt entfernt, ist schlimmer als das Problem, das es lösen sollte.
+   */
+  it("zählt Auszeichnungszeichen als Inhalt, wenn sie der Inhalt SIND", () => {
+    for (const md of [
+      "`*`", // Code-Auszeichnung: das Sternchen wird gezeigt
+      "```\n*\n```", // Codeblock mit einem Sternchen darin
+      "...", // Auslassungspunkte
+      ".",
+      "2024",
+      "--", // zwei Striche sind kein Trenner (der braucht drei) und stehen als Text
+      "__",
+      "**",
+    ]) {
+      expect(hatSichtbarenInhalt(md), `„${md}" sollte als Inhalt gelten`).toBe(true);
+    }
+  });
+
+  /**
+   * Ebenfalls aus der Prüfung: Ein Verweis OHNE Beschriftung rendert nichts —
+   * er ist genau die Sorte unsichtbarer Block, um die es hier geht.
+   */
+  it("erkennt einen Verweis ohne Beschriftung als leer", () => {
+    expect(hatSichtbarenInhalt("[](/reisen)")).toBe(false);
+    expect(hatSichtbarenInhalt("[ ](/reisen)")).toBe(false);
+    expect(hatSichtbarenInhalt("[Reisen](/reisen)")).toBe(true);
+    // Ein Bild OHNE Alt-Text zeigt sehr wohl etwas.
+    expect(hatSichtbarenInhalt("![](/a.jpg)")).toBe(true);
+  });
+});
+
+describe("htmlToMarkdown — Verweis ohne Beschriftung", () => {
+  it("erzeugt keinen leeren Verweis", () => {
+    const leer = el("A", [br()]);
+    leer.getAttribute = () => "/reisen";
+    expect(htmlToMarkdown(wurzel([el("P", [leer])]))).toBe("");
+  });
+
+  it("lässt einen beschrifteten Verweis stehen", () => {
+    const voll = el("A", [text("Reisen")]);
+    voll.getAttribute = () => "/reisen";
+    expect(htmlToMarkdown(wurzel([el("P", [voll])]))).toBe("[Reisen](/reisen)");
+  });
+});
+
+/**
+ * Die Probe aufs Exempel: Das Prädikat behauptet etwas über den BERICHT —
+ * also wird es gegen den Renderer gehalten, der den Bericht baut, statt gegen
+ * meine Einschätzung, wie Markdown wohl aussieht.
+ *
+ * Genau daran wäre die erste Fassung gescheitert: Sie hielt ein Sternchen in
+ * Code-Auszeichnung für leer — der Renderer macht daraus ein sichtbares
+ * Sternchen. Neue Grenzfälle kommen künftig einfach in die Liste; die
+ * Eigenschaft prüft sich selbst.
+ */
+describe("hatSichtbarenInhalt stimmt mit dem Renderer überein", () => {
+  /** Zeigt dieses HTML etwas? Bild und Trenner zeigen ohne Text etwas. */
+  function zeigtEtwas(html: string): boolean {
+    if (/<(?:img|hr)\b/.test(html)) return true;
+    const text = html.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ");
+    return text.replace(/[\s\u00a0\u200b\u2060\ufeff]+/g, "") !== "";
+  }
+
+  const faelle = [
+    // leer im Bericht
+    "", "   ", "##", "######", ">", ">>", "-", "*", "+", "1.", "12)", "&nbsp;",
+    "​", "⁠", "﻿", "\f", "\v", "\u2028", "```\n\n```", "~~~\n\n~~~",
+    "[](/reisen)", "[ ](/reisen)", "``",
+    // sichtbar im Bericht
+    "Text", "## Überschrift", "> Zitat", "- eins", "1. eins", "---", "***", "___",
+    "![Bild](/a.jpg)", "![](/a.jpg)", "[Reisen](/reisen)", "`*`", "```\n*\n```",
+    "--", "**", "__", "...", ".", "2024", "\\*\\*", "# 2024",
+  ];
+
+  it.each(faelle)("stimmt für %j mit dem Renderer überein", (md) => {
+    expect(hatSichtbarenInhalt(md)).toBe(zeigtEtwas(renderMarkdown(md)));
   });
 });

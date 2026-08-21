@@ -99,6 +99,13 @@ COPY --from=build /app/.next/static ./.next/static
 COPY --from=build /app/public ./public
 COPY --from=build /app/drizzle ./drizzle
 COPY --from=build /app/scripts/migrate.mjs ./scripts/migrate.mjs
+# migrate.mjs räumt unsichtbare Textblöcke weg und benutzt dafür DIESELBE
+# Sichtbarkeits-Regel wie Editor und Speicherweg — als echte Datei, weil im
+# Standalone-Image weder TypeScript läuft noch die Anwendungsmodule auflösbar
+# sind. Beide Dateien gehören deshalb ins Laufzeit-Image; fehlt eine, bricht
+# der Start mit klarer Meldung ab (fail-closed), statt still nicht aufzuräumen.
+COPY --from=build /app/scripts/leere-bloecke-raeumen.mjs ./scripts/leere-bloecke-raeumen.mjs
+COPY --from=build /app/src/lib/sichtbarkeit.mjs ./src/lib/sichtbarkeit.mjs
 COPY --from=build /app/scripts/regenerate-variants.mjs ./scripts/regenerate-variants.mjs
 COPY --from=build /app/config ./config
 COPY --from=build /app/scripts/entry.sh ./scripts/entry.sh

@@ -275,3 +275,63 @@ describe("Tripwire: Pakete mit Install-Skript sind ratifiziert", () => {
     ).toEqual([]);
   });
 });
+
+/**
+ * Was `migrate.mjs` lädt, muss auch im Laufzeit-Image liegen.
+ *
+ * Das Standalone-Image enthält NICHT den Quelltext, sondern nur einzeln
+ * kopierte Skripte. Ein `import` in einem dieser Skripte, dessen Ziel niemand
+ * kopiert, fällt deshalb nicht beim Bauen auf und nicht im Test — sondern erst
+ * beim Start auf dem Server, wenn migrate.mjs abbricht und der Container nicht
+ * hochkommt. Diese Kontrolle folgt den relativen Importen und besteht darauf,
+ * dass für jede erreichte Datei eine COPY-Zeile existiert.
+ */
+describe("Laufzeit-Image: Migrationsskripte sind vollständig", () => {
+  /** Ziele aller `COPY --from=build /app/X ./Y`-Zeilen, als Repo-Pfade. */
+  const kopiert = new Set(
+    instruktionen(containerfile)
+      .filter((i) => i.startsWith("COPY --from=build /app/"))
+      .map((i) => i.split(/\s+/)[2].replace("/app/", "")),
+  );
+
+  /** Relative Importe einer Datei, aufgelöst zu Repo-Pfaden. */
+  function importe(datei: string): string[] {
+    const quelle = fs.readFileSync(path.join(ROOT, datei), "utf8");
+    // Statisch (`import x from "./y"`) UND dynamisch (`await import("./y")`) —
+    // migrate.mjs benutzt die zweite Form, und genau die hätte eine Kontrolle
+    // übersehen, die nur nach dem Schlüsselwort am Zeilenanfang sucht.
+    const treffer = [
+      ...quelle.matchAll(/(?:^|\s)(?:import|from)\s+["'](\.[^"']+)["']/gm),
+      ...quelle.matchAll(/\bimport\s*\(\s*["'](\.[^"']+)["']\s*\)/g),
+    ];
+    const ordner = path.posix.dirname(datei);
+    return treffer.map((m) => path.posix.normalize(path.posix.join(ordner, m[1])));
+  }
+
+  it("jede von migrate.mjs erreichte Datei wird ins Image kopiert", () => {
+    const offen = ["scripts/migrate.mjs"];
+    const gesehen = new Set<string>();
+    const fehlend: string[] = [];
+    while (offen.length) {
+      const datei = offen.pop()!;
+      if (gesehen.has(datei)) continue;
+      gesehen.add(datei);
+      for (const ziel of importe(datei)) {
+        // Ein ganzes Verzeichnis zu kopieren deckt alles darunter ab.
+        const abgedeckt = [...kopiert].some(
+          (k) => k === ziel || ziel.startsWith(k.endsWith("/") ? k : `${k}/`),
+        );
+        if (!abgedeckt) fehlend.push(`${datei} → ${ziel}`);
+        offen.push(ziel);
+      }
+    }
+    expect(
+      fehlend,
+      "Diese Importe erreicht migrate.mjs zur Laufzeit, aber das Containerfile " +
+        "kopiert ihr Ziel nicht ins Laufzeit-Image. Der Container käme auf dem " +
+        "Server nicht hoch.",
+    ).toEqual([]);
+    // Die Kontrolle muss überhaupt etwas verfolgt haben, sonst ist sie blind.
+    expect(gesehen.size).toBeGreaterThan(1);
+  });
+});

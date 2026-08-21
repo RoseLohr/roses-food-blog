@@ -557,6 +557,48 @@ describe("Robustheit", () => {
     ).rejects.toThrow(/Version 1/);
   });
 
+  it("übernimmt keine unsichtbaren Textblöcke aus einem Alt-Export", async () => {
+    // Ein Export von vor dem Umbau kann Textblöcke enthalten, die im Editor
+    // leer aussahen und trotzdem `##` lauten. Beim Import dürfen sie nicht
+    // wieder entstehen — sonst bricht dieser unsichtbare BLOCK erneut die
+    // Bildzeile, und der Redakteur sieht wieder nur den weißen Zwischenraum.
+    const alt = {
+      format: "roses-food-blog",
+      version: 2,
+      travel: [
+        {
+          title: "Alt-Export",
+          slug: "alt-export",
+          contentBlocks: [
+            { type: "text", markdown: "Erster Absatz." },
+            { type: "text", markdown: "##" },
+            { type: "text", markdown: "\u200b" },
+            { type: "text", markdown: "---" },
+            { type: "text", markdown: "Zweiter Absatz." },
+          ],
+        },
+      ],
+    };
+    const { zipSync, strToU8 } = await import("fflate");
+    const zip = zipSync({ "content.json": strToU8(JSON.stringify(alt)) });
+    const res = await importBundle(zip, { recipes: false, travel: true, pages: false }, adminId);
+    expect(res.travel).toBe(1);
+    const [post] = await db
+      .select()
+      .from(schema.travelPost)
+      .where(eq(schema.travelPost.slug, "alt-export"));
+    const bloecke = await db
+      .select()
+      .from(schema.travelBlock)
+      .where(eq(schema.travelBlock.travelPostId, post.id))
+      .orderBy(asc(schema.travelBlock.sortOrder));
+    expect(bloecke.map((b) => b.markdown)).toEqual([
+      "Erster Absatz.",
+      "---",
+      "Zweiter Absatz.",
+    ]);
+  });
+
   it("liest minimalen Export tolerant ein (Defaults)", async () => {
     // Nur Pflichtfeld-arm: ein Rezept mit Titel, sonst nichts.
     const minimal = {

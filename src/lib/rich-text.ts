@@ -10,6 +10,16 @@
  * damit die Logik ohne echtes DOM testbar ist. Ein echtes HTMLElement erfüllt
  * diese Schnittstelle strukturell.
  */
+import { hatSichtbarenInhalt, sichtbar } from "@/lib/sichtbarkeit.mjs";
+
+/**
+ * Dieselbe Regel wie im Editor, für alle anderen Schreiber (Speicherweg,
+ * Datenübernahme, Aufräumen des Altbestands). Sie steht in
+ * `sichtbarkeit.mjs`, weil `scripts/migrate.mjs` sie ebenfalls braucht und
+ * dort kein TypeScript läuft — EINE Fassung statt zweier, die auseinanderlaufen.
+ */
+export { hatSichtbarenInhalt };
+
 export interface MinimalNode {
   nodeType: number;
   nodeName: string;
@@ -85,6 +95,10 @@ function inline(node: MinimalNode): string {
       return kids.trim() ? "`" + (node.textContent ?? "") + "`" : "";
     case "A": {
       const href = node.getAttribute?.("href") ?? "";
+      // Ohne Beschriftung gibt es nichts zum Anklicken: `[](…)` rendert zu
+      // einem leeren <a> — unsichtbar, aber ein Block, der eine Bildzeile
+      // bricht. Dann bleibt nur der (leere) Kindtext.
+      if (!sichtbar(kids)) return kids;
       return SAFE_HREF.test(href) ? `[${kids}](${href})` : kids;
     }
     default:
@@ -98,17 +112,6 @@ function inlineChildren(el: MinimalNode): string {
     .join("")
     .replace(/\n{2,}/g, "\n")
     .trim();
-}
-
-/**
- * Zeichen, die im Browser nichts zeigen — Leerraum, geschütztes Leerzeichen,
- * Nullbreiten-Leerzeichen, Wortverbinder, Byte-Order-Mark.
- */
-const UNSICHTBAR = /[\s\u00a0\u200b\u2060\ufeff]+/g;
-
-/** Bleibt nach dem Entfernen unsichtbarer Zeichen noch etwas übrig? */
-function sichtbar(s: string): boolean {
-  return s.replace(UNSICHTBAR, "") !== "";
 }
 
 /**
@@ -143,10 +146,8 @@ function block(el: MinimalNode): string {
   const name = el.nodeName.toUpperCase();
   if (name === "HR") return "---";
 
-  if (name === "UL" || name === "OL") {
-    const eintraege = listItems(el, name === "OL");
-    return sichtbar(eintraege.replace(/^\s*(?:[-*]|\d+\.)\s*/gm, "")) ? eintraege : "";
-  }
+  // listItems() lässt leere Einträge weg — bleibt nichts, ist die Liste leer.
+  if (name === "UL" || name === "OL") return listItems(el, name === "OL");
 
   if (name === "PRE") {
     const inhalt = el.textContent ?? "";
@@ -175,29 +176,6 @@ function block(el: MinimalNode): string {
     default:
       return inhalt; // P, DIV
   }
-}
-
-/**
- * Zeigt dieses Markdown im Bericht überhaupt etwas?
- *
- * Dasselbe Prädikat, das der Editor über den DOM anwendet — hier über den
- * gespeicherten Text, denn der Browser ist nicht der einzige Schreiber
- * (API, Datenübernahme, Altbestand). Ein Trenner, ein Bild und ein Codeblock
- * mit Inhalt zeigen etwas, auch ohne Fließtext; leere Auszeichnung nicht.
- */
-export function hatSichtbarenInhalt(markdown: string): boolean {
-  const ohneAuszeichnung = markdown
-    // Trenner und Bilder sind für sich sichtbar.
-    .replace(/^\s*(?:---+|\*\*\*+|___+)\s*$/gm, "SICHTBAR")
-    .replace(/!\[[^\]]*\]\([^)]*\)/g, "SICHTBAR")
-    // Reine Auszeichnung am Zeilenanfang: Raute, Zitatpfeil, Listenzeichen.
-    .replace(/^[ \t]*(?:#{1,6}|>|[-*+]|\d+[.)])[ \t]*/gm, "")
-    // Zaun eines Codeblocks — sein Inhalt bleibt stehen.
-    .replace(/^[ \t]*(?:```|~~~).*$/gm, "")
-    // Inline-Auszeichnung ohne eigenen Text.
-    .replace(/[*_`~]/g, "")
-    .replace(/&nbsp;/g, " ");
-  return sichtbar(ohneAuszeichnung);
 }
 
 export function htmlToMarkdown(root: MinimalNode): string {
