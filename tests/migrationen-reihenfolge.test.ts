@@ -179,6 +179,62 @@ describe("Migrator", () => {
   });
 
   it.each([
+    ["oberste Zeile", "DELETE FROM __drizzle_migrations WHERE created_at = (SELECT max(created_at) FROM __drizzle_migrations)"],
+    ["alle Zeilen", "DELETE FROM __drizzle_migrations"],
+  ])(
+    "bricht ab, wenn die Buchführung schrumpft (%s) — die Marke bezeugt mehr",
+    (_name, sql) => {
+      expect(migriere().code).toBe(0);
+      const vorher = tabellen();
+
+      // Die Suffix-Lücke: Alle anderen Prüfungen sehen nur UNTER den
+      // Wasserstand, und der kommt aus der Buchführung selbst. Fällt deren
+      // oberste Zeile weg, sinkt er lautlos mit — die fehlende Migration liegt
+      // dann gar nicht mehr im geprüften Bereich, und ihr SQL liefe erneut.
+      const verbindung = db();
+      verbindung.exec(sql);
+      const marke = verbindung.pragma("user_version", { simple: true }) as number;
+      const zeilen = (
+        verbindung.prepare("SELECT count(*) AS n FROM __drizzle_migrations").get() as {
+          n: number;
+        }
+      ).n;
+      verbindung.close();
+      expect(marke).toBeGreaterThan(zeilen);
+
+      const lauf = migriere();
+      expect(lauf.code).toBe(1);
+      expect(lauf.ausgabe).toContain("Schema-Marke");
+      expect(tabellen()).toEqual(vorher);
+    },
+  );
+
+  it("schlägt bei einer Datenbank ohne Marke (Altbestand) NICHT falsch an", () => {
+    expect(migriere().code).toBe(0);
+
+    // Datenbanken von vor dieser Änderung tragen user_version = 0. Das darf
+    // keinen Alarm auslösen — sonst stünde nach dem Deploy die Seite.
+    const verbindung = db();
+    verbindung.pragma("user_version = 0");
+    verbindung.close();
+
+    const lauf = migriere();
+    expect(lauf.code).toBe(0);
+    expect(lauf.ausgabe).toContain("keine neuen Migrationen");
+
+    // Und die Marke wird dabei nachgetragen, damit der Schutz ab jetzt greift.
+    const verbindung2 = db();
+    const marke = verbindung2.pragma("user_version", { simple: true }) as number;
+    const zeilen = (
+      verbindung2.prepare("SELECT count(*) AS n FROM __drizzle_migrations").get() as {
+        n: number;
+      }
+    ).n;
+    verbindung2.close();
+    expect(marke).toBe(zeilen);
+  });
+
+  it.each([
     ["NULL", null],
     ["Text", "kaputt"],
   ])("bricht bei unlesbarem created_at (%s) ab, bevor er das Schema anfasst", (_name, wert) => {

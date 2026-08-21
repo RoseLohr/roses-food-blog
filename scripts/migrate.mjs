@@ -160,6 +160,47 @@ const insertMigration = sqlite.prepare(
   'INSERT INTO __drizzle_migrations ("hash", "created_at") VALUES (?, ?)',
 );
 
+// --- Fail-closed: die Buchführung darf nicht SCHRUMPFEN ---------------------
+// Alle Prüfungen unten sehen nur UNTER den Wasserstand — und der Wasserstand
+// kommt selbst aus der Buchführung. Fällt deren oberste Zeile weg (etwa nach
+// einer unvollständigen Wiederherstellung), sinkt er lautlos mit: Die fehlende
+// Migration liegt dann gar nicht mehr im geprüften Bereich, Menge, Anzahl und
+// Hashes bleiben unauffällig — und ihr längst gelaufenes SQL läuft ein zweites
+// Mal gegen ein Schema, das es schon trägt. Ist die Tabelle ganz leer, laufen
+// sogar alle Migrationen erneut.
+//
+// Aus der Buchführung allein ist „C lief nie" von „Cs Zeile wurde gelöscht"
+// nicht zu unterscheiden. Es braucht einen Zeugen AUSSERHALB der Tabelle:
+// `PRAGMA user_version` steht im Datei-Header, wird von dieser Anwendung sonst
+// nirgends benutzt, ist transaktional (rollt mit zurück) und geht beim Löschen
+// von Zeilen nicht mit verloren. Der Migrator schreibt dort unten die Zahl der
+// angewendeten Migrationen hin; hier wird sie gegengelesen.
+//
+// GRENZE, bewusst: Wird die GANZE Datei aus einem älteren Backup
+// wiederhergestellt, sinkt die Marke mit — dann ist die Datenbank wirklich
+// zurück, und erneut zu migrieren ist richtig. Erkannt wird nur der Fall, dass
+// die Buchführung hinter das zurückfällt, was das Schema bezeugt.
+// Datenbanken von vor dieser Änderung tragen 0 und lösen nichts aus; die Marke
+// wird beim nächsten Lauf gesetzt.
+{
+  const schemaMarke = sqlite.pragma("user_version", { simple: true });
+  if (schemaMarke > buchfuehrung.length) {
+    console.error(
+      `[migrate] Die Schema-Marke sagt, dass ${schemaMarke} Migration(en) angewendet ` +
+        `wurden — in __drizzle_migrations stehen aber nur ${buchfuehrung.length} Zeile(n). ` +
+        "Die Buchführung hat Zeilen verloren; typisch nach einer unvollständigen " +
+        "Wiederherstellung, bei der die Anwendungstabellen aktuell blieben und nur " +
+        "die Buchführung zurückfiel. Würde jetzt weitergemacht, liefe bereits " +
+        "angewendetes SQL ein zweites Mal gegen ein Schema, das es schon trägt.\n" +
+        "Reparatur: die fehlenden Zeilen nachtragen (Zeitstempel und Hash stehen " +
+        "im Journal bzw. ergeben sich aus der Migrationsdatei). Ist das Schema " +
+        "wirklich zurückgefallen, gehört stattdessen die Marke zurückgesetzt — " +
+        "aber erst, wenn das nachgewiesen ist.",
+    );
+    process.exit(1);
+  }
+}
+
 // --- Fail-closed: nichts still überspringen ---------------------------------
 // Der Wasserstand oben ist drizzles Verfahren: „alles bis zu diesem Zeitstempel
 // ist erledigt". Es trägt nur, solange das Journal streng aufsteigend ist.
@@ -284,6 +325,9 @@ const runAll = sqlite.transaction(() => {
     insertMigration.run(migration.hash, migration.folderMillis);
     applied += 1;
   }
+  // Der Zeuge von oben. INNERHALB der Transaktion, damit er bei einem Abbruch
+  // mit zurückrollt und nie mehr behauptet, als tatsächlich angewendet ist.
+  sqlite.pragma(`user_version = ${buchfuehrung.length + applied}`);
 });
 runAll();
 console.log(
