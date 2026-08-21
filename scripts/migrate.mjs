@@ -123,6 +123,20 @@ console.log(
     : `[migrate] ${applied} Migration(en) angewendet.`,
 );
 
+// --- Altbestand: unsichtbare Textblöcke entfernen ---------------------------
+// Siehe scripts/leere-bloecke-raeumen.mjs. Idempotent, läuft nach den
+// Migrationen und benutzt DASSELBE Prädikat wie Editor und Speicherweg.
+try {
+  const { raeumeLeereTextbloecke } = await import("./leere-bloecke-raeumen.mjs");
+  const entfernt = raeumeLeereTextbloecke(sqlite);
+  if (entfernt > 0) {
+    console.log(`[migrate] ${entfernt} unsichtbare(n) Textblock/Textblöcke entfernt.`);
+  }
+} catch (err) {
+  console.error("[migrate] Aufräumen der Textblöcke fehlgeschlagen:", err.message);
+  process.exit(1);
+}
+
 // --- Admin-Konto beim Erstlauf anlegen --------------------------------------
 try {
   const hasTable = sqlite

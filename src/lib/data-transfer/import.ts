@@ -27,6 +27,7 @@ import { db, schema } from "@/db";
 import { deleteImageFiles, uploadsDir } from "@/lib/media";
 import { slugify, uniqueSlug } from "@/lib/slug";
 import { blocksToMarkdown, type TravelBlock } from "@/lib/travel-blocks";
+import { hatSichtbarenInhalt } from "@/lib/sichtbarer-inhalt";
 import type { TaxonomyType } from "@/lib/taxonomies";
 import {
   EXPORT_VERSION,
@@ -407,7 +408,15 @@ export async function importBundle(
     const blocks: TravelBlock[] = [];
     for (const b of tv.contentBlocks) {
       if (b.type === "text") {
-        if (b.markdown.trim()) blocks.push({ type: "text", markdown: b.markdown });
+        // Dasselbe Prädikat wie im Editor und im Speicherpfad: ein Alt-Export
+        // kann Textblöcke enthalten, die nur aus Auszeichnung bestehen (`##`)
+        // oder aus unsichtbaren Zeichen. Sie sähen im Bericht nach nichts aus,
+        // wären aber BLÖCKE — und brächen jede Bildzeile, durch die sie laufen.
+        // OHNE .trim(): Führender Leerraum ist in Markdown BEDEUTUNG — vier
+        // Leerzeichen machen einen Codeblock. Ein Export muss unverändert
+        // wieder hereinkommen (Befund des Prüfpanels).
+        if (hatSichtbarenInhalt(b.markdown))
+          blocks.push({ type: "text", markdown: b.markdown });
       } else if (b.type === "bild") {
         const imgId = await importImage(b.image);
         if (imgId != null)

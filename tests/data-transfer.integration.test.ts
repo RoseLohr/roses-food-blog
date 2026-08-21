@@ -557,6 +557,79 @@ describe("Robustheit", () => {
     ).rejects.toThrow(/Version 1/);
   });
 
+  it("übernimmt keine unsichtbaren Textblöcke aus einem Alt-Export", async () => {
+    // Ein Export von vor dem Umbau kann Textblöcke enthalten, die im Editor
+    // leer aussahen und trotzdem `##` lauten. Beim Import dürfen sie nicht
+    // wieder entstehen — sonst bricht dieser unsichtbare BLOCK erneut die
+    // Bildzeile, und der Redakteur sieht wieder nur den weißen Zwischenraum.
+    const alt = {
+      format: "roses-food-blog",
+      version: 2,
+      travel: [
+        {
+          title: "Alt-Export",
+          slug: "alt-export",
+          contentBlocks: [
+            { type: "text", markdown: "Erster Absatz." },
+            { type: "text", markdown: "##" },
+            { type: "text", markdown: "\u200b" },
+            { type: "text", markdown: "---" },
+            { type: "text", markdown: "Zweiter Absatz." },
+          ],
+        },
+      ],
+    };
+    const { zipSync, strToU8 } = await import("fflate");
+    const zip = zipSync({ "content.json": strToU8(JSON.stringify(alt)) });
+    const res = await importBundle(zip, { recipes: false, travel: true, pages: false }, adminId);
+    expect(res.travel).toBe(1);
+    const [post] = await db
+      .select()
+      .from(schema.travelPost)
+      .where(eq(schema.travelPost.slug, "alt-export"));
+    const bloecke = await db
+      .select()
+      .from(schema.travelBlock)
+      .where(eq(schema.travelBlock.travelPostId, post.id))
+      .orderBy(asc(schema.travelBlock.sortOrder));
+    expect(bloecke.map((b) => b.markdown)).toEqual([
+      "Erster Absatz.",
+      "---",
+      "Zweiter Absatz.",
+    ]);
+  });
+
+  it("übernimmt eingerückten Code unverändert", async () => {
+    // Führender Leerraum ist in Markdown BEDEUTUNG: Vier Leerzeichen machen
+    // einen Codeblock. Ein `.trim()` beim Import macht daraus einen Absatz —
+    // der Export käme nicht mehr so herein, wie er hinausging (Befund des
+    // Prüfpanels).
+    const code = "    const a = 1;\n    const b = 2;";
+    const bundle = {
+      format: "roses-food-blog",
+      version: 2,
+      travel: [
+        {
+          title: "Eingerückt",
+          slug: "eingerueckt",
+          contentBlocks: [{ type: "text", markdown: code }],
+        },
+      ],
+    };
+    const { zipSync, strToU8 } = await import("fflate");
+    const zip = zipSync({ "content.json": strToU8(JSON.stringify(bundle)) });
+    await importBundle(zip, { recipes: false, travel: true, pages: false }, adminId);
+    const [post] = await db
+      .select()
+      .from(schema.travelPost)
+      .where(eq(schema.travelPost.slug, "eingerueckt"));
+    const [block] = await db
+      .select()
+      .from(schema.travelBlock)
+      .where(eq(schema.travelBlock.travelPostId, post.id));
+    expect(block.markdown).toBe(code);
+  });
+
   it("liest minimalen Export tolerant ein (Defaults)", async () => {
     // Nur Pflichtfeld-arm: ein Rezept mit Titel, sonst nichts.
     const minimal = {
