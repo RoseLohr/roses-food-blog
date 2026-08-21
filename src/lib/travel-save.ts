@@ -9,6 +9,7 @@ import { z } from "zod";
 import { db, schema } from "@/db";
 import { hatSichtbarenInhalt } from "@/lib/sichtbarer-inhalt";
 import { normalisiereZeilen } from "@/lib/bildreihen";
+import { restaurantWirdGespeichert } from "@/lib/travel-wirksam";
 import { slugify, uniqueSlug } from "@/lib/slug";
 import type { TaxonomyType } from "@/lib/taxonomies";
 import {
@@ -126,8 +127,11 @@ export async function saveTravelFromForm(
   const keptIndexByOld = new Map<number, number>();
   {
     let next = 0;
+    // Dasselbe Prädikat wie im Editor (src/lib/travel-wirksam.ts). Vorher
+    // entschied hier der Name und dort der Index — und eine Bildzeile ging
+    // zwischen beiden verloren.
     restaurants.forEach((r, oldIdx) => {
-      if (r.name !== "") keptIndexByOld.set(oldIdx, next++);
+      if (restaurantWirdGespeichert(r.name)) keptIndexByOld.set(oldIdx, next++);
     });
   }
   restaurants = restaurants
@@ -135,7 +139,7 @@ export async function saveTravelFromForm(
       ...r,
       dishes: r.dishes.filter((d) => d.name !== ""),
     }))
-    .filter((r) => r.name !== "");
+    .filter((r) => restaurantWirdGespeichert(r.name));
 
   // Inhalts-Blöcke (Block-Editor). Ohne Feld: Altverhalten (Feld "inhalt"
   // als ein Textblock) — hält API und Tests stabil.

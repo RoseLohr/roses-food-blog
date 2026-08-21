@@ -17,17 +17,21 @@ import {
   BILD_GROESSEN,
   BILD_PLAETZE,
   bildBreitenGross,
-  entferneBlock,
   fliesstText,
   normalisiereZeilen,
   passtInZeile,
-  verschiebeBlock,
+  tauscheBloecke,
   seitenverhaeltnis,
   zeilenBreite,
   zeilenIndizes,
   type BildGroesse,
   type BildPlatz,
 } from "@/lib/bildreihen";
+import {
+  bildWirdGespeichert,
+  restaurantWirdGespeichert,
+  textWirdGespeichert,
+} from "@/lib/travel-wirksam";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -130,28 +134,41 @@ interface Zeilenwissen {
   davor: BildGroesse[];
 }
 
-function zeilenwissen(blocks: EditorBlock[]): Map<number, Zeilenwissen> {
-  const zeilen = zeilenIndizes(blocks);
+function zeilenwissen(
+  blocks: EditorBlock[],
+  wirksam: number[],
+): Map<number, Zeilenwissen> {
+  // Gerechnet wird auf der Folge, die WIRKLICH GESPEICHERT wird — nicht auf
+  // dem, was im Editor untereinander steht. Ein Block, den der Server ohnehin
+  // verwirft (Restaurant ohne Namen, Bild ohne Foto, leerer Text), steht im
+  // Bericht nicht und darf deshalb auch keine Bildzeile brechen. Vorher tat er
+  // es: Der Editor strich die Zeilenzugehörigkeit des unteren Bildes, der
+  // Server warf den Block weg — und übrig blieb eine zerrissene Zeile ohne
+  // sichtbare Ursache.
+  const folge = wirksam.map((i) => blocks[i]);
+  const zeilen = zeilenIndizes(folge);
   const zeileVon = new Map<number, number[]>();
-  for (const z of zeilen) for (const i of z) zeileVon.set(i, z);
+  for (const z of zeilen) for (const e of z) zeileVon.set(e, z);
 
   const wissen = new Map<number, Zeilenwissen>();
-  for (const [i, zeile] of zeileVon) {
-    const block = blocks[i];
+  for (const [e, zeile] of zeileVon) {
+    const block = folge[e];
     if (block.type !== "bild") continue;
     // Anbietbar ist das Häkchen, wenn direkt darüber ein Bild steht und dieses
     // Bild noch in dessen Zeile passt — also die Summe der Anteile die Spalte
     // nicht überschreitet. Steht der Block schon in einer Zeile mit anderen,
     // ist die Frage schon beantwortet.
-    const davor = zeileVon.get(i - 1);
+    const davor = zeileVon.get(e - 1);
     const davorGroessen = (davor ?? [])
-      .filter((k) => k !== i)
-      .map((k) => blocks[k])
+      .filter((k) => k !== e)
+      .map((k) => folge[k])
       .filter((b) => b.type === "bild")
       .map((b) => b.groesse);
-    wissen.set(i, {
-      zeile,
-      angehaengt: zeile[0] !== i,
+    // Nach außen wieder in Original-Indizes, damit die Anzeige weiß, welcher
+    // Block im Editor gemeint ist.
+    wissen.set(wirksam[e], {
+      zeile: zeile.map((k) => wirksam[k]),
+      angehaengt: zeile[0] !== e,
       anbietbar:
         davor !== undefined &&
         davorGroessen.length > 0 &&
@@ -160,6 +177,55 @@ function zeilenwissen(blocks: EditorBlock[]): Map<number, Zeilenwissen> {
     });
   }
   return wissen;
+}
+
+/**
+ * Die Indizes der Blöcke, die beim Speichern erhalten bleiben.
+ *
+ * Dieselben Prädikate wie im Speicherweg (src/lib/travel-wirksam.ts). Was hier
+ * fehlt, steht später nicht im Bericht — und darf deshalb weder eine Bildzeile
+ * brechen noch beim Absenden mitgeschickt werden.
+ */
+function wirksameIndizes(
+  blocks: EditorBlock[],
+  restaurants: EditorRestaurant[],
+): number[] {
+  const out: number[] = [];
+  blocks.forEach((b, i) => {
+    const bleibt =
+      b.type === "bild"
+        ? bildWirdGespeichert(b.imageId)
+        : b.type === "restaurant"
+          ? restaurantWirdGespeichert(restaurants[b.index]?.name ?? "")
+          : textWirdGespeichert(b.markdown);
+    if (bleibt) out.push(i);
+  });
+  return out;
+}
+
+/**
+ * Zeilenzugehörigkeit normalisieren — über die WIRKSAME Folge, das Ergebnis an
+ * die ursprünglichen Stellen zurückgeschrieben.
+ *
+ * Über der ganzen Folge normalisiert zu haben war der Fehler: Ein Block, den
+ * der Server verwirft, hätte dabei eine Flagge gestrichen, die nach dem
+ * Speichern sehr wohl gewirkt hätte.
+ */
+function normalisiereWirksam(
+  blocks: EditorBlock[],
+  restaurants: EditorRestaurant[],
+): EditorBlock[] {
+  const wirksam = wirksameIndizes(blocks, restaurants);
+  const folge = normalisiereZeilen(wirksam.map((i) => blocks[i]));
+  let geaendert = false;
+  const out = [...blocks];
+  wirksam.forEach((i, e) => {
+    if (out[i] !== folge[e]) {
+      out[i] = folge[e];
+      geaendert = true;
+    }
+  });
+  return geaendert ? out : blocks;
 }
 
 /**
@@ -315,17 +381,20 @@ export function TravelEditor({
     // sein Foto fehlt und der Block deshalb übersprungen wird. Ungeräumt
     // stünden sie im Editor unsichtbar da und würden beim Speichern
     // zurückgeschrieben.
-    normalisiereZeilen(
+    normalisiereWirksam(
       (initial.blocks.length
         ? initial.blocks
         : [{ type: "text", markdown: "" } as EditorBlockData]
       ).map((b) => ({ ...b, key: nextBlockKey() })),
+      initial.restaurants,
     ),
   );
 
   // Zeilen einmal je Rendervorgang bestimmen — aus derselben Gruppierung, die
   // beim Speichern das Frontend baut.
-  const wissen = zeilenwissen(blocks);
+  const wirksam = wirksameIndizes(blocks, restaurants);
+  const wissen = zeilenwissen(blocks, wirksam);
+  const wirksamSet = new Set(wirksam);
 
   // Jede Änderung an der Folge läuft durch normalisiereZeilen: Eine Flagge
   // steht nur dort, wo sie auch wirkt. Sonst zeigte das Häkchen etwas anderes
@@ -333,25 +402,35 @@ export function TravelEditor({
   // längst vergessene Flagge plötzlich greifen.
   const updateBlock = (i: number, patch: Partial<EditorBlockData>) =>
     setBlocks((prev) =>
-      normalisiereZeilen(
+      normalisiereWirksam(
         prev.map((b, idx) => (idx === i ? ({ ...b, ...patch } as EditorBlock) : b)),
+        restaurants,
       ),
     );
   const moveBlock = (i: number, dir: -1 | 1) =>
-    setBlocks((prev) => verschiebeBlock(prev, i, dir));
-  const removeBlock = (i: number) => setBlocks((prev) => entferneBlock(prev, i));
+    // Tauschen (Flaggen bleiben an ihrer Position) und über die WIRKSAME Folge
+    // normalisieren — deshalb hier tauscheBloecke statt verschiebeBlock.
+    setBlocks((prev) => normalisiereWirksam(tauscheBloecke(prev, i, dir), restaurants));
+  const removeBlock = (i: number) =>
+    setBlocks((prev) =>
+      normalisiereWirksam(
+        prev.filter((_, idx) => idx !== i),
+        restaurants,
+      ),
+    );
   const addBlock = (b: EditorBlockData) =>
     setBlocks((prev) => [...prev, { ...b, key: nextBlockKey() }]);
 
   // Restaurant entfernen: Blöcke auf spätere Restaurants nachziehen,
   // Blöcke auf das entfernte Restaurant mit entfernen.
   const removeRestaurant = (ri: number) => {
-    setRestaurants((prev) => prev.filter((_, idx) => idx !== ri));
+    const danach = restaurants.filter((_, idx) => idx !== ri);
+    setRestaurants(danach);
     setBlocks((prev) =>
       // Fällt ein Restaurant-Block zwischen zwei Bildern weg, rücken die Bilder
       // zusammen — dann kann eine Flagge greifen, die vorher ins Leere zeigte.
       // Umgekehrt gilt dasselbe; normalisiereZeilen streicht nur, setzt nie.
-      normalisiereZeilen(
+      normalisiereWirksam(
         prev
           .filter((b) => b.type !== "restaurant" || b.index !== ri)
           .map((b) =>
@@ -359,20 +438,20 @@ export function TravelEditor({
               ? { ...b, index: b.index - 1 }
               : b,
           ),
+        danach,
       ),
     );
   };
 
-  // Unvollständige Blöcke (Bild ohne Auswahl, Restaurant ohne Ziel) beim
-  // Absenden weglassen; leere Textblöcke filtert der Server.
+  // Abgesendet wird GENAU die Folge, auf der auch die Zeilen gerechnet wurden.
+  // Vorher waren das zwei verschiedene Mengen: Der Absende-Filter fragte bei
+  // einem Restaurant-Block „gibt es diesen Index?", der Server „hat dieses
+  // Restaurant einen Namen?" — und dazwischen ging eine Bildzeile verloren.
   const serializedBlocks = JSON.stringify(
-    blocks
-      .filter(
-        (b) =>
-          (b.type !== "bild" || b.imageId > 0) &&
-          (b.type !== "restaurant" || (b.index >= 0 && b.index < restaurants.length)),
-      )
-      .map(({ key: _key, ...b }) => b),
+    wirksam.map((i) => {
+      const { key: _key, ...b } = blocks[i];
+      return b;
+    }),
   );
 
   // "48,2" / "48.2" / "" → number | null (Koordinaten-Override)
@@ -407,10 +486,22 @@ export function TravelEditor({
     })),
   );
 
-  const updateRestaurant = (i: number, patch: Partial<EditorRestaurant>) =>
-    setRestaurants((prev) =>
+  const updateRestaurant = (i: number, patch: Partial<EditorRestaurant>) => {
+    // Ein Restaurant OHNE Namen wird nicht gespeichert — Blöcke, die darauf
+    // zeigen, also auch nicht. Bekommt es einen Namen (oder verliert ihn),
+    // ändert sich damit die wirksame Blockfolge, und die Zeilen sind neu zu
+    // rechnen. Ohne das zeigte der Editor eine Zeile, die das Speichern
+    // anders zusammensetzt.
+    if (patch.name !== undefined) {
+      const danach = restaurants.map((r, idx) =>
+        idx === i ? { ...r, ...patch } : r,
+      );
+      setBlocks((prev) => normalisiereWirksam(prev, danach));
+    }
+    return setRestaurants((prev) =>
       prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)),
     );
+  };
   const updateDish = (ri: number, di: number, patch: Partial<EditorDish>) =>
     setRestaurants((prev) =>
       prev.map((r, idx) =>
@@ -538,7 +629,12 @@ export function TravelEditor({
             <p className="mb-2 text-xs text-ink-soft">{d.blocksHint}</p>
             <div className="flex flex-col gap-3">
               {blocks.map((b, i) => (
-                <div key={b.key} className="border border-ink/10 p-3">
+                <div
+                  key={b.key}
+                  className={`border border-ink/10 p-3 ${
+                    wirksamSet.has(i) ? "" : "border-dashed bg-cream/40"
+                  }`}
+                >
                   <div className="mb-2 flex items-center gap-1.5">
                     <span className="text-xs font-semibold uppercase tracking-wide text-ink-soft">
                       {b.type === "text"
@@ -547,6 +643,11 @@ export function TravelEditor({
                           ? d.blockImage
                           : d.blockRestaurant}
                     </span>
+                    {!wirksamSet.has(i) && (
+                      <span className="text-xs font-normal normal-case text-ink-soft">
+                        {d.blockNichtGespeichertKurz}
+                      </span>
+                    )}
                     <div className="ml-auto flex gap-1">
                       <button
                         type="button"
@@ -698,6 +799,11 @@ export function TravelEditor({
                         </>
                       );
                     })()}
+                  {!wirksamSet.has(i) && (
+                    <p className="mb-2 border-l-2 border-ink/25 bg-ink/[0.04] px-3 py-1.5 text-xs text-ink-soft">
+                      {d.blockNichtGespeichert[b.type]}
+                    </p>
+                  )}
                   {b.type === "restaurant" &&
                     (restaurants.length === 0 ? (
                       <p className="text-sm text-ink-soft">{d.blockNoRestaurants}</p>
