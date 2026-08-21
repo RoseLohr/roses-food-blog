@@ -17,8 +17,11 @@ import {
   BILD_GROESSEN,
   BILD_PLAETZE,
   bildBreitenGross,
+  entferneBlock,
   fliesstText,
+  normalisiereZeilen,
   passtInZeile,
+  verschiebeBlock,
   seitenverhaeltnis,
   zeilenBreite,
   zeilenIndizes,
@@ -116,6 +119,15 @@ interface Zeilenwissen {
   angehaengt: boolean;
   /** Darf das Häkchen überhaupt angeboten werden — passt das Bild daneben? */
   anbietbar: boolean;
+  /**
+   * Die Größen der Zeile DARÜBER. Leer, wenn darüber gar kein Bild steht.
+   *
+   * Für den Hinweis: „geht nicht" ist keine Auskunft. Es gibt genau zwei
+   * Gründe, und sie führen zu verschiedenen Handgriffen — darüber steht kein
+   * Bild (dann eines dorthin schieben), oder die Zeile darüber ist schon voll
+   * (dann eine Größe verkleinern). Der Editor muss sagen, welcher gilt.
+   */
+  davor: BildGroesse[];
 }
 
 function zeilenwissen(blocks: EditorBlock[]): Map<number, Zeilenwissen> {
@@ -144,6 +156,7 @@ function zeilenwissen(blocks: EditorBlock[]): Map<number, Zeilenwissen> {
         davor !== undefined &&
         davorGroessen.length > 0 &&
         passtInZeile(davorGroessen, block.groesse),
+      davor: davor === undefined ? [] : davorGroessen,
     });
   }
   return wissen;
@@ -297,30 +310,36 @@ export function TravelEditor({
     initial.restaurants.length ? initial.restaurants : [],
   );
   const [blocks, setBlocks] = useState<EditorBlock[]>(() =>
-    (initial.blocks.length
-      ? initial.blocks
-      : [{ type: "text", markdown: "" } as EditorBlockData]
-    ).map((b) => ({ ...b, key: nextBlockKey() })),
+    // Schon beim Laden normalisieren: Der Bestand kann Flaggen enthalten, die
+    // nicht mehr wirken — etwa weil ein Bild dazwischen gelöscht wurde oder
+    // sein Foto fehlt und der Block deshalb übersprungen wird. Ungeräumt
+    // stünden sie im Editor unsichtbar da und würden beim Speichern
+    // zurückgeschrieben.
+    normalisiereZeilen(
+      (initial.blocks.length
+        ? initial.blocks
+        : [{ type: "text", markdown: "" } as EditorBlockData]
+      ).map((b) => ({ ...b, key: nextBlockKey() })),
+    ),
   );
 
   // Zeilen einmal je Rendervorgang bestimmen — aus derselben Gruppierung, die
   // beim Speichern das Frontend baut.
   const wissen = zeilenwissen(blocks);
 
+  // Jede Änderung an der Folge läuft durch normalisiereZeilen: Eine Flagge
+  // steht nur dort, wo sie auch wirkt. Sonst zeigte das Häkchen etwas anderes
+  // an, als gespeichert wird — und eine spätere Größenänderung ließe eine
+  // längst vergessene Flagge plötzlich greifen.
   const updateBlock = (i: number, patch: Partial<EditorBlockData>) =>
     setBlocks((prev) =>
-      prev.map((b, idx) => (idx === i ? ({ ...b, ...patch } as EditorBlock) : b)),
+      normalisiereZeilen(
+        prev.map((b, idx) => (idx === i ? ({ ...b, ...patch } as EditorBlock) : b)),
+      ),
     );
   const moveBlock = (i: number, dir: -1 | 1) =>
-    setBlocks((prev) => {
-      const j = i + dir;
-      if (j < 0 || j >= prev.length) return prev;
-      const next = [...prev];
-      [next[i], next[j]] = [next[j], next[i]];
-      return next;
-    });
-  const removeBlock = (i: number) =>
-    setBlocks((prev) => prev.filter((_, idx) => idx !== i));
+    setBlocks((prev) => verschiebeBlock(prev, i, dir));
+  const removeBlock = (i: number) => setBlocks((prev) => entferneBlock(prev, i));
   const addBlock = (b: EditorBlockData) =>
     setBlocks((prev) => [...prev, { ...b, key: nextBlockKey() }]);
 
@@ -329,13 +348,18 @@ export function TravelEditor({
   const removeRestaurant = (ri: number) => {
     setRestaurants((prev) => prev.filter((_, idx) => idx !== ri));
     setBlocks((prev) =>
-      prev
-        .filter((b) => b.type !== "restaurant" || b.index !== ri)
-        .map((b) =>
-          b.type === "restaurant" && b.index > ri
-            ? { ...b, index: b.index - 1 }
-            : b,
-        ),
+      // Fällt ein Restaurant-Block zwischen zwei Bildern weg, rücken die Bilder
+      // zusammen — dann kann eine Flagge greifen, die vorher ins Leere zeigte.
+      // Umgekehrt gilt dasselbe; normalisiereZeilen streicht nur, setzt nie.
+      normalisiereZeilen(
+        prev
+          .filter((b) => b.type !== "restaurant" || b.index !== ri)
+          .map((b) =>
+            b.type === "restaurant" && b.index > ri
+              ? { ...b, index: b.index - 1 }
+              : b,
+          ),
+      ),
     );
   };
 
@@ -567,6 +591,14 @@ export function TravelEditor({
                       const w = wissen.get(i);
                       const gepaart = w?.angehaengt ?? false;
                       const anbietbar = w?.anbietbar ?? false;
+                      const davor = w?.davor ?? [];
+                      // Warum das Häkchen nicht greift — die beiden Gründe
+                      // führen zu verschiedenen Handgriffen.
+                      const grund = anbietbar
+                        ? undefined
+                        : davor.length === 0
+                          ? d.blockWithPreviousOff
+                          : d.blockWithPreviousNoFit(davor, b.groesse);
                       const zeile = w?.zeile ?? [i];
                       const zeilenGroessen = zeile
                         .map((k) => blocks[k])
@@ -621,12 +653,18 @@ export function TravelEditor({
                             className={`mt-3 flex items-start gap-2 text-sm ${
                               anbietbar ? "" : "opacity-50"
                             }`}
-                            title={anbietbar ? undefined : d.blockWithPreviousOff}
+                            title={grund}
                           >
                             <input
                               type="checkbox"
                               className="mt-1 h-4 w-4 accent-leaf"
-                              checked={gepaart}
+                              /* Die ABSICHT, nicht die abgeleitete Wirkung: Was
+                                 hier steht, ist das, was gespeichert wird. Beide
+                                 fallen zusammen, weil jede Änderung durch
+                                 normalisiereZeilen läuft — vorher konnte eine
+                                 gespeicherte Flagge unangekreuzt danebenstehen
+                                 und später still greifen. */
+                              checked={b.mitVorherigem}
                               disabled={!anbietbar}
                               onChange={(e) =>
                                 updateBlock(i, { mitVorherigem: e.target.checked })
@@ -634,6 +672,9 @@ export function TravelEditor({
                             />
                             <span>{d.blockWithPrevious}</span>
                           </label>
+                          {grund && (
+                            <p className="mt-1 text-xs text-ink-soft">{grund}</p>
+                          )}
                           <p className="mt-2 border-l-2 border-leaf bg-leaf/[0.06] px-3 py-1.5 text-xs text-ink-soft">
                             {zeilenPlatz === null
                               ? zeilenBreite(zeilenGroessen).n === 1

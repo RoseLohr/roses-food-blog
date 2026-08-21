@@ -207,6 +207,74 @@ export function zeilenIndizes(blocks: TravelBlock[]): number[][] {
     .map((g) => g.indizes);
 }
 
+/**
+ * Streicht jede `mitVorherigem`-Flagge, die an ihrer Stelle nicht wirken kann.
+ *
+ * `mitVorherigem` heißt „steht neben dem Bild DARÜBER" — eine Aussage über die
+ * POSITION, transportiert als Feld AM Block. Wo darüber kein Bild steht oder
+ * die Zeile schon voll ist, ist die Flagge wirkungslos; sie bleibt aber
+ * gespeichert und wird beim nächsten Speichern zurückgeschrieben. Später kann
+ * sie dann plötzlich greifen — etwa wenn das Bild darüber von L auf S wechselt
+ * —, ohne dass jemand ein Häkchen angefasst hat.
+ *
+ * Deshalb wird nach jeder Änderung an der Folge normalisiert: Was gespeichert
+ * ist, wirkt auch; und was im Editor angekreuzt steht, ist das, was gespeichert
+ * ist. Gesetzt wird hier NIE etwas — nur gestrichen.
+ */
+export function normalisiereZeilen<T extends TravelBlock>(blocks: T[]): T[] {
+  const angehaengt = new Set<number>();
+  for (const zeile of zeilenIndizes(blocks)) {
+    for (const i of zeile.slice(1)) angehaengt.add(i);
+  }
+  let geaendert = false;
+  const out = blocks.map((b, i) => {
+    if (b.type !== "bild") return b;
+    const wirkt = angehaengt.has(i);
+    if (b.mitVorherigem === wirkt) return b;
+    geaendert = true;
+    return { ...b, mitVorherigem: wirkt };
+  });
+  // Unverändert dieselbe Folge zurückgeben — der Editor hängt seinen State
+  // daran, und ein neues Array bei jedem Tastendruck wäre unnötige Arbeit.
+  return geaendert ? out : blocks;
+}
+
+/**
+ * Einen Block eine Stelle nach oben oder unten schieben.
+ *
+ * Die Zeilenzugehörigkeit bleibt dabei an ihrer POSITION: Tauschen zwei Bilder
+ * die Plätze, behält jede Stelle ihre Flagge. Sonst zerfiele eine Zeile, in der
+ * jemand nur die Reihenfolge ändern wollte — die Flagge des zweiten Bildes
+ * wanderte nach ganz oben, wo über ihr nichts steht, und das dritte Bild
+ * rutschte nach unten.
+ *
+ * Zwischen einem Bild und einem Textblock gibt es nichts zu tauschen: Dort
+ * ändert sich die Nachbarschaft wirklich, und `normalisiereZeilen` räumt auf,
+ * was danach nicht mehr wirken kann.
+ */
+export function verschiebeBlock<T extends TravelBlock>(
+  blocks: T[],
+  i: number,
+  richtung: -1 | 1,
+): T[] {
+  const j = i + richtung;
+  if (j < 0 || j >= blocks.length) return blocks;
+  const next = [...blocks];
+  [next[i], next[j]] = [next[j], next[i]];
+  const a = blocks[i];
+  const b = blocks[j];
+  if (a.type === "bild" && b.type === "bild") {
+    next[i] = { ...next[i], mitVorherigem: a.mitVorherigem };
+    next[j] = { ...next[j], mitVorherigem: b.mitVorherigem };
+  }
+  return normalisiereZeilen(next);
+}
+
+/** Einen Block entfernen — ohne eine Flagge zurückzulassen, die ins Leere zeigt. */
+export function entferneBlock<T extends TravelBlock>(blocks: T[], i: number): T[] {
+  return normalisiereZeilen(blocks.filter((_, idx) => idx !== i));
+}
+
 /** Fasst die Blockfolge des Editors zu Renderblöcken zusammen. */
 export function zuRenderBloecken(blocks: TravelBlock[]): RenderBlock[] {
   return gruppiere(blocks).map(({ block, indizes }) => {

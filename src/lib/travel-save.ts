@@ -8,6 +8,7 @@ import { eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db, schema } from "@/db";
 import { hatSichtbarenInhalt } from "@/lib/sichtbarer-inhalt";
+import { normalisiereZeilen } from "@/lib/bildreihen";
 import { slugify, uniqueSlug } from "@/lib/slug";
 import type { TaxonomyType } from "@/lib/taxonomies";
 import {
@@ -367,40 +368,51 @@ export async function saveTravelFromForm(
       }
     }
 
-    // Inhalts-Blöcke einfügen (Restaurant-Index → restaurant_id)
-    const blockValues: (typeof schema.travelBlock.$inferInsert)[] = [];
-    blocks.forEach((b, i) => {
-      if (b.type === "text") {
-        blockValues.push({
-          travelPostId: tid,
-          sortOrder: i,
-          type: "text",
-          markdown: b.markdown,
-        });
-      } else if (b.type === "bild") {
-        if (validBlockImageIds.has(b.imageId)) {
-          blockValues.push({
+    // Inhalts-Blöcke einfügen (Restaurant-Index → restaurant_id).
+    //
+    // ERST aussortieren, DANN normalisieren: Ein Bild ohne gültiges Foto und
+    // ein Restaurant-Block ohne Ziel fallen hier weg — und damit ändert sich
+    // die Nachbarschaft. Eine `mitVorherigem`-Flagge darunter zeigte sonst auf
+    // ein anderes Bild als das, neben dem der Redakteur sie gesetzt hat, oder
+    // ins Leere. Was gespeichert wird, muss auch wirken.
+    const behalten = normalisiereZeilen(
+      blocks.filter((b) =>
+        b.type === "bild"
+          ? validBlockImageIds.has(b.imageId)
+          : b.type === "restaurant"
+            ? restaurantIdByIndex[b.index] !== undefined
+            : true,
+      ),
+    );
+    const blockValues: (typeof schema.travelBlock.$inferInsert)[] = behalten.map(
+      (b, i) => {
+        if (b.type === "text") {
+          return {
             travelPostId: tid,
             sortOrder: i,
-            type: "bild",
+            type: "text" as const,
+            markdown: b.markdown,
+          };
+        }
+        if (b.type === "bild") {
+          return {
+            travelPostId: tid,
+            sortOrder: i,
+            type: "bild" as const,
             imageId: b.imageId,
             groesse: b.groesse,
             platz: b.platz,
             mitVorherigem: b.mitVorherigem,
-          });
+          };
         }
-      } else {
-        const restaurantId = restaurantIdByIndex[b.index];
-        if (restaurantId !== undefined) {
-          blockValues.push({
-            travelPostId: tid,
-            sortOrder: i,
-            type: "restaurant",
-            restaurantId,
-          });
-        }
-      }
-    });
+        return {
+          travelPostId: tid,
+          sortOrder: i,
+          type: "restaurant" as const,
+          restaurantId: restaurantIdByIndex[b.index],
+        };
+      },
+    );
     if (blockValues.length) {
       tx.insert(schema.travelBlock).values(blockValues).run();
     }
