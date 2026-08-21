@@ -103,6 +103,37 @@ const insertMigration = sqlite.prepare(
   'INSERT INTO __drizzle_migrations ("hash", "created_at") VALUES (?, ?)',
 );
 
+// --- Fail-closed: nichts still überspringen ---------------------------------
+// Der Wasserstand oben ist drizzles Verfahren: „alles bis zu diesem Zeitstempel
+// ist erledigt". Es trägt nur, solange das Journal streng aufsteigend ist.
+// Zwei parallele Zweige mit derselben Nummer brechen das — der später gemergte
+// hat dann einen ÄLTEREN Zeitstempel und würde hier lautlos übersprungen: keine
+// Fehlermeldung, die Spalte entsteht nie, und die Anwendung läuft gegen ein
+// Schema, das es nicht gibt.
+//
+// Gezählt statt gehasht: Ob eine Migration angewendet wurde, steht in der
+// Zeilenzahl. Ein Hash-Vergleich schlüge auch dann an, wenn eine längst
+// angewendete Datei später noch einmal angefasst wurde — das wäre ein
+// Fehlalarm, der den Start verhindert.
+{
+  const { n: angewendet } = sqlite
+    .prepare("SELECT COUNT(*) AS n FROM __drizzle_migrations")
+    .get();
+  const uebersprungen = migrations.filter(
+    (m) => lastAppliedAt !== null && lastAppliedAt >= m.folderMillis,
+  );
+  if (uebersprungen.length > angewendet) {
+    console.error(
+      `[migrate] ${uebersprungen.length} Migration(en) liegen unter dem ` +
+        `Wasserstand (${lastAppliedAt}), angewendet sind aber nur ${angewendet}. ` +
+        "Mindestens eine würde still übersprungen — vermutlich zwei Zweige mit " +
+        "derselben Nummer. Das Journal muss streng aufsteigend sein " +
+        "(scripts/regime/migrations-order.mjs).",
+    );
+    process.exit(1);
+  }
+}
+
 let applied = 0;
 const runAll = sqlite.transaction(() => {
   for (const migration of migrations) {

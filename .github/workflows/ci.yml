@@ -33,6 +33,10 @@ jobs:
         run: npm run lint
       - name: Quelltext-Gates (Stubs A-16, Modell-Aliase B-13)
         run: node scripts/regime/source-gates.mjs
+      - name: Migrations-Journal streng aufsteigend (still übersprungene Migration)
+        run: node scripts/regime/migrations-order.mjs
+      - name: Migrations-Journal-Selbsttest
+        run: node scripts/regime/migrations-order.mjs --selftest
       - name: SEO-/LLM-Gate (Routen registriert, Artefakte laufzeit-dynamisch, ein Ursprung)
         run: node scripts/regime/seo-gate.mjs
       - name: SEO-Gate-Selbsttest (A-36)
