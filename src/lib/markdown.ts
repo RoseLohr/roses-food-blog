@@ -115,7 +115,15 @@ export function extractHeadings(md: string): MarkdownHeading[] {
 export function hatSichtbarenInhalt(markdown: string): boolean {
   const html = renderMarkdown(markdown);
   // Bild und Trenner zeigen ohne Text etwas.
-  if (/<(?:img|hr)\b/.test(html)) return true;
+  //
+  // Hier stehen nur DIESE beiden Elemente, und das ist vollständig: Das einzige
+  // HTML in `html` stammt aus diesem Renderer, denn `escapeRawHtml()` macht aus
+  // jedem `<` der Eingabe ein `&lt;`. Rohes `<img>` oder `<video>` aus dem
+  // Markdown kann also gar kein Element werden — es wird Text und zählt als
+  // sichtbar, weil der Browser es als Text zeigt. Die Schreibweise ist
+  // trotzdem unempfindlich gegen Groß-/Kleinschreibung: Sie soll nicht davon
+  // abhängen, wie ein Renderer seine Tags schreibt.
+  if (/<(?:img|hr)\b/i.test(html)) return true;
   // Entitäten auflösen, BEVOR gezählt wird: `&#8203;` sind acht Zeichen im
   // Quelltext und nichts auf dem Schirm.
   return sichtbar(ohneEntitaeten(html.replace(/<[^>]*>/g, "")));

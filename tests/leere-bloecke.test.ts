@@ -390,3 +390,51 @@ function altesMarkdown(el: Knoten): string {
   // htmlToMarkdown() fügte die Blöcke und trimmte am Ende.
   return md.trim();
 }
+
+/**
+ * Was das Prüfpanel im vierten und fünften Durchgang gemeldet hat — und was
+ * die Nachmessung ergeben hat.
+ *
+ * Zwei der drei Befunde stellen sich nicht nach, WEIL der Renderer die
+ * Mehrdeutigkeit vorher wegnimmt. Genau deshalb stehen sie hier: Die Annahme
+ * „rohes HTML kann nie ein Element werden" und „ein `&` ohne gültige Entität
+ * kommt als `&amp;` an" sind Eigenschaften des Renderers, nicht meiner
+ * Funktion. Ändert sich der Renderer, muss dieser Test brechen — sonst würde
+ * aus einer belegten Aussage stillschweigend eine Vermutung.
+ */
+describe("Annahmen über den Renderer, auf denen das Prädikat ruht", () => {
+  it("macht aus rohem HTML Text, niemals ein Element", () => {
+    for (const md of [
+      "<!-- <img> -->",
+      "<IMG src='/a.jpg'>",
+      "<video controls></video>",
+      "<hr>",
+      "<script>alert(1)</script>",
+    ]) {
+      const html = renderMarkdown(md);
+      expect(html, `„${md}" darf kein Element erzeugen`).not.toMatch(
+        /<(?:img|hr|video|script)\b/i,
+      );
+      // Als Text ist es sichtbar — der Browser zeigt die spitzen Klammern.
+      expect(hatSichtbarenInhalt(md), `„${md}" zeigt Text`).toBe(true);
+    }
+  });
+
+  it("schreibt ein & ohne gültige Entität als &amp; aus", () => {
+    // Deshalb darf und muss der Entitäten-Auflöser ein Semikolon verlangen:
+    // Was ohne Semikolon dasteht, ist keine Entität mehr, wenn es hier ankommt.
+    for (const md of ["&#8203", "&#x200B", "&nbsp", "&shy", "&zwnj", "&#8203x"]) {
+      expect(renderMarkdown(md), `„${md}" muss maskiert werden`).toContain("&amp;");
+      expect(hatSichtbarenInhalt(md), `„${md}" zeigt Text`).toBe(true);
+    }
+    // Mit Semikolon dagegen bleibt die Entität stehen und der Browser löst sie
+    // auf — dann ist der Block leer.
+    expect(renderMarkdown("&#8203;")).toContain("&#8203;");
+    expect(hatSichtbarenInhalt("&#8203;")).toBe(false);
+  });
+
+  it("erkennt Bild und Trenner unabhängig von der Schreibweise", () => {
+    expect(hatSichtbarenInhalt("![](/a.jpg)")).toBe(true);
+    expect(hatSichtbarenInhalt("---")).toBe(true);
+  });
+});

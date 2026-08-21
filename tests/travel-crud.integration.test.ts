@@ -233,6 +233,24 @@ describe("Reise-CRUD", () => {
     expect(full!.restaurants[0].name).toBe("Izakaya Block");
   });
 
+  it("speichert eingerückten Code unverändert", async () => {
+    // Dasselbe wie beim Import: Vier Leerzeichen am Zeilenanfang machen einen
+    // Codeblock. Ein `.trim()` im Speicherweg macht daraus einen Absatz.
+    const { saveTravelFromForm } = await import("@/lib/travel-save");
+    const { getFullTravelPost } = await import("@/lib/travel");
+    const code = "    const a = 1;\n    const b = 2;";
+    const fd = new FormData();
+    fd.set("titel", "Eingerückter Code");
+    fd.set("status", "entwurf");
+    fd.set("restaurants", JSON.stringify([]));
+    fd.set("bloecke", JSON.stringify([{ type: "text", markdown: code }]));
+    const result = await saveTravelFromForm(fd, adminId);
+    const full = await getFullTravelPost({
+      id: (result as { travelId: number }).travelId,
+    });
+    expect(full!.blocks).toEqual([{ type: "text", markdown: code }]);
+  });
+
   it("schlägt ähnliche Rezepte nur bei Kategorie+Küche+Zutat-Überschneidung vor", async () => {
     const { saveTravelFromForm } = await import("@/lib/travel-save");
     const { getFullTravelPost } = await import("@/lib/travel");

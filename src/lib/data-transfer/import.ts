@@ -412,8 +412,11 @@ export async function importBundle(
         // kann Textblöcke enthalten, die nur aus Auszeichnung bestehen (`##`)
         // oder aus unsichtbaren Zeichen. Sie sähen im Bericht nach nichts aus,
         // wären aber BLÖCKE — und brächen jede Bildzeile, durch die sie laufen.
+        // OHNE .trim(): Führender Leerraum ist in Markdown BEDEUTUNG — vier
+        // Leerzeichen machen einen Codeblock. Ein Export muss unverändert
+        // wieder hereinkommen (Befund des Prüfpanels).
         if (hatSichtbarenInhalt(b.markdown))
-          blocks.push({ type: "text", markdown: b.markdown.trim() });
+          blocks.push({ type: "text", markdown: b.markdown });
       } else if (b.type === "bild") {
         const imgId = await importImage(b.image);
         if (imgId != null)

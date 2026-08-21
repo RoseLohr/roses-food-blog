@@ -156,8 +156,13 @@ export async function saveTravelFromForm(
         // BLOCK: er brach die Bildzeile darüber und hinterließ eine weiße
         // Fläche. Der Browser ist nicht der einzige Schreiber, deshalb prüft
         // der Server dasselbe wie der Editor, mit derselben Funktion.
+        // OHNE .trim(): Führender Leerraum ist in Markdown BEDEUTUNG — vier
+        // Leerzeichen am Zeilenanfang machen einen Codeblock. Das .trim() stand
+        // hier schon vorher und hat denselben Schaden angerichtet wie das, das
+        // die Prüfung im Importeur gefunden hat; es hier stehen zu lassen,
+        // hieße einen bekannten Fehler zu übersehen.
         if (hatSichtbarenInhalt(b.markdown)) {
-          blocks.push({ type: "text", markdown: b.markdown.trim() });
+          blocks.push({ type: "text", markdown: b.markdown });
         }
       } else if (b.type === "bild") {
         blocks.push(b);

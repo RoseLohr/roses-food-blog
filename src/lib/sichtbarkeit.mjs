@@ -63,6 +63,13 @@ const UNSICHTBARE_ENTITAETEN = {
  * Zeichen der Entität für Inhalt und lässt einen unsichtbaren Block stehen,
  * der die Bildzeile bricht (Befund des Prüfpanels).
  *
+ * Das SEMIKOLON ist Pflicht, und das ist kein Versehen: Diese Funktion läuft
+ * auf der Ausgabe des Markdown-Renderers, und der schreibt ein einzelnes `&`,
+ * das keine gültige Entität einleitet, bereits als `&amp;` aus. `&#8203` ohne
+ * Semikolon kommt hier also als `&amp;#8203` an — der Browser zeigt dann den
+ * Text `&#8203`, und sichtbar ist genau richtig. Verankert in
+ * tests/leere-bloecke.test.ts.
+ *
  * @param {string} html
  * @returns {string}
  */
