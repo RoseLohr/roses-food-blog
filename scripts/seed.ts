@@ -564,8 +564,9 @@ async function main() {
       city: "Palermo",
       lat: 38.1157,
       lng: 13.3615,
-      // Restaurant-Foto (klickbar → groß im Pop-up).
+      // EIN Foto → Band über die ganze Kartenbreite (klickbar → Pop-up).
       imageColor: "#1e5631",
+      imageColor2: null,
       description:
         "Familiengeführte Trattoria nahe dem Ballarò-Markt, drei Tische, keine Speisekarte.",
       dishes: [
@@ -600,7 +601,10 @@ async function main() {
       city: "Catania",
       lat: 37.5079,
       lng: 15.083,
-      imageColor: null,
+      // ZWEI Fotos → kleiner nebeneinander, beide klickbar, das Pop-up
+      // blättert zwischen ihnen.
+      imageColor: "#7d5a3c",
+      imageColor2: "#3c6e7d",
       description:
         "Direkt am Fischmarkt — was morgens ankommt, liegt mittags auf dem Teller.",
       dishes: [
@@ -621,6 +625,9 @@ async function main() {
     const restImageId = r.imageColor
       ? await placeholder(r.name.split(" ")[0], r.imageColor, 960, 640)
       : null;
+    const restImageId2 = r.imageColor2
+      ? await placeholder(`${r.name.split(" ")[0]} 2`, r.imageColor2, 900, 1200)
+      : null;
     const [rest] = await db
       .insert(schema.restaurant)
       .values({
@@ -629,6 +636,7 @@ async function main() {
         city: r.city,
         description: r.description,
         imageId: restImageId,
+        imageId2: restImageId2,
         // Koordinaten-Override — die Platzhalterbilder tragen kein EXIF-GPS
         lat: r.lat,
         lng: r.lng,

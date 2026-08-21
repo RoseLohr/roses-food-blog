@@ -486,6 +486,7 @@ export async function importBundle(
     const restaurantIdByIndex: number[] = [];
     for (const [ri, rest] of tv.restaurants.entries()) {
       const restImageId = await importImage(rest.image);
+      const restImageId2 = await importImage(rest.image2);
       const [restRow] = await db
         .insert(schema.restaurant)
         .values({
@@ -494,6 +495,10 @@ export async function importBundle(
           city: rest.city,
           description: rest.description,
           imageId: restImageId,
+          // Dasselbe Foto zweimal lehnt die Datenbank ab
+          // (restaurant_image_2_check) — ein Archiv, das beide Plätze mit
+          // demselben Bild füllt, kippte sonst den ganzen Import.
+          imageId2: restImageId2 === restImageId ? null : restImageId2,
           lat: rest.lat,
           lng: rest.lng,
           sortOrder: ri,

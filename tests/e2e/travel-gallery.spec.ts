@@ -161,6 +161,43 @@ test.describe("Reisebericht: Foto-Galerie / Lightbox", () => {
     await expect(dialog).toBeHidden();
   });
 
+  test("Restaurant mit zwei Fotos: nebeneinander, gleich hoch, beide vergrößerbar", async ({
+    page,
+  }) => {
+    await page.goto(REPORT);
+
+    // „Osteria del Porto" trägt zwei Fotos (scripts/seed.ts).
+    const karte = page.locator('div[id^="restaurant-"]').filter({
+      has: page.getByRole("heading", { level: 3, name: /Osteria del Porto/ }),
+    });
+    await expect(karte).toBeVisible();
+
+    // Das Band der Karte — NICHT die Gerichtsfotos weiter unten.
+    const band = karte.locator("div.grid.grid-cols-2").first();
+    const kacheln = band.locator("button:has(img)");
+    await expect(kacheln).toHaveCount(2);
+
+    // Nebeneinander, gleich hoch, zusammen so breit wie die Karte.
+    const a = (await kacheln.nth(0).boundingBox())!;
+    const b = (await kacheln.nth(1).boundingBox())!;
+    const k = (await karte.boundingBox())!;
+    expect(b.x).toBeGreaterThan(a.x + a.width - 1);
+    expect(Math.abs(a.height - b.height)).toBeLessThan(1.5);
+    expect(Math.abs(a.width - b.width)).toBeLessThan(1.5);
+    // Die Karte trägt links und rechts je 1 px Rahmen — das Band liegt darin.
+    expect(Math.abs(b.x + b.width - a.x - (k.width - 2))).toBeLessThan(1.5);
+
+    // Beide öffnen groß, und im Pop-up wird zwischen ihnen geblättert.
+    await kacheln.first().click();
+    const dialog = page.getByRole("dialog", { name: G.dialogLabel });
+    await expect(dialog).toBeVisible();
+    await expect(page.getByText(G.counter(1, 2))).toBeVisible();
+    await page.getByRole("button", { name: G.next }).click();
+    await expect(page.getByText(G.counter(2, 2))).toBeVisible();
+    await page.getByRole("button", { name: G.close }).click();
+    await expect(dialog).toBeHidden();
+  });
+
   test("Restaurant mit einem Foto: öffnet groß, keine Blätter-Pfeile", async ({
     page,
   }) => {

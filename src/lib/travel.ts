@@ -8,6 +8,7 @@ import type { MediaImage } from "@/lib/recipes";
 import { variantWidthsByImage } from "@/lib/media";
 import { dishTaxonomiesByDish, type TaxonomyRef } from "@/lib/taxonomies";
 import type { TravelBlock } from "@/lib/travel-blocks";
+import { restaurantFotoIds } from "@/lib/restaurant-fotos";
 
 export type TravelPost = typeof schema.travelPost.$inferSelect;
 export type { TaxonomyRef };
@@ -31,8 +32,12 @@ export interface FullRestaurant {
   name: string;
   city: string;
   description: string;
-  imageId: number | null;
-  image: MediaImage | null;
+  /**
+   * Fotos des Restaurants, lückenlos und in Reihenfolge (höchstens zwei,
+   * siehe RESTAURANT_FOTOS_MAX). Eines steht über die ganze Kartenbreite,
+   * zwei stehen kleiner nebeneinander.
+   */
+  images: MediaImage[];
   /** Manueller Koordinaten-Override (Vorrang vor EXIF der Fotos) */
   lat: number | null;
   lng: number | null;
@@ -197,10 +202,8 @@ export async function getFullTravelPost(
     .orderBy(asc(schema.restaurant.sortOrder));
   const restaurantIds = restaurantRows.map((r) => r.id);
 
-  // Restaurant-Fotos (optional) in einer Abfrage laden.
-  const restImageIds = restaurantRows
-    .map((r) => r.imageId)
-    .filter((x): x is number => x != null);
+  // Restaurant-Fotos (bis zu zwei je Restaurant) in einer Abfrage laden.
+  const restImageIds = restaurantRows.flatMap(restaurantFotoIds);
   const restImages = restImageIds.length
     ? await db
         .select()
@@ -309,8 +312,12 @@ export async function getFullTravelPost(
     name: r.name,
     city: r.city,
     description: r.description,
-    imageId: r.imageId ?? null,
-    image: r.imageId ? (restImageById.get(r.imageId) ?? null) : null,
+    // Verdichtet: Fehlt ein Bild (Medium gelöscht → ON DELETE SET NULL),
+    // rückt das verbliebene auf. Das Zusammenlegen steht in travel-blocks.ts,
+    // damit Bericht, Weltkarte und Export dieselbe Liste sehen.
+    images: restaurantFotoIds(r)
+      .map((id) => restImageById.get(id))
+      .filter((img): img is MediaImage => img !== undefined),
     lat: r.lat,
     lng: r.lng,
     sortOrder: r.sortOrder,

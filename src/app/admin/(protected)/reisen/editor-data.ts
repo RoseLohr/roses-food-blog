@@ -90,7 +90,7 @@ export async function buildTravelEditorProps(
         name: r.name,
         city: r.city,
         description: r.description,
-        imageId: r.imageId ?? null,
+        imageIds: r.images.map((i) => i.id),
         lat: r.lat != null ? String(r.lat).replace(".", ",") : "",
         lng: r.lng != null ? String(r.lng).replace(".", ",") : "",
         dishes: r.dishes.map((d) => ({

@@ -393,6 +393,8 @@ export const de = {
     chooseFile: "Datei wählen …",
     useSuggestion: "Vorschlag übernehmen",
     selectedCount: (n: number) => `${n} ausgewählt`,
+    /** Höchstzahl erreicht: erst abwählen, dann neu wählen. */
+    full: "Höchstzahl erreicht — zuerst ein Bild abwählen.",
   },
   richtext: {
     bold: "Fett",
@@ -921,7 +923,10 @@ export const de = {
       restaurantName: "Name des Restaurants",
       restaurantCity: "Ort",
       restaurantDescription: "Beschreibung (Markdown)",
-      restaurantImage: "Foto des Restaurants (optional)",
+      restaurantImage: "Fotos des Restaurants (optional, höchstens zwei)",
+      /** Erklärt, was die Anzahl bewirkt — die Wahl steckt in der Zahl. */
+      restaurantImageHint:
+        "Ein Foto steht über die ganze Breite der Karte, zwei stehen kleiner nebeneinander. Beide lassen sich anklicken und groß öffnen.",
       restaurantLat: "Breitengrad (optional)",
       restaurantLng: "Längengrad (optional)",
       restaurantCoordsHint:

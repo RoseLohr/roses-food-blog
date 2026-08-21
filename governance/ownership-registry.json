@@ -41,6 +41,7 @@
     ],
     "content-platform": [
       "src/lib/recipe",
+      "src/lib/restaurant-fotos",
       "src/lib/travel",
       "src/lib/saisonkalender",
       "src/lib/season",

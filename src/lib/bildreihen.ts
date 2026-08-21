@@ -387,6 +387,27 @@ export function vollbildSizes(): string {
   return gedeckeltSizes(SPALTE_GROSS);
 }
 
+/** Abstand zwischen zwei Fotos im Restaurant-Band (gap-2 = 8 px). */
+const BAND_ABSTAND = 8;
+
+/**
+ * `sizes` eines von ZWEI Fotos im Restaurant-Band.
+ *
+ * Das Band ist so breit wie die Inhaltsspalte; zwei Fotos teilen sie sich
+ * hälftig, der Abstand dazwischen herausgerechnet. Beide Kacheln haben
+ * dasselbe Format (Zuschnitt 4:3), also dieselbe Breite — eine Angabe genügt
+ * für beide, anders als in der Bildzeile des Fließtexts, wo sich die Breite
+ * nach dem Format richtet.
+ */
+export function restaurantPaarSizes(): string {
+  const haelfte = (spalte: string) => `(${spalte} - ${BAND_ABSTAND}px) / 2`;
+  return [
+    `(max-width: 767px) calc(${haelfte(`100vw - ${SPALTE_HANDY_ABZUG / 16}rem`)})`,
+    `(max-width: 928px) calc(${haelfte(`100vw - ${SPALTE_MITTEL_ABZUG / 16}rem`)})`,
+    `${Math.round((SPALTE_GROSS - BAND_ABSTAND) / 2)}px`,
+  ].join(", ");
+}
+
 /**
  * `sizes` eines Galeriebildes: Format × feste Zeilenhöhe, gedeckelt auf die
  * Spalte.
