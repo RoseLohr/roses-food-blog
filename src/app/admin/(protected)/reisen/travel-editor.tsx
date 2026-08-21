@@ -5,7 +5,7 @@
  * Gerichten (inkl. Bilder- und Zutaten-Referenzen) als React-State,
  * serialisiert als JSON in ein Hidden-Field.
  */
-import { useActionState, useState } from "react";
+import { useActionState, useMemo, useState } from "react";
 import { saveTravelAction, type TravelFormState } from "./actions";
 import { ImagePicker, type ImageChoice } from "@/components/admin/image-picker";
 import {
@@ -29,8 +29,8 @@ import {
 import {
   bildWirdGespeichert,
   restaurantWirdGespeichert,
-  textWirdGespeichert,
 } from "@/lib/travel-wirksam";
+import { zeigtVoraussichtlichEtwas } from "@/lib/sichtbar-vorschau";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -196,7 +196,11 @@ function wirksameIndizes(
         ? bildWirdGespeichert(b.imageId)
         : b.type === "restaurant"
           ? restaurantWirdGespeichert(restaurants[b.index]?.name ?? "")
-          : textWirdGespeichert(b.markdown);
+          : // Derselbe Weg wie beim Server — Bericht bauen und nachsehen —,
+            // nur ohne die Entitäten-Tabelle: Die passt nicht mehr ins
+            // JS-Budget dieser Route, und der Unterschied betrifft allein die
+            // ANZEIGE. Die Begründung steht in src/lib/sichtbar-vorschau.ts.
+            zeigtVoraussichtlichEtwas(b.markdown);
     if (bleibt) out.push(i);
   });
   return out;
@@ -363,7 +367,11 @@ export function TravelEditor({
 
   // Zeilen einmal je Rendervorgang bestimmen — aus derselben Gruppierung, die
   // beim Speichern das Frontend baut.
-  const wirksam = wirksameIndizes(blocks, restaurants);
+  // Einmal je Änderung, nicht je Rendervorgang: Das Prädikat rendert Markdown.
+  const wirksam = useMemo(
+    () => wirksameIndizes(blocks, restaurants),
+    [blocks, restaurants],
+  );
   const wissen = zeilenwissen(blocks, wirksam);
   const wirksamSet = new Set(wirksam);
 

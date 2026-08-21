@@ -19,6 +19,12 @@
  * Frage verschieden beantworten. Deshalb steht die Antwort hier — einmal, für
  * beide Seiten.
  *
+ * Für TEXT-Blöcke steht die Antwort nicht hier: „zeigt der Bericht etwas?"
+ * beantwortet man, indem man den Bericht BAUT und ansieht — im Speicherweg mit
+ * src/lib/sichtbarer-inhalt.ts, im Editor mit src/lib/sichtbar-vorschau.ts.
+ * Eine eigene Näherung (`trim()`) wäre wieder eine Vermutung über den Server
+ * gewesen, und genau daran ist der erste Anlauf gescheitert.
+ *
  * Bewusst ohne Abhängigkeiten (auch ohne zod): Der Editor ist eine
  * Client-Komponente, und was er importiert, landet im Browser-Bündel.
  */
@@ -37,18 +43,4 @@ export function restaurantWirdGespeichert(name: string): boolean {
 /** Ein Bildblock ohne ausgewähltes Foto wird nicht gespeichert. */
 export function bildWirdGespeichert(imageId: number): boolean {
   return imageId > 0;
-}
-
-/**
- * Ein Textblock ohne Inhalt wird nicht gespeichert.
- *
- * Der Server stellt hier die genauere Frage („zeigt der Bericht etwas?",
- * `hatSichtbarenInhalt`) — die braucht den Markdown-Renderer und läuft deshalb
- * nicht im Browser. Für alles, was der EDITOR erzeugen kann, sagen beide
- * dasselbe: Seit der Editor für einen leeren Block gar kein Markdown mehr
- * erzeugt, gibt es keinen Fall mehr, in dem `trim()` etwas übrig lässt, das
- * der Bericht nicht zeigt.
- */
-export function textWirdGespeichert(markdown: string): boolean {
-  return markdown.trim() !== "";
 }
