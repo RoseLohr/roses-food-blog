@@ -27,7 +27,7 @@ import { db, schema } from "@/db";
 import { deleteImageFiles, uploadsDir } from "@/lib/media";
 import { slugify, uniqueSlug } from "@/lib/slug";
 import { blocksToMarkdown, type TravelBlock } from "@/lib/travel-blocks";
-import { hatSichtbarenInhalt } from "@/lib/markdown";
+import { hatSichtbarenInhalt } from "@/lib/sichtbarer-inhalt";
 import type { TaxonomyType } from "@/lib/taxonomies";
 import {
   EXPORT_VERSION,

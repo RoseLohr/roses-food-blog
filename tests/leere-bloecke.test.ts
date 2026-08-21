@@ -23,7 +23,8 @@
  */
 import { describe, expect, it } from "vitest";
 import { htmlToMarkdown } from "@/lib/rich-text";
-import { hatSichtbarenInhalt, renderMarkdown } from "@/lib/markdown";
+import { renderMarkdown } from "@/lib/markdown";
+import { hatSichtbarenInhalt } from "@/lib/sichtbarer-inhalt";
 import { LEERE_BLOCKFORMEN, istLeererAltblock } from "@/lib/sichtbarkeit.mjs";
 
 /** Minimaler DOM-Nachbau — dieselbe Form, die der Editor durchreicht. */
@@ -222,6 +223,15 @@ describe("hatSichtbarenInhalt stimmt mit dem Renderer überein", () => {
  */
 describe("hatSichtbarenInhalt löst auf, was der Browser auflöst", () => {
   it.each([
+    // Aus dem fünften Panel-Veto: benannte Entitäten für unsichtbare Zeichen.
+    // Eine Handliste hatte sie nicht; die vollständige Tabelle des
+    // HTML-Standards (Paket `entities`) hat sie.
+    ["&Tab;", false],
+    ["&InvisibleTimes;", false],
+    ["&ic;", false],
+    ["&af;", false],
+    ["&NegativeThinSpace;", false],
+    ["&NewLine;", false],
     ["&#8203;", false], // Nullbreiten-Leerzeichen, dezimal
     ["&#x200b;", false], // dasselbe, hexadezimal
     ["&#x200B;", false], // Großschreibung im Hex

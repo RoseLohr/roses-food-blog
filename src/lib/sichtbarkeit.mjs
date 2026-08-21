@@ -30,68 +30,6 @@ export function sichtbar(s) {
 }
 
 /**
- * Benannte HTML-Entitäten, die für ein UNSICHTBARES Zeichen stehen.
- *
- * Nur diese sind nötig: Jede andere benannte Entität steht für ein sichtbares
- * Zeichen, und die bleibt unentschlüsselt als Text stehen — also ebenfalls
- * sichtbar. Der Irrtum ginge damit in die harmlose Richtung (ein Block bleibt
- * stehen), nicht in die löschende.
- */
-const UNSICHTBARE_ENTITAETEN = {
-  nbsp: 0x00a0,
-  shy: 0x00ad,
-  ensp: 0x2002,
-  emsp: 0x2003,
-  numsp: 0x2007,
-  puncsp: 0x2008,
-  thinsp: 0x2009,
-  hairsp: 0x200a,
-  ZeroWidthSpace: 0x200b,
-  zwnj: 0x200c,
-  zwj: 0x200d,
-  lrm: 0x200e,
-  rlm: 0x200f,
-  NoBreak: 0x2060,
-  MediumSpace: 0x205f,
-};
-
-/**
- * HTML-Entitäten in ihre Zeichen auflösen.
- *
- * Der Browser zeigt `&#8203;` als Nullbreiten-Leerzeichen — also als nichts.
- * Wer den gerenderten HTML-Text ansieht, ohne aufzulösen, hält die acht
- * Zeichen der Entität für Inhalt und lässt einen unsichtbaren Block stehen,
- * der die Bildzeile bricht (Befund des Prüfpanels).
- *
- * Das SEMIKOLON ist Pflicht, und das ist kein Versehen: Diese Funktion läuft
- * auf der Ausgabe des Markdown-Renderers, und der schreibt ein einzelnes `&`,
- * das keine gültige Entität einleitet, bereits als `&amp;` aus. `&#8203` ohne
- * Semikolon kommt hier also als `&amp;#8203` an — der Browser zeigt dann den
- * Text `&#8203`, und sichtbar ist genau richtig. Verankert in
- * tests/leere-bloecke.test.ts.
- *
- * @param {string} html
- * @returns {string}
- */
-export function ohneEntitaeten(html) {
-  return html
-    .replace(/&#(\d{1,7});/g, (ganz, zahl) => codepunkt(Number(zahl), ganz))
-    .replace(/&#x([0-9a-f]{1,6});/gi, (ganz, hex) =>
-      codepunkt(parseInt(hex, 16), ganz),
-    )
-    .replace(/&([a-zA-Z][a-zA-Z0-9]*);/g, (ganz, name) => {
-      const cp = UNSICHTBARE_ENTITAETEN[name];
-      return cp === undefined ? ganz : String.fromCodePoint(cp);
-    });
-}
-
-/** Zahl → Zeichen; unbrauchbare Werte bleiben, wie sie dastehen. */
-function codepunkt(wert, ganz) {
-  if (!Number.isInteger(wert) || wert < 0 || wert > 0x10ffff) return ganz;
-  return String.fromCodePoint(wert);
-}
-
-/**
  * Eine Zeile, die nur aus einem Blockmarker besteht — und aus sonst nichts.
  *
  * Der Marker muss die Zeile ausfüllen: `#` gefolgt von einem

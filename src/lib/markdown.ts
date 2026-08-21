@@ -11,7 +11,6 @@
  */
 import { Marked, type Tokens } from "marked";
 import { slugify } from "@/lib/slug";
-import { ohneEntitaeten, sichtbar } from "@/lib/sichtbarkeit.mjs";
 
 const SAFE_HREF = /^(https?:\/\/|mailto:|\/|#)/i;
 
@@ -88,43 +87,4 @@ export function extractHeadings(md: string): MarkdownHeading[] {
     }
   }
   return headings;
-}
-
-/**
- * Zeigt dieses Markdown im Bericht etwas?
- *
- * Die Frage stellt der Speicherweg und die Datenübernahme — überall dort, wo
- * fertiges Markdown ankommt statt eines DOM (der Browser ist nicht der einzige
- * Schreiber). Beantwortet wird sie, indem der Bericht GEBAUT und angesehen
- * wird. Kein Nachbau der Markdown-Regeln.
- *
- * Zwei Anläufe haben das teuer gelernt. Der erste zog Auszeichnungszeichen
- * pauschal ab und hielt ein Sternchen in Code-Auszeichnung für leer. Der
- * zweite verlangte hinter jedem Blockmarker ein Trennzeichen — richtig nach
- * CommonMark, aber dieser Renderer nimmt auch ein geschütztes Leerzeichen als
- * Trenner. Jede Regel, die man neben den Renderer stellt, bildet ihn
- * unvollständig ab; und dieses Prädikat entscheidet über das LÖSCHEN eines
- * Blocks.
- *
- * „Zeigt etwas" heißt: Text, ein Bild oder ein Trenner. Der Schmuck, den ein
- * leerer Block mitbringt — der cremefarbene Kasten eines leeren
- * Code-Elements, der Balken eines leeren Zitats, der Punkt eines leeren
- * Aufzählungseintrags — ist kein Inhalt, sondern der Rest einer Auszeichnung
- * ohne Aussage. Genau solche Blöcke sind der gemeldete Fehler.
- */
-export function hatSichtbarenInhalt(markdown: string): boolean {
-  const html = renderMarkdown(markdown);
-  // Bild und Trenner zeigen ohne Text etwas.
-  //
-  // Hier stehen nur DIESE beiden Elemente, und das ist vollständig: Das einzige
-  // HTML in `html` stammt aus diesem Renderer, denn `escapeRawHtml()` macht aus
-  // jedem `<` der Eingabe ein `&lt;`. Rohes `<img>` oder `<video>` aus dem
-  // Markdown kann also gar kein Element werden — es wird Text und zählt als
-  // sichtbar, weil der Browser es als Text zeigt. Die Schreibweise ist
-  // trotzdem unempfindlich gegen Groß-/Kleinschreibung: Sie soll nicht davon
-  // abhängen, wie ein Renderer seine Tags schreibt.
-  if (/<(?:img|hr)\b/i.test(html)) return true;
-  // Entitäten auflösen, BEVOR gezählt wird: `&#8203;` sind acht Zeichen im
-  // Quelltext und nichts auf dem Schirm.
-  return sichtbar(ohneEntitaeten(html.replace(/<[^>]*>/g, "")));
 }

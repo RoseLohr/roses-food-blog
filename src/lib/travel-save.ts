@@ -7,7 +7,7 @@
 import { eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db, schema } from "@/db";
-import { hatSichtbarenInhalt } from "@/lib/markdown";
+import { hatSichtbarenInhalt } from "@/lib/sichtbarer-inhalt";
 import { slugify, uniqueSlug } from "@/lib/slug";
 import type { TaxonomyType } from "@/lib/taxonomies";
 import {

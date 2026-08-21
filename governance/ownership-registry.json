@@ -47,6 +47,8 @@
       "src/lib/slug",
       "src/lib/markdown",
       "src/lib/rich-text",
+      "src/lib/sichtbarkeit",
+      "src/lib/sichtbarer-inhalt",
       "src/lib/homepage",
       "src/lib/search",
       "src/lib/likes",
