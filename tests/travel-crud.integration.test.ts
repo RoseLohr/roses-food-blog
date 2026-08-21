@@ -251,6 +251,49 @@ describe("Reise-CRUD", () => {
     expect(full!.blocks).toEqual([{ type: "text", markdown: code }]);
   });
 
+  it("streicht eine Paarung, die nach dem Aussortieren nicht mehr wirken kann", async () => {
+    // `mitVorherigem` heißt „neben dem Bild DARÜBER" — das ist eine Aussage
+    // über die POSITION. Fällt der Block darüber beim Speichern weg (hier: ein
+    // Bild, dessen Foto es nicht gibt), zeigt die Flagge auf etwas anderes als
+    // das, was der Redakteur gesehen hat. Gespeichert wird deshalb nur, was
+    // auch wirkt.
+    const { saveTravelFromForm } = await import("@/lib/travel-save");
+    const { getFullTravelPost } = await import("@/lib/travel");
+    const { db, schema } = await import("@/db");
+    const [img] = await db
+      .insert(schema.mediaImage)
+      .values({
+        fileKey: "geistflagge",
+        originalName: "geist.jpg",
+        width: 800,
+        height: 600,
+        sizeBytes: 1000,
+        createdAt: new Date(),
+      })
+      .returning();
+
+    const fd = new FormData();
+    fd.set("titel", "Geisterflagge");
+    fd.set("status", "entwurf");
+    fd.set("restaurants", JSON.stringify([]));
+    fd.set(
+      "bloecke",
+      JSON.stringify([
+        // Dieses Bild gibt es nicht — der Block fällt beim Speichern weg.
+        { type: "bild", imageId: 999999, groesse: "s" },
+        // …und damit steht über diesem Bild nichts mehr.
+        { type: "bild", imageId: img.id, groesse: "s", mitVorherigem: true },
+      ]),
+    );
+    const result = await saveTravelFromForm(fd, adminId);
+    const full = await getFullTravelPost({
+      id: (result as { travelId: number }).travelId,
+    });
+    expect(full!.blocks).toEqual([
+      { type: "bild", imageId: img.id, groesse: "s", platz: "rechts", mitVorherigem: false },
+    ]);
+  });
+
   it("schlägt ähnliche Rezepte nur bei Kategorie+Küche+Zutat-Überschneidung vor", async () => {
     const { saveTravelFromForm } = await import("@/lib/travel-save");
     const { getFullTravelPost } = await import("@/lib/travel");

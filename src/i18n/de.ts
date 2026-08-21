@@ -869,8 +869,15 @@ export const de = {
         rechts: { label: "rechts", title: "Bild rechts, der Text fließt links daneben" },
       },
       blockWithPrevious: "neben dem Bild darüber",
-      blockWithPreviousOff:
-        "Nur möglich, wenn direkt darüber ein Bild steht und beide zusammen noch in eine Zeile passen — drei Drittel füllen sie bereits.",
+      /**
+       * Zwei Gründe, zwei Handgriffe: „geht nicht" wäre keine Auskunft. Steht
+       * darüber kein Bild, muss eines dorthin; ist die Zeile voll, muss eine
+       * Größe kleiner werden. Deshalb je eine eigene Meldung — und die zweite
+       * nennt die Rechnung, statt sie den Redakteur suchen zu lassen.
+       */
+      blockWithPreviousOff: "Darüber steht kein Bild, neben das dieses treten könnte.",
+      blockWithPreviousNoFit: (zeile: string[], eigen: string) =>
+        `Die Zeile darüber ist mit ${zeile.map((g) => g.toUpperCase()).join(" + ")} schon voll — für ein weiteres ${eigen.toUpperCase()} ist kein Platz. Eine der Größen verkleinern.`,
       /** Zusatz im Hinweis, sobald mehrere Bilder eine Zeile teilen. */
       blockInRow: (anzahl: number) =>
         `Teilt sich die Zeile mit ${anzahl - 1} weiteren Bild${anzahl === 2 ? "" : "ern"} — alle gleich hoch, unten bündig. Die Seite kommt vom ersten Bild der Zeile.`,
