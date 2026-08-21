@@ -730,13 +730,14 @@ export function TravelEditor({
                                  gespeicherte Flagge unangekreuzt danebenstehen
                                  und später still greifen. */
                               checked={b.mitVorherigem}
-                              /* Nur gesperrt, wenn darüber gar kein Bild
-                                 steht. Passt es dort MOMENTAN nicht hinein,
-                                 bleibt das Häkchen bedienbar: Es ist eine
-                                 Absicht, die wieder greift, sobald Platz ist —
-                                 und ein Häkchen, das man nicht mehr abwählen
-                                 kann, wäre eine Falle. */
-                              disabled={davor.length === 0}
+                              /* NIE gesperrt. Das Häkchen trägt eine Absicht,
+                                 und eine Absicht muss man zurücknehmen können:
+                                 Ein gesetztes Häkchen, das nicht mehr abwählbar
+                                 ist, bleibt gespeichert und greift wieder,
+                                 sobald über dem Bild eines steht — ohne dass
+                                 jemand das noch ändern konnte. Warum es hier
+                                 gerade nichts bewirkt, sagt der Hinweis
+                                 darunter. */
                               onChange={(e) =>
                                 updateBlock(i, { mitVorherigem: e.target.checked })
                               }

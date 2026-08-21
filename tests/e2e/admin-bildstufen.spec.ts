@@ -88,10 +88,18 @@ test("das Häkchen gibt es, solange das Bild noch in die Zeile passt", async ({
   const bloecke = bildBloecke(page);
 
   // Erster Bildblock: darüber steht Text — es gibt nichts, wozu er sich
-  // stellen könnte.
-  await expect(haken(bloecke.nth(0))).toBeDisabled();
-  // Zweiter: darüber ein Bild → anbietbar.
+  // stellen könnte. Das Häkchen ist trotzdem BEDIENBAR und sagt den Grund.
+  //
+  // Es zu sperren war eine Falle: Ein gesetztes Häkchen bliebe dann
+  // gespeichert, ohne dass man es noch abwählen könnte — und griffe wieder,
+  // sobald über dem Bild eines steht (Befund des Prüfpanels).
+  await expect(haken(bloecke.nth(0))).toBeEnabled();
+  await expect(
+    bloecke.nth(0).getByText(d.blockWithPreviousOff),
+  ).toBeVisible();
+  // Zweiter: darüber ein Bild → es kann greifen, also kein Hinweis.
   await expect(haken(bloecke.nth(1))).toBeEnabled();
+  await expect(bloecke.nth(1).getByText(d.blockWithPreviousOff)).toBeHidden();
 
   // Alle drei auf S: dann tragen sie zusammen genau eine Zeile.
   for (const n of [0, 1, 2]) {
