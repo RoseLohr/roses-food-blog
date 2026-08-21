@@ -27,6 +27,15 @@ jobs:
           node-version: "22"
           cache: npm
       - run: npm ci --no-audit --no-fund
+      # Das Migrations-Gate vergleicht das Journal gegen den AUSGELIEFERTEN
+      # Stand — ohne diesen Bezugspunkt prüft es nur den Anstieg im Journal und
+      # ließe genau den chronologisch aufgelösten Merge-Konflikt durch. Der
+      # Checkout holt nur den PR-Stand, also wird `origin/main` hier nachgeholt.
+      # Ist er unlesbar, ist das ein Befund, kein Durchwinken — deshalb kein
+      # `|| true`. `--depth=1` genügt: gelesen wird eine einzige Datei an der
+      # Spitze von main.
+      - name: Bezugspunkt für das Migrations-Gate holen (origin/main)
+        run: git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
       - name: Typecheck (tsc --noEmit)
         run: npm run typecheck
       - name: Lint (Standards + Barrierefreiheit, blockierend)

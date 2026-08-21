@@ -93,12 +93,65 @@ const migrations = journal.entries.map((entry) => {
 sqlite.exec(
   "CREATE TABLE IF NOT EXISTS __drizzle_migrations (id SERIAL PRIMARY KEY, hash text NOT NULL, created_at numeric)",
 );
-const lastRow = sqlite
-  .prepare(
-    "SELECT created_at FROM __drizzle_migrations ORDER BY created_at DESC LIMIT 1",
-  )
-  .get();
-const lastAppliedAt = lastRow ? Number(lastRow.created_at) : null;
+// --- Form der Buchführung zuerst prüfen -----------------------------------
+// `created_at` ist als `numeric` deklariert und lässt NULL zu; SQLite legt in
+// einer NUMERIC-Spalte außerdem nicht konvertierbaren Text unverändert ab.
+// Beides wäre für alles Weitere hier fatal, weil `Number(...)` still etwas
+// Plausibles liefert: `Number(null)` ist 0, `Number("x")` ist NaN. Der
+// Schaden ist gemessen, nicht vermutet — und er fällt je nach Speicherklasse
+// verschieden aus, weil SQLite in DESC nach NULL < Zahl < Text sortiert:
+//
+//   NULL — die kaputte Zeile sortiert nach UNTEN und wird gar nicht erst
+//   gelesen. Der Wasserstand fällt still auf den zweithöchsten Wert, und die
+//   oberste, längst angewendete Migration läuft ein zweites Mal. Danach steht
+//   eine null-Zeile plus ein Duplikat in der Buchführung. (Ist die kaputte
+//   Zeile die einzige, wird der Wasserstand 0 und alles läuft erneut.)
+//
+//   Text — die kaputte Zeile sortiert nach OBEN, der Wasserstand wird NaN und
+//   damit ist JEDER Vergleich unten falsch. Die Fail-closed-Prüfung findet
+//   nichts Verschlucktes und winkt durch, sämtliche Migrationen laufen erneut,
+//   und der Lauf stirbt mitten im Schema an "table 'admin_user' already
+//   exists" — die Datenbank bleibt halb migriert zurück.
+//
+// Deshalb: erst die Form, dann rechnen. Beide Fälle sind in
+// tests/migrationen-reihenfolge.test.ts festgenagelt.
+const buchfuehrung = sqlite
+  .prepare("SELECT rowid AS zeile, hash, created_at FROM __drizzle_migrations")
+  .all();
+const unlesbar = buchfuehrung.filter(
+  (r) => typeof r.created_at !== "number" || !Number.isFinite(r.created_at),
+);
+if (unlesbar.length) {
+  const nachHash = new Map(migrations.map((m) => [m.hash, m]));
+  console.error(
+    `[migrate] ${unlesbar.length} Zeile(n) in __drizzle_migrations haben kein ` +
+      "lesbares created_at (NULL oder Text). Der Wasserstand ließe sich daraus " +
+      "nicht bilden, und alle folgenden Prüfungen wären wertlos. Betroffen:\n" +
+      unlesbar
+        .map((r) => {
+          const treffer = nachHash.get(r.hash);
+          return (
+            `  - rowid ${r.zeile}: created_at=${JSON.stringify(r.created_at)}` +
+            (treffer
+              ? `, hash gehört zu „${treffer.tag}" — dort gehört ${treffer.folderMillis} hinein`
+              : ", hash passt zu keiner Migrationsdatei")
+          );
+        })
+        .join("\n") +
+      "\nDie Buchführung muss repariert werden (created_at auf den " +
+      "`when`-Wert der zugehörigen Migration setzen), bevor der Lauf " +
+      "fortgesetzt werden kann.",
+  );
+  process.exit(1);
+}
+
+// Der Wasserstand wird hier in JS gebildet und nicht mehr per ORDER BY: Nach
+// der Formprüfung sind alle Werte endliche Zahlen, damit ist das Maximum
+// eindeutig — während SQLites DESC-Sortierung zuerst über Speicherklassen
+// ginge und damit genau die Falle von oben offen ließe.
+const lastAppliedAt = buchfuehrung.length
+  ? Math.max(...buchfuehrung.map((r) => r.created_at))
+  : null;
 
 const insertMigration = sqlite.prepare(
   'INSERT INTO __drizzle_migrations ("hash", "created_at") VALUES (?, ?)',
@@ -120,12 +173,7 @@ const insertMigration = sqlite.prepare(
 // Hash-Vergleich hielte das für eine fehlende Migration und verhinderte den
 // Start.
 {
-  const angewendet = new Set(
-    sqlite
-      .prepare("SELECT created_at FROM __drizzle_migrations")
-      .all()
-      .map((r) => Number(r.created_at)),
-  );
+  const angewendet = new Set(buchfuehrung.map((r) => r.created_at));
   const verschluckt = migrations.filter(
     (m) =>
       lastAppliedAt !== null &&
@@ -137,8 +185,21 @@ const insertMigration = sqlite.prepare(
       `[migrate] ${verschluckt.length} Migration(en) würden still übersprungen: ` +
         verschluckt.map((m) => `${m.tag} (when=${m.folderMillis})`).join(", ") +
         `. Sie liegen unter dem Wasserstand (${lastAppliedAt}), wurden aber nie ` +
-        "angewendet — vermutlich zwei Zweige mit derselben Nummer. Das Journal " +
-        "muss streng aufsteigend sein (scripts/regime/migrations-order.mjs).",
+        "angewendet. Dafür gibt es zwei Ursachen, und sie brauchen " +
+        "verschiedene Reparaturen:\n" +
+        "  1. Zwei Zweige mit derselben Nummer: Der später gemergte trägt " +
+        "einen älteren `when`-Wert und rutscht unter den Wasserstand. Dann " +
+        "gehört die Migration im Journal umnummeriert (neuer Zeitstempel, " +
+        "größer als jeder ausgelieferte) — geprüft von " +
+        "scripts/regime/migrations-order.mjs.\n" +
+        "  2. Die Buchführung ist unvollständig: Das Schema trägt die " +
+        "Änderung bereits, nur die Zeile in __drizzle_migrations fehlt (etwa " +
+        "nach einem von Hand eingespielten Schema oder einem abgebrochenen " +
+        "Lauf). Ist das Schema nachweislich vollständig, sind die genannten " +
+        "`when`-Werte in __drizzle_migrations nachzutragen; dann läuft der " +
+        "Migrator wieder durch.\n" +
+        "Ohne diese Entscheidung wird nicht weitergemacht: Ein Überspringen " +
+        "hinterließe ein Schema, gegen das die Anwendung nicht laufen kann.",
     );
     process.exit(1);
   }
