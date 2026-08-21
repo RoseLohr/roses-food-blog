@@ -58,6 +58,18 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$BASIS" ] || { echo "FEHLER: --basis fehlt." >&2; exit 2; }
 case "$EBENE" in rand|ursprung) ;; *) echo "FEHLER: --ebene muss rand oder ursprung sein." >&2; exit 2 ;; esac
+# Die Basis muss eine brauchbare URL sein — und der WERT gehört in die Meldung.
+# Der erste Produktionslauf scheiterte an einem `https:/…` mit nur einem
+# Schrägstrich; die Meldung nannte damals nur den daraus abgeleiteten Unsinn
+# („Name https"), nicht die Eingabe, aus der er entstand. Wer den Wert sieht,
+# sieht den Tippfehler.
+case "$BASIS" in
+  [a-z]*://?*) ;;
+  *) echo "FEHLER: --basis ist keine brauchbare URL: '$BASIS'" >&2
+     echo "        Erwartet wird schema://name[:port], zum Beispiel https://example.de" >&2
+     echo "        Kommt der Wert aus BASE_URL in der .env, dort nachsehen." >&2
+     exit 2 ;;
+esac
 BASIS="${BASIS%/}"
 
 # Name UND Port aus der Basis lesen. Die erste Fassung setzte `--resolve` fest
