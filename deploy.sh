@@ -461,6 +461,33 @@ if [[ "${HEALTH_OK:-0}" != "1" ]]; then
   fail "Healthcheck fehlgeschlagen. Vollständige Logs: podman logs roses-blog"
 fi
 
+# --- 6b. Auslieferung am Ursprung ---------------------------------------------
+# Die App liefert bewusst UNKOMPRIMIERT aus (next.config.ts: compress:false),
+# damit der Reverse Proxy komprimieren kann. Ob er das tut, hat vier Wochen lang
+# niemand gemessen: Die tägliche Prüfung in perf-uptime.yml lief gegen die
+# öffentliche Domain und damit gegen Cloudflare, das nachkomprimierte. Am
+# Ursprung liefen CSS und JavaScript derweil vollständig unkomprimiert
+# (audit/11-infrastruktur-befund.md, B1/B2).
+#
+# WARUM DIE PRÜFUNG HIER STEHT und nicht in GitHub Actions: Von dort aus wäre
+# der Ursprung nur über seine IP-Adresse messbar, und die gehört nicht in ein
+# öffentliches Repository (B7). Auf dem Server ist er über 127.0.0.1 erreichbar
+# — und bleibt es auch, wenn der Zugang von außen später auf die
+# Cloudflare-Bereiche eingeschränkt wird.
+#
+# WARUM SIE HART FEHLSCHLÄGT: Ein Deployment, dessen Ergebnis falsch
+# ausgeliefert wird, ist kein abgeschlossenes Deployment. Die Meldung unten
+# nennt den Weg zur Behebung; unterdrückt wird hier nichts.
+URSPRUNG_HOST="${BASE_URL#*://}"; URSPRUNG_HOST="${URSPRUNG_HOST%%/*}"; URSPRUNG_HOST="${URSPRUNG_HOST%%:*}"
+log "Prüfe Auslieferung am Ursprung ($URSPRUNG_HOST über 127.0.0.1)"
+if ! "$SCRIPT_DIR/scripts/regime/kompression-pruefen.sh" \
+      --basis "https://$URSPRUNG_HOST" --aufloesen 127.0.0.1 --ebene ursprung; then
+  echo
+  echo "Der Reverse Proxy liefert nicht so aus, wie next.config.ts es voraussetzt."
+  echo "Vorlage und Einspielweg stehen im Kopf von deploy/npm/http_top.conf."
+  fail "Auslieferung am Ursprung fehlerhaft (siehe Mängel oben)."
+fi
+
 # --- 7. Autostart nach Reboot -------------------------------------------------
 # Zwei unabhängige Voraussetzungen — beide bei JEDEM Lauf sicherstellen, sonst
 # startet der Container nach einem Reboot nicht (Autostart still kaputt).

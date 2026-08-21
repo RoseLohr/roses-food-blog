@@ -1,7 +1,7 @@
 # Infrastruktur-Befund und Plan (Erhebung 2026-08-21)
 
-Grundlage ist eine rein lesende Erhebung auf `leaf.klee.me`, ausgeführt vom
-Betreiber am 21.08.2026 um 19:37 UTC. Sie misst die Auslieferung auf **drei
+Grundlage ist eine rein lesende Erhebung auf dem Produktionsserver, ausgeführt
+vom Betreiber am 21.08.2026 um 19:37 UTC. Sie misst die Auslieferung auf **drei
 Ebenen getrennt** — Anwendung, Reverse Proxy, CDN — und macht damit zuordenbar,
 welche Schicht welche Bytes und welche Millisekunden verursacht.
 
@@ -151,9 +151,16 @@ Cloudflare-Adresse in denselben Topf wirft.
 
 ### B7 — Der Ursprung ist unter seiner eigenen Adresse direkt erreichbar
 
-`https://88.214.24.208/` mit SNI `gourmetcompass.de` antwortet mit **200**.
-Wer die Adresse kennt, umgeht Cloudflare vollständig: WAF, Ratenbegrenzung,
-Bot-Abwehr und Caching. Die ufw-Regeln öffnen 80/443 für „Anywhere".
+Ein Abruf direkt an die öffentliche Adresse des Servers, mit SNI der Domain,
+antwortet mit **200**. Wer die Adresse kennt, umgeht Cloudflare vollständig:
+WAF, Ratenbegrenzung, Bot-Abwehr und Caching. Die ufw-Regeln öffnen 80/443 für
+„Anywhere".
+
+Die Adresse steht hier bewusst NICHT — dieses Repository ist öffentlich, und
+sie neben dieser Feststellung zu notieren hieße, die Umgehung mitzuliefern.
+Ermitteln lässt sie sich jederzeit auf dem Server selbst
+(`curl -sS https://<domain>/cdn-cgi/trace | grep ^ip=`). In der ersten Fassung
+dieses Dokuments stand sie ausgeschrieben; das war mein Fehler.
 
 Vorsicht bei der Behebung: Die Origin-Zertifikate stammen von Let's Encrypt.
 Ob deren Erneuerung über Port 80 läuft und ob sie eine Einschränkung auf
@@ -228,13 +235,22 @@ ist der A-37-Drill nicht bestanden.
 
 ### Spur B — Die Prüfung dorthin richten, wo sie etwas findet
 
-| | Schritt | Werkzeug |
+| | Schritt | Stand |
 |---|---|---|
-| B1 | `perf-uptime.yml` misst Kompression zusätzlich **am Ursprung**, nicht nur am Rand (B2) | `curl --resolve`, wie in der Erhebung erprobt |
-| B2 | Schwellen als Zahlen festhalten: HTML-Rohgröße, CSS/JS komprimiert am Ursprung, TTFB-Median je Ebene | `scripts/regime/lighthouse-budget.mjs` als Vorbild |
+| B1 | Kompression am **Ursprung** messen, nicht nur am Rand (B2) | **erledigt** — `scripts/regime/kompression-pruefen.sh` |
+| B2 | Schwellen als Zahlen festhalten: HTML-Rohgröße, TTFB-Median je Ebene | offen |
 
 Ohne B1 bleibt jede Korrektur an der Proxy-Konfiguration ungeschützt: Sie kann
 beim nächsten NPM-Update still verschwinden, ohne dass eine Ampel rot wird.
+
+**Wo die Prüfung läuft — und warum nicht in GitHub Actions.** Von dort aus wäre
+der Ursprung nur über seine IP-Adresse messbar, und die gehört nach B7 nicht in
+dieses öffentliche Repository. Die Ursprungsprüfung läuft deshalb auf dem
+Server, bei jedem Deployment (`deploy.sh`, Abschnitt 6b); `perf-uptime.yml`
+nutzt dasselbe Skript für den Rand. Dass die Prüfung wirklich fehlschlagen
+kann, hält `tests/kompression-pruefung.test.ts` fest — gegen einen Server, der
+Kompression nur behauptet, einen, der immer komprimiert, und einen, der bereits
+komprimierte Formate nochmals packt.
 
 ### Spur C — Ursprungskonfiguration (kleine Eingriffe, große Wirkung)
 
@@ -243,7 +259,7 @@ Image-Neubau, überlebt NPM-Updates.
 
 | | Schritt | Wirkung |
 |---|---|---|
-| C1 | `gzip_types`, `gzip_vary on`, `gzip_comp_level`, `gzip_min_length` (B1, B4) | CSS 67,8 KB → ~13 KB je Cache-Miss |
+| C1 | `gzip_types`, `gzip_vary on`, `gzip_comp_level`, `gzip_min_length` (B1, B4) — Vorlage liegt als `deploy/npm/http_top.conf` bereit, **Einspielen auf dem Server steht aus** | CSS 67,8 KB → ~13 KB je Cache-Miss |
 | C2 | Cloudflare-Adressbereiche in `set_real_ip_from` + `real_ip_header CF-Connecting-IP` (B6) | Ratenbegrenzung und Protokolle werden wieder wahr |
 | C3 | `proxy_http_version 1.1` + Keepalive — **erst nach Beleg** der Hypothese aus B9 | Latenz je Anfrage, evtl. der Absturz |
 | C4 | Proxy-Host für `www.` samt Zertifikat (B8) | 525 verschwindet |

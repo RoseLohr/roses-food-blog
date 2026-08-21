@@ -1,0 +1,221 @@
+#!/usr/bin/env bash
+# ============================================================================
+# Misst, was der Server WIRKLICH ausliefert — nicht, was die Konfiguration
+# behauptet.
+#
+#   kompression-pruefen.sh --basis <URL> [--aufloesen <IP>] [--ebene <Ebene>]
+#
+#   --basis      z. B. https://example.de  (Pflicht)
+#   --aufloesen  IP, auf die der Name gezwungen wird. Damit misst man den
+#                URSPRUNG an einem davorliegenden CDN vorbei.
+#   --ebene      `rand` (Voreinstellung) oder `ursprung`. Steuert nur, welche
+#                Prüfungen gelten — siehe unten.
+#
+# WARUM ES DIESES SKRIPT GIBT (Erhebung 2026-08-21)
+# ---------------------------------------------------------------------------
+# Der Ursprung komprimierte ausschließlich HTML; CSS und JavaScript liefen
+# unkomprimiert durch. Aufgefallen ist das NIEMANDEM, obwohl perf-uptime.yml
+# die Kompression täglich prüft — denn diese Prüfung lief gegen die öffentliche
+# Domain und damit gegen Cloudflare. Das CDN komprimierte nach, die Ampel blieb
+# grün. Eine Messung, die bei kaputter eigener Konfiguration nichts merkt,
+# prüft nichts.
+#
+# Deshalb ist dasselbe Skript auf BEIDEN Ebenen einsetzbar, und deshalb prüft
+# es Größen statt Kopfzeilen.
+#
+# WAS AUF WELCHER EBENE GILT — und warum das kein Weichspülen ist
+# ---------------------------------------------------------------------------
+# `Vary: Accept-Encoding` wird nur am URSPRUNG verlangt. Cloudflare lässt den
+# Kopf an zwischengespeicherten statischen Dateien bewusst weg und schlüsselt
+# seinen Cache selbst (gemessen: am Rand trägt das CSS kein `vary`, am Ursprung
+# muss es eines tragen). Am Rand darauf zu bestehen hieße, fremdes und
+# korrektes Verhalten als Fehler zu melden. Alle übrigen Prüfungen gelten auf
+# beiden Ebenen unverändert.
+#
+# GEGENPROBEN, ohne die die Prüfung wertlos wäre
+# ---------------------------------------------------------------------------
+#  1. Ein `Content-Encoding`-Kopf beweist nichts. Geprüft wird zusätzlich, dass
+#     die übertragene Größe wirklich unter der unkomprimierten liegt.
+#  2. Käme die Antwort auch OHNE `Accept-Encoding` komprimiert, wäre Prüfung 1
+#     wertlos — dann misst man einen Server, der immer komprimiert. Also wird
+#     auch das geprüft.
+#  3. woff2 und WebP sind bereits komprimiert. Ein Server, der sie nochmals
+#     durch gzip schickt, verbrennt Rechenzeit ohne Gegenwert. Diese Prüfung
+#     ist zugleich der Beleg, dass `gzip_types` wirklich greift und nicht
+#     einfach alles komprimiert wird.
+# ============================================================================
+set -euo pipefail
+
+BASIS=""; AUFLOESEN=""; EBENE="rand"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --basis)     BASIS="${2:-}"; shift 2 ;;
+    --aufloesen) AUFLOESEN="${2:-}"; shift 2 ;;
+    --ebene)     EBENE="${2:-}"; shift 2 ;;
+    -h|--hilfe|--help) sed -n '2,14p' "$0"; exit 0 ;;
+    *) echo "Unbekanntes Argument: $1" >&2; exit 2 ;;
+  esac
+done
+[ -n "$BASIS" ] || { echo "FEHLER: --basis fehlt." >&2; exit 2; }
+case "$EBENE" in rand|ursprung) ;; *) echo "FEHLER: --ebene muss rand oder ursprung sein." >&2; exit 2 ;; esac
+BASIS="${BASIS%/}"
+
+HOST="${BASIS#*://}"; HOST="${HOST%%/*}"; HOST="${HOST%%:*}"
+CURL=(curl -sS --max-time 25 --connect-timeout 8)
+if [ -n "$AUFLOESEN" ]; then
+  CURL+=(--resolve "$HOST:443:$AUFLOESEN" --resolve "$HOST:80:$AUFLOESEN")
+fi
+# Ein gesetztes HTTP(S)_PROXY würde die Messung auf den Proxy lenken statt auf
+# den Server — man misst dann fremde Kompression. Für jedes lokale Ziel und für
+# jede erzwungene Auflösung ist der direkte Weg der einzig richtige.
+case "${AUFLOESEN}${HOST}" in
+  *127.0.0.1*|*localhost*|*::1*) CURL+=(--noproxy '*') ;;
+  *) [ -n "$AUFLOESEN" ] && CURL+=(--noproxy '*') ;;
+esac
+
+MAENGEL=()
+LETZTE_CACHE=""
+maengel() { MAENGEL+=("$1"); }
+
+# abrufen URL ENCODING → setzt CODE, BYTES, ENCODING, VARY, CACHE
+abrufen() {
+  local url="$1" enc="$2" roh
+  if ! roh=$("${CURL[@]}" -o /dev/null -D - -H "Accept-Encoding: $enc" \
+             -w 'ZKOMPRESSIONSCODE=%{response_code} ZKOMPRESSIONSBYTES=%{size_download}' \
+             "$url" 2>&1); then
+    CODE=""; BYTES=""; ENCODING=""; VARY=""; CACHE=""
+    FEHLERTEXT=$(printf '%s' "$roh" | head -2 | tr '\n' ' ')
+    return 1
+  fi
+  CODE=$(printf '%s' "$roh"  | grep -o 'ZKOMPRESSIONSCODE=[0-9]*'  | tail -1 | cut -d= -f2)
+  BYTES=$(printf '%s' "$roh" | grep -o 'ZKOMPRESSIONSBYTES=[0-9]*' | tail -1 | cut -d= -f2)
+  local kopfteil; kopfteil=$(printf '%s\n' "$roh" | tr -d '\r')
+  ENCODING=$(printf '%s\n' "$kopfteil" | awk 'tolower($1)=="content-encoding:"{print tolower($2)}' | tail -1)
+  VARY=$(printf '%s\n'     "$kopfteil" | awk 'tolower($1)=="vary:"{$1="";print tolower($0)}' | tr -d ' \t' | paste -sd, -)
+  CACHE=$(printf '%s\n'    "$kopfteil" | awk 'tolower($1)=="cache-control:"{$1="";print tolower($0)}' | tail -1)
+  return 0
+}
+
+# textressource NAME URL — muss komprimiert werden
+textressource() {
+  local name="$1" url="$2" roh_bytes komp_bytes komp_enc komp_vary komp_cache anteil
+  # Zurücksetzen, BEVOR irgendein Zweig früh aussteigt: sonst prüfte der
+  # immutable-Test unten den Cache-Control-Wert der VORIGEN Ressource.
+  LETZTE_CACHE=""
+  if ! abrufen "$url" "identity"; then
+    maengel "$name: nicht abrufbar (${FEHLERTEXT:-unbekannt})"; return 0
+  fi
+  if [ "$CODE" != "200" ]; then maengel "$name: HTTP $CODE statt 200"; return 0; fi
+  roh_bytes="$BYTES"
+  # Gegenprobe 2: ohne Accept-Encoding darf NICHTS komprimiert ankommen.
+  if [ -n "$ENCODING" ]; then
+    maengel "$name: kommt auch OHNE Accept-Encoding als '$ENCODING' — damit belegt die Kompressionsprüfung nichts."
+  fi
+
+  if ! abrufen "$url" "br, gzip"; then
+    maengel "$name: nicht abrufbar (${FEHLERTEXT:-unbekannt})"; return 0
+  fi
+  komp_bytes="$BYTES"; komp_enc="$ENCODING"; komp_vary="$VARY"; komp_cache="$CACHE"
+
+  if [ -z "$komp_enc" ]; then
+    maengel "$name: wird UNKOMPRIMIERT ausgeliefert ($roh_bytes Bytes)."
+  else
+    # Gegenprobe 1: der Kopf allein beweist nichts, die Größe muss es belegen.
+    anteil=$(awk -v k="$komp_bytes" -v r="$roh_bytes" 'BEGIN{ if (r+0==0) print 999; else printf "%d", (k*100)/r }')
+    if [ "$anteil" -gt 60 ]; then
+      maengel "$name: meldet '$komp_enc', überträgt aber $komp_bytes von $roh_bytes Bytes (${anteil} %) — das ist keine Kompression."
+    fi
+    if [ "$EBENE" = ursprung ]; then
+      case "$komp_vary" in
+        *accept-encoding*) ;;
+        *) maengel "$name: komprimiert, aber ohne 'Vary: Accept-Encoding' (gzip_vary off) — ein Zwischenspeicher dürfte die gzip-Antwort an einen Client ohne gzip ausliefern." ;;
+      esac
+    fi
+  fi
+  printf '  %-8s %-52s %8s → %-8s %-5s %s\n' "$EBENE" "$(kuerzen "$url")" \
+    "$roh_bytes" "${komp_bytes:-–}" "${komp_enc:-roh}" "${komp_cache:0:38}"
+  LETZTE_CACHE="$komp_cache"
+}
+
+# fertigkomprimiert NAME URL — darf NICHT nochmals komprimiert werden
+fertigkomprimiert() {
+  local name="$1" url="$2"
+  if ! abrufen "$url" "br, gzip"; then
+    maengel "$name: nicht abrufbar (${FEHLERTEXT:-unbekannt})"; return 0
+  fi
+  if [ "$CODE" != "200" ]; then maengel "$name: HTTP $CODE statt 200"; return 0; fi
+  if [ -n "$ENCODING" ]; then
+    maengel "$name: wird als '$ENCODING' nochmals komprimiert — das Format ist bereits komprimiert, das ist verbrannte Rechenzeit."
+  fi
+  printf '  %-8s %-52s %8s → %-8s %-5s %s\n' "$EBENE" "$(kuerzen "$url")" \
+    "$BYTES" "$BYTES" "${ENCODING:-roh}" "${CACHE:0:38}"
+}
+
+kuerzen() { local s="${1#*://}"; s="${s#*/}"; printf '/%s' "${s:0:51}"; }
+
+# ---------------------------------------------------------------------------
+printf 'Kompression auf Ebene "%s": %s%s\n\n' "$EBENE" "$BASIS" \
+  "$( [ -n "$AUFLOESEN" ] && printf ' (aufgelöst auf %s)' "$AUFLOESEN" )"
+
+# Die Startseite wird allein gebraucht, um die Adressen von CSS, JS und Schrift
+# zu lesen. Die Aussagen über Kodierung fallen weiter unten, je Ressource.
+#
+# ZWEI VERSUCHE, und beide sind nötig — beim Gegenprüfen gefunden, nicht beim
+# Schreiben (tests/kompression-pruefung.test.ts):
+#   1. `identity`: der Normalfall. Ein Server, der die Wahrheit sagt, liefert
+#      hier unkomprimiert.
+#   2. `--compressed`: ein Server, der AUCH OHNE Anfrage komprimiert, liefert
+#      bei (1) Binärbytes; ohne diesen zweiten Versuch meldete das Skript „das
+#      ist nicht die Startseite" — die falsche Ursache.
+# Umgekehrt scheitert (2) allein an einem Server, der Kompression nur behauptet:
+# curl versucht zu entpacken, was gar nicht gepackt ist, und bricht ab. Nur
+# beide Versuche zusammen benennen jeden der drei Fälle richtig.
+#
+# In eine DATEI statt in eine Variable: gzip-Bytes enthalten Null-Bytes, und
+# die verschluckt jede Kommandosubstitution mit einer Warnung.
+SEITE_TMP="$(mktemp)"
+trap 'rm -f "$SEITE_TMP"' EXIT
+"${CURL[@]}" -H 'Accept-Encoding: identity' -o "$SEITE_TMP" "$BASIS/" 2>/dev/null || true
+if ! grep -qa 'featured-slider' "$SEITE_TMP" 2>/dev/null; then
+  "${CURL[@]}" --compressed -o "$SEITE_TMP" "$BASIS/" 2>/dev/null || true
+fi
+
+if [ ! -s "$SEITE_TMP" ]; then
+  echo "FEHLER: Startseite unter $BASIS/ nicht abrufbar — hier wird nichts gemessen." >&2
+  exit 1
+fi
+# Dieselbe Marke, an der auch perf-uptime.yml die Startseite erkennt: eine
+# Fehlerseite mit Status 200 trägt weiterhin /_next/static/*.js, und daraus
+# ließen sich fröhlich grüne Kennzahlen ziehen.
+if ! grep -qa 'featured-slider' "$SEITE_TMP"; then
+  echo "FEHLER: Unter $BASIS/ steht nicht die Startseite (keine section.featured-slider)." >&2
+  exit 1
+fi
+
+CSS=$(grep -oaE  '/_next/static/[^"]+\.css' "$SEITE_TMP" | head -1)
+JS=$(grep -oaE   '/_next/static/[^"]+\.js'  "$SEITE_TMP" | head -1)
+FONT=$(grep -oaE '/fonts/[^"]+\.woff2[^"]*' "$SEITE_TMP" | head -1)
+
+printf '  %-8s %-52s %8s   %-8s %-5s %s\n' "Ebene" "Ressource" "roh" "kompr." "Kod." "Cache-Control"
+printf '  %s\n' "$(printf '%.0s-' $(seq 1 110))"
+
+textressource "HTML" "$BASIS/"
+if [ -n "$CSS" ]; then textressource "CSS" "$BASIS$CSS"
+  case "$LETZTE_CACHE" in *immutable*) ;; *) maengel "CSS: kein 'immutable' im Cache-Control ($LETZTE_CACHE)" ;; esac
+else maengel "Keine CSS-Datei in der Startseite gefunden — die Prüfung wäre unvollständig."; fi
+if [ -n "$JS" ]; then textressource "JS" "$BASIS$JS"
+  case "$LETZTE_CACHE" in *immutable*) ;; *) maengel "JS: kein 'immutable' im Cache-Control ($LETZTE_CACHE)" ;; esac
+else maengel "Keine JS-Datei in der Startseite gefunden — die Prüfung wäre unvollständig."; fi
+if [ -n "$FONT" ]; then fertigkomprimiert "Font" "$BASIS$FONT"
+else maengel "Keine woff2-Schrift in der Startseite gefunden — die Gegenprobe fehlt."; fi
+
+echo
+if [ "${#MAENGEL[@]}" -eq 0 ]; then
+  echo "Kompression auf Ebene \"$EBENE\": in Ordnung."
+  exit 0
+fi
+echo "MÄNGEL auf Ebene \"$EBENE\":"
+for m in "${MAENGEL[@]}"; do printf '  - %s\n' "$m"; done
+echo
+echo "Vorlage und Einspielweg: deploy/npm/http_top.conf"
+exit 1
