@@ -40,6 +40,9 @@ const platz = (block: ReturnType<typeof bildBloecke>) =>
   block.getByRole("group", { name: d.blockPlace });
 const haken = (block: ReturnType<typeof bildBloecke>) =>
   block.getByRole("checkbox", { name: d.blockWithPrevious });
+/** Die Pfeilknöpfe des Blocks, in dem dieses Bild steckt. */
+const runter = (page: import("@playwright/test").Page, n: number) =>
+  page.locator("div.border.border-ink\\/10").nth(n).getByRole("button", { name: d.blockDown });
 
 test.beforeEach(async ({ context }) => {
   await context.addCookies([
@@ -114,11 +117,34 @@ test("das Häkchen gibt es, solange das Bild noch in die Zeile passt", async ({
   await expect(bloecke.nth(2).getByText(d.blockInRow(3))).toBeVisible();
 
   // Wird das erste Bild größer, passt das dritte nicht mehr: M+S+S wäre mehr
-  // als eine Spalte. Das Häkchen steht dann still, statt zu lügen.
+  // als eine Spalte.
   await groesse(bloecke.nth(0))
     .getByRole("button", { name: d.blockSizeOptions.m.label })
     .click();
-  await expect(haken(bloecke.nth(2))).toBeDisabled();
+
+  // Das Häkchen bleibt gesetzt und bedienbar — und der Editor sagt, warum es
+  // hier gerade nichts bewirkt.
+  //
+  // Früher wurde es an dieser Stelle gesperrt. Das war zweifach falsch: Ein
+  // Häkchen, das man nicht mehr abwählen kann, ist eine Falle — und die
+  // Absicht („neben dem Bild darüber") gilt weiter, sie greift nur im Moment
+  // nicht. Verkleinert man das obere Bild wieder, steht die Zeile ohne
+  // weiteres Zutun. Wer die Flagge hier streicht, macht aus einem
+  // vorübergehenden Zustand einen dauerhaften Verlust — genau der Fehler, den
+  // die unabhängige Prüfung an drei Stellen gefunden hat.
+  await expect(haken(bloecke.nth(2))).toBeChecked();
+  await expect(haken(bloecke.nth(2))).toBeEnabled();
+  await expect(
+    bloecke.nth(2).getByText(d.blockWithPreviousNoFit(["m", "s"], "s")),
+  ).toBeVisible();
+  await expect(bloecke.nth(2).getByText(d.blockInRow(3))).toBeHidden();
+
+  // Und zurück auf S: die Zeile steht wieder, ohne dass jemand etwas anhaken
+  // musste.
+  await groesse(bloecke.nth(0))
+    .getByRole("button", { name: d.blockSizeOptions.s.label })
+    .click();
+  await expect(bloecke.nth(2).getByText(d.blockInRow(3))).toBeVisible();
 });
 
 test("Größe und Platz überleben das Speichern und kommen im Bericht an", async ({
@@ -208,4 +234,133 @@ test("drei Bilder im Editor nebeneinander stellen — und sie stehen es auch", a
   expect(Math.max(...hoehen) - Math.min(...hoehen)).toBeLessThan(1.5);
   const unten = kaesten.map((k) => k.oben + k.hoehe);
   expect(Math.max(...unten) - Math.min(...unten)).toBeLessThan(1.5);
+});
+
+test("die Reihenfolge in einer Zeile ändern zerreißt die Zeile nicht", async ({
+  page,
+}) => {
+  // Der gemeldete Fehler, am echten Editor: Drei S-Bilder stehen in einer
+  // Zeile. Der Redakteur schiebt das erste eine Stelle nach unten — er will
+  // nur die Reihenfolge ändern. Vorher reiste die Flagge „neben dem Bild
+  // darüber" mit dem Block mit: das zweite Bild stand plötzlich ganz oben, wo
+  // über ihm nichts ist, und das dritte rutschte nach unten. Ein Bild allein,
+  // darunter zwei — ohne dass jemand ein Häkchen angefasst hat.
+  await page.goto(editorUrl);
+  const bloecke = bildBloecke(page);
+  await expect(bloecke).toHaveCount(3);
+
+  for (const n of [0, 1, 2]) {
+    await groesse(bloecke.nth(n))
+      .getByRole("button", { name: d.blockSizeOptions.s.label })
+      .click();
+  }
+  await haken(bloecke.nth(1)).check();
+  await haken(bloecke.nth(2)).check();
+  await expect(bloecke.nth(2).getByText(d.blockInRow(3))).toBeVisible();
+
+  // Der Block der drei Bilder liegt hinter dem ersten Textblock; der erste
+  // Bildblock ist damit der zweite Block der Liste.
+  const ersterBildblock = 1;
+  await runter(page, ersterBildblock).click();
+
+  // Immer noch EINE Zeile aus drei Bildern — das ist der ganze Punkt.
+  await expect(bildBloecke(page).nth(2).getByText(d.blockInRow(3))).toBeVisible();
+  await expect(haken(bildBloecke(page).nth(0))).not.toBeChecked();
+  await expect(haken(bildBloecke(page).nth(1))).toBeChecked();
+  await expect(haken(bildBloecke(page).nth(2))).toBeChecked();
+
+  await page.getByRole("button", { name: /Speichern/i }).click();
+  await page.waitForURL(/meldung=/);
+
+  // Und in der Vorschau stehen sie GEMESSEN nebeneinander.
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(`/admin/reisen/${session.travelId}/vorschau`);
+  const zeile = page.locator("article .bildplatz.br-1-1:has(.bildpaar)");
+  await expect(zeile).toHaveCount(1);
+  const kaesten = await zeile.locator("img").evaluateAll((els) =>
+    els.map((el) => {
+      const r = el.getBoundingClientRect();
+      return { x: r.x, breite: r.width, oben: r.y };
+    }),
+  );
+  expect(kaesten.length).toBe(3);
+  expect(kaesten[1].x).toBeGreaterThan(kaesten[0].x + kaesten[0].breite - 1);
+  expect(kaesten[2].x).toBeGreaterThan(kaesten[1].x + kaesten[1].breite - 1);
+  const oben = kaesten.map((k) => k.oben);
+  expect(Math.max(...oben) - Math.min(...oben)).toBeLessThan(1.5);
+});
+
+test("ein Block, der nicht gespeichert wird, bricht die Zeile nicht", async ({
+  page,
+}) => {
+  // Der dritte Weg zum gemeldeten Bild, am echten Editor: Ein Restaurant ohne
+  // Namen wird nicht gespeichert — ein Block darauf also auch nicht. Steht er
+  // trotzdem zwischen zwei Bildern einer Zeile, riss er sie vorher
+  // auseinander: Der Editor strich die Zeilenzugehörigkeit, der Server warf
+  // den Block weg, und übrig blieben zwei Bilder nebeneinander und eines
+  // darunter — ohne dass dazwischen etwas zu sehen wäre.
+  await page.goto(editorUrl);
+  const bloecke = bildBloecke(page);
+  await expect(bloecke).toHaveCount(3);
+
+  for (const n of [0, 1, 2]) {
+    await groesse(bloecke.nth(n))
+      .getByRole("button", { name: d.blockSizeOptions.s.label })
+      .click();
+  }
+  await haken(bloecke.nth(1)).check();
+  await haken(bloecke.nth(2)).check();
+  await expect(bloecke.nth(2).getByText(d.blockInRow(3))).toBeVisible();
+
+  // Ein Restaurant anlegen und NICHT benennen.
+  await page.getByRole("button", { name: `+ ${d.addRestaurant}` }).click();
+  const namenlos = await page
+    .getByRole("textbox", { name: d.restaurantName })
+    .count();
+  // Dann einen Block darauf.
+  await page
+    .getByRole("button", { name: `+ ${d.blockRestaurant}`, exact: true })
+    .click();
+
+  const blockAuswahl = page.getByRole("combobox", { name: d.blockRestaurant });
+  // Der Kasten dieses Blocks — daran hängen seine Pfeilknöpfe.
+  const restaurantBlock = page
+    .locator("div.border.p-3")
+    .filter({ has: blockAuswahl });
+  // Auf das NAMENLOSE Restaurant zeigen (Platzhalter „Restaurant N").
+  await blockAuswahl.selectOption({
+    label: `${d.blockRestaurant} ${namenlos}`,
+  });
+
+  // Der Block sagt selbst, dass er nicht gespeichert wird.
+  await expect(
+    page.getByText(d.blockNichtGespeichert.restaurant),
+  ).toBeVisible();
+
+  // Zwischen Bild 2 und Bild 3 schieben (ein Mal nach oben).
+  await restaurantBlock.getByRole("button", { name: d.blockUp }).click();
+
+  // Die Zeile steht weiterhin — der Block zählt nicht mit.
+  await expect(bildBloecke(page).nth(2).getByText(d.blockInRow(3))).toBeVisible();
+  await expect(haken(bildBloecke(page).nth(2))).toBeChecked();
+
+  await page.getByRole("button", { name: /Speichern/i }).click();
+  await page.waitForURL(/meldung=/);
+
+  // Und in der Vorschau stehen die drei GEMESSEN nebeneinander.
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(`/admin/reisen/${session.travelId}/vorschau`);
+  const zeile = page.locator("article .bildplatz.br-1-1:has(.bildpaar)");
+  await expect(zeile).toHaveCount(1);
+  const kaesten = await zeile.locator("img").evaluateAll((els) =>
+    els.map((el) => {
+      const r = el.getBoundingClientRect();
+      return { x: r.x, breite: r.width, oben: r.y };
+    }),
+  );
+  expect(kaesten.length).toBe(3);
+  expect(kaesten[1].x).toBeGreaterThan(kaesten[0].x + kaesten[0].breite - 1);
+  expect(kaesten[2].x).toBeGreaterThan(kaesten[1].x + kaesten[1].breite - 1);
+  const oben = kaesten.map((k) => k.oben);
+  expect(Math.max(...oben) - Math.min(...oben)).toBeLessThan(1.5);
 });

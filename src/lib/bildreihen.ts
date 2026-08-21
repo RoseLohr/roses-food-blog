@@ -207,6 +207,37 @@ export function zeilenIndizes(blocks: TravelBlock[]): number[][] {
     .map((g) => g.indizes);
 }
 
+/**
+ * Zwei benachbarte Blöcke tauschen.
+ *
+ * Die Zeilenzugehörigkeit bleibt dabei an ihrer POSITION: Tauschen zwei Bilder
+ * die Plätze, behält jede Stelle ihre Flagge. Sonst zerfiele eine Zeile, in der
+ * jemand nur die Reihenfolge ändern wollte — die Flagge des zweiten Bildes
+ * wanderte nach ganz oben, wo über ihr nichts steht, und das dritte Bild
+ * rutschte nach unten.
+ *
+ * Zwischen einem Bild und einem Textblock gibt es nichts zu tauschen: Dort
+ * ändert sich die Nachbarschaft wirklich, und jeder Block behält seine eigene
+ * Flagge.
+ */
+export function tauscheBloecke<T extends TravelBlock>(
+  blocks: T[],
+  i: number,
+  richtung: -1 | 1,
+): T[] {
+  const j = i + richtung;
+  if (j < 0 || j >= blocks.length) return blocks;
+  const next = [...blocks];
+  [next[i], next[j]] = [next[j], next[i]];
+  const a = blocks[i];
+  const b = blocks[j];
+  if (a.type === "bild" && b.type === "bild") {
+    next[i] = { ...next[i], mitVorherigem: a.mitVorherigem };
+    next[j] = { ...next[j], mitVorherigem: b.mitVorherigem };
+  }
+  return next;
+}
+
 /** Fasst die Blockfolge des Editors zu Renderblöcken zusammen. */
 export function zuRenderBloecken(blocks: TravelBlock[]): RenderBlock[] {
   return gruppiere(blocks).map(({ block, indizes }) => {
