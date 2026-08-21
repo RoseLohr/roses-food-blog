@@ -469,8 +469,16 @@ export const travelBlock = sqliteTable(
     sortOrder: integer("sort_order").notNull().default(0),
     type: text("type", { enum: ["text", "bild", "restaurant"] }).notNull(),
     markdown: text("markdown").notNull().default(""),
+    /**
+     * Das Foto des Bild-Blocks. RESTRICT statt SET NULL: Ein gelöschtes Foto
+     * hinterließ sonst einen Bildblock ohne Foto — beim Lesen still
+     * übersprungen, während die Zeilenzugehörigkeit der Nachbarn stehen blieb.
+     * Die Bildzeile zerfiel dadurch ohne sichtbare Ursache. Die Mediathek
+     * fragt vorher (src/lib/media-verwendung.ts); das hier ist die Sicherung
+     * für alle anderen Schreibwege.
+     */
     imageId: integer("image_id").references(() => mediaImage.id, {
-      onDelete: "set null",
+      onDelete: "restrict",
     }),
     /** Breite eines Bild-Blocks als Anteil der Spalte (siehe
      *  lib/bildreihen.ts): s = Drittel, m = Hälfte, l = ganze Spalte. Für Text-
@@ -504,6 +512,11 @@ export const travelBlock = sqliteTable(
     check(
       "travel_block_restaurant_check",
       sql`(${t.type} = 'restaurant') = (${t.restaurantId} IS NOT NULL)`,
+    ),
+    /** Ein Bild-Block ohne Foto ist keine Auszeichnung, sondern ein Verlust. */
+    check(
+      "travel_block_bild_check",
+      sql`(${t.type} = 'bild') = (${t.imageId} IS NOT NULL)`,
     ),
   ],
 );
