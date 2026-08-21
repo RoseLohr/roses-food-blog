@@ -57,35 +57,66 @@ if $PODMAN exec "$CONTAINER" test -f "$ZIEL" 2>/dev/null; then
   $PODMAN exec "$CONTAINER" cp "$ZIEL" "$SICHERUNG"
 fi
 
+# Rollt zurück UND SIEHT NACH, ob es geklappt hat. Rückgabe 0 = der Proxy ist
+# wieder in einem Zustand, den nginx annimmt; 1 = er ist es NICHT.
+#
+# DIE ERSTE FASSUNG SCHRIEB HIER `|| true` — ausgerechnet im Rückrollpfad.
+# Scheitert dort das `mv` oder `rm`, bleibt die abgelehnte Fassung liegen, das
+# Skript meldet nur den ursprünglichen Fehler, und beim nächsten Neustart des
+# Proxys kommt er für ALLE Hosts nicht mehr hoch. Ein verschluckter Fehler an
+# genau der Stelle, die den Schaden verhindern soll.
+#
+# Deshalb wird dem Exit-Code auch nicht geglaubt, sondern der ZUSTAND geprüft:
+# `nginx -t` muss danach wieder durchgehen. Das ist die Frage, auf die es
+# ankommt — nicht, ob ein einzelnes Kommando 0 zurückgab.
 zurueckrollen() {
   if [ "$VORHANDEN" = 1 ]; then
     $PODMAN exec "$CONTAINER" mv "$SICHERUNG" "$ZIEL" || true
-    echo "  Vorherige Fassung wiederhergestellt." >&2
   else
     $PODMAN exec "$CONTAINER" rm -f "$ZIEL" || true
-    echo "  Neu angelegte Datei wieder entfernt." >&2
   fi
+  if $PODMAN exec "$CONTAINER" nginx -t >/dev/null 2>&1; then
+    echo "  Zurückgerollt — nginx nimmt die Konfiguration wieder an." >&2
+    return 0
+  fi
+  echo "" >&2
+  echo "!!! ACHTUNG: Das Zurückrollen hat NICHT funktioniert." >&2
+  echo "!!! Im Proxy liegt eine Konfiguration, die nginx ablehnt. Der laufende" >&2
+  echo "!!! Prozess arbeitet noch mit der alten Fassung im Speicher — beim" >&2
+  echo "!!! nächsten Neustart käme er für ALLE Hosts nicht mehr hoch." >&2
+  echo "!!!" >&2
+  echo "!!! Von Hand beheben, BEVOR der Proxy neu startet:" >&2
+  echo "!!!   podman exec $CONTAINER rm -f $ZIEL" >&2
+  echo "!!!   podman exec $CONTAINER ls -la $(dirname "$ZIEL")   # Sicherung $SICHERUNG?" >&2
+  echo "!!!   podman exec $CONTAINER nginx -t" >&2
+  return 1
+}
+
+# Ruft zurueckrollen auf und beendet mit dem Code, der dem Ergebnis entspricht:
+# 1 = eingespielt hat nicht geklappt, Proxy aber unversehrt.
+# 3 = der Proxy ist in einem gefährlichen Zustand und braucht eine Hand.
+abbrechen() {
+  local meldung="$1"
+  if zurueckrollen; then
+    echo "FEHLER: $meldung" >&2
+    exit 1
+  fi
+  echo "FEHLER: $meldung" >&2
+  exit 3
 }
 
 if ! $PODMAN cp "$DATEI" "$CONTAINER:$ZIEL"; then
-  zurueckrollen
-  echo "FEHLER: Datei ließ sich nicht in den Container kopieren." >&2
-  exit 1
+  abbrechen "Datei ließ sich nicht in den Container kopieren."
 fi
 
 if ! $PODMAN exec "$CONTAINER" nginx -t; then
-  zurueckrollen
-  echo "FEHLER: nginx lehnt die Konfiguration ab — nichts wurde übernommen." >&2
-  echo "        Der Proxy läuft mit der bisherigen Fassung weiter." >&2
-  exit 1
+  abbrechen "nginx lehnt die Konfiguration ab — nichts wurde übernommen."
 fi
 
 if ! $PODMAN exec "$CONTAINER" nginx -s reload; then
-  zurueckrollen
-  echo "FEHLER: Neuladen fehlgeschlagen — Konfiguration zurückgerollt." >&2
-  exit 1
+  abbrechen "Neuladen fehlgeschlagen."
 fi
 
-[ "$VORHANDEN" = 1 ] && $PODMAN exec "$CONTAINER" rm -f "$SICHERUNG"
+if [ "$VORHANDEN" = 1 ]; then $PODMAN exec "$CONTAINER" rm -f "$SICHERUNG" || true; fi
 echo "  Eingespielt und neu geladen."
 exit 0

@@ -37,7 +37,12 @@ let arbeit: string;
  * statt den Container nachzubilden. Maskiert bleibt allein `\${…}`: Das ist
  * bash-Expansion mit Klammern, die JavaScript sonst selbst einsetzte.
  */
-function podmanAttrappe(optionen: { zielVorhanden: boolean; nginxLehntAb: boolean }) {
+function podmanAttrappe(optionen: {
+  zielVorhanden: boolean;
+  nginxLehntAb: boolean;
+  /** mv/rm scheitern — die abgelehnte Fassung bleibt liegen. */
+  rueckrollenScheitert?: boolean;
+}) {
   const bin = path.join(arbeit, "bin");
   fs.mkdirSync(bin, { recursive: true });
   const behaelter = path.join(arbeit, "container");
@@ -57,14 +62,24 @@ case "$1" in
     shift; shift            # exec <container>
     case "$1" in
       nginx)
-        if [ "$2" = "-t" ]; then ${optionen.nginxLehntAb ? 'echo "nginx: [emerg] abgelehnt" >&2; exit 1' : "exit 0"}; fi
+        # nginx -t lehnt nur ab, SOLANGE die beanstandete Fassung dort liegt.
+        # Ein echtes nginx nimmt die zurückgerollte wieder an — ohne dieses
+        # Verhalten liefe jede Rückroll-Prüfung in den Gefahrenpfad und der
+        # Unterschied zwischen „sauber zurückgerollt" und „Proxy in Gefahr"
+        # wäre gar nicht prüfbar.
+        if [ "$2" = "-t" ]; then
+          ${optionen.nginxLehntAb
+            ? 'if grep -q KENNUNG-NEU "$WURZEL/data/nginx/custom/http_top.conf" 2>/dev/null; then echo "nginx: [emerg] abgelehnt" >&2; exit 1; fi'
+            : ":"}
+          exit 0
+        fi
         exit 0 ;;
       mkdir) mkdir -p "$(uebersetze "$3")"; exit 0 ;;
       test)  [ -f "$(uebersetze "$3")" ] && exit 0 || exit 1 ;;
       cat)   cat "$(uebersetze "$2")" 2>/dev/null; exit $? ;;
       cp)    cp "$(uebersetze "$2")" "$(uebersetze "$3")"; exit 0 ;;
-      mv)    mv "$(uebersetze "$2")" "$(uebersetze "$3")"; exit 0 ;;
-      rm)    rm -f "$(uebersetze "$3")"; exit 0 ;;
+      mv)    ${optionen.rueckrollenScheitert ? 'echo "mv: schreibgeschützt" >&2; exit 1' : 'mv "$(uebersetze "$2")" "$(uebersetze "$3")"; exit 0'} ;;
+      rm)    ${optionen.rueckrollenScheitert ? 'echo "rm: schreibgeschützt" >&2; exit 1' : 'rm -f "$(uebersetze "$3")"; exit 0'} ;;
       *) exit 0 ;;
     esac ;;
   cp)
@@ -98,7 +113,9 @@ describe("Schnipsel in den Proxy einspielen", () => {
   beforeEach(() => {
     arbeit = fs.mkdtempSync(path.join(os.tmpdir(), "npm-snippet-"));
     neueDatei = path.join(arbeit, "http_top.conf");
-    fs.writeFileSync(neueDatei, "gzip_vary on;\ngzip_types text/css;\n");
+    // KENNUNG-NEU markiert die Fassung, die das nachgestellte nginx ablehnen
+    // soll — so unterscheidet es „liegt noch dort" von „zurückgerollt".
+    fs.writeFileSync(neueDatei, "# KENNUNG-NEU\ngzip_vary on;\ngzip_types text/css;\n");
   });
   afterEach(() => fs.rmSync(arbeit, { recursive: true, force: true }));
 
@@ -140,6 +157,28 @@ describe("Schnipsel in den Proxy einspielen", () => {
     const { code, ausgabe } = await einspielen(bin, neueDatei);
     expect(code, ausgabe).not.toBe(0);
     expect(fs.existsSync(ziel), "die abgelehnte Datei darf nicht liegen bleiben").toBe(false);
+  });
+
+  it("schreit, wenn das Zurückrollen selbst scheitert", async () => {
+    // DER SCHLIMMSTE FALL, und die erste Fassung verschluckte ihn mit
+    // `|| true` — ausgerechnet im Rückrollpfad. Bleibt die abgelehnte Fassung
+    // liegen, kommt der Proxy beim nächsten Neustart für ALLE Hosts nicht mehr
+    // hoch, und das Skript hätte nur den ursprünglichen Fehler gemeldet.
+    // (Befund des Pflicht-Approvers, PR #103.)
+    const { bin } = podmanAttrappe({ zielVorhanden: true, nginxLehntAb: true, rueckrollenScheitert: true });
+    const { code, ausgabe } = await einspielen(bin, neueDatei);
+    expect(code, ausgabe).toBe(3);
+    expect(ausgabe).toMatch(/Zurückrollen hat NICHT funktioniert/);
+    expect(ausgabe, "der Weg von Hand muss dastehen").toMatch(/podman exec npm rm -f/);
+  });
+
+  it("meldet sauberes Zurückrollen mit Code 1, nicht mit dem Gefahrencode", async () => {
+    // Die Gegenprobe: Klappt das Zurückrollen, ist der Proxy unversehrt — das
+    // muss sich vom Fall darüber unterscheiden, sonst sagt der Code nichts.
+    const { bin } = podmanAttrappe({ zielVorhanden: true, nginxLehntAb: true });
+    const { code, ausgabe } = await einspielen(bin, neueDatei);
+    expect(code, ausgabe).toBe(1);
+    expect(ausgabe).toMatch(/nimmt die Konfiguration wieder an/);
   });
 
   it("verweigert eine leere oder fehlende Vorlage", async () => {

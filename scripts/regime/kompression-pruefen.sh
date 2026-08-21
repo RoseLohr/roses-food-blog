@@ -58,35 +58,20 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$BASIS" ] || { echo "FEHLER: --basis fehlt." >&2; exit 2; }
 case "$EBENE" in rand|ursprung) ;; *) echo "FEHLER: --ebene muss rand oder ursprung sein." >&2; exit 2 ;; esac
-# Die Basis muss eine brauchbare URL sein — und der WERT gehört in die Meldung.
-# Der erste Produktionslauf scheiterte an einem `https:/…` mit nur einem
-# Schrägstrich; die Meldung nannte damals nur den daraus abgeleiteten Unsinn
-# („Name https"), nicht die Eingabe, aus der er entstand. Wer den Wert sieht,
-# sieht den Tippfehler.
-case "$BASIS" in
-  [a-z]*://?*) ;;
-  *) echo "FEHLER: --basis ist keine brauchbare URL: '$BASIS'" >&2
-     echo "        Erwartet wird schema://name[:port], zum Beispiel https://example.de" >&2
-     echo "        Kommt der Wert aus BASE_URL in der .env, dort nachsehen." >&2
-     exit 2 ;;
-esac
+# Die Zerlegung liegt in url-teile.sh — an EINER Stelle für alle Skripte, die
+# sie brauchen. Drei eigene Fassungen hatten wir schon; eine davon hat den
+# ersten Produktionslauf abgebrochen.
+# shellcheck source=scripts/regime/url-teile.sh
+. "$(dirname "$0")/url-teile.sh"
+if ! url_teile "$BASIS"; then
+  echo "FEHLER: --basis ist keine brauchbare URL: '$BASIS'" >&2
+  echo "        Erwartet wird schema://name[:port], zum Beispiel https://example.de" >&2
+  echo "        Kommt der Wert aus BASE_URL in der .env, dort nachsehen." >&2
+  exit 2
+fi
 BASIS="${BASIS%/}"
+HOST="$URL_HOST"; PORT="$URL_PORT"
 
-# Name UND Port aus der Basis lesen. Die erste Fassung setzte `--resolve` fest
-# auf 80 und 443 — bei einer Basis mit abweichendem Port (`https://host:8443`)
-# griff die Angabe dann NICHT, curl löste über DNS auf, und die Prüfung „am
-# Ursprung" maß in Wahrheit das CDN. Nachgemessen: eine --resolve-Angabe für
-# 443 ist für Port 8791 wirkungslos, die Verbindung geht dorthin, wohin der
-# Name zeigt. (Befund des Pflicht-Approvers, PR #102.)
-SCHEMA="${BASIS%%://*}"
-HOSTPORT="${BASIS#*://}"; HOSTPORT="${HOSTPORT%%/*}"
-case "$SCHEMA" in https) PORT_VORGABE=443 ;; *) PORT_VORGABE=80 ;; esac
-case "$HOSTPORT" in
-  \[*\]:*) HOST="${HOSTPORT%%]*}"; HOST="${HOST#[}"; PORT="${HOSTPORT##*:}" ;;
-  \[*\])   HOST="${HOSTPORT#[}"; HOST="${HOST%]}"; PORT="$PORT_VORGABE" ;;
-  *:*)     HOST="${HOSTPORT%%:*}"; PORT="${HOSTPORT##*:}" ;;
-  *)       HOST="$HOSTPORT"; PORT="$PORT_VORGABE" ;;
-esac
 CURL=(curl -sS --max-time 25 --connect-timeout 8)
 if [ -n "$AUFLOESEN" ]; then
   CURL+=(--resolve "$HOST:$PORT:$AUFLOESEN")

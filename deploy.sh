@@ -759,22 +759,27 @@ done
 # nächsten Neustart für alle Seiten nicht mehr hoch. Nachgestellt in
 # tests/npm-snippet.test.ts.
 #
-# Kein `| head -1` in der Zuweisung: Unter `set -e -o pipefail` beendet ein
-# SIGPIPE an grep das ganze Skript (in scripts/regime/kompression-pruefen.sh
-# nachgemessen). Erste Zeile per Parametererweiterung.
-NPM_KANDIDATEN=$(podman ps --format '{{.Names}}|{{.Image}}|{{.Ports}}' 2>/dev/null \
-  | grep -E ':(80|443)->|nginx-proxy-manager|openresty') || NPM_KANDIDATEN=""
-NPM_ZEILE=${NPM_KANDIDATEN%%$'\n'*}
-NPM_CONTAINER=${NPM_ZEILE%%|*}
+# Welcher Container das ist, wird POSITIV zugeordnet, nicht geraten: Die erste
+# Fassung nahm den ersten Treffer auf `:80->`/`:443->`/„openresty" — auf einem
+# Host mit mehreren solchen Containern hätte das Deploy eine GLOBALE
+# nginx-Konfiguration in einen fremden geschrieben. Genau diese Lage liegt hier
+# vor; auf demselben Proxy laufen weitere Domains.
+# npm-container-finden.sh verlangt: veröffentlicht 80/443, ist wirklich ein
+# nginx, UND bedient laut /data/nginx/proxy_host/ genau diesen Namen.
+# BASE_URL wird auch hier UNVERÄNDERT durchgereicht — die Zerlegung liegt in
+# scripts/regime/url-teile.sh, an einer Stelle für alle.
+NPM_CONTAINER=$("$SCRIPT_DIR/scripts/regime/npm-container-finden.sh" --basis "$BASE_URL") || NPM_CONTAINER=""
 if [ -n "$NPM_CONTAINER" ]; then
   log "Stelle Kompression im Reverse Proxy sicher ($NPM_CONTAINER)"
   if ! "$SCRIPT_DIR/scripts/regime/npm-snippet-einspielen.sh" \
         --container "$NPM_CONTAINER" --datei "$SCRIPT_DIR/deploy/npm/http_top.conf"; then
-    fail "Kompressionsschnipsel ließ sich nicht einspielen (siehe oben). Der Proxy läuft unverändert weiter."
+    fail "Kompressionsschnipsel ließ sich nicht einspielen (siehe oben)."
   fi
 else
-  echo "  Kein Reverse-Proxy-Container gefunden — es wird nichts eingespielt."
-  echo "  Die Messung unten prüft trotzdem, was TATSÄCHLICH ausgeliefert wird."
+  echo "  Kein eindeutig zugeordneter Proxy-Container — es wird nichts eingespielt."
+  echo "  In fremde oder mehrdeutige Container zu schreiben wäre schlimmer als"
+  echo "  nichts zu tun. Die Messung unten prüft trotzdem, was TATSÄCHLICH"
+  echo "  ausgeliefert wird — durchgewunken wird also nichts."
 fi
 
 # BASE_URL wird UNVERÄNDERT durchgereicht. Die erste Fassung zerlegte sie in
