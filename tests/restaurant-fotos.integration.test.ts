@@ -75,7 +75,7 @@ function formular(restaurants: unknown): FormData {
   return fd;
 }
 
-describe("Migration 0010", () => {
+describe("Migration 0011", () => {
   it("legt die zweite Spalte an und lehnt dasselbe Foto zweimal ab", () => {
     const sqlite = new Database(path.join(tmp, "app.db"));
     const spalten = sqlite

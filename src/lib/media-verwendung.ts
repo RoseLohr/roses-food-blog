@@ -84,22 +84,27 @@ const QUELLEN: Array<{ bereich: string; ids: () => Promise<(number | null)[]> }>
         await db.select({ id: schema.travelBlock.imageId }).from(schema.travelBlock)
       ).map((r) => r.id),
   },
+  // Die beiden Fotoplätze eines Restaurants stehen BEWUSST als zwei Einträge
+  // da, nicht als einer mit zwei Spalten. Die Fangregel in
+  // tests/bild-ohne-foto.integration.test.ts zählt Einträge gegen
+  // Fremdschlüsselspalten: Nur so fällt auf, wenn eine Spalte dazukommt und
+  // hier vergessen wird — und der Redakteur erfährt, WELCHES der beiden Fotos
+  // dem Löschen im Weg steht, statt nur „Restaurant".
   {
-    bereich: "Restaurant",
-    // BEIDE Fotoplätze. Ein Restaurant trägt eines über die ganze Kartenbreite
-    // oder zwei kleinere nebeneinander (RESTAURANT_FOTOS_MAX). Fehlte hier der
-    // zweite Platz, hielte die Mediathek dessen Foto für unbenutzt: Das Löschen
-    // ginge ohne Warnung durch, ON DELETE SET NULL leerte die Spalte, und aus
-    // dem Paar würde still ein Einzelband.
+    bereich: "Restaurant (erstes Foto)",
+    ids: async () =>
+      (
+        await db.select({ id: schema.restaurant.imageId }).from(schema.restaurant)
+      ).map((r) => r.id),
+  },
+  {
+    bereich: "Restaurant (zweites Foto)",
     ids: async () =>
       (
         await db
-          .select({
-            id: schema.restaurant.imageId,
-            id2: schema.restaurant.imageId2,
-          })
+          .select({ id: schema.restaurant.imageId2 })
           .from(schema.restaurant)
-      ).flatMap((r) => [r.id, r.id2]),
+      ).map((r) => r.id),
   },
   {
     bereich: "Gericht",
