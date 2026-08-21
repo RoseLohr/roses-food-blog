@@ -148,6 +148,36 @@ describe("Migrator", () => {
     expect(tabellen()).toEqual(vorher);
   });
 
+  it("bricht ab, wenn eine Zeile den richtigen Zeitstempel, aber einen fremden Hash trägt", () => {
+    expect(migriere().code).toBe(0);
+    const vorher = tabellen();
+
+    // Der feinste Fall: Lief eine Migration nie, fehlt ihre Zeile — und eine
+    // fremde Zeile mit IHREM Zeitstempel füllt genau diese Lücke. Menge der
+    // Zeitstempel und Zeilenzahl bleiben dabei unauffällig; nur der Hash
+    // unterscheidet die echte Zeile von der fremden.
+    const verbindung = db();
+    const hoechster = verbindung
+      .prepare("SELECT max(created_at) AS m FROM __drizzle_migrations")
+      .get() as { m: number };
+    verbindung
+      .prepare("UPDATE __drizzle_migrations SET hash = ? WHERE created_at = ?")
+      .run("f".repeat(64), hoechster.m);
+    const kennzahlen = verbindung
+      .prepare(
+        "SELECT count(*) AS zeilen, count(DISTINCT created_at) AS menge FROM __drizzle_migrations",
+      )
+      .get() as { zeilen: number; menge: number };
+    verbindung.close();
+    // Belegt, dass die beiden schwächeren Prüfungen hier NICHTS sehen.
+    expect(kennzahlen.zeilen).toBe(kennzahlen.menge);
+
+    const lauf = migriere();
+    expect(lauf.code).toBe(1);
+    expect(lauf.ausgabe).toContain("FREMDEN Hash");
+    expect(tabellen()).toEqual(vorher);
+  });
+
   it.each([
     ["NULL", null],
     ["Text", "kaputt"],

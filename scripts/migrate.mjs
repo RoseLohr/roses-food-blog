@@ -168,38 +168,70 @@ const insertMigration = sqlite.prepare(
 // Fehlermeldung, die Spalte entsteht nie, und die Anwendung läuft gegen ein
 // Schema, das es nicht gibt.
 //
-// Geprüft wird die IDENTITÄT — und ZUSÄTZLICH die Anzahl. Keins von beidem
-// genügt allein:
+// Geprüft wird jede Migration unter dem Wasserstand auf DREI Eigenschaften,
+// weil keine davon allein trägt:
 //
 //   Zählen allein ist zu schwach: Eine Historie mit A, B, X und Dateien A, B, C
 //   ergibt drei gegen drei — und C liefe nie.
 //
-//   Identität allein ist ebenfalls zu schwach, und das ist subtiler: Eine
-//   ZUSÄTZLICHE Zeile mit dem Zeitstempel von C — verdoppelt oder fremd
-//   eingetragen — lässt C als erledigt gelten, obwohl es nie lief. Die Menge
-//   der Zeitstempel stimmt dann, die Anzahl nicht. Unter dem Wasserstand muss
-//   deshalb Zeile für Zeile genau eine Migration stehen.
+//   Die MENGE der Zeitstempel allein ist zu schwach: Eine zusätzliche Zeile mit
+//   einem vorhandenen Zeitstempel lässt sich damit nicht sehen.
 //
-// Die Kennung ist der Zeitstempel und NICHT der Hash: `created_at` steht so in
-// der Tabelle, wie es im Journal steht, und ändert sich nicht, wenn jemand eine
-// längst angewendete Datei später noch einmal anfasst. Ein Hash-Vergleich
-// hielte genau das für eine fehlende Migration und verhinderte den Start der
-// Seite — im schlechtesten Moment, nämlich beim Deploy. Dass ausgelieferte
-// Migrationen nicht mehr angefasst werden, sichert stattdessen
-// scripts/regime/migrations-order.mjs beim Pull Request, wo es reparierbar ist.
+//   Zeitstempel UND Anzahl zusammen sind IMMER NOCH zu schwach — das ist der
+//   feinste Fall: Lief C nie, fehlt seine Zeile; eine fremde Zeile mit
+//   `created_at = C.when` füllt dann genau diese Lücke. Menge und Anzahl
+//   stimmen, C gilt als erledigt, wird übersprungen, und sein Schema fehlt.
+//   Nur der HASH unterscheidet die echte Zeile von der fremden.
+//
+// FRÜHER STAND HIER DAS GEGENTEIL, und die Begründung war: Ein Hash-Vergleich
+// hielte eine nachträglich angefasste, längst angewendete Datei für eine
+// fehlende Migration und verhinderte den Start der Seite ausgerechnet beim
+// Deploy. Diese Sorge ist ausgeräumt, und zwar nachgeprüft statt angenommen:
+//
+//   1. `scripts/regime/migrations-order.mjs` lässt eine ausgelieferte Migration
+//      nicht mehr verändern — Zeitstempel, Position und SQL-Text werden beim
+//      Pull Request gegen `origin/main` byte-genau verglichen.
+//   2. In der Historie dieses Repositorys wurde KEINE Migrationsdatei je nach
+//      ihrem Hinzufügen angefasst (`git log --follow` über drizzle/*.sql: je
+//      genau ein Commit). Keine ausgelieferte Datenbank kann also einen Hash
+//      tragen, der nicht zur heutigen Datei passt.
+//   3. Der Hash ist derselbe wie drizzles eigener — sha256 über den ganzen
+//      Dateiinhalt (node_modules/drizzle-orm/migrator.js:23). Eine mit
+//      drizzle-kit migrierte Datenbank passt deshalb genauso.
 {
-  const angewendet = new Set(buchfuehrung.map((r) => r.created_at));
-  const verschluckt = migrations.filter(
-    (m) =>
-      lastAppliedAt !== null &&
-      lastAppliedAt >= m.folderMillis &&
-      !angewendet.has(m.folderMillis),
-  );
+  const nachZeitstempel = new Map();
+  for (const r of buchfuehrung) {
+    const liste = nachZeitstempel.get(r.created_at);
+    if (liste) liste.push(r);
+    else nachZeitstempel.set(r.created_at, [r]);
+  }
 
-  // Anzahl-Abgleich: unter dem Wasserstand eine Zeile je Migration.
   const erledigt = migrations.filter(
     (m) => lastAppliedAt !== null && lastAppliedAt >= m.folderMillis,
   );
+  const verschluckt = erledigt.filter((m) => !nachZeitstempel.has(m.folderMillis));
+
+  // Zeile vorhanden, aber sie gehört nicht zu dieser Migration.
+  const fremd = erledigt.filter((m) => {
+    const zeilen = nachZeitstempel.get(m.folderMillis);
+    return zeilen !== undefined && !zeilen.some((z) => z.hash === m.hash);
+  });
+  if (fremd.length) {
+    console.error(
+      `[migrate] Für ${fremd.length} Migration(en) steht zwar eine Zeile mit ihrem ` +
+        "Zeitstempel in der Buchführung, aber mit einem FREMDEN Hash: " +
+        fremd.map((m) => `${m.tag} (when=${m.folderMillis})`).join(", ") +
+        ". Dafür gibt es zwei Ursachen, und beide sind ernst:\n" +
+        "  1. Die Migrationsdatei wurde nach ihrer Anwendung geändert. Dann " +
+        "gehört ihr ursprünglicher Inhalt zurück — eine angewendete Migration " +
+        "läuft nie erneut, die Änderung käme also nie an. Neue Änderungen " +
+        "gehören in eine NEUE Migration.\n" +
+        "  2. Die Zeile stammt nicht von dieser Migration. Dann ist sie nie " +
+        "gelaufen, ihr Schema fehlt, und sie würde hier gerade übersprungen.\n" +
+        "Ohne zu wissen, welches von beiden, wird nicht weitergemacht.",
+    );
+    process.exit(1);
+  }
   if (lastAppliedAt !== null && buchfuehrung.length !== erledigt.length) {
     const zuViel = buchfuehrung.length - erledigt.length;
     console.error(
