@@ -30,6 +30,25 @@ export function sichtbar(s) {
 }
 
 /**
+ * Der Text, den ein gerendertes Stück Bericht ZEIGT — Tags entfernt.
+ *
+ * Bild und Trenner zeigen ohne Text etwas; sie werden deshalb zu einem
+ * sichtbaren Platzhalter. Alles Übrige entscheidet der verbliebene Text.
+ *
+ * Nur diese beiden Elemente, und das ist vollständig: Das einzige HTML kommt
+ * aus dem Markdown-Renderer, denn der macht aus jedem `<` der Eingabe ein
+ * `&lt;`. Rohes `<img>` im Markdown kann also gar kein Element werden — es
+ * wird Text und zählt als sichtbar, weil der Browser es als Text zeigt.
+ *
+ * @param {string} html
+ * @returns {string}
+ */
+export function textAusHtml(html) {
+  if (/<(?:img|hr)\b/i.test(html)) return "SICHTBAR";
+  return html.replace(/<[^>]*>/g, "");
+}
+
+/**
  * Eine Zeile, die nur aus einem Blockmarker besteht — und aus sonst nichts.
  *
  * Der Marker muss die Zeile ausfüllen: `#` gefolgt von einem

@@ -5,7 +5,7 @@
  * Gerichten (inkl. Bilder- und Zutaten-Referenzen) als React-State,
  * serialisiert als JSON in ein Hidden-Field.
  */
-import { useActionState, useState } from "react";
+import { useActionState, useMemo, useState } from "react";
 import { saveTravelAction, type TravelFormState } from "./actions";
 import { ImagePicker, type ImageChoice } from "@/components/admin/image-picker";
 import {
@@ -19,12 +19,18 @@ import {
   bildBreitenGross,
   fliesstText,
   passtInZeile,
+  tauscheBloecke,
   seitenverhaeltnis,
   zeilenBreite,
   zeilenIndizes,
   type BildGroesse,
   type BildPlatz,
 } from "@/lib/bildreihen";
+import {
+  bildWirdGespeichert,
+  restaurantWirdGespeichert,
+} from "@/lib/travel-wirksam";
+import { zeigtVoraussichtlichEtwas } from "@/lib/sichtbar-vorschau";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -116,37 +122,88 @@ interface Zeilenwissen {
   angehaengt: boolean;
   /** Darf das Häkchen überhaupt angeboten werden — passt das Bild daneben? */
   anbietbar: boolean;
+  /**
+   * Die Größen der Zeile DARÜBER. Leer, wenn darüber gar kein Bild steht.
+   *
+   * Für den Hinweis: „geht nicht" ist keine Auskunft. Es gibt genau zwei
+   * Gründe, und sie führen zu verschiedenen Handgriffen — darüber steht kein
+   * Bild (dann eines dorthin schieben), oder die Zeile darüber ist schon voll
+   * (dann eine Größe verkleinern). Der Editor muss sagen, welcher gilt.
+   */
+  davor: BildGroesse[];
 }
 
-function zeilenwissen(blocks: EditorBlock[]): Map<number, Zeilenwissen> {
-  const zeilen = zeilenIndizes(blocks);
+function zeilenwissen(
+  blocks: EditorBlock[],
+  wirksam: number[],
+): Map<number, Zeilenwissen> {
+  // Gerechnet wird auf der Folge, die WIRKLICH GESPEICHERT wird — nicht auf
+  // dem, was im Editor untereinander steht. Ein Block, den der Server ohnehin
+  // verwirft (Restaurant ohne Namen, Bild ohne Foto, leerer Text), steht im
+  // Bericht nicht und darf deshalb auch keine Bildzeile brechen. Vorher tat er
+  // es: Der Editor strich die Zeilenzugehörigkeit des unteren Bildes, der
+  // Server warf den Block weg — und übrig blieb eine zerrissene Zeile ohne
+  // sichtbare Ursache.
+  const folge = wirksam.map((i) => blocks[i]);
+  const zeilen = zeilenIndizes(folge);
   const zeileVon = new Map<number, number[]>();
-  for (const z of zeilen) for (const i of z) zeileVon.set(i, z);
+  for (const z of zeilen) for (const e of z) zeileVon.set(e, z);
 
   const wissen = new Map<number, Zeilenwissen>();
-  for (const [i, zeile] of zeileVon) {
-    const block = blocks[i];
+  for (const [e, zeile] of zeileVon) {
+    const block = folge[e];
     if (block.type !== "bild") continue;
     // Anbietbar ist das Häkchen, wenn direkt darüber ein Bild steht und dieses
     // Bild noch in dessen Zeile passt — also die Summe der Anteile die Spalte
     // nicht überschreitet. Steht der Block schon in einer Zeile mit anderen,
     // ist die Frage schon beantwortet.
-    const davor = zeileVon.get(i - 1);
+    const davor = zeileVon.get(e - 1);
     const davorGroessen = (davor ?? [])
-      .filter((k) => k !== i)
-      .map((k) => blocks[k])
+      .filter((k) => k !== e)
+      .map((k) => folge[k])
       .filter((b) => b.type === "bild")
       .map((b) => b.groesse);
-    wissen.set(i, {
-      zeile,
-      angehaengt: zeile[0] !== i,
+    // Nach außen wieder in Original-Indizes, damit die Anzeige weiß, welcher
+    // Block im Editor gemeint ist.
+    wissen.set(wirksam[e], {
+      zeile: zeile.map((k) => wirksam[k]),
+      angehaengt: zeile[0] !== e,
       anbietbar:
         davor !== undefined &&
         davorGroessen.length > 0 &&
         passtInZeile(davorGroessen, block.groesse),
+      davor: davor === undefined ? [] : davorGroessen,
     });
   }
   return wissen;
+}
+
+/**
+ * Die Indizes der Blöcke, die beim Speichern erhalten bleiben.
+ *
+ * Dieselben Prädikate wie im Speicherweg (src/lib/travel-wirksam.ts). Was hier
+ * fehlt, steht später nicht im Bericht — und darf deshalb weder eine Bildzeile
+ * brechen noch beim Absenden mitgeschickt werden.
+ */
+function wirksameIndizes(
+  blocks: EditorBlock[],
+  restaurants: EditorRestaurant[],
+): number[] {
+  const out: number[] = [];
+  blocks.forEach((b, i) => {
+    const bleibt =
+      b.type === "bild"
+        ? bildWirdGespeichert(b.imageId)
+        : b.type === "restaurant"
+          ? restaurantWirdGespeichert(restaurants[b.index]?.name ?? "")
+          : // Derselbe Weg wie beim Server — Bericht bauen und nachsehen —,
+            // nur ohne die Entitäten-Tabelle: Die passt nicht mehr ins
+            // JS-Budget dieser Route, und der Unterschied betrifft allein die
+            // ANZEIGE. Die Begründung steht in src/lib/sichtbar-vorschau.ts.
+            zeigtVoraussichtlichEtwas(b.markdown);
+    if (bleibt) out.push(i);
+  });
+  return out;
 }
 
 /**
@@ -297,6 +354,11 @@ export function TravelEditor({
     initial.restaurants.length ? initial.restaurants : [],
   );
   const [blocks, setBlocks] = useState<EditorBlock[]>(() =>
+    // Schon beim Laden normalisieren: Der Bestand kann Flaggen enthalten, die
+    // nicht mehr wirken — etwa weil ein Bild dazwischen gelöscht wurde oder
+    // sein Foto fehlt und der Block deshalb übersprungen wird. Ungeräumt
+    // stünden sie im Editor unsichtbar da und würden beim Speichern
+    // zurückgeschrieben.
     (initial.blocks.length
       ? initial.blocks
       : [{ type: "text", markdown: "" } as EditorBlockData]
@@ -305,20 +367,38 @@ export function TravelEditor({
 
   // Zeilen einmal je Rendervorgang bestimmen — aus derselben Gruppierung, die
   // beim Speichern das Frontend baut.
-  const wissen = zeilenwissen(blocks);
+  // Einmal je Änderung, nicht je Rendervorgang: Das Prädikat rendert Markdown.
+  const wirksam = useMemo(
+    () => wirksameIndizes(blocks, restaurants),
+    [blocks, restaurants],
+  );
+  const wissen = zeilenwissen(blocks, wirksam);
+  const wirksamSet = new Set(wirksam);
 
+  // Der Editor STREICHT keine Zeilenzugehörigkeit mehr.
+  //
+  // Vorher tat er es: Er rechnete aus, welche Blöcke das Speichern behalten
+  // würde, und löschte jede Flagge, die in dieser Folge nicht wirken könnte.
+  // Das war eine VERMUTUNG über den Server — und jede Vermutung ist eine
+  // Stelle, an der beide auseinandergehen. Die unabhängige Prüfung hat drei
+  // davon gefunden: ein Restaurant ohne Namen, ein leerer Textblock, und ein
+  // Altbestand-Block, der nur aus `&#8203;` besteht. In allen drei Fällen
+  // strich der Editor eine Flagge, der Server warf danach den Block weg — und
+  // die Bildzeile blieb zerrissen, obwohl nichts mehr dazwischenstand.
+  //
+  // Die Absicht bleibt jetzt stehen, und WO sie wirkt, entscheidet erst
+  // `gruppiere()` beim Rendern — auf der endgültigen, gespeicherten Folge. Ein
+  // Häkchen, das gerade nicht greift, ist kein Fehler: Es ist eine Absicht, die
+  // wieder greift, sobald nichts mehr dazwischensteht. Der Editor zeigt es
+  // angehakt und sagt dazu, warum es hier gerade nichts bewirkt.
   const updateBlock = (i: number, patch: Partial<EditorBlockData>) =>
     setBlocks((prev) =>
       prev.map((b, idx) => (idx === i ? ({ ...b, ...patch } as EditorBlock) : b)),
     );
   const moveBlock = (i: number, dir: -1 | 1) =>
-    setBlocks((prev) => {
-      const j = i + dir;
-      if (j < 0 || j >= prev.length) return prev;
-      const next = [...prev];
-      [next[i], next[j]] = [next[j], next[i]];
-      return next;
-    });
+    // Beim Tauschen bleiben die Flaggen an ihrer POSITION — sonst zerfiele eine
+    // Zeile, in der jemand nur die Reihenfolge geändert hat.
+    setBlocks((prev) => tauscheBloecke(prev, i, dir));
   const removeBlock = (i: number) =>
     setBlocks((prev) => prev.filter((_, idx) => idx !== i));
   const addBlock = (b: EditorBlockData) =>
@@ -339,16 +419,15 @@ export function TravelEditor({
     );
   };
 
-  // Unvollständige Blöcke (Bild ohne Auswahl, Restaurant ohne Ziel) beim
-  // Absenden weglassen; leere Textblöcke filtert der Server.
+  // Abgesendet wird GENAU die Folge, auf der auch die Zeilen gerechnet wurden.
+  // Vorher waren das zwei verschiedene Mengen: Der Absende-Filter fragte bei
+  // einem Restaurant-Block „gibt es diesen Index?", der Server „hat dieses
+  // Restaurant einen Namen?" — und dazwischen ging eine Bildzeile verloren.
   const serializedBlocks = JSON.stringify(
-    blocks
-      .filter(
-        (b) =>
-          (b.type !== "bild" || b.imageId > 0) &&
-          (b.type !== "restaurant" || (b.index >= 0 && b.index < restaurants.length)),
-      )
-      .map(({ key: _key, ...b }) => b),
+    wirksam.map((i) => {
+      const { key: _key, ...b } = blocks[i];
+      return b;
+    }),
   );
 
   // "48,2" / "48.2" / "" → number | null (Koordinaten-Override)
@@ -514,7 +593,12 @@ export function TravelEditor({
             <p className="mb-2 text-xs text-ink-soft">{d.blocksHint}</p>
             <div className="flex flex-col gap-3">
               {blocks.map((b, i) => (
-                <div key={b.key} className="border border-ink/10 p-3">
+                <div
+                  key={b.key}
+                  className={`border border-ink/10 p-3 ${
+                    wirksamSet.has(i) ? "" : "border-dashed bg-cream/40"
+                  }`}
+                >
                   <div className="mb-2 flex items-center gap-1.5">
                     <span className="text-xs font-semibold uppercase tracking-wide text-ink-soft">
                       {b.type === "text"
@@ -523,6 +607,11 @@ export function TravelEditor({
                           ? d.blockImage
                           : d.blockRestaurant}
                     </span>
+                    {!wirksamSet.has(i) && (
+                      <span className="text-xs font-normal normal-case text-ink-soft">
+                        {d.blockNichtGespeichertKurz}
+                      </span>
+                    )}
                     <div className="ml-auto flex gap-1">
                       <button
                         type="button"
@@ -567,6 +656,14 @@ export function TravelEditor({
                       const w = wissen.get(i);
                       const gepaart = w?.angehaengt ?? false;
                       const anbietbar = w?.anbietbar ?? false;
+                      const davor = w?.davor ?? [];
+                      // Warum das Häkchen nicht greift — die beiden Gründe
+                      // führen zu verschiedenen Handgriffen.
+                      const grund = anbietbar
+                        ? undefined
+                        : davor.length === 0
+                          ? d.blockWithPreviousOff
+                          : d.blockWithPreviousNoFit(davor, b.groesse);
                       const zeile = w?.zeile ?? [i];
                       const zeilenGroessen = zeile
                         .map((k) => blocks[k])
@@ -621,19 +718,35 @@ export function TravelEditor({
                             className={`mt-3 flex items-start gap-2 text-sm ${
                               anbietbar ? "" : "opacity-50"
                             }`}
-                            title={anbietbar ? undefined : d.blockWithPreviousOff}
+                            title={grund}
                           >
                             <input
                               type="checkbox"
                               className="mt-1 h-4 w-4 accent-leaf"
-                              checked={gepaart}
-                              disabled={!anbietbar}
+                              /* Die ABSICHT, nicht die abgeleitete Wirkung: Was
+                                 hier steht, ist das, was gespeichert wird. Beide
+                                 fallen zusammen, weil jede Änderung durch
+                                 normalisiereZeilen läuft — vorher konnte eine
+                                 gespeicherte Flagge unangekreuzt danebenstehen
+                                 und später still greifen. */
+                              checked={b.mitVorherigem}
+                              /* NIE gesperrt. Das Häkchen trägt eine Absicht,
+                                 und eine Absicht muss man zurücknehmen können:
+                                 Ein gesetztes Häkchen, das nicht mehr abwählbar
+                                 ist, bleibt gespeichert und greift wieder,
+                                 sobald über dem Bild eines steht — ohne dass
+                                 jemand das noch ändern konnte. Warum es hier
+                                 gerade nichts bewirkt, sagt der Hinweis
+                                 darunter. */
                               onChange={(e) =>
                                 updateBlock(i, { mitVorherigem: e.target.checked })
                               }
                             />
                             <span>{d.blockWithPrevious}</span>
                           </label>
+                          {grund && (
+                            <p className="mt-1 text-xs text-ink-soft">{grund}</p>
+                          )}
                           <p className="mt-2 border-l-2 border-leaf bg-leaf/[0.06] px-3 py-1.5 text-xs text-ink-soft">
                             {zeilenPlatz === null
                               ? zeilenBreite(zeilenGroessen).n === 1
@@ -657,6 +770,11 @@ export function TravelEditor({
                         </>
                       );
                     })()}
+                  {!wirksamSet.has(i) && (
+                    <p className="mb-2 border-l-2 border-ink/25 bg-ink/[0.04] px-3 py-1.5 text-xs text-ink-soft">
+                      {d.blockNichtGespeichert[b.type]}
+                    </p>
+                  )}
                   {b.type === "restaurant" &&
                     (restaurants.length === 0 ? (
                       <p className="text-sm text-ink-soft">{d.blockNoRestaurants}</p>

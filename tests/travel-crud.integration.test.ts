@@ -251,6 +251,50 @@ describe("Reise-CRUD", () => {
     expect(full!.blocks).toEqual([{ type: "text", markdown: code }]);
   });
 
+  it("behält eine Paarung, auch wenn der Block darüber aussortiert wird", async () => {
+    // `mitVorherigem` ist eine ABSICHT und wird beim Speichern nicht
+    // angetastet. Fällt der Block darüber weg (hier: ein Bild, dessen Foto es
+    // nicht gibt), rückt das Bild eine Stelle nach oben — und die Absicht
+    // „neben dem Bild darüber" gilt dann eben für das nächste. Wo sie WIRKT,
+    // entscheidet `gruppiere()` beim Rendern. Sie hier zu streichen hieße, aus
+    // einem vorübergehenden Zustand einen dauerhaften Verlust zu machen.
+    const { saveTravelFromForm } = await import("@/lib/travel-save");
+    const { getFullTravelPost } = await import("@/lib/travel");
+    const { db, schema } = await import("@/db");
+    const [img] = await db
+      .insert(schema.mediaImage)
+      .values({
+        fileKey: "geistflagge",
+        originalName: "geist.jpg",
+        width: 800,
+        height: 600,
+        sizeBytes: 1000,
+        createdAt: new Date(),
+      })
+      .returning();
+
+    const fd = new FormData();
+    fd.set("titel", "Geisterflagge");
+    fd.set("status", "entwurf");
+    fd.set("restaurants", JSON.stringify([]));
+    fd.set(
+      "bloecke",
+      JSON.stringify([
+        // Dieses Bild gibt es nicht — der Block fällt beim Speichern weg.
+        { type: "bild", imageId: 999999, groesse: "s" },
+        // …und damit steht über diesem Bild nichts mehr.
+        { type: "bild", imageId: img.id, groesse: "s", mitVorherigem: true },
+      ]),
+    );
+    const result = await saveTravelFromForm(fd, adminId);
+    const full = await getFullTravelPost({
+      id: (result as { travelId: number }).travelId,
+    });
+    expect(full!.blocks).toEqual([
+      { type: "bild", imageId: img.id, groesse: "s", platz: "rechts", mitVorherigem: true },
+    ]);
+  });
+
   it("schlägt ähnliche Rezepte nur bei Kategorie+Küche+Zutat-Überschneidung vor", async () => {
     const { saveTravelFromForm } = await import("@/lib/travel-save");
     const { getFullTravelPost } = await import("@/lib/travel");
