@@ -7,6 +7,7 @@
 import { eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db, schema } from "@/db";
+import { hatSichtbarenInhalt } from "@/lib/rich-text";
 import { slugify, uniqueSlug } from "@/lib/slug";
 import type { TaxonomyType } from "@/lib/taxonomies";
 import {
@@ -149,7 +150,15 @@ export async function saveTravelFromForm(
     blocks = [];
     for (const b of parsed) {
       if (b.type === "text") {
-        if (b.markdown.trim()) blocks.push({ type: "text", markdown: b.markdown.trim() });
+        // Nicht `.trim()`, sondern „zeigt das im Bericht überhaupt etwas?".
+        // Ein leerer Block aus dem Editor kam früher als „##" oder „>" hier an
+        // — nicht leer, also gespeichert, im Bericht unsichtbar, aber ein
+        // BLOCK: er brach die Bildzeile darüber und hinterließ eine weiße
+        // Fläche. Der Browser ist nicht der einzige Schreiber, deshalb prüft
+        // der Server dasselbe wie der Editor, mit derselben Funktion.
+        if (hatSichtbarenInhalt(b.markdown)) {
+          blocks.push({ type: "text", markdown: b.markdown.trim() });
+        }
       } else if (b.type === "bild") {
         blocks.push(b);
       } else {

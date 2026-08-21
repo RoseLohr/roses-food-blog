@@ -100,43 +100,104 @@ function inlineChildren(el: MinimalNode): string {
     .trim();
 }
 
+/**
+ * Zeichen, die im Browser nichts zeigen — Leerraum, geschütztes Leerzeichen,
+ * Nullbreiten-Leerzeichen, Wortverbinder, Byte-Order-Mark.
+ */
+const UNSICHTBAR = /[\s\u00a0\u200b\u2060\ufeff]+/g;
+
+/** Bleibt nach dem Entfernen unsichtbarer Zeichen noch etwas übrig? */
+function sichtbar(s: string): boolean {
+  return s.replace(UNSICHTBAR, "") !== "";
+}
+
+/**
+ * Listeneinträge — leere übersprungen. Ein `<li>` ohne sichtbaren Inhalt ist
+ * im Bericht ein leerer Aufzählungspunkt: ein Zeichen ohne Aussage. Die
+ * Nummerierung zählt danach die BEHALTENEN Einträge, sonst entstünden Lücken.
+ */
 function listItems(el: MinimalNode, ordered: boolean): string {
-  const items = toArray(el.childNodes).filter(
-    (n) => n.nodeType === 1 && n.nodeName.toUpperCase() === "LI",
-  );
-  return items
-    .map((li, i) => `${ordered ? `${i + 1}.` : "-"} ${inlineChildren(li)}`)
+  return toArray(el.childNodes)
+    .filter((n) => n.nodeType === 1 && n.nodeName.toUpperCase() === "LI")
+    .map((li) => inlineChildren(li))
+    .filter((inhalt) => sichtbar(inhalt))
+    .map((inhalt, i) => `${ordered ? `${i + 1}.` : "-"} ${inhalt}`)
     .join("\n");
 }
 
+/**
+ * Markdown eines Blocks — oder LEER, wenn der Block nichts Sichtbares enthält.
+ *
+ * Der Grund steht in tests/leere-bloecke.test.ts: Ein leerer Block im Editor
+ * (`<h2><br></h2>`, entstanden durch einen Klick auf „H2" oder durch
+ * tippen–formatieren–löschen) ergab früher die Zeichenkette `##`. Die ist nicht
+ * leer, überlebte also jede `.trim()`-Prüfung und wurde als Textblock
+ * gespeichert. Im Bericht rendert sie zu einem unsichtbaren `<h2>` — das aber
+ * ein BLOCK ist und damit eine Bildzeile bricht. Der Redakteur sah weder im
+ * Editor noch im Bericht, was da steht.
+ *
+ * Deshalb wird hier der INHALT geprüft, nicht das Erzeugnis. Der Trenner (HR)
+ * bleibt: er zeigt auch ohne Text etwas.
+ */
 function block(el: MinimalNode): string {
-  switch (el.nodeName.toUpperCase()) {
+  const name = el.nodeName.toUpperCase();
+  if (name === "HR") return "---";
+
+  if (name === "UL" || name === "OL") {
+    const eintraege = listItems(el, name === "OL");
+    return sichtbar(eintraege.replace(/^\s*(?:[-*]|\d+\.)\s*/gm, "")) ? eintraege : "";
+  }
+
+  if (name === "PRE") {
+    const inhalt = el.textContent ?? "";
+    return sichtbar(inhalt) ? "```\n" + inhalt + "\n```" : "";
+  }
+
+  const inhalt = inlineChildren(el);
+  if (!sichtbar(inhalt)) return "";
+
+  switch (name) {
     case "H1":
-      return `# ${inlineChildren(el)}`;
+      return `# ${inhalt}`;
     case "H2":
-      return `## ${inlineChildren(el)}`;
+      return `## ${inhalt}`;
     case "H3":
-      return `### ${inlineChildren(el)}`;
+      return `### ${inhalt}`;
     case "H4":
     case "H5":
     case "H6":
-      return `#### ${inlineChildren(el)}`;
+      return `#### ${inhalt}`;
     case "BLOCKQUOTE":
-      return inlineChildren(el)
+      return inhalt
         .split("\n")
         .map((l) => `> ${l}`.trimEnd())
         .join("\n");
-    case "UL":
-      return listItems(el, false);
-    case "OL":
-      return listItems(el, true);
-    case "HR":
-      return "---";
-    case "PRE":
-      return "```\n" + (el.textContent ?? "") + "\n```";
     default:
-      return inlineChildren(el); // P, DIV
+      return inhalt; // P, DIV
   }
+}
+
+/**
+ * Zeigt dieses Markdown im Bericht überhaupt etwas?
+ *
+ * Dasselbe Prädikat, das der Editor über den DOM anwendet — hier über den
+ * gespeicherten Text, denn der Browser ist nicht der einzige Schreiber
+ * (API, Datenübernahme, Altbestand). Ein Trenner, ein Bild und ein Codeblock
+ * mit Inhalt zeigen etwas, auch ohne Fließtext; leere Auszeichnung nicht.
+ */
+export function hatSichtbarenInhalt(markdown: string): boolean {
+  const ohneAuszeichnung = markdown
+    // Trenner und Bilder sind für sich sichtbar.
+    .replace(/^\s*(?:---+|\*\*\*+|___+)\s*$/gm, "SICHTBAR")
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, "SICHTBAR")
+    // Reine Auszeichnung am Zeilenanfang: Raute, Zitatpfeil, Listenzeichen.
+    .replace(/^[ \t]*(?:#{1,6}|>|[-*+]|\d+[.)])[ \t]*/gm, "")
+    // Zaun eines Codeblocks — sein Inhalt bleibt stehen.
+    .replace(/^[ \t]*(?:```|~~~).*$/gm, "")
+    // Inline-Auszeichnung ohne eigenen Text.
+    .replace(/[*_`~]/g, "")
+    .replace(/&nbsp;/g, " ");
+  return sichtbar(ohneAuszeichnung);
 }
 
 export function htmlToMarkdown(root: MinimalNode): string {
