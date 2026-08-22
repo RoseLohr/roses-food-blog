@@ -112,13 +112,13 @@ Zwei Dinge, die das Inventar zusätzlich festhält:
   ist Regressionsschutz, nicht Drift-Erkennung — und muss auch so heißen.
 
   *Gebaut 2026-08-22:* `scripts/regime/doku-gate.mjs`, blockierend in CI, mit
-  Selbsttest. Es prüft drei Klassen: veraltete Anleitung (nur INNERHALB
-  umzäunter Codeblöcke, ausgenommen unter einer Überschrift mit „historisch" —
+  Selbsttest. Es prüft drei Klassen: veraltete Anleitung (nur in dem, was
+  Markdown als Code liest, ausgenommen unter einer Überschrift mit „historisch" —
   Fließtext darf weiter sagen, dass es certbot hier nicht gibt), tote
-  Annahmenummern und Pfadverweise ins Leere. Gemessen am Bestand: 300
+  Annahmenummern und Pfadverweise ins Leere. Gemessen am Bestand: 312
   Pfadverweise, 4 historische Codeblöcke, alle in Ordnung.
 
-  **Der Pflicht-Approver hat in DREI Runden NEUN Umgehungen gefunden** — sechs
+  **Der Pflicht-Approver hat in VIER Runden ELF Umgehungen gefunden** — acht
   von ihm benannt, drei beim Nachziehen derselben Klasse. Sechs davon haben
   dieselbe Form: *eine Prüfung, die sich still selbst abschaltet.* Eine
   Shell-Zeile „# historisch" INNERHALB eines Codeblocks setzte die Ausnahme für
@@ -162,9 +162,27 @@ Zwei Dinge, die das Inventar zusätzlich festhält:
   gefundenen Datei. Benannt statt offen. Im selben Zug fiel eine Bereinigung
   nachgestellter Interpunktion weg, die dasselbe tat — Tippfehler waschen.
 
-  42 Selbsttestfälle, Gegenprobe gegen alle drei Vorfassungen gefahren (alle
-  neun Löcher rutschen dort durch), dazu eine Positivkontrolle am echten Baum:
-  drei eingeschleuste Verstöße in README, `docs/` und `src/` werden mit exakter
+  **Runde vier fand zwei weitere, und beide sind lehrreich.** Eine Überschrift
+  IN einem Zitat oder Listenpunkt machte einen Abschnitt auf und schaltete die
+  „historisch"-Ausnahme für alles Folgende ein — auch außerhalb des Zitats; an
+  beiden Formen nachgestellt. Und die Liste der obersten Verzeichnisse war
+  VERDRAHTET und unvollständig: `.zap`, `.lighthouse`, `.admin-data` und
+  `.repro-data` fehlten, Verweise dorthin wurden gar nicht erst geprüft. Sie
+  wird jetzt aus dem Repository hergeleitet — dieselbe Lehre wie beim
+  Shell-Syntax-Schritt und bei `tests/gate-verdrahtung.test.ts`: entdecken statt
+  aufzählen. Die Abdeckung stieg dadurch von 300 auf 312 Verweise.
+
+  Zum zweiten Teil desselben Befunds — nackte Dateinamen wie „package.jso" —
+  steht die Messung im Skriptkopf: Von über neunzig solchen Stücken in der
+  Dokumentation sind neun tatsächlich Dateien im Wurzelverzeichnis; der Rest
+  sind Kurzformen für Dateien in Unterverzeichnissen, Versionsnummern, Adressen
+  und Ausdrücke aus dem Quelltext. Eine Prüfung darauf bräuchte eine
+  Ausnahmeliste, und die ist hier ausgeschlossen. Das bleibt eine benannte
+  Grenze, keine stille.
+
+  51 Selbsttestfälle, Gegenprobe gegen alle vier Vorfassungen gefahren (alle elf
+  Löcher rutschen dort durch), dazu eine Positivkontrolle am echten Baum: drei
+  eingeschleuste Verstöße in README, `docs/` und `src/` werden mit exakter
   Zeilennummer gemeldet.
 
   Die Gegenbeispiele stehen hier bewusst OHNE Backticks: Das Gate kann eine

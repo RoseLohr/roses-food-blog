@@ -55,7 +55,7 @@
  * WARUM HIER ZWEI FREMDE PARSER LAUFEN UND KEINE EIGENEN WÄHLER
  *
  * Die ersten Fassungen zerlegten Markdown und TypeScript von Hand. Der
- * Pflicht-Approver hat in DREI Runden NEUN Umgehungen gefunden (PR #109) — und
+ * Pflicht-Approver hat in VIER Runden ELF Umgehungen gefunden (PR #109) — und
  * das ist kein Ausreißer, sondern die Regel: Ein handgeschriebener Zerleger hat
  * so viele Löcher, wie das Format Sonderfälle hat. Die gefundenen, zur
  * Erinnerung und als Selbsttestfälle unten festgenagelt:
@@ -72,12 +72,18 @@
  *      als gültig.
  *   h) `split("\n").length` zählte bei abschließendem Umbruch eine Zeile zu
  *      viel — ein Verweis auf N+1 war grün.
+ *   j) EINE ÜBERSCHRIFT IN EINEM ZITAT ODER LISTENPUNKT setzte die
+ *      „historisch"-Ausnahme für alles Folgende — auch außerhalb des Zitats.
+ *      Abschnitte macht jetzt nur eine Überschrift auf oberster Ebene.
+ *   k) DIE LISTE DER OBERSTEN VERZEICHNISSE WAR VERDRAHTET und unvollständig
+ *      (`.zap`, `.lighthouse`, `.admin-data`, `.repro-data` fehlten). Sie wird
+ *      jetzt aus dem Repository HERGELEITET — entdecken statt aufzählen.
  *   i) JEDER eindeutige PRÄFIX galt als gültige Abkürzung. Damit lief ein
  *      vertippter Pfad (`src/lib/media.t`) grün durch — die Frage „gibt es
  *      diese Datei?" war ausgehöhlt, nicht bloß umgangen. Siehe `aufloesen`.
  *
- * a, b, c und f sind Markdown-Sonderfälle; g ist ein TypeScript-Sonderfall.
- * Fünf von acht Löchern kamen also daher, dass hier zwei Sprachen nachgebaut
+ * a, b, c, f und j sind Markdown-Sonderfälle; g ist ein TypeScript-Sonderfall.
+ * Sechs von elf Löchern kamen also daher, dass hier zwei Sprachen nachgebaut
  * wurden, die das Projekt längst richtig zerlegen kann:
  *
  *   * `marked` (Produktionsabhängigkeit, treibt `src/lib/markdown.ts`) liefert
@@ -88,8 +94,10 @@
  *     `const r = /a\/\//; // A5`: Der reine Scanner liest daraus „//; // A5"
  *     und liegt falsch, der Parser liefert „// A5" und liegt richtig.
  *
- * d, e und h bleiben eigene Logik — sie handeln von Dateien und Zahlen, nicht
- * von Grammatik.
+ * d, e, h, i und k bleiben eigene Logik — sie handeln von Dateien und Zahlen,
+ * nicht von Grammatik. j fällt nicht ganz weg: `marked` liefert die
+ * Verschachtelung korrekt, aber WELCHE Überschrift einen Abschnitt aufmacht,
+ * ist eine Entscheidung dieses Gates und musste hier getroffen werden.
  *
  * `.css` wird BEWUSST als Ganzes durchsucht statt über einen dritten Zerleger:
  * CSS kennt keine Bezeichner der Form „A2", der Anlass für die
@@ -120,9 +128,27 @@ function dateien() {
     .filter(Boolean);
 }
 
-/** Oberste Verzeichnisse dieses Repositories — nur damit fängt ein Pfadverweis an. */
-const WURZELN = "src|scripts|tests|docs|deploy|governance|audit|drizzle|config|public|\\.github";
-const PFAD_RE = new RegExp(`^((?:${WURZELN})/[^:\\s]*?)(?::(\\d+)(?:-(\\d+))?)?$`);
+/**
+ * Oberste Verzeichnisse dieses Repositories — HERGELEITET, nicht verdrahtet.
+ *
+ * Hier stand eine Liste aus elf Namen. Sie war unvollständig: `.zap`,
+ * `.lighthouse`, `.admin-data` und `.repro-data` fehlten, Verweise dorthin
+ * wurden also gar nicht erst geprüft (Loch k, Befund des Pflicht-Approvers,
+ * vierte Runde). Eine Liste, die jemand pflegen muss, vergisst neue Einträge —
+ * dieselbe Lehre wie beim Shell-Syntax-Schritt und bei
+ * `tests/gate-verdrahtung.test.ts`: entdecken statt aufzählen.
+ */
+export function wurzelnAus(alle) {
+  const raus = new Set();
+  for (const f of alle) {
+    const i = f.indexOf("/");
+    if (i > 0) raus.add(f.slice(0, i));
+  }
+  return raus;
+}
+
+/** Trennt eine angehängte Zeilenangabe (`…:42`, `…:10-20`) vom Pfad ab. */
+const ZEILEN_TEIL = /^(.*?)(?::(\d+)(?:-(\d+))?)?$/;
 
 /** Anweisungen, die zum abgeschalteten Host-nginx-Betrieb gehören. */
 export const VERALTETE_ANLEITUNG = /\bcertbot\b|\bsites-available\b|\/etc\/letsencrypt\b/;
@@ -152,10 +178,15 @@ export function verboteneAnleitung(md) {
   let unterHistorisch = false;
   let suchAb = 0;
 
-  const lauf = (tokens) => {
+  const lauf = (tokens, oberste) => {
     for (const t of tokens) {
+      // Abschnitte macht NUR eine Überschrift auf oberster Ebene. Eine
+      // Überschrift in einem Zitat oder Listenpunkt (`> ## Historisch`) tut das
+      // nicht — sie setzte die Ausnahme trotzdem und ließ jeden folgenden
+      // Codeblock ungeprüft, auch außerhalb des Zitats (Loch j, Befund des
+      // Pflicht-Approvers, vierte Runde; an beiden Formen nachgestellt).
       if (t.type === "heading") {
-        unterHistorisch = /historisch/i.test(t.text ?? "");
+        if (oberste) unterHistorisch = /historisch/i.test(t.text ?? "");
       } else if (t.type === "code") {
         // Vorwärts suchen: Token stehen in Dokumentreihenfolge, auch die in
         // Listen verschachtelten. Zwei gleiche Blöcke stören deshalb nicht.
@@ -170,14 +201,14 @@ export function verboteneAnleitung(md) {
       }
       // Verschachtelte Blöcke (Codeblock in einer Liste, in einem Zitat, in
       // einer Tabellenzelle) hängen an eigenen Token-Listen.
-      if (Array.isArray(t.tokens)) lauf(t.tokens);
-      if (Array.isArray(t.items)) lauf(t.items);
-      if (Array.isArray(t.rows)) for (const zeile of t.rows) lauf(zeile);
-      if (Array.isArray(t.header)) lauf(t.header);
+      if (Array.isArray(t.tokens)) lauf(t.tokens, false);
+      if (Array.isArray(t.items)) lauf(t.items, false);
+      if (Array.isArray(t.rows)) for (const zeile of t.rows) lauf(zeile, false);
+      if (Array.isArray(t.header)) lauf(t.header, false);
     }
   };
 
-  lauf(new Marked({ gfm: true }).lexer(md));
+  lauf(new Marked({ gfm: true }).lexer(md), true);
   return treffer.sort((a, b) => a - b);
 }
 
@@ -223,21 +254,39 @@ export function toteNummernInKommentaren(quelle, datei = "x.ts") {
 
 /**
  * Pfadverweise einer Zeile: alles in Backticks, das wie ein Repo-Pfad aussieht.
- * Platzhalter (`*`, `<…>`, `{…}`) sind keine Verweise, sondern Muster.
+ *
+ * Als Verweis gilt ein Stück nur, wenn sein erstes Wegstück ein tatsächlich
+ * vorhandenes oberstes Verzeichnis ist — oder wenn es mit `./` ausdrücklich als
+ * repo-relativ ausgezeichnet ist. Platzhalter (`*`, `<…>`, `{…}`) sind keine
+ * Verweise, sondern Muster.
+ *
+ * WARUM NACKTE DATEINAMEN NICHT GEPRÜFT WERDEN — gemessen, nicht vermutet: Von
+ * über neunzig Stücken der Form „name.endung" ohne Wegstück sind neun
+ * tatsächlich Dateien im Wurzelverzeichnis. Der große Rest sind Kurzformen für
+ * Dateien in Unterverzeichnissen (`boundary-check.mjs`, `route.ts`,
+ * `globals.css`), Versionsnummern, Adressen und Ausdrücke aus dem Quelltext.
+ * Eine Prüfung darauf bräuchte eine Ausnahmeliste — und eine Ausnahmeliste ist
+ * der Anfang der Weichspülung. Dasselbe gilt für „irgendein Stück mit
+ * Schrägstrich": `try/catch`, `text/html`, `application/json`, `@/db` und
+ * `A-20/B-05` wären sonst Pfadverweise. Die Herleitung aus den echten obersten
+ * Verzeichnissen trennt beides sauber, ohne dass jemand etwas pflegen muss.
  */
-export function pfadverweise(zeile) {
+export function pfadverweise(zeile, wurzeln) {
   const raus = [];
   for (const m of zeile.matchAll(/`([^`\s]+)`/g)) {
     if (/[*<>{}]/.test(m[1])) continue;
-    const t = PFAD_RE.exec(m[1]);
-    if (!t) continue;
+    let stueck = m[1];
+    const repoRelativ = stueck.startsWith("./");
+    if (repoRelativ) stueck = stueck.slice(2);
+    const t = ZEILEN_TEIL.exec(stueck);
+    // KEINE Bereinigung nachgestellter Interpunktion: Sie stand hier und wusch
+    // Tippfehler. Innerhalb von Backticks gehört jedes Zeichen zum Verweis; am
+    // Bestand nachgesehen trägt kein einziger Pfad dort einen Punkt am Ende.
+    const pfad = t[1];
+    if (!repoRelativ && !(pfad.includes("/") && wurzeln.has(pfad.slice(0, pfad.indexOf("/"))))) continue;
     raus.push({
       text: m[1],
-      // KEINE Bereinigung nachgestellter Interpunktion: Sie stand hier und
-      // wusch Tippfehler. Innerhalb von Backticks gehört jedes Zeichen zum
-      // Verweis; am Bestand nachgesehen trägt kein einziger Pfad dort einen
-      // Punkt oder ein Komma am Ende.
-      pfad: t[1],
+      pfad,
       von: t[2] === undefined ? null : Number(t[2]),
       bis: t[3] === undefined ? (t[2] === undefined ? null : Number(t[2])) : Number(t[3]),
     });
@@ -308,6 +357,7 @@ export function zeilenBefund(datei, von, bis) {
 
 function main() {
   const alle = dateien();
+  const wurzeln = wurzelnAus(alle);
   let verstoesse = 0;
   const melde = (art, ort, text) => {
     console.error(`❌ ${art} ${ort}: ${text}`);
@@ -340,7 +390,7 @@ function main() {
 
     if (!istMd) continue;
     zeilen.forEach((zeile, i) => {
-      for (const v of pfadverweise(zeile)) {
+      for (const v of pfadverweise(zeile, wurzeln)) {
         // In `audit/` nur Verweise MIT Zeilennummer — siehe Kopf.
         if (imAudit && v.von === null) continue;
         gezaehlt++;
@@ -368,6 +418,7 @@ if (process.argv.includes("--selftest")) {
   const z4 = "````";
   const welle = "~~~";
   const alle = dateien();
+  const wurzeln = wurzelnAus(alle);
   const faelle = [
     // Prüfung 1 — der Verstoß wird in ALLEN Markdown-Codeformen gefangen.
     ["Anleitung im ```-Zaun", verboteneAnleitung(`## Setup\n\n${z3}\nsudo certbot --nginx\n${z3}\n`).length === 1],
@@ -378,6 +429,9 @@ if (process.argv.includes("--selftest")) {
     ["Codeblock in einer Liste wird gesehen", verboteneAnleitung(`## Setup\n\n- Schritt:\n\n  ${z3}\n  sudo certbot --nginx\n  ${z3}\n`).length === 1],
     // … und feuert NICHT, wo er nicht feuern darf.
     ["historischer Block bleibt frei", verboteneAnleitung(`## Historisch: alter Weg\n\n${z3}\nsudo certbot --nginx\n${z3}\n`).length === 0],
+    // … aber eine Überschrift IM Zitat oder Listenpunkt macht keinen Abschnitt auf (Loch j).
+    ["Zitat-Überschrift leakt nicht (Loch j)", verboteneAnleitung(`## Setup\n\n> ## Historisch: alter Weg\n\n${z3}\nsudo certbot --nginx\n${z3}\n`).length === 1],
+    ["Listen-Überschrift leakt nicht (Loch j)", verboteneAnleitung(`## Setup\n\n- ### Historisch\n\n${z3}\nsudo certbot --nginx\n${z3}\n`).length === 1],
     ["Fließtext bleibt frei", verboteneAnleitung("certbot gibt es hier nicht.\n").length === 0],
     ["Zitatblock bleibt frei", verboteneAnleitung("> `certbot` steht hier bewusst nicht mehr.\n").length === 0],
     ["Listenfortsetzung bleibt frei", verboteneAnleitung("- Punkt\n- certbot ist Geschichte\n").length === 0],
@@ -396,11 +450,19 @@ if (process.argv.includes("--selftest")) {
     ["Regex-Literal verwirrt den Parser nicht", toteNummernInKommentaren("const r = /a\\/\\//; // A5").length === 1],
     ["Division verwirrt den Parser nicht", toteNummernInKommentaren("const y = 6 / 2 / 3; // A4").length === 1],
     // Prüfung 3 — Pfad wird erkannt, Muster und Fremdpfade nicht.
-    ["Pfad erkannt", pfadverweise("siehe `src/lib/media.ts`")[0]?.pfad === "src/lib/media.ts"],
-    ["Zeilennummer erkannt", pfadverweise("siehe `src/lib/media.ts:42`")[0]?.bis === 42],
-    ["Bereich erkannt", pfadverweise("siehe `src/lib/media.ts:10-20`")[0]?.von === 10],
-    ["Muster ignoriert", pfadverweise("siehe `scripts/regime/*.mjs`").length === 0],
-    ["Fremdpfad ignoriert", pfadverweise("liegt in `/etc/nginx/conf.d/x.conf`").length === 0],
+    ["Pfad erkannt", pfadverweise("siehe `src/lib/media.ts`", wurzeln)[0]?.pfad === "src/lib/media.ts"],
+    ["Zeilennummer erkannt", pfadverweise("siehe `src/lib/media.ts:42`", wurzeln)[0]?.bis === 42],
+    ["Bereich erkannt", pfadverweise("siehe `src/lib/media.ts:10-20`", wurzeln)[0]?.von === 10],
+    ["Muster ignoriert", pfadverweise("siehe `scripts/regime/*.mjs`", wurzeln).length === 0],
+    ["Fremdpfad ignoriert", pfadverweise("liegt in `/etc/nginx/conf.d/x.conf`", wurzeln).length === 0],
+    // Hergeleitete statt verdrahtete Wurzelliste (Loch k).
+    ["verstecktes Verzeichnis wird erkannt (Loch k)", pfadverweise("siehe `.zap/rules.tsv`", wurzeln)[0]?.pfad === ".zap/rules.tsv"],
+    ["`./` gilt als repo-relativ", pfadverweise("siehe `./deploy.sh`", wurzeln)[0]?.pfad === "deploy.sh"],
+    ["kein Pfad: try/catch", pfadverweise("ein `try/catch` im Branding-Pfad", wurzeln).length === 0],
+    ["kein Pfad: text/html", pfadverweise("liefert `text/html`", wurzeln).length === 0],
+    ["kein Pfad: Prüfkennungen", pfadverweise("betrifft `A-20/B-05`", wurzeln).length === 0],
+    ["kein Pfad: Modulkürzel", pfadverweise("importiert `@/db` nicht statisch", wurzeln).length === 0],
+    ["kein Pfad: nackter Dateiname", pfadverweise("siehe `boundary-check.mjs`", wurzeln).length === 0],
     // Abkürzung löst auf — und die Zeilenprüfung greift trotzdem (Loch d).
     ["Abkürzung löst auf", aufloesen("audit/06", alle) === "audit/06-residual-risk-register.md"],
     ["Erfundener Pfad löst nicht auf", aufloesen("src/gibt-es-nicht.ts", alle) === null],
@@ -408,7 +470,7 @@ if (process.argv.includes("--selftest")) {
     ["vertippter Pfad löst nicht auf (Loch i)", aufloesen("src/lib/media.t", alle) === null],
     ["Verkürzung löst nicht auf (Loch i)", aufloesen("src/lib/bildreihe", alle) === null],
     ["einstellige Nummer ist keine Abkürzung", aufloesen("audit/0", alle) === null],
-    ["Pfad mit Punkt am Ende wird nicht gewaschen", pfadverweise("siehe `src/lib/media.ts.`")[0]?.pfad === "src/lib/media.ts."],
+    ["Pfad mit Punkt am Ende wird nicht gewaschen", pfadverweise("siehe `src/lib/media.ts.`", wurzeln)[0]?.pfad === "src/lib/media.ts."],
     ["Zeilenprüfung greift auch bei Abkürzung (Loch d)", zeilenBefund(aufloesen("audit/06", alle), 99999, 99999) !== null],
     // Unmögliche Angaben (Loch e).
     ["Zeile an einem Verzeichnis (Loch e)", zeilenBefund("src/lib", 999, 999) !== null],
