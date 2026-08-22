@@ -246,39 +246,60 @@ Spec-Gruppe.
 
 ---
 
-## B9 — Die Rasterungsumgebung ist nicht festgelegt
+## B9 — Die Rasterungsumgebung ist nicht festgelegt — WURZEL BENANNT UND VERDRAHTET 08/2026, Restschritt offen
 
-**Befund.** Die 33 Referenzaufnahmen reproduzieren auf dem CI-Läufer NICHT. Es
-ist keine Kantenglättung, sondern eine andere Schriftmetrik: Der Text bricht
-anders um, und die Seiten werden unterschiedlich hoch.
+**Was der Befund sagte.** Die Referenzaufnahmen reproduzieren auf dem CI-Läufer
+nicht; „der Läufer rastert Schrift anders". Das war richtig beobachtet und zu
+vage, um daran etwas zu reparieren.
+
+**Nachgemessen ist es schärfer — es sind ZWEI CHROMIUM-BUILDS:**
 
 ```
-datenschutz @ handy-390:  erwartet 390x6102, erhalten 390x6000   (102 px kürzer)
-datenschutz @ ipad-834:   erwartet 834x3822, erhalten 834x3849   ( 27 px höher)
-datenschutz @ desktop:    erwartet 1280x3785, erhalten 1280x3812 ( 27 px höher)
-ueber-mich  @ desktop:    gleiche Höhe, 8883 Pixel (Verhältnis 0,01)
+Playwright 1.62.1 verlangt     Revision 1234  (Chrome for Testing 151.0.7922.34)
+diese Umgebung hat             Revision 1194  (Chromium 141.0.7390.37)
+CI installiert                 Revision 1234
 ```
 
-**Was getan wurde.** Die Referenz ist ein ÖRTLICHES Werkzeug: Sie läuft vor dem
-Push auf einer Maschine und beweist dort, dass ein Umbau nur ändert, was er
-ändern soll (beim Bildgruppen-Umbau: 30 von 33 pixelgleich). In CI läuft sie
-nicht, und die Begründung samt Zahlen steht in `playwright.config.ts`.
+`playwright.config.ts` nahm das vorinstallierte Chromium **still**, sobald es
+da war. Aufgenommen wurde also mit dem einen Build, verglichen mit dem anderen.
+Dass Text dann anders umbricht und Seiten unterschiedlich hoch werden, ist
+keine Überraschung mehr, sondern die Folge.
 
-**Ausdrücklich NICHT getan.** Die Toleranz wurde nicht angehoben. Bei einer
-Abweichung von 0,20 müsste sie so weit hoch, dass eine verrutschte Bildzeile
-darunter verschwindet — die Kontrolle wäre dann nur noch Dekoration.
+**Was jetzt gilt.** Neben jeder Basis liegt `AUFNAHME-UMGEBUNG.txt` mit der
+Browser-Kennung. Die Referenz prüft sie beim Start:
 
-**Die Wurzel** ist, dass die Rasterungsumgebung nirgends festgelegt ist. Wer
-die Referenz zum CI-Gate machen will, muss e2e in einem festen Abbild fahren —
-naheliegend dasselbe Container-Abbild, in dem die Anwendung ausgeliefert wird
-(`podman`, siehe README §Betrieb). Dann stimmen Schriften und Rasterung, und
-die Basis ist zwischen Maschinen portabel. Das ist eigene Arbeit und braucht
-eine eigene Abnahme.
+* Stempel passt → es wird verglichen, **auch in CI**. Die Bedingung
+  `!process.env.CI` ist weg; über die Gültigkeit entscheidet der Browser, nicht
+  die Umgebungsvariable.
+* Stempel passt nicht → **übersprungen mit Begründung**. Eine Messung, die auf
+  diesem Build nicht gültig ist, darf weder grün noch rot behauptet werden. Die
+  Toleranz bleibt bei 0,002.
 
-**Zwischenstand bis dahin:** Die Struktur der Bildanordnung ist in CI trotzdem
-gedeckt — `tests/e2e/bildreihen.spec.ts` und `tests/e2e/bildgruppe-mock.spec.ts`
-messen Geometrie (gleiche Höhe, Breitensumme, kein Überlauf) statt Pixel und
-sind damit maschinenunabhängig.
+`playwright.config.ts` bevorzugt außerdem Playwrights eigenen (gepinnten)
+Build; das vorinstallierte Chromium ist nur noch Rückfallweg.
+
+**Ein Fehler dabei, gefunden durch Nachstellen:** Der erste Anlauf schrieb den
+Stempel bei JEDEM Lauf neu — `updateSnapshots` steht standardmäßig auf
+`"missing"`, nicht auf `"none"`, die Bedingung war immer wahr. Der Wächter hat
+also nichts bewacht. Gegenprobe: Stempel von Hand auf `chromium 999.0.0.0`
+gesetzt, normaler Lauf — 33 grün, Stempel danach wieder auf dem laufenden
+Browser. Jetzt wird nur bei `--update-snapshots` gestempelt; dieselbe
+Gegenprobe ergibt **33 übersprungen, Stempel unverändert**.
+
+**RESTSCHRITT (offen).** Die eingecheckte Basis trägt `chromium 141.0.7390.37`
+(Revision 1194) — den Build dieser Sandbox. Damit CI wirklich vergleicht, muss
+die Basis einmal auf dem gepinnten Build (1234) aufgenommen werden:
+
+```
+npx playwright install chromium
+npx playwright test seiten-referenz admin-referenz --update-snapshots
+```
+
+Hier ist das nicht möglich: Der Download scheitert an der Netzpolitik
+(`Failed to download Chrome for Testing 151.0.7922.34`). Es braucht eine
+Umgebung, die den Browser laden darf. Danach ist ohne weitere Code-Änderung ein
+echtes CI-Gate daraus geworden — bis dahin meldet CI ehrlich „übersprungen,
+weil anderer Browser" statt 114 rätselhafter Pixelabweichungen.
 
 ---
 
