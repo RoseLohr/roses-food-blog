@@ -59,19 +59,34 @@ while IFS= read -r zeile; do
   ports=${zeile#*|}
   case "$ports" in *:80-\>*|*:443-\>*) ;; *) continue ;; esac
   $PODMAN exec "$name" nginx -v >/dev/null 2>&1 || continue
-  # Den Namen als eigenes WORT in einer server_name-Zeile suchen, nicht die
-  # ganze Zeile vergleichen: NPM rückt sie ein, und `server_name a.de b.de;`
-  # ist zulässig. `grep -Fx` auf den zerlegten Wörtern trifft exakt und braucht
-  # keine Maskierung der Punkte. Nur grep und tr — beides ist in dem Container
-  # nachweislich vorhanden.
-  $PODMAN exec "$name" sh -c \
-    "grep -hE '^[[:space:]]*server_name[[:space:]]' /data/nginx/proxy_host/*.conf 2>/dev/null \
-     | tr -d ';' | tr -s ' \t' '\n' | grep -Fxq '$HOST'" >/dev/null 2>&1 || continue
+  # Im Container wird nur GELESEN, mit einem FESTEN Kommando. Ausgewertet wird
+  # hier draußen. Zwei Gründe, beide vom Pflicht-Approver gefunden (PR #103):
+  #
+  #  1. Die erste Fassung baute `$HOST` in eine `sh -c`-Zeichenkette. Ein Wert
+  #     wie `x' >/dev/null; true #` hätte die Prüfung immer bestehen lassen —
+  #     und dann schriebe deploy.sh eine globale Konfiguration in den
+  #     erstbesten fremden nginx. Fremde Daten gehören nicht in eine
+  #     Kommandozeichenkette; als Argument an grep sind sie harmlos.
+  #  2. Die erste Fassung zerlegte die ganze Zeile in Wörter — samt Kommentar.
+  #     `server_name fremd.de; # ziel.de` hätte „ziel.de" diesem Container
+  #     zugeordnet. Eine nginx-Direktive endet am Semikolon, und alles hinter
+  #     `#` ist Kommentar.
+  konf=$($PODMAN exec "$name" sh -c 'cat /data/nginx/proxy_host/*.conf 2>/dev/null') || konf=""
+  [ -n "$konf" ] || continue
+  namen=$(printf '%s\n' "$konf" \
+    | sed 's/#.*$//' \
+    | grep -E '^[[:space:]]*server_name[[:space:]]' \
+    | sed -e 's/;.*$//' -e 's/^[[:space:]]*server_name[[:space:]]*//' \
+    | tr -s ' \t' '\n') || namen=""
+  printf '%s\n' "$namen" | grep -Fxq -- "$HOST" || continue
   TREFFER="$TREFFER$name"$'\n'
   ANZAHL=$((ANZAHL + 1))
-done <<EOF
-$LAUFENDE
-EOF
+# Gespeist wird die Schleife mit einem Here-String. Ein unquotiertes Heredoc
+# ist im Projekt verboten — sein Rumpf würde von der Shell ausgewertet (Regel
+# aus dem Vorfall 2026-08-14, erzwungen von tests/deploy-betrieb.test.ts). Und
+# eine Pipe scheidet aus: Die Schleife liefe in einer Subshell, TREFFER und
+# ANZAHL kämen nie hier an.
+done <<< "$LAUFENDE"
 
 if [ "$ANZAHL" -eq 0 ]; then
   echo "Kein Proxy-Container gefunden, der '$HOST' bedient." >&2

@@ -29,5 +29,12 @@ url_teile() {
     *)       URL_HOST="$hostport" ;;
   esac
   [ -n "$URL_HOST" ] || return 1
+  # Der Name muss wie ein Name aussehen. Das ist die Wurzel, an der eine ganze
+  # Fehlerklasse verschwindet: Anführungszeichen, Semikolons und Leerzeichen
+  # kommen so gar nicht erst bei einem Aufrufer an, der sie womöglich in eine
+  # Kommandozeichenkette schreibt. Der Doppelpunkt bleibt zulässig — IPv6.
+  case "$URL_HOST" in
+    *[!A-Za-z0-9._:-]*) return 1 ;;
+  esac
   return 0
 }

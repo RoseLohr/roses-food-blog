@@ -364,6 +364,17 @@ describe("Kompressionsprüfung", () => {
     expect(ausgabe).toMatch(/keine brauchbare URL: 'https:\/gourmetcompass\.de'/);
   });
 
+  it("weist einen Namen zurück, der wie eine Shell-Einschleusung aussieht", async () => {
+    // Die Zerlegung in scripts/regime/url-teile.sh verlangt, dass der Name wie
+    // ein Name aussieht. Das ist die Wurzel, an der eine ganze Fehlerklasse
+    // verschwindet: Anführungszeichen und Semikolons kommen gar nicht erst bei
+    // einem Aufrufer an, der sie womöglich in eine Kommandozeichenkette
+    // schreibt — so geschehen in npm-container-finden.sh (PR #103).
+    const { code, ausgabe } = await pruefen("https://x';true;x='", "ursprung");
+    expect(code, ausgabe).toBe(2);
+    expect(ausgabe).toMatch(/keine brauchbare URL/);
+  });
+
   it("misst nichts auf einer Fehlerseite mit Status 200", async () => {
     server = createServer((_a, antwort) => {
       antwort.writeHead(200, { "Content-Type": "text/html" }).end("<html><body>Störung</body></html>");

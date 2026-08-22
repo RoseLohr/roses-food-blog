@@ -29,6 +29,8 @@ type Behaelter = {
   nginx: boolean;
   /** Welche Namen bedient er laut /data/nginx/proxy_host/? */
   hosts: string[];
+  /** Statt der Hostliste eine rohe conf-Zeile, für knifflige Formen. */
+  rohzeile?: string;
 };
 
 let arbeit: string;
@@ -46,7 +48,9 @@ function podmanAttrappe(behaelter: Behaelter[]) {
   for (const b of behaelter) {
     const ph = path.join(wurzeln, b.name, "data/nginx/proxy_host");
     fs.mkdirSync(ph, { recursive: true });
-    if (b.hosts.length) {
+    if (b.rohzeile !== undefined) {
+      fs.writeFileSync(path.join(ph, "1.conf"), `${b.rohzeile}\n`);
+    } else if (b.hosts.length) {
       fs.writeFileSync(path.join(ph, "1.conf"), `  server_name ${b.hosts.join(" ")};\n`);
     }
   }
@@ -148,6 +152,44 @@ describe("Proxy-Container zuordnen", () => {
       { name: "npm", ports: "0.0.0.0:443->443/tcp", nginx: true, hosts: ["gourmetcompass.de"] },
     ]);
     expect((await finden(bin, "compass.de")).code).toBe(1);
+  });
+
+  it("liest keinen Namen aus einem Kommentar", async () => {
+    // `server_name fremd.de; # ziel.de` — eine nginx-Direktive endet am
+    // Semikolon, alles hinter `#` ist Kommentar. Die erste Fassung zerlegte
+    // die ganze Zeile in Wörter und hätte den Container fälschlich zugeordnet.
+    // (Befund des Pflicht-Approvers, PR #103.)
+    const bin = podmanAttrappe([
+      { name: "npm", ports: "0.0.0.0:443->443/tcp", nginx: true, hosts: [],
+        rohzeile: "  server_name fremd.de; # gourmetcompass.de" },
+    ]);
+    expect((await finden(bin, "gourmetcompass.de")).code).toBe(1);
+  });
+
+  it("liest keinen Namen aus einer auskommentierten Direktive", async () => {
+    const bin = podmanAttrappe([
+      { name: "npm", ports: "0.0.0.0:443->443/tcp", nginx: true, hosts: [],
+        rohzeile: "  # server_name gourmetcompass.de;" },
+    ]);
+    expect((await finden(bin, "gourmetcompass.de")).code).toBe(1);
+  });
+
+  it("lässt sich nicht per Shell-Einschleusung im Hostnamen überlisten", async () => {
+    // Die erste Fassung baute den Namen in eine `sh -c`-Zeichenkette. Ein Wert
+    // wie `x' >/dev/null; true #` hätte die Prüfung IMMER bestehen lassen —
+    // und dann schriebe deploy.sh eine globale nginx-Konfiguration in den
+    // erstbesten fremden Container. (Befund des Pflicht-Approvers, PR #103.)
+    const bin = podmanAttrappe([
+      { name: "fremd", ports: "0.0.0.0:443->443/tcp", nginx: true, hosts: ["fremd.example"] },
+    ]);
+    // Die Nutzlast trägt bewusst weder `/` noch `:`: Beides schneidet die
+    // URL-Zerlegung ab und entschärfte eine erste, naheliegendere Nutzlast
+    // ZUFÄLLIG — die Prüfung wäre dann auch mit der verwundbaren Fassung grün
+    // gewesen und hätte nichts belegt. Gegengeprüft: Mit der alten Fassung
+    // besteht der Container die Namensprüfung, mit dieser nicht.
+    const { code, gefunden, ausgabe } = await finden(bin, "x';true;x='");
+    expect(code, ausgabe).not.toBe(0);
+    expect(gefunden, "es darf kein Container zurückgegeben werden").toBe("");
   });
 
   it("rät NICHT, wenn zwei Container dieselbe Domain bedienen", async () => {
