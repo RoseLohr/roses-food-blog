@@ -118,7 +118,7 @@ Zwei Dinge, die das Inventar zusätzlich festhält:
   Annahmenummern und Pfadverweise ins Leere. Gemessen am Bestand: 300
   Pfadverweise, 4 historische Codeblöcke, alle in Ordnung.
 
-  **Der Pflicht-Approver hat in ZWEI Runden ACHT Umgehungen gefunden** — fünf
+  **Der Pflicht-Approver hat in DREI Runden NEUN Umgehungen gefunden** — sechs
   von ihm benannt, drei beim Nachziehen derselben Klasse. Sechs davon haben
   dieselbe Form: *eine Prüfung, die sich still selbst abschaltet.* Eine
   Shell-Zeile „# historisch" INNERHALB eines Codeblocks setzte die Ausnahme für
@@ -146,9 +146,25 @@ Zwei Dinge, die das Inventar zusätzlich festhält:
   „// A5". Übrig als eigene Logik bleiben die drei Löcher, die von Dateien und
   Zahlen handeln statt von Grammatik.
 
-  38 Selbsttestfälle, Gegenprobe gegen beide Vorfassungen gefahren (alle acht
-  rutschen dort durch), dazu eine Positivkontrolle am echten Baum: drei
-  eingeschleuste Verstöße in README, `docs/` und `src/` werden mit exakter
+  **Runde drei fand ein neuntes Loch — und es war das gefährlichste**, weil es
+  die Prüfung nicht umging, sondern ihren Zweck aushöhlte: Ein Pfadverweis galt
+  als gültig, sobald er ein eindeutiger PRÄFIX einer vorhandenen Datei war.
+  Damit lief jeder vertippte oder verkürzte Pfad grün durch — nachgemessen an
+  drei Beispielen, die die Vorfassung alle auflöste und die neue Fassung alle
+  zurückweist. Ausgerechnet die Frage „gibt es diese Datei?" wäre damit
+  wirkungslos gewesen.
+
+  Gebraucht wird die Abkürzung an GENAU EINER Stelle im ganzen Bestand: Die
+  Verfassung nennt das Residuals-Register bei seiner Nummer, und sie ist
+  hash-attestiert — sie für eine Linting-Bequemlichkeit umzuschreiben wäre die
+  falsche Richtung. Die Ausnahme heißt deshalb jetzt, was sie ist: zweistellige
+  Dokumentnummer als letztes Wegstück, gefolgt von einem Bindestrich in der
+  gefundenen Datei. Benannt statt offen. Im selben Zug fiel eine Bereinigung
+  nachgestellter Interpunktion weg, die dasselbe tat — Tippfehler waschen.
+
+  42 Selbsttestfälle, Gegenprobe gegen alle drei Vorfassungen gefahren (alle
+  neun Löcher rutschen dort durch), dazu eine Positivkontrolle am echten Baum:
+  drei eingeschleuste Verstöße in README, `docs/` und `src/` werden mit exakter
   Zeilennummer gemeldet.
 
   Die Gegenbeispiele stehen hier bewusst OHNE Backticks: Das Gate kann eine

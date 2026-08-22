@@ -54,8 +54,8 @@
  * ─────────────────────────────────────────────────────────────────────────
  * WARUM HIER ZWEI FREMDE PARSER LAUFEN UND KEINE EIGENEN WÄHLER
  *
- * Die ersten beiden Fassungen zerlegten Markdown und TypeScript von Hand. Der
- * Pflicht-Approver hat in ZWEI Runden ACHT Umgehungen gefunden (PR #109) — und
+ * Die ersten Fassungen zerlegten Markdown und TypeScript von Hand. Der
+ * Pflicht-Approver hat in DREI Runden NEUN Umgehungen gefunden (PR #109) — und
  * das ist kein Ausreißer, sondern die Regel: Ein handgeschriebener Zerleger hat
  * so viele Löcher, wie das Format Sonderfälle hat. Die gefundenen, zur
  * Erinnerung und als Selbsttestfälle unten festgenagelt:
@@ -72,6 +72,9 @@
  *      als gültig.
  *   h) `split("\n").length` zählte bei abschließendem Umbruch eine Zeile zu
  *      viel — ein Verweis auf N+1 war grün.
+ *   i) JEDER eindeutige PRÄFIX galt als gültige Abkürzung. Damit lief ein
+ *      vertippter Pfad (`src/lib/media.t`) grün durch — die Frage „gibt es
+ *      diese Datei?" war ausgehöhlt, nicht bloß umgangen. Siehe `aufloesen`.
  *
  * a, b, c und f sind Markdown-Sonderfälle; g ist ein TypeScript-Sonderfall.
  * Fünf von acht Löchern kamen also daher, dass hier zwei Sprachen nachgebaut
@@ -230,7 +233,11 @@ export function pfadverweise(zeile) {
     if (!t) continue;
     raus.push({
       text: m[1],
-      pfad: t[1].replace(/[.,;:)]+$/, ""),
+      // KEINE Bereinigung nachgestellter Interpunktion: Sie stand hier und
+      // wusch Tippfehler. Innerhalb von Backticks gehört jedes Zeichen zum
+      // Verweis; am Bestand nachgesehen trägt kein einziger Pfad dort einen
+      // Punkt oder ein Komma am Ende.
+      pfad: t[1],
       von: t[2] === undefined ? null : Number(t[2]),
       bis: t[3] === undefined ? (t[2] === undefined ? null : Number(t[2])) : Number(t[3]),
     });
@@ -241,10 +248,23 @@ export function pfadverweise(zeile) {
 /**
  * Löst einen Verweis auf die Datei auf, die er meint.
  *
- * Auch eine EINDEUTIGE Abkürzung zählt: `audit/06` meint
- * `audit/06-residual-risk-register.md`, und diese Schreibweise steht unter
- * anderem in der Verfassung. Mehrdeutig ist sie kein Verweis mehr — dann `null`,
- * genau wie bei „gibt es nicht".
+ * Neben dem exakten Pfad zählt GENAU EINE Abkürzung: die Nummer eines
+ * nummerierten Dokuments. `audit/06` meint `audit/06-residual-risk-register.md`;
+ * diese Schreibweise steht in der Verfassung (Artikel XIII, Residuals-Register),
+ * und die ist hash-attestiert — sie für eine Linting-Bequemlichkeit
+ * umzuschreiben wäre die falsche Richtung.
+ *
+ * WARUM NICHT „irgendein eindeutiger Präfix" (Loch i, Befund des
+ * Pflicht-Approvers, dritte Runde): Diese Regel stand hier und war eine
+ * Tippfehler-Waschanlage. `src/lib/media.t` ist ein eindeutiger Präfix von
+ * `src/lib/media.ts` — ein vertippter Pfad wäre grün durchgelaufen, und damit
+ * hätte ausgerechnet die Prüfung „gibt es diese Datei?" ihren Zweck verloren.
+ * JEDE Verkürzung wäre erlaubt gewesen.
+ *
+ * Jetzt muss die Abkürzung auf eine ZWEISTELLIGE Zahl als letztes Wegstück
+ * enden, und die gefundene Datei muss unmittelbar danach einen Bindestrich
+ * tragen. `src/lib/media.t` erfüllt das nicht, `audit/06` schon. Die Ausnahme
+ * ist damit benannt statt offen.
  *
  * Der aufgelöste Pfad wird ZURÜCKGEGEBEN und nicht bloß als „trifft/trifft
  * nicht" verworfen: Sonst hängt die Zeilenprüfung am Rohpfad und springt bei
@@ -252,10 +272,11 @@ export function pfadverweise(zeile) {
  */
 export function aufloesen(pfad, alle) {
   if (fs.existsSync(pfad)) return pfad;
+  if (!/(?:^|\/)\d{2}$/.test(pfad)) return null;
   // `git ls-files --cached` führt auch Einträge, deren Datei im Arbeitsbaum
   // gerade fehlt. Ohne diese Prüfung stürbe `zeilenBefund` später an einem
   // `statSync` — eine Kontrolle, die abstürzt, meldet nichts.
-  const treffer = alle.filter((f) => f.startsWith(pfad) && fs.existsSync(f));
+  const treffer = alle.filter((f) => f.startsWith(`${pfad}-`) && fs.existsSync(f));
   return treffer.length === 1 ? treffer[0] : null;
 }
 
@@ -383,6 +404,11 @@ if (process.argv.includes("--selftest")) {
     // Abkürzung löst auf — und die Zeilenprüfung greift trotzdem (Loch d).
     ["Abkürzung löst auf", aufloesen("audit/06", alle) === "audit/06-residual-risk-register.md"],
     ["Erfundener Pfad löst nicht auf", aufloesen("src/gibt-es-nicht.ts", alle) === null],
+    // … aber NUR die Dokumentnummer, kein beliebiger Präfix (Loch i).
+    ["vertippter Pfad löst nicht auf (Loch i)", aufloesen("src/lib/media.t", alle) === null],
+    ["Verkürzung löst nicht auf (Loch i)", aufloesen("src/lib/bildreihe", alle) === null],
+    ["einstellige Nummer ist keine Abkürzung", aufloesen("audit/0", alle) === null],
+    ["Pfad mit Punkt am Ende wird nicht gewaschen", pfadverweise("siehe `src/lib/media.ts.`")[0]?.pfad === "src/lib/media.ts."],
     ["Zeilenprüfung greift auch bei Abkürzung (Loch d)", zeilenBefund(aufloesen("audit/06", alle), 99999, 99999) !== null],
     // Unmögliche Angaben (Loch e).
     ["Zeile an einem Verzeichnis (Loch e)", zeilenBefund("src/lib", 999, 999) !== null],
