@@ -5,7 +5,7 @@ automatisiertem Podman-Deployment auf einem eigenen Ubuntu-Server.
 
 ## Stack-Entscheidung
 
-Es gilt die Empfehlung aus dem Auftrag (Annahme A1), ohne Abweichung:
+Es gilt die Empfehlung aus dem Auftrag, ohne Abweichung:
 
 | Baustein        | Wahl                                             | Begründung |
 |-----------------|--------------------------------------------------|------------|

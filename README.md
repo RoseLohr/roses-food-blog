@@ -15,10 +15,10 @@ sein Dienst ist aber `enabled` **und** `failed` und gehört nicht zur Kette
 - Planung & Stack-Entscheidung: [`docs/PLAN.md`](docs/PLAN.md)
 - Dokumentierte Annahmen: [`docs/ASSUMPTIONS.md`](docs/ASSUMPTIONS.md)
 
-> Verweise auf „Annahme A1–A11" stammen aus dem Projektauftrag und sind im
-> Repository nirgends niedergeschrieben (`governance/mandate.md` kennt sie
-> nicht). Sie sind deshalb hier entfernt statt durch eine andere Nummer
-> ersetzt.
+> Nummerierte Verweise auf die Annahmen des Projektauftrags („Annahme Nr. …")
+> sind hier entfernt statt durch eine andere Nummer ersetzt: Diese Nummern sind
+> im Repository nirgends niedergeschrieben, `governance/mandate.md` kennt sie
+> nicht. Was hier gilt, steht in `docs/ASSUMPTIONS.md` unter B1–B24.
 
 ## Entwicklung (lokal)
 

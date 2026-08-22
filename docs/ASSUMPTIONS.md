@@ -1,7 +1,8 @@
 # ASSUMPTIONS — dokumentierte Annahmen
 
-Die Annahmen A1–A11 stammen aus dem Projektauftrag und sind im Repository
-nirgends niedergeschrieben (`governance/mandate.md` kennt sie nicht); sie gelten. Zusätzliche
+Die nummerierten Annahmen des Projektauftrags sind im Repository nirgends
+niedergeschrieben (`governance/mandate.md` kennt sie nicht); nummerierte
+Verweise darauf sind deshalb aus der Dokumentation entfernt. Sie gelten. Zusätzliche
 Annahmen, die während der Umsetzung getroffen wurden:
 
 - **B1 — Next.js 16:** „Aktuelle stabile Version" ist Next.js 16 (App Router).
@@ -61,7 +62,7 @@ Annahmen, die während der Umsetzung getroffen wurden:
   (pausiert, 2 Beispielschritte); Schritte/Inhalte sind im Admin editierbar.
   Trigger: Statuswechsel auf „aktiv" (Double-Opt-in bestätigt).
 - **B15 — Admin-UI-Sprache:** Auch der Admin-Bereich ist Deutsch; alle Texte
-  liegen in `src/i18n/de.ts` (i18n-vorbereitet, A3).
+  liegen in `src/i18n/de.ts` (i18n-vorbereitet).
 - **B16 — Kalorien:** `kcal` gilt pro Portion (Anzeige kennzeichnet das).
 - **B17 — Container-Basisimage:** `node:22-bookworm-slim` (glibc) statt Alpine,
   damit better-sqlite3/sharp/argon2 als Prebuilds funktionieren — kein
@@ -78,7 +79,8 @@ Annahmen, die während der Umsetzung getroffen wurden:
   liegen drei selbst gehostete Variable-woff2 — Raleway (`--font-display`,
   Überschriften), Nunito Sans (`--font-sans`, Fließtext) und Jost
   (`--font-brand`, ausschließlich das Marken-Lockup). Kein externes CDN, kein
-  Laufzeit-Download; A7 bleibt damit erfüllt, nur eben mit eigenen Dateien.
+  Laufzeit-Download; die Auftragsforderung „kein externes CDN" bleibt damit
+  erfüllt, nur eben mit eigenen Dateien.
   *Stand 2026-08-16:* zusammen 92.916 B. Die Dateien sind latin-subgesetzt
   (221–231 Zeichen); der verbliebene Ballast steckt in der `gvar`-Tabelle, also
   in der Breite der Gewichtsachse. Die Achsen sind deshalb auf die im Browser
