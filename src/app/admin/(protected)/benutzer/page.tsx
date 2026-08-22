@@ -41,7 +41,9 @@ export default async function UsersPage(props: {
                 <td className="px-4 py-3 font-medium">{u.name}</td>
                 <td className="px-4 py-3">{u.email}</td>
                 <td className="px-4 py-3">
-                  {u.createdAt.toLocaleDateString("de-DE")}
+                  <span data-referenz-maske="true">
+                    {u.createdAt.toLocaleDateString("de-DE")}
+                  </span>
                 </td>
                 <td className="px-4 py-3">
                   <form action={deleteUserAction}>

@@ -33,6 +33,12 @@ export interface Seitentyp {
    * Zustand zeigen, der aufgenommen werden soll. Optional.
    */
   vorbereiten?: (page: Page) => Promise<void>;
+  /**
+   * Trägt diese Seite mindestens einen lauf-abhängigen Wert, der maskiert
+   * werden MUSS? Fehlt die Angabe, wird auf dieser Seite gar keine Maske
+   * erwartet — und eine gefundene ist dann ein Fehler.
+   */
+  maskiert?: true;
 }
 
 /** Erste Verknüpfung unter `muster` auf der Seite `von`. */
@@ -60,12 +66,24 @@ export async function ausSitemap(page: Page, muster: RegExp) {
 }
 
 /**
- * Bereiche, die sich zwischen zwei Läufen ohne Zutun ändern können.
+ * Bereiche, die vom LAUF abhängen statt von den Daten.
  *
- * „Beliebt" auf der Startseite sortiert nach Likes — und andere E2E-Tests
- * vergeben Likes. Ohne Maske hinge diese Kontrolle an der Reihenfolge der
- * Testdateien; sie wäre flatterhaft, und eine flatterhafte Kontrolle wird
- * abgeschaltet statt beachtet.
+ * Maskiert wird, was sich zwischen zwei identischen Läufen ohne Zutun ändern
+ * kann — sonst wäre die Kontrolle flatterhaft, und eine flatterhafte Kontrolle
+ * wird abgeschaltet statt beachtet. Die Maske deckt den TEXT ab, nicht die
+ * Geometrie: Playwright legt ein Rechteck über die Box des Elements, ein
+ * anderes Format oder eine andere Textbreite fällt also weiterhin auf.
+ *
+ * RICHTIGSTELLUNG (08/2026): Bis hierher behauptete dieser Kommentar, die
+ * Maske schütze die „Beliebt"-Liste der Startseite vor Likes aus anderen
+ * Specs. Das stimmte nicht — die Marke `data-referenz-maske` stand in KEINER
+ * einzigen Datei unter src/. Der Wähler traf nichts, die Zusage war leer. Was
+ * dort tatsächlich schützt, ist die Reihenfolge: Die Referenz läuft als
+ * eigenes Playwright-Projekt vor allem anderen (playwright.config.ts).
+ *
+ * Getragen wird die Marke jetzt von drei Datumszellen und einer Kachel im
+ * Admin — Werte, die am Tag des Laufs bzw. an den Aufrufen DIESES Laufs
+ * hängen. Sie sind der Grund, dass es die Maske gibt.
  */
 function masken(page: Page) {
   return [page.locator('[data-referenz-maske="true"]')];
@@ -90,6 +108,31 @@ export function referenzaufnahmen(
         const ziel = await seite.ziel(page);
         await page.goto(ziel);
         if (seite.vorbereiten) await seite.vorbereiten(page);
+
+        // Die Maske muss treffen, was sie zu maskieren vorgibt. Bis 08/2026
+        // stand `data-referenz-maske` in KEINER Datei unter src/ — der Wähler
+        // traf nichts, und die Aufnahmen hätten einen lauf-abhängigen Wert
+        // stillschweigend als Basis eingefroren. Ein solcher Irrtum fällt
+        // nirgends auf: Die Aufnahme ist grün, solange der Wert zufällig
+        // gleich bleibt, und wird rot, sobald er es nicht mehr tut — dann aber
+        // ohne Hinweis auf die Ursache.
+        const gefunden = await page
+          .locator('[data-referenz-maske="true"]')
+          .count();
+        if (seite.maskiert) {
+          expect(
+            gefunden,
+            `${seite.name} soll einen lauf-abhängigen Wert maskieren, ` +
+              `trägt aber kein [data-referenz-maske]`,
+          ).toBeGreaterThan(0);
+        } else {
+          expect(
+            gefunden,
+            `${seite.name} trägt eine Maske, die hier nicht angemeldet ist — ` +
+              `entweder gehört sie nicht dorthin, oder die Seite braucht ` +
+              `\`maskiert: true\``,
+          ).toBe(0);
+        }
 
         const { haengen, kaputt } = await bilderFertig(page);
         expect(haengen, `Bilder ohne Abschluss auf ${ziel}`).toEqual([]);

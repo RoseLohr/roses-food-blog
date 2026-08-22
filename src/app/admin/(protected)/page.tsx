@@ -30,11 +30,16 @@ export default async function AdminDashboard() {
     WHERE day = ${today} AND visitor_type = 'mensch'
   `)[0] ?? { n: 0 };
 
-  const cards: Array<[string, number | string]> = [
+  // Das dritte Feld markiert Werte, die vom LAUF abhängen statt von den Daten.
+  // „Aufrufe heute" zählt die Aufrufe DIESER Sitzung mit — im Testlauf also die
+  // Seiten, die der Läufer selbst besucht hat. Die Referenzaufnahme blendet den
+  // Wert deshalb aus (siehe tests/e2e/referenz.ts); die Kachel selbst, ihre
+  // Größe und ihre Beschriftung bleiben im Bild.
+  const cards: Array<[string, number | string, boolean?]> = [
     [`${dict.admin.dashboard.recipes} (${dict.admin.dashboard.published})`, published.n],
     [dict.admin.dashboard.drafts, drafts.n],
     [dict.admin.dashboard.contacts, activeContacts.n],
-    [dict.admin.dashboard.viewsToday, viewsToday.n],
+    [dict.admin.dashboard.viewsToday, viewsToday.n, true],
   ];
 
   return (
@@ -43,9 +48,14 @@ export default async function AdminDashboard() {
         {dict.admin.dashboard.welcome}, {admin.name}!
       </h1>
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        {cards.map(([label, value]) => (
+        {cards.map(([label, value, laufabhaengig]) => (
           <div key={label} className="bg-white p-5 shadow-sm">
-            <p className="text-3xl font-bold text-rose-primary">{value}</p>
+            <p
+              className="text-3xl font-bold text-rose-primary"
+              data-referenz-maske={laufabhaengig ? "true" : undefined}
+            >
+              {value}
+            </p>
             <p className="mt-1 text-sm text-ink-soft">{label}</p>
           </div>
         ))}

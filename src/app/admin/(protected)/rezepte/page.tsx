@@ -75,7 +75,9 @@ export default async function RecipesAdminPage(props: {
                 </td>
                 <td className="px-4 py-3">{r.likeCount}</td>
                 <td className="px-4 py-3">
-                  {r.updatedAt.toLocaleDateString("de-DE")}
+                  <span data-referenz-maske="true">
+                    {r.updatedAt.toLocaleDateString("de-DE")}
+                  </span>
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex gap-3">

@@ -99,7 +99,11 @@ export default async function TravelAdminPage(props: {
                       : dict.admin.recipes.statusDraft}
                   </span>
                 </td>
-                <td className="px-4 py-3">{p.updatedAt.toLocaleDateString("de-DE")}</td>
+                <td className="px-4 py-3">
+                  <span data-referenz-maske="true">
+                    {p.updatedAt.toLocaleDateString("de-DE")}
+                  </span>
+                </td>
                 <td className="px-4 py-3">
                   <div className="flex gap-3">
                     <Link
