@@ -1,0 +1,118 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Mock: Einzelbild mit Größe und Ausrichtung</title>
+<!--
+  SCHRITT 1 — Der Entwurf für Bilder OHNE Gruppe, isoliert.
+
+  REGEL (vorgegeben): Ein Bild, das zu keiner Gruppe gehört, bekommt eine
+  Größe (s/m/l) und eine Ausrichtung (links/rechts). Der Text läuft darum
+  herum.
+
+  ── WARUM DAS DIESMAL TRAGEN MUSS ─────────────────────────────────────────
+
+  Genau diese Mechanik hat den ursprünglichen Fehler verursacht: Zwei Bilder
+  mit 2/3 und 1/3 nebeneinander, jedes mit `margin-right: 1.5rem` — Summe über
+  100 %, das zweite MUSSTE umbrechen. Der Unterschied jetzt ist nicht die
+  Vorsicht, sondern die Konstruktion:
+
+  1. Es steht IMMER NUR EIN Bild im Umfluss. Es gibt keine Rechnung „passen
+     zwei nebeneinander", also auch keine Summe, die überlaufen kann.
+  2. Die Breite ist ein PROZENTSATZ der Spalte, der Abstand liegt INNEN
+     (`margin` auf der Textseite, nicht auf beiden). Breite + Abstand können
+     die Spalte nicht überschreiten, weil der Abstand nicht zur Breite kommt.
+  3. Zwei aufeinanderfolgende Bilder derselben Seite stapeln sich NICHT
+     nebeneinander: `clear` auf der eigenen Seite schiebt das zweite unter das
+     erste. Ein Bild links und eines rechts dürfen nebeneinander stehen — das
+     ist gewollt und die einzige Konstellation, in der zwei Bilder eine Zeile
+     teilen.
+
+  Der Prüfstand misst genau diese drei Zusagen an echtem Chromium.
+-->
+<style>
+  /* --- Kandidat: die einzigen neuen Regeln ------------------------------- */
+  .einzelbild {
+    /* Die Vorgabe des Browsers für <figure> ist `margin: 1em 40px`. Ohne
+       Zurücksetzen sitzt das Bild 40 px eingerückt, und die Prozentbreite
+       bezieht sich auf einen um 80 px schmaleren Kasten — der Prüfstand hat
+       das im ersten Lauf gefangen (gemessen 35,05 % statt 33,33 %).
+       Der Abstand zur Textseite kommt gleich aus .eb-links/.eb-rechts und
+       liegt INNEN; er kommt NICHT zur Breite hinzu. Das war der Fehler der
+       alten Fassung. */
+    margin: 0 0 12px;
+  }
+  .einzelbild img {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+  .eb-s { width: 33.333%; }
+  .eb-m { width: 50%; }
+  .eb-l { width: 66.666%; }
+
+  .eb-links {
+    float: left;
+    margin-right: 20px;
+    /* Zwei linke Bilder hintereinander stehen UNTEREINANDER, nicht
+       nebeneinander. Ohne das entstünde wieder eine Zeile, deren Belegung
+       niemand angesagt hat. */
+    clear: left;
+  }
+  .eb-rechts {
+    float: right;
+    margin-left: 20px;
+    clear: right;
+  }
+
+  /* Was NACH dem Umfluss kommt, beginnt wieder auf voller Breite. */
+  .eb-schluss { clear: both; }
+
+  /* --- Nur Prüfstand-Beiwerk, nicht Teil des Kandidaten ------------------ */
+  body { margin: 0; font: 16px/1.6 system-ui, sans-serif; }
+  main { width: var(--spalte, 816px); margin: 0 auto; padding: 20px 0; }
+  img { background: #cfd8dc; }
+  p { margin: 0 0 1em; }
+</style>
+
+<main id="spalte">
+  <!-- Wird vom Test befüllt. -->
+</main>
+
+<script>
+  // Der Test ruft `aufbauen([...])` mit einer Liste von Bildern und Absätzen.
+  // Absichtlich ohne Rahmenwerk: Der Prüfstand soll nur die CSS-Regeln oben
+  // prüfen, nicht eine Bibliothek.
+  function bild(groesse, seite, nr) {
+    const fig = document.createElement("figure");
+    fig.className = `einzelbild eb-${groesse} eb-${seite}`;
+    fig.dataset.nr = String(nr);
+    fig.dataset.groesse = groesse;
+    fig.dataset.seite = seite;
+    const im = document.createElement("img");
+    // 3:2, damit die Höhe aus der Breite folgt und messbar bleibt.
+    im.width = 600; im.height = 400;
+    im.alt = `Bild ${nr}`;
+    im.src =
+      "data:image/svg+xml;utf8," +
+      encodeURIComponent(
+        `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400"><rect width="600" height="400" fill="#b0bec5"/></svg>`,
+      );
+    fig.append(im);
+    return fig;
+  }
+  function absatz(text) {
+    const p = document.createElement("p");
+    p.textContent = text;
+    return p;
+  }
+  window.aufbauen = (folge, spalte) => {
+    const main = document.getElementById("spalte");
+    main.innerHTML = "";
+    if (spalte) main.style.setProperty("--spalte", spalte + "px");
+    folge.forEach((e, i) =>
+      main.append(e.art === "bild" ? bild(e.groesse, e.seite, i) : absatz(e.text)),
+    );
+    const schluss = document.createElement("div");
+    schluss.className = "eb-schluss";
+    main.append(schluss);
+  };
+</script>
