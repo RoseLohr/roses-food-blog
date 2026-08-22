@@ -43,9 +43,13 @@ export default defineConfig({
    * Genau so entsteht eine flatterhafte Kontrolle, und eine flatterhafte
    * Kontrolle wird abgeschaltet statt beachtet.
    *
-   * `dependencies` erzwingt die Reihenfolge ausdrücklich. Der Pfad der
-   * Vergleichsbilder wird dabei bewusst OHNE Projektnamen geschrieben — sonst
-   * benennte allein diese Umstellung alle 33 Aufnahmen um.
+   * `dependencies` erzwingt die Reihenfolge ausdrücklich. Die Vergleichsbilder
+   * tragen dadurch den Projektnamen im Dateinamen (`…-referenz.png`) — das ist
+   * Playwrights Vorgabe. Ein eigener `snapshotPathTemplate`, um das zu
+   * vermeiden, war der erste Versuch und ein Fehler: Ohne `{snapshotDir}`
+   * wurde der Pfad absolut, lokal fiel es nicht auf, und in CI scheiterten
+   * alle 33 Aufnahmen an `EACCES: mkdir '/seiten-referenz.spec.ts-snapshots'`.
+   * Die Vorgabe des Werkzeugs ist hier verlässlicher als eine eigene Regel.
    */
   projects: [
     { name: "referenz", testMatch: /seiten-referenz\.spec\.ts/ },
@@ -55,8 +59,6 @@ export default defineConfig({
       dependencies: ["referenz"],
     },
   ],
-  snapshotPathTemplate:
-    "{testFileDir}/{testFileName}-snapshots/{arg}{-snapshotSuffix}{ext}",
   use: {
     baseURL: `http://localhost:${PORT}`,
     viewport: { width: 1280, height: 900 },
