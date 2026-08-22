@@ -118,9 +118,9 @@ Zwei Dinge, die das Inventar zusätzlich festhält:
   Annahmenummern und Pfadverweise ins Leere. Gemessen am Bestand: 312
   Pfadverweise, 4 historische Codeblöcke, alle in Ordnung.
 
-  **Der Pflicht-Approver hat in ACHT Runden ZWANZIG Umgehungen gefunden, eine
-  einundzwanzigste kam beim eigenen Nachsehen dazu** — siebzehn von ihm benannt,
-  vier beim Nachziehen derselben Klasse. Sechs davon haben
+  **Der Pflicht-Approver hat in NEUN Runden EINUNDZWANZIG Umgehungen gefunden,
+  eine zweiundzwanzigste kam beim eigenen Nachsehen dazu** — achtzehn von ihm
+  benannt, vier beim Nachziehen derselben Klasse. Sechs davon haben
   dieselbe Form: *eine Prüfung, die sich still selbst abschaltet.* Eine
   Shell-Zeile „# historisch" INNERHALB eines Codeblocks setzte die Ausnahme für
   alles Folgende; ein Zaun aus drei Tilden galt gar nicht als Code; eingerückter
@@ -269,10 +269,21 @@ Zwei Dinge, die das Inventar zusätzlich festhält:
   Ausnahmeliste. Vollständig ist dafür die Block-Prüfung, und dort leben
   Anleitungen.
 
-  81 Selbsttestfälle, Gegenprobe gegen alle acht Vorfassungen gefahren (alle
-  zwanzig Umgehungen rutschen dort durch), dazu eine Positivkontrolle am echten
-  Baum: drei eingeschleuste Verstöße in README, `docs/` und `src/` werden mit
-  exakter Zeilennummer gemeldet.
+  **Runde neun hat die Grenze aus Runde acht zu Recht verschoben.** „Mehr als
+  ein Wort" hiess bei mir „enthält Leerraum" — aber eine Kommandoliste braucht
+  gar kein Leerzeichen: Programmname, Semikolon, nächster Befehl. Dasselbe mit
+  doppeltem Kaufmanns-Und, mit senkrechtem Strich, mit einer Umleitung oder in
+  einer Kommandoersetzung. Alle fünf Formen liefen durch; erkannt wird jetzt
+  zusätzlich an Shell-Metazeichen. (Sie stehen hier ohne Backticks — sonst wären
+  sie selbst Anweisungen, und das Gate hat genau diesen Absatz beim ersten Lauf
+  beanstandet. Wieder die Kontrolle bei der Arbeit.) Am Bestand nachgemessen: Von 3818 Inline-Spannen feuert die
+  verschärfte Regel auf NULL — die sechs legitimen Nennungen tragen keines
+  dieser Zeichen. Die benannte Grenze schrumpft damit auf den blossen Namen.
+
+  87 Selbsttestfälle, Gegenprobe gegen alle neun Vorfassungen gefahren (alle
+  einundzwanzig Umgehungen rutschen dort durch), dazu eine Positivkontrolle am
+  echten Baum: drei eingeschleuste Verstöße in README, `docs/` und `src/` werden
+  mit exakter Zeilennummer gemeldet.
 
   Die Gegenbeispiele stehen hier bewusst OHNE Backticks: Das Gate kann eine
   Veranschaulichung nicht von einem echten Verweis unterscheiden — und hat

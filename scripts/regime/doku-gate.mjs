@@ -55,10 +55,10 @@
  * WARUM HIER ZWEI FREMDE PARSER LAUFEN UND KEINE EIGENEN WÄHLER
  *
  * Die ersten Fassungen zerlegten Markdown und TypeScript von Hand. Der
- * Pflicht-Approver hat in ACHT Runden ZWANZIG Umgehungen gefunden, eine
- * EINUNDZWANZIGSTE kam beim eigenen Nachsehen dazu (PR #109). Das ist kein
+ * Pflicht-Approver hat in NEUN Runden EINUNDZWANZIG Umgehungen gefunden, eine
+ * ZWEIUNDZWANZIGSTE kam beim eigenen Nachsehen dazu (PR #109). Das ist kein
  * Ausreißer, sondern die Regel: Ein handgeschriebener Zerleger hat so viele
- * Löcher, wie das Format Sonderfälle hat. Alle einundzwanzig, zur Erinnerung
+ * Löcher, wie das Format Sonderfälle hat. Alle zweiundzwanzig, zur Erinnerung
  * und als Selbsttestfälle unten festgenagelt — bis auf t, das keine Umgehung
  * ist, sondern eine Grenze:
  *
@@ -118,7 +118,11 @@
  *      nicht als Pfad, weil `srcc` kein oberstes Verzeichnis ist. Erkannt wird
  *      jetzt über ZWEI unabhängige Merkmale — bekanntes Wegstück ODER
  *      Dateiendung.
- *   t) EINWORTIGE INLINE-SPANNEN SIND PAUSCHAL FREI. Das ist die einzige
+ *   v) INLINE-ANWEISUNGEN WURDEN NUR AN LEERRAUM ERKANNT. `certbot;ls`,
+ *      `certbot&&nginx`, `certbot|tee`, `certbot>log` und `$(certbot)` sind
+ *      gültige Kommandolisten ohne ein einziges Leerzeichen und liefen durch.
+ *      Erkannt wird jetzt zusätzlich an Shell-Metazeichen.
+ *   t) SPANNEN, DIE NUR DER BLOSSE NAME SIND, BLEIBEN FREI. Das ist die einzige
  *      BENANNTE GRENZE dieses Gates und keine Umgehung, die sich schließen
  *      ließe — die Begründung samt Messung steht bei `verboteneAnleitung`.
  *   p) DAS CONTAINMENT WAR REIN LEXIKALISCH. Ein verfolgter Symlink, der aus
@@ -126,7 +130,7 @@
  *      fremde Datei gelesen. Siehe `echtDrin`.
  *
  * a, b, c, f, j, n und o sind Markdown-Sonderfälle; g ist ein
- * TypeScript-Sonderfall, r ein weiterer Markdown-Fall. NEUN von einundzwanzig
+ * TypeScript-Sonderfall, r ein weiterer Markdown-Fall. NEUN von zweiundzwanzig
  * Löchern kamen also daher, dass hier
  * zwei Sprachen nachgebaut wurden, die das Projekt längst richtig zerlegen
  * kann — und n und o kamen erst zutage, NACHDEM die Blockzerlegung schon auf
@@ -142,7 +146,7 @@
  *     `const r = /a\/\//; // A5`: Der reine Scanner liest daraus „//; // A5"
  *     und liegt falsch, der Parser liefert „// A5" und liegt richtig.
  *
- * d, e, h, i, k, l, m, p, q, s und u bleiben eigene Logik — sie handeln von Dateien und
+ * d, e, h, i, k, l, m, p, q, s, u und v bleiben eigene Logik — sie handeln von Dateien und
  * Zahlen, nicht von Grammatik. j fällt nicht ganz weg: `marked` liefert die
  * Verschachtelung korrekt, aber WELCHE Überschrift einen Abschnitt aufmacht,
  * ist eine Entscheidung dieses Gates und musste hier getroffen werden.
@@ -232,6 +236,20 @@ const IST_MUSTER = /\.{3}|…|[[\]()*<>{}\s]/;
 
 /** Anweisungen, die zum abgeschalteten Host-nginx-Betrieb gehören. */
 export const VERALTETE_ANLEITUNG = /\bcertbot\b|\bsites-available\b|\/etc\/letsencrypt\b/;
+
+/**
+ * Woran eine Inline-Spanne als ANWEISUNG erkennbar ist: Leerraum ODER ein
+ * Shell-Metazeichen.
+ *
+ * Der Leerraum allein genügte nicht (Loch v, Befund des Pflicht-Approvers):
+ * `certbot;ls`, `certbot&&nginx`, `certbot|tee`, `certbot>log` und
+ * `$(certbot)` sind gültige Kommandolisten OHNE ein einziges Leerzeichen und
+ * liefen durch. Am Bestand nachgemessen, bevor die Metazeichen dazukamen: Von
+ * 3818 Spannen feuert die verschärfte Regel auf NULL — die sechs legitimen
+ * Nennungen (`certbot`, `sites-available`, `/etc/letsencrypt/live`) tragen
+ * keines dieser Zeichen.
+ */
+export const IST_ANWEISUNG = /[\s;&|<>$(){}`\\]/;
 
 /**
  * „A1"…„A11" — die Nummerierung, die es nicht gibt.
@@ -352,27 +370,28 @@ export function verboteneAnleitung(md) {
       });
       continue;
     }
-    // EINE INLINE-SPANNE zählt, wenn sie eine ANWEISUNG ist — also mehr als ein
-    // Wort. `sudo certbot --nginx` ist eine; `certbot` allein ist das Wort.
-    // Vorher waren Inline-Spannen gar nicht geprüft (Loch n).
+    // EINE INLINE-SPANNE zählt, wenn sie eine ANWEISUNG ist: Leerraum oder ein
+    // Shell-Metazeichen. `sudo certbot --nginx` ist eine, `certbot;ls` auch;
+    // `certbot` allein ist der blosse Name. Vorher waren Inline-Spannen gar
+    // nicht geprüft (Loch n), danach nur die mit Leerraum (Loch v).
     //
     // DIE GRENZE, AUSGESPROCHEN (Loch t, Befund des Pflicht-Approvers): Eine
-    // EINWORTIGE Spanne, die als Anweisung gemeint ist — „Führe `certbot` aus"
-    // —, fällt hier durch. Das ist keine Nachlässigkeit, sondern die Grenze des
+    // Spanne, die nur der blosse NAME ist und trotzdem als Anweisung gemeint
+    // ist — „Führe `certbot` aus" —, fällt hier durch. Das ist keine Nachlässigkeit, sondern die Grenze des
     // Machbaren: Ob eine Nennung eine Anweisung ist, steht im FLIESSTEXT
     // daneben, nicht in der Spanne. Kein Wähler auf der Spanne kann das
     // entscheiden.
     //
-    // Und die Gegenrichtung wäre schlimmer, gemessen statt vermutet: Von 2468
-    // Spannen tragen SECHS ein verbotenes Wort, alle sechs einwortig, alle sechs
-    // legitime Feststellungen der ABWESENHEIT — in README §2, in
+    // Und die Gegenrichtung wäre schlimmer, gemessen statt vermutet: Von 3818
+    // Spannen tragen SECHS ein verbotenes Wort, alle sechs blosse Namen, alle
+    // sechs legitime Feststellungen der ABWESENHEIT — in README §2, in
     // `audit/11-infrastruktur-befund.md` und in `audit/12-infrastruktur-fahrplan.md`
     // ausgerechnet dort, wo diese Regel beschrieben wird. Einwortige Spannen zu
     // verbieten hieße, das Gate auf dem Text rot zu fahren, der es erklärt —
     // und der einzige Ausweg wäre eine Ausnahmeliste. Die ist hier verboten.
     //
     // Vollständig ist dafür die BLOCK-Prüfung, und dort leben Anleitungen.
-    if (/\s/.test(s.text) && VERALTETE_ANLEITUNG.test(s.text)) treffer.push(s.zeile ?? 0);
+    if (IST_ANWEISUNG.test(s.text) && VERALTETE_ANLEITUNG.test(s.text)) treffer.push(s.zeile ?? 0);
   }
   return [...new Set(treffer)].sort((a, b) => a - b);
 }
@@ -826,8 +845,15 @@ if (process.argv.includes("--selftest")) {
     ["kein Pfad: Muster mit Auslassung", pfadverweis(".../ai/ping/route.ts", wurzeln) === null],
     ["kein Pfad: Muster mit Klammern", pfadverweis("(protected)/layout.tsx", wurzeln) === null],
     // Die benannte Grenze aus Loch t — sie steht hier, damit sie nicht still ist.
-    ["einwortige Anweisung bleibt durch (benannte Grenze, Loch t)", verboteneAnleitung("Führe `certbot` aus.\n").length === 0],
-    ["mehrwortige Anweisung wird gefangen", verboteneAnleitung("Führe `certbot --nginx` aus.\n").length === 1],
+    ["blosser Name bleibt durch (benannte Grenze, Loch t)", verboteneAnleitung("Führe `certbot` aus.\n").length === 0],
+    ["Anweisung mit Leerraum wird gefangen", verboteneAnleitung("Führe `certbot --nginx` aus.\n").length === 1],
+    // Kommandolisten OHNE Leerraum (Loch v).
+    ["Kommandoliste mit Semikolon (Loch v)", verboteneAnleitung("Ruf `certbot;ls` auf.\n").length === 1],
+    ["Kommandoliste mit && (Loch v)", verboteneAnleitung("Ruf `certbot&&nginx` auf.\n").length === 1],
+    ["Kommandoliste mit Pipe (Loch v)", verboteneAnleitung("Ruf `certbot|tee` auf.\n").length === 1],
+    ["Umleitung (Loch v)", verboteneAnleitung("Ruf `certbot>log` auf.\n").length === 1],
+    ["Kommandoersetzung (Loch v)", verboteneAnleitung("Ruf `$(certbot)` auf.\n").length === 1],
+    ["Pfadnennung bleibt Nennung", verboteneAnleitung("Es gibt kein `/etc/letsencrypt/live`.\n").length === 0],
     // Abkürzung löst auf — und die Zeilenprüfung greift trotzdem (Loch d).
     ["Abkürzung löst auf", aufloesen("audit/06", alle) === "audit/06-residual-risk-register.md"],
     ["Erfundener Pfad löst nicht auf", aufloesen("src/gibt-es-nicht.ts", alle) === null],
