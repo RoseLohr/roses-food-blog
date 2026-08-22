@@ -497,11 +497,27 @@ export const travelBlock = sqliteTable(
     imageId: integer("image_id").references(() => mediaImage.id, {
       onDelete: "restrict",
     }),
-    /* Hier standen `groesse`, `platz` und `mit_vorherigem`. Alle drei waren
-       Aussagen eines Blocks über seine NACHBARN — und genau daran zerfiel die
-       Anordnung, sobald sich die Nachbarschaft änderte. Die Anordnung folgt
-       jetzt allein aus der Reihenfolge (siehe lib/bildreihen.ts), also gibt es
-       nichts mehr zu speichern. Entfernt in 0012_bildgruppe.sql. */
+    /**
+     * Die Gruppe, zu der dieses Bild gehört — NULL für ein Einzelbild.
+     *
+     * Hier standen bis 0012 `groesse`, `platz` und `mit_vorherigem`. Alle drei
+     * waren Aussagen eines Blocks über seine NACHBARN, und genau daran zerfiel
+     * die Anordnung, sobald sich die Nachbarschaft änderte.
+     *
+     * `gruppe` ist bewusst etwas anderes: eine MARKE über das Bild SELBST.
+     * Zwei Bilder gehören zusammen, weil beide dieselbe Marke tragen —
+     * symmetrisch. Keines behauptet etwas über das andere; verschwindet der
+     * Nachbar, bleibt die eigene Marke richtig.
+     */
+    gruppe: integer("gruppe"),
+    /**
+     * Nur für Bilder OHNE Gruppe: Breite (s/m/l) und Seite, an der das Bild
+     * steht; der Text läuft darum herum. In einer Gruppe bestimmt die Position
+     * die Anordnung — dort MÜSSEN beide NULL sein, und der CHECK unten setzt
+     * das durch. Eine unwirksame Angabe soll gar nicht erst speicherbar sein.
+     */
+    groesse: text("groesse", { enum: ["s", "m", "l"] }),
+    ausrichtung: text("ausrichtung", { enum: ["links", "rechts"] }),
     restaurantId: integer("restaurant_id").references(() => restaurant.id, {
       onDelete: "cascade",
     }),
@@ -515,6 +531,20 @@ export const travelBlock = sqliteTable(
     check(
       "travel_block_restaurant_check",
       sql`(${t.type} = 'restaurant') = (${t.restaurantId} IS NOT NULL)`,
+    ),
+    /**
+     * Gruppe UND Regler zugleich wären zwei Wahrheiten über dieselbe
+     * Anordnung — und die unwirksame davon bliebe unbemerkt stehen. Genau so
+     * eine stille Zweitangabe hat die alte Fassung unbrauchbar gemacht.
+     */
+    check(
+      "travel_block_bild_regler_check",
+      sql`${t.gruppe} IS NULL OR (${t.groesse} IS NULL AND ${t.ausrichtung} IS NULL)`,
+    ),
+    /** Was kein Bild ist, trägt auch keine Bildangaben. */
+    check(
+      "travel_block_nur_bild_check",
+      sql`${t.type} = 'bild' OR (${t.gruppe} IS NULL AND ${t.groesse} IS NULL AND ${t.ausrichtung} IS NULL)`,
     ),
     /** Ein Bild-Block ohne Foto ist keine Auszeichnung, sondern ein Verlust. */
     check(

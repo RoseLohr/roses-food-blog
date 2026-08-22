@@ -178,6 +178,62 @@ html {
   gap: 12px;
   align-items: flex-start;
 }
+
+/* ── EINZELBILD: Größe und Ausrichtung, Text läuft darum herum ─────────────
+   Geprüft als Entwurf in tests/e2e/mocks/einzelbild.html, an echtem Chromium:
+   vier Spaltenbreiten × drei Größen × zwei Seiten.
+
+   WARUM DAS NICHT DIE ALTE FEHLERKLASSE ZURÜCKHOLT: Genau diese Mechanik hat
+   den ursprünglichen Umbruch verursacht — zwei Bilder mit 2/3 und 1/3
+   nebeneinander, jedes mit `margin-right: 1.5rem`, Summe über 100 %. Der
+   Unterschied ist die Bauart:
+     1. Es steht immer nur EIN Bild im Umfluss. Keine Rechnung „passen zwei
+        nebeneinander", also keine Summe, die überlaufen kann.
+     2. Der Abstand liegt INNEN auf der Textseite; er kommt nicht zur Breite.
+     3. Zwei Bilder derselben Seite stehen untereinander (`clear`). Links und
+        rechts dürfen nebeneinander — die einzige gewollte gemeinsame Zeile. */
+.einzelbild {
+  /* Die Vorgabe des Browsers für Figuren-artige Kästen zurücksetzen: Der
+     Prüfstand hat im ersten Lauf 35,05 % statt 33,33 % gemessen, weil eine
+     Einrückung die Bezugsbreite verkleinerte. */
+  margin: 0 0 12px;
+}
+.einzelbild img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.eb-s {
+  width: 33.333%;
+}
+.eb-m {
+  width: 50%;
+}
+.eb-l {
+  width: 66.666%;
+}
+.eb-links {
+  float: left;
+  margin-right: 20px;
+  clear: left;
+}
+.eb-rechts {
+  float: right;
+  margin-left: 20px;
+  clear: right;
+}
+/* Auf dem Handy ist für Umfluss kein Platz: Ein Drittel der Spalte wäre
+   ~100 px breit, und daneben stünden zwei Wörter je Zeile. Unter 640 px steht
+   jedes Einzelbild deshalb über die volle Breite — dieselbe Entscheidung, die
+   das Inhaltsverzeichnis dort schon trifft. */
+@media (max-width: 639px) {
+  .einzelbild {
+    float: none;
+    width: 100%;
+    margin-left: 0;
+    margin-right: 0;
+  }
+}
 .bildgruppe-weitere > * {
   flex: var(--ar) 1 0;
   min-width: 0;

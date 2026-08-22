@@ -330,7 +330,7 @@ describe("Export", () => {
       { type: "text", markdown: "Langer Reisetext." },
       // Der Bildblock trägt nichts über sein Aussehen mehr — nur die
       // Datei-Referenz. Die Anordnung folgt aus der Reihenfolge.
-      { type: "bild", image: "aaaa1111" },
+      { type: "bild", image: "aaaa1111", gruppe: null, groesse: null, ausrichtung: null },
       { type: "restaurant", index: 0 },
     ]);
 

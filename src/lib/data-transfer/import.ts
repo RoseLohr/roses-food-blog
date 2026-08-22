@@ -420,11 +420,17 @@ export async function importBundle(
       } else if (b.type === "bild") {
         const imgId = await importImage(b.image);
         if (imgId != null)
-          // Der Bildblock trägt nichts über sein Aussehen — die Anordnung
-          // folgt aus der Position. Ein Archiv von vor dem Umbau bringt zwar
-          // noch `groesse`/`platz` mit; die Felder werden schlicht nicht mehr
-          // gelesen, und die Reihenfolge im Archiv genügt.
-          blocks.push({ type: "bild", imageId: imgId });
+          blocks.push({
+            type: "bild",
+            imageId: imgId,
+            // Mit übernehmen, sonst sieht der zurückgespielte Bericht anders
+            // aus als der gesicherte (Befund B4). Ältere Archive kennen die
+            // Felder nicht — dort steht `null`, und das ist genau richtig:
+            // ein Einzelbild ohne Vorgabe.
+            gruppe: b.gruppe,
+            groesse: b.gruppe === null ? b.groesse : null,
+            ausrichtung: b.gruppe === null ? b.ausrichtung : null,
+          });
       } else if (b.index < tv.restaurants.length) {
         blocks.push({ type: "restaurant", index: b.index });
       }

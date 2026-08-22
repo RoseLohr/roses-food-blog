@@ -139,7 +139,18 @@ const contentBlockSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("bild"),
     image: z.string().nullable().default(null),
-    /** Höhenstufe (siehe lib/bildreihen.ts); ältere Archive ohne Feld → 'm'. */
+    /**
+     * Die Anordnung MUSS mit ins Archiv.
+     *
+     * Sie tat es schon einmal nicht — Befund B4: Export/Import verlor die
+     * Layout-Angaben des Bildblocks, und ein zurückgespielter Bericht sah
+     * anders aus als der gesicherte. Ältere Archive kennen die Felder nicht;
+     * `null` heißt dort „Einzelbild ohne Vorgabe", und der Renderer setzt
+     * seine Vorgaben ein.
+     */
+    gruppe: z.number().int().positive().nullable().default(null),
+    groesse: z.enum(["s", "m", "l"]).nullable().default(null),
+    ausrichtung: z.enum(["links", "rechts"]).nullable().default(null),
   }),
   z.object({ type: z.literal("restaurant"), index: z.number().int().nonnegative() }),
 ]);
