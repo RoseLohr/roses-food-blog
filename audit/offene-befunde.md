@@ -9,22 +9,34 @@ warum er hier statt sofort steht. Kein Eintrag ohne Beleg.
 
 ---
 
-## B1 — `/rezepte/kategorie/<slug>` ist im Frontend unverlinkt
+## B1 — `/rezepte/kategorie/<slug>` ist im Frontend unverlinkt — ERLEDIGT 08/2026
 
-**Befund.** Die Route existiert und steht in der Sitemap, aber im ganzen
-Frontend zeigt kein einziger Link darauf. Die Rezept-Detailseite verweist
-stattdessen auf `/suche?kategorie=…` (`src/components/recipe-view.tsx:97`,
-`filterRow`), die Rezeptliste verlinkt Kategorien gar nicht.
+**Der Befund war zu scharf formuliert.** Verlinkt WAR die Route — in
+`src/lib/nav-data.ts`, für das Aufklappmenü der Kopfzeile. Nur steht dieses
+Menü erst nach einem Hover im DOM (`hasChildren && expanded &&`,
+`site-header.tsx:201`). Für einen Menschen erreichbar, für einen Crawler nicht.
 
-**Beleg.** `grep -rn 'rezepte/kategorie/' src/` findet nur die Seite selbst und
-ihre Metadaten. Die Referenzaufnahme in `tests/e2e/seiten-referenz.spec.ts`
-muss die Adresse deshalb aus der Sitemap holen statt einer Verknüpfung zu
-folgen.
+**Das eigentliche Problem war ein anderes:** Startseite und Rezept-Detailseite
+zeigten auf `/suche?kategorie=…` — zwei Wege zu demselben Inhalt, und verlinkt
+war der NICHT-kanonische. Die Kategorieseite trägt `alternates.canonical` auf
+sich selbst, eine eigene Brotkrume und einen eigenen Tracking-Pfad; sie ist
+offensichtlich als die kanonische Adresse gedacht.
 
-**Warum hier.** Ob die Route bleiben, verlinkt oder entfallen soll, ist eine
-inhaltliche Entscheidung — zwei Wege zum selben Ergebnis (`/suche?kategorie=`
-und `/rezepte/kategorie/`) sind außerdem ein SEO-Thema (Duplikat), kein
-Layout-Thema.
+**Entschieden: behalten und verlinken.** Kategorien zeigen jetzt auf
+`/rezepte/kategorie/<slug>`. Die übrigen drei Taxonomien (Küche,
+Ernährungsform, Schlagwort) haben keine eigene Seite und bleiben bei der Suche
+— dort wäre eine eigene Route eine 404.
+
+**Anker ist die REZEPTSEITE, nicht die Startseite.** Deren Filtergruppen sind
+admin-konfigurierbar (`homepage_filter_group`), und „kategorie" ist in der Saat
+nicht freigeschaltet. Ein Test, der von der Startseite ausginge, prüfte die
+Konfiguration statt der Verlinkung — der erste Anlauf tat genau das und war
+zu Recht rot.
+
+Die Referenzaufnahme holt die Adresse jetzt über eine echte Verknüpfung statt
+aus der Sitemap. Dadurch erreicht sie `/rezepte/kategorie/salat` statt
+`/rezepte/kategorie/fruehstueck` — eine ANDERE Seite, kein Layoutbruch;
+gemessen und benannt, die drei Aufnahmen gezielt neu genommen.
 
 ---
 

@@ -19,7 +19,6 @@
  * Prüfen:                       npx playwright test seiten-referenz
  */
 import {
-  ausSitemap,
   ersterLink,
   referenzaufnahmen,
   type Seitentyp,
@@ -33,14 +32,20 @@ const SEITEN: Seitentyp[] = [
     ziel: (p) => ersterLink(p, "/rezepte", /^\/rezepte\/(?!kategorie)[^/]+$/),
   },
   {
-    // Aus der SITEMAP, nicht aus einer Verknüpfung: Auf
-    // /rezepte/kategorie/<slug> zeigt im ganzen Frontend kein einziger Link —
-    // die Rezept-Detailseite verweist auf /suche?kategorie=…, die Liste gar
-    // nicht. Die Route ist damit nur über die Adresszeile und die Sitemap
-    // erreichbar. Das ist ein eigener Befund (siehe audit/offene-befunde.md);
-    // für die Referenzaufnahme wird sie hier direkt angesteuert.
+    // Seit 08/2026 über eine echte VERKNÜPFUNG erreichbar: Die Kategorie-Zeile
+    // der Rezept-Detailseite und die Kategorie-Kacheln der Startseite zeigen
+    // auf /rezepte/kategorie/ statt auf /suche?kategorie= (B1). Vorher musste
+    // die Adresse aus der Sitemap geholt werden, weil im ganzen sichtbaren
+    // Markup kein Link darauf stand — der einzige lag im Aufklappmenü der
+    // Kopfzeile, das erst nach Hover in den DOM kommt.
+    // Zwei Sprünge, wie bei reisen-filter: Die Kategorie hängt an einem
+    // REZEPT. Die Startseite taugt nicht als Anker — ihre Filtergruppen sind
+    // admin-konfigurierbar, und die Saat schaltet „kategorie" nicht frei.
     name: "rezepte-kategorie",
-    ziel: (p) => ausSitemap(p, /\/rezepte\/kategorie\/[^/<]+/),
+    ziel: async (p) => {
+      const rezept = await ersterLink(p, "/rezepte", /^\/rezepte\/(?!kategorie)[^/]+$/);
+      return ersterLink(p, rezept, /^\/rezepte\/kategorie\/[^/]+$/);
+    },
   },
   { name: "reisen-liste", ziel: async () => "/reisen" },
   {

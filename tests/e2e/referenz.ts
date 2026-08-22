@@ -104,14 +104,6 @@ export async function ersterLink(page: Page, von: string, muster: RegExp) {
   return href;
 }
 
-/** Erste Adresse aus der Sitemap, die `muster` trifft — als Pfad. */
-export async function ausSitemap(page: Page, muster: RegExp) {
-  const xml = await (await page.request.get("/sitemap.xml")).text();
-  const treffer = muster.exec(xml);
-  if (!treffer) throw new Error(`Keine Adresse ${muster} in der Sitemap`);
-  return new URL(treffer[0], "http://x").pathname;
-}
-
 /**
  * Bereiche, die vom LAUF abhängen statt von den Daten.
  *

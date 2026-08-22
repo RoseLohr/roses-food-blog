@@ -232,3 +232,52 @@ test.describe("Seiten-Metadaten", () => {
     );
   });
 });
+
+/**
+ * B1: `/rezepte/kategorie/<slug>` war von keiner Inhaltsseite aus verlinkt.
+ *
+ * Verlinkt WAR die Route — im Aufklappmenü der Kopfzeile. Das steht aber erst
+ * nach einem Hover im DOM (`hasChildren && expanded &&` in site-header.tsx),
+ * ein Crawler sieht es also nie. Gleichzeitig zeigten Startseite und
+ * Rezept-Detailseite auf `/suche?kategorie=…`: zwei Wege zu demselben Inhalt,
+ * und der verlinkte war der NICHT-kanonische — die Kategorieseite trägt
+ * `alternates.canonical` auf sich selbst.
+ *
+ * Geprüft wird deshalb das AUSGELIEFERTE Markup ohne jede Interaktion.
+ */
+test.describe("Kategorieseiten sind erreichbar, ohne zu hovern", () => {
+  test("die Rezeptseite verlinkt ihre Kategorie kanonisch, andere Taxonomien in die Suche", async ({
+    page,
+  }) => {
+    // Anker ist die REZEPTSEITE, nicht die Startseite: Deren Filtergruppen sind
+    // admin-konfigurierbar (`homepage_filter_group`), „kategorie" ist in der
+    // Saat nicht freigeschaltet. Ein Test, der davon abhängt, prüfte die
+    // Konfiguration statt der Verlinkung.
+    const rezept = await page.goto("/rezepte").then(() =>
+      page
+        .locator('a[href^="/rezepte/"]')
+        .evaluateAll((as) =>
+          (as as HTMLAnchorElement[])
+            .map((a) => new URL(a.href).pathname)
+            .find((p) => /^\/rezepte\/(?!kategorie)[^/]+$/.test(p)),
+        ),
+    );
+    expect(rezept, "kein Rezept in der Liste").toBeTruthy();
+
+    await page.goto(rezept!);
+    const kategorielinks = page.locator('a[href^="/rezepte/kategorie/"]');
+    expect(
+      await kategorielinks.count(),
+      "Kategorieseite von der Rezeptseite aus nicht erreichbar",
+    ).toBeGreaterThan(0);
+
+    // Und der Link führt wirklich irgendwohin.
+    const ziel = await kategorielinks.first().getAttribute("href");
+    expect((await page.request.get(ziel!)).status()).toBe(200);
+
+    // Die übrigen Taxonomien haben keine eigene Seite — sie bleiben bei der
+    // Suche. Wäre das nicht so, verwiese die Seite auf eine 404.
+    await expect(page.locator('a[href^="/suche?kategorie="]')).toHaveCount(0);
+    await expect(page.locator('a[href^="/suche?kueche="]')).not.toHaveCount(0);
+  });
+});
