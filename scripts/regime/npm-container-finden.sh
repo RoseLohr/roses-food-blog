@@ -16,10 +16,11 @@
 # falsche Antwort. (Befund des Pflicht-Approvers, PR #103.)
 #
 # Drei Bedingungen müssen zusammen erfüllt sein:
-#   1. der Container veröffentlicht GENAU den Port aus der Basis,
+#   1. der Container veröffentlicht nicht IRGENDEINEN anderen Port als unseren,
 #   2. er ist wirklich ein nginx (`nginx -v` läuft darin),
 #   3. unter /data/nginx/proxy_host/ steht eine Konfiguration, die GENAU
-#      diesen Namen bedient.
+#      diesen Namen bedient,
+#   4. und dieselbe Konfiguration lauscht auf GENAU unserem Port.
 #
 # Bedingung 3 ist die eigentliche Zuordnung: Sie macht aus „irgendein Proxy"
 # ein „der Proxy DIESER Domain". Passen mehrere, wird NICHT gewählt — dann
@@ -84,7 +85,7 @@ while IFS= read -r zeile; do
   hat_unseren_port=0
   case "$ports" in
     *:"$PORT"-\>*) hat_unseren_port=1 ;;
-    "") ;;                                    # keine Ports: Pod/Host-Netzwerk
+    "") ;;   # keine Veröffentlichung — sagt für sich genommen NICHTS, siehe unten
     *:*-\>*) verworfen "$name" "veröffentlicht Ports, aber nicht $PORT ($ports)"; continue ;;
   esac
 
@@ -145,6 +146,32 @@ while IFS= read -r zeile; do
   done <<< "$namen"
   if [ "$passt" != 1 ]; then
     verworfen "$name" "bedient '$HOST' nicht"
+    continue
+  fi
+
+  # DRITTES MERKMAL: Die Konfiguration muss auf UNSEREM Port lauschen.
+  #
+  # Vorher galt „veröffentlicht keine Ports" als Freibrief — begründet mit dem
+  # Pod bzw. Host-Netzwerk dieses Servers. Das ist aber kein Beleg, sondern nur
+  # die Abwesenheit eines Gegenbeweises: Ein abgeschotteter Bridge-Container
+  # veröffentlicht ebenfalls nichts, und trüge er zufällig eine passende
+  # NPM-Konfiguration, wäre er der einzige Treffer gewesen.
+  # (Befund des Pflicht-Approvers, PR #105.)
+  #
+  # `listen` ist das positive Gegenstück und steht in derselben Konfiguration,
+  # die ohnehin schon gelesen wurde — auch bei Pod und Host-Netzwerk, wo die
+  # Portspalte leer bleibt. Auf diesem Server: `listen 443 ssl;`.
+  # Abgedeckte Schreibweisen (durchgespielt): `443`, `[::]:443`, `0.0.0.0:8443`,
+  # mit Zusätzen wie `ssl http2`; Kommentare und `unix:`-Sockets fallen heraus.
+  lauscht=$(printf '%s\n' "$konf" \
+    | sed 's/#.*$//' \
+    | grep -E '^[[:space:]]*listen[[:space:]]' \
+    | sed -e 's/;.*$//' -e 's/^[[:space:]]*listen[[:space:]]*//' \
+    | awk '{print $1}' \
+    | sed -e 's/.*\]://' -e 's/^.*:\([0-9][0-9]*\)$/\1/' \
+    | grep -E '^[0-9]+$') || lauscht=""
+  if ! printf '%s\n' "$lauscht" | grep -Fxq -- "$PORT"; then
+    verworfen "$name" "lauscht laut Konfiguration nicht auf $PORT (gefunden: $(printf '%s' "$lauscht" | tr '\n' ' '))"
     continue
   fi
   TREFFER="$TREFFER$name"$'\n'

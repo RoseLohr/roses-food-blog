@@ -31,6 +31,8 @@ type Behaelter = {
   hosts: string[];
   /** Statt der Hostliste eine rohe conf-Zeile, für knifflige Formen. */
   rohzeile?: string;
+  /** Ports, auf denen die Konfiguration lauscht. NPM schreibt 80 und 443. */
+  lauscht?: number[];
 };
 
 let arbeit: string;
@@ -48,10 +50,18 @@ function podmanAttrappe(behaelter: Behaelter[]) {
   for (const b of behaelter) {
     const ph = path.join(wurzeln, b.name, "data/nginx/proxy_host");
     fs.mkdirSync(ph, { recursive: true });
+    // NPM schreibt in jede proxy_host-Datei BEIDES: listen-Zeilen und
+    // server_name. Die erste Fassung dieser Attrappe ließ die listen-Zeilen
+    // weg — und war damit kein Abbild der echten Datei, sondern nur des
+    // Ausschnitts, den die damalige Prüfung ansah.
+    const lauscht = b.lauscht ?? [80, 443];
+    const listenZeilen = lauscht
+      .flatMap((p) => [`  listen ${p}${p === 443 ? " ssl" : ""};`, `  listen [::]:${p}${p === 443 ? " ssl" : ""};`])
+      .join("\n");
     if (b.rohzeile !== undefined) {
-      fs.writeFileSync(path.join(ph, "1.conf"), `${b.rohzeile}\n`);
+      fs.writeFileSync(path.join(ph, "1.conf"), `${listenZeilen}\n${b.rohzeile}\n`);
     } else if (b.hosts.length) {
-      fs.writeFileSync(path.join(ph, "1.conf"), `  server_name ${b.hosts.join(" ")};\n`);
+      fs.writeFileSync(path.join(ph, "1.conf"), `${listenZeilen}\n  server_name ${b.hosts.join(" ")};\n`);
     }
   }
 
@@ -156,6 +166,23 @@ describe("Proxy-Container zuordnen", () => {
     const { code, gefunden, ausgabe } = await finden(bin, "gourmetcompass.de");
     expect(code, ausgabe).toBe(0);
     expect(gefunden).toBe("nginx-proxy-manager");
+  });
+
+  it("übergeht einen abgeschotteten Container, der auf einem anderen Port lauscht", async () => {
+    // DER FALL, DEN „veröffentlicht keine Ports" NICHT ABDECKT: Ein Container
+    // ohne Veröffentlichungen ist nicht automatisch der vorgelagerte Proxy —
+    // ein abgeschotteter Bridge-Container veröffentlicht ebenfalls nichts.
+    // Trüge er zufällig eine passende NPM-Konfiguration, wäre er der einzige
+    // Treffer gewesen. (Befund des Pflicht-Approvers, PR #105.)
+    //
+    // `listen` ist das positive Gegenstück: Es steht auch bei Pod und
+    // Host-Netzwerk in der Konfiguration, wo die Portspalte leer bleibt.
+    const bin = podmanAttrappe([
+      { name: "abgeschottet", ports: "", nginx: true, hosts: ["gourmetcompass.de"], lauscht: [8080] },
+    ]);
+    const { code, ausgabe } = await finden(bin, "gourmetcompass.de");
+    expect(code, ausgabe).toBe(1);
+    expect(ausgabe).toMatch(/lauscht laut Konfiguration nicht auf 443/);
   });
 
   it("nennt bei Misserfolg, was geprüft und warum verworfen wurde", async () => {
@@ -279,7 +306,7 @@ describe("Proxy-Container zuordnen", () => {
     // (Befund des Pflicht-Approvers, PR #103.)
     const bin = podmanAttrappe([
       { name: "fremd-443", ports: "0.0.0.0:443->443/tcp", nginx: true, hosts: ["ziel.example"] },
-      { name: "richtig-8443", ports: "0.0.0.0:8443->443/tcp", nginx: true, hosts: ["ziel.example"] },
+      { name: "richtig-8443", ports: "0.0.0.0:8443->443/tcp", nginx: true, hosts: ["ziel.example"], lauscht: [8443] },
     ]);
     const { code, gefunden, ausgabe } = await finden(bin, "ziel.example", "https://ziel.example:8443");
     expect(code, ausgabe).toBe(0);
