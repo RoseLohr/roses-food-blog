@@ -22,6 +22,9 @@ import { promisify } from "node:util";
 const SKRIPT = path.join(process.cwd(), "scripts/regime/npm-container-finden.sh");
 const ausfuehren = promisify(execFile);
 
+/** Ein server-Block: worauf er lauscht und welche Namen er bedient. */
+type Block = { lauscht?: number[]; hosts: string[]; rohzeile?: string };
+
 type Behaelter = {
   name: string;
   ports: string;
@@ -39,6 +42,8 @@ type Behaelter = {
   pod?: string;
   /** Was der POD veröffentlicht (sein Infra-Container), nicht das Mitglied. */
   podPorts?: string;
+  /** Mehrere server-Blöcke, wenn ein Container mehrere Domains bedient. */
+  bloecke?: Block[];
 };
 
 let arbeit: string;
@@ -60,14 +65,27 @@ function podmanAttrappe(behaelter: Behaelter[]) {
     // server_name. Die erste Fassung dieser Attrappe ließ die listen-Zeilen
     // weg — und war damit kein Abbild der echten Datei, sondern nur des
     // Ausschnitts, den die damalige Prüfung ansah.
-    const lauscht = b.lauscht ?? [80, 443];
-    const listenZeilen = lauscht
-      .flatMap((p) => [`  listen ${p}${p === 443 ? " ssl" : ""};`, `  listen [::]:${p}${p === 443 ? " ssl" : ""};`])
+    // ECHTE server-Blöcke, wie NPM sie schreibt. Eine frühere Fassung legte
+    // listen- und server_name-Zeilen lose nebeneinander — damit ließ sich gar
+    // nicht prüfen, ob Port und Name aus DEMSELBEN Block stammen, und genau
+    // diese fehlende Zuordnung war der Befund des Pflicht-Approvers.
+    const bloecke: Block[] = b.bloecke ?? [{ lauscht: b.lauscht ?? [80, 443], hosts: b.hosts, rohzeile: b.rohzeile }];
+    const text = bloecke
+      .map((bl) => {
+        const listenZeilen = (bl.lauscht ?? [80, 443])
+          .flatMap((p) => [`    listen ${p}${p === 443 ? " ssl" : ""};`, `    listen [::]:${p}${p === 443 ? " ssl" : ""};`])
+          .join("\n");
+        const namensZeile =
+          bl.rohzeile !== undefined
+            ? `  ${bl.rohzeile}`
+            : bl.hosts.length
+              ? `    server_name ${bl.hosts.join(" ")};`
+              : "";
+        return `  server {\n${listenZeilen}\n${namensZeile}\n    location / { proxy_pass http://x; }\n  }`;
+      })
       .join("\n");
-    if (b.rohzeile !== undefined) {
-      fs.writeFileSync(path.join(ph, "1.conf"), `${listenZeilen}\n${b.rohzeile}\n`);
-    } else if (b.hosts.length) {
-      fs.writeFileSync(path.join(ph, "1.conf"), `${listenZeilen}\n  server_name ${b.hosts.join(" ")};\n`);
+    if (bloecke.some((bl) => bl.rohzeile !== undefined || bl.hosts.length)) {
+      fs.writeFileSync(path.join(ph, "1.conf"), `http {\n${text}\n}\n`);
     }
   }
 
@@ -249,7 +267,10 @@ describe("Proxy-Container zuordnen", () => {
     ]);
     const { code, ausgabe } = await finden(bin, "ziel.example", "https://ziel.example:8443");
     expect(code, ausgabe).toBe(1);
-    expect(ausgabe).toMatch(/läuft im Host-Netzwerk, belegt dort aber nicht 8443/);
+    // Die Begründung nennt beides: dass auf dem verlangten Port nichts bedient
+    // wird, UND worauf der Container stattdessen lauscht.
+    expect(ausgabe).toMatch(/läuft im Host-Netzwerk, bedient auf 8443 aber nichts/);
+    expect(ausgabe).toMatch(/lauscht auf: 80 443/);
   });
 
   it("nimmt einen Host-Netz-nginx, der unseren Port belegt", async () => {
@@ -306,6 +327,57 @@ describe("Proxy-Container zuordnen", () => {
     const { code, ausgabe } = await finden(bin, "ziel.example");
     expect(code, ausgabe).toBe(1);
     expect(ausgabe).toMatch(/weder einen Port veröffentlicht noch im Host-Netzwerk/);
+  });
+
+  it("ordnet Port und Namen DEMSELBEN server-Block zu, nicht der Gesamtkonfiguration", async () => {
+    // DER BEFUND DES PFLICHT-APPROVERS (PR #105), gegen die vorige Fassung:
+    // Sie las die Lauschports aus `nginx -T` (ganzer Prozess) und die Namen aus
+    // /data/nginx/proxy_host/*.conf — zwei Quellen, die nie einander zugeordnet
+    // wurden. Ein Host-Netz-nginx mit
+    //
+    //     server { listen 443;  server_name fremd.example; }
+    //     server { listen 8443; server_name ziel.example;  }
+    //
+    // bestand damit die Prüfung für `ziel.example` auf Port 443: Er lauscht
+    // irgendwo auf 443 (Block 1) und bedient irgendwo ziel.example (Block 2).
+    // Auf 443 bedient er ziel.example aber NICHT — dort landet die Anfrage beim
+    // fremden Host. Das Schnipsel wäre in einen Proxy geschrieben worden, der
+    // unsere Domain auf diesem Port gar nicht ausliefert.
+    const bin = podmanAttrappe([
+      {
+        name: "geteilter-host-nginx",
+        ports: "",
+        nginx: true,
+        hosts: [],
+        netzmodus: "host",
+        bloecke: [
+          { lauscht: [443], hosts: ["fremd.example"] },
+          { lauscht: [8443], hosts: ["ziel.example"] },
+        ],
+      },
+    ]);
+    const { code, ausgabe } = await finden(bin, "ziel.example", "https://ziel.example");
+    expect(code, ausgabe).toBe(1);
+    expect(ausgabe).toMatch(/bedient 'ziel.example' nicht auf 443/);
+  });
+
+  it("nimmt ihn, wenn Port UND Name aus demselben Block kommen", async () => {
+    const bin = podmanAttrappe([
+      {
+        name: "geteilter-host-nginx",
+        ports: "",
+        nginx: true,
+        hosts: [],
+        netzmodus: "host",
+        bloecke: [
+          { lauscht: [443], hosts: ["fremd.example"] },
+          { lauscht: [8443], hosts: ["ziel.example"] },
+        ],
+      },
+    ]);
+    const { code, gefunden, ausgabe } = await finden(bin, "ziel.example", "https://ziel.example:8443");
+    expect(code, ausgabe).toBe(0);
+    expect(gefunden).toBe("geteilter-host-nginx");
   });
 
   it("nennt bei Misserfolg, was geprüft und warum verworfen wurde", async () => {

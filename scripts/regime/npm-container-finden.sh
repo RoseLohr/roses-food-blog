@@ -98,6 +98,10 @@ while IFS= read -r zeile; do
   # `server_name ziel` aus der anderen hätten zusammen bestanden.
   # (Alles drei: Befund des Pflicht-Approvers, PR #105.)
   hat_unseren_port=0
+  # Je Container zurücksetzen: Sonst trüge der nächste die Herkunftsangabe des
+  # vorigen in seiner Verwerfungsbegründung — und die Namensquelle dazu.
+  HERKUNFT=""
+  namen=""
   case "$ports" in
     *:"$PORT"-\>*) hat_unseren_port=1 ;;
     *:*-\>*) verworfen "$name" "veröffentlicht Ports, aber nicht $PORT ($ports)"; continue ;;
@@ -155,21 +159,67 @@ while IFS= read -r zeile; do
     # bekäme ein Container ohne nginx die Begründung „belegt Port X nicht"
     # statt „kein nginx darin" — eine irreführende Fehlersuche.
     #
-    # Gelesen wird `nginx -T`, die WIRKSAME Gesamtkonfiguration, nicht eine
-    # einzelne Datei: Gefragt ist, ob dieser nginx-Prozess unseren Port auf dem
-    # Host belegt. Das ist eine Frage an den ganzen Prozess und braucht
-    # deshalb — anders als die Namenszuordnung — keine Datei-Korrelation.
-    lauscht=$($PODMAN exec "$name" nginx -T 2>/dev/null \
-      | sed 's/#.*$//' \
-      | grep -E '^[[:space:]]*listen[[:space:]]' \
-      | sed -e 's/;.*$//' -e 's/^[[:space:]]*listen[[:space:]]*//' \
-      | awk '{print $1}' \
-      | sed -e 's/.*\]://' -e 's/^.*:\([0-9][0-9]*\)$/\1/' \
-      | grep -E '^[0-9]+$') || lauscht=""
-    if ! printf '%s\n' "$lauscht" | grep -Fxq -- "$PORT"; then
-      verworfen "$name" "läuft im Host-Netzwerk, belegt dort aber nicht $PORT (lauscht auf: $(printf '%s' "$lauscht" | tr '\n' ' '))"
+    # Gelesen wird `nginx -T`, die WIRKSAME Gesamtkonfiguration — und zwar
+    # BLOCKWEISE. Port und Name müssen aus DEMSELBEN server-Block stammen.
+    #
+    # Eine frühere Fassung nahm die Lauschports aus `nginx -T` (ganzer Prozess)
+    # und die Namen aus /data/nginx/proxy_host/*.conf — zwei Quellen, die nie
+    # einander zugeordnet wurden. Ein geteilter Host-nginx mit
+    #
+    #     server { listen 443;  server_name fremd.example; }
+    #     server { listen 8443; server_name ziel.example;  }
+    #
+    # bestand damit für `ziel.example` auf Port 443: irgendwo 443, irgendwo
+    # ziel.example. Auf 443 landet die Anfrage aber beim fremden Host — das
+    # Schnipsel wäre in einen Proxy geschrieben worden, der unsere Domain auf
+    # diesem Port gar nicht ausliefert. (Befund des Pflicht-Approvers, PR #105.)
+    paare=$($PODMAN exec "$name" nginx -T 2>/dev/null | awk '
+      # Je server-Block JEDES Paar aus Lauschport und bedientem Namen, als
+      # "PORT<TAB>NAME". Die Klammertiefe grenzt die Blöcke ab; ohne sie würde
+      # ein location-Block das Ende des server-Blocks vortäuschen.
+      {
+        zeile=$0
+        sub(/#.*$/, "", zeile)   # Kommentar ab # — sonst zählte er als Name
+        n=split(zeile, w, /[ \t]+/)
+        auf=gsub(/\{/, "{", zeile); zu=gsub(/\}/, "}", zeile)
+        wort=""; for (i=1;i<=n;i++) if (w[i]!="") { wort=w[i]; break }
+        if (inserver==0 && wort=="server" && auf>0) { inserver=1; tiefe=0; np=0; nn=0 }
+        if (inserver) {
+          if (wort=="listen") {
+            for (i=1;i<=n;i++) if (w[i]=="listen") { p=w[i+1]; break }
+            sub(/;.*$/, "", p)
+            if (p !~ /^unix:/) {
+              sub(/.*\]:/, "", p)                              # [::]:443 -> 443
+              if (p ~ /^[0-9.]+:[0-9]+$/) sub(/^.*:/, "", p)    # 0.0.0.0:8443 -> 8443
+              if (p ~ /^[0-9]+$/) { np++; ports[np]=p }
+            }
+          }
+          if (wort=="server_name") {
+            gefunden=0
+            for (i=1;i<=n;i++) {
+              if (w[i]=="") continue
+              if (gefunden) {
+                t=w[i]; fertig=(t ~ /;/); sub(/;.*$/, "", t)
+                if (t!="") { nn++; namen[nn]=tolower(t) }
+                if (fertig) break
+              }
+              if (w[i]=="server_name") gefunden=1
+            }
+          }
+          tiefe += auf; tiefe -= zu
+          if (tiefe<=0) {
+            for (a=1;a<=np;a++) for (b=1;b<=nn;b++) print ports[a] "\t" namen[b]
+            inserver=0
+          }
+        }
+      }') || paare=""
+    lauscht=$(printf '%s\n' "$paare" | cut -f1 | sort -un | tr '\n' ' ')
+    namen=$(printf '%s\n' "$paare" | awk -F'\t' -v p="$PORT" '$1==p{print $2}')
+    if [ -z "$namen" ]; then
+      verworfen "$name" "läuft im Host-Netzwerk, bedient auf $PORT aber nichts (lauscht auf: ${lauscht:-nichts})"
       continue
     fi
+    HERKUNFT=" auf $PORT"
     hat_unseren_port=1
   fi
   # Im Container wird nur GELESEN, mit einem FESTEN Kommando. Ausgewertet wird
@@ -184,16 +234,23 @@ while IFS= read -r zeile; do
   #     `server_name fremd.de; # ziel.de` hätte „ziel.de" diesem Container
   #     zugeordnet. Eine nginx-Direktive endet am Semikolon, und alles hinter
   #     `#` ist Kommentar.
-  konf=$($PODMAN exec "$name" sh -c 'cat /data/nginx/proxy_host/*.conf 2>/dev/null') || konf=""
-  if [ -z "$konf" ]; then
-    verworfen "$name" "keine Proxy-Host-Konfiguration unter /data/nginx/proxy_host/"
-    continue
+  # Im Host-Netzwerk stehen die Namen schon fest — dort wurden sie oben
+  # blockweise zusammen mit dem Port bestimmt. Sonst kommen sie aus den
+  # Proxy-Host-Dateien; die Host-Seite des Ports ist dann bereits über podman
+  # belegt (eigene Portspalte oder die des Pods), und die listen-Zahlen der
+  # Konfiguration sind die Container-Seite, also die falsche Größe.
+  if [ -z "${HERKUNFT:-}" ]; then
+    konf=$($PODMAN exec "$name" sh -c 'cat /data/nginx/proxy_host/*.conf 2>/dev/null') || konf=""
+    if [ -z "$konf" ]; then
+      verworfen "$name" "keine Proxy-Host-Konfiguration unter /data/nginx/proxy_host/"
+      continue
+    fi
+    namen=$(printf '%s\n' "$konf" \
+      | sed 's/#.*$//' \
+      | grep -E '^[[:space:]]*server_name[[:space:]]' \
+      | sed -e 's/;.*$//' -e 's/^[[:space:]]*server_name[[:space:]]*//' \
+      | tr -s ' \t' '\n' | tr 'A-Z' 'a-z') || namen=""
   fi
-  namen=$(printf '%s\n' "$konf" \
-    | sed 's/#.*$//' \
-    | grep -E '^[[:space:]]*server_name[[:space:]]' \
-    | sed -e 's/;.*$//' -e 's/^[[:space:]]*server_name[[:space:]]*//' \
-    | tr -s ' \t' '\n' | tr 'A-Z' 'a-z') || namen=""
   # nginx' Namenssemantik nachbilden, nicht bloß Zeichen vergleichen. Ein
   # Literalvergleich verfehlte zwei gängige Fälle (Befund des Pflicht-
   # Approvers, PR #103):
@@ -224,7 +281,7 @@ while IFS= read -r zeile; do
     esac
   done <<< "$namen"
   if [ "$passt" != 1 ]; then
-    verworfen "$name" "bedient '$HOST' nicht"
+    verworfen "$name" "bedient '$HOST' nicht${HERKUNFT:-}"
     continue
   fi
 
