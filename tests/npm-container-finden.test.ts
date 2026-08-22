@@ -37,6 +37,8 @@ type Behaelter = {
   netzmodus?: string;
   /** Pod-Kennung, falls Mitglied eines Pods. */
   pod?: string;
+  /** Was der POD veröffentlicht (sein Infra-Container), nicht das Mitglied. */
+  podPorts?: string;
 };
 
 let arbeit: string;
@@ -79,6 +81,16 @@ function podmanAttrappe(behaelter: Behaelter[]) {
     inspectDatei,
     behaelter.map((b) => `${b.name} ${b.netzmodus ?? "bridge"}|${b.pod ?? ""}`).join("\n") + "\n",
   );
+  // Welche Ports der POD veröffentlicht (nicht das Mitglied). Format
+  // „<ports>|<podkennung>", damit die Attrappe nach der Kennung filtern kann.
+  const podPortsDatei = path.join(arbeit, "podports.txt");
+  fs.writeFileSync(
+    podPortsDatei,
+    behaelter
+      .filter((b) => b.pod)
+      .map((b) => `${b.podPorts ?? ""}|${b.pod}`)
+      .join("\n") + "\n",
+  );
   const psDatei = path.join(arbeit, "ps.txt");
   fs.writeFileSync(psDatei, behaelter.map((b) => `${b.name}|${b.ports}`).join("\n") + "\n");
   const nginxJa = behaelter.filter((b) => b.nginx).map((b) => b.name).join(" ");
@@ -89,7 +101,15 @@ function podmanAttrappe(behaelter: Behaelter[]) {
 set -u
 WURZELN=${JSON.stringify(wurzeln)}
 case "$1" in
-  ps) cat ${JSON.stringify(psDatei)}; exit 0 ;;
+  ps)
+    # Der Infra-Container eines Pods traegt dessen Veroeffentlichungen. Mit
+    # --filter pod=<kennung> fragt das Skript genau danach.
+    for a in "$@"; do case "$a" in pod=*) POD=\${a#pod=} ;; esac; done
+    if [ -n "\${POD:-}" ]; then
+      grep -E "\\|\${POD}\\$" ${JSON.stringify(podPortsDatei)} 2>/dev/null | cut -d'|' -f1
+      exit 0
+    fi
+    cat ${JSON.stringify(psDatei)}; exit 0 ;;
   inspect)
     # podman inspect <name> --format '{{.HostConfig.NetworkMode}}|{{.Pod}}'
     zeile=$(grep -E "^$2 " ${JSON.stringify(inspectDatei)} || true)
@@ -99,7 +119,15 @@ case "$1" in
     name="$2"; shift 2
     case "$1" in
       nginx)
-        for n in ${nginxJa || "''"}; do [ "$n" = "$name" ] && exit 0; done
+        for n in ${nginxJa || "''"}; do
+          if [ "$n" = "$name" ]; then
+            # nginx -T gibt die WIRKSAME Gesamtkonfiguration aus. Die
+            # Attrappe reicht dafuer dieselben Dateien durch, die auch unter
+            # /data/nginx/proxy_host/ liegen - inklusive ihrer listen-Zeilen.
+            if [ "\${2:-}" = "-T" ]; then cat "$WURZELN/$name/data/nginx/proxy_host/"*.conf 2>/dev/null; fi
+            exit 0
+          fi
+        done
         echo "nginx: not found" >&2; exit 127 ;;
       sh)
         befehl=$(printf '%s' "$3" | sed "s#/data/#$WURZELN/$name/data/#g")
@@ -183,7 +211,16 @@ describe("Proxy-Container zuordnen", () => {
   it("nimmt einen Proxy im Pod — dort veröffentlicht der Pod, nicht das Mitglied", async () => {
     // Die Lage dieses Servers, gemessen am 22.08.2026.
     const bin = podmanAttrappe([
-      { name: "nginx-proxy-manager", ports: "", nginx: true, hosts: ["gourmetcompass.de"], pod: "a9981908aef1" },
+      {
+        name: "nginx-proxy-manager",
+        ports: "",
+        nginx: true,
+        hosts: ["gourmetcompass.de"],
+        pod: "a9981908aef1",
+        // Der Pod veröffentlicht — das Mitglied nicht. Ohne diese Angabe wäre
+        // die Attrappe wieder nur ein Abbild dessen, was der Code gerade liest.
+        podPorts: "0.0.0.0:80->80/tcp, 0.0.0.0:443->443/tcp",
+      },
     ]);
     const { code, gefunden, ausgabe } = await finden(bin, "gourmetcompass.de");
     expect(code, ausgabe).toBe(0);
@@ -195,6 +232,80 @@ describe("Proxy-Container zuordnen", () => {
       { name: "npm", ports: "", nginx: true, hosts: ["gourmetcompass.de"], netzmodus: "host" },
     ]);
     expect((await finden(bin, "gourmetcompass.de")).gefunden).toBe("npm");
+  });
+
+  it("übergeht einen Host-Netz-nginx, der unseren Port gar nicht belegt", async () => {
+    // DER BEFUND DES PFLICHT-APPROVERS (PR #105), gegen die vorige Fassung:
+    // Die hatte für portlose Container nur noch gefragt, OB sie erreichbar
+    // sind — nicht mehr WORAUF. Ein fremder nginx im Host-Netzwerk auf 80/443
+    // wäre damit als unser Proxy auf 8443 durchgegangen und global
+    // umkonfiguriert worden.
+    //
+    // Im Host-Netzwerk gibt es keine Abbildung: Container-Seite und Host-Seite
+    // sind dieselbe Zahl. Nur DESHALB darf hier die listen-Zahl verglichen
+    // werden — bei einer Abbildung 8443->443 wäre genau das falsch.
+    const bin = podmanAttrappe([
+      { name: "fremder-nginx", ports: "", nginx: true, hosts: ["ziel.example"], netzmodus: "host", lauscht: [80, 443] },
+    ]);
+    const { code, ausgabe } = await finden(bin, "ziel.example", "https://ziel.example:8443");
+    expect(code, ausgabe).toBe(1);
+    expect(ausgabe).toMatch(/läuft im Host-Netzwerk, belegt dort aber nicht 8443/);
+  });
+
+  it("nimmt einen Host-Netz-nginx, der unseren Port belegt", async () => {
+    const bin = podmanAttrappe([
+      { name: "npm", ports: "", nginx: true, hosts: ["ziel.example"], netzmodus: "host", lauscht: [80, 8443] },
+    ]);
+    const { code, gefunden, ausgabe } = await finden(bin, "ziel.example", "https://ziel.example:8443");
+    expect(code, ausgabe).toBe(0);
+    expect(gefunden).toBe("npm");
+  });
+
+  it("übergeht ein Pod-Mitglied, dessen POD unseren Port nicht veröffentlicht", async () => {
+    // Der zweite Halbsatz desselben Befunds: „bzw. Pod mit anderem Mapping".
+    // Der Pod veröffentlicht 80/443, verlangt ist 8443.
+    const bin = podmanAttrappe([
+      {
+        name: "fremder-pod-proxy",
+        ports: "",
+        nginx: true,
+        hosts: ["ziel.example"],
+        pod: "p9",
+        podPorts: "0.0.0.0:80->80/tcp, 0.0.0.0:443->443/tcp",
+      },
+    ]);
+    const { code, ausgabe } = await finden(bin, "ziel.example", "https://ziel.example:8443");
+    expect(code, ausgabe).toBe(1);
+    expect(ausgabe).toMatch(/Pod p9, und der Pod veröffentlicht nicht 8443/);
+  });
+
+  it("nimmt ein Pod-Mitglied, dessen POD auf unseren Port abbildet — ohne die listen-Zahlen anzusehen", async () => {
+    // Der Pod bildet 8443 (Host) auf 443 (Container) ab; die Konfiguration
+    // lauscht folgerichtig auf 443. Verlangt ist 8443. Beides zusammen darf
+    // NICHT verglichen werden — hier liegt eine Abbildung vor.
+    const bin = podmanAttrappe([
+      {
+        name: "npm",
+        ports: "",
+        nginx: true,
+        hosts: ["ziel.example"],
+        pod: "p1",
+        podPorts: "0.0.0.0:8443->443/tcp",
+        lauscht: [443],
+      },
+    ]);
+    const { code, gefunden, ausgabe } = await finden(bin, "ziel.example", "https://ziel.example:8443");
+    expect(code, ausgabe).toBe(0);
+    expect(gefunden).toBe("npm");
+  });
+
+  it("übergeht ein Pod-Mitglied, dessen Pod gar nichts veröffentlicht", async () => {
+    const bin = podmanAttrappe([
+      { name: "abgeschotteter-pod", ports: "", nginx: true, hosts: ["ziel.example"], pod: "p0", podPorts: "" },
+    ]);
+    const { code, ausgabe } = await finden(bin, "ziel.example");
+    expect(code, ausgabe).toBe(1);
+    expect(ausgabe).toMatch(/weder einen Port veröffentlicht noch im Host-Netzwerk/);
   });
 
   it("nennt bei Misserfolg, was geprüft und warum verworfen wurde", async () => {
@@ -372,7 +483,7 @@ describe("Proxy-Container zuordnen", () => {
       // Der portlose ist ein Pod-Mitglied — also ein echter Kandidat, genau wie
       // der Proxy dieses Servers. Ohne diese Angabe wäre er schon an der
       // Erreichbarkeit gescheitert und die Mehrdeutigkeit gar nicht eingetreten.
-      { name: "ohne-ports", ports: "", nginx: true, hosts: ["gourmetcompass.de"], pod: "p1" },
+      { name: "ohne-ports", ports: "", nginx: true, hosts: ["gourmetcompass.de"], pod: "p1", podPorts: "0.0.0.0:443->443/tcp" },
       { name: "mit-443", ports: "0.0.0.0:443->443/tcp", nginx: true, hosts: ["gourmetcompass.de"] },
     ]);
     const { code, gefunden, ausgabe } = await finden(bin, "gourmetcompass.de");

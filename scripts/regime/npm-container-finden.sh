@@ -21,9 +21,12 @@
 #   3. unter /data/nginx/proxy_host/ steht eine Konfiguration, die GENAU
 #      diesen Namen bedient.
 #
-# Zum Port wird AUSDRÜCKLICH NICHTS aus der nginx-Konfiguration gelesen: Deren
-# `listen`-Zahlen sind die Container-Seite, die URL nennt die Host-Seite, und
-# bei einem Mapping wie 8443->443 sind das verschiedene Zahlen.
+# Der Port wird IMMER auf der HOST-Seite verglichen, aber je nach Netzlage aus
+# einer anderen Quelle: aus der eigenen Portspalte, aus der des Pods, oder —
+# nur im Host-Netzwerk, wo es keine Abbildung gibt und beide Seiten dieselbe
+# Zahl sind — aus den `listen`-Zeilen. Die `listen`-Zahl gegen die URL zu
+# halten, WÄHREND eine Abbildung besteht, wäre falsch: bei 8443->443 sind das
+# verschiedene Zahlen.
 #
 # Bedingung 3 ist die eigentliche Zuordnung: Sie macht aus „irgendein Proxy"
 # ein „der Proxy DIESER Domain". Passen mehrere, wird NICHT gewählt — dann
@@ -99,17 +102,36 @@ while IFS= read -r zeile; do
     *:"$PORT"-\>*) hat_unseren_port=1 ;;
     *:*-\>*) verworfen "$name" "veröffentlicht Ports, aber nicht $PORT ($ports)"; continue ;;
     *)
-      # GAR KEINE Veröffentlichung. Das allein ist kein Freibrief — ein
-      # abgeschotteter Bridge-Container veröffentlicht ebenfalls nichts und ist
-      # vom Host aus überhaupt nicht erreichbar. Statt das zu unterstellen,
-      # wird nachgesehen, WARUM die Spalte leer ist:
-      #   Host-Netzwerk → nginx bindet direkt auf dem Host, also erreichbar.
-      #   Mitglied eines Pods → der Pod veröffentlicht, nicht das Mitglied.
-      #   sonst → nicht erreichbar, kommt nicht in Frage.
+      # GAR KEINE Veröffentlichung in DIESER Zeile. Das allein sagt weder ja
+      # noch nein — es heißt nur, dass die Host-Seite woanders steht. Wo, hängt
+      # davon ab, WARUM die Spalte leer ist. Und in beiden Fällen, in denen sie
+      # aus einem guten Grund leer ist, ist die Host-Seite sehr wohl zu
+      # ermitteln. Sie NICHT zu ermitteln hieße, einen fremden nginx auf 80/443
+      # als unseren Proxy auf 8443 zu nehmen und ihn global umzukonfigurieren.
+      # (Befund des Pflicht-Approvers, PR #105 — gegen die Fassung, die hier
+      # nur noch fragte, OB der Container erreichbar ist, nicht mehr WORAUF.)
       netz=$($PODMAN inspect "$name" --format '{{.HostConfig.NetworkMode}}|{{.Pod}}' 2>/dev/null) || netz=""
       modus=${netz%%|*}
       pod=${netz#*|}
-      if [ "$modus" != host ] && [ -z "$pod" ]; then
+      if [ -n "$pod" ]; then
+        # POD: Veröffentlicht wird vom Infra-Container des Pods, nicht vom
+        # Mitglied. Die Host-Seite steht also in der Portspalte eines ANDEREN
+        # Containers desselben Pods — dieselbe Schreibweise, dieselbe Prüfung.
+        pod_ports=$($PODMAN ps -a --filter "pod=$pod" --format '{{.Ports}}' 2>/dev/null | tr '\n' ' ') || pod_ports=""
+        case "$pod_ports" in
+          *:"$PORT"-\>*) hat_unseren_port=1 ;;
+          *:*-\>*) verworfen "$name" "liegt im Pod $pod, und der Pod veröffentlicht nicht $PORT ($pod_ports)"; continue ;;
+          *)
+            # Pod ohne jede Veröffentlichung: Entweder der Pod selbst läuft im
+            # Host-Netzwerk — dann gilt die Betrachtung unten —, oder er ist
+            # abgeschottet und vom Host aus nicht erreichbar.
+            if [ "$modus" != host ]; then
+              verworfen "$name" "liegt im Pod $pod, der weder einen Port veröffentlicht noch im Host-Netzwerk läuft — vom Host aus nicht erreichbar"
+              continue
+            fi ;;
+        esac
+      fi
+      if [ "$hat_unseren_port" = 0 ] && [ "$modus" != host ]; then
         verworfen "$name" "veröffentlicht keinen Port und ist weder im Host-Netzwerk noch in einem Pod (Netzmodus: ${modus:-unbekannt}) — vom Host aus nicht erreichbar"
         continue
       fi ;;
@@ -118,6 +140,37 @@ while IFS= read -r zeile; do
   if ! $PODMAN exec "$name" nginx -v >/dev/null 2>&1; then
     verworfen "$name" "kein nginx darin"
     continue
+  fi
+
+  if [ "$hat_unseren_port" = 0 ]; then
+    # HOST-NETZWERK ohne jede Veröffentlichung. Hier — und AUSSCHLIESSLICH
+    # hier — darf die `listen`-Zahl der Konfiguration gegen den Port aus der
+    # URL gehalten werden. Es gibt keine Abbildung: Der Container teilt sich
+    # den Netzwerk-Namensraum des Hosts, Container-Seite und Host-Seite sind
+    # dieselbe Zahl. Bei einer Abbildung wie 8443->443 wäre genau dieser
+    # Vergleich falsch — deshalb steht er nur in diesem Zweig.
+    #
+    # Und er steht NACH der nginx-Prüfung, nicht davor: Er liest
+    # nginx-Konfiguration, setzt also einen nginx voraus. Stünde er oben,
+    # bekäme ein Container ohne nginx die Begründung „belegt Port X nicht"
+    # statt „kein nginx darin" — eine irreführende Fehlersuche.
+    #
+    # Gelesen wird `nginx -T`, die WIRKSAME Gesamtkonfiguration, nicht eine
+    # einzelne Datei: Gefragt ist, ob dieser nginx-Prozess unseren Port auf dem
+    # Host belegt. Das ist eine Frage an den ganzen Prozess und braucht
+    # deshalb — anders als die Namenszuordnung — keine Datei-Korrelation.
+    lauscht=$($PODMAN exec "$name" nginx -T 2>/dev/null \
+      | sed 's/#.*$//' \
+      | grep -E '^[[:space:]]*listen[[:space:]]' \
+      | sed -e 's/;.*$//' -e 's/^[[:space:]]*listen[[:space:]]*//' \
+      | awk '{print $1}' \
+      | sed -e 's/.*\]://' -e 's/^.*:\([0-9][0-9]*\)$/\1/' \
+      | grep -E '^[0-9]+$') || lauscht=""
+    if ! printf '%s\n' "$lauscht" | grep -Fxq -- "$PORT"; then
+      verworfen "$name" "läuft im Host-Netzwerk, belegt dort aber nicht $PORT (lauscht auf: $(printf '%s' "$lauscht" | tr '\n' ' '))"
+      continue
+    fi
+    hat_unseren_port=1
   fi
   # Im Container wird nur GELESEN, mit einem FESTEN Kommando. Ausgewertet wird
   # hier draußen. Zwei Gründe, beide vom Pflicht-Approver gefunden (PR #103):
