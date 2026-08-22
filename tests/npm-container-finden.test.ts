@@ -192,6 +192,52 @@ describe("Proxy-Container zuordnen", () => {
     expect(gefunden, "es darf kein Container zurückgegeben werden").toBe("");
   });
 
+  it("ordnet unabhängig von Groß- und Kleinschreibung zu", async () => {
+    // nginx behandelt server_name gross/klein-unabhaengig, DNS ebenso. Ein
+    // Literalvergleich verfehlte das. (Befund des Pflicht-Approvers, PR #103.)
+    const bin = podmanAttrappe([
+      { name: "npm", ports: "0.0.0.0:443->443/tcp", nginx: true, hosts: [],
+        rohzeile: "  server_name GourmetCompass.DE;" },
+    ]);
+    expect((await finden(bin, "gourmetcompass.de")).gefunden).toBe("npm");
+  });
+
+  it("versteht den Platzhalter *.example.de wie nginx", async () => {
+    const bin = podmanAttrappe([
+      { name: "npm", ports: "0.0.0.0:443->443/tcp", nginx: true, hosts: [],
+        rohzeile: "  server_name *.example.de;" },
+    ]);
+    expect((await finden(bin, "www.example.de")).gefunden).toBe("npm");
+    // …und eben NICHT die nackte Domain — genau wie nginx.
+    expect((await finden(bin, "example.de")).code).toBe(1);
+  });
+
+  it("versteht die nginx-Kurzform .example.de — Name UND Unterdomänen", async () => {
+    const bin = podmanAttrappe([
+      { name: "npm", ports: "0.0.0.0:443->443/tcp", nginx: true, hosts: [],
+        rohzeile: "  server_name .example.de;" },
+    ]);
+    expect((await finden(bin, "example.de")).gefunden).toBe("npm");
+    expect((await finden(bin, "www.example.de")).gefunden).toBe("npm");
+  });
+
+  it("ordnet bei Regex-Namen und beim Auffangnamen _ bewusst NICHT zu", async () => {
+    // Beides wäre Raten: Ein Regex nachzubilden ginge schief, und `_` ließe
+    // JEDEN Proxy passen — in einen beliebigen fremden Container zu schreiben
+    // ist genau der Fehler, den dieses Skript verhindern soll. Lieber „nicht
+    // zugeordnet" und das Kompressions-Gate schlägt an.
+    const regex = podmanAttrappe([
+      { name: "npm", ports: "0.0.0.0:443->443/tcp", nginx: true, hosts: [],
+        rohzeile: "  server_name ~^web[0-9]\\.de$;" },
+    ]);
+    expect((await finden(regex, "web1.de")).code).toBe(1);
+
+    const auffang = podmanAttrappe([
+      { name: "npm", ports: "0.0.0.0:443->443/tcp", nginx: true, hosts: [], rohzeile: "  server_name _;" },
+    ]);
+    expect((await finden(auffang, "gourmetcompass.de")).code).toBe(1);
+  });
+
   it("rät NICHT, wenn zwei Container dieselbe Domain bedienen", async () => {
     // Bei geteilter Infrastruktur ist Raten die falsche Antwort: Geschrieben
     // wird eine GLOBALE Konfiguration.

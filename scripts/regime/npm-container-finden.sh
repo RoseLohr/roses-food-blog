@@ -77,8 +77,37 @@ while IFS= read -r zeile; do
     | sed 's/#.*$//' \
     | grep -E '^[[:space:]]*server_name[[:space:]]' \
     | sed -e 's/;.*$//' -e 's/^[[:space:]]*server_name[[:space:]]*//' \
-    | tr -s ' \t' '\n') || namen=""
-  printf '%s\n' "$namen" | grep -Fxq -- "$HOST" || continue
+    | tr -s ' \t' '\n' | tr 'A-Z' 'a-z') || namen=""
+  # nginx' Namenssemantik nachbilden, nicht bloß Zeichen vergleichen. Ein
+  # Literalvergleich verfehlte zwei gängige Fälle (Befund des Pflicht-
+  # Approvers, PR #103):
+  #   - Groß/Kleinschreibung: `server_name GourmetCompass.de` bedient dieselbe
+  #     Domain. Beide Seiten werden deshalb kleingeschrieben.
+  #   - Platzhalter: `*.example.de` bedient `www.example.de`, und die nginx-
+  #     Kurzform `.example.de` bedient beides — den Namen selbst und jede
+  #     Unterdomäne. Ohne das bliebe das Schnipsel aus und das Kompressions-
+  #     Gate scheiterte anschließend, obwohl alles richtig eingerichtet ist.
+  #
+  # `case` mit unquotiertem Muster ist hier genau das richtige Werkzeug: Es
+  # vergleicht als Muster, führt aber nichts aus.
+  #
+  # ABSICHTLICH NICHT ZUGEORDNET: Regex-Namen (`~^…$`) und der Auffangname `_`.
+  # Ersteres wäre Raten, Letzteres würde JEDEN Proxy passen lassen — und in
+  # einen beliebigen fremden Container zu schreiben ist genau der Fehler, den
+  # diese Datei verhindern soll. Wer so einrichtet, bekommt „nicht zugeordnet"
+  # und damit kein Schnipsel; das Kompressions-Gate meldet es dann.
+  passt=0
+  while IFS= read -r muster; do
+    [ -n "$muster" ] || continue
+    case "$muster" in '~'*|'_') continue ;; esac
+    case "$muster" in
+      .*) rumpf=${muster#.}
+          [ "$HOST" = "$rumpf" ] && { passt=1; break; }
+          case "$HOST" in *".$rumpf") passt=1; break ;; esac ;;
+      *)  case "$HOST" in $muster) passt=1; break ;; esac ;;
+    esac
+  done <<< "$namen"
+  [ "$passt" = 1 ] || continue
   TREFFER="$TREFFER$name"$'\n'
   ANZAHL=$((ANZAHL + 1))
 # Gespeist wird die Schleife mit einem Here-String. Ein unquotiertes Heredoc

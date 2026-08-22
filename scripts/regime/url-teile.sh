@@ -15,12 +15,21 @@
 # wer nur das abgeleitete Ergebnis liest, sucht an der falschen Stelle.
 url_teile() {
   local url="${1:-}"
+  # Schemata sind nach RFC 3986 GROSS/KLEIN-UNABHÄNGIG: `HTTPS://…` ist gültig.
+  # Die erste Fassung verlangte Kleinschreibung und hätte einen solchen Wert in
+  # der .env mit Code 2 abgewiesen — das Deployment wäre daran gescheitert.
+  # (Befund des Pflicht-Approvers, PR #103.)
   case "$url" in
-    [a-z]*://?*) ;;
+    [A-Za-z]*://?*) ;;
     *) return 1 ;;
   esac
-  URL_SCHEMA="${url%%://*}"
-  local hostport="${url#*://}"; hostport="${hostport%%/*}"
+  URL_SCHEMA=$(printf '%s' "${url%%://*}" | tr 'A-Z' 'a-z')
+  case "$URL_SCHEMA" in
+    *[!a-z0-9.+-]*) return 1 ;;
+  esac
+  # Auch der Name wird kleingeschrieben — DNS ist gross/klein-unabhaengig, und
+  # nachgelagerte Vergleiche sollen sich darauf verlassen koennen.
+  local hostport; hostport=$(printf '%s' "${url#*://}" | tr 'A-Z' 'a-z'); hostport="${hostport%%/*}"
   case "$URL_SCHEMA" in https) URL_PORT=443 ;; *) URL_PORT=80 ;; esac
   case "$hostport" in
     \[*\]:*) URL_HOST="${hostport%%]*}"; URL_HOST="${URL_HOST#[}"; URL_PORT="${hostport##*:}" ;;
