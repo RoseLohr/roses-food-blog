@@ -332,11 +332,28 @@ Die neun, mit erster Einschätzung (nicht entschieden):
 | Modern Web Application [10109] | 5 | rein informativ. |
 | Authentication Request Identified [10111] | 1 | rein informativ. |
 
-**D-2 — Die ZAP-Aktion kann ihr eigenes Artefakt nicht hochladen.**
+**D-2 — Die ZAP-Aktion kann ihr eigenes Artefakt nicht hochladen.** *Behoben
+2026-08-22.*
 `Create Artifact Container failed: The artifact name zap_scan is not valid` —
 `zaproxy/action-baseline@v0.12.0` gegen die heutige Artefakt-Schnittstelle. Der
 nachgelagerte eigene Upload (`zap-report`) gelingt, der Bericht ist also da;
 die Fehlermeldung ist trotzdem eine weitere Spur, die in die Irre führt.
+
+Die Wurzel ist nicht der Name — `zap_scan` ist zulässig. Die alte Aktion bringt
+eine abgekündigte `upload-artifact`-Fassung mit, deren Dienst-Schnittstelle
+abgeschaltet ist; die Meldung ist das Symptom davon. `v0.14.0` behebt genau das
+(„stop using deprecated upload-artifact version"), `v0.15.0` ist der aktuelle
+Stand und jetzt gepinnt. Die vier benutzten Eingaben (`target`,
+`rules_file_name`, `fail_action`, `allow_issue_writing`) gibt es dort
+unverändert — an der `action.yml` des Tags nachgesehen, nicht vermutet.
+
+Der eigene Upload bleibt trotzdem stehen: Er liegt außerhalb der Aktion und
+trägt `if: always()`, liefert den Bericht also auch dann, wenn die Aktion selbst
+abbricht. Zwei Artefakte kosten nichts, ein fehlender Bericht kostet den Lauf.
+
+**Was das NICHT heilt:** Der wöchentliche Lauf bleibt rot. Er ist fail-closed
+und fällt über die neun WARN aus D-1 — D-2 war immer nur die irreführende
+Meldung daneben.
 
 **Nebenwirkung dieses Laufs:** Der Meldepfad hat wie vorgesehen einen Kommentar
 an Issue #75 („Wiederkehrender Lauf fehlgeschlagen: DAST") geschrieben. Der
