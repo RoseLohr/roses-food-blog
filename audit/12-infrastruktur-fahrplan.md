@@ -111,6 +111,37 @@ Zwei Dinge, die das Inventar zusätzlich festhält:
   `ASSUMPTIONS Bxx`, Dateipfade in Codeblöcken, die toten A-Nummern). Beides
   ist Regressionsschutz, nicht Drift-Erkennung — und muss auch so heißen.
 
+  *Gebaut 2026-08-22:* `scripts/regime/doku-gate.mjs`, blockierend in CI, mit
+  Selbsttest. Es prüft drei Klassen: veraltete Anleitung (nur INNERHALB
+  umzäunter Codeblöcke, ausgenommen unter einer Überschrift mit „historisch" —
+  Fließtext darf weiter sagen, dass es certbot hier nicht gibt), tote
+  Annahmenummern und Pfadverweise ins Leere. Gemessen am Bestand: 300
+  Pfadverweise, 4 historische Codeblöcke, alle in Ordnung.
+
+  **Zwei Dinge, die es NICHT tut, damit sich niemand darauf verlässt:**
+  - Feste Portzahlen bleiben ungeprüft. `localhost:3000` ist im
+    Entwicklungsabschnitt richtig und am Proxy falsch; ein Gate, das beides
+    nicht auseinanderhalten kann, hätte eine Ausnahmeliste gebraucht — und
+    eine Ausnahmeliste ist der Anfang der Weichspülung. Die Portfrage hängt
+    ohnehin an M1.
+  - `ASSUMPTIONS Bxx` bleibt ungeprüft: `B1`–`B10` sind gleichzeitig die
+    Befundnummern in `audit/offene-befunde.md` und `B-06`/`B-13` die
+    Prüfkennungen. Drei Bezugssysteme auf demselben Zeichen — mechanisch nicht
+    trennbar, ohne zu raten.
+
+  In `audit/` gilt eine engere Regel, mit inhaltlichem Grund: Ein Fahrplan nennt
+  planmäßig Dateien, die es noch nicht gibt (`scripts/regime/erhebung.sh` aus
+  Spur A1). Ein Verweis MIT Zeilennummer kann das nie sein — man zitiert keine
+  Zeile einer Datei, die nicht existiert. Genau die werden dort geprüft.
+
+  **Das Gate war beim ersten Lauf rot, auf zwei echten Fundstellen**, die das
+  A2/A3-Inventar übersehen hatte, weil es nur Doku durchsucht hatte:
+  `src/i18n/de.ts` verwies auf eine tote Annahmenummer, und `src/lib/mailer.ts`
+  behauptete „Konfiguration ausschließlich über .env". Das zweite war nicht nur
+  eine tote Nummer, sondern **sachlich falsch**: `getSmtpConfig()` liest zuerst
+  die Einstellungen aus der Datenbank, `.env` ist bloß der Rückfall. Wer bei
+  einer Störung dem Kommentar gefolgt wäre, hätte in der falschen Datei gesucht.
+
 ## Spur A1/B2/F1 — Erhebung als Regime-Skript, Schwellen, Kadenz
 
 **Trägt:** `scripts/regime/erhebung.sh` als Skript. Zertifikatsrestlaufzeit

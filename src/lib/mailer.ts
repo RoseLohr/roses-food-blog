@@ -1,5 +1,13 @@
 /**
- * SMTP-Versand (Nodemailer), Konfiguration ausschließlich über .env (A2).
+ * SMTP-Versand (Nodemailer).
+ *
+ * Die Zugangsdaten kommen aus den Einstellungen der Datenbank; `.env`
+ * (SMTP_HOST/PORT/USER/PASS/FROM) ist nur der Rückfall — `getSmtpConfig()` in
+ * `src/lib/settings.ts` liest in genau dieser Reihenfolge. Hier stand
+ * „Konfiguration ausschließlich über .env"; das ist falsch, seit die
+ * Einstellungen im Admin pflegbar sind, und hätte bei der Fehlersuche in die
+ * falsche Datei geführt.
+ *
  * Baut aus Markdown-Inhalten eine responsive HTML-Mail + Textversion;
  * jede Mail enthält Abmeldelink und Absenderangaben (Akzeptanzkriterium 13).
  */
