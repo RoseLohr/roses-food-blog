@@ -103,17 +103,17 @@ Ertrag pro Risiko:
 
 | # | Was | Datei(en) | Zeilen |
 |---|---|---|---|
-| 1 | Zwölf ausgeschriebene Quellen → Tupel-Tabelle + `.map` | `src/lib/media-verwendung.ts:35-132` | −72 |
+| 1 | Zwölf ausgeschriebene Quellen → Tupel-Tabelle + `.map` | `src/lib/media-verwendung.ts:35-132` | −72 · **erledigt (−48)** |
 | 2 | Vier identische Formularaufbauten → ein Bauer | `tests/travel-dish-images.integration.test.ts` | −65 |
 | 3 | 17× dieselbe Statusmeldung → `<Meldung>` | 17 Admin-Seiten | −40 bis −52 |
 | 4 | Testaufbau „frische Datenbank" → `frischeDb()` | 23 Testdateien | −95 bis −105 |
 | 5 | Testdaten „Admin anlegen" → `adminAnlegen()` | 7 Testdateien | −42 |
 | 6 | Löschen-Formular → `<LoeschForm>` | 9 Admin-Seiten | −25 |
 | 7 | Vier Inline-Setter → vorhandenes `updateDish` | `travel-editor.tsx` | −18 |
-| 8 | `MASSE.inhalt` ist ein Doppelgänger von `vollbildSizes()` | `travel-view.tsx:59-68` | −3 bis −14 |
+| 8 | `MASSE.inhalt` ist ein Doppelgänger von `vollbildSizes()` | `travel-view.tsx:59-68` | −3 bis −14 · **erledigt (−13)** |
 | 9 | Publikationsstatus-Chip → eine Komponente | 3 Admin-Seiten | −8 bis −13 |
-| 10 | Wurzelkrume in `breadcrumbJsonLd` ziehen | `src/lib/jsonld.tsx` + 6 Seiten | −8 |
-| 11 | `GalleryImage extends MediaImageLike` | `gallery-lightbox.tsx:34-65` | −8 |
+| 10 | Wurzelkrume in `breadcrumbJsonLd` ziehen | `src/lib/jsonld.tsx` + 6 Seiten | −8 · **erledigt (−12)** |
+| 11 | `GalleryImage extends MediaImageLike` | `gallery-lightbox.tsx:34-65` | −8 · **erledigt (−6)** |
 | 12 | Zwei sofort ausgeführte Funktionen auflösen | `image-picker.tsx` | −3 |
 
 **Gesamt realistisch ≈ −395** (untere Kante; der Hausstil verlangt an jeder
@@ -198,3 +198,37 @@ eine eigene Abnahme.
 gedeckt — `tests/e2e/bildreihen.spec.ts` und `tests/e2e/bildgruppe-mock.spec.ts`
 messen Geometrie (gleiche Höhe, Breitensumme, kein Überlauf) statt Pixel und
 sind damit maschinenunabhängig.
+
+---
+
+## B10 — Unbenutzte Importe röten das Gate nicht
+
+**Gefunden 08/2026 beim Umbau der Brotkrume (B6, Eintrag 10).** Nachdem
+`getSiteName()` aus sechs Aufrufstellen verschwand, blieb der Import in VIER
+Dateien stehen und wurde von niemandem mehr gebraucht:
+
+```
+src/components/travel-filter-list.tsx:14
+src/app/(public)/[slug]/page.tsx:14
+src/app/(public)/rezepte/kategorie/[slug]/page.tsx:18
+src/app/(public)/datenschutz/page.tsx:24
+```
+
+`tsc --noEmit` sieht das nicht (`noUnusedLocals` ist aus, und für Importe
+greift es ohnehin nur eingeschränkt). ESLint sieht es, meldet es aber als
+**Warnung** — `npm run lint` bleibt grün, und das Gate liest nur die Fehler.
+
+Das ist kein kosmetischer Befund: Ein unbenutzter Import ist eine Kante, die
+das Abhängigkeitsbild verfälscht (`boundary-check.mjs` und `deps-existence.mjs`
+lesen Importe) und die beim Bündeln Gewicht kosten kann, wenn das Modul
+Nebenwirkungen hat.
+
+**Wurzelbehebung:** `@typescript-eslint/no-unused-vars` für `src/**` auf
+`error`. Voraussetzung sind die **9 verbliebenen Fundstellen** in `src/`
+(Stand 08/2026, `npx eslint src | grep no-unused-vars`) — erst aufräumen, dann
+die Regel schärfen, sonst ist der erste Lauf rot und die Regel wird wieder
+gelockert. Kein Anheben einer Schwelle, keine Ausnahmeliste.
+
+In `tests/` stehen daneben 22 weitere Warnungen, überwiegend
+`no-explicit-any`. Sie gehören in denselben Durchgang, aber nicht in dieselbe
+Regel: Tests dürfen aus guten Gründen unscharf typisieren, `src/` nicht.
