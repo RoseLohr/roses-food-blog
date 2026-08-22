@@ -303,34 +303,25 @@ weil anderer Browser" statt 114 rätselhafter Pixelabweichungen.
 
 ---
 
-## B10 — Unbenutzte Importe röten das Gate nicht
+## B10 — Unbenutzte Importe röten das Gate nicht — ERLEDIGT 08/2026
 
-**Gefunden 08/2026 beim Umbau der Brotkrume (B6, Eintrag 10).** Nachdem
-`getSiteName()` aus sechs Aufrufstellen verschwand, blieb der Import in VIER
-Dateien stehen und wurde von niemandem mehr gebraucht:
+**Befund war.** Nach dem Umbau der Brotkrume blieben VIER Importe stehen, die
+niemand mehr brauchte. `tsc --noEmit` sieht das nicht, ESLint meldete es als
+**Warnung** — `npm run lint` blieb grün, und das Gate liest nur Fehler.
 
-```
-src/components/travel-filter-list.tsx:14
-src/app/(public)/[slug]/page.tsx:14
-src/app/(public)/rezepte/kategorie/[slug]/page.tsx:18
-src/app/(public)/datenschutz/page.tsx:24
-```
+**Erledigt.** Erst die acht Bestandsfälle aufgeräumt, dann
+`@typescript-eslint/no-unused-vars` für `src/**` auf `error`. In `tests/` bleibt
+es eine Warnung: Dort darf aus guten Gründen mal eine Hilfsvariable stehen.
 
-`tsc --noEmit` sieht das nicht (`noUnusedLocals` ist aus, und für Importe
-greift es ohnehin nur eingeschränkt). ESLint sieht es, meldet es aber als
-**Warnung** — `npm run lint` bleibt grün, und das Gate liest nur die Fehler.
+Aufgeräumt wurde nicht nur weggestrichen — eine Fundstelle war ein echter
+Defekt: `recipe-editor.tsx` hielt `taxonomyOptions` in `useState`, ohne den
+Setzer je zu rufen. Das ist kein Zustand, das ist eine **eingefrorene Prop**:
+Eine spätere Änderung von `taxonomies` wäre nie angekommen. Jetzt ein
+abgeleiteter Wert.
 
-Das ist kein kosmetischer Befund: Ein unbenutzter Import ist eine Kante, die
-das Abhängigkeitsbild verfälscht (`boundary-check.mjs` und `deps-existence.mjs`
-lesen Importe) und die beim Bündeln Gewicht kosten kann, wenn das Modul
-Nebenwirkungen hat.
-
-**Wurzelbehebung:** `@typescript-eslint/no-unused-vars` für `src/**` auf
-`error`. Voraussetzung sind die **9 verbliebenen Fundstellen** in `src/`
-(Stand 08/2026, `npx eslint src | grep no-unused-vars`) — erst aufräumen, dann
-die Regel schärfen, sonst ist der erste Lauf rot und die Regel wird wieder
-gelockert. Kein Anheben einer Schwelle, keine Ausnahmeliste.
-
-In `tests/` stehen daneben 22 weitere Warnungen, überwiegend
-`no-explicit-any`. Sie gehören in denselben Durchgang, aber nicht in dieselbe
-Regel: Tests dürfen aus guten Gründen unscharf typisieren, `src/` nicht.
+**Zwei Anläufe, und der erste wirkte nicht.** Die Verschärfung stand zuerst vor
+einem späteren, globalen Block, der dieselbe Regel wieder auf `warn` setzt — in
+der Flat-Config gewinnt der letzte Eintrag. Der Lauf war grün, die Regel hatte
+keine Wirkung. Gegenprobe gefahren: toter Import in `hero-slider.tsx`,
+`npx eslint src` — erst `warning`, nach dem Verschieben `error`, und in `tests/`
+weiterhin `warning`.

@@ -11,9 +11,7 @@ import { getPublicBaseUrl } from "@/lib/base-url";
 import { JsonLd, breadcrumbJsonLd } from "@/lib/jsonld";
 import { PageTracker } from "@/components/page-tracker";
 import { ResponsiveImg } from "@/components/responsive-img";
-import { t } from "@/i18n/de";
 
-const dict = t();
 
 export const dynamic = "force-dynamic";
 
