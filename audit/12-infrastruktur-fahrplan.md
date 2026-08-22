@@ -118,8 +118,8 @@ Zwei Dinge, die das Inventar zusätzlich festhält:
   Annahmenummern und Pfadverweise ins Leere. Gemessen am Bestand: 312
   Pfadverweise, 4 historische Codeblöcke, alle in Ordnung.
 
-  **Der Pflicht-Approver hat in SIEBEN Runden ACHTZEHN Umgehungen gefunden,
-  eine neunzehnte kam beim eigenen Nachsehen dazu** — fünfzehn von ihm benannt,
+  **Der Pflicht-Approver hat in ACHT Runden ZWANZIG Umgehungen gefunden, eine
+  einundzwanzigste kam beim eigenen Nachsehen dazu** — siebzehn von ihm benannt,
   vier beim Nachziehen derselben Klasse. Sechs davon haben
   dieselbe Form: *eine Prüfung, die sich still selbst abschaltet.* Eine
   Shell-Zeile „# historisch" INNERHALB eines Codeblocks setzte die Ausnahme für
@@ -250,8 +250,27 @@ Zwei Dinge, die das Inventar zusätzlich festhält:
   inhaltlich begründet, für die veraltete Anleitung stand sie nur aus Symmetrie
   da. Sie ist gefallen; am Bestand nachgemessen vorher: null Treffer.
 
-  73 Selbsttestfälle, Gegenprobe gegen alle sieben Vorfassungen gefahren (alle
-  neunzehn Löcher rutschen dort durch), dazu eine Positivkontrolle am echten
+  **Runde acht brachte einen Tippfehler und eine Grenze.** Ein Tippfehler im
+  ERSTEN Wegstück fiel durch — ein Stück galt gar nicht als Pfad, wenn sein
+  erstes Wegstück kein oberstes Verzeichnis ist. Erkannt wird jetzt über zwei
+  unabhängige Merkmale: bekanntes Wegstück ODER Dateiendung. Am Bestand
+  nachgemessen feuert das auf keine einzige vorhandene Stelle; Branch-Namen,
+  Medientypen, Modulkürzel und Aktionsversionen tragen keine dieser Endungen.
+
+  Der zweite Befund ist keine Umgehung, sondern **die einzige benannte Grenze
+  dieses Gates**, und sie wird ausgesprochen statt versteckt: Eine EINWORTIGE
+  Inline-Spanne, die als Anweisung gemeint ist, fällt durch. Ob eine Nennung
+  eine Anweisung ist, steht im FLIESSTEXT daneben, nicht in der Spanne — kein
+  Wähler auf der Spanne kann das entscheiden. Die Gegenrichtung wäre messbar
+  schlimmer: Von 2468 Spannen tragen sechs ein verbotenes Wort, alle sechs
+  einwortig, alle sechs legitime Feststellungen der ABWESENHEIT — darunter
+  dieser Absatz hier. Einwortige Spannen zu verbieten hieße, das Gate auf dem
+  Text rot zu fahren, der es erklärt, und der einzige Ausweg wäre eine
+  Ausnahmeliste. Vollständig ist dafür die Block-Prüfung, und dort leben
+  Anleitungen.
+
+  81 Selbsttestfälle, Gegenprobe gegen alle acht Vorfassungen gefahren (alle
+  zwanzig Umgehungen rutschen dort durch), dazu eine Positivkontrolle am echten
   Baum: drei eingeschleuste Verstöße in README, `docs/` und `src/` werden mit
   exakter Zeilennummer gemeldet.
 
