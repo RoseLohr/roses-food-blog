@@ -43,6 +43,14 @@ Repository belegbar und hingen an keiner Messung:
 - **Der Shell-Syntax-Schritt sah neue Dateien nicht** (`git ls-files '*.sh'`
   ohne `--others --exclude-standard`). Dieselbe Klasse wie der Vorfall vom
   2026-08-21; die Regressionssperre dafür hatte selbst die Lücke.
+- **Ein TLS-Fehler am Ursprung wurde der Kompression angelastet** — siehe
+  Spur A1/B2/F1. Datiert: `npm-20` läuft am 31.10.2026 ab.
+- **Der Deploy-Webhook-Kommentar nennt einen falschen Default-Branch.**
+  `src/app/api/deploy-hook/route.ts` behauptet, der Default-Branch dieses
+  Repositories sei `claude/roses-food-blog-vxs3vm`; über die GitHub-API
+  geprüft ist er `main`. Wer den Kommentar liest, schließt daraus, dass ein
+  Push auf den Arbeits-Branch ein Produktionsdeployment auslöst. Gehört in die
+  A2/A3-Änderung, weil es dieselbe Fehlerklasse ist.
 
 ## Spur A2/A3 — Doku beschreibt einen Server, den es nicht gibt
 
@@ -82,9 +90,18 @@ kennzeichnen. Löschung und `bootstrap.sh`-Umbau an die Messung M1/M2 binden.
 
 **Trägt:** `scripts/regime/erhebung.sh` als Skript. Zertifikatsrestlaufzeit
 gehört in die Kennzahlen — sie ist der einzige streuungsfreie und zugleich
-datierte Wert, und ein abgelaufenes Ursprungszertifikat lässt heute
-`kompression-pruefen.sh` und damit `deploy.sh` scheitern, ohne den Grund zu
-nennen.
+datierte Wert.
+
+*Teilweise erledigt (2026-08-22).* Ein abgelaufenes Ursprungszertifikat ließ
+`kompression-pruefen.sh` und damit `deploy.sh` scheitern, **ohne den Grund zu
+nennen** — mit `--aufloesen` sogar mit der Meldung „blieb wirkungslos", weil
+der Wirksamkeitstest `%{remote_ip}` liest und der bei einem TLS-Abbruch leer
+bleibt. Nachgestellt an einem HTTPS-Server mit unbrauchbarem Zertifikat. Das
+Skript trennt TLS jetzt von allem anderen und nennt Rückgabewert, Zertifikat
+und Restlaufzeit; auf dem Erfolgspfad weist es die Restlaufzeit am Ursprung
+aus — **als Auskunft, nicht als Grenze**, und nicht am Rand, wo das Zertifikat
+Cloudflare gehört. Damit ist die Fehlermeldung geheilt und die Frist sichtbar.
+Eine echte Überwachung ist das nicht: Sie sieht nur, wer deployt.
 
 **Blockiert:**
 
@@ -258,6 +275,7 @@ Voraussetzung, nicht Fleißarbeit — jede blockiert mindestens einen Schritt ob
 | M5 | Welche Namen bedient dieser Proxy, welche Zertifikate gibt es, wann laufen sie ab, und über welchen ACME-Weg werden sie erneuert? Hängen alle hinter Cloudflare? | E1, A1 |
 | M6 | Der **vollständige** Journal-Eintrag zum Absturz samt Stack, und die Neustart-Zeitstempel des Containers. | E2 |
 | M7 | Wie verteilen sich die 41 ms Ursprungsmedian auf Datenbank, Render und Serialisierung? | D2 |
+| M8 | Auf welche URL zeigt der GitHub-Webhook für das Auto-Deploy — auf die von Cloudflare bediente Domain oder auf die Ursprungsadresse? Zeigt er auf den Ursprung, stirbt das Auto-Deploy nach E1-2 **still**; das Symptom wäre „gemergte PRs erreichen die Produktion nicht mehr", und dafür gibt es keinen Alarm. Diese Sitzung hat kein `admin`-Recht auf dem Repository und kann die Hooks nicht auslesen — die Betreiberin muss in den Repository-Einstellungen nachsehen. | E1 |
 
 Alle sieben sind **rein lesend**. Sie gehören in einen einzigen Erhebungslauf,
 nicht in sieben Sitzungen — und ihr Ergebnis gehört **nicht** in dieses

@@ -72,6 +72,32 @@ fi
 BASIS="${BASIS%/}"
 HOST="$URL_HOST"; PORT="$URL_PORT"
 
+# Liest Ablauf und Namen des ausgelieferten Zertifikats. AUSKUNFT, keine
+# Schwelle: Ein Gate auf die Restlaufzeit würde den Deploy an einem Datum
+# blockieren, und über eine echte Überwachung ist noch nicht entschieden
+# (Spur A1/F1). Hier steht nur, was zu sehen ist.
+zert_auskunft() {
+  local ziel="${1:-$HOST}"
+  case "$URL_SCHEMA" in https) ;; *) return 0 ;; esac
+  if ! command -v openssl >/dev/null 2>&1; then
+    echo "        (openssl nicht vorhanden — Restlaufzeit nicht ermittelt)"
+    return 0
+  fi
+  local roh
+  roh=$(printf '' | openssl s_client -connect "$ziel:$PORT" -servername "$HOST" 2>/dev/null \
+        | openssl x509 -noout -subject -enddate 2>/dev/null) || roh=""
+  if [ -z "$roh" ]; then
+    echo "        (Zertifikat nicht lesbar — die Gegenstelle antwortet nicht oder spricht kein TLS)"
+    return 0
+  fi
+  printf '        Zertifikat: %s\n' "$(printf '%s' "$roh" | tr '\n' ' ')"
+  local bis rest
+  bis=$(printf '%s\n' "$roh" | sed -n 's/^notAfter=//p')
+  if [ -n "$bis" ] && rest=$(date -d "$bis" +%s 2>/dev/null); then
+    echo "        Noch $(( (rest - $(date +%s)) / 86400 )) Tage gültig."
+  fi
+}
+
 CURL=(curl -sS --max-time 25 --connect-timeout 8)
 if [ -n "$AUFLOESEN" ]; then
   CURL+=(--resolve "$HOST:$PORT:$AUFLOESEN")
@@ -82,6 +108,39 @@ fi
 case "${AUFLOESEN}${HOST}" in
   *127.0.0.1*|*localhost*|*::1*) CURL+=(--noproxy '*') ;;
   *) [ -n "$AUFLOESEN" ] && CURL+=(--noproxy '*') ;;
+esac
+
+# ERSTE VERBINDUNG — sie trennt einen TLS-Fehler von allem anderen, BEVOR eine
+# Aussage über Auflösung oder Kompression versucht wird.
+#
+# WARUM DAS HIER STEHEN MUSS: Der Abruf unten läuft mit gewöhnlichem curl, also
+# MIT Zertifikatsprüfung (kein -k, bewusst). Läuft das Ursprungszertifikat ab,
+# scheitert jeder Abruf — und die Meldungen, die dann kamen, zeigten in die
+# falsche Richtung:
+#   * mit --aufloesen: „blieb wirkungslos — verbunden wurde mit 'unbekannt'",
+#     weil der Wirksamkeitstest %{remote_ip} liest und der bei einem
+#     TLS-Abbruch leer bleibt;
+#   * ohne: „Startseite nicht abrufbar";
+#   * und deploy.sh macht aus beidem „Der Reverse Proxy liefert nicht so aus,
+#     wie next.config.ts es voraussetzt" samt Verweis auf die
+#     Kompressionsvorlage.
+# Das ist keine Randfrage: audit/11-infrastruktur-befund.md nennt den
+# 31.10.2026 als Ablauf von npm-20, und im ganzen Repository gibt es KEINE
+# Zertifikatsprüfung. Diese Stelle ist die einzige, an der ein abgelaufenes
+# Zertifikat überhaupt sichtbar wird — dann soll sie es auch sagen.
+ERST_RC=0
+"${CURL[@]}" -o /dev/null "$BASIS/" >/dev/null 2>&1 || ERST_RC=$?
+case "$ERST_RC" in
+  # curl-Rückgabewerte der TLS-Klasse: 35 Verbindungsaufbau, 51 Gegenstelle
+  # nicht verifizierbar, 58/59 lokales Zertifikat bzw. Chiffre, 60 Zertifikat
+  # nicht durch bekannte CA gedeckt (der Ablauf-Fall), 66 Initialisierung,
+  # 77 CA-Datei, 83 Aussteller.
+  35|51|58|59|60|66|77|83)
+    echo "FEHLER: TLS-Verbindung zu $BASIS scheitert (curl-Rückgabewert $ERST_RC)." >&2
+    echo "        Das ist KEIN Kompressionsmangel und KEIN Problem der Auflösung." >&2
+    zert_auskunft "$AUFLOESEN" >&2
+    echo "        Solange das nicht behoben ist, wird hier nichts gemessen." >&2
+    exit 1 ;;
 esac
 
 # Und weil eine still wirkungslose Auflösung genau der Fehler wäre, den diese
@@ -355,6 +414,22 @@ if [ -n "$JS" ]; then textressource "JS" "$BASIS$JS"
 else maengel "Keine JS-Datei in der Startseite gefunden — die Prüfung wäre unvollständig."; fi
 if [ -n "$FONT" ]; then fertigkomprimiert "Font" "$BASIS$FONT"
 else maengel "Keine woff2-Schrift in der Startseite gefunden — die Gegenprobe fehlt."; fi
+
+# Restlaufzeit des Ursprungszertifikats — als AUSKUNFT, nicht als Schwelle.
+# Sie steht hier, weil dieses Skript bei jedem vollen Deploy läuft und damit
+# der einzige regelmäßige Blick auf das Zertifikat ist; im übrigen Repository
+# gibt es keinen. Ausdrücklich KEIN Gate: Eine Frist als harte Grenze würde den
+# Deploy an einem Datum blockieren, statt rechtzeitig zu erinnern, und über
+# eine echte Überwachung ist noch nicht entschieden (Spur A1/F1,
+# audit/12-infrastruktur-fahrplan.md).
+#
+# Nur am Ursprung. Am Rand gehört das Zertifikat Cloudflare — dessen Laufzeit
+# hier zu melden hieße, über fremdes Gerät zu berichten, das niemand von hier
+# aus erneuert.
+if [ "$EBENE" = ursprung ]; then
+  echo
+  zert_auskunft "${AUFLOESEN:-$HOST}"
+fi
 
 echo
 if [ "${#MAENGEL[@]}" -eq 0 ]; then

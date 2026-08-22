@@ -21,6 +21,10 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { execFile } from "node:child_process";
 import { createServer, type Server } from "node:http";
+import { createServer as createServerTls } from "node:https";
+import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
 import { deflateSync, gzipSync } from "node:zlib";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -165,16 +169,99 @@ function starten(v: Verhalten): Promise<string> {
   });
 }
 
-async function pruefen(basis: string, ebene: "rand" | "ursprung", aufloesen?: string) {
+async function pruefen(
+  basis: string,
+  ebene: "rand" | "ursprung",
+  aufloesen?: string,
+  umgebung?: Record<string, string>,
+) {
   const argumente = ["--basis", basis, "--ebene", ebene];
   if (aufloesen) argumente.push("--aufloesen", aufloesen);
   try {
-    const { stdout } = await ausfuehren(SKRIPT, argumente, { timeout: 60_000 });
+    const { stdout } = await ausfuehren(SKRIPT, argumente, {
+      timeout: 60_000,
+      env: umgebung ? { ...process.env, ...umgebung } : process.env,
+    });
     return { code: 0, ausgabe: stdout };
   } catch (fehler) {
     const f = fehler as { code?: number; stdout?: string; stderr?: string };
     return { code: f.code ?? -1, ausgabe: `${f.stdout ?? ""}${f.stderr ?? ""}` };
   }
+}
+
+/**
+ * Ein HTTPS-Server mit einem Zertifikat, dem curl nicht traut. Genau die Lage,
+ * die am Ursprung eintritt, wenn ein Zertifikat abläuft — curl bricht in beiden
+ * Fällen mit einem TLS-Fehler ab (Rückgabewert 60 bzw. 35).
+ */
+function zertifikatErzeugen(tage: number) {
+  const verzeichnis = fs.mkdtempSync(path.join(os.tmpdir(), "komp-tls-"));
+  const schluessel = path.join(verzeichnis, "k.pem");
+  const zertifikat = path.join(verzeichnis, "c.pem");
+  execFileSync("openssl", [
+    "req", "-x509", "-newkey", "rsa:2048", "-nodes",
+    "-keyout", schluessel, "-out", zertifikat,
+    "-days", String(tage), "-subj", "/CN=127.0.0.1",
+    "-addext", "subjectAltName=IP:127.0.0.1",
+  ], { stdio: "ignore" });
+  return { schluessel, zertifikat };
+}
+
+function tlsServerStarten(): Promise<string> {
+  const { schluessel, zertifikat } = zertifikatErzeugen(1);
+  return new Promise((aufloesen) => {
+    server = createServerTls(
+      { key: fs.readFileSync(schluessel), cert: fs.readFileSync(zertifikat) },
+      (_a, antwort) => {
+        antwort.writeHead(200, { "Content-Type": "text/html" });
+        antwort.end(STARTSEITE);
+      },
+    ) as unknown as Server;
+    server.listen(0, "127.0.0.1", () => {
+      const adresse = server!.address();
+      if (typeof adresse === "string" || adresse === null) throw new Error("keine Adresse");
+      aufloesen(`https://127.0.0.1:${adresse.port}`);
+    });
+  });
+}
+
+/**
+ * Ein HTTPS-Server, dem curl VERTRAUT (über CURL_CA_BUNDLE), mit vollständiger
+ * und korrekt komprimierter Auslieferung. Damit lässt sich prüfen, was auf dem
+ * ERFOLGSPFAD ausgegeben wird — die Zertifikatsauskunft.
+ */
+function tlsServerVertrauenswuerdig(tage: number): Promise<{ basis: string; bundle: string }> {
+  const { schluessel, zertifikat } = zertifikatErzeugen(tage);
+  const inhalte: Record<string, { koerper: Buffer; typ: string; unveraenderlich: boolean }> = {
+    "/": { koerper: Buffer.from(STARTSEITE), typ: "text/html; charset=utf-8", unveraenderlich: false },
+    "/_next/static/haupt.css": { koerper: Buffer.from(CSS), typ: "text/css", unveraenderlich: true },
+    "/_next/static/haupt.js": { koerper: Buffer.from(JS), typ: "application/javascript", unveraenderlich: true },
+    "/fonts/raleway.woff2": { koerper: FONT, typ: "font/woff2", unveraenderlich: true },
+  };
+  return new Promise((aufloesen) => {
+    server = createServerTls(
+      { key: fs.readFileSync(schluessel), cert: fs.readFileSync(zertifikat) },
+      (anfrage, antwort) => {
+        const eintrag = inhalte[(anfrage.url ?? "/").split("?")[0]];
+        if (!eintrag) { antwort.writeHead(404).end(); return; }
+        const typ = eintrag.typ.split(";")[0];
+        const packen = /gzip/.test(String(anfrage.headers["accept-encoding"] ?? "")) && ALLES.has(typ);
+        const koerper = packen ? gzipSync(eintrag.koerper) : eintrag.koerper;
+        const kopf: Record<string, string> = {
+          "Content-Type": eintrag.typ,
+          "Cache-Control": eintrag.unveraenderlich ? "public, max-age=31536000, immutable" : "no-store",
+          "Content-Length": String(koerper.length),
+        };
+        if (packen) { kopf["Content-Encoding"] = "gzip"; kopf["Vary"] = "Accept-Encoding"; }
+        antwort.writeHead(200, kopf).end(koerper);
+      },
+    ) as unknown as Server;
+    server.listen(0, "127.0.0.1", () => {
+      const adresse = server!.address();
+      if (typeof adresse === "string" || adresse === null) throw new Error("keine Adresse");
+      aufloesen({ basis: `https://127.0.0.1:${adresse.port}`, bundle: zertifikat });
+    });
+  });
 }
 
 const ALLES = new Set(["text/html", "text/css", "application/javascript"]);
@@ -389,5 +476,59 @@ describe("Kompressionsprüfung", () => {
     const { code, ausgabe } = await pruefen(basis, "ursprung");
     expect(code, ausgabe).not.toBe(0);
     expect(ausgabe).toMatch(/nicht die Startseite/);
+  });
+
+  it("nennt einen TLS-Fehler beim Namen, statt ihn der Kompression anzulasten", async () => {
+    // DER DATIERTE FALL: audit/11-infrastruktur-befund.md nennt den 31.10.2026
+    // als Ablauf des Ursprungszertifikats npm-20. `kompression-pruefen.sh`
+    // ruft mit gewöhnlichem curl ab, validiert also das Zertifikat, und
+    // deploy.sh macht aus jedem Fehlschlag hier
+    //
+    //   "Der Reverse Proxy liefert nicht so aus, wie next.config.ts es
+    //    voraussetzt. Vorlage und Einspielweg stehen im Kopf von
+    //    deploy/npm/http_top.conf."
+    //
+    // Mit --aufloesen — dem Weg, den deploy.sh geht — meldete die frühere
+    // Fassung sogar "--aufloesen blieb wirkungslos … verbunden wurde mit
+    // 'unbekannt'": Der Wirksamkeitstest liest %{remote_ip}, und bei einem
+    // TLS-Abbruch bleibt der leer. Beide Meldungen schicken die Fehlersuche in
+    // die falsche Richtung, während in Wahrheit das Zertifikat kaputt ist.
+    //
+    // Im Repository gibt es KEINE Zertifikatsprüfung (geprüft: kein notAfter,
+    // kein x509, kein checkend in *.sh, *.mjs, *.yml, *.ts). Diese Meldung ist
+    // damit die einzige Stelle, an der ein abgelaufenes Zertifikat überhaupt
+    // sichtbar würde.
+    const basis = await tlsServerStarten();
+    const { code, ausgabe } = await pruefen(basis, "ursprung", "127.0.0.1");
+    expect(code, ausgabe).toBe(1);
+    expect(ausgabe, "die Meldung muss TLS nennen").toMatch(/TLS|Zertifikat/);
+    expect(ausgabe, "sie darf NICHT die Auflösung beschuldigen").not.toMatch(/blieb wirkungslos/);
+    expect(ausgabe, "und nicht die Kompression").not.toMatch(/Kompression stimmt nicht|gzip_types/);
+  });
+
+  it("weist die Restlaufzeit des Ursprungszertifikats aus — als Auskunft, nicht als Grenze", async () => {
+    // Die vorbeugende Hälfte zum TLS-Befund oben: Dieses Skript läuft bei jedem
+    // vollen Deploy und ist damit der einzige regelmäßige Blick auf das
+    // Zertifikat — im übrigen Repository gibt es keinen. Also soll die
+    // Restlaufzeit im Protokoll stehen, BEVOR sie zum Problem wird.
+    //
+    // AUSDRÜCKLICH KEINE SCHWELLE: Der Lauf bleibt grün. Eine Frist als harte
+    // Grenze würde den Deploy an einem Datum blockieren, statt zu erinnern —
+    // und über eine echte Überwachung ist noch nicht entschieden (Spur A1/F1).
+    const { basis, bundle } = await tlsServerVertrauenswuerdig(30);
+    const { code, ausgabe } = await pruefen(basis, "ursprung", "127.0.0.1", { CURL_CA_BUNDLE: bundle });
+    expect(code, ausgabe).toBe(0);
+    expect(ausgabe).toMatch(/Zertifikat:.*notAfter/);
+    expect(ausgabe, "die Restlaufzeit muss beziffert sein").toMatch(/Noch \d+ Tage gültig/);
+  });
+
+  it("meldet am RAND keine Zertifikatslaufzeit — dort gehört das Zertifikat Cloudflare", async () => {
+    // Über fremdes Gerät zu berichten, das niemand von hier aus erneuert, wäre
+    // Rauschen. Dieselbe Begründung wie beim Vary-Kopf: am Rand nicht
+    // beanstanden oder melden, was uns nicht gehört.
+    const { basis, bundle } = await tlsServerVertrauenswuerdig(30);
+    const { code, ausgabe } = await pruefen(basis, "rand", undefined, { CURL_CA_BUNDLE: bundle });
+    expect(code, ausgabe).toBe(0);
+    expect(ausgabe).not.toMatch(/Noch \d+ Tage gültig/);
   });
 });
