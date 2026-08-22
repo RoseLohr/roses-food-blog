@@ -118,8 +118,8 @@ Zwei Dinge, die das Inventar zusätzlich festhält:
   Annahmenummern und Pfadverweise ins Leere. Gemessen am Bestand: 312
   Pfadverweise, 4 historische Codeblöcke, alle in Ordnung.
 
-  **Der Pflicht-Approver hat in NEUN Runden EINUNDZWANZIG Umgehungen gefunden,
-  eine zweiundzwanzigste kam beim eigenen Nachsehen dazu** — achtzehn von ihm
+  **Der Pflicht-Approver hat in ZEHN Runden ZWEIUNDZWANZIG Umgehungen gefunden,
+  eine dreiundzwanzigste kam beim eigenen Nachsehen dazu** — neunzehn von ihm
   benannt, vier beim Nachziehen derselben Klasse. Sechs davon haben
   dieselbe Form: *eine Prüfung, die sich still selbst abschaltet.* Eine
   Shell-Zeile „# historisch" INNERHALB eines Codeblocks setzte die Ausnahme für
@@ -280,8 +280,27 @@ Zwei Dinge, die das Inventar zusätzlich festhält:
   verschärfte Regel auf NULL — die sechs legitimen Nennungen tragen keines
   dieser Zeichen. Die benannte Grenze schrumpft damit auf den blossen Namen.
 
-  87 Selbsttestfälle, Gegenprobe gegen alle neun Vorfassungen gefahren (alle
-  einundzwanzig Umgehungen rutschen dort durch), dazu eine Positivkontrolle am
+  **Runde zehn traf einen Rückfall, den die Korrektur aus Runde acht selbst
+  eingebaut hatte.** Um fremde Pfade ruhigzustellen, warf eine neue Regel jedes
+  Stück mit führendem Schrägstrich weg — und verschluckte damit auch den Fall,
+  den Runde fünf gerade erst sichtbar gemacht hatte: ein ausdrücklich
+  repo-relativ ausgezeichnetes Stück, das nach draußen zeigt. Das Gate meldete
+  nichts mehr statt eines Verweises ins Leere. Die Regel gilt jetzt nur noch für
+  Stücke OHNE diese Auszeichnung. **Eine Korrektur ist kein Freibrief** — das
+  ist die Lehre dieser Runde und der Grund, warum jede Gegenprobe nicht nur den
+  neuen Fall prüft, sondern auch die alten.
+
+  **In derselben Runde ein Befund, der NICHT zutraf:** Ein zweiter Prüfer
+  meldete die Löcher q, i und p als offen und nannte dabei Zeilennummern aus dem
+  Skriptkopf — also aus der Liste, in der diese Löcher als BEHOBEN
+  dokumentiert sind. Nachgeprüft statt geglaubt: Der Lauf aus einem
+  Unterverzeichnis liefert dasselbe Ergebnis wie der aus der Wurzel (51 Dateien,
+  312 Verweise), die drei vertippten Pfade lösen alle auf `null` auf, und die
+  Symlink-Probe weist den Ausbruch ab. Ein Befund wird geprüft, nicht geglaubt —
+  in beide Richtungen.
+
+  89 Selbsttestfälle, Gegenprobe gegen alle zehn Vorfassungen gefahren (alle
+  zweiundzwanzig Umgehungen rutschen dort durch), dazu eine Positivkontrolle am
   echten Baum: drei eingeschleuste Verstöße in README, `docs/` und `src/` werden
   mit exakter Zeilennummer gemeldet.
 

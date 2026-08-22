@@ -55,10 +55,10 @@
  * WARUM HIER ZWEI FREMDE PARSER LAUFEN UND KEINE EIGENEN WÄHLER
  *
  * Die ersten Fassungen zerlegten Markdown und TypeScript von Hand. Der
- * Pflicht-Approver hat in NEUN Runden EINUNDZWANZIG Umgehungen gefunden, eine
- * ZWEIUNDZWANZIGSTE kam beim eigenen Nachsehen dazu (PR #109). Das ist kein
+ * Pflicht-Approver hat in ZEHN Runden ZWEIUNDZWANZIG Umgehungen gefunden, eine
+ * DREIUNDZWANZIGSTE kam beim eigenen Nachsehen dazu (PR #109). Das ist kein
  * Ausreißer, sondern die Regel: Ein handgeschriebener Zerleger hat so viele
- * Löcher, wie das Format Sonderfälle hat. Alle zweiundzwanzig, zur Erinnerung
+ * Löcher, wie das Format Sonderfälle hat. Alle dreiundzwanzig, zur Erinnerung
  * und als Selbsttestfälle unten festgenagelt — bis auf t, das keine Umgehung
  * ist, sondern eine Grenze:
  *
@@ -122,6 +122,10 @@
  *      `certbot&&nginx`, `certbot|tee`, `certbot>log` und `$(certbot)` sind
  *      gültige Kommandolisten ohne ein einziges Leerzeichen und liefen durch.
  *      Erkannt wird jetzt zusätzlich an Shell-Metazeichen.
+ *   w) DIE FREMDPFAD-REGEL AUS RUNDE ACHT VERSCHLUCKTE `.//etc/passwd`. Nach
+ *      dem `./`-Abschnitt blieb ein führender Schrägstrich stehen, der Filter
+ *      warf das Stück weg, und das Gate meldete gar nichts statt eines
+ *      Verweises ins Leere. Eine Korrektur ist kein Freibrief.
  *   t) SPANNEN, DIE NUR DER BLOSSE NAME SIND, BLEIBEN FREI. Das ist die einzige
  *      BENANNTE GRENZE dieses Gates und keine Umgehung, die sich schließen
  *      ließe — die Begründung samt Messung steht bei `verboteneAnleitung`.
@@ -130,7 +134,7 @@
  *      fremde Datei gelesen. Siehe `echtDrin`.
  *
  * a, b, c, f, j, n und o sind Markdown-Sonderfälle; g ist ein
- * TypeScript-Sonderfall, r ein weiterer Markdown-Fall. NEUN von zweiundzwanzig
+ * TypeScript-Sonderfall, r ein weiterer Markdown-Fall. NEUN von dreiundzwanzig
  * Löchern kamen also daher, dass hier
  * zwei Sprachen nachgebaut wurden, die das Projekt längst richtig zerlegen
  * kann — und n und o kamen erst zutage, NACHDEM die Blockzerlegung schon auf
@@ -146,7 +150,7 @@
  *     `const r = /a\/\//; // A5`: Der reine Scanner liest daraus „//; // A5"
  *     und liegt falsch, der Parser liefert „// A5" und liegt richtig.
  *
- * d, e, h, i, k, l, m, p, q, s, u und v bleiben eigene Logik — sie handeln von Dateien und
+ * d, e, h, i, k, l, m, p, q, s, u, v und w bleiben eigene Logik — sie handeln von Dateien und
  * Zahlen, nicht von Grammatik. j fällt nicht ganz weg: `marked` liefert die
  * Verschachtelung korrekt, aber WELCHE Überschrift einen Abschnitt aufmacht,
  * ist eine Entscheidung dieses Gates und musste hier getroffen werden.
@@ -466,8 +470,18 @@ export function pfadverweis(inhalt, wurzeln) {
   let stueck = inhalt;
   const repoRelativ = stueck.startsWith("./");
   if (repoRelativ) stueck = stueck.slice(2);
-  // Ein führender Schrägstrich heißt: fremdes Dateisystem, nicht dieses Repo.
-  if (stueck.startsWith("/")) return null;
+  // Ein führender Schrägstrich heißt fremdes Dateisystem — ABER nur, wenn das
+  // Stück nicht ausdrücklich als repo-relativ ausgezeichnet war. Ohne diese
+  // Einschränkung verschluckte die Regel `.//etc/passwd`: Nach dem `./` blieb
+  // `/etc/passwd` stehen, der Filter warf es weg, und das Gate meldete
+  // GARNICHTS statt eines Verweises ins Leere (Loch w). Das `./` ist eine
+  // ausdrückliche Behauptung „liegt in diesem Repository"; widerspricht der
+  // Inhalt ihr, gehört das gemeldet, nicht übergangen.
+  //
+  // ZUR HERKUNFT, weil sie lehrreich ist: Diese Regel kam in Runde acht dazu,
+  // um fremde Pfade wie `/etc/nginx/nginx.conf` ruhigzustellen — und riss dabei
+  // ein neues Loch auf. Eine Korrektur ist kein Freibrief.
+  if (!repoRelativ && stueck.startsWith("/")) return null;
   const t = ZEILEN_TEIL.exec(stueck);
   // KEINE Bereinigung nachgestellter Interpunktion: Sie stand hier und wusch
   // Tippfehler. In einer Code-Spanne gehört jedes Zeichen zum Verweis; am
@@ -842,6 +856,9 @@ if (process.argv.includes("--selftest")) {
     ["kein Pfad: Branch-Name", pfadverweis("claude/roses-food-blog-vxs3vm", wurzeln) === null],
     ["kein Pfad: Aktionsversion", pfadverweis("zaproxy/action-baseline@v0.12.0", wurzeln) === null],
     ["kein Pfad: fremdes Dateisystem", pfadverweis("/etc/nginx/nginx.conf", wurzeln) === null],
+    // Ausdrücklich repo-relativ, aber nach draußen zeigend: MELDEN (Loch w).
+    ["`./` plus Ausbruch wird gemeldet (Loch w)", pfadverweis(".//etc/passwd", wurzeln)?.pfad === "/etc/passwd"],
+    ["… und löst dann nicht auf", aufloesen(pfadverweis(".//etc/passwd", wurzeln).pfad, alle) === null],
     ["kein Pfad: Muster mit Auslassung", pfadverweis(".../ai/ping/route.ts", wurzeln) === null],
     ["kein Pfad: Muster mit Klammern", pfadverweis("(protected)/layout.tsx", wurzeln) === null],
     // Die benannte Grenze aus Loch t — sie steht hier, damit sie nicht still ist.
