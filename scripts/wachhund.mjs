@@ -44,6 +44,13 @@
 export const NEUSTART_GRENZE = 5;
 /** So viele Beobachtungen hintereinander muss es rot UND steigend sein. */
 export const BEOBACHTUNGEN = 3;
+/**
+ * So viele Beobachtungen umfasst das Fenster, in dem Neustarts gezählt werden.
+ *
+ * Bei fünf Minuten Takt sind das eine halbe Stunde. Der Wachhund kennt seinen
+ * Takt weiterhin nicht — auch das hier sind Beobachtungen, keine Zeit.
+ */
+export const FLATTER_FENSTER = 6;
 
 /**
  * Die ganze Entscheidung, als reine Funktion.
@@ -53,19 +60,82 @@ export const BEOBACHTUNGEN = 3;
  * @returns { alarm, stoppen, grund, neuerStand }
  */
 export function beurteile(jetzt, vorher) {
-  // Grün: alles zurücksetzen. Ein einmal überstandener Holperstart darf sich
-  // nicht auf die nächste Störung anrechnen lassen.
-  if (jetzt.gesund) {
-    return { alarm: false, stoppen: false, grund: "gesund", neuerStand: null };
+  // ── ZWEI SCHLEIFEN, ZWEI KRITERIEN ────────────────────────────────────────
+  //
+  // Bis 08/2026 stand hier zuerst: „grün → alles zurücksetzen, neuerStand
+  // null". Das war für den Holperstart gedacht und für die durchgehend tote
+  // Anwendung richtig. Für die FLATTERNDE Schleife war es fatal: Ein Container,
+  // der nach dem Warmlaufen stirbt (OOM ist der Klassiker), sieht bei jeder
+  // zweiten Messung gesund aus. `rotSeit` fiel dann jedes Mal zurück, die
+  // Schwelle von drei ununterbrochen roten Beobachtungen wurde NIE erreicht —
+  // und mit dem Zustand flog auch der Neustartzähler weg, das einzige
+  // monotone Zeugnis, das es gibt. `restart: always` blieb unbegrenzt
+  // (Befund gpt-5.6-sol, PR #110, Runde 6).
+  //
+  // Deshalb jetzt zwei Kriterien nebeneinander:
+  //
+  //   (a) Der Zähler WÄCHST — über ein Fenster von Beobachtungen hinweg, egal
+  //       wie die einzelne Messung ausfällt. `RestartCount` ist monoton, solange
+  //       der Container derselbe ist; ein Wachstum von NEUSTART_GRENZE
+  //       innerhalb von FLATTER_FENSTER Beobachtungen IST eine Schleife.
+  //   (b) Durchgehend rot und steigend — der alte, unveränderte Fall.
+  //
+  // Was NICHT passiert: Etwas stoppen, das gerade antwortet. Kriterium (a)
+  // meldet dann nur. Ein laufender Dienst wird nicht abgeschaltet, weil er
+  // eine halbe Stunde zuvor geflattert hat.
+
+  // Zähler kleiner als zuletzt? Dann ist der Container neu angelegt worden
+  // (jeder Deploy tut das) — das Fenster fängt von vorn an, sonst zählte man
+  // Neustarts zweier verschiedener Container zusammen.
+  const neuAngelegt = vorher !== null && jetzt.neustarts < vorher.neustarts;
+  const frisch = vorher === null || neuAngelegt;
+
+  let fensterNeustarts = frisch
+    ? jetzt.neustarts
+    : (vorher.fensterNeustarts ?? vorher.neustarts);
+  let fensterBeobachtungen = (frisch ? 0 : (vorher.fensterBeobachtungen ?? 0)) + 1;
+  let wachstum = jetzt.neustarts - fensterNeustarts;
+
+  // Fenster voll, ohne dass die Schwelle erreicht wurde: neu ansetzen. Sonst
+  // summierte sich über Wochen jeder einzelne Neustart zu einer „Schleife".
+  if (fensterBeobachtungen > FLATTER_FENSTER && wachstum < NEUSTART_GRENZE) {
+    fensterNeustarts = jetzt.neustarts;
+    fensterBeobachtungen = 1;
+    wachstum = 0;
   }
 
   const gestiegen = vorher !== null && jetzt.neustarts > vorher.neustarts;
   // `rotSeit` zählt die Beobachtungen, seit es rot ist — nicht die Zeit. Der
   // Wachhund weiß nichts über seinen eigenen Takt, und das soll so bleiben:
   // Wer ihn seltener laufen lässt, verschiebt damit die Frist, nicht die Logik.
-  const rotSeit = (vorher?.rotSeit ?? 0) + 1;
-  const neuerStand = { neustarts: jetzt.neustarts, rotSeit };
+  // Eine gesunde Messung setzt ihn zurück (der Holperstart von oben), löscht
+  // aber nicht mehr das Fenster.
+  const rotSeit = jetzt.gesund ? 0 : (vorher?.rotSeit ?? 0) + 1;
+  const neuerStand = {
+    neustarts: jetzt.neustarts,
+    rotSeit,
+    fensterNeustarts,
+    fensterBeobachtungen,
+  };
 
+  // (a) Die flatternde Schleife.
+  if (wachstum >= NEUSTART_GRENZE) {
+    return {
+      alarm: true,
+      stoppen: !jetzt.gesund,
+      grund:
+        `Neustartschleife: ${wachstum} Neustarts in ${fensterBeobachtungen} ` +
+        `Beobachtungen (Zähler ${fensterNeustarts} → ${jetzt.neustarts}). ` +
+        (jetzt.gesund
+          ? `Der Container antwortet gerade — er wird deshalb NICHT gestoppt, ` +
+            `aber das ist keine Erholung, das ist der Takt der Schleife.`
+          : `Container wird gestoppt, damit die Schleife endet und der Zustand ` +
+            `untersuchbar bleibt.`),
+      neuerStand,
+    };
+  }
+
+  // (b) Durchgehend rot und steigend — unverändert.
   const schleife =
     rotSeit >= BEOBACHTUNGEN &&
     jetzt.neustarts >= NEUSTART_GRENZE &&
@@ -94,6 +164,23 @@ export function beurteile(jetzt, vorher) {
     };
   }
 
+  if (jetzt.gesund) {
+    // Ganz ruhig — kein Wachstum im Fenster: Dann darf wirklich alles vergessen
+    // werden. Das ist der Holperstart, der sich gefangen hat.
+    if (wachstum === 0) {
+      return { alarm: false, stoppen: false, grund: "gesund", neuerStand: null };
+    }
+    // Gesund, aber der Zähler ist im Fenster gestiegen: still weiterschauen.
+    // Genau dieses Weiterschauen fehlte, und daran ist die flatternde Schleife
+    // durchgerutscht.
+    return {
+      alarm: false,
+      stoppen: false,
+      grund: `gesund, aber ${wachstum} Neustarts im laufenden Fenster`,
+      neuerStand,
+    };
+  }
+
   return { alarm: false, stoppen: false, grund: "rot, noch in Frist", neuerStand };
 }
 
@@ -115,13 +202,26 @@ function hauptlauf() {
   if (args[3]) {
     try {
       const roh = JSON.parse(args[3]);
-      if (
-        typeof roh?.neustarts === "number" &&
-        Number.isFinite(roh.neustarts) &&
-        typeof roh?.rotSeit === "number" &&
-        Number.isFinite(roh.rotSeit)
-      ) {
-        vorher = { neustarts: roh.neustarts, rotSeit: roh.rotSeit };
+      const zahl = (v) => typeof v === "number" && Number.isFinite(v);
+      if (zahl(roh?.neustarts) && zahl(roh?.rotSeit)) {
+        // ALLE Felder durchreichen, die beurteile() kennt.
+        //
+        // Hier standen nur `neustarts` und `rotSeit`. Die Fensterfelder fielen
+        // damit bei JEDEM Lauf weg — das Fenster konnte über Aufrufe hinweg gar
+        // nicht wachsen, und die Erkennung der flatternden Schleife wäre im
+        // Betrieb wirkungslos geblieben, während die Tests von beurteile()
+        // grün sind. Also wieder ein Wächter über einem Pfad, den niemand
+        // erreicht. Aufgefallen erst beim echten Durchlauf durch die CLI.
+        vorher = {
+          neustarts: roh.neustarts,
+          rotSeit: roh.rotSeit,
+          ...(zahl(roh?.fensterNeustarts)
+            ? { fensterNeustarts: roh.fensterNeustarts }
+            : {}),
+          ...(zahl(roh?.fensterBeobachtungen)
+            ? { fensterBeobachtungen: roh.fensterBeobachtungen }
+            : {}),
+        };
       }
     } catch {
       // Unlesbarer Stand = kein Stand. Die Frist beginnt von vorn; das ist die

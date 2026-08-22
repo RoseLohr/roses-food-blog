@@ -549,7 +549,7 @@ Wahrheit, und gegen den jeweils vorigen Stand fallen die Fälle korrekt um.
 
 ---
 
-## B14 — Elf weitere Befunde aus derselben Prüfung — SECHS DAVON ERLEDIGT 08/2026
+## B14 — Elf weitere Befunde aus derselben Prüfung — SIEBEN DAVON ERLEDIGT 08/2026
 
 Die Gegenprüfung war auf sechs Befunde gedeckelt; die folgenden sind gefunden,
 aber zunächst weder von Skeptikern geprüft noch behoben worden. Sie standen
@@ -588,26 +588,44 @@ die Nummern 1, 2 und 7. Fünf Runden haben gezeigt, dass ein Verdacht in einer
 Datei, die dieser Zweig ohnehin umbaut, nicht liegen bleiben sollte: Er kommt
 als Veto zurück.
 
-**Was bewusst OFFEN bleibt — und warum:**
+**Dritter Nachtrag — auch Nr. 5 ist erledigt.** Sie war hier als bewusst offen
+vermerkt, mit der Begründung, sie verlange eine Entwurfsänderung und sei von
+keiner Gegenprüfung bestätigt. Runde 6 hat sie bestätigt, und zwar als
+einzigen Blocker. Damit war die Begründung hinfällig.
 
-* **Nr. 5 (`scripts/wachhund.mjs:59`)** ist die einzige der Beobachtungen, die
-  eine echte ENTWURFSÄNDERUNG verlangt, nicht eine Absicherung. Heute setzt
-  eine gesunde Messung `neuerStand: null` und verwirft damit auch den
-  Neustartzähler; eine Schleife, die zwischendurch kurz gesund aussieht (etwa
-  ein OOM-Kill nach dem Warmlaufen), erreicht die Schwelle von drei
-  ununterbrochen roten Beobachtungen nie. Das Zurücksetzen selbst ist
-  ABSICHTLICH (ein überstandener Holperstart darf sich nicht anrechnen), und
-  die kleine Variante — den Zähler behalten, nur `rotSeit` nullen — schließt
-  die Lücke NICHT, weil die Schleifenbedingung weiterhin an `rotSeit` hängt.
-  Es braucht ein zusätzliches Kriterium („der Neustartzähler ist seit der
-  ersten Beobachtung um mehr als N gestiegen"), also neuen Zustand und eine
-  neue Schwelle. Das ist ein Eingriff in eine Sicherheitskomponente, den
-  niemand angefordert hat und der bisher von keiner Gegenprüfung bestätigt
-  wurde. Er gehört in einen eigenen Schritt mit eigener Messung, nicht als
-  Beifang in diesen Zweig.
+Der Entwurf steht jetzt auf ZWEI Kriterien nebeneinander:
+
+* **(a) Der Zähler wächst.** `RestartCount` ist monoton, solange der Container
+  derselbe ist. Wächst er innerhalb von `FLATTER_FENSTER` (6) Beobachtungen um
+  `NEUSTART_GRENZE` (5), IST das eine Schleife — unabhängig davon, wie die
+  einzelne Gesundheitsmessung ausfällt. Damit ist der OOM-Fall erfasst, der
+  bei jeder zweiten Messung gesund aussieht.
+* **(b) Durchgehend rot und steigend** — der alte Fall, unverändert.
+
+Zwei Entscheidungen dabei, die nicht offensichtlich sind:
+
+* **Was gerade antwortet, wird nicht gestoppt.** Trifft (a) auf eine gesunde
+  Messung, wird nur gemeldet. Einen laufenden Dienst abzuschalten, weil er eine
+  halbe Stunde zuvor geflattert hat, wäre der Ausfall, den der Wachhund
+  verhindern soll.
+* **Ein sinkender Zähler setzt das Fenster zurück.** Jeder Deploy legt den
+  Container neu an, `RestartCount` fängt bei 0 an; ohne diese Unterscheidung
+  addierte man die Neustarts zweier verschiedener Container.
+
+**Und dabei wäre die Reparatur um ein Haar wirkungslos geblieben.** Die CLI in
+`scripts/wachhund.mjs` baute `vorher` aus einer WEISSEN LISTE mit `neustarts`
+und `rotSeit` zusammen. Die neuen Fensterfelder fielen damit bei jedem Aufruf
+weg — das Fenster hätte über Läufe hinweg nie wachsen können, die Erkennung
+wäre im Betrieb tot gewesen, und ALLE Tests von `beurteile()` wären grün
+geblieben, weil sie die Funktion direkt rufen. Aufgefallen ist es nur beim
+echten Durchlauf durch die CLI, nicht im Test. `tests/wachhund.test.ts` fährt
+deshalb jetzt zusätzlich die CLI selbst — samt Stand aus der alten Fassung und
+unlesbarem Müll. Gegenprobe: Nimmt man allein die weiße Liste zurück und lässt
+`beurteile()` unangetastet, fallen genau diese CLI-Fälle um; die zwölf
+übrigen bleiben grün.
 
 Die beiden vorbestehenden Punkte außerhalb des Zweigs (Nummern 8 und 9)
-bleiben ebenfalls offen und unbestätigt.
+bleiben offen und unbestätigt.
 
 Im Zweig von PR #110 (also selbst verursacht, gehört zuerst geprüft):
 
@@ -621,9 +639,7 @@ Im Zweig von PR #110 (also selbst verursacht, gehört zuerst geprüft):
    mehr.
 3. ~~`deploy/rollback.sh:238`~~ — ERLEDIGT, siehe oben.
 4. ~~`deploy/wachhund.sh:53`~~ — ERLEDIGT, siehe oben.
-5. `scripts/wachhund.mjs:59` — ein einziger gesunder Augenblick setzt
-   `neuerStand: null` und verwirft damit auch den Neustartzähler. Eine
-   flatternde, aber echte Schleife würde nie erkannt.
+5. ~~`scripts/wachhund.mjs:59`~~ — ERLEDIGT 08/2026, siehe unten.
 6. ~~`tests/deploy-betrieb.test.ts:314`~~ — ERLEDIGT, siehe oben.
 7. ~~`scripts/regime/rollback-check.mjs:54`~~ — ERLEDIGT 08/2026. Die literale
    Alternative ist raus; geblieben ist die strukturelle Prüfung, dass nach der
