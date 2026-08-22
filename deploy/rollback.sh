@@ -274,16 +274,39 @@ if [[ $WITH_DB -eq 1 ]]; then
   # Mit `|| fail`, wie jede andere riskante Operation hier auch: Ein an der
   # vollen Platte abgebrochenes `cp` hinterlässt eine HALBE Datenbank — und der
   # Lauf machte bisher weiter, löschte das WAL und quittierte Erfolg.
-  cp "$BACKUP" "$DATA_DIR/app.db" \
-    || fail "Einspielen von $BACKUP fehlgeschlagen — app.db ist möglicherweise \
-unvollständig. Die Sicherung des vorigen Standes liegt in $DATA_DIR/backups/."
   # ── UND DIE ALTEN WAL-DATEIEN MÜSSEN WEG ────────────────────────────────
   # Sonst spielt SQLite beim nächsten Öffnen das WAL der ERSETZTEN Datenbank
   # über das eingespielte Backup. Nachgemessen: nach hartem Abbruch
   # (`podman rm -f`, also der Regelfall hier) liefert die Datenbank danach die
   # 3000 ALTEN Zeilen statt der 7 gesicherten — der Restore tut nichts und
   # meldet Erfolg. Das ist schlimmer als ein Fehlschlag.
+  #
+  # ── UND ZWISCHEN DEN SCHRITTEN DARF ES DIESEN ZUSTAND NICHT GEBEN ───────
+  #
+  # Bis 08/2026 stand hier `cp` und DANACH das Entfernen des WAL. Wer den Lauf
+  # dazwischen abbrach (Strom, Kill, volle Platte), hinterließ genau die
+  # Kombination, die der Absatz oben beschreibt: neues app.db, altes WAL
+  # daneben. Beim nächsten Öffnen spielt SQLite das alte WAL darüber — der
+  # Rollback wird zum stillen No-op, und niemand hat etwas davon gemerkt
+  # (Befund gpt-5.6-sol, PR #110, Runde 4).
+  #
+  # Deshalb in drei Schritten, von denen KEIN Zwischenstand gefährlich ist:
+  #   1. In eine Nebendatei kopieren — app.db bleibt unangetastet, ein
+  #      halb geschriebenes Backup landet nie auf der echten Datenbank.
+  #   2. Erst dann WAL und SHM entfernen. Bricht es hier ab, bleibt das ALTE
+  #      app.db ohne WAL zurück: der letzte festgeschriebene Stand, in sich
+  #      stimmig — und der vollständige alte Stand liegt ohnehin als
+  #      pre-rollback-*.db daneben.
+  #   3. Umbenennen. `mv` innerhalb desselben Dateisystems ist atomar; einen
+  #      Zwischenstand „neu und alt zugleich" gibt es nicht.
+  rm -f "$DATA_DIR/app.db.neu"
+  cp "$BACKUP" "$DATA_DIR/app.db.neu" \
+    || fail "Einspielen von $BACKUP fehlgeschlagen — app.db ist UNVERÄNDERT. \
+Die Sicherung des vorigen Standes liegt in $DATA_DIR/backups/."
   rm -f "$DATA_DIR/app.db-wal" "$DATA_DIR/app.db-shm"
+  mv -f "$DATA_DIR/app.db.neu" "$DATA_DIR/app.db" \
+    || fail "Umbenennen der eingespielten Datenbank fehlgeschlagen — \
+$DATA_DIR/app.db.neu liegt bereit, app.db trägt noch den vorigen Stand."
 
   # 4b. Das letzte Wort hat die Datei, die WIRKLICH daliegt.
   #

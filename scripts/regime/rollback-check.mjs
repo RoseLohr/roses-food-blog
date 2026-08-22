@@ -12,7 +12,8 @@
  *  - jede Invariante wird SEMANTISCH verdrahtet geprüft (das curl-Ergebnis muss in
  *    ein Gate/`fail` fließen — `curl … || true` wird abgelehnt; --dry-run muss real
  *    im Arg-Loop geparst werden UND vor Mutation abzweigen; das DB-Restore muss ein
- *    echtes `cp "$BACKUP" "$DATA_DIR/app.db"` sein; die Vorbedingung :previous muss
+ *    echtes, ATOMARES Einspielen sein (cp nach app.db.neu → WAL/SHM weg → mv, in
+ *    dieser Reihenfolge, und kein direktes cp auf app.db); die Vorbedingung :previous muss
  *    in `|| fail` münden, nicht in `|| true`),
  *  - der --selftest führt eine Positiv-Attacke: ein Skript, das alle Tokens nur in
  *    Kommentaren/`|| true` trägt, MUSS abgelehnt werden.
@@ -62,8 +63,26 @@ const RB_INVARIANTS = [
     ok: (s) => /--dry-run\)\s*DRY=1/.test(s) && /\[\[\s*\$DRY -eq 1\s*\]\]/.test(s),
   },
   {
-    what: "DB-Restore ist echt: `cp \"$BACKUP\" \"$DATA_DIR/app.db\"` (nicht nur der Glob im Kommentar)",
-    ok: (s) => /cp "\$BACKUP" "\$DATA_DIR\/app\.db"/.test(s),
+    // Seit dem atomaren Einspielen (B14/3) geht der Restore über eine
+    // Nebendatei: kopieren nach app.db.neu, WAL und SHM entfernen, dann
+    // umbenennen. Geprüft werden alle DREI Schritte UND ihre Reihenfolge —
+    // vorher stand hier nur die eine `cp`-Zeile, und die sagte nichts darüber,
+    // ob zwischen Kopie und WAL-Entfernung ein gefährlicher Zwischenstand
+    // liegt. Ein direktes `cp` auf app.db ist jetzt ausdrücklich verboten.
+    what:
+      "DB-Restore ist echt UND atomar: cp nach app.db.neu, dann WAL/SHM weg, " +
+      "dann mv — und kein direktes cp auf app.db",
+    ok: (s) => {
+      const kopie = s.indexOf('cp "$BACKUP" "$DATA_DIR/app.db.neu"');
+      const walWeg = s.indexOf('rm -f "$DATA_DIR/app.db-wal"');
+      const umbenennen = s.indexOf('mv -f "$DATA_DIR/app.db.neu"');
+      return (
+        kopie > -1 &&
+        walWeg > kopie &&
+        umbenennen > walWeg &&
+        !/cp "\$BACKUP" "\$DATA_DIR\/app\.db"(?!\.neu)/.test(s)
+      );
+    },
   },
 ];
 

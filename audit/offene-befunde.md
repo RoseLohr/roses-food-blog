@@ -549,12 +549,41 @@ Wahrheit, und gegen den jeweils vorigen Stand fallen die Fälle korrekt um.
 
 ---
 
-## B14 — Elf weitere Befunde aus derselben Prüfung, NICHT gegengeprüft — OFFEN
+## B14 — Elf weitere Befunde aus derselben Prüfung — DREI DAVON ERLEDIGT 08/2026
 
 Die Gegenprüfung war auf sechs Befunde gedeckelt; die folgenden sind gefunden,
-aber weder von Skeptikern geprüft noch behoben. Sie stehen hier, damit sie
-nicht verloren gehen und nicht heimlich mitgeschleppt werden. **Keiner davon
-ist bestätigt** — sie sind Verdachtsmomente mit Fundstelle.
+aber zunächst weder von Skeptikern geprüft noch behoben worden. Sie standen
+hier als Verdachtsmomente mit Fundstelle, ausdrücklich unbestätigt.
+
+**Nachtrag — der Pflicht-Approver hat drei davon unabhängig bestätigt**
+(gpt-5.6-sol, PR #110, Runde 4): die Nummern 3, 4 und 6. Sie sind damit keine
+Verdachtsmomente mehr und behoben:
+
+* **Nr. 3 — das Einspielen war nicht atomar.** `cp` schrieb direkt auf
+  `app.db`, das Entfernen von `-wal`/`-shm` kam danach. Ein Abbruch dazwischen
+  hinterließ neues `app.db` neben altem WAL — genau die Kombination, die SQLite
+  beim nächsten Öffnen zum stillen No-op macht (B3/1). Jetzt in drei Schritten,
+  von denen kein Zwischenstand gefährlich ist: in eine Nebendatei kopieren,
+  dann WAL und SHM entfernen, dann atomar umbenennen. Bricht es nach Schritt 2
+  ab, bleibt das ALTE `app.db` ohne WAL zurück — der letzte festgeschriebene
+  Stand, in sich stimmig, und der vollständige alte Stand liegt ohnehin als
+  `pre-rollback-*.db` daneben.
+* **Nr. 4 — der Wachhund-Stand wurde ungeprüft und nicht atomar geschrieben.**
+  Die Umlenkung kürzt die Datei, bevor sie schreibt; bei voller Platte blieb
+  eine leere zurück, der nächste Lauf las „kein Stand", `rotSeit` fing wieder
+  bei 1 an — und die Stoppschwelle wurde NIE erreicht. Bitter, weil eine volle
+  Platte einer der klassischen Auslöser genau dieser Schleife ist. Jetzt über
+  eine Nebendatei mit `mv`, und ein misslungenes Schreiben beendet den Lauf mit
+  1 (nach dem Handeln, damit ein echter Stopp oder Alarm nicht ausbleibt).
+* **Nr. 6 — der No-op-Wächter hing an einer Regex auf dem eigenen Kommentar.**
+  `/identisch/i` und `/previous.*latest/s` trafen den Kommentar über der
+  Prüfung; man hätte die Prüfung ersatzlos streichen können, und der Test wäre
+  grün geblieben. Der Textvergleich läuft jetzt über den Quelltext OHNE
+  Kommentare, und dass der Rollback bei gleichen Image-IDs wirklich abbricht,
+  misst `tests/rollback-ablauf.test.ts` am laufenden Skript.
+
+Die übrigen acht bleiben unbestätigt und offen. **Keiner davon ist geprüft** —
+sie sind Verdachtsmomente mit Fundstelle.
 
 Im Zweig von PR #110 (also selbst verursacht, gehört zuerst geprüft):
 
@@ -564,18 +593,12 @@ Im Zweig von PR #110 (also selbst verursacht, gehört zuerst geprüft):
 2. `deploy/rollback.sh:231` — die Sicherung des jetzigen Standes (das Netz)
    wird nur am Exit-Status von `db.backup()` gemessen, während das eingehende
    Backup drei Prüfungen durchläuft. Asymmetrie ohne Begründung.
-3. `deploy/rollback.sh:238` — zwischen `cp` und dem Entfernen von `-wal`/`-shm`
-   liegt ein Zustand, der bei Abbruch genau den stillen No-op aus B3 ergibt.
-4. `deploy/wachhund.sh:53` — der Stand wird ohne temporäre Datei und ohne
-   Prüfung geschrieben; bei voller Platte friert `rotSeit` auf 1 ein. Eine
-   volle Platte ist ein klassischer Auslöser genau der Schleife, die der
-   Wachhund erkennen soll.
+3. ~~`deploy/rollback.sh:238`~~ — ERLEDIGT, siehe oben.
+4. ~~`deploy/wachhund.sh:53`~~ — ERLEDIGT, siehe oben.
 5. `scripts/wachhund.mjs:59` — ein einziger gesunder Augenblick setzt
    `neuerStand: null` und verwirft damit auch den Neustartzähler. Eine
    flatternde, aber echte Schleife würde nie erkannt.
-6. `tests/deploy-betrieb.test.ts:314` — der No-op-Wächter (`:previous` ==
-   `:latest`) wird von einer Regex gehalten, die schon der KOMMENTAR im
-   geprüften Skript erfüllt.
+6. ~~`tests/deploy-betrieb.test.ts:314`~~ — ERLEDIGT, siehe oben.
 7. `scripts/regime/rollback-check.mjs:54` — die Invariante „Fehlschlagpfad bei
    roter Health" prüft eine literale Zeichenkette, die ein `log` genauso trägt
    wie ein `fail`.

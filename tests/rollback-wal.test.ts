@@ -161,7 +161,11 @@ describe("deploy/rollback.sh trägt die Konsequenz", () => {
 
   it("stoppt den Container, BEVOR es die Datenbank anfasst", () => {
     const stopp = ohneKommentar.indexOf("podman rm -f roses-blog");
-    const restore = ohneKommentar.indexOf('cp "$BACKUP" "$DATA_DIR/app.db"');
+    // Seit dem atomaren Einspielen kopiert das Skript nach app.db.neu und
+    // benennt danach um — der erste Zugriff auf die Datenbank ist also diese
+    // Kopie. Die Aussage des Tests bleibt dieselbe: Erst stoppen, dann
+    // anfassen.
+    const restore = ohneKommentar.indexOf('cp "$BACKUP" "$DATA_DIR/app.db.neu"');
     expect(stopp).toBeGreaterThan(-1);
     expect(restore).toBeGreaterThan(-1);
     expect(stopp).toBeLessThan(restore);

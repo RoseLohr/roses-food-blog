@@ -82,8 +82,33 @@ NEUER="$(printf '%s' "$URTEIL" | sed -n 's/.*"neuerStand":\(null\|{[^}]*}\).*/\1
 
 log "$GRUND"
 
-# 3. Stand fortschreiben.
-if [[ "$NEUER" == "null" || -z "$NEUER" ]]; then rm -f "$STAND"; else printf '%s' "$NEUER" > "$STAND"; fi
+# 3. Stand fortschreiben — und zwar so, dass ein Fehlschlag auffällt.
+#
+# Hier stand `printf … > "$STAND"`: ohne Nebendatei und ohne Prüfung. Die
+# Umlenkung KÜRZT die Datei, bevor geschrieben wird; geht das Schreiben schief
+# (volle Platte, nicht beschreibbares Datenverzeichnis), bleibt eine leere oder
+# halbe Datei zurück. Der nächste Lauf liest sie als „kein Stand", `rotSeit`
+# fängt wieder bei 1 an — und die Stoppschwelle wird NIE erreicht. Der Wachhund
+# bellt dann nie, gerade wenn er müsste: Eine volle Platte ist einer der
+# klassischen Auslöser genau der Neustartschleife, die er erkennen soll
+# (Befund gpt-5.6-sol, PR #110, Runde 4).
+#
+# Jetzt: in eine Nebendatei schreiben, dann atomar umbenennen. Und wenn das
+# nicht geht, endet der Lauf mit 1 — die Unit steht dann als fehlgeschlagen da,
+# statt Erfolg über einem verlorenen Fortschritt zu melden.
+STAND_VERLOREN=0
+if [[ "$NEUER" == "null" || -z "$NEUER" ]]; then
+  rm -f "$STAND" || { log "WARNUNG: Wachhund-Stand nicht löschbar."; STAND_VERLOREN=1; }
+else
+  if printf '%s' "$NEUER" > "$STAND.neu" && mv -f "$STAND.neu" "$STAND"; then
+    :
+  else
+    rm -f "$STAND.neu"
+    log "FEHLER: Wachhund-Stand nicht schreibbar — der Fortschritt geht verloren,"
+    log "        die Stoppschwelle wird so nie erreicht. Platte/Rechte prüfen."
+    STAND_VERLOREN=1
+  fi
+fi
 
 # 4. Handeln.
 if [[ "$STOPPEN" == "true" ]]; then
@@ -103,3 +128,8 @@ Protokoll: podman logs roses-blog
 Wieder anfahren: ./deploy.sh (oder ./deploy/rollback.sh)" 2>&1 | sed 's/^/[wachhund] /' \
     || log "WARNUNG: Alarm nicht absetzbar."
 fi
+
+# Gehandelt wurde in jedem Fall; erst danach wird der verlorene Stand quittiert.
+# Sonst bliebe ein echter Stopp oder Alarm aus, nur weil die Platte voll ist.
+[[ "$STAND_VERLOREN" -eq 1 ]] && exit 1
+exit 0

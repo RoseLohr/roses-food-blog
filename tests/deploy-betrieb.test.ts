@@ -308,10 +308,22 @@ describe("rollback.sh: gleiche Konfigurationsquelle wie deploy.sh", () => {
     expect(rollback).toMatch(/-n "\$AUFRUFER_COMPOSE"/);
   });
 
-  it("bricht ab, wenn :previous und :latest dasselbe Image sind", () => {
-    // Sonst meldet ein Rollback, der nichts zurückrollt, „erfolgreich".
-    expect(rollback).toMatch(/previous.*latest|latest.*previous/s);
-    expect(rollback).toMatch(/identisch/i);
+  it("vergleicht die Image-IDs überhaupt — im CODE, nicht im Kommentar", () => {
+    // Hier standen zwei Regexe auf dem GANZEN Skript:
+    //   /previous.*latest|latest.*previous/s  und  /identisch/i
+    // Beide trafen den Kommentar über der Prüfung. Man hätte die Prüfung
+    // ersatzlos streichen können, und dieser Test wäre grün geblieben
+    // (Befund gpt-5.6-sol, PR #110, Runde 4).
+    //
+    // Geprüft wird jetzt der Quelltext OHNE Kommentare — und dass der Rollback
+    // bei gleichen Images wirklich abbricht, misst
+    // tests/rollback-ablauf.test.ts am laufenden Skript.
+    const ohneKommentar = rollback
+      .split("\n")
+      .filter((l) => !/^\s*#/.test(l))
+      .join("\n");
+    expect(ohneKommentar).toMatch(/\[\[ "\$VORIG_ID" != "\$AKTUELL_ID" \]\]/);
+    expect(ohneKommentar).toMatch(/fail ":previous und :latest sind identisch/);
   });
 
   it("entwertet deploy-state, damit der Rollback für deploy.sh sichtbar ist", () => {

@@ -39,6 +39,8 @@ type Modus = {
   schema?: "ok" | "fehler" | "unsinn";
   /** Wie sich `podman run … integrity_check` verhält. */
   backupLesbar?: boolean;
+  /** Sind :previous und :latest dasselbe Image? Dann gibt es nichts zu tun. */
+  gleicheImages?: boolean;
   /**
    * Ob `podman rm -f` den Container wirklich entfernt. `false` stellt den Fall
    * nach, in dem das Stoppen scheitert (gesperrter podman-Store, hängende
@@ -77,6 +79,7 @@ function spielwiese(modus: Modus = {}) {
   const backupLesbar = modus.backupLesbar ?? true;
   const backupStand = modus.backupStand ?? 3;
   const stoppGelingt = modus.stoppGelingt ?? true;
+  const gleicheImages = modus.gleicheImages ?? false;
 
   fs.writeFileSync(
     path.join(bin, "podman"),
@@ -90,6 +93,7 @@ case "$1 $2" in
   "image exists") exit 0 ;;
   "container exists") [[ -e "$WEG" ]] && exit 1 || exit 0 ;;
   "image inspect")
+    if ${gleicheImages}; then echo "sha256:aaaa"; exit 0; fi
     [[ "$*" == *previous* ]] && echo "sha256:aaaa" || echo "sha256:bbbb"; exit 0 ;;
 esac
 case "$1" in
@@ -304,6 +308,86 @@ describe("Befund 4: der Stopp wird festgestellt, nicht gehofft", () => {
 
     expect(lauf.code).toBe(0);
     expect(lauf.ausgabe).toMatch(/Rollback erfolgreich/);
+  });
+});
+
+describe("Kein stiller No-op: gleiche Images sind nichts zum Zurückrollen", () => {
+  it("bricht ab, wenn :previous und :latest dasselbe Image sind", () => {
+    // Diese Zusage hing bis 08/2026 an zwei Regexen in
+    // tests/deploy-betrieb.test.ts, und beide trafen den KOMMENTAR im Skript.
+    // Man haette die Pruefung ersatzlos streichen koennen, und der Test waere
+    // gruen geblieben (Befund gpt-5.6-sol, PR #110, Runde 4).
+    const platz = spielwiese({ gleicheImages: true });
+    fs.writeFileSync(path.join(platz.daten, "app.db"), "die echten daten");
+
+    const lauf = fahre([], platz);
+
+    expect(lauf.code).not.toBe(0);
+    expect(lauf.ausgabe).toMatch(/identisch/i);
+    expect(dienstAngefasst(lauf)).toBe(false);
+    expect(lauf.protokoll.some((z) => z.startsWith("podman tag"))).toBe(false);
+  });
+});
+
+describe("Das Einspielen hinterlaesst keinen gefaehrlichen Zwischenstand", () => {
+  it("laesst app.db unangetastet, wenn das Kopieren scheitert", () => {
+    const platz = spielwiese();
+    // Ein Verzeichnis anstelle der Backup-Datei: Die Lesbarkeitspruefung faehrt
+    // die Attrappe (gruen), `cp` scheitert danach echt ("omitting directory").
+    fs.mkdirSync(path.join(platz.daten, "backups", "pre-deploy-20260822.db"));
+    fs.writeFileSync(path.join(platz.daten, "app.db"), "die echten daten");
+    fs.writeFileSync(path.join(platz.daten, "app.db-wal"), "das echte wal");
+
+    const lauf = fahre(["--with-db"], platz);
+
+    expect(lauf.code).not.toBe(0);
+    // Der Kern: app.db traegt noch den vorigen Stand, und das WAL steht noch
+    // dazu. Vorher schrieb `cp` direkt auf app.db.
+    expect(fs.readFileSync(path.join(platz.daten, "app.db"), "utf8")).toBe(
+      "die echten daten",
+    );
+    expect(fs.existsSync(path.join(platz.daten, "app.db-wal"))).toBe(true);
+  });
+
+  it("raeumt die Nebendatei weg, wenn alles gut geht", () => {
+    const platz = spielwiese();
+    fs.writeFileSync(
+      path.join(platz.daten, "backups", "pre-deploy-20260822.db"),
+      "backup-inhalt",
+    );
+    fs.writeFileSync(path.join(platz.daten, "app.db"), "alter stand");
+    fs.writeFileSync(path.join(platz.daten, "app.db-wal"), "altes wal");
+
+    const lauf = fahre(["--with-db"], platz);
+
+    expect(lauf.code).toBe(0);
+    expect(fs.readFileSync(path.join(platz.daten, "app.db"), "utf8")).toBe(
+      "backup-inhalt",
+    );
+    expect(fs.existsSync(path.join(platz.daten, "app.db-wal"))).toBe(false);
+    expect(fs.existsSync(path.join(platz.daten, "app.db.neu"))).toBe(false);
+  });
+
+  it("entfernt das WAL erst NACH dem Kopieren und VOR dem Umbenennen", () => {
+    // Die Reihenfolge ist der ganze Punkt: Nach dem Entfernen des WAL darf
+    // app.db noch den alten Stand tragen (stimmig, nur veraltet) — aber es
+    // darf nie das NEUE app.db neben dem ALTEN WAL geben.
+    const skript = fs.readFileSync(
+      path.resolve(process.cwd(), "deploy/rollback.sh"),
+      "utf8",
+    );
+    const ohneKommentar = skript
+      .split("\n")
+      .filter((l) => !/^\s*#/.test(l))
+      .join("\n");
+    const kopieren = ohneKommentar.indexOf('cp "$BACKUP" "$DATA_DIR/app.db.neu"');
+    const walWeg = ohneKommentar.indexOf('rm -f "$DATA_DIR/app.db-wal"');
+    const umbenennen = ohneKommentar.indexOf('mv -f "$DATA_DIR/app.db.neu"');
+    expect(kopieren).toBeGreaterThan(-1);
+    expect(walWeg).toBeGreaterThan(kopieren);
+    expect(umbenennen).toBeGreaterThan(walWeg);
+    // Und app.db wird nirgends mehr direkt beschrieben.
+    expect(ohneKommentar).not.toMatch(/cp "\$BACKUP" "\$DATA_DIR\/app\.db"/);
   });
 });
 

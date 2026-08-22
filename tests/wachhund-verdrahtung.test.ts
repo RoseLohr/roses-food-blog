@@ -73,9 +73,9 @@ case "$1" in
     fi
     if [[ "$*" == *betriebsalarm.mjs* ]]; then
       # Festgehalten wird, was ueber -e UEBERGEBEN wurde — NICHT die eigene
-      # Umgebung. Die erste Fassung las \$SMTP_HOST, und die erbt die Attrappe
-      # ohnehin vom Test: Sie meldete den Wert auch dann, wenn podman ihn gar
-      # nicht durchgereicht bekam. Damit war der Test gegen den alten,
+      # Umgebung. Die erste Fassung las SMTP_HOST aus ihrer eigenen Umgebung,
+      # und die erbt sie vom Test: Sie meldete den Wert auch dann, wenn podman
+      # ihn gar nicht durchgereicht bekam. Damit war der Test gegen den alten,
       # defekten Stand gruen — eine Attrappe, die ueber den Prueflings luegt.
       UEBERGEBEN=""
       naechstes_ist_env=0
@@ -164,6 +164,49 @@ describe("Das Image muss urteilen KÖNNEN, nicht nur existieren", () => {
     const lauf = fahre(spielwiese());
     expect(lauf.code).toBe(0);
     expect(lauf.ausgabe).toMatch(/Testgrund/);
+  });
+});
+
+describe("Ein verlorener Stand ist kein erledigter Lauf", () => {
+  it("schreibt den Stand über eine Nebendatei und benennt ihn um", () => {
+    const platz = spielwiese({
+      urteil:
+        '{"alarm":false,"stoppen":false,"grund":"eine Beobachtung",' +
+        '"neuerStand":{"neustarts":3,"rotSeit":1}}',
+    });
+
+    const lauf = fahre(platz);
+
+    expect(lauf.code).toBe(0);
+    const stand = path.join(platz.daten, "wachhund-stand.json");
+    expect(JSON.parse(fs.readFileSync(stand, "utf8"))).toEqual({
+      neustarts: 3,
+      rotSeit: 1,
+    });
+    // Keine Nebendatei bleibt liegen.
+    expect(fs.existsSync(`${stand}.neu`)).toBe(false);
+  });
+
+  it("meldet einen Fehlschlag, wenn der Stand nicht schreibbar ist", () => {
+    // Genau der Fall, der den Wachhund unbrauchbar machte: Bei voller Platte
+    // kürzte die alte Umlenkung die Datei und schrieb sie nicht neu. Der
+    // nächste Lauf las „kein Stand", rotSeit fing wieder bei 1 an — und die
+    // Stoppschwelle wurde NIE erreicht. Eine volle Platte ist zugleich einer
+    // der klassischen Auslöser genau dieser Neustartschleife.
+    const platz = spielwiese({
+      urteil:
+        '{"alarm":false,"stoppen":false,"grund":"eine Beobachtung",' +
+        '"neuerStand":{"neustarts":3,"rotSeit":1}}',
+    });
+    // Ein VERZEICHNIS an der Stelle der Nebendatei: Die Umlenkung scheitert
+    // dann zuverlässig. (Rechte zu entziehen taugt nicht — der Testlauf ist
+    // root und darf ohnehin überall schreiben.)
+    fs.mkdirSync(path.join(platz.daten, "wachhund-stand.json.neu"));
+    const lauf = fahre(platz);
+
+    expect(lauf.code).not.toBe(0);
+    expect(lauf.ausgabe).toMatch(/Wachhund-Stand nicht schreibbar/);
+    expect(lauf.ausgabe).toMatch(/Stoppschwelle wird so nie erreicht/);
   });
 });
 
