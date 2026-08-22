@@ -21,6 +21,11 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { execFile } from "node:child_process";
 import { createServer, type Server } from "node:http";
+import { createServer as createServerTls } from "node:https";
+import net from "node:net";
+import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
 import { deflateSync, gzipSync } from "node:zlib";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -29,13 +34,22 @@ const SKRIPT = path.join(process.cwd(), "scripts/regime/kompression-pruefen.sh")
 const ausfuehren = promisify(execFile);
 
 const STARTSEITE = [
-  '<!doctype html><html><body><section class="featured-slider">Bühne</section>',
+  '<!doctype html><html><body><main data-seite="start">',
+  '<section class="featured-slider">Bühne</section>',
   '<link rel="stylesheet" href="/_next/static/haupt.css">',
   '<script src="/_next/static/haupt.js"></script>',
   '<link rel="preload" href="/fonts/raleway.woff2?v=abc" as="font">',
   ...Array.from({ length: 60 }, (_, i) => `<p>Fülltext ${i} — genug Masse, damit Kompression überhaupt greift.</p>`),
-  "</body></html>",
+  "</main></body></html>",
 ].join("\n");
+
+// Dieselbe Seite, aber mit LEEREM Slider. Genau das liefert die echte
+// Startseite, wenn die Redaktion keine Slider-Einträge gepflegt hat:
+// src/app/(public)/page.tsx rendert die Bühne nur bei slides.length > 0.
+const STARTSEITE_OHNE_BUEHNE = STARTSEITE.replace(
+  '<section class="featured-slider">Bühne</section>\n',
+  "",
+);
 const CSS = Array.from({ length: 200 }, (_, i) => `.k-${i}{color:#123456;padding:1rem}`).join("\n");
 const JS = Array.from({ length: 200 }, (_, i) => `function f${i}(a,b){return a+b+${i}}`).join("\n");
 // Zufallsbytes: wie eine echte woff2 praktisch nicht weiter komprimierbar.
@@ -58,6 +72,8 @@ type Verhalten = {
   abgeschnitten?: boolean;
   /** Startseite ohne CSS-Verweis. */
   ohneCss?: boolean;
+  /** Startseite ohne Slider-Bühne — leerer Slider, redaktioneller Normalfall. */
+  ohneBuehne?: boolean;
   /** Gültiges gzip — aber von FREMDEM Inhalt gleicher Länge. */
   fremdinhalt?: boolean;
   /** Antwortet auf den komprimierten Abruf mit einem Fehlerstatus. */
@@ -73,7 +89,13 @@ let server: Server | undefined;
 function starten(v: Verhalten): Promise<string> {
   const inhalte: Record<string, { koerper: Buffer; typ: string; unveraenderlich: boolean }> = {
     "/": {
-      koerper: Buffer.from(v.ohneCss ? STARTSEITE.replace(/<link rel="stylesheet"[^>]*>/, "") : STARTSEITE),
+      koerper: Buffer.from(
+        v.ohneBuehne
+          ? STARTSEITE_OHNE_BUEHNE
+          : v.ohneCss
+            ? STARTSEITE.replace(/<link rel="stylesheet"[^>]*>/, "")
+            : STARTSEITE,
+      ),
       typ: "text/html; charset=utf-8",
       unveraenderlich: false,
     },
@@ -165,16 +187,132 @@ function starten(v: Verhalten): Promise<string> {
   });
 }
 
-async function pruefen(basis: string, ebene: "rand" | "ursprung", aufloesen?: string) {
+async function pruefen(
+  basis: string,
+  ebene: "rand" | "ursprung",
+  aufloesen?: string,
+  umgebung?: Record<string, string>,
+) {
   const argumente = ["--basis", basis, "--ebene", ebene];
   if (aufloesen) argumente.push("--aufloesen", aufloesen);
   try {
-    const { stdout } = await ausfuehren(SKRIPT, argumente, { timeout: 60_000 });
+    const { stdout } = await ausfuehren(SKRIPT, argumente, {
+      timeout: 60_000,
+      env: umgebung ? { ...process.env, ...umgebung } : process.env,
+    });
     return { code: 0, ausgabe: stdout };
   } catch (fehler) {
     const f = fehler as { code?: number; stdout?: string; stderr?: string };
     return { code: f.code ?? -1, ausgabe: `${f.stdout ?? ""}${f.stderr ?? ""}` };
   }
+}
+
+/**
+ * Ein HTTPS-Server mit einem Zertifikat, dem curl nicht traut. Genau die Lage,
+ * die am Ursprung eintritt, wenn ein Zertifikat abläuft — curl bricht in beiden
+ * Fällen mit einem TLS-Fehler ab (Rückgabewert 60 bzw. 35).
+ */
+function zertifikatErzeugen(tage: number) {
+  const verzeichnis = fs.mkdtempSync(path.join(os.tmpdir(), "komp-tls-"));
+  const schluessel = path.join(verzeichnis, "k.pem");
+  const zertifikat = path.join(verzeichnis, "c.pem");
+  execFileSync("openssl", [
+    "req", "-x509", "-newkey", "rsa:2048", "-nodes",
+    "-keyout", schluessel, "-out", zertifikat,
+    "-days", String(tage), "-subj", "/CN=127.0.0.1",
+    "-addext", "subjectAltName=IP:127.0.0.1",
+  ], { stdio: "ignore" });
+  return { schluessel, zertifikat };
+}
+
+function tlsServerStarten(): Promise<string> {
+  const { schluessel, zertifikat } = zertifikatErzeugen(1);
+  return new Promise((aufloesen) => {
+    server = createServerTls(
+      { key: fs.readFileSync(schluessel), cert: fs.readFileSync(zertifikat) },
+      (_a, antwort) => {
+        antwort.writeHead(200, { "Content-Type": "text/html" });
+        antwort.end(STARTSEITE);
+      },
+    ) as unknown as Server;
+    server.listen(0, "127.0.0.1", () => {
+      const adresse = server!.address();
+      if (typeof adresse === "string" || adresse === null) throw new Error("keine Adresse");
+      aufloesen(`https://127.0.0.1:${adresse.port}`);
+    });
+  });
+}
+
+/**
+ * Ein HTTPS-Server, dem curl VERTRAUT (über CURL_CA_BUNDLE), mit vollständiger
+ * und korrekt komprimierter Auslieferung. Damit lässt sich prüfen, was auf dem
+ * ERFOLGSPFAD ausgegeben wird — die Zertifikatsauskunft.
+ */
+function tlsServerVertrauenswuerdig(tage: number): Promise<{ basis: string; bundle: string }> {
+  const { schluessel, zertifikat } = zertifikatErzeugen(tage);
+  const inhalte: Record<string, { koerper: Buffer; typ: string; unveraenderlich: boolean }> = {
+    "/": { koerper: Buffer.from(STARTSEITE), typ: "text/html; charset=utf-8", unveraenderlich: false },
+    "/_next/static/haupt.css": { koerper: Buffer.from(CSS), typ: "text/css", unveraenderlich: true },
+    "/_next/static/haupt.js": { koerper: Buffer.from(JS), typ: "application/javascript", unveraenderlich: true },
+    "/fonts/raleway.woff2": { koerper: FONT, typ: "font/woff2", unveraenderlich: true },
+  };
+  return new Promise((aufloesen) => {
+    server = createServerTls(
+      { key: fs.readFileSync(schluessel), cert: fs.readFileSync(zertifikat) },
+      (anfrage, antwort) => {
+        const eintrag = inhalte[(anfrage.url ?? "/").split("?")[0]];
+        if (!eintrag) { antwort.writeHead(404).end(); return; }
+        const typ = eintrag.typ.split(";")[0];
+        const packen = /gzip/.test(String(anfrage.headers["accept-encoding"] ?? "")) && ALLES.has(typ);
+        const koerper = packen ? gzipSync(eintrag.koerper) : eintrag.koerper;
+        const kopf: Record<string, string> = {
+          "Content-Type": eintrag.typ,
+          "Cache-Control": eintrag.unveraenderlich ? "public, max-age=31536000, immutable" : "no-store",
+          "Content-Length": String(koerper.length),
+        };
+        if (packen) { kopf["Content-Encoding"] = "gzip"; kopf["Vary"] = "Accept-Encoding"; }
+        antwort.writeHead(200, kopf).end(koerper);
+      },
+    ) as unknown as Server;
+    server.listen(0, "127.0.0.1", () => {
+      const adresse = server!.address();
+      if (typeof adresse === "string" || adresse === null) throw new Error("keine Adresse");
+      aufloesen({ basis: `https://127.0.0.1:${adresse.port}`, bundle: zertifikat });
+    });
+  });
+}
+
+/**
+ * Nimmt die TCP-Verbindung an und schweigt danach — kein TLS, keine Antwort.
+ * Genau die Lage, in der `openssl s_client` unbegrenzt wartet (nachgemessen:
+ * nach 12 s noch immer offen) und in der eine Prüfung ohne Zeitgrenze das
+ * ganze Deployment hängen lässt.
+ */
+function schwarzesLochStarten(): Promise<string> {
+  return new Promise((aufloesen) => {
+    // Die offenen Sitzungen festhalten und beim Abräumen zerstören: `close()`
+    // wartet sonst auf eine Verbindung, die per Konstruktion nie endet — der
+    // afterEach-Haken lief in seine eigene Zeitgrenze.
+    const sitzungen: net.Socket[] = [];
+    const lauscher = net.createServer((sitzung) => {
+      sitzungen.push(sitzung);
+      sitzung.on("error", () => {
+        // Der Client bricht ab, wenn seine Zeitgrenze greift. Das ist der
+        // erwartete Verlauf, kein Fehler dieser Attrappe.
+      });
+    });
+    const schliessen = lauscher.close.bind(lauscher);
+    lauscher.close = ((rueckruf?: (f?: Error) => void) => {
+      for (const s of sitzungen) s.destroy();
+      return schliessen(rueckruf);
+    }) as typeof lauscher.close;
+    server = lauscher as unknown as Server;
+    lauscher.listen(0, "127.0.0.1", () => {
+      const adresse = lauscher.address();
+      if (typeof adresse === "string" || adresse === null) throw new Error("keine Adresse");
+      aufloesen(`https://127.0.0.1:${adresse.port}`);
+    });
+  });
 }
 
 const ALLES = new Set(["text/html", "text/css", "application/javascript"]);
@@ -292,10 +430,17 @@ describe("Kompressionsprüfung", () => {
     //
     // Hier verlangt der Aufruf eine andere Adresse als die, unter der der
     // Prüfstand wirklich läuft. Stillschweigend weitermessen wäre der Fehler.
+    // NACHTRAG 2026-08-22: Diese Prüfung erwartete die Meldung „blieb
+    // wirkungslos" — und die war für genau diesen Aufbau FALSCH. curl wendet
+    // die --resolve-Angabe hier sehr wohl an und wählt 127.0.0.2; dort lauscht
+    // nur nichts. Die alte Meldung entstand, weil der Wirksamkeitstest
+    // %{remote_ip} liest und der bei einer abgelehnten Verbindung leer bleibt.
+    // Dieselbe Fehlerklasse wie beim TLS-Abbruch: eine Meldung, die woanders
+    // hinzeigt. Der Abbruch bleibt richtig, die Begründung ist jetzt die wahre.
     const basis = await starten({ komprimiert: ALLES });
     const { code, ausgabe } = await pruefen(basis, "ursprung", "127.0.0.2");
     expect(code, ausgabe).not.toBe(0);
-    expect(ausgabe).toMatch(/blieb wirkungslos/);
+    expect(ausgabe).toMatch(/Verbindung zu 127\.0\.0\.2:\d+ \(für '127\.0\.0\.1' aufgelöst\) wird abgelehnt/);
   });
 
   it("misst mit --aufloesen auf dem tatsächlichen Port weiter", async () => {
@@ -336,7 +481,7 @@ describe("Kompressionsprüfung", () => {
     const basis = await starten({ komprimiert: ALLES, kurzerRumpf: true });
     const { code, ausgabe } = await pruefen(basis, "ursprung");
     expect(code, ausgabe).not.toBe(0);
-    expect(ausgabe).toMatch(/enthält 'featured-slider' nicht/);
+    expect(ausgabe).toMatch(/enthält 'data-seite="start"' nicht/);
   });
 
   it("prüft die Variante, die es gemessen hat — nicht eine andere", async () => {
@@ -389,5 +534,169 @@ describe("Kompressionsprüfung", () => {
     const { code, ausgabe } = await pruefen(basis, "ursprung");
     expect(code, ausgabe).not.toBe(0);
     expect(ausgabe).toMatch(/nicht die Startseite/);
+  });
+
+  it("nennt einen TLS-Fehler beim Namen, statt ihn der Kompression anzulasten", async () => {
+    // DER DATIERTE FALL: audit/11-infrastruktur-befund.md nennt den 31.10.2026
+    // als Ablauf des Ursprungszertifikats npm-20. `kompression-pruefen.sh`
+    // ruft mit gewöhnlichem curl ab, validiert also das Zertifikat, und
+    // deploy.sh macht aus jedem Fehlschlag hier
+    //
+    //   "Der Reverse Proxy liefert nicht so aus, wie next.config.ts es
+    //    voraussetzt. Vorlage und Einspielweg stehen im Kopf von
+    //    deploy/npm/http_top.conf."
+    //
+    // Mit --aufloesen — dem Weg, den deploy.sh geht — meldete die frühere
+    // Fassung sogar "--aufloesen blieb wirkungslos … verbunden wurde mit
+    // 'unbekannt'": Der Wirksamkeitstest liest %{remote_ip}, und bei einem
+    // TLS-Abbruch bleibt der leer. Beide Meldungen schicken die Fehlersuche in
+    // die falsche Richtung, während in Wahrheit das Zertifikat kaputt ist.
+    //
+    // Im Repository gibt es KEINE Zertifikatsprüfung (geprüft: kein notAfter,
+    // kein x509, kein checkend in *.sh, *.mjs, *.yml, *.ts). Diese Meldung ist
+    // damit die einzige Stelle, an der ein abgelaufenes Zertifikat überhaupt
+    // sichtbar würde.
+    const basis = await tlsServerStarten();
+    const { code, ausgabe } = await pruefen(basis, "ursprung", "127.0.0.1");
+    expect(code, ausgabe).toBe(1);
+    expect(ausgabe, "die Meldung muss TLS nennen").toMatch(/TLS|Zertifikat/);
+    expect(ausgabe, "sie darf NICHT die Auflösung beschuldigen").not.toMatch(/blieb wirkungslos/);
+    expect(ausgabe, "und nicht die Kompression").not.toMatch(/Kompression stimmt nicht|gzip_types/);
+  });
+
+  it("weist die Restlaufzeit des Ursprungszertifikats aus — als Auskunft, nicht als Grenze", async () => {
+    // Die vorbeugende Hälfte zum TLS-Befund oben: Dieses Skript läuft bei jedem
+    // vollen Deploy und ist damit der einzige regelmäßige Blick auf das
+    // Zertifikat — im übrigen Repository gibt es keinen. Also soll die
+    // Restlaufzeit im Protokoll stehen, BEVOR sie zum Problem wird.
+    //
+    // AUSDRÜCKLICH KEINE SCHWELLE: Der Lauf bleibt grün. Eine Frist als harte
+    // Grenze würde den Deploy an einem Datum blockieren, statt zu erinnern —
+    // und über eine echte Überwachung ist noch nicht entschieden (Spur A1/F1).
+    const { basis, bundle } = await tlsServerVertrauenswuerdig(30);
+    const { code, ausgabe } = await pruefen(basis, "ursprung", "127.0.0.1", { CURL_CA_BUNDLE: bundle });
+    expect(code, ausgabe).toBe(0);
+    expect(ausgabe).toMatch(/Zertifikat:.*notAfter/);
+    expect(ausgabe, "die Restlaufzeit muss beziffert sein").toMatch(/Noch \d+ Tage gültig/);
+  });
+
+  it("meldet am RAND keine Zertifikatslaufzeit — dort gehört das Zertifikat Cloudflare", async () => {
+    // Über fremdes Gerät zu berichten, das niemand von hier aus erneuert, wäre
+    // Rauschen. Dieselbe Begründung wie beim Vary-Kopf: am Rand nicht
+    // beanstanden oder melden, was uns nicht gehört.
+    const { basis, bundle } = await tlsServerVertrauenswuerdig(30);
+    const { code, ausgabe } = await pruefen(basis, "rand", undefined, { CURL_CA_BUNDLE: bundle });
+    expect(code, ausgabe).toBe(0);
+    expect(ausgabe).not.toMatch(/Noch \d+ Tage gültig/);
+  });
+
+  it("bricht NICHT ab, wenn die Redaktion den Slider geleert hat", async () => {
+    // src/app/(public)/page.tsx:408 rendert die Bühne nur bei
+    // `slides.length > 0`, und die Einträge kommen aus der Datenbank. Solange
+    // die Prüfung die Startseite an `featured-slider` erkannte, machte ein rein
+    // REDAKTIONELLER Vorgang — Slider leeren, Rezept depublizieren — jeden
+    // Deploy kaputt: Abschnitt 9c von deploy.sh ruft dieses Skript, und ein
+    // Fehlschlag hier endet in `fail "Auslieferung am Ursprung fehlerhaft"`.
+    // Die Meldung hätte gelautet „Unter <url> steht nicht die Startseite" —
+    // wieder eine Fehlersuche in der falschen Richtung.
+    //
+    // Erkannt wird die Seite jetzt an `data-seite="start"` auf ihrem eigenen
+    // <main>. Das ist eine STRUKTURELLE Marke: unabhängig vom Inhalt, aber
+    // trotzdem nur auf dieser Seite — eine Next-Fehlerseite trägt sie nicht
+    // (eine eigene error.tsx gibt es in diesem Projekt nicht).
+    const basis = await starten({ komprimiert: ALLES, ohneBuehne: true });
+    const { code, ausgabe } = await pruefen(basis, "ursprung");
+    expect(code, ausgabe).toBe(0);
+  });
+
+  it("die Startseite trägt die strukturelle Marke außerhalb jeder Bedingung", async () => {
+    // Der Gegenzug: Die Marke muss am <main> selbst hängen. Stünde sie in einem
+    // bedingt gerenderten Block, wäre sie wieder inhaltsabhängig — und der
+    // Fehler von oben käme unter anderem Namen zurück.
+    const seite = fs.readFileSync(path.join(process.cwd(), "src/app/(public)/page.tsx"), "utf8");
+    expect(seite).toContain('<main data-seite="start">');
+  });
+
+  it("hängt nicht an einer Gegenstelle, die annimmt und dann schweigt", async () => {
+    // BEFUND DES PFLICHT-APPROVERS (PR #105): `openssl s_client` in der
+    // Zertifikatsauskunft hatte keine Zeitgrenze. Dieses Skript läuft in
+    // deploy.sh Abschnitt 9c — ein unbegrenzter Aufruf hängt dort das
+    // Deployment, und zwar in einer Funktion, die bei einer Störung helfen soll.
+    //
+    // Zusätzlich hier festgehalten: Eine stumme Gegenstelle lief vorher in DREI
+    // Zeitgrenzen nacheinander (diese Prüfung, dann beide Abrufe der
+    // Startseite) und meldete am Ende „Startseite nicht abrufbar" — dreimal so
+    // lange gewartet für eine Auskunft, die schon beim ersten Versuch feststand.
+    const basis = await schwarzesLochStarten();
+    const begonnen = Date.now();
+    const { code, ausgabe } = await pruefen(basis, "ursprung");
+    const dauer = (Date.now() - begonnen) / 1000;
+
+    expect(code, ausgabe).toBe(1);
+    expect(ausgabe, "die Meldung muss sagen, dass gar keine Antwort kam").toMatch(
+      /keine Antwort von .* innerhalb der Zeitgrenze/,
+    );
+    expect(ausgabe, "und dass das kein Kompressionsbefund ist").toMatch(/kein Kompressionsbefund/);
+    // Eine Zeitgrenze von curl (25 s) plus Anlauf. Ohne die Klassifizierung
+    // oben wären es drei davon.
+    expect(dauer, `${dauer.toFixed(1)}s gebraucht — es darf nur EINE Zeitgrenze sein`).toBeLessThan(45);
+  }, 90_000);
+
+  it("fragt das Zertifikat GAR NICHT ab, wenn es die Grenze nicht setzen kann", async () => {
+    // BEFUND DES PFLICHT-APPROVERS (PR #105) gegen die erste Fassung dieser
+    // Grenze: Sie war OPTIONAL — `command -v timeout && begrenzt=(timeout 10)`
+    // —, und ohne `timeout` lief der Aufruf wieder unbegrenzt. Also derselbe
+    // Defekt, nur bedingt.
+    //
+    // Die Abwägung: Die Zertifikatsauskunft ist eine Beigabe, das Deployment
+    // ist es nicht. Ohne `timeout` wird nicht gefragt — und das wird gesagt.
+    //
+    // Gemessen wird das mit einem PATH, der alles enthält AUSSER `timeout`.
+    const { basis, bundle } = await tlsServerVertrauenswuerdig(30);
+    const ohneTimeout = fs.mkdtempSync(path.join(os.tmpdir(), "ohne-timeout-"));
+    try {
+      for (const verzeichnis of ["/usr/bin", "/bin", "/usr/local/bin"]) {
+        if (!fs.existsSync(verzeichnis)) continue;
+        for (const eintrag of fs.readdirSync(verzeichnis)) {
+          if (eintrag === "timeout") continue;
+          const ziel = path.join(ohneTimeout, eintrag);
+          if (fs.existsSync(ziel)) continue;
+          try {
+            fs.symlinkSync(path.join(verzeichnis, eintrag), ziel);
+          } catch {
+            // Ein Eintrag, der sich nicht verlinken lässt, fehlt eben — für
+            // diese Messung genügt, dass `timeout` sicher nicht dabei ist.
+          }
+        }
+      }
+      expect(fs.existsSync(path.join(ohneTimeout, "timeout")), "timeout darf nicht im PATH sein").toBe(false);
+
+      const { code, ausgabe } = await pruefen(basis, "ursprung", "127.0.0.1", {
+        CURL_CA_BUNDLE: bundle,
+        PATH: ohneTimeout,
+      });
+      expect(code, ausgabe).toBe(0);
+      expect(ausgabe, "es muss gesagt werden, dass nicht gefragt wurde").toMatch(
+        /kein 'timeout' vorhanden — Zertifikat NICHT abgefragt/,
+      );
+      expect(ausgabe, "und es darf keine Restlaufzeit behauptet werden").not.toMatch(/Noch \d+ Tage gültig/);
+    } finally {
+      fs.rmSync(ohneTimeout, { recursive: true, force: true });
+    }
+  }, 60_000);
+
+  it("begrenzt den openssl-Aufruf unbedingt, nicht nur wenn es geht", () => {
+    const skript = fs.readFileSync(SKRIPT, "utf8");
+    const stelle = skript.slice(skript.indexOf("zert_auskunft()"), skript.indexOf("CURL=("));
+    const code = stelle
+      .split("\n")
+      .filter((z) => !z.trimStart().startsWith("#"))
+      .join("\n");
+    // JEDE Fundstelle muss hinter einer Grenze stehen, nicht nur eine.
+    const aufrufe = code.split("\n").filter((z) => z.includes("openssl s_client"));
+    expect(aufrufe.length, "es muss überhaupt einen Aufruf geben").toBeGreaterThan(0);
+    for (const zeile of aufrufe) {
+      expect(zeile.trim(), `unbegrenzter Aufruf: ${zeile.trim()}`).toMatch(/timeout \d+ openssl s_client/);
+    }
   });
 });

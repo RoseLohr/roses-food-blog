@@ -74,10 +74,16 @@ jobs:
       # je zuvor (Befund gpt-5.6-sol, PR #63).
       #
       # Geprüft wird deshalb beides: der Status UND dass es wirklich die
-      # Startseite ist. `section.featured-slider` ist die Bühne der Startseite;
-      # dieselbe Marke nutzen die E2E-Tests. Eine Fehlerseite hat sie nicht.
-      # Nur bei 200 mit Bühne läuft der Rest — sonst bricht der Lauf hier ab und
-      # meldet, statt auf einer Fehlerseite Kennzahlen zu erheben.
+      # Startseite ist. `data-seite="start"` ist die strukturelle Kennung der
+      # Startseite — sie haengt am <main> und nicht an redaktionellem Inhalt.
+      # Vorher stand hier `section.featured-slider`; die rendert
+      # src/app/(public)/page.tsx aber nur bei `slides.length > 0`, ein
+      # geleerter Slider haette diese Messung also rot gemacht.
+      # Dieselbe Marke prueft scripts/regime/kompression-pruefen.sh am Ursprung.
+      # Eine Next-Fehlerseite traegt sie nicht (eine eigene error.tsx gibt es in
+      # diesem Projekt nicht). Nur bei 200 MIT Kennung laeuft der Rest — sonst
+      # bricht der Lauf hier ab und meldet, statt auf einer Fehlerseite
+      # Kennzahlen zu erheben.
       - name: Startseite liefert wirklich die Startseite
         run: |
           set -euo pipefail
@@ -87,8 +93,8 @@ jobs:
             echo "Startseite antwortet mit $code — hier wird nichts gemessen."
             exit 1
           fi
-          if ! grep -q 'featured-slider' /tmp/start.html; then
-            echo "Startseite ohne Bühne (section.featured-slider) — das ist nicht"
+          if ! grep -q 'data-seite="start"' /tmp/start.html; then
+            echo "Startseite ohne strukturelle Kennung (data-seite=\"start\") — das ist nicht"
             echo "die Startseite, sondern vermutlich eine Fehlerseite mit Status 200."
             exit 1
           fi

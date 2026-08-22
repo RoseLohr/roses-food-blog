@@ -72,6 +72,57 @@ fi
 BASIS="${BASIS%/}"
 HOST="$URL_HOST"; PORT="$URL_PORT"
 
+# Liest Ablauf und Namen des ausgelieferten Zertifikats. AUSKUNFT, keine
+# Schwelle: Ein Gate auf die Restlaufzeit würde den Deploy an einem Datum
+# blockieren, und über eine echte Überwachung ist noch nicht entschieden
+# (Spur A1/F1). Hier steht nur, was zu sehen ist.
+zert_auskunft() {
+  local ziel="${1:-$HOST}"
+  case "$URL_SCHEMA" in https) ;; *) return 0 ;; esac
+  if ! command -v openssl >/dev/null 2>&1; then
+    echo "        (openssl nicht vorhanden — Restlaufzeit nicht ermittelt)"
+    return 0
+  fi
+  # `openssl s_client` hat keine Zeitgrenze für den Handshake. Nimmt die
+  # Gegenstelle die TCP-Verbindung an und schweigt danach, wartet es
+  # UNBEGRENZT — nachgestellt: nach 12 s noch immer offen. Dieses Skript läuft
+  # in deploy.sh Abschnitt 9c; ein unbegrenzter Aufruf hängt dort das ganze
+  # Deployment, und zwar ausgerechnet in einer Funktion, die bei einer Störung
+  # helfen soll. (Befund des Pflicht-Approvers, PR #105.)
+  #
+  # Der Fall braucht eine Zustandsänderung zwischen curls Versuch und diesem —
+  # curl hat vorher eine Antwort bekommen, sonst wären wir nicht hier. Genau
+  # deshalb ist die Grenze billig und richtig: Sie kostet nichts und nimmt dem
+  # Deploy die Möglichkeit, endlos zu warten.
+  # OHNE `timeout` wird gar nicht erst gefragt. Eine frühere Fassung setzte die
+  # Grenze nur, WENN `timeout` vorhanden war — und ließ den Aufruf sonst
+  # unbegrenzt, also genau den Defekt, den sie beheben sollte, nur bedingt.
+  # (Befund des Pflicht-Approvers, PR #105.)
+  #
+  # Die Abwägung ist eindeutig: Die Zertifikatsauskunft ist eine Beigabe, das
+  # Deployment ist es nicht. Eine Auskunft, die sich nicht sicher holen lässt,
+  # wird nicht geholt — und das wird gesagt, statt still zu fehlen.
+  if ! command -v timeout >/dev/null 2>&1; then
+    echo "        (kein 'timeout' vorhanden — Zertifikat NICHT abgefragt. Ein"
+    echo "         unbegrenzter openssl-Aufruf darf hier nicht stehen: er würde"
+    echo "         das Deployment an einer schweigenden Gegenstelle aufhängen.)"
+    return 0
+  fi
+  local roh
+  roh=$(printf '' | timeout 10 openssl s_client -connect "$ziel:$PORT" -servername "$HOST" 2>/dev/null \
+        | openssl x509 -noout -subject -enddate 2>/dev/null) || roh=""
+  if [ -z "$roh" ]; then
+    echo "        (Zertifikat nicht lesbar — die Gegenstelle antwortet nicht oder spricht kein TLS)"
+    return 0
+  fi
+  printf '        Zertifikat: %s\n' "$(printf '%s' "$roh" | tr '\n' ' ')"
+  local bis rest
+  bis=$(printf '%s\n' "$roh" | sed -n 's/^notAfter=//p')
+  if [ -n "$bis" ] && rest=$(date -d "$bis" +%s 2>/dev/null); then
+    echo "        Noch $(( (rest - $(date +%s)) / 86400 )) Tage gültig."
+  fi
+}
+
 CURL=(curl -sS --max-time 25 --connect-timeout 8)
 if [ -n "$AUFLOESEN" ]; then
   CURL+=(--resolve "$HOST:$PORT:$AUFLOESEN")
@@ -84,8 +135,72 @@ case "${AUFLOESEN}${HOST}" in
   *) [ -n "$AUFLOESEN" ] && CURL+=(--noproxy '*') ;;
 esac
 
+# ERSTE VERBINDUNG — sie trennt einen TLS-Fehler von allem anderen, BEVOR eine
+# Aussage über Auflösung oder Kompression versucht wird.
+#
+# WARUM DAS HIER STEHEN MUSS: Der Abruf unten läuft mit gewöhnlichem curl, also
+# MIT Zertifikatsprüfung (kein -k, bewusst). Läuft das Ursprungszertifikat ab,
+# scheitert jeder Abruf — und die Meldungen, die dann kamen, zeigten in die
+# falsche Richtung:
+#   * mit --aufloesen: „blieb wirkungslos — verbunden wurde mit 'unbekannt'",
+#     weil der Wirksamkeitstest %{remote_ip} liest und der bei einem
+#     TLS-Abbruch leer bleibt;
+#   * ohne: „Startseite nicht abrufbar";
+#   * und deploy.sh macht aus beidem „Der Reverse Proxy liefert nicht so aus,
+#     wie next.config.ts es voraussetzt" samt Verweis auf die
+#     Kompressionsvorlage.
+# Das ist keine Randfrage: audit/11-infrastruktur-befund.md nennt den
+# 31.10.2026 als Ablauf von npm-20, und im ganzen Repository gibt es KEINE
+# Zertifikatsprüfung. Diese Stelle ist die einzige, an der ein abgelaufenes
+# Zertifikat überhaupt sichtbar wird — dann soll sie es auch sagen.
+ERST_RC=0
+"${CURL[@]}" -o /dev/null "$BASIS/" >/dev/null 2>&1 || ERST_RC=$?
+case "$ERST_RC" in
+  # curl-Rückgabewerte der TLS-Klasse: 35 Verbindungsaufbau, 51 Gegenstelle
+  # nicht verifizierbar, 58/59 lokales Zertifikat bzw. Chiffre, 60 Zertifikat
+  # nicht durch bekannte CA gedeckt (der Ablauf-Fall), 66 Initialisierung,
+  # 77 CA-Datei, 83 Aussteller.
+  35|51|58|59|60|66|77|83)
+    echo "FEHLER: TLS-Verbindung zu $BASIS scheitert (curl-Rückgabewert $ERST_RC)." >&2
+    echo "        Das ist KEIN Kompressionsmangel und KEIN Problem der Auflösung." >&2
+    zert_auskunft "$AUFLOESEN" >&2
+    echo "        Solange das nicht behoben ist, wird hier nichts gemessen." >&2
+    exit 1 ;;
+  # Gar keine Antwort. Ohne diesen Zweig liefe eine stumme Gegenstelle in DREI
+  # Zeitgrenzen nacheinander (dieser Versuch, dann beide Abrufe der Startseite)
+  # und meldete am Ende „Startseite nicht abrufbar" — dreimal so lange gewartet
+  # für eine Auskunft, die schon hier feststeht.
+  #   6 Name nicht auflösbar · 7 Verbindung abgelehnt · 28 Zeitgrenze
+  6|7|28)
+    # Die Adresse, die WIRKLICH gewählt wurde, benennen — nicht den Namen aus
+    # der Basis. Mit --aufloesen sind das verschiedene Dinge, und eine Meldung,
+    # die auf den Namen zeigt, während die Verbindung zur aufgelösten Adresse
+    # ging, schickt die Fehlersuche an die falsche Stelle.
+    if [ -n "$AUFLOESEN" ]; then
+      wohin="$AUFLOESEN:$PORT (für '$HOST' aufgelöst)"
+    else
+      wohin="$HOST:$PORT"
+    fi
+    case "$ERST_RC" in
+      6) grund="Name '$HOST' ist nicht auflösbar" ;;
+      7) grund="Verbindung zu $wohin wird abgelehnt" ;;
+      *) grund="keine Antwort von $wohin innerhalb der Zeitgrenze" ;;
+    esac
+    echo "FEHLER: $grund (curl-Rückgabewert $ERST_RC)." >&2
+    echo "        Hier wird nichts gemessen — das ist kein Kompressionsbefund." >&2
+    exit 1 ;;
+esac
+
 # Und weil eine still wirkungslose Auflösung genau der Fehler wäre, den diese
-# Datei verhindern soll: nachsehen, ob sie wirklich gegriffen hat. Ein
+# Datei verhindern soll: nachsehen, ob sie wirklich gegriffen hat.
+#
+# HINWEIS zur Reichweite: Seit der Port aus der Basis kommt (statt fest 80/443
+# zu sein), passt die --resolve-Angabe immer zur Anfrage — der ursprüngliche
+# Auslöser aus PR #102 ist damit von außen nicht mehr herstellbar. Diese Prüfung
+# ist deshalb heute Regressionsschutz gegen eine künftige Codeänderung, nicht
+# mehr eine Prüfung gegen eine erreichbare Fehlbedienung. Eine tote Zieladresse
+# fällt schon oben durch (Rückgabewert 7) — und wird dort auch als das benannt,
+# was sie ist, statt als „Auflösung wirkungslos". Ein
 # `--resolve` greift zum Beispiel auch dann nicht, wenn die Basis bereits eine
 # IP-Adresse statt eines Namens trägt. Ohne diese Nachfrage könnte das
 # Ursprungs-Gate grün melden, während es das CDN vermessen hat.
@@ -307,7 +422,7 @@ printf 'Kompression auf Ebene "%s": %s%s\n\n' "$EBENE" "$BASIS" \
 SEITE_TMP="$(mktemp)"
 trap 'rm -f "$SEITE_TMP"' EXIT
 "${CURL[@]}" -H 'Accept-Encoding: identity' -o "$SEITE_TMP" "$BASIS/" 2>/dev/null || true
-if ! grep -qa 'featured-slider' "$SEITE_TMP" 2>/dev/null; then
+if ! grep -qa 'data-seite="start"' "$SEITE_TMP" 2>/dev/null; then
   "${CURL[@]}" --compressed -o "$SEITE_TMP" "$BASIS/" 2>/dev/null || true
 fi
 
@@ -318,8 +433,15 @@ fi
 # Dieselbe Marke, an der auch perf-uptime.yml die Startseite erkennt: eine
 # Fehlerseite mit Status 200 trägt weiterhin /_next/static/*.js, und daraus
 # ließen sich fröhlich grüne Kennzahlen ziehen.
-if ! grep -qa 'featured-slider' "$SEITE_TMP"; then
-  echo "FEHLER: Unter $BASIS/ steht nicht die Startseite (keine section.featured-slider)." >&2
+#
+# Die Marke ist STRUKTURELL, nicht redaktionell. Vorher stand hier
+# `featured-slider` — die Bühne der Startseite. Die rendert
+# src/app/(public)/page.tsx aber nur bei `slides.length > 0`, und die Einträge
+# kommen aus der Datenbank. Ein geleerter Slider hätte damit jeden Deploy
+# scheitern lassen (Abschnitt 9c von deploy.sh), mit einer Meldung, die auf den
+# Proxy zeigt statt auf die Redaktion.
+if ! grep -qa 'data-seite="start"' "$SEITE_TMP"; then
+  echo "FEHLER: Unter $BASIS/ steht nicht die Startseite (kein data-seite=\"start\")." >&2
   exit 1
 fi
 
@@ -346,7 +468,7 @@ printf '  %s\n' "$(printf '%.0s-' $(seq 1 110))"
 
 # Beim HTML wird zusätzlich verlangt, dass das Entpackte die Bühne der
 # Startseite noch trägt — dieselbe Marke, an der die Seite oben erkannt wurde.
-textressource "HTML" "$BASIS/" "featured-slider"
+textressource "HTML" "$BASIS/" 'data-seite="start"'
 if [ -n "$CSS" ]; then textressource "CSS" "$BASIS$CSS"
   case "$LETZTE_CACHE" in *immutable*) ;; *) maengel "CSS: kein 'immutable' im Cache-Control ($LETZTE_CACHE)" ;; esac
 else maengel "Keine CSS-Datei in der Startseite gefunden — die Prüfung wäre unvollständig."; fi
@@ -355,6 +477,22 @@ if [ -n "$JS" ]; then textressource "JS" "$BASIS$JS"
 else maengel "Keine JS-Datei in der Startseite gefunden — die Prüfung wäre unvollständig."; fi
 if [ -n "$FONT" ]; then fertigkomprimiert "Font" "$BASIS$FONT"
 else maengel "Keine woff2-Schrift in der Startseite gefunden — die Gegenprobe fehlt."; fi
+
+# Restlaufzeit des Ursprungszertifikats — als AUSKUNFT, nicht als Schwelle.
+# Sie steht hier, weil dieses Skript bei jedem vollen Deploy läuft und damit
+# der einzige regelmäßige Blick auf das Zertifikat ist; im übrigen Repository
+# gibt es keinen. Ausdrücklich KEIN Gate: Eine Frist als harte Grenze würde den
+# Deploy an einem Datum blockieren, statt rechtzeitig zu erinnern, und über
+# eine echte Überwachung ist noch nicht entschieden (Spur A1/F1,
+# audit/12-infrastruktur-fahrplan.md).
+#
+# Nur am Ursprung. Am Rand gehört das Zertifikat Cloudflare — dessen Laufzeit
+# hier zu melden hieße, über fremdes Gerät zu berichten, das niemand von hier
+# aus erneuert.
+if [ "$EBENE" = ursprung ]; then
+  echo
+  zert_auskunft "${AUFLOESEN:-$HOST}"
+fi
 
 echo
 if [ "${#MAENGEL[@]}" -eq 0 ]; then
