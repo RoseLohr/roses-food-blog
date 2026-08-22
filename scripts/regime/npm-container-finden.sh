@@ -19,8 +19,11 @@
 #   1. der Container veröffentlicht nicht IRGENDEINEN anderen Port als unseren,
 #   2. er ist wirklich ein nginx (`nginx -v` läuft darin),
 #   3. unter /data/nginx/proxy_host/ steht eine Konfiguration, die GENAU
-#      diesen Namen bedient,
-#   4. und dieselbe Konfiguration lauscht auf GENAU unserem Port.
+#      diesen Namen bedient.
+#
+# Zum Port wird AUSDRÜCKLICH NICHTS aus der nginx-Konfiguration gelesen: Deren
+# `listen`-Zahlen sind die Container-Seite, die URL nennt die Host-Seite, und
+# bei einem Mapping wie 8443->443 sind das verschiedene Zahlen.
 #
 # Bedingung 3 ist die eigentliche Zuordnung: Sie macht aus „irgendein Proxy"
 # ein „der Proxy DIESER Domain". Passen mehrere, wird NICHT gewählt — dann
@@ -82,11 +85,34 @@ while IFS= read -r zeile; do
   # Verworfen wird deshalb nur, wer Ports veröffentlicht und unseren NICHT
   # dabei hat — das ist eine echte Unstimmigkeit. Wer gar keine veröffentlicht,
   # wird an den anderen Merkmalen gemessen.
+  # Verglichen wird HOST-SEITE mit HOST-SEITE. In `0.0.0.0:8443->443/tcp` ist
+  # 8443 die Host-Seite und 443 die Container-Seite; die URL nennt die
+  # Host-Seite. Eine frühere Fassung prüfte zusätzlich die `listen`-Zeilen der
+  # Konfiguration — das ist die CONTAINER-Seite und bei einem Mapping 8443->443
+  # eine andere Zahl. Sie hätte den richtigen Container verworfen. Dieselbe
+  # Fassung las server_name und listen außerdem über ALLE *.conf hinweg, ohne
+  # sie einander zuzuordnen: `listen 8080` aus der einen Datei und
+  # `server_name ziel` aus der anderen hätten zusammen bestanden.
+  # (Alles drei: Befund des Pflicht-Approvers, PR #105.)
   hat_unseren_port=0
   case "$ports" in
     *:"$PORT"-\>*) hat_unseren_port=1 ;;
-    "") ;;   # keine Veröffentlichung — sagt für sich genommen NICHTS, siehe unten
     *:*-\>*) verworfen "$name" "veröffentlicht Ports, aber nicht $PORT ($ports)"; continue ;;
+    *)
+      # GAR KEINE Veröffentlichung. Das allein ist kein Freibrief — ein
+      # abgeschotteter Bridge-Container veröffentlicht ebenfalls nichts und ist
+      # vom Host aus überhaupt nicht erreichbar. Statt das zu unterstellen,
+      # wird nachgesehen, WARUM die Spalte leer ist:
+      #   Host-Netzwerk → nginx bindet direkt auf dem Host, also erreichbar.
+      #   Mitglied eines Pods → der Pod veröffentlicht, nicht das Mitglied.
+      #   sonst → nicht erreichbar, kommt nicht in Frage.
+      netz=$($PODMAN inspect "$name" --format '{{.HostConfig.NetworkMode}}|{{.Pod}}' 2>/dev/null) || netz=""
+      modus=${netz%%|*}
+      pod=${netz#*|}
+      if [ "$modus" != host ] && [ -z "$pod" ]; then
+        verworfen "$name" "veröffentlicht keinen Port und ist weder im Host-Netzwerk noch in einem Pod (Netzmodus: ${modus:-unbekannt}) — vom Host aus nicht erreichbar"
+        continue
+      fi ;;
   esac
 
   if ! $PODMAN exec "$name" nginx -v >/dev/null 2>&1; then
@@ -149,31 +175,6 @@ while IFS= read -r zeile; do
     continue
   fi
 
-  # DRITTES MERKMAL: Die Konfiguration muss auf UNSEREM Port lauschen.
-  #
-  # Vorher galt „veröffentlicht keine Ports" als Freibrief — begründet mit dem
-  # Pod bzw. Host-Netzwerk dieses Servers. Das ist aber kein Beleg, sondern nur
-  # die Abwesenheit eines Gegenbeweises: Ein abgeschotteter Bridge-Container
-  # veröffentlicht ebenfalls nichts, und trüge er zufällig eine passende
-  # NPM-Konfiguration, wäre er der einzige Treffer gewesen.
-  # (Befund des Pflicht-Approvers, PR #105.)
-  #
-  # `listen` ist das positive Gegenstück und steht in derselben Konfiguration,
-  # die ohnehin schon gelesen wurde — auch bei Pod und Host-Netzwerk, wo die
-  # Portspalte leer bleibt. Auf diesem Server: `listen 443 ssl;`.
-  # Abgedeckte Schreibweisen (durchgespielt): `443`, `[::]:443`, `0.0.0.0:8443`,
-  # mit Zusätzen wie `ssl http2`; Kommentare und `unix:`-Sockets fallen heraus.
-  lauscht=$(printf '%s\n' "$konf" \
-    | sed 's/#.*$//' \
-    | grep -E '^[[:space:]]*listen[[:space:]]' \
-    | sed -e 's/;.*$//' -e 's/^[[:space:]]*listen[[:space:]]*//' \
-    | awk '{print $1}' \
-    | sed -e 's/.*\]://' -e 's/^.*:\([0-9][0-9]*\)$/\1/' \
-    | grep -E '^[0-9]+$') || lauscht=""
-  if ! printf '%s\n' "$lauscht" | grep -Fxq -- "$PORT"; then
-    verworfen "$name" "lauscht laut Konfiguration nicht auf $PORT (gefunden: $(printf '%s' "$lauscht" | tr '\n' ' '))"
-    continue
-  fi
   TREFFER="$TREFFER$name"$'\n'
   ANZAHL=$((ANZAHL + 1))
   if [ "$hat_unseren_port" = 1 ]; then
