@@ -2,36 +2,24 @@
  * Reisen: kommagetrennte Region/Stadt als Einzel-Filter (jeder Wert findet den
  * Bericht) und das neue Feld „Reisejahr" (Speichern/Rücklesen + Validierung).
  */
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { execSync } from "node:child_process";
-import { beforeAll, afterAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
+import { frischeDb } from "./helfer/frische-db";
+import { adminAnlegen } from "./helfer/saat";
+
+frischeDb("travel-ry");
 
 // App-Module (die @/db anziehen) werden BEWUSST erst nach dem Setzen von
-// DATA_DIR dynamisch importiert — sonst bände der db-Singleton an ./data.
+// DATA_DIR durch frischeDb() dynamisch importiert — sonst bände der
+// db-Singleton an ./data.
 type MatchFn = (field: string, value: string) => boolean;
 let matchesCommaToken: MatchFn;
 let decodeFilterValue: (raw: string) => string;
 
-let tmp: string;
 let adminId: number;
 
 beforeAll(async () => {
-  tmp = fs.mkdtempSync(path.join(os.tmpdir(), "roses-travel-ry-"));
-  process.env.DATA_DIR = tmp;
-  execSync("node scripts/migrate.mjs", { env: { ...process.env, DATA_DIR: tmp } });
   ({ matchesCommaToken, decodeFilterValue } = await import("@/lib/travel"));
-  const { db, schema } = await import("@/db");
-  const [admin] = await db
-    .insert(schema.adminUser)
-    .values({ email: "rose@example.de", passwordHash: "x", name: "Rose", createdAt: new Date() })
-    .returning();
-  adminId = admin.id;
-});
-
-afterAll(() => {
-  fs.rmSync(tmp, { recursive: true, force: true });
+  adminId = (await adminAnlegen()).id;
 });
 
 describe("matchesCommaToken (reine Logik)", () => {

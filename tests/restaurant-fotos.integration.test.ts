@@ -10,35 +10,20 @@
  * und die Fotos des ganzen Berichts wären ohne Fehlermeldung verschwunden.
  * Deshalb nimmt der Vertrag beide Formen an, und dieser Test hält das fest.
  */
-import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
-import { execSync } from "node:child_process";
 import Database from "better-sqlite3";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
+import { frischeDb } from "./helfer/frische-db";
+import { adminAnlegen } from "./helfer/saat";
 
-let tmp: string;
+// Rückgabewert ist das Wegwerf-Verzeichnis: der Migrationstest unten öffnet
+// die SQLite-Datei selbst.
+const tmp = frischeDb("restfotos");
+
 let adminId: number;
 
 beforeAll(async () => {
-  tmp = fs.mkdtempSync(path.join(os.tmpdir(), "roses-restfotos-"));
-  process.env.DATA_DIR = tmp;
-  execSync("node scripts/migrate.mjs", { env: { ...process.env, DATA_DIR: tmp } });
-  const { db, schema } = await import("@/db");
-  const [admin] = await db
-    .insert(schema.adminUser)
-    .values({
-      email: "rose@example.de",
-      passwordHash: "x",
-      name: "Rose",
-      createdAt: new Date(),
-    })
-    .returning();
-  adminId = admin.id;
-});
-
-afterAll(() => {
-  fs.rmSync(tmp, { recursive: true, force: true });
+  adminId = (await adminAnlegen()).id;
 });
 
 /** Zwei Platzhalter-Bilder in der Medienbibliothek. */

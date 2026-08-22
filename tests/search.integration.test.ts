@@ -2,25 +2,14 @@
  * Integrationstest Suche: FTS-Query-Builder, Volltextsuche, Facettenfilter
  * und Zutatensuche über Rezepte UND Restaurant-Gerichte.
  */
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { execSync } from "node:child_process";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
+import { frischeDb } from "./helfer/frische-db";
+import { adminAnlegen } from "./helfer/saat";
 
-let tmp: string;
+frischeDb("search");
 
 beforeAll(async () => {
-  tmp = fs.mkdtempSync(path.join(os.tmpdir(), "roses-search-"));
-  process.env.DATA_DIR = tmp;
-  execSync("node scripts/migrate.mjs", { env: { ...process.env, DATA_DIR: tmp } });
-
-  const { db, schema } = await import("@/db");
-  const now = new Date();
-  const [admin] = await db
-    .insert(schema.adminUser)
-    .values({ email: "a@b.de", passwordHash: "x", name: "A", createdAt: now })
-    .returning();
+  const admin = await adminAnlegen({ email: "a@b.de", name: "A" });
 
   const { saveRecipeFromForm } = await import("@/lib/recipe-save");
   const mk = (
@@ -92,10 +81,6 @@ beforeAll(async () => {
     ]),
   );
   await saveTravelFromForm(fd, admin.id);
-});
-
-afterAll(() => {
-  fs.rmSync(tmp, { recursive: true, force: true });
 });
 
 describe("toFtsQuery", () => {

@@ -9,27 +9,17 @@
  * ein stilles Zurückdrehen von effort/smart-subsample/Qualität dynamisch,
  * nicht nur die Konstanten im Quelltext.
  */
-import { execFileSync, execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import Database from "better-sqlite3";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import encoder from "../config/bild-encoder.json";
+import { frischeDb } from "./helfer/frische-db";
 
-let tmp: string;
-
-beforeAll(() => {
-  tmp = fs.mkdtempSync(path.join(os.tmpdir(), "roses-regen-"));
-  process.env.DATA_DIR = tmp;
-  execSync("node scripts/migrate.mjs", {
-    env: { ...process.env, DATA_DIR: tmp },
-  });
-});
-
-afterAll(() => {
-  fs.rmSync(tmp, { recursive: true, force: true });
-});
+// Der Rückgabewert ist das Wegwerf-Verzeichnis: die Tests öffnen die Datenbank
+// darin selbst und reichen es an den Nachzug (regenerate-variants) weiter.
+const tmp = frischeDb("regen");
 
 /** Fotoähnliches Testbild (Verläufe + Rauschen): flache Farbflächen wären
  *  für Kompressions-Budgets aussagelos. Deterministisch (fester Seed). */

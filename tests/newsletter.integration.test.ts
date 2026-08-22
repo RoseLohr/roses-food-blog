@@ -4,21 +4,17 @@
  * Klick → aktiv (Quelle, Interesse, Einwilligungszeitpunkt, Sequenzplanung) →
  * One-Click-Abmeldung.
  */
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { execSync } from "node:child_process";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
+import { frischeDb } from "./helfer/frische-db";
 
-let tmp: string;
+// BASE_URL steht vor dem Migrieren, damit Bestätigungs- und Abmeldelinks die
+// Testdomain tragen.
+process.env.BASE_URL = "https://blog.example.de";
+frischeDb("news");
+
 const sentMails: Array<{ to: string; subject: string; html: string; text: string }> = [];
 
 beforeAll(async () => {
-  tmp = fs.mkdtempSync(path.join(os.tmpdir(), "roses-news-"));
-  process.env.DATA_DIR = tmp;
-  process.env.BASE_URL = "https://blog.example.de";
-  execSync("node scripts/migrate.mjs", { env: { ...process.env, DATA_DIR: tmp } });
-
   const { setTransporterForTesting } = await import("@/lib/mailer");
   setTransporterForTesting({
     sendMail: async (opts: any) => {
@@ -55,10 +51,6 @@ beforeAll(async () => {
       content: "Noch mehr Tipps.",
     },
   ]);
-});
-
-afterAll(() => {
-  fs.rmSync(tmp, { recursive: true, force: true });
 });
 
 describe("Double-Opt-in-Flow", () => {

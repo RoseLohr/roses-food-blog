@@ -18,22 +18,18 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { execSync } from "node:child_process";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { frischeDb } from "./helfer/frische-db";
 
-let tmp: string;
+const tmp = frischeDb("bild");
+
 let db: typeof import("@/db").db;
 let schema: typeof import("@/db").schema;
 let sqlite: import("better-sqlite3").Database;
 
 beforeAll(async () => {
-  tmp = fs.mkdtempSync(path.join(os.tmpdir(), "roses-bild-"));
-  process.env.DATA_DIR = tmp;
-  execSync("node scripts/migrate.mjs", {
-    cwd: process.cwd(),
-    env: { ...process.env, DATA_DIR: tmp },
-    stdio: "pipe",
-  });
+  // `@/db` erst jetzt holen: die Verbindung entsteht beim Auswerten des
+  // Moduls, also muss `frischeDb()` oben schon gelaufen sein.
   ({ db, schema } = await import("@/db"));
   const { default: Database } = await import("better-sqlite3");
   sqlite = new Database(path.join(tmp, "app.db"));
@@ -41,7 +37,6 @@ beforeAll(async () => {
 
 afterAll(() => {
   sqlite?.close();
-  fs.rmSync(tmp, { recursive: true, force: true });
 });
 
 async function bildAnlegen(fileKey: string) {

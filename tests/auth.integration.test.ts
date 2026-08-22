@@ -4,6 +4,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { frischeDb } from "./helfer/frische-db";
+import { adminAnlegen } from "./helfer/saat";
 
 frischeDb("auth");
 
@@ -22,15 +23,9 @@ describe("Auth", () => {
       await import("@/lib/auth-core");
     const { db, schema } = await import("@/db");
 
-    const [user] = await db
-      .insert(schema.adminUser)
-      .values({
-        email: "rose@example.de",
-        passwordHash: await hashPassword("streng-geheim-123"),
-        name: "Rose",
-        createdAt: new Date(),
-      })
-      .returning();
+    const user = await adminAnlegen({
+      passwordHash: await hashPassword("streng-geheim-123"),
+    });
 
     const token = await createSession(user.id);
     expect(token).toHaveLength(64);

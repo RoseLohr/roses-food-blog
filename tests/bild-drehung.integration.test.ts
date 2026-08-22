@@ -22,21 +22,13 @@
  */
 import { execSync } from "node:child_process";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
+import { frischeDb } from "./helfer/frische-db";
 
-let tmp: string;
-
-beforeAll(() => {
-  tmp = fs.mkdtempSync(path.join(os.tmpdir(), "roses-drehung-"));
-  process.env.DATA_DIR = tmp;
-  execSync("node scripts/migrate.mjs", { env: { ...process.env, DATA_DIR: tmp } });
-});
-
-afterAll(() => {
-  fs.rmSync(tmp, { recursive: true, force: true });
-});
+// Der Rückgabewert ist das Wegwerf-Verzeichnis: die Tests öffnen die Datenbank
+// darin selbst und reichen es an den Nachzug (regenerate-variants) weiter.
+const tmp = frischeDb("drehung");
 
 /** Fotoähnlicher JPEG-Puffer mit gesetzter EXIF-Orientierung. */
 async function fotoMitDrehung(
