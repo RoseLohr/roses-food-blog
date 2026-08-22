@@ -18,6 +18,7 @@ import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 const HELFER = path.resolve(process.cwd(), "tests/helfer/frische-db.ts");
+const SAAT = path.resolve(process.cwd(), "tests/helfer/saat.ts");
 
 /**
  * Alle Modulnamen, die diese Datei tatsächlich lädt — statische Importe,
@@ -29,7 +30,7 @@ const HELFER = path.resolve(process.cwd(), "tests/helfer/frische-db.ts");
  * Kommentare anspringt, wird nach dem zweiten Fehlalarm abgeschaltet — und
  * dann bewacht er nichts mehr.
  */
-function geladeneModule(datei: string): string[] {
+function geladeneModule(datei: string, nur?: "statisch"): string[] {
   const quelle = ts.createSourceFile(
     datei,
     fs.readFileSync(datei, "utf8"),
@@ -46,6 +47,7 @@ function geladeneModule(datei: string): string[] {
       out.push(n.moduleSpecifier.text);
     }
     if (
+      nur !== "statisch" &&
       ts.isCallExpression(n) &&
       n.expression.kind === ts.SyntaxKind.ImportKeyword &&
       n.arguments.length > 0 &&
@@ -78,6 +80,16 @@ describe("frische-db-Helfer", () => {
         "mittelbar) @/db auswertet, bindet die Verbindung an die falsche " +
         "Datei. Neuen Import bewusst in die Positivliste aufnehmen.",
     ).toEqual([]);
+  });
+
+  it("die Saat-Helfer holen @/db erst beim Aufruf, nicht beim Import", () => {
+    // `tests/helfer/saat.ts` wird von Testdateien am MODULANFANG importiert —
+    // also möglicherweise, bevor frischeDb() DATA_DIR gesetzt hat. Ein
+    // STATISCHER @/db-Import dort bände die Verbindung an die falsche Datei,
+    // für die ganze Testdatei. Dynamisch ist erlaubt und richtig: dann läuft
+    // der Import erst, wenn die Funktion gerufen wird.
+    expect(geladeneModule(SAAT, "statisch")).toEqual([]);
+    expect(geladeneModule(SAAT)).toContain("@/db");
   });
 
   it("legt eine migrierte Datenbank an und richtet DATA_DIR darauf", async () => {
