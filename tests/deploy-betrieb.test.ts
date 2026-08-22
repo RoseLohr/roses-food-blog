@@ -691,12 +691,19 @@ describe("Alarm auch dann, wenn die Anwendung nicht läuft", () => {
     expect(failBlock).toMatch(/alarm_absetzen/);
   });
 
-  it("nimmt dafür das BEKANNT GUTE Image, nicht das gerade gescheiterte", () => {
+  it("fragt zuerst :previous, dann :latest — in dieser Reihenfolge", () => {
+    // Nur noch die REIHENFOLGE der Kandidaten, und die ist eine Aussage über
+    // den Text. Dass wirklich das Image mit dem Alarmskript gewählt wird und
+    // :previous bevorzugt wird, prüft tests/deploy-betriebsabsicherung.test.ts
+    // an der ausgeführten Funktion — hier stand vorher nur
+    // `bild=localhost/roses-blog:previous`, und das belegte nichts davon.
     const fn = deploySh.slice(
+      deploySh.indexOf("alarm_bild_waehlen() {"),
       deploySh.indexOf("alarm_absetzen() {"),
-      deploySh.indexOf("alarm_absetzen() {") + 700,
     );
-    expect(fn).toMatch(/bild=localhost\/roses-blog:previous/);
+    expect(fn).toMatch(
+      /for kandidat in localhost\/roses-blog:previous localhost\/roses-blog:latest/,
+    );
   });
 
   it("blockiert den Fehlschlagpfad nicht, wenn kein Alarmweg da ist", () => {
@@ -739,7 +746,16 @@ describe("Neustartschleife hat eine Grenze", () => {
     expect(deploySh.slice(start, ende)).toMatch(/^KillMode=process$/m);
   });
 
-  it("nennt einen Cron-Ersatzweg, falls der Timer nicht aktivierbar ist", () => {
-    expect(deploySh).toMatch(/\*\/5 \* \* \* \* .*wachhund\.sh/);
+  it("bietet KEINEN Cron-Ersatzweg an, wenn der Timer nicht aktivierbar ist", () => {
+    // Diese Zusicherung stand hier mit UMGEKEHRTEM Vorzeichen: Sie verlangte
+    // die fertige crontab-Zeile. Ein Test, der einen Workaround erzwingt,
+    // während CLAUDE.md schon dessen VORSCHLAG verbietet — und daneben lief
+    // der Deploy grün weiter, obwohl die einzige Obergrenze für
+    // `restart: always` fehlte (Befund gpt-5.6-sol, PR #110, Runde 3).
+    expect(deploySh).not.toMatch(/\*\/5 \* \* \* \*/);
+    // Stattdessen: nachsehen, ob der Timer LÄUFT, und sonst den Lauf nicht
+    // als erfolgreich quittieren.
+    expect(deploySh).toMatch(/is-active roses-blog-wachhund\.timer/);
+    expect(deploySh).toMatch(/WACHHUND_FEHLT=1/);
   });
 });

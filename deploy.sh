@@ -23,6 +23,12 @@ SECONDS=0   # Gesamtdauer fürs Abschluss-Log
 # schreibt fortlaufend eine Statusdatei (aktuelle Phase, läuft ja/nein, Ergebnis)
 # und ein Log. Das Panel pollt beides und zeigt so, dass wirklich etwas passiert.
 DEPLOY_STATUS_RESULT=""        # während des Laufs unbekannt
+# Gesetzt, wenn der Wachhund-Timer nachweislich NICHT läuft (Abschnitt 7e).
+# Ausgewertet ganz am Ende — der Grund steht dort.
+WACHHUND_FEHLT=0
+# Gesetzt, sobald eine spezifische Alarmnachricht abgesetzt wurde; fail()
+# schickt dann keine zweite, allgemeine hinterher.
+ALARM_SCHON_GESENDET=0
 DEPLOY_PHASE="gestartet"
 DEPLOY_RUNNING=1
 _status_ready() { [[ -n "${DATA_DIR:-}" && -d "${DATA_DIR:-/nonexistent}" ]]; }
@@ -99,14 +105,71 @@ log()  {
 #
 # Best-Effort und bewusst nie blockierend: Ein fehlender Alarmweg darf den
 # Fehlschlag nicht verschlimmern. Was geschah, steht in jedem Fall im Protokoll.
+#
+# ── DAS ERSTBESTE IMAGE IST NICHT DAS RICHTIGE ─────────────────────────────
+#
+# Hier stand: „nimm :previous, sonst :latest". Beim ERSTEN Ausrollen dieser
+# Änderung ist :previous aber der Stand von VORHER — und der kennt
+# scripts/betriebsalarm.mjs noch gar nicht. podman brach ab, übrig blieb eine
+# Zeile im Protokoll, und niemand bekam eine Nachricht. Eine Meldekette, die
+# ausgerechnet dann schweigt, wenn sie zum ersten Mal gebraucht wird, ist
+# keine (Befund gpt-5.6-sol, PR #110, Runde 3).
+#
+# Gewählt wird deshalb nicht das erste VORHANDENE Image, sondern das erste, das
+# das Alarmskript wirklich enthält. Geprüft wird mit node — nichts anderes
+# braucht der Alarm auch. Das Ergebnis wird gemerkt, damit der Fehlerpfad nicht
+# zwei zusätzliche Container startet.
+ALARM_BILD=""
+ALARM_BILD_GEPRUEFT=0
+alarm_bild_waehlen() {
+  [[ $ALARM_BILD_GEPRUEFT -eq 1 ]] && return 0
+  ALARM_BILD_GEPRUEFT=1
+  local kandidat
+  for kandidat in localhost/roses-blog:previous localhost/roses-blog:latest; do
+    podman image exists "$kandidat" 2>/dev/null || continue
+    if timeout 30 podman run --rm --entrypoint node "$kandidat" \
+         -e "process.exit(require('fs').existsSync('/app/scripts/betriebsalarm.mjs')?0:1)" \
+         >/dev/null 2>&1; then
+      ALARM_BILD="$kandidat"
+      return 0
+    fi
+    deploy_log "Alarm: $kandidat enthält betriebsalarm.mjs nicht — nächster Kandidat."
+  done
+  deploy_log "Alarm: KEIN Image enthält betriebsalarm.mjs — es kann keine Nachricht abgesetzt werden."
+}
 alarm_absetzen() {
   local betreff="$1" text="$2"
-  local bild=localhost/roses-blog:previous
-  podman image exists "$bild" 2>/dev/null || bild=localhost/roses-blog:latest
-  podman image exists "$bild" 2>/dev/null || { deploy_log "Alarm: kein Image verfügbar"; return 0; }
+  alarm_bild_waehlen
+  [[ -n "$ALARM_BILD" ]] || return 0
   timeout 60 podman run --rm --entrypoint node -v "$DATA_DIR:/data" \
-    -e DATA_DIR=/data "$bild" /app/scripts/betriebsalarm.mjs "$betreff" "$text" \
+    -e DATA_DIR=/data "$ALARM_BILD" /app/scripts/betriebsalarm.mjs "$betreff" "$text" \
     2>&1 | sed 's/^/[alarm] /' || deploy_log "Alarm konnte nicht abgesetzt werden."
+}
+
+# Läuft der Wachhund-Timer WIRKLICH? Hinterlegt den Zeugen und setzt
+# WACHHUND_FEHLT. Aufgerufen wird sie in Abschnitt 7e; sie steht hier oben als
+# eigene Funktion, damit tests/deploy-wachhund-verankerung.test.ts sie gegen
+# ein vorgetäuschtes systemctl fahren kann. „Der Deploy merkt es, wenn der
+# Wachhund fehlt" ist sonst eine Behauptung über Verhalten, belegt durch einen
+# Textvergleich — und genau diese Sorte Wächter ist hier schon zweimal als
+# wirkungslos aufgefallen.
+wachhund_verankern() {
+  local zustand
+  zustand="$(systemctl --user is-active roses-blog-wachhund.timer 2>/dev/null || true)"
+  if [[ "$zustand" == "active" ]]; then
+    printf 'roses-blog-wachhund.timer aktiv, geprueft am %s\n' "$(date -Is)" \
+      > "$DATA_DIR/wachhund-ok" 2>/dev/null || true
+    echo "Wachhund: aktiv (alle 5 min, roses-blog-wachhund.timer)."
+    return 0
+  fi
+  # Kein Zeuge, wenn die Sache nicht bezeugt ist — und kein Ersatzvorschlag.
+  rm -f "$DATA_DIR/wachhund-ok" 2>/dev/null || true
+  WACHHUND_FEHLT=1
+  echo "FEHLER: Wachhund-Timer NICHT aktiv (Zustand: ${zustand:-unbekannt})."
+  echo "        Ohne ihn ist 'restart: always' unbegrenzt — das ist die Lage"
+  echo "        vom 2026-08-10. Der Deploy wird deshalb nicht als erfolgreich"
+  echo "        quittiert; die Ursache gehört behoben (systemctl --user status"
+  echo "        roses-blog-wachhund.timer), nicht ersetzt."
 }
 
 fail() {
@@ -116,7 +179,13 @@ fail() {
   status_write
   # Nur wenn DATA_DIR schon feststeht — davor gibt es weder Datenbank noch
   # Einstellungen, aus denen ein Empfänger käme.
-  if [[ -n "${DATA_DIR:-}" && -d "${DATA_DIR:-/nicht/vorhanden}" ]]; then
+  #
+  # Und nur, wenn nicht schon eine PASSENDERE Nachricht raus ist: Der Text hier
+  # nennt den Rollback als nächsten Schritt. Bei einem Fehlschlag, der die
+  # Anwendung gar nicht betrifft (fehlender Wachhund), wäre das die falsche
+  # Anweisung — zwei Alarme, von denen einer in die Irre führt.
+  if [[ -n "${DATA_DIR:-}" && -d "${DATA_DIR:-/nicht/vorhanden}" \
+        && "${ALARM_SCHON_GESENDET:-0}" -ne 1 ]]; then
     alarm_absetzen "⚠ Roses Blog — Deployment fehlgeschlagen" \
       "Phase: ${DEPLOY_PHASE}
 
@@ -438,6 +507,12 @@ if podman image exists localhost/roses-blog:latest 2>/dev/null; then
 fi
 run_logged podman build "${BUILD_OPTS[@]}" -t localhost/roses-blog:latest . \
   || fail "Image-Build fehlgeschlagen (Stufe: Laufzeit-Image)."
+# Ab hier gibt es ein frisches :latest aus DIESEM Stand — es enthält das
+# Alarmskript mit Sicherheit. Die Wahl von oben neu treffen lassen: Beim ersten
+# Ausrollen war zu diesem Zeitpunkt noch KEIN Image mit Alarmskript da, und
+# ohne das Zurücksetzen bliebe es bis zum Ende des Laufs dabei — die Alarme des
+# Health-Gates gingen dann verloren, obwohl längst ein taugliches Image steht.
+ALARM_BILD_GEPRUEFT=0
 
 # --- 4. DB-Backup vor Migration/Neustart -------------------------------------
 if [[ -f "$DATA_DIR/app.db" ]]; then
@@ -781,12 +856,26 @@ EOF
   printf '%s\n' "$wach_dienst" > "$UNIT_DIR/roses-blog-wachhund.service"
   printf '%s\n' "$wach_timer"  > "$UNIT_DIR/roses-blog-wachhund.timer"
   systemctl --user daemon-reload >/dev/null 2>&1 || true
-  if systemctl --user enable --now roses-blog-wachhund.timer >/dev/null 2>&1; then
-    echo "Wachhund: aktiv (alle 5 min, roses-blog-wachhund.timer)."
-  else
-    echo "HINWEIS: Wachhund-Timer nicht aktivierbar — ersatzweise per Cron:"
-    echo "         */5 * * * * $SCRIPT_DIR/deploy/wachhund.sh >> \$HOME/wachhund.log 2>&1"
-  fi
+  systemctl --user enable --now roses-blog-wachhund.timer >/dev/null 2>&1 || true
+  # ── NACHSEHEN, NICHT DEM RÜCKGABEWERT GLAUBEN ────────────────────────────
+  #
+  # Hier stand `if systemctl enable --now …; then … else HINWEIS + Cron-Zeile`,
+  # und der Deploy lief in beiden Fällen grün weiter. Daran war zweierlei
+  # falsch (Befund gpt-5.6-sol, PR #110, Runde 3):
+  #
+  #   1. Der Rückgabewert von `enable --now` ist kein Beleg dafür, dass der
+  #      Timer danach LÄUFT. Gefragt wird deshalb der Zustand selbst — dieselbe
+  #      Regel wie eine Sektion weiter oben bei der Panel-Freigabe: nur nach
+  #      echter Verifikation.
+  #   2. Die Cron-Zeile war ein VORGESCHLAGENER WORKAROUND, und der Deploy
+  #      meldete Erfolg, während die einzige Obergrenze für `restart: always`
+  #      schlicht fehlte — also genau die Lücke offenstand, die am 2026-08-10
+  #      elf Stunden Ausfall gekostet hat. Ein grünes Deployment über einer
+  #      fehlenden Sicherung ist eine Falschaussage.
+  #
+  # Der Zeuge macht die Sicherung ÜBERPRÜFBAR statt vorausgesetzt, genauso wie
+  # `deploy-unit-ok` es für die Panel-Freigabe tut.
+  wachhund_verankern
 fi
 
 # --- 8. Aufräumen: alte, nun unbenutzte Images entfernen ---------------------
@@ -917,13 +1006,43 @@ if ! "$SCRIPT_DIR/scripts/regime/kompression-pruefen.sh" \
   fail "Auslieferung am Ursprung fehlerhaft (siehe Mängel oben)."
 fi
 
-# Erst NACH bestandenem Health-Gate: Schnellpfad-State festhalten + Erfolg markieren.
-printf '%s %s\n' "$COMMIT" "$ENV_HASH" > "$STATE_FILE" 2>/dev/null || true
 # Der Zeuge für Befund 4: DIESES Image ist jetzt nachweislich gut — es hat den
 # Healthcheck, den finalen Health-Gate und die Auslieferungsprüfung bestanden.
 # Nur ein Image mit diesem Zeugnis darf beim nächsten Lauf zu :previous werden.
+#
+# Das gilt AUCH, wenn der Wachhund fehlt: Das Image ist deswegen nicht
+# schlechter. Würde der Zeuge hier ausgelassen, verlöre die Rollback-Kette
+# ihren einzigen bekannt guten Stand — ein zweiter Schaden aus einem ersten.
 podman image inspect -f '{{.Id}}' localhost/roses-blog:latest \
   > "$DATA_DIR/deploy-image-ok" 2>/dev/null || true
+
+# ── FEHLT DIE BETRIEBSABSICHERUNG, IST DER LAUF NICHT ERFOLGREICH ──────────
+#
+# Der Schnellpfad-State wird dann BEWUSST NICHT geschrieben. Stünde er da,
+# meldete der nächste Lauf „Bereits aktuell" und übersprünge alles — auch den
+# zweiten Versuch, den Wachhund zu installieren. Der Fehler reparierte sich
+# dann nie und bliebe für immer unsichtbar.
+if [[ "$WACHHUND_FEHLT" -eq 1 ]]; then
+  DEPLOY_PHASE="Wachhund nicht installiert"
+  ALARM_SCHON_GESENDET=1
+  alarm_absetzen "⚠ Roses Blog — Deployment unvollständig (Wachhund fehlt)" \
+    "Die ANWENDUNG läuft auf dem neuen Stand und ist gesund — Health-Gate und
+Auslieferungsprüfung sind bestanden. Ein Rollback ist NICHT der nächste Schritt.
+
+Unvollständig ist die Betriebsabsicherung: roses-blog-wachhund.timer ist nicht
+aktiv. Damit hat 'restart: always' keine Obergrenze mehr — das ist genau die
+Lage, die am 2026-08-10 elf Stunden Ausfall verursacht hat.
+
+Nächster Schritt auf dem Server:
+  systemctl --user status roses-blog-wachhund.timer
+  systemctl --user enable --now roses-blog-wachhund.timer
+Danach ./deploy.sh erneut laufen lassen."
+  fail "Wachhund-Timer nicht aktiv — Betriebsabsicherung fehlt (Anwendung läuft, kein Rollback nötig)."
+fi
+
+# Erst NACH bestandenem Health-Gate UND vollständiger Absicherung:
+# Schnellpfad-State festhalten + Erfolg markieren.
+printf '%s %s\n' "$COMMIT" "$ENV_HASH" > "$STATE_FILE" 2>/dev/null || true
 DEPLOY_STATUS_RESULT="erfolgreich"   # EXIT-Trap schreibt deploy-status.json
 log "Deployment erfolgreich (Dauer: ${SECONDS}s)"
 echo "Health:   OK (http://127.0.0.1:$PORT/health)"

@@ -428,3 +428,54 @@ der Flat-Config gewinnt der letzte Eintrag. Der Lauf war grün, die Regel hatte
 keine Wirkung. Gegenprobe gefahren: toter Import in `hero-slider.tsx`,
 `npx eslint src` — erst `warning`, nach dem Verschieben `error`, und in `tests/`
 weiterhin `warning`.
+
+---
+
+## B12 — Zwei Sicherungen, die es nur auf dem Papier gab — ERLEDIGT 08/2026
+
+Dritte Runde der Gegenprüfung zu PR #110 (gpt-5.6-sol). Beide Befunde haben
+dieselbe Form wie die beiden davor, und die Form ist das Eigentliche: **eine
+Sicherung, die still nicht da ist.**
+
+**1. Der Alarm lief gegen ein Image ohne Alarmskript.** `alarm_absetzen` nahm
+das erstbeste VORHANDENE Image (`:previous`, sonst `:latest`). Beim ERSTEN
+Ausrollen dieser Änderung ist `:previous` aber der Stand von vorher — und der
+kennt `scripts/betriebsalarm.mjs` gar nicht. podman brach ab, übrig blieb eine
+Zeile im Protokoll, und niemand bekam eine Nachricht. Eine Meldekette, die
+ausgerechnet beim ersten Ernstfall schweigt, ist keine. Gewählt wird jetzt das
+erste Image, das das Skript WIRKLICH enthält; nach dem Build wird die Wahl neu
+getroffen, damit die Alarme des Health-Gates das frische `:latest` nutzen.
+
+**2. Ein nicht aktivierbarer Wachhund-Timer kostete nur einen Hinweis.** Der
+Deploy lief grün weiter, und `restart: always` hatte damit keine Obergrenze
+mehr — genau die Lage vom 2026-08-10, elf Stunden Ausfall. Dazu war der
+angebotene Cron-Ersatz ein VORGESCHLAGENER Workaround, was CLAUDE.md
+ausdrücklich verbietet. Jetzt wird der Zustand nachgesehen statt dem
+Rückgabewert von `enable --now` geglaubt (`is-active`), ein Zeuge
+`wachhund-ok` hinterlegt — dieselbe Mechanik wie `deploy-unit-ok` bei der
+Panel-Freigabe — und der Lauf endet mit Fehlschlag samt eigenem Alarm.
+
+Zwei Feinheiten, die dabei zu entscheiden waren:
+
+* Der Image-Zeuge `deploy-image-ok` wird TROTZDEM geschrieben. Das Image ist
+  nicht schlechter, weil ein Timer fehlt; ließe man den Zeugen weg, verlöre die
+  Rollback-Kette ihren einzigen bekannt guten Stand — ein zweiter Schaden aus
+  einem ersten.
+* Der Schnellpfad-State `deploy-state` wird BEWUSST NICHT geschrieben. Stünde
+  er da, meldete der nächste Lauf „Bereits aktuell" und übersprünge alles —
+  auch den zweiten Versuch, den Wachhund zu installieren. Der Fehler
+  reparierte sich dann nie.
+* Der Alarm von `fail()` nennt den Rollback als nächsten Schritt. Hier wäre das
+  falsch: Die Anwendung läuft. Deshalb setzt der Wachhund-Pfad seinen eigenen
+  Alarm ab, und `fail()` schickt keinen zweiten hinterher.
+
+**Und die Prüfung ist diesmal eine Prüfung.** In diesem Zweig sind schon drei
+Wächter aufgefallen, die grün waren und nichts bewachten; ein
+`expect(skript).toMatch(/is-active/)` wäre der vierte gewesen.
+`tests/deploy-betriebsabsicherung.test.ts` schneidet die Funktionen deshalb
+AUS `deploy.sh` heraus — samt ihrer Startwerte, denn abgeschriebene Startwerte
+wären dieselbe Falle wie die abgeschriebene CSS-Datei in B11 — und fährt sie
+gegen ein vorgetäuschtes podman/systemctl. Gegenprobe: Wird die Bildwahl auf
+die alte, naive Fassung zurückgedreht, fallen genau die zwei
+Verhaltensfälle um.
+
