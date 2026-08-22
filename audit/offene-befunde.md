@@ -76,60 +76,96 @@ Import nicht (festgehalten in `tests/data-transfer.integration.test.ts`).
 
 ---
 
-## B5 — Referenzaufnahmen decken den Admin nicht ab
+## B5 — Referenzaufnahmen decken den Admin nicht ab — ERLEDIGT 08/2026
 
-**Befund.** `tests/e2e/seiten-referenz.spec.ts` hält elf ÖFFENTLICHE Seitentypen
-an drei Breiten fest. Für `/admin` gibt es keine einzige Aufnahme. Ein Umbau im
-Admin lässt sich damit nicht als „sieht gleich aus" nachweisen.
+**Befund war.** `seiten-referenz.spec.ts` hielt elf ÖFFENTLICHE Seitentypen an
+drei Breiten fest. Für `/admin` gab es keine einzige Aufnahme; fünf der zwölf
+Reduktions-Kandidaten lagen dort und waren damit nicht abnehmbar.
 
-**Warum das zählt.** Die Durchmusterung (58 Agenten) hat zwölf
-Generalisierungen vorgeschlagen, die der Gegenprüfung standhielten oder in
-deren Korrektur überlebten. **Fünf davon liegen im Admin** — sie sind ohne
-Beweismittel nicht abnehmbar.
+**Erledigt** mit `tests/e2e/admin-referenz.spec.ts`: 27 Admin-Seiten × drei
+Breiten = 81 Aufnahmen, 8,1 MB. Die Mechanik (Breiten, Warten, Masken,
+Toleranz) liegt gemeinsam in `tests/e2e/referenz.ts`; die Specs tragen nur noch
+ihre Seitenlisten.
 
-**Vorschlag.** Kein Screenshot, sondern ein HTML-Vergleich: vor dem Umbau das
-gerenderte Markup der betroffenen Admin-Routen wegschreiben, danach
-byte-vergleichen. Die Kandidaten behaupten byte-gleiches Markup — genau das
-prüft man so direkt statt über Pixel. Wegwerf-Skript, kein Dauertest.
+**Der ursprüngliche Vorschlag (Markup byte-vergleichen) wurde verworfen**, und
+das mit Grund: Ein byte-gleiches Markup ist weder notwendig noch hinreichend.
+`<Statuschip>` erzeugt dieselben Klassen in anderer Reihenfolge — Markup
+verschieden, Bild gleich. Umgekehrt kann gleiches Markup unter geändertem CSS
+anders aussehen. Gemessen werden sollte, was der Redakteur sieht.
+
+**Drei Seiten bleiben bewusst draußen** (durchgemustert, nicht übersehen):
+`/admin/saisonkalender` (Kalenderwoche aus der Systemuhr, die Chip-Liste wird
+je nach Woche 28 bis 75 Einträge lang — kein Maskenfall, die halbe Seite wird
+anders hoch), `/admin/statistik` (die Kennzahlen zählen die Aufrufe DIESES
+Laufs mit) und `/admin/kontakte/[id]` (die Saat legt keinen Kontakt an).
+
+**Nebenbefund, beim Bauen gefunden und behoben:** Die Maske
+`[data-referenz-maske="true"]` traf NICHTS — die Marke stand in keiner Datei
+unter `src/`, obwohl der Kommentar einen Schutz behauptete. Die Mechanik prüft
+jetzt sich selbst: Eine Seite mit `maskiert: true` muss mindestens eine Marke
+tragen, jede andere keine.
+
+**Restarbeit (klein):** Die Wurzel unter den drei Datumsmasken ist, dass der
+Seed `new Date()` benutzt. Ein fester Saat-Zeitpunkt machte die Daten
+reproduzierbar UND gäbe den Listen mit gleichen Zeitstempeln eine definierte
+Reihenfolge. Das berührt auch die öffentlichen Aufnahmen und ist deshalb ein
+eigener Schritt.
 
 ---
 
-## B6 — Arbeitsliste Code-Reduktion (aus der Durchmusterung)
+## B6 — Arbeitsliste Code-Reduktion — ERLEDIGT 08/2026
 
 Ergebnis von 58 Agenten über sechs Bereiche, jeder Vorschlag anschließend
 angegriffen. Die meisten Kandidaten sind GEFALLEN — das ist selbst ein Befund:
-Der Code ist weniger doppelt, als er aussieht. Was standhielt, geordnet nach
-Ertrag pro Risiko:
+Der Code ist weniger doppelt, als er aussieht. Alle zwölf, die standhielten,
+sind umgesetzt.
 
-| # | Was | Datei(en) | Zeilen |
-|---|---|---|---|
-| 1 | Zwölf ausgeschriebene Quellen → Tupel-Tabelle + `.map` | `src/lib/media-verwendung.ts:35-132` | −72 · **erledigt (−48)** |
-| 2 | Vier identische Formularaufbauten → ein Bauer | `tests/travel-dish-images.integration.test.ts` | −65 |
-| 3 | 17× dieselbe Statusmeldung → `<Meldung>` | 17 Admin-Seiten | −40 bis −52 |
-| 4 | Testaufbau „frische Datenbank" → `frischeDb()` | 23 Testdateien | −95 bis −105 |
-| 5 | Testdaten „Admin anlegen" → `adminAnlegen()` | 7 Testdateien | −42 |
-| 6 | Löschen-Formular → `<LoeschForm>` | 9 Admin-Seiten | −25 |
-| 7 | Vier Inline-Setter → vorhandenes `updateDish` | `travel-editor.tsx` | −18 |
-| 8 | `MASSE.inhalt` ist ein Doppelgänger von `vollbildSizes()` | `travel-view.tsx:59-68` | −3 bis −14 · **erledigt (−13)** |
-| 9 | Publikationsstatus-Chip → eine Komponente | 3 Admin-Seiten | −8 bis −13 |
-| 10 | Wurzelkrume in `breadcrumbJsonLd` ziehen | `src/lib/jsonld.tsx` + 6 Seiten | −8 · **erledigt (−12)** |
-| 11 | `GalleryImage extends MediaImageLike` | `gallery-lightbox.tsx:34-65` | −8 · **erledigt (−6)** |
-| 12 | Zwei sofort ausgeführte Funktionen auflösen | `image-picker.tsx` | −3 |
+| # | Was | Geschätzt | Tatsächlich |
+|---|---|---:|---:|
+| 1 | Zwölf ausgeschriebene Quellen → Tupel-Tabelle | −72 | **−48** |
+| 2 | Vier Formularaufbauten → ein Bauer | −65 | **−39** |
+| 3 | 17× Statusmeldung → `<Meldung>` | −40…−52 | *siehe unten* |
+| 4 | Testaufbau „frische Datenbank" → `frischeDb()` | −95…−105 | **−271 (mit 2+5)** |
+| 5 | „Admin anlegen" → `adminAnlegen()` | −42 | *in 4 enthalten* |
+| 6 | Löschen-Formular → `<LoeschForm>` | −25 | *siehe unten* |
+| 7 | Vier Inline-Setter → `updateDish` | −18 | **−10 (sechs Stellen)** |
+| 8 | `MASSE.inhalt` = `vollbildSizes()` | −3…−14 | **−13** |
+| 9 | Statuschip → eine Komponente | −8…−13 | *siehe unten* |
+| 10 | Wurzelkrume in `breadcrumbJsonLd` | −8 | **−12** |
+| 11 | `GalleryImage extends MediaImageLike` | −8 | **−6** |
+| 12 | Zwei Sofortfunktionen auflösen | −3 | *siehe unten* |
 
-**Gesamt realistisch ≈ −395** (untere Kante; der Hausstil verlangt an jeder
-neuen Datei einen deutschen Doc-Kommentar, das kostet je Eintrag 5–15 Zeilen
-gegenüber der Rohrechnung). Einträge 1, 2 und 4 tragen davon ≈ 235 — kippt
-einer, kippt die Bilanz.
+**Gesamt `src/`: −65 Zeilen** gegenüber geschätzt ≈ −395. Der Unterschied ist
+kein Rechenfehler, sondern eine Lehre:
 
-**Reihenfolge.** Erst B5 (Admin-Beweismittel), sonst sind 3, 6, 9 und 12 nicht
-abnehmbar. Dann 1, 8, 10, 11 (unabhängig, durch vorhandene Kontrollen gedeckt).
-Dann 2+4+5 in EINEM Durchgang je Testdatei — sie fassen dieselben
-`beforeAll`-Blöcke an.
+1. **Die Testeinträge (2, 4, 5) tragen fast alles.** −271 Zeilen in 23
+   Testdateien. Dort war die Wiederholung echt und ohne Gegenwert.
+2. **Die Komponenteneinträge (3, 6, 9, 12) tragen zusammen −17.** Eine
+   Komponente kostet ihre Schnittstelle: Typangaben, Vorgabewerte, den
+   Kopfkommentar, den der Hausstil verlangt. Der erste Wurf machte `src/` sogar
+   um 51 Zeilen LÄNGER; erst kürzere Kommentare und Vorgabewerte für den
+   häufigsten Fall (`<LoeschForm action={…} id={…} />`) drehten das.
+3. **Die Zeilenzahl war die falsche Größe.** Was tatsächlich sank:
 
-**Voraussetzung für Eintrag 4:** Der Helfer darf `@/db` nicht statisch
-importieren (`src/db/index.ts:92` legt die Verbindung eager an). Heute schützt
-davor die handgeschriebene Reihenfolge; danach schützt nichts mehr. **Erst die
-Kontrolle bauen, dann den Helfer.**
+       Duplikation   4,12 % → 3,67 %
+       Klonpaare     124 → 107
+       dupl. Zeilen  1624 → 1449
+
+   17 Kopien einer Rückmeldung sind 17 Gelegenheiten, `role="status"` zu
+   vergessen. Zwölf Löschen-Formulare sind zwölf Stellen, an denen eine
+   Rückfrage einzubauen wäre — in einem Projekt, in dem Löschen ohne Rückfrage
+   schon einmal eine Bildzeile zerrissen hat.
+
+**Was dabei zusätzlich herauskam** (nicht auf der Liste, im Vorbeigehen
+gefunden): Eintrag 7 war nicht nur Wiederholung, sondern ein latenter Defekt
+(sechs Stellen rechneten auf dem gerenderten statt dem aktuellen Zustand);
+`breadcrumbJsonLd` hatte gar keinen Test; der Selbsttest zu Eintrag 1 verglich
+Anzahlen statt Paare und hätte zwei sich aufhebende Fehler durchgelassen; und
+die Maske der Referenzaufnahmen traf nichts (siehe B5).
+
+**Nicht umgestellt:** `tests/migrationen-reihenfolge.test.ts` — sie PRÜFT den
+Migrator, statt ihn als Aufbau zu benutzen, und braucht je Testfall ein eigenes
+Verzeichnis. Das ist die Grenze des Musters, kein Versehen.
 
 ---
 
