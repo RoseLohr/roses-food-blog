@@ -299,17 +299,24 @@ describe("Proxy-Container zuordnen", () => {
     expect(ausgabe).toMatch(/veröffentlicht Ports, aber nicht 8443/);
   });
 
-  it("entscheidet unter mehreren anhand des Ports", async () => {
-    // Zwei nginx bedienen denselben Namen; einer veröffentlicht unseren Port,
-    // der andere gar keinen. Dann ist der Port die Auswahlhilfe, für die er
-    // gedacht ist — und es bleibt eindeutig.
+  it("rät auch dann nicht, wenn nur einer den Port veröffentlicht", async () => {
+    // DIESE PRÜFUNG STAND EINMAL ANDERSHERUM DA und schrieb damit eine falsche
+    // Entscheidung fest: Sie verlangte, dass unter mehreren Treffern der mit
+    // dem veröffentlichten Port gewinnt. Auf DIESEM Server veröffentlicht der
+    // richtige Proxy aber gar keine Ports (Pod bzw. Host-Netzwerk) — der
+    // Stichentscheid hätte ausgerechnet den fremden gewählt und ihn global
+    // umkonfiguriert. (Befund des Pflicht-Approvers, PR #105.)
+    //
+    // Bedienen wirklich mehrere denselben Namen, gibt es keine verlässliche
+    // Unterscheidung. Dann ist Nichtstun die richtige Antwort.
     const bin = podmanAttrappe([
       { name: "ohne-ports", ports: "", nginx: true, hosts: ["gourmetcompass.de"] },
       { name: "mit-443", ports: "0.0.0.0:443->443/tcp", nginx: true, hosts: ["gourmetcompass.de"] },
     ]);
     const { code, gefunden, ausgabe } = await finden(bin, "gourmetcompass.de");
-    expect(code, ausgabe).toBe(0);
-    expect(gefunden).toBe("mit-443");
+    expect(code, ausgabe).toBe(2);
+    expect(gefunden, "es darf kein Container gewählt werden").toBe("");
+    expect(ausgabe).toMatch(/kann trotzdem der richtige sein/);
   });
 
   it("rät NICHT, wenn zwei Container dieselbe Domain bedienen", async () => {

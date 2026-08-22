@@ -54,7 +54,6 @@ LAUFENDE=$($PODMAN ps --format '{{.Names}}|{{.Ports}}' 2>/dev/null) || LAUFENDE=
 
 TREFFER=""
 ANZAHL=0
-MIT_PORT=""
 ANZAHL_MIT_PORT=0
 VERWORFEN=""
 verworfen() { VERWORFEN="$VERWORFEN  $1: $2"$'\n'; }
@@ -151,7 +150,8 @@ while IFS= read -r zeile; do
   TREFFER="$TREFFER$name"$'\n'
   ANZAHL=$((ANZAHL + 1))
   if [ "$hat_unseren_port" = 1 ]; then
-    MIT_PORT="$MIT_PORT$name"$'\n'
+    # Nur noch für die Meldung bei Mehrdeutigkeit gezählt — entschieden wird
+    # damit NICHT (siehe unten).
     ANZAHL_MIT_PORT=$((ANZAHL_MIT_PORT + 1))
   fi
 # Gespeist wird die Schleife mit einem Here-String. Ein unquotiertes Heredoc
@@ -174,18 +174,22 @@ if [ "$ANZAHL" -eq 0 ]; then
 fi
 
 if [ "$ANZAHL" -gt 1 ]; then
-  # Erst JETZT entscheidet der Port — als Auswahlhilfe unter mehreren, nicht
-  # als Tor davor.
-  if [ "$ANZAHL_MIT_PORT" -eq 1 ]; then
-    printf '%s\n' "${MIT_PORT%%$'\n'*}"
-    exit 0
-  fi
+  # KEIN STICHENTSCHEID PER PORT. Eine frühere Fassung wählte unter mehreren
+  # Treffern den, der unseren Port veröffentlicht — das sah nach einer Regel
+  # aus, war aber geraten: Auf DIESEM Server veröffentlicht der richtige Proxy
+  # gar keine Ports (Pod bzw. Host-Netzwerk), während ein fremder nginx auf 443
+  # welche hätte. Der Stichentscheid hätte also ausgerechnet den falschen
+  # gewählt und ihn global umkonfiguriert. (Befund des Pflicht-Approvers,
+  # PR #105.)
+  #
+  # Bedienen wirklich mehrere denselben Namen, gibt es keine verlässliche
+  # Unterscheidung mehr — dann ist Nichtstun die richtige Antwort.
   echo "Mehrdeutig: $ANZAHL Container bedienen '$HOST' —" >&2
   printf '%s' "$TREFFER" | sed 's/^/  /' >&2
-  if [ "$ANZAHL_MIT_PORT" -gt 1 ]; then
-    echo "Davon veröffentlichen $ANZAHL_MIT_PORT den Port $PORT; das entscheidet also nicht." >&2
-  else
-    echo "Keiner davon veröffentlicht Port $PORT; das entscheidet also nicht." >&2
+  if [ "$ANZAHL_MIT_PORT" -gt 0 ]; then
+    echo "Davon veröffentlichen $ANZAHL_MIT_PORT den Port $PORT. Das entscheidet NICHT:" >&2
+    echo "Ein Proxy im Pod oder mit Host-Netzwerk veröffentlicht gar keine Ports und" >&2
+    echo "kann trotzdem der richtige sein." >&2
   fi
   echo "Hier wird nicht geraten. Bitte von Hand entscheiden." >&2
   exit 2
