@@ -9,8 +9,11 @@
  *     alte Fassung addierte `margin-right: 1.5rem` ZUR Breite; 2/3 + 1/3 + zwei
  *     Abstände waren mehr als 100 %, und der zweite Float musste umbrechen.
  *  2. Der Text läuft wirklich daneben — nicht darunter.
- *  3. Zwei Bilder DERSELBEN Seite stehen untereinander, ein linkes und ein
- *     rechtes dürfen nebeneinander. Kein anderer Fall darf eine Zeile teilen.
+ *  3. KEIN Einzelbild teilt sich seine Zeile mit einem anderen — und was für
+ *     den Text übrig bleibt, ist immer noch Text. Hier stand zuerst „ein
+ *     linkes und ein rechtes dürfen nebeneinander"; die Messung unten hat
+ *     diese Zusage widerlegt (s+m lässt 48,7 px von 816 übrig, also fünf
+ *     Zeichen je Zeile). Die Zusage ist deshalb ersetzt, nicht aufgeweicht.
  */
 import path from "node:path";
 import { expect, test } from "@playwright/test";
@@ -89,6 +92,20 @@ test.describe("Einzelbild: Größe und Ausrichtung", () => {
           );
 
           const [bild, text] = await kaesten(page);
+          // Unter 640 px Fenster greift die Handy-Regel: volle Breite, kein
+          // Umfluss. Das stand vorher NICHT in diesem Prüfstand, weil er eine
+          // Abschrift der Regeln prüfte, in der die Medienabfrage fehlte —
+          // aufgefallen, als er auf die ausgelieferte Datei umgestellt wurde.
+          if (spalte + 40 < 640) {
+            const spalteM = await spaltenkasten(page);
+            expect(await page.evaluate(() =>
+              getComputedStyle(document.querySelector(".einzelbild")!).float,
+            )).toBe("none");
+            expect(bild.breite).toBeCloseTo(spalteM.breite, 0);
+            // Und der Text steht DARUNTER, nicht daneben.
+            expect(text.oben).toBeGreaterThanOrEqual(bild.unten - 0.5);
+            return;
+          }
           // Die Spalte wird GEMESSEN, nicht aus den Kindern erschlossen: Der
           // erste Anlauf leitete sie aus den Rändern von Bild und Text ab und
           // maß dadurch die Einrückung der <figure>-Vorgabe mit.
@@ -135,7 +152,9 @@ test.describe("Einzelbild: Größe und Ausrichtung", () => {
     expect(b.oben).toBeGreaterThanOrEqual(a.unten - 0.5);
   });
 
-  test("ein linkes und ein rechtes Bild dürfen nebeneinander", async ({ page }) => {
+  test("auch ein linkes und ein rechtes Bild teilen sich keine Zeile", async ({
+    page,
+  }) => {
     await page.goto(MOCK);
     await page.evaluate(() =>
       window.aufbauen(
@@ -148,10 +167,70 @@ test.describe("Einzelbild: Größe und Ausrichtung", () => {
       ),
     );
     const [a, b] = await kaesten(page);
-    expect(a.oben).toBeCloseTo(b.oben, 0);
-    // Und sie überlappen sich nicht.
-    expect(a.rechts).toBeLessThanOrEqual(b.links + 0.5);
+    // Genau dieser Fall stand hier vorher mit umgekehrter Erwartung. Er sah
+    // gut aus — bis daneben ein halbbreites Bild stand.
+    expect(b.oben).toBeGreaterThanOrEqual(a.unten - 0.5);
   });
+
+  /**
+   * Die eigentliche Zusage, und die einzige, die zählt: Egal wie zwei
+   * Einzelbilder eingestellt sind, für den Text bleibt eine LESBARE Spalte.
+   *
+   * Gemessen wird die schmalste Zeilenbox des Absatzes ohne seine letzte —
+   * die ist naturgemäß kurz und sagt über den Umfluss nichts. Vor dieser
+   * Änderung fiel s+m hier mit 48,7 px durch.
+   */
+  const PAARE = [
+    ["s", "s"],
+    ["s", "m"],
+    ["m", "s"],
+    ["s", "l"],
+    ["m", "m"],
+    ["l", "s"],
+    ["m", "l"],
+    ["l", "l"],
+  ] as const;
+  for (const [links, rechts] of PAARE) {
+    test(`${links} links + ${rechts} rechts lässt eine lesbare Textspalte`, async ({
+      page,
+    }) => {
+      await page.goto(MOCK);
+      await page.evaluate(
+        ([a, b]) =>
+          window.aufbauen(
+            [
+              { art: "bild", groesse: a, seite: "links" },
+              { art: "bild", groesse: b, seite: "rechts" },
+              { art: "text", text: "Lorem ipsum ".repeat(200) },
+            ],
+            816,
+          ),
+        [links, rechts] as [string, string],
+      );
+      const enge = await page.evaluate(() => {
+        const p = document.querySelector("p")!;
+        const bereich = document.createRange();
+        bereich.selectNodeContents(p);
+        // Ein Viertel der Spalte: die Grenze, unter die das breiteste
+        // Einzelbild (l = 2/3) den Text nicht drückt — 816 − 544 − 20 = 252.
+        return [...bereich.getClientRects()]
+          .slice(0, -1)
+          .filter((z) => z.width < 816 * 0.25).length;
+      });
+      // GEZÄHLT, nicht am Minimum gemessen: Am Übergang von einem Float zum
+      // nächsten liegt IMMER eine kurze Zeile — der Zeilenkasten überlappt
+      // beide. Das ist normaler Satz, kein Befund, und ein Mindestwert würde
+      // genau daran hängenbleiben (dieser Prüfstand tat das im ersten Anlauf).
+      //
+      // Der Unterschied, um den es geht, steht in den gemessenen Zahlen für
+      // s links + m rechts:
+      //   vorher (beide teilen die Zeile):  50 49 50 49 50 49 50 49 377 …
+      //   jetzt  (clear: both):            486 484 486 484 486 484 486 49 …
+      // Acht Zeilen à fünf Zeichen sind der Befund; eine ist der Übergang.
+      // Bei zwei Bildern gibt es höchstens zwei solche Übergänge.
+      expect(enge).toBeLessThanOrEqual(2);
+    });
+  }
 
   test("auch die größte Stufe auf beiden Seiten überläuft die Spalte nicht", async ({
     page,
