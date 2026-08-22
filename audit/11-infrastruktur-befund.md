@@ -194,6 +194,24 @@ HTTP/1.0-Regeln behandelt, schließt ihn früher als die Anwendung erwartet.
 **Das ist eine Hypothese, keine Feststellung** — sie ist zu belegen, bevor
 daraus eine Änderung wird.
 
+**Nachtrag 2026-08-22 — eine zweite Quelle ist nachgestellt und behoben, die
+Hypothese bleibt trotzdem stehen.** Die Bild-Auslieferung gab bis heute einen
+`fs.createReadStream` als Antwortkörper zurück. Bricht der Leser ab, während
+das abschließende `pull()` läuft, wirft der Adapter zeichengleich diese
+Ausnahme — nachgestellt an einer Datei in der Größe der größten
+ausgelieferten Variante. Derselbe Pfad hielt außerdem bei jeder Anfrage, deren
+Körper nie gelesen wird (Next führt HEAD als GET aus), den Dateideskriptor
+offen: gemessen 50 Deskriptoren für 50 Antworten. Beides ist behoben, die
+Prüfungen stehen in `tests/upload-auslieferung.test.ts`.
+
+Damit ist belegt, dass der Pfad diese Meldung erzeugen KANN — **nicht**, dass
+er die Zeilen im Journal erzeugt HAT. Die Trefferfläche ist schmal: Die
+Varianten sind klein, davor liegen Cloudflare und ein Jahr `immutable`.
+Solange der vollständige Journal-Eintrag samt Stack nicht gelesen ist
+(M6 in `12-infrastruktur-fahrplan.md`), bleibt B9 als mögliche zweite Quelle
+ausdrücklich offen. Was von B9 unabhängig gilt: Die Latenzbegründung für C3
+trägt für sich allein — sie braucht die Absturz-Zuschreibung nicht.
+
 ### B10 — Aufräumbares
 
 - Podman-Images: 5,996 GB, davon **4,757 GB (79 %) rückgewinnbar**.
@@ -292,7 +310,7 @@ seitenweise, mit E2E-Beleg dass eine Admin-Änderung sofort sichtbar bleibt.
 | | Schritt |
 |---|---|
 | E1 | ufw 80/443 auf Cloudflare-Bereiche einschränken (B7) — **vorher** Zertifikatserneuerung prüfen |
-| E2 | `ReadableStream is already closed` untersuchen (B9); bis dahin ist es ein ungeklärter Absturz in Produktion |
+| E2 | `ReadableStream is already closed` — **eine Quelle behoben** (Bild-Auslieferung, siehe Nachtrag zu B9); ob damit erklärt, entscheidet der vollständige Journal-Eintrag (M6) |
 | E3 | `/etc/nginx/conf.d/roses-kompression.conf` löschen, `nginx.service` deaktivieren (B10) |
 | E4 | Podman-Aufräumroutine für die 4,76 GB rückgewinnbaren Ebenen (B10) |
 
