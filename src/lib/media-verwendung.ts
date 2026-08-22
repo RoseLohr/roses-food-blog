@@ -15,6 +15,8 @@
  * erkennen. Sie stand nur an der falschen Stelle, um vor dem Löschen zu warnen.
  * Deshalb steht sie jetzt HIER — einmal, und beide Seiten fragen sie.
  */
+import { getTableName } from "drizzle-orm";
+import type { SQLiteColumn, SQLiteTable } from "drizzle-orm/sqlite-core";
 import { db, schema } from "@/db";
 
 /** Eine Fundstelle: der Bereich, in dem das Foto steckt, und wie oft. */
@@ -23,113 +25,53 @@ export interface Bildverwendung {
   anzahl: number;
 }
 
+/** Ein Eintrag der Tabelle unten: lesbarer Name, Tabelle, Fremdschlüsselspalte. */
+type Quelle = readonly [bereich: string, tabelle: SQLiteTable, spalte: SQLiteColumn];
+
 /**
  * Jede Spalte, die auf `media_image` zeigt — mit dem Namen, den ein Mensch
  * lesen kann.
  *
+ * Bewusst eine Tabelle aus Tupeln und keine zwölf ausgeschriebenen Abfragen:
+ * Die Abfrage ist bei allen dieselbe (`SELECT <spalte> FROM <tabelle>`), nur
+ * Tabelle und Spalte wechseln. Ausgeschrieben war der eigentliche Inhalt —
+ * welche Spalte zählt — zwischen immer gleichem Beiwerk versteckt, und eine
+ * neue Zeile hieß acht Zeilen abschreiben.
+ *
  * Kommt eine Spalte hinzu, gehört sie hierher: Was hier fehlt, gilt als
  * unbenutzt — und wird beim Aufräumen gelöscht bzw. beim Löschen nicht
- * gemeldet. Der Selbsttest in tests/media-verwendung.integration.test.ts hält
- * die Liste gegen das Schema.
+ * gemeldet. Der Selbsttest in tests/bild-ohne-foto.integration.test.ts hält
+ * die Liste Paar für Paar gegen die Fremdschlüssel des Schemas.
+ *
+ * Die beiden Fotoplätze eines Restaurants stehen BEWUSST als zwei Einträge da,
+ * nicht als einer mit zwei Spalten: Nur so fällt auf, wenn eine Spalte
+ * dazukommt und hier vergessen wird — und der Redakteur erfährt, WELCHES der
+ * beiden Fotos dem Löschen im Weg steht, statt nur „Restaurant".
  */
-const QUELLEN: Array<{ bereich: string; ids: () => Promise<(number | null)[]> }> = [
-  {
-    bereich: "Rezept (Titelbild)",
-    ids: async () =>
-      (await db.select({ id: schema.recipe.heroImageId }).from(schema.recipe)).map(
-        (r) => r.id,
-      ),
-  },
-  {
-    bereich: "Rezept (Zubereitungsschritt)",
-    ids: async () =>
-      (
-        await db.select({ id: schema.recipeStep.imageId }).from(schema.recipeStep)
-      ).map((r) => r.id),
-  },
-  {
-    bereich: "Zutat",
-    ids: async () =>
-      (
-        await db.select({ id: schema.ingredient.imageId }).from(schema.ingredient)
-      ).map((r) => r.id),
-  },
-  {
-    bereich: "Seite (Titelbild)",
-    ids: async () =>
-      (await db.select({ id: schema.page.heroImageId }).from(schema.page)).map(
-        (r) => r.id,
-      ),
-  },
-  {
-    bereich: "Reisebericht (Titelbild)",
-    ids: async () =>
-      (
-        await db.select({ id: schema.travelPost.heroImageId }).from(schema.travelPost)
-      ).map((r) => r.id),
-  },
-  {
-    bereich: "Reisebericht (Galerie)",
-    ids: async () =>
-      (
-        await db
-          .select({ id: schema.travelPostImage.imageId })
-          .from(schema.travelPostImage)
-      ).map((r) => r.id),
-  },
-  {
-    bereich: "Reisebericht (Bild im Text)",
-    ids: async () =>
-      (
-        await db.select({ id: schema.travelBlock.imageId }).from(schema.travelBlock)
-      ).map((r) => r.id),
-  },
-  // Die beiden Fotoplätze eines Restaurants stehen BEWUSST als zwei Einträge
-  // da, nicht als einer mit zwei Spalten. Die Fangregel in
-  // tests/bild-ohne-foto.integration.test.ts zählt Einträge gegen
-  // Fremdschlüsselspalten: Nur so fällt auf, wenn eine Spalte dazukommt und
-  // hier vergessen wird — und der Redakteur erfährt, WELCHES der beiden Fotos
-  // dem Löschen im Weg steht, statt nur „Restaurant".
-  {
-    bereich: "Restaurant (erstes Foto)",
-    ids: async () =>
-      (
-        await db.select({ id: schema.restaurant.imageId }).from(schema.restaurant)
-      ).map((r) => r.id),
-  },
-  {
-    bereich: "Restaurant (zweites Foto)",
-    ids: async () =>
-      (
-        await db
-          .select({ id: schema.restaurant.imageId2 })
-          .from(schema.restaurant)
-      ).map((r) => r.id),
-  },
-  {
-    bereich: "Gericht",
-    ids: async () =>
-      (await db.select({ id: schema.dishImage.imageId }).from(schema.dishImage)).map(
-        (r) => r.id,
-      ),
-  },
-  {
-    bereich: "Startseite (Über mich)",
-    ids: async () =>
-      (
-        await db
-          .select({ id: schema.homepageConfig.aboutTeaserImageId })
-          .from(schema.homepageConfig)
-      ).map((r) => r.id),
-  },
-  {
-    bereich: "Startseite (Slider)",
-    ids: async () =>
-      (
-        await db.select({ id: schema.sliderItem.imageId }).from(schema.sliderItem)
-      ).map((r) => r.id),
-  },
-];
+const QUELLEN = [
+  ["Rezept (Titelbild)", schema.recipe, schema.recipe.heroImageId],
+  ["Rezept (Zubereitungsschritt)", schema.recipeStep, schema.recipeStep.imageId],
+  ["Zutat", schema.ingredient, schema.ingredient.imageId],
+  ["Seite (Titelbild)", schema.page, schema.page.heroImageId],
+  ["Reisebericht (Titelbild)", schema.travelPost, schema.travelPost.heroImageId],
+  ["Reisebericht (Galerie)", schema.travelPostImage, schema.travelPostImage.imageId],
+  ["Reisebericht (Bild im Text)", schema.travelBlock, schema.travelBlock.imageId],
+  ["Restaurant (erstes Foto)", schema.restaurant, schema.restaurant.imageId],
+  ["Restaurant (zweites Foto)", schema.restaurant, schema.restaurant.imageId2],
+  ["Gericht", schema.dishImage, schema.dishImage.imageId],
+  [
+    "Startseite (Über mich)",
+    schema.homepageConfig,
+    schema.homepageConfig.aboutTeaserImageId,
+  ],
+  ["Startseite (Slider)", schema.sliderItem, schema.sliderItem.imageId],
+] as const satisfies readonly Quelle[];
+
+/** Alle Werte einer Fremdschlüsselspalte — NULL eingeschlossen. */
+async function idsAus([, tabelle, spalte]: Quelle): Promise<(number | null)[]> {
+  const zeilen = await db.select({ id: spalte }).from(tabelle);
+  return zeilen.map((z) => z.id as number | null);
+}
 
 /** Die Bereiche, in denen dieses Foto steckt — leer heißt: nirgends. */
 export async function verwendungenVonBild(
@@ -137,8 +79,8 @@ export async function verwendungenVonBild(
 ): Promise<Bildverwendung[]> {
   const out: Bildverwendung[] = [];
   for (const q of QUELLEN) {
-    const anzahl = (await q.ids()).filter((id) => id === imageId).length;
-    if (anzahl > 0) out.push({ bereich: q.bereich, anzahl });
+    const anzahl = (await idsAus(q)).filter((id) => id === imageId).length;
+    if (anzahl > 0) out.push({ bereich: q[0], anzahl });
   }
   return out;
 }
@@ -147,10 +89,21 @@ export async function verwendungenVonBild(
 export async function referenzierteBildIds(): Promise<Set<number>> {
   const s = new Set<number>();
   for (const q of QUELLEN) {
-    for (const id of await q.ids()) if (id != null) s.add(id);
+    for (const id of await idsAus(q)) if (id != null) s.add(id);
   }
   return s;
 }
 
 /** Nur für den Selbsttest: die Namen der Fundstellen. */
-export const VERWENDUNGS_BEREICHE = QUELLEN.map((q) => q.bereich);
+export const VERWENDUNGS_BEREICHE = QUELLEN.map(([bereich]) => bereich);
+
+/**
+ * Nur für den Selbsttest: `tabelle.spalte` je Fundstelle, wie SQLite sie
+ * schreibt. Damit prüft der Test nicht mehr bloß die ANZAHL der Einträge gegen
+ * die Anzahl der Fremdschlüssel, sondern jedes Paar einzeln — zwei Fehler, die
+ * sich in der Zählung aufheben (eine Spalte vergessen, eine doppelt), fallen
+ * jetzt auf.
+ */
+export const VERWENDUNGS_SPALTEN = QUELLEN.map(
+  ([, tabelle, spalte]) => `${getTableName(tabelle)}.${spalte.name}`,
+);
