@@ -39,6 +39,12 @@ type Modus = {
   schema?: "ok" | "fehler" | "unsinn";
   /** Wie sich `podman run … integrity_check` verhält. */
   backupLesbar?: boolean;
+  /**
+   * Der `user_version`-Wert des BACKUPS, falls er sich von dem der laufenden
+   * Datenbank unterscheiden soll. Genau daran hing der Nachschlag zu Befund 1:
+   * Ein gültiges, aber zu neues Backup kam durch die Lesbarkeitsprüfung.
+   */
+  backupStand?: number;
 };
 
 type Lauf = {
@@ -63,6 +69,7 @@ function spielwiese(modus: Modus = {}) {
 
   const schema = modus.schema ?? "ok";
   const backupLesbar = modus.backupLesbar ?? true;
+  const backupStand = modus.backupStand ?? 3;
 
   fs.writeFileSync(
     path.join(bin, "podman"),
@@ -80,10 +87,24 @@ case "$1" in
   run)
     if [[ "$*" == *user_version* ]]; then
       case "${schema}" in
-        ok)     echo 3; exit 0 ;;
         unsinn) echo "keine-zahl"; exit 0 ;;
         fehler) echo "podman: connection refused" >&2; exit 1 ;;
       esac
+      # Das Skript reicht den Pfad als letztes Argument durch — daran hängt,
+      # ob nach dem Backup oder nach der laufenden Datenbank gefragt wird.
+      #
+      # Und app.db antwortet mit dem Stand des BACKUPS, sobald es eingespielt
+      # ist. Ohne das würde die Attrappe über den Prüfling lügen: Der alte
+      # Stand hätte hier scheinbar Erfolg gehabt, statt — wie in Wirklichkeit —
+      # nach Ausfall und Überschreiben abzubrechen.
+      if [[ "\${!#}" == backups/* ]]; then
+        echo ${backupStand}
+      elif grep -q "backup-inhalt" "$DATA_DIR/app.db" 2>/dev/null; then
+        echo ${backupStand}
+      else
+        echo 3
+      fi
+      exit 0
     fi
     if [[ "$*" == *readdirSync* ]]; then echo 5; exit 0; fi
     if [[ "$*" == *integrity_check* ]]; then
@@ -186,6 +207,32 @@ describe("Befund 1: ein Fehlschlag darf nicht zusätzlich den Dienst kosten", ()
     );
   });
 
+  it("bricht bei einem gültigen, aber ZU NEUEN Backup ab, ohne etwas anzufassen", () => {
+    // Nachschlag zu diesem Befund (zweite Runde der Gegenprüfung): Die erste
+    // Fassung prüfte vor dem Stoppen nur, ob das Backup LESBAR ist. Ein
+    // gültiges Backup mit zu neuem Schema kam damit durch — der Dienst wurde
+    // gestoppt, app.db überschrieben, das WAL gelöscht, und ERST DANN brach
+    // die Schema-Prüfung ab. Ausfall und veränderter Zustand für nichts.
+    const platz = spielwiese({ backupStand: 9 });
+    fs.writeFileSync(
+      path.join(platz.daten, "backups", "pre-deploy-20260822.db"),
+      "backup-inhalt",
+    );
+    fs.writeFileSync(path.join(platz.daten, "app.db"), "die echten daten");
+    fs.writeFileSync(path.join(platz.daten, "app.db-wal"), "das echte wal");
+
+    const lauf = fahre(["--with-db"], platz);
+
+    expect(lauf.code).not.toBe(0);
+    expect(lauf.ausgabe).toMatch(/Schema ist der zurückgerollten Anwendung VORAUS/);
+    expect(dienstAngefasst(lauf)).toBe(false);
+    // Nichts angefasst heißt: nichts angefasst.
+    expect(fs.readFileSync(path.join(platz.daten, "app.db"), "utf8")).toBe(
+      "die echten daten",
+    );
+    expect(fs.existsSync(path.join(platz.daten, "app.db-wal"))).toBe(true);
+  });
+
   it("prüft das Backup, BEVOR es den Container stoppt — nicht danach", () => {
     const platz = spielwiese();
     fs.writeFileSync(
@@ -215,7 +262,7 @@ describe("Befund 2: ein nicht ermittelbarer Schema-Stand ist kein Freibrief", ()
     const lauf = fahre([], platz);
 
     expect(lauf.code).not.toBe(0);
-    expect(lauf.ausgabe).toMatch(/Schema-Stand der Datenbank nicht ermittelbar/);
+    expect(lauf.ausgabe).toMatch(/Schema-Stand von app\.db nicht ermittelbar/);
     // Vorher lief der Rollback hier durch und taggte :previous → :latest.
     expect(lauf.protokoll.some((z) => z.startsWith("podman tag"))).toBe(false);
   });
@@ -271,7 +318,7 @@ describe("der glückliche Fall bleibt glücklich", () => {
     expect(stellen).toEqual([...stellen].sort((a, b) => a - b));
   });
 
-  it("die Schema-Prüfung läuft mit --with-db NACH dem Einspielen", () => {
+  it("die Schema-Prüfung läuft mit --with-db vor UND nach dem Einspielen", () => {
     const platz = spielwiese();
     fs.writeFileSync(
       path.join(platz.daten, "backups", "pre-deploy-20260822.db"),
@@ -281,11 +328,20 @@ describe("der glückliche Fall bleibt glücklich", () => {
 
     const lauf = fahre(["--with-db"], platz);
 
-    // Mit --with-db entscheidet erst das eingespielte Backup, welches Schema
-    // die Anwendung vorfindet — vorher gemessen wäre die falsche Datenbank.
+    // Mit --with-db wird das Schema ZWEIMAL gemessen, und beide Male zu Recht:
+    // vor dem Stoppen am BACKUP (sonst kostet ein zu neues Backup den Dienst)
+    // und nach dem Einspielen an der Datei, die wirklich daliegt.
     const stopp = lauf.protokoll.findIndex((z) => z.startsWith("podman rm"));
-    const schema = lauf.protokoll.findIndex((z) => z.includes("user_version"));
-    expect(schema).toBeGreaterThan(stopp);
+    const schemaLaeufe = lauf.protokoll
+      .map((z, i) => (z.includes("user_version") ? i : -1))
+      .filter((i) => i > -1);
+    expect(schemaLaeufe).toHaveLength(2);
+    expect(schemaLaeufe[0]).toBeLessThan(stopp);
+    expect(schemaLaeufe[1]).toBeGreaterThan(stopp);
     expect(lauf.ausgabe).toMatch(/Schema-Stand: Datenbank 3, :previous kennt 5/);
+    // …und vorher schon für das Backup, vor dem Stoppen.
+    expect(lauf.ausgabe).toMatch(
+      /Schema-Stand: das Backup pre-deploy-20260822\.db 3, :previous kennt 5/,
+    );
   });
 });

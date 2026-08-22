@@ -97,25 +97,48 @@ fi
 # keine Zahl ist, gilt als nicht ermittelt: `[[ "x" -gt 3 ]]` wäre in bash
 # still `false` gewesen — wieder eine übersprungene Prüfung, die wie eine
 # bestandene aussieht.
+#
+# ── WARUM DIE HELFER IN GLOBALE VARIABLEN SCHREIBEN, STATT ZU ECHOEN ───────
+# Ein `n="$(helfer)"` führt den Helfer in einer SUBSHELL aus. Ein `exit 1`
+# darin beendet nur die Subshell; das Skript liefe mit leerem Wert weiter —
+# also genau der Fehlschlag, den diese Helfer verhindern sollen. Deshalb
+# setzen sie IMAGE_STAND bzw. DB_STAND und geben nichts aus.
 zahl(){ [[ "$1" =~ ^[0-9]+$ ]]; }
-schema_pruefen(){
-  [[ -f "$DATA_DIR/app.db" ]] || return 0
-  local db_stand image_stand
-  db_stand="$(podman run --rm --entrypoint node -v "$DATA_DIR:/data" localhost/roses-blog:previous \
-    -e "const db=require('better-sqlite3')('/data/app.db',{readonly:true});console.log(db.pragma('user_version',{simple:true}));db.close()")" \
-    || fail "Schema-Stand der Datenbank nicht ermittelbar — Abbruch statt ungeprüftem Start."
-  image_stand="$(podman run --rm --entrypoint node localhost/roses-blog:previous \
+
+IMAGE_STAND=""
+image_stand_ermitteln(){
+  IMAGE_STAND="$(podman run --rm --entrypoint node localhost/roses-blog:previous \
     -e "console.log(require('fs').readdirSync('/app/drizzle').filter(f=>f.endsWith('.sql')).length)")" \
     || fail "Migrationsstand des :previous-Images nicht ermittelbar — Abbruch statt ungeprüftem Start."
-  zahl "$db_stand" \
-    || fail "Schema-Stand der Datenbank ist keine Zahl ('$db_stand') — Abbruch statt ungeprüftem Start."
-  zahl "$image_stand" \
-    || fail "Migrationsstand des :previous-Images ist keine Zahl ('$image_stand') — Abbruch statt ungeprüftem Start."
-  [[ "$db_stand" -le "$image_stand" ]] || fail "Schema ist der zurückgerollten Anwendung VORAUS: \
-Datenbank auf Stand $db_stand, :previous kennt $image_stand Migrationen. Mit --with-db das \
-passende Pre-Deploy-Backup mit einspielen — ein Rollback auf ein zu neues Schema wird nicht \
-als Erfolg quittiert."
-  log "Schema-Stand: Datenbank $db_stand, :previous kennt $image_stand Migrationen."
+  zahl "$IMAGE_STAND" \
+    || fail "Migrationsstand des :previous-Images ist keine Zahl ('$IMAGE_STAND') — Abbruch."
+}
+
+DB_STAND=""
+# $1 = Pfad der Datenbank RELATIV zu DATA_DIR (z. B. app.db oder backups/…db)
+db_stand_ermitteln(){
+  DB_STAND="$(podman run --rm --entrypoint node -v "$DATA_DIR:/data" localhost/roses-blog:previous \
+    -e "const db=require('better-sqlite3')('/data/'+process.argv[1],{readonly:true});console.log(db.pragma('user_version',{simple:true}));db.close()" \
+    "$1")" \
+    || fail "Schema-Stand von $1 nicht ermittelbar — Abbruch statt ungeprüftem Start."
+  zahl "$DB_STAND" \
+    || fail "Schema-Stand von $1 ist keine Zahl ('$DB_STAND') — Abbruch."
+}
+
+# Vergleicht den Stand einer Datenbank mit dem, was :previous kennt.
+schema_vergleichen(){
+  local was="$1"
+  [[ "$DB_STAND" -le "$IMAGE_STAND" ]] || fail "Schema ist der zurückgerollten Anwendung VORAUS: \
+$was auf Stand $DB_STAND, :previous kennt $IMAGE_STAND Migrationen. Ein Rollback auf ein zu neues \
+Schema wird nicht als Erfolg quittiert."
+  log "Schema-Stand: $was $DB_STAND, :previous kennt $IMAGE_STAND Migrationen."
+}
+
+schema_pruefen(){
+  [[ -f "$DATA_DIR/app.db" ]] || return 0
+  db_stand_ermitteln "app.db"
+  image_stand_ermitteln
+  schema_vergleichen "Datenbank"
 }
 
 # 2. Vorbedingungen, die KEINEN Stillstand rechtfertigen — vor dem Stoppen.
@@ -126,10 +149,19 @@ als Erfolg quittiert."
 # der zusätzlich den intakten Dienst kostet, ist teurer als der Fehlschlag
 # selbst (Befund gpt-5.6-sol, PR #110).
 #
-# Alles, was ohne Stillstand feststellbar ist, wird deshalb hier festgestellt —
-# einschließlich der Frage, ob das Backup überhaupt LESBAR ist. Ein
-# abgeschnittenes oder halb geschriebenes Backup fiel bisher erst auf, nachdem
-# `cp` es über die laufende Datenbank gelegt hatte.
+# Alles, was ohne Stillstand feststellbar ist, wird deshalb hier festgestellt.
+# Das sind DREI Fragen, und die dritte fehlte in der ersten Fassung dieses
+# Blocks (zweite Runde desselben Befunds):
+#
+#   a) Gibt es überhaupt ein Backup?
+#   b) Ist es LESBAR? Ein abgeschnittenes oder halb geschriebenes Backup fiel
+#      früher erst auf, nachdem `cp` es über die laufende Datenbank gelegt
+#      hatte.
+#   c) PASST SEIN SCHEMA zu :previous? Ein gültiges, aber ZU NEUES Backup kam
+#      durch a) und b) glatt durch. Der Dienst wurde gestoppt, app.db
+#      überschrieben, das WAL gelöscht — und ERST DANN brach die Prüfung ab.
+#      Vermeidbarer Ausfall, und dazu ein veränderter Zustand, den niemand
+#      gewollt hatte.
 #
 # Der Lesetest fährt dabei genau die Maschinerie an, die die Sicherung in
 # Schritt 4 braucht: das :previous-Image, den Mount, better-sqlite3. Was danach
@@ -139,16 +171,19 @@ if [[ $WITH_DB -eq 1 ]]; then
   BACKUP=$(ls -1t "$DATA_DIR"/backups/pre-deploy-*.db 2>/dev/null | head -1 || true)
   [[ -n "$BACKUP" ]] \
     || fail "--with-db verlangt, aber kein Pre-Deploy-Backup gefunden — Dienst läuft unverändert weiter."
+  BACKUP_NAME="$(basename "$BACKUP")"
   log "Prüfe das Backup auf Lesbarkeit: $BACKUP"
   podman run --rm --entrypoint node -v "$DATA_DIR:/data" localhost/roses-blog:previous \
     -e "const db=require('better-sqlite3')('/data/backups/'+process.argv[1],{readonly:true});const r=db.pragma('integrity_check',{simple:true});db.close();if(r!=='ok'){console.error(r);process.exit(1)}" \
-    "$(basename "$BACKUP")" \
+    "$BACKUP_NAME" \
     || fail "Backup $BACKUP ist unlesbar oder beschädigt — Rollback abgebrochen, Dienst läuft unverändert weiter."
+  db_stand_ermitteln "backups/$BACKUP_NAME"
+  image_stand_ermitteln
+  schema_vergleichen "das Backup $BACKUP_NAME"
 else
   # Ohne --with-db bleibt die Datenbank, wie sie ist — ob ihr Schema der
   # zurückgerollten Anwendung voraus ist, steht damit JETZT schon fest und
-  # braucht den Stillstand nicht. Mit --with-db entscheidet darüber erst das
-  # eingespielte Backup; dann prüft Schritt 4b.
+  # braucht den Stillstand nicht.
   schema_pruefen
 fi
 
@@ -209,7 +244,12 @@ if [[ $WITH_DB -eq 1 ]]; then
   # meldet Erfolg. Das ist schlimmer als ein Fehlschlag.
   rm -f "$DATA_DIR/app.db-wal" "$DATA_DIR/app.db-shm"
 
-  # 4b. Erst jetzt steht fest, welches Schema die Anwendung vorfindet.
+  # 4b. Das letzte Wort hat die Datei, die WIRKLICH daliegt.
+  #
+  # Ihr Stand ist oben schon am Backup geprüft worden, und genau deshalb ist
+  # der Dienst überhaupt noch bis hierher gekommen. Diese Prüfung misst nun
+  # nicht mehr die Absicht, sondern das Ergebnis: Sie fällt nur noch, wenn
+  # `cp` etwas anderes hinterlassen hat, als geprüft wurde.
   schema_pruefen
 fi
 
