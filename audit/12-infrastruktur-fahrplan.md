@@ -118,8 +118,8 @@ Zwei Dinge, die das Inventar zusätzlich festhält:
   Annahmenummern und Pfadverweise ins Leere. Gemessen am Bestand: 312
   Pfadverweise, 4 historische Codeblöcke, alle in Ordnung.
 
-  **Der Pflicht-Approver hat in ZEHN Runden ZWEIUNDZWANZIG Umgehungen gefunden,
-  eine dreiundzwanzigste kam beim eigenen Nachsehen dazu** — neunzehn von ihm
+  **Der Pflicht-Approver hat in ELF Runden DREIUNDZWANZIG Befunde gefunden,
+  einen vierundzwanzigsten habe ich selbst nachgetragen** — zwanzig von ihm
   benannt, vier beim Nachziehen derselben Klasse. Sechs davon haben
   dieselbe Form: *eine Prüfung, die sich still selbst abschaltet.* Eine
   Shell-Zeile „# historisch" INNERHALB eines Codeblocks setzte die Ausnahme für
@@ -299,8 +299,24 @@ Zwei Dinge, die das Inventar zusätzlich festhält:
   Symlink-Probe weist den Ausbruch ab. Ein Befund wird geprüft, nicht geglaubt —
   in beide Richtungen.
 
-  89 Selbsttestfälle, Gegenprobe gegen alle zehn Vorfassungen gefahren (alle
-  zweiundzwanzig Umgehungen rutschen dort durch), dazu eine Positivkontrolle am
+  **Runde elf brachte den ersten Befund, der keine Umgehung war, sondern ein
+  FEHLALARM.** Die Blockprüfung las die Zaunzeile mit — deren Infozeichenkette
+  sagt aber etwas ÜBER den Block (Sprache, Titel) und ist keine Anweisung IN
+  ihm. Ein Zaun, dessen Titel den Namen eines der verbotenen Verzeichnisse
+  enthält, wurde als Verstoß gemeldet. Das ist kein Loch, kostet aber dieselbe
+  Glaubwürdigkeit: **Eine Kontrolle, die grundlos rot wird, wird abgeschaltet
+  statt beachtet** — und damit wäre alle Arbeit der zehn Runden davor umsonst.
+
+  **Zum zweiten Mal ein Befund, der nicht zutraf:** Derselbe zweite Prüfer wie
+  in Runde zehn meldete erneut m, p und q als offen und behauptete zusätzlich,
+  die Symlink-Prüfung existiere „nur im Selbsttest, im regulären Ablauf
+  auskommentiert?" — mit Fragezeichen. Nachgesehen statt geglaubt: Sie steht an
+  zwei Stellen im Regelablauf der Auflösung. Auch das gehört ins Protokoll,
+  damit die Bilanz nicht schöner aussieht, als sie ist: Nicht jeder Befund
+  trägt, und das Prüfen kostet jedes Mal denselben Aufwand wie ein echter.
+
+  91 Selbsttestfälle, Gegenprobe gegen alle elf Vorfassungen gefahren (alle
+  dreiundzwanzig Befunde greifen dort durch), dazu eine Positivkontrolle am
   echten Baum: drei eingeschleuste Verstöße in README, `docs/` und `src/` werden
   mit exakter Zeilennummer gemeldet.
 

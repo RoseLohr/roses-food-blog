@@ -55,10 +55,10 @@
  * WARUM HIER ZWEI FREMDE PARSER LAUFEN UND KEINE EIGENEN WÄHLER
  *
  * Die ersten Fassungen zerlegten Markdown und TypeScript von Hand. Der
- * Pflicht-Approver hat in ZEHN Runden ZWEIUNDZWANZIG Umgehungen gefunden, eine
- * DREIUNDZWANZIGSTE kam beim eigenen Nachsehen dazu (PR #109). Das ist kein
+ * Pflicht-Approver hat in ELF Runden DREIUNDZWANZIG Befunde gefunden, einen
+ * VIERUNDZWANZIGSTEN habe ich selbst nachgetragen (PR #109). Das ist kein
  * Ausreißer, sondern die Regel: Ein handgeschriebener Zerleger hat so viele
- * Löcher, wie das Format Sonderfälle hat. Alle dreiundzwanzig, zur Erinnerung
+ * Löcher, wie das Format Sonderfälle hat. Alle vierundzwanzig, zur Erinnerung
  * und als Selbsttestfälle unten festgenagelt — bis auf t, das keine Umgehung
  * ist, sondern eine Grenze:
  *
@@ -126,6 +126,12 @@
  *      dem `./`-Abschnitt blieb ein führender Schrägstrich stehen, der Filter
  *      warf das Stück weg, und das Gate meldete gar nichts statt eines
  *      Verweises ins Leere. Eine Korrektur ist kein Freibrief.
+ *   x) DIE BLOCKPRÜFUNG LAS DIE ZAUNZEILE MIT. Deren Infozeichenkette sagt
+ *      etwas ÜBER den Block (Sprache, Titel) und ist keine Anweisung IN ihm;
+ *      ein Zaun der Form ```conf title="sites-available/…" wurde als Verstoß
+ *      gemeldet. Ein Fehlalarm ist kein Loch, kostet aber dieselbe
+ *      Glaubwürdigkeit: Eine Kontrolle, die grundlos rot wird, wird
+ *      abgeschaltet statt beachtet.
  *   t) SPANNEN, DIE NUR DER BLOSSE NAME SIND, BLEIBEN FREI. Das ist die einzige
  *      BENANNTE GRENZE dieses Gates und keine Umgehung, die sich schließen
  *      ließe — die Begründung samt Messung steht bei `verboteneAnleitung`.
@@ -134,7 +140,7 @@
  *      fremde Datei gelesen. Siehe `echtDrin`.
  *
  * a, b, c, f, j, n und o sind Markdown-Sonderfälle; g ist ein
- * TypeScript-Sonderfall, r ein weiterer Markdown-Fall. NEUN von dreiundzwanzig
+ * TypeScript-Sonderfall, r und x weitere Markdown-Fälle. ZEHN von vierundzwanzig
  * Löchern kamen also daher, dass hier
  * zwei Sprachen nachgebaut wurden, die das Projekt längst richtig zerlegen
  * kann — und n und o kamen erst zutage, NACHDEM die Blockzerlegung schon auf
@@ -227,6 +233,12 @@ const ZEILEN_TEIL = /^(.*?)(?::(\d+)(?:-(\d+))?)?$/;
  * vorhandene Stelle. `try/catch`, `text/html`, `application/json`, `@/db`,
  * `A-20/B-05`, Branch-Namen und `zaproxy/action-baseline@v0.12.0` tragen keine
  * dieser Endungen und bleiben draußen.
+ *
+ * WAS DAMIT NICHT ABGEDECKT IST, ausdrücklich: Ein Tippfehler im ersten
+ * Wegstück eines VERZEICHNIS-Verweises ohne Endung — etwa `srcc/lib/prompts` —
+ * fällt weiter durch. Die Alternative wäre, jedes Stück mit Schrägstrich als
+ * Pfad zu lesen; gemessen wären das 29 Fehlalarme. Das ist eine benannte
+ * Grenze, keine stille.
  */
 const DATEIENDUNG = /\.(ts|tsx|js|mjs|cjs|json|md|sh|css|yml|yaml|tsv|sql|html|svg|png|webp|woff2|example|conf)$/;
 
@@ -254,6 +266,9 @@ export const VERALTETE_ANLEITUNG = /\bcertbot\b|\bsites-available\b|\/etc\/letse
  * keines dieser Zeichen.
  */
 export const IST_ANWEISUNG = /[\s;&|<>$(){}`\\]/;
+
+/** Eine Zaunzeile (öffnend oder schließend), samt möglicher Infozeichenkette. */
+export const ZAUNZEILE = /^\s*(?:`{3,}|~{3,})/;
 
 /**
  * „A1"…„A11" — die Nummerierung, die es nicht gibt.
@@ -370,6 +385,13 @@ export function verboteneAnleitung(md) {
     if (s.unterHistorisch) continue;
     if (s.art === "block") {
       s.roh.split("\n").forEach((zeile, j) => {
+        // DIE ZAUNZEILE IST KEIN INHALT. Ihre Infozeichenkette sagt etwas ÜBER
+        // den Block — die Sprache, ein Titel — und ist keine Anweisung IN ihm.
+        // Ein Zaun der Form ```conf title="sites-available/…" löste einen
+        // Fehlalarm aus (Loch x, Befund des Pflicht-Approvers). Ein Fehlalarm
+        // ist kein Loch, aber er kostet dieselbe Glaubwürdigkeit: Eine
+        // Kontrolle, die grundlos rot wird, wird abgeschaltet statt beachtet.
+        if (ZAUNZEILE.test(zeile)) return;
         if (VERALTETE_ANLEITUNG.test(zeile)) treffer.push(s.zeile === null ? 0 : s.zeile + j);
       });
       continue;
@@ -805,6 +827,15 @@ if (process.argv.includes("--selftest")) {
     ["Anleitung im ```-Zaun", verboteneAnleitung(`## Setup\n\n${z3}\nsudo certbot --nginx\n${z3}\n`).length === 1],
     ["Anleitung im ~~~-Zaun (Loch b)", verboteneAnleitung(`## Setup\n\n${welle}\nsudo certbot --nginx\n${welle}\n`).length === 1],
     ["Anleitung eingerückt (Loch c)", verboteneAnleitung("## Setup\n\n    sudo certbot --nginx\n").length === 1],
+    // Die Infozeichenkette der Zaunzeile ist kein Inhalt (Loch x).
+    [
+      "Infozeichenkette löst keinen Fehlalarm aus (Loch x)",
+      verboteneAnleitung(`## X\n\n${z3}conf titel=sites-available/roses\nlisten 80;\n${z3}\n`).length === 0,
+    ],
+    [
+      "Anweisung im Block mit Infozeichenkette wird gefangen",
+      verboteneAnleitung(`## X\n\n${z3}bash\nsudo certbot --nginx\n${z3}\n`).length === 1,
+    ],
     ["Vierer-Zaun bleibt offen (Loch f)", verboteneAnleitung(`## Setup\n\n${z4}\n${z3}\nsudo certbot --nginx\n${z4}\n`).length === 1],
     ["Raute im Zaun schaltet nichts ab (Loch a)", verboteneAnleitung(`## Setup\n\n${z3}\n# historisch: alter Weg\nsudo certbot --nginx\n${z3}\n`).length === 1],
     ["Codeblock in einer Liste wird gesehen", verboteneAnleitung(`## Setup\n\n- Schritt:\n\n  ${z3}\n  sudo certbot --nginx\n  ${z3}\n`).length === 1],
