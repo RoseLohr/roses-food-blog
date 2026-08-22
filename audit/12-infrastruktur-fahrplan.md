@@ -118,6 +118,23 @@ Zwei Dinge, die das Inventar zusätzlich festhält:
   Annahmenummern und Pfadverweise ins Leere. Gemessen am Bestand: 300
   Pfadverweise, 4 historische Codeblöcke, alle in Ordnung.
 
+  **Die erste Fassung hatte fünf Umgehungen** — drei benannt vom
+  Pflicht-Approver (PR #109), zwei beim Nachziehen derselben Klasse gefunden.
+  Sie sind lehrreich, weil vier davon dieselbe Form haben: *eine Prüfung, die
+  sich still selbst abschaltet.* Eine Shell-Zeile „# historisch" INNERHALB
+  eines Codeblocks setzte die Ausnahme für alles Folgende; ein Zaun aus drei
+  Tilden galt gar nicht als Code; eingerückter Code wurde nie geprüft; die
+  Zeilenprüfung sprang bei einer Abkürzung mit Fantasiezeile ab („audit/06"
+  plus Zeile 99999); und eine Zeilennummer an einem VERZEICHNIS, ein Bereich
+  rückwärts (100–10) und die Zeile 0 liefen als gültig durch. Jede ist jetzt
+  ein Selbsttestfall (24 insgesamt), und die Gegenprobe gegen die Vorfassung
+  ist gefahren: alle fünf rutschen dort durch, alle fünf werden hier gefangen.
+
+  Die Gegenbeispiele stehen hier bewusst OHNE Backticks: Das Gate kann eine
+  Veranschaulichung nicht von einem echten Verweis unterscheiden — und hat
+  genau diesen Absatz beim ersten Lauf beanstandet. Das ist kein Mangel,
+  sondern die Kontrolle bei der Arbeit.
+
   **Zwei Dinge, die es NICHT tut, damit sich niemand darauf verlässt:**
   - Feste Portzahlen bleiben ungeprüft. `localhost:3000` ist im
     Entwicklungsabschnitt richtig und am Proxy falsch; ein Gate, das beides
