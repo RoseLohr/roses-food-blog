@@ -16,7 +16,7 @@
 # falsche Antwort. (Befund des Pflicht-Approvers, PR #103.)
 #
 # Drei Bedingungen müssen zusammen erfüllt sein:
-#   1. der Container veröffentlicht 80 oder 443,
+#   1. der Container veröffentlicht GENAU den Port aus der Basis,
 #   2. er ist wirklich ein nginx (`nginx -v` läuft darin),
 #   3. unter /data/nginx/proxy_host/ steht eine Konfiguration, die GENAU
 #      diesen Namen bedient.
@@ -43,6 +43,7 @@ if ! url_teile "$BASIS"; then
   exit 3
 fi
 HOST="$URL_HOST"
+PORT="$URL_PORT"
 
 PODMAN="${PODMAN:-podman}"
 
@@ -57,7 +58,13 @@ while IFS= read -r zeile; do
   [ -n "$zeile" ] || continue
   name=${zeile%%|*}
   ports=${zeile#*|}
-  case "$ports" in *:80-\>*|*:443-\>*) ;; *) continue ;; esac
+  # Nach dem TATSÄCHLICHEN Port der Basis filtern, nicht fest nach 80/443.
+  # Die erste Fassung berechnete URL_PORT und warf ihn weg: Bei
+  # `BASE_URL=https://ziel:8443` wäre der richtige Proxy ausgeschlossen worden
+  # — und ein FREMDER nginx auf 443, der zufällig denselben Namen bedient,
+  # hätte gewählt und global umkonfiguriert werden können.
+  # (Befund des Pflicht-Approvers, PR #103.)
+  case "$ports" in *:"$PORT"-\>*) ;; *) continue ;; esac
   $PODMAN exec "$name" nginx -v >/dev/null 2>&1 || continue
   # Im Container wird nur GELESEN, mit einem FESTEN Kommando. Ausgewertet wird
   # hier draußen. Zwei Gründe, beide vom Pflicht-Approver gefunden (PR #103):
@@ -118,7 +125,7 @@ while IFS= read -r zeile; do
 done <<< "$LAUFENDE"
 
 if [ "$ANZAHL" -eq 0 ]; then
-  echo "Kein Proxy-Container gefunden, der '$HOST' bedient." >&2
+  echo "Kein Proxy-Container gefunden, der '$HOST' auf Port $PORT bedient." >&2
   exit 1
 fi
 if [ "$ANZAHL" -gt 1 ]; then

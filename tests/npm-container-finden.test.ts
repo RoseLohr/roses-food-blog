@@ -90,9 +90,9 @@ exit 0
   return bin;
 }
 
-async function finden(bin: string, host: string) {
+async function finden(bin: string, host: string, basis?: string) {
   try {
-    const { stdout } = await ausfuehren(SKRIPT, ["--basis", `https://${host}`], {
+    const { stdout } = await ausfuehren(SKRIPT, ["--basis", basis ?? `https://${host}`], {
       env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
       timeout: 30_000,
     });
@@ -238,12 +238,39 @@ describe("Proxy-Container zuordnen", () => {
     expect((await finden(auffang, "gourmetcompass.de")).code).toBe(1);
   });
 
+  it("nimmt den Container auf dem Port aus der Basis, nicht den auf 443", async () => {
+    // DIE GEFAHR: Bei `https://ziel:8443` wäre der richtige Proxy
+    // ausgeschlossen worden — und der FREMDE auf 443, der zufällig denselben
+    // Namen bedient, hätte gewählt und global umkonfiguriert werden können.
+    // (Befund des Pflicht-Approvers, PR #103.)
+    const bin = podmanAttrappe([
+      { name: "fremd-443", ports: "0.0.0.0:443->443/tcp", nginx: true, hosts: ["ziel.example"] },
+      { name: "richtig-8443", ports: "0.0.0.0:8443->443/tcp", nginx: true, hosts: ["ziel.example"] },
+    ]);
+    const { code, gefunden, ausgabe } = await finden(bin, "ziel.example", "https://ziel.example:8443");
+    expect(code, ausgabe).toBe(0);
+    expect(gefunden).toBe("richtig-8443");
+  });
+
+  it("wählt gar nichts, wenn auf dem verlangten Port keiner lauscht", async () => {
+    // Lieber „nicht zugeordnet" als der falsche Container: Geschrieben würde
+    // eine GLOBALE Konfiguration.
+    const bin = podmanAttrappe([
+      { name: "fremd-443", ports: "0.0.0.0:443->443/tcp", nginx: true, hosts: ["ziel.example"] },
+    ]);
+    const { code, ausgabe } = await finden(bin, "ziel.example", "https://ziel.example:8443");
+    expect(code, ausgabe).toBe(1);
+    expect(ausgabe).toMatch(/Port 8443/);
+  });
+
   it("rät NICHT, wenn zwei Container dieselbe Domain bedienen", async () => {
     // Bei geteilter Infrastruktur ist Raten die falsche Antwort: Geschrieben
     // wird eine GLOBALE Konfiguration.
     const bin = podmanAttrappe([
+      // BEIDE auf demselben Port — sonst entscheidet inzwischen schon der
+      // Portfilter, und die Prüfung träfe die Mehrdeutigkeit gar nicht mehr.
       { name: "npm-alt", ports: "0.0.0.0:443->443/tcp", nginx: true, hosts: ["gourmetcompass.de"] },
-      { name: "npm-neu", ports: "0.0.0.0:80->80/tcp", nginx: true, hosts: ["gourmetcompass.de"] },
+      { name: "npm-neu", ports: "[::]:443->443/tcp", nginx: true, hosts: ["gourmetcompass.de"] },
     ]);
     const { code, ausgabe } = await finden(bin, "gourmetcompass.de");
     expect(code, ausgabe).toBe(2);
