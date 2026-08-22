@@ -55,10 +55,10 @@
  * WARUM HIER ZWEI FREMDE PARSER LAUFEN UND KEINE EIGENEN WÄHLER
  *
  * Die ersten Fassungen zerlegten Markdown und TypeScript von Hand. Der
- * Pflicht-Approver hat in SECHS Runden SECHZEHN Umgehungen gefunden, eine
- * SIEBZEHNTE kam beim eigenen Nachsehen dazu (PR #109). Das ist kein Ausreißer,
+ * Pflicht-Approver hat in SIEBEN Runden ACHTZEHN Umgehungen gefunden, eine
+ * NEUNZEHNTE kam beim eigenen Nachsehen dazu (PR #109). Das ist kein Ausreißer,
  * sondern die Regel: Ein handgeschriebener Zerleger hat so viele Löcher, wie
- * das Format Sonderfälle hat. Alle siebzehn, zur Erinnerung und als
+ * das Format Sonderfälle hat. Alle neunzehn, zur Erinnerung und als
  * Selbsttestfälle unten festgenagelt:
  *
  *   a) Eine Raute IM Codeblock galt als Überschrift und schaltete die
@@ -102,12 +102,24 @@
  *      die ganze Zeit geht. Behoben doppelt: Die Dateiliste kommt jetzt aus der
  *      Repo-Wurzel, UND ein Lauf ohne eine einzige geprüfte Datei ist ein
  *      Fehlschlag statt eines Erfolgs.
+ *   r) DIE TABELLENKOPFZEILE WURDE NACH DEN DATENZEILEN GELAUFEN. Die
+ *      Vorwärtssuche setzt Dokumentreihenfolge voraus; eine Spanne in der
+ *      Kopfzeile wurde deshalb nicht mehr gefunden und auf Zeile 1 gemeldet
+ *      statt auf ihrer eigenen. Eine falsche Fundstelle schickt den Leser an
+ *      die falsche Stelle. Beim Beheben fiel ein zweiter Teil auf: Für
+ *      INLINE-Token ist `raw` bereits entrückt und deshalb gar keine Teilkette
+ *      der Quelle — siehe `findeStelle`.
+ *   s) `audit/` WAR AUCH VON PRÜFUNG 1 AUSGENOMMEN, ohne Begründung. Für die
+ *      toten Nummern und die Vorwärtsverweise ist die Ausnahme begründet; für
+ *      die veraltete ANLEITUNG stand sie nur aus Symmetrie da. Am Bestand
+ *      nachgemessen, bevor sie fiel: null Treffer in `audit/`.
  *   p) DAS CONTAINMENT WAR REIN LEXIKALISCH. Ein verfolgter Symlink, der aus
  *      dem Repository hinauszeigt, kam durch — und `zeilenBefund` hätte die
  *      fremde Datei gelesen. Siehe `echtDrin`.
  *
  * a, b, c, f, j, n und o sind Markdown-Sonderfälle; g ist ein
- * TypeScript-Sonderfall. ACHT von siebzehn Löchern kamen also daher, dass hier
+ * TypeScript-Sonderfall, r ein weiterer Markdown-Fall. NEUN von neunzehn
+ * Löchern kamen also daher, dass hier
  * zwei Sprachen nachgebaut wurden, die das Projekt längst richtig zerlegen
  * kann — und n und o kamen erst zutage, NACHDEM die Blockzerlegung schon auf
  * `marked` stand: Ein Rest Handarbeit an den Inline-Spannen war übrig
@@ -122,7 +134,7 @@
  *     `const r = /a\/\//; // A5`: Der reine Scanner liest daraus „//; // A5"
  *     und liegt falsch, der Parser liefert „// A5" und liegt richtig.
  *
- * d, e, h, i, k, l, m, p und q bleiben eigene Logik — sie handeln von Dateien und
+ * d, e, h, i, k, l, m, p, q und s bleiben eigene Logik — sie handeln von Dateien und
  * Zahlen, nicht von Grammatik. j fällt nicht ganz weg: `marked` liefert die
  * Verschachtelung korrekt, aber WELCHE Überschrift einen Abschnitt aufmacht,
  * ist eine Entscheidung dieses Gates und musste hier getroffen werden.
@@ -225,6 +237,29 @@ function zeileVon(text, pos) {
  * die Ausnahme trotzdem und ließ jeden folgenden Codeblock ungeprüft, auch
  * außerhalb des Zitats (Loch j).
  */
+/**
+ * Findet die Stelle eines Token-Rohtextes in der Quelle, ab `suchAb`.
+ *
+ * Warum nicht schlicht `indexOf`: Für INLINE-Token ist `raw` bereits ENTRÜCKT.
+ * Die Fortsetzungszeile eines Listenpunkts verliert ihre Einrückung, bevor
+ * `marked` die Zeile inline zerlegt — `raw` ist dann keine Teilkette der Quelle
+ * mehr. Nachgemessen an CLAUDE.md:
+ *
+ *   Quelle : "…bestehen: `npm run typecheck && npm run lint\n  && npm test…"
+ *   raw    : "`npm run typecheck && npm run lint\n&& npm test…"
+ *
+ * Die zwei Leerzeichen fehlen. Deshalb wird zuerst wörtlich und dann über
+ * Leerraum TOLERANT gesucht: Jede Folge von Leerraum im Rohtext darf in der
+ * Quelle jeder Folge von Leerraum entsprechen. Alles andere muss stimmen.
+ */
+function findeStelle(quelle, suchAb, roh) {
+  const woertlich = quelle.indexOf(roh, suchAb);
+  if (woertlich !== -1) return woertlich;
+  const muster = new RegExp(roh.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+"));
+  const treffer = muster.exec(quelle.slice(suchAb));
+  return treffer ? suchAb + treffer.index : -1;
+}
+
 export function codestuecke(md) {
   const raus = [];
   let unterHistorisch = false;
@@ -237,22 +272,32 @@ export function codestuecke(md) {
       } else if (t.type === "code" || t.type === "codespan") {
         // Vorwärts suchen: Token stehen in Dokumentreihenfolge, auch die in
         // Listen verschachtelten. Zwei gleiche Stücke stören deshalb nicht.
-        const pos = md.indexOf(t.raw, suchAb);
+        const pos = findeStelle(md, suchAb, t.raw);
         if (pos !== -1) suchAb = pos + t.raw.length;
         raus.push({
           art: t.type === "code" ? "block" : "inline",
           roh: t.raw,
           text: t.text ?? "",
-          zeile: pos === -1 ? 1 : zeileVon(md, pos),
+          // Nicht auffindbar heißt NICHT „Zeile 1". Eine erfundene Fundstelle
+          // schickt den Leser an die falsche Stelle; `main()` meldet den Fall
+          // stattdessen als eigenen Verstoß.
+          zeile: pos === -1 ? null : zeileVon(md, pos),
           unterHistorisch,
         });
       }
       // Verschachtelte Stücke (Codeblock in einer Liste, Spanne in einem
       // Zitat, in einer Tabellenzelle) hängen an eigenen Token-Listen.
+      //
+      // DIE REIHENFOLGE IST TRAGEND: Die Vorwärtssuche unten setzt voraus, dass
+      // hier in DOKUMENTREIHENFOLGE gelaufen wird. `header` stand hinter `rows`
+      // und damit hinter dem, was im Dokument darunter steht — eine Spanne in
+      // der Kopfzeile wurde deshalb nicht mehr gefunden und auf Zeile 1
+      // gemeldet statt auf ihrer eigenen (Loch r). Nachgestellt: Kopfzeile in
+      // Zeile 5, gemeldet als Zeile 1.
       if (Array.isArray(t.tokens)) lauf(t.tokens, false);
       if (Array.isArray(t.items)) lauf(t.items, false);
-      if (Array.isArray(t.rows)) for (const zeile of t.rows) lauf(zeile, false);
       if (Array.isArray(t.header)) lauf(t.header, false);
+      if (Array.isArray(t.rows)) for (const zeile of t.rows) lauf(zeile, false);
     }
   };
 
@@ -271,7 +316,7 @@ export function verboteneAnleitung(md) {
     if (s.unterHistorisch) continue;
     if (s.art === "block") {
       s.roh.split("\n").forEach((zeile, j) => {
-        if (VERALTETE_ANLEITUNG.test(zeile)) treffer.push(s.zeile + j);
+        if (VERALTETE_ANLEITUNG.test(zeile)) treffer.push(s.zeile === null ? 0 : s.zeile + j);
       });
       continue;
     }
@@ -281,7 +326,7 @@ export function verboteneAnleitung(md) {
     // feststellt. Vorher waren Inline-Spannen gar nicht geprüft (Loch n).
     // Am Bestand nachgemessen: Von 2468 Spannen tragen drei ein verbotenes
     // Wort, alle drei einwortig — die Regel erzeugt heute null Fehlalarme.
-    if (/\s/.test(s.text) && VERALTETE_ANLEITUNG.test(s.text)) treffer.push(s.zeile);
+    if (/\s/.test(s.text) && VERALTETE_ANLEITUNG.test(s.text)) treffer.push(s.zeile ?? 0);
   }
   return [...new Set(treffer)].sort((a, b) => a - b);
 }
@@ -526,9 +571,15 @@ function main() {
     const zeilen = text.split("\n");
     if (istMd) gepruefteMd++;
 
-    if (istMd && !imAudit) {
+    if (istMd) {
+      // AUCH `audit/`. Die Ausnahme dort ist für die toten Nummern und die
+      // Vorwärtsverweise begründet (eigenes Bezugssystem, geplante Dateien) —
+      // für die veraltete ANLEITUNG gab es nie einen Grund, sie stand nur aus
+      // Symmetrie da (Loch s). Am Bestand nachgemessen, bevor sie fiel: null
+      // Treffer in `audit/`. Wer dort eine historische Anweisung zitieren will,
+      // nimmt dieselbe „historisch"-Überschrift wie alle anderen.
       for (const nr of verboteneAnleitung(text)) {
-        melde("Veraltete Anleitung im Code (A2/A3)", `${datei}:${nr}`, zeilen[nr - 1].trim());
+        melde("Veraltete Anleitung im Code (A2/A3)", `${datei}:${nr || "?"}`, (zeilen[nr - 1] ?? "").trim());
       }
     }
 
@@ -541,6 +592,10 @@ function main() {
 
     if (!istMd) continue;
     for (const s of codestuecke(text)) {
+      if (s.zeile === null) {
+        melde("Fundstelle nicht bestimmbar", datei, `\`${s.text}\` — die Zerlegung findet das Stück nicht wieder`);
+        continue;
+      }
       if (s.art !== "inline") continue;
       const v = pfadverweis(s.text, wurzeln);
       if (v === null) continue;
@@ -606,6 +661,24 @@ function leerlaufProbe() {
   } finally {
     fs.rmSync(ordner, { recursive: true, force: true });
   }
+}
+
+/**
+ * Zeile der Spanne in der KOPFZEILE einer Tabelle, die in Zeile 5 beginnt.
+ * Stand `header` hinter `rows`, kam hier 1 heraus statt 5 (Loch r).
+ */
+function tabellenProbe() {
+  const md = [
+    "# Titel",
+    "",
+    "Ein Satz.",
+    "",
+    "| `src/lib/media.ts` | Spalte |",
+    "|---|---|",
+    "| `src/db/schema.ts` | Wert |",
+    "",
+  ].join("\n");
+  return codestuecke(md).find((s) => s.text === "src/lib/media.ts")?.zeile ?? null;
 }
 
 /** Der Inhalt der ersten Inline-Spanne — für den Selbsttest von Loch o. */
@@ -721,6 +794,14 @@ if (process.argv.includes("--selftest")) {
     // Ein Lauf ohne eine einzige geprüfte Datei ist ein Fehlschlag (Loch q) —
     // im echten Leerlauf nachgewiesen, nicht behauptet.
     ["Leerlauf ist rot, nicht grün (Loch q)", leerlaufProbe() === true],
+    // Tabellenkopf steht VOR den Datenzeilen — sonst falsche Fundstelle (Loch r).
+    ["Fundstelle im Tabellenkopf (Loch r)", tabellenProbe() === 5],
+    // Entrückter Inline-Rohtext wird trotzdem gefunden (Loch r, zweiter Teil).
+    [
+      "entrückte Fortsetzungszeile wird gefunden",
+      codestuecke("- Punkt: `eins zwei\n  drei vier` Ende\n").find((x) => x.art === "inline")?.zeile === 1,
+    ],
+    ["nicht auffindbares Stück meldet keine Zeile", codestuecke("`x`").every((x) => x.zeile !== null)],
     ["Pfad mit Punkt am Ende wird nicht gewaschen", pfadverweis("src/lib/media.ts.", wurzeln)?.pfad === "src/lib/media.ts."],
     ["Zeilenprüfung greift auch bei Abkürzung (Loch d)", zeilenBefund(aufloesen("audit/06", alle), 99999, 99999) !== null],
     // Unmögliche Angaben (Loch e).

@@ -118,8 +118,8 @@ Zwei Dinge, die das Inventar zusätzlich festhält:
   Annahmenummern und Pfadverweise ins Leere. Gemessen am Bestand: 312
   Pfadverweise, 4 historische Codeblöcke, alle in Ordnung.
 
-  **Der Pflicht-Approver hat in SECHS Runden SECHZEHN Umgehungen gefunden,
-  eine siebzehnte kam beim eigenen Nachsehen dazu** — dreizehn von ihm benannt,
+  **Der Pflicht-Approver hat in SIEBEN Runden ACHTZEHN Umgehungen gefunden,
+  eine neunzehnte kam beim eigenen Nachsehen dazu** — fünfzehn von ihm benannt,
   vier beim Nachziehen derselben Klasse. Sechs davon haben
   dieselbe Form: *eine Prüfung, die sich still selbst abschaltet.* Eine
   Shell-Zeile „# historisch" INNERHALB eines Codeblocks setzte die Ausnahme für
@@ -232,8 +232,26 @@ Zwei Dinge, die das Inventar zusätzlich festhält:
   kann. Die Ausgabe nennt seither auch die Zahl der geprüften Dateien, damit ein
   Leerlauf beim Lesen auffällt.
 
-  70 Selbsttestfälle, Gegenprobe gegen alle sechs Vorfassungen gefahren (alle
-  siebzehn Löcher rutschen dort durch), dazu eine Positivkontrolle am echten
+  **Runde sieben brachte eine falsche FUNDSTELLE und eine unbegründete
+  Ausnahme.** Die Tabellenkopfzeile wurde nach den Datenzeilen gelaufen, obwohl
+  sie im Dokument darüber steht; eine Spanne dort wurde deshalb nicht mehr
+  gefunden und auf Zeile 1 gemeldet statt auf ihrer eigenen. Beim Beheben fiel
+  ein zweiter, größerer Teil auf: Für Inline-Token liefert `marked` einen
+  bereits ENTRÜCKTEN Rohtext — die Fortsetzungszeile eines Listenpunkts verliert
+  ihre Einrückung —, er ist damit gar keine Teilkette der Quelle. An CLAUDE.md
+  nachgemessen: Die Spanne mit dem Gate-Kommando steht in Zeile 29 und wurde als
+  Zeile 1 gemeldet. Gesucht wird jetzt über Leerraum tolerant, und ein Stück,
+  das sich NICHT verorten lässt, ist ein eigener Verstoß statt einer erfundenen
+  Zeile 1 — genau dieser Riegel hat die beiden echten Fälle im Bestand
+  überhaupt erst sichtbar gemacht.
+
+  Die zweite Hälfte: `audit/` war auch von Prüfung 1 ausgenommen, ohne
+  Begründung. Für die toten Nummern und die Vorwärtsverweise ist die Ausnahme
+  inhaltlich begründet, für die veraltete Anleitung stand sie nur aus Symmetrie
+  da. Sie ist gefallen; am Bestand nachgemessen vorher: null Treffer.
+
+  73 Selbsttestfälle, Gegenprobe gegen alle sieben Vorfassungen gefahren (alle
+  neunzehn Löcher rutschen dort durch), dazu eine Positivkontrolle am echten
   Baum: drei eingeschleuste Verstöße in README, `docs/` und `src/` werden mit
   exakter Zeilennummer gemeldet.
 
