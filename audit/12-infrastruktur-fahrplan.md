@@ -118,9 +118,9 @@ Zwei Dinge, die das Inventar zusätzlich festhält:
   Annahmenummern und Pfadverweise ins Leere. Gemessen am Bestand: 312
   Pfadverweise, 4 historische Codeblöcke, alle in Ordnung.
 
-  **Der Pflicht-Approver hat in ELF Runden DREIUNDZWANZIG Befunde gefunden,
-  einen vierundzwanzigsten habe ich selbst nachgetragen** — zwanzig von ihm
-  benannt, vier beim Nachziehen derselben Klasse. Sechs davon haben
+  **Der Pflicht-Approver hat in ZWÖLF Runden FÜNFUNDZWANZIG Befunde gefunden,
+  einen sechsundzwanzigsten habe ich selbst nachgetragen** — zweiundzwanzig von
+  ihm benannt, vier beim Nachziehen derselben Klasse. Sechs davon haben
   dieselbe Form: *eine Prüfung, die sich still selbst abschaltet.* Eine
   Shell-Zeile „# historisch" INNERHALB eines Codeblocks setzte die Ausnahme für
   alles Folgende; ein Zaun aus drei Tilden galt gar nicht als Code; eingerückter
@@ -315,10 +315,30 @@ Zwei Dinge, die das Inventar zusätzlich festhält:
   damit die Bilanz nicht schöner aussieht, als sie ist: Nicht jeder Befund
   trägt, und das Prüfen kostet jedes Mal denselben Aufwand wie ein echter.
 
-  91 Selbsttestfälle, Gegenprobe gegen alle elf Vorfassungen gefahren (alle
-  dreiundzwanzig Befunde greifen dort durch), dazu eine Positivkontrolle am
-  echten Baum: drei eingeschleuste Verstöße in README, `docs/` und `src/` werden
-  mit exakter Zeilennummer gemeldet.
+  **Runde zwölf legte den größten fail-open des ganzen PR frei.** Klammern
+  galten pauschal als Muster und disqualifizierten ein Stück als Pfadverweis —
+  aber Next.js schreibt Routengruppen und dynamische Segmente in den
+  DATEINAMEN. In diesem Repository tragen **72 echte Dateien** solche Klammern;
+  Verweise darauf wurden nie geprüft. Ein toter Verweis auf halb `src/app/`
+  blieb grün. Geprüft wird jetzt auf Platzhalter-WEGSTÜCKE statt auf Klammern,
+  und die Muster (Auslassung als eigenes Wegstück, Glob) bleiben draußen.
+
+  **Das Gate hat daraufhin sofort einen echten Doku-Fehler gefunden:**
+  `audit/01-claims-ledger.md` zitierte Zeile 4 eines Pfades, den es so nicht
+  gibt — die Kurzform ohne `src/app/`. Ein Verweis mit Zeilennummer ist eine
+  Behauptung über eine bestehende Datei; er steht jetzt vollständig da. Die
+  Abdeckung stieg von 312 auf 313 Verweise.
+
+  **Und die Gegenprobe hat mich in derselben Runde widerlegt.** Der zweite
+  Befund betraf einen Bindestrich unmittelbar nach einer toten Nummer. Ich hatte
+  als Beispiel eine NUMMERNSPANNE angenommen — die alte Fassung fing sie aber
+  bereits über die zweite Nummer. Der Unterschied liegt allein beim angehängten
+  Wort. Die Beschreibung ist auf das Gemessene zurückgezogen; eine Annahme, die
+  die Gegenprobe nicht trägt, gehört nicht in den Quelltext.
+
+  98 Selbsttestfälle, Gegenprobe gegen alle zwölf Vorfassungen gefahren, dazu
+  eine Positivkontrolle am echten Baum: drei eingeschleuste Verstöße in README,
+  `docs/` und `src/` werden mit exakter Zeilennummer gemeldet.
 
   Die Gegenbeispiele stehen hier bewusst OHNE Backticks: Das Gate kann eine
   Veranschaulichung nicht von einem echten Verweis unterscheiden — und hat

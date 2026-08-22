@@ -55,10 +55,10 @@
  * WARUM HIER ZWEI FREMDE PARSER LAUFEN UND KEINE EIGENEN WÄHLER
  *
  * Die ersten Fassungen zerlegten Markdown und TypeScript von Hand. Der
- * Pflicht-Approver hat in ELF Runden DREIUNDZWANZIG Befunde gefunden, einen
- * VIERUNDZWANZIGSTEN habe ich selbst nachgetragen (PR #109). Das ist kein
+ * Pflicht-Approver hat in ZWÖLF Runden FÜNFUNDZWANZIG Befunde gefunden, einen
+ * SECHSUNDZWANZIGSTEN habe ich selbst nachgetragen (PR #109). Das ist kein
  * Ausreißer, sondern die Regel: Ein handgeschriebener Zerleger hat so viele
- * Löcher, wie das Format Sonderfälle hat. Alle vierundzwanzig, zur Erinnerung
+ * Löcher, wie das Format Sonderfälle hat. Alle sechsundzwanzig, zur Erinnerung
  * und als Selbsttestfälle unten festgenagelt — bis auf t, das keine Umgehung
  * ist, sondern eine Grenze:
  *
@@ -132,6 +132,16 @@
  *      gemeldet. Ein Fehlalarm ist kein Loch, kostet aber dieselbe
  *      Glaubwürdigkeit: Eine Kontrolle, die grundlos rot wird, wird
  *      abgeschaltet statt beachtet.
+ *   y) KLAMMERN GALTEN PAUSCHAL ALS MUSTER. Next.js schreibt Routengruppen und
+ *      dynamische Segmente in den DATEINAMEN; 72 echte Dateien dieses
+ *      Repositories tragen Klammern. Verweise darauf wurden nie geprüft — ein
+ *      toter Verweis auf halb `src/app/` blieb grün. Geprüft wird jetzt auf
+ *      Platzhalter-WEGSTÜCKE statt auf Klammern.
+ *   z) DER NACHGESTELLTE BINDESTRICH verdeckte eine tote Nummer mit
+ *      angehängtem Wort („A7-neu"). Eine Spanne wie „A1-A11" fing die alte
+ *      Fassung schon über die zweite Nummer — das hat erst die Gegenprobe
+ *      gezeigt, meine erste Annahme war falsch. Am Bestand kostet die
+ *      Lockerung null Fehlalarme.
  *   t) SPANNEN, DIE NUR DER BLOSSE NAME SIND, BLEIBEN FREI. Das ist die einzige
  *      BENANNTE GRENZE dieses Gates und keine Umgehung, die sich schließen
  *      ließe — die Begründung samt Messung steht bei `verboteneAnleitung`.
@@ -140,7 +150,7 @@
  *      fremde Datei gelesen. Siehe `echtDrin`.
  *
  * a, b, c, f, j, n und o sind Markdown-Sonderfälle; g ist ein
- * TypeScript-Sonderfall, r und x weitere Markdown-Fälle. ZEHN von vierundzwanzig
+ * TypeScript-Sonderfall, r und x weitere Markdown-Fälle. ZEHN von sechsundzwanzig
  * Löchern kamen also daher, dass hier
  * zwei Sprachen nachgebaut wurden, die das Projekt längst richtig zerlegen
  * kann — und n und o kamen erst zutage, NACHDEM die Blockzerlegung schon auf
@@ -156,7 +166,7 @@
  *     `const r = /a\/\//; // A5`: Der reine Scanner liest daraus „//; // A5"
  *     und liegt falsch, der Parser liefert „// A5" und liegt richtig.
  *
- * d, e, h, i, k, l, m, p, q, s, u, v und w bleiben eigene Logik — sie handeln von Dateien und
+ * d, e, h, i, k, l, m, p, q, s, u, v, w, y und z bleiben eigene Logik — sie handeln von Dateien und
  * Zahlen, nicht von Grammatik. j fällt nicht ganz weg: `marked` liefert die
  * Verschachtelung korrekt, aber WELCHE Überschrift einen Abschnitt aufmacht,
  * ist eine Entscheidung dieses Gates und musste hier getroffen werden.
@@ -243,12 +253,28 @@ const ZEILEN_TEIL = /^(.*?)(?::(\d+)(?:-(\d+))?)?$/;
 const DATEIENDUNG = /\.(ts|tsx|js|mjs|cjs|json|md|sh|css|yml|yaml|tsv|sql|html|svg|png|webp|woff2|example|conf)$/;
 
 /**
- * Auslassungen und Klammern machen aus einem Pfad ein MUSTER, keinen Verweis:
- * `.../ai/ping/route.ts`, `(protected)/layout.tsx`, `uploads/[...pfad]/route.ts`
- * und `…/04bv4jz9i8omc.css` stehen so in den Befunden und meinen nicht die
- * Datei, sondern ihre Form.
+ * Platzhalter machen aus einem Pfad ein MUSTER, keinen Verweis: `*` (Glob),
+ * spitze und geschweifte Klammern, Leerraum.
+ *
+ * RUNDE und eckige KLAMMERN gehören NICHT dazu, und das war ein fail-open
+ * (Loch y, Befund des Pflicht-Approvers): Next.js schreibt Routengruppen und
+ * dynamische Segmente in den DATEINAMEN — `src/app/(public)/page.tsx`,
+ * `src/app/uploads/[...pfad]/route.ts`. In diesem Repository tragen 72 echte
+ * Dateien solche Klammern; Verweise darauf wurden pauschal verworfen und damit
+ * nie geprüft. Ein toter Verweis auf halb `src/app/` blieb grün.
  */
-const IST_MUSTER = /\.{3}|…|[[\]()*<>{}\s]/;
+const IST_MUSTER = /[*<>{}\s]/;
+
+/**
+ * Ein WEGSTÜCK, das nur aus Auslassungspunkten besteht, ist ein Platzhalter —
+ * `.../ai/ping/route.ts` und `…/04bv4jz9i8omc.css` meinen die Form, nicht die
+ * Datei. Die drei Punkte INNERHALB eckiger Klammern (`[...pfad]`) sind dagegen
+ * Teil eines echten Dateinamens; deshalb wird auf Wegstücke geprüft und nicht
+ * auf die Zeichenkette als Ganzes.
+ */
+function hatPlatzhalterStueck(pfad) {
+  return pfad.split("/").some((teil) => teil === "..." || teil.includes("…"));
+}
 
 /** Anweisungen, die zum abgeschalteten Host-nginx-Betrieb gehören. */
 export const VERALTETE_ANLEITUNG = /\bcertbot\b|\bsites-available\b|\/etc\/letsencrypt\b/;
@@ -273,9 +299,16 @@ export const ZAUNZEILE = /^\s*(?:`{3,}|~{3,})/;
 /**
  * „A1"…„A11" — die Nummerierung, die es nicht gibt.
  *
- * Der NACHGESTELLTE Bindestrich trennt sie von den Prüfkennungen A-16, A-20,
- * A-33 (dort folgt auf das A kein Ziffernpaar, sondern ein Bindestrich); das
- * vorangestellte `/` von Pfadbestandteilen wie `https://x/A7/y`.
+ * Von den Prüfkennungen A-16, A-20, A-33 trennt sie sich von selbst: Dort
+ * folgt auf das A kein Ziffernpaar, sondern ein Bindestrich. Das vorangestellte
+ * `/` hält Pfadbestandteile wie `https://x/A7/y` heraus.
+ *
+ * Der NACHGESTELLTE Bindestrich stand ebenfalls in der Ausnahme und verdeckte
+ * eine tote Nummer, auf die unmittelbar ein Bindestrich folgt — „laut A7-neu"
+ * (Loch z). NACHGEMESSEN, und die Messung hat meine erste Annahme widerlegt:
+ * Eine SPANNE wie „A1-A11" fing die alte Fassung bereits, nämlich über die
+ * ZWEITE Nummer; der Unterschied liegt allein beim angehängten Wort. Am Bestand
+ * kostet die Lockerung null zusätzliche Treffer.
  *
  * Der VORANGESTELLTE Bindestrich stand hier ebenfalls in der Ausnahme und war
  * ein Loch (l): „laut Annahme-A7" blieb grün, obwohl der Verweis genauso tot
@@ -283,7 +316,7 @@ export const ZAUNZEILE = /^\s*(?:`{3,}|~{3,})/;
  * Kennungen wie `R-A33` und `R-A07` trifft die Regex ohnehin nicht, weil auf
  * das A keine passende Zahl folgt.
  */
-export const TOTE_NUMMER = /(?<![A-Za-z0-9_/.])A(1[01]|[1-9])(?![0-9A-Za-z-])/;
+export const TOTE_NUMMER = /(?<![A-Za-z0-9_/.])A(1[01]|[1-9])(?![0-9A-Za-z])/;
 
 /** Zeilennummer (1-basiert) des Zeichens an `pos`. */
 function zeileVon(text, pos) {
@@ -488,7 +521,7 @@ export function toteNummernInKommentaren(quelle, datei = "x.ts") {
  * Verzeichnissen trennt beides sauber, ohne dass jemand etwas pflegen muss.
  */
 export function pfadverweis(inhalt, wurzeln) {
-  if (IST_MUSTER.test(inhalt)) return null;
+  if (IST_MUSTER.test(inhalt) || hatPlatzhalterStueck(inhalt)) return null;
   let stueck = inhalt;
   const repoRelativ = stueck.startsWith("./");
   if (repoRelativ) stueck = stueck.slice(2);
@@ -891,7 +924,22 @@ if (process.argv.includes("--selftest")) {
     ["`./` plus Ausbruch wird gemeldet (Loch w)", pfadverweis(".//etc/passwd", wurzeln)?.pfad === "/etc/passwd"],
     ["… und löst dann nicht auf", aufloesen(pfadverweis(".//etc/passwd", wurzeln).pfad, alle) === null],
     ["kein Pfad: Muster mit Auslassung", pfadverweis(".../ai/ping/route.ts", wurzeln) === null],
-    ["kein Pfad: Muster mit Klammern", pfadverweis("(protected)/layout.tsx", wurzeln) === null],
+    // Klammern gehören zu echten Next.js-Dateinamen (Loch y).
+    [
+      "Routengruppe wird erkannt (Loch y)",
+      pfadverweis("src/app/(public)/page.tsx", wurzeln)?.pfad === "src/app/(public)/page.tsx",
+    ],
+    [
+      "dynamisches Segment wird erkannt (Loch y)",
+      aufloesen("src/app/uploads/[...pfad]/route.ts", alle) === "src/app/uploads/[...pfad]/route.ts",
+    ],
+    ["Auslassung als Wegstück bleibt Muster", pfadverweis(".../ai/ping/route.ts", wurzeln) === null],
+    ["Auslassungszeichen bleibt Muster", pfadverweis("…/04bv4jz9i8omc.css", wurzeln) === null],
+    // Nachgestellter Bindestrich verdeckt keine Nummernspanne mehr (Loch z).
+    ["tote Nummer mit angehängtem Wort (Loch z)", toteNummern("laut A7-neu weiterhin").length === 1],
+    ["Nummernspanne wird gefangen", toteNummern("die Annahmen A1-A11 gelten").length === 1],
+    ["Prüfkennung bleibt weiterhin frei", toteNummern("A-16 und A-33").length === 0],
+    ["Residual-Kennung bleibt frei", toteNummern("Residual R-A33").length === 0],
     // Die benannte Grenze aus Loch t — sie steht hier, damit sie nicht still ist.
     ["blosser Name bleibt durch (benannte Grenze, Loch t)", verboteneAnleitung("Führe `certbot` aus.\n").length === 0],
     ["Anweisung mit Leerraum wird gefangen", verboteneAnleitung("Führe `certbot --nginx` aus.\n").length === 1],
