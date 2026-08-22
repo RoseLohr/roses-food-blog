@@ -6,10 +6,13 @@
  * Zeichenketten im Quelltext (steht `loading="lazy"` da? ist browserslist
  * gesetzt?). Kein einziger Wächter sah je ein Byte eines gebauten Artefakts.
  *
- * Gemessen wird gzip, weil der Next-Server genau das ausliefert
- * (node_modules/next/dist/server/lib/router-server.js: compression() ohne
- * Brotli). Brotli wird zusätzlich ausgewiesen, aber NICHT gedeckelt — solange
- * nginx es nicht ausliefert, wäre das eine Zahl ohne Wirklichkeit.
+ * Gemessen wird gzip. Die Begründung hat 08/2026 gewechselt, die Wahl nicht:
+ * Früher lieferte der Next-Server selbst gzip aus; heute steht dort
+ * `compress: false` (next.config.ts), und gzip kommt vom Ursprung
+ * (deploy/npm/http_top.conf, `gzip_comp_level 5`). Brotli wird zusätzlich
+ * ausgewiesen, aber NICHT gedeckelt — am Ursprung gibt es kein brotli
+ * (OpenResty ohne Modul), es kommt erst von Cloudflare am Rand. Die
+ * Brotli-Zahl hier ist also eine Simulation ohne Entsprechung am Ursprung.
  *
  * VIER GRENZEN, weil jede einzelne eine Lücke lässt (beide Lücken kamen aus
  * dem Review, gpt-5.6-sol, PR #63):
@@ -46,9 +49,16 @@ export const BUDGET = {
 };
 
 /**
- * Kompressionsstufe, die der Reverse Proxy fährt — Quelle der Wahrheit ist
- * deploy/nginx.conf.example (`brotli_comp_level`). Weicht sie dort ab, meldet
- * es tests/kompression.test.ts.
+ * Stufe für die simulierte Brotli-Kennzahl. Sie ist an `brotli_comp_level` in
+ * deploy/nginx.conf.example gekoppelt (erzwungen von tests/kompression.test.ts)
+ * — und jene Vorlage beschreibt einen HISTORISCHEN Host-nginx-Betrieb, den
+ * dieser Server nicht fährt. Am Ursprung wird gar kein brotli angewendet.
+ *
+ * Der Wert fließt in KEIN Budget, nur in eine Ausgabezeile, die selbst mit
+ * „nur zur Information" gekennzeichnet ist. Er bleibt vorerst stehen: Ihn zu
+ * entfernen ist folgenlos für jede Grenze, macht aber tests/kompression.test.ts
+ * rot und gehört deshalb in denselben Zug wie der Umbau jener Vorlage
+ * (audit/12-infrastruktur-fahrplan.md, Spur A2/A3, blockiert).
  */
 const PROXY_BROTLI_STUFE = 5;
 

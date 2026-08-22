@@ -3,9 +3,14 @@
  * Inhaltstypen als Kopien ein (bestehende Inhalte bleiben unangetastet).
  * Admin-geschützt + Same-Origin.
  *
- * Hinweis zur Uploadgröße: Der Reverse-Proxy (nginx) begrenzt die Größe per
- * `client_max_body_size`. Für große Sicherungen ggf. dort erhöhen
- * (siehe deploy/nginx.conf.example). Serverseitig gilt zusätzlich MAX_IMPORT_BYTES.
+ * Hinweis zur Uploadgröße: Der vorgelagerte Proxy begrenzt sie per
+ * `client_max_body_size`; für große Sicherungen ist sie dort zu erhöhen.
+ * Die Vorlage deploy/nginx.conf.example fordert dafür 200m und
+ * proxy_read_timeout 600s — sie beschreibt allerdings einen historischen
+ * Host-nginx-Betrieb, und ob die Werte am tatsächlichen Proxy gelten, ist
+ * NICHT erhoben (Messfrage M2, audit/12-infrastruktur-fahrplan.md). Sie ist
+ * zugleich die einzige Stelle im Repository, die sie überhaupt niederschreibt.
+ * Serverseitig gilt zusätzlich MAX_IMPORT_BYTES.
  */
 import { NextResponse } from "next/server";
 import { getCurrentAdmin } from "@/lib/auth";

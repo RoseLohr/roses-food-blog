@@ -16,7 +16,9 @@
  *     Seite unter gourmetcompass.de lief) vergiftete jede ausgelieferte URL,
  *     ohne dass irgendetwas rot wurde. Deshalb leitet sich der öffentliche
  *     Ursprung für ausgelieferte Artefakte aus der LAUFENDEN ANFRAGE ab
- *     (nginx reicht Host + X-Forwarded-Proto durch): Der Ursprung, unter dem
+ *     (der vorgelagerte Proxy reicht Host + X-Forwarded-Proto durch — WELCHE
+ *     Köpfe er tatsächlich setzt, ist nicht erhoben, siehe M3 in
+ *     audit/12-infrastruktur-fahrplan.md): Der Ursprung, unter dem
  *     ein Crawler uns erreicht, IST der öffentliche Ursprung. Das kann nicht
  *     veralten.
  */
@@ -104,8 +106,13 @@ export function getBaseUrl(): string {
 }
 
 /**
- * Ursprung der laufenden Anfrage aus den Proxy-Headern (nginx setzt
- * `Host` und `X-Forwarded-Proto`, siehe deploy/nginx.conf.example).
+ * Ursprung der laufenden Anfrage aus den Proxy-Headern.
+ *
+ * WELCHE Köpfe der aktive Proxy setzt, ist NICHT erhoben (Messfrage M3,
+ * audit/12-infrastruktur-fahrplan.md). Hier stand früher „nginx setzt Host und
+ * X-Forwarded-Proto, siehe deploy/nginx.conf.example" — jene Vorlage gilt für
+ * einen Host-nginx, der hier nicht läuft. Der Code liest überdies ZUERST
+ * `x-forwarded-host`, einen Kopf, den die Vorlage gar nicht setzt.
  * Unplausible Header → null (dann gilt die Konfiguration).
  */
 export function originFromHeaders(headerBag: Headers): string | null {
