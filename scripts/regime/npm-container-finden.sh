@@ -54,18 +54,45 @@ LAUFENDE=$($PODMAN ps --format '{{.Names}}|{{.Ports}}' 2>/dev/null) || LAUFENDE=
 
 TREFFER=""
 ANZAHL=0
+MIT_PORT=""
+ANZAHL_MIT_PORT=0
+VERWORFEN=""
+verworfen() { VERWORFEN="$VERWORFEN  $1: $2"$'\n'; }
+
 while IFS= read -r zeile; do
   [ -n "$zeile" ] || continue
   name=${zeile%%|*}
   ports=${zeile#*|}
-  # Nach dem TATSÄCHLICHEN Port der Basis filtern, nicht fest nach 80/443.
-  # Die erste Fassung berechnete URL_PORT und warf ihn weg: Bei
-  # `BASE_URL=https://ziel:8443` wäre der richtige Proxy ausgeschlossen worden
-  # — und ein FREMDER nginx auf 443, der zufällig denselben Namen bedient,
-  # hätte gewählt und global umkonfiguriert werden können.
-  # (Befund des Pflicht-Approvers, PR #103.)
-  case "$ports" in *:"$PORT"-\>*) ;; *) continue ;; esac
-  $PODMAN exec "$name" nginx -v >/dev/null 2>&1 || continue
+
+  # DER PORT IST KEIN TOR, SONDERN EINE AUSWAHLHILFE.
+  #
+  # Die erste Fassung verlangte, dass der Container den Port aus der Basis
+  # veröffentlicht. Auf dem echten Server schloss das ausgerechnet den
+  # richtigen Proxy aus: Er läuft in einem Pod (bzw. mit Host-Netzwerk), und
+  # `podman ps` weist ihm deshalb GAR KEINE Ports zu — die Portspalte ist leer,
+  # während nginx darin auf 80/443 lauscht. Gemessen am 22.08.2026:
+  #
+  #   nginx-proxy-manager|localhost/leaf-migration-npm:…|      ← keine Ports
+  #   roses-blog|localhost/roses-blog:latest|127.0.0.1:3011->3000/tcp
+  #
+  # Die beiden Merkmale, die den Proxy WIRKLICH ausweisen, sind die anderen
+  # zwei: Er ist ein nginx, und seine Konfiguration bedient genau diesen Namen.
+  # Der Port hilft nur, wenn mehrere davon in Frage kommen.
+  #
+  # Verworfen wird deshalb nur, wer Ports veröffentlicht und unseren NICHT
+  # dabei hat — das ist eine echte Unstimmigkeit. Wer gar keine veröffentlicht,
+  # wird an den anderen Merkmalen gemessen.
+  hat_unseren_port=0
+  case "$ports" in
+    *:"$PORT"-\>*) hat_unseren_port=1 ;;
+    "") ;;                                    # keine Ports: Pod/Host-Netzwerk
+    *:*-\>*) verworfen "$name" "veröffentlicht Ports, aber nicht $PORT ($ports)"; continue ;;
+  esac
+
+  if ! $PODMAN exec "$name" nginx -v >/dev/null 2>&1; then
+    verworfen "$name" "kein nginx darin"
+    continue
+  fi
   # Im Container wird nur GELESEN, mit einem FESTEN Kommando. Ausgewertet wird
   # hier draußen. Zwei Gründe, beide vom Pflicht-Approver gefunden (PR #103):
   #
@@ -79,7 +106,10 @@ while IFS= read -r zeile; do
   #     zugeordnet. Eine nginx-Direktive endet am Semikolon, und alles hinter
   #     `#` ist Kommentar.
   konf=$($PODMAN exec "$name" sh -c 'cat /data/nginx/proxy_host/*.conf 2>/dev/null') || konf=""
-  [ -n "$konf" ] || continue
+  if [ -z "$konf" ]; then
+    verworfen "$name" "keine Proxy-Host-Konfiguration unter /data/nginx/proxy_host/"
+    continue
+  fi
   namen=$(printf '%s\n' "$konf" \
     | sed 's/#.*$//' \
     | grep -E '^[[:space:]]*server_name[[:space:]]' \
@@ -114,9 +144,16 @@ while IFS= read -r zeile; do
       *)  case "$HOST" in $muster) passt=1; break ;; esac ;;
     esac
   done <<< "$namen"
-  [ "$passt" = 1 ] || continue
+  if [ "$passt" != 1 ]; then
+    verworfen "$name" "bedient '$HOST' nicht"
+    continue
+  fi
   TREFFER="$TREFFER$name"$'\n'
   ANZAHL=$((ANZAHL + 1))
+  if [ "$hat_unseren_port" = 1 ]; then
+    MIT_PORT="$MIT_PORT$name"$'\n'
+    ANZAHL_MIT_PORT=$((ANZAHL_MIT_PORT + 1))
+  fi
 # Gespeist wird die Schleife mit einem Here-String. Ein unquotiertes Heredoc
 # ist im Projekt verboten — sein Rumpf würde von der Shell ausgewertet (Regel
 # aus dem Vorfall 2026-08-14, erzwungen von tests/deploy-betrieb.test.ts). Und
@@ -125,14 +162,34 @@ while IFS= read -r zeile; do
 done <<< "$LAUFENDE"
 
 if [ "$ANZAHL" -eq 0 ]; then
-  echo "Kein Proxy-Container gefunden, der '$HOST' auf Port $PORT bedient." >&2
+  # Sagen, WAS geprüft und warum verworfen wurde. Die erste Fassung meldete nur
+  # „nicht gefunden" — und dass der richtige Container am Portfilter scheiterte,
+  # war daran nicht zu erkennen.
+  echo "Kein Proxy-Container gefunden, der '$HOST' bedient." >&2
+  if [ -n "$VERWORFEN" ]; then
+    echo "Geprüft und verworfen:" >&2
+    printf '%s' "$VERWORFEN" >&2
+  fi
   exit 1
 fi
+
 if [ "$ANZAHL" -gt 1 ]; then
+  # Erst JETZT entscheidet der Port — als Auswahlhilfe unter mehreren, nicht
+  # als Tor davor.
+  if [ "$ANZAHL_MIT_PORT" -eq 1 ]; then
+    printf '%s\n' "${MIT_PORT%%$'\n'*}"
+    exit 0
+  fi
   echo "Mehrdeutig: $ANZAHL Container bedienen '$HOST' —" >&2
   printf '%s' "$TREFFER" | sed 's/^/  /' >&2
+  if [ "$ANZAHL_MIT_PORT" -gt 1 ]; then
+    echo "Davon veröffentlichen $ANZAHL_MIT_PORT den Port $PORT; das entscheidet also nicht." >&2
+  else
+    echo "Keiner davon veröffentlicht Port $PORT; das entscheidet also nicht." >&2
+  fi
   echo "Hier wird nicht geraten. Bitte von Hand entscheiden." >&2
   exit 2
 fi
+
 printf '%s\n' "${TREFFER%%$'\n'*}"
 exit 0

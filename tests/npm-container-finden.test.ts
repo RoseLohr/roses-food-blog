@@ -130,12 +130,46 @@ describe("Proxy-Container zuordnen", () => {
     expect(gefunden).toBe("npm");
   });
 
-  it("übergeht Container ohne veröffentlichte 80/443", async () => {
+  it("übergeht einen Container, der Ports veröffentlicht — aber nicht unseren", async () => {
+    // Eine echte Unstimmigkeit: Wer 8080 veröffentlicht, bedient die Domain
+    // nicht auf 443.
     const bin = podmanAttrappe([
       { name: "intern", ports: "127.0.0.1:8080->80/tcp", nginx: true, hosts: ["gourmetcompass.de"] },
     ]);
-    const { code } = await finden(bin, "gourmetcompass.de");
+    const { code, ausgabe } = await finden(bin, "gourmetcompass.de");
     expect(code).toBe(1);
+    expect(ausgabe, "die Verwerfung muss begründet sein").toMatch(/veröffentlicht Ports, aber nicht 443/);
+  });
+
+  it("findet einen Proxy, der GAR KEINE Ports veröffentlicht (Pod bzw. Host-Netzwerk)", async () => {
+    // DER FALL DES ECHTEN SERVERS, gemessen am 22.08.2026: Der Proxy läuft in
+    // einem Pod, `podman ps` weist ihm deshalb keine Ports zu — die Spalte ist
+    // leer, während nginx darin auf 443 lauscht. Die erste Fassung verlangte
+    // den Port und schloss damit ausgerechnet den richtigen Container aus:
+    //
+    //   Kein Proxy-Container gefunden, der 'gourmetcompass.de' auf Port 443 bedient.
+    //
+    // Der Port ist seitdem Auswahlhilfe, nicht Tor.
+    const bin = podmanAttrappe([
+      { name: "nginx-proxy-manager", ports: "", nginx: true, hosts: ["gourmetcompass.de"] },
+    ]);
+    const { code, gefunden, ausgabe } = await finden(bin, "gourmetcompass.de");
+    expect(code, ausgabe).toBe(0);
+    expect(gefunden).toBe("nginx-proxy-manager");
+  });
+
+  it("nennt bei Misserfolg, was geprüft und warum verworfen wurde", async () => {
+    // Ohne diese Begründung war am echten Server nicht zu erkennen, dass der
+    // richtige Container am Portfilter scheiterte.
+    const bin = podmanAttrappe([
+      { name: "ohne-nginx", ports: "", nginx: false, hosts: ["gourmetcompass.de"] },
+      { name: "fremd", ports: "", nginx: true, hosts: ["fremd.example"] },
+    ]);
+    const { code, ausgabe } = await finden(bin, "gourmetcompass.de");
+    expect(code).toBe(1);
+    expect(ausgabe).toMatch(/Geprüft und verworfen/);
+    expect(ausgabe).toMatch(/ohne-nginx: kein nginx darin/);
+    expect(ausgabe).toMatch(/fremd: bedient 'gourmetcompass\.de' nicht/);
   });
 
   it("findet den Namen auch, wenn die Zeile mehrere trägt", async () => {
@@ -260,7 +294,22 @@ describe("Proxy-Container zuordnen", () => {
     ]);
     const { code, ausgabe } = await finden(bin, "ziel.example", "https://ziel.example:8443");
     expect(code, ausgabe).toBe(1);
-    expect(ausgabe).toMatch(/Port 8443/);
+    // Der Port muss in der Begründung stehen — sonst sucht man an der
+    // falschen Stelle. Die Formulierung nennt ihn jetzt in der Verwerfung.
+    expect(ausgabe).toMatch(/veröffentlicht Ports, aber nicht 8443/);
+  });
+
+  it("entscheidet unter mehreren anhand des Ports", async () => {
+    // Zwei nginx bedienen denselben Namen; einer veröffentlicht unseren Port,
+    // der andere gar keinen. Dann ist der Port die Auswahlhilfe, für die er
+    // gedacht ist — und es bleibt eindeutig.
+    const bin = podmanAttrappe([
+      { name: "ohne-ports", ports: "", nginx: true, hosts: ["gourmetcompass.de"] },
+      { name: "mit-443", ports: "0.0.0.0:443->443/tcp", nginx: true, hosts: ["gourmetcompass.de"] },
+    ]);
+    const { code, gefunden, ausgabe } = await finden(bin, "gourmetcompass.de");
+    expect(code, ausgabe).toBe(0);
+    expect(gefunden).toBe("mit-443");
   });
 
   it("rät NICHT, wenn zwei Container dieselbe Domain bedienen", async () => {

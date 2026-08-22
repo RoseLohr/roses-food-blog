@@ -45,5 +45,13 @@ url_teile() {
   case "$URL_HOST" in
     *[!A-Za-z0-9._:-]*) return 1 ;;
   esac
+  # Der Port muss eine Zahl im gültigen Bereich sein. Ohne diese Prüfung kam
+  # ein DOPPELTES Schema durch: `https://https://example.de/` ergibt Host
+  # „https" und einen LEEREN Port — und daraus wird ein `--resolve https::…`,
+  # das nirgends greift. Genau so stand es am 22.08.2026 in einer .env.
+  case "$URL_PORT" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  [ "$URL_PORT" -ge 1 ] && [ "$URL_PORT" -le 65535 ] || return 1
   return 0
 }
