@@ -44,6 +44,8 @@ type Behaelter = {
   podPorts?: string;
   /** Mehrere server-Blöcke, wenn ein Container mehrere Domains bedient. */
   bloecke?: Block[];
+  /** Läuft der POD im Host-Netzwerk? (podman pod inspect .InfraConfig.HostNetwork) */
+  podHostnetz?: boolean;
 };
 
 let arbeit: string;
@@ -109,6 +111,11 @@ function podmanAttrappe(behaelter: Behaelter[]) {
       .map((b) => `${b.podPorts ?? ""}|${b.pod}`)
       .join("\n") + "\n",
   );
+  const podNetzDatei = path.join(arbeit, "podnetz.txt");
+  fs.writeFileSync(
+    podNetzDatei,
+    behaelter.filter((b) => b.pod).map((b) => `${b.pod} ${b.podHostnetz ? "true" : "false"}`).join("\n") + "\n",
+  );
   const psDatei = path.join(arbeit, "ps.txt");
   fs.writeFileSync(psDatei, behaelter.map((b) => `${b.name}|${b.ports}`).join("\n") + "\n");
   const nginxJa = behaelter.filter((b) => b.nginx).map((b) => b.name).join(" ");
@@ -132,6 +139,14 @@ case "$1" in
     # podman inspect <name> --format '{{.HostConfig.NetworkMode}}|{{.Pod}}'
     zeile=$(grep -E "^$2 " ${JSON.stringify(inspectDatei)} || true)
     [ -n "$zeile" ] || exit 1
+    printf '%s\\n' "\${zeile#* }"; exit 0 ;;
+  pod)
+    # podman pod inspect <pod> --format '{{.InfraConfig.HostNetwork}}'
+    # Ein Pod-MITGLIED meldet als NetworkMode "container:<infra>", nicht "host"
+    # — auch dann, wenn der Pod im Host-Netzwerk laeuft. Gefragt werden muss
+    # deshalb der Pod, nicht das Mitglied.
+    zeile=$(grep -E "^$3 " ${JSON.stringify(podNetzDatei)} 2>/dev/null || true)
+    [ -n "$zeile" ] || { echo false; exit 0; }
     printf '%s\\n' "\${zeile#* }"; exit 0 ;;
   exec)
     name="$2"; shift 2
@@ -269,7 +284,7 @@ describe("Proxy-Container zuordnen", () => {
     expect(code, ausgabe).toBe(1);
     // Die Begründung nennt beides: dass auf dem verlangten Port nichts bedient
     // wird, UND worauf der Container stattdessen lauscht.
-    expect(ausgabe).toMatch(/läuft im Host-Netzwerk, bedient auf 8443 aber nichts/);
+    expect(ausgabe).toMatch(/bedient auf Container-Port 8443 nichts/);
     expect(ausgabe).toMatch(/lauscht auf: 80 443/);
   });
 
@@ -358,7 +373,10 @@ describe("Proxy-Container zuordnen", () => {
     ]);
     const { code, ausgabe } = await finden(bin, "ziel.example", "https://ziel.example");
     expect(code, ausgabe).toBe(1);
-    expect(ausgabe).toMatch(/bedient 'ziel.example' nicht auf 443/);
+    // Und sie nennt, WAS dort stattdessen bedient wird — sonst suchte man den
+    // Fehler beim Namen statt beim Port.
+    expect(ausgabe).toMatch(/bedient 'ziel.example' nicht auf Container-Port 443/);
+    expect(ausgabe).toMatch(/dort: fremd.example/);
   });
 
   it("nimmt ihn, wenn Port UND Name aus demselben Block kommen", async () => {
@@ -378,6 +396,78 @@ describe("Proxy-Container zuordnen", () => {
     const { code, gefunden, ausgabe } = await finden(bin, "ziel.example", "https://ziel.example:8443");
     expect(code, ausgabe).toBe(0);
     expect(gefunden).toBe("geteilter-host-nginx");
+  });
+
+  it("bindet auch das ABBILDUNGSZIEL an den server-Block", async () => {
+    // BEFUND DES PFLICHT-APPROVERS (PR #105), vierte Runde am selben
+    // Kriterium: Der Container bildet 8443 auf 443 UND 8080 auf 80 ab. Unsere
+    // Domain wird nur im Block auf 80 bedient, auf 443 sitzt ein fremder Host.
+    // Verlangt ist :8443 — das führt über die Abbildung auf Container-Port 443,
+    // und dort bedient er uns NICHT.
+    //
+    // Die vorige Fassung fragte in diesem Zweig nur, ob die Portspalte 8443
+    // enthält, und nahm die Namen dann aus allen Blöcken zusammen.
+    const bin = podmanAttrappe([
+      {
+        name: "geteilter-proxy",
+        ports: "0.0.0.0:8443->443/tcp, 0.0.0.0:8080->80/tcp",
+        nginx: true,
+        hosts: [],
+        bloecke: [
+          { lauscht: [443], hosts: ["fremd.example"] },
+          { lauscht: [80], hosts: ["ziel.example"] },
+        ],
+      },
+    ]);
+    const { code, ausgabe } = await finden(bin, "ziel.example", "https://ziel.example:8443");
+    expect(code, ausgabe).toBe(1);
+    expect(ausgabe).toMatch(/bedient 'ziel.example' nicht/);
+  });
+
+  it("nimmt denselben Container über die Abbildung, die WIRKLICH zu ihm führt", async () => {
+    const bin = podmanAttrappe([
+      {
+        name: "geteilter-proxy",
+        ports: "0.0.0.0:8443->443/tcp, 0.0.0.0:8080->80/tcp",
+        nginx: true,
+        hosts: [],
+        bloecke: [
+          { lauscht: [443], hosts: ["fremd.example"] },
+          { lauscht: [80], hosts: ["ziel.example"] },
+        ],
+      },
+    ]);
+    const { code, gefunden, ausgabe } = await finden(bin, "ziel.example", "http://ziel.example:8080");
+    expect(code, ausgabe).toBe(0);
+    expect(gefunden).toBe("geteilter-proxy");
+  });
+
+  it("erkennt einen Pod im Host-Netzwerk am POD, nicht am Mitglied", async () => {
+    // BEFUND DES PFLICHT-APPROVERS (PR #105): Ein Pod-MITGLIED meldet als
+    // NetworkMode „container:<infra>", nicht „host" — auch dann, wenn der Pod
+    // im Host-Netzwerk läuft. Die vorige Fassung prüfte den Netzmodus des
+    // Mitglieds und hätte einen solchen Pod verworfen.
+    //
+    // Das ist auf DIESEM Server kein Gedankenspiel: Der Proxy liegt in einem
+    // Pod, und `podman ps` weist ihm keine Ports zu. Läuft der Pod im
+    // Host-Netzwerk, wäre der Deploy wieder bei „Kein Proxy-Container
+    // gefunden" gelandet.
+    const bin = podmanAttrappe([
+      {
+        name: "npm",
+        ports: "",
+        nginx: true,
+        hosts: ["ziel.example"],
+        netzmodus: "container:a9981908aef1",
+        pod: "p1",
+        podPorts: "",
+        podHostnetz: true,
+        lauscht: [80, 443],
+      },
+    ]);
+    const { code, gefunden, ausgabe } = await finden(bin, "ziel.example", "https://ziel.example");
+    expect(code, ausgabe).toBe(0);
+    expect(gefunden).toBe("npm");
   });
 
   it("nennt bei Misserfolg, was geprüft und warum verworfen wurde", async () => {

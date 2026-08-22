@@ -97,160 +97,161 @@ while IFS= read -r zeile; do
   # sie einander zuzuordnen: `listen 8080` aus der einen Datei und
   # `server_name ziel` aus der anderen hätten zusammen bestanden.
   # (Alles drei: Befund des Pflicht-Approvers, PR #105.)
+  # EINE REGEL, drei Wege zur selben Zahl.
+  #
+  # Gesucht ist der CONTAINER-seitige Port, auf dem eine Anfrage an
+  # HOST:PORT ankommt. Erst mit ihm lässt sich fragen, ob DORT auch unser Name
+  # bedient wird. Vier Anläufe an dieser Stelle sind schiefgegangen, weil sie
+  # Teilfragen getrennt beantwortet und die Antworten dann zusammengeworfen
+  # haben (alle vier: Befunde des Pflicht-Approvers, PR #103 und #105):
+  #
+  #   1. Der Port als Tor: Wer ihn nicht veröffentlicht, fliegt raus. Schloss
+  #      ausgerechnet den richtigen Proxy aus, der in einem Pod liegt.
+  #   2. Stichentscheid per Port unter mehreren Treffern. Auf diesem Server
+  #      genau verkehrt herum.
+  #   3. `listen` gegen den Port aus der URL. Das ist Container-Seite gegen
+  #      Host-Seite; bei 8443->443 verschiedene Zahlen.
+  #   4. Port und Name unkorreliert: irgendwo 443, irgendwo unser Name —
+  #      zusammen bestanden, obwohl auf 443 ein fremder Host sitzt.
+  #
+  # Deshalb jetzt in EINER Reihenfolge, ohne Sonderwege:
+  #   a) Container-Seite bestimmen (aus der eigenen Portspalte, aus der des
+  #      Pods, oder — im Host-Netzwerk, wo es keine Abbildung gibt — direkt).
+  #   b) `nginx -T` BLOCKWEISE lesen und nur die Namen nehmen, die auf genau
+  #      dieser Container-Seite bedient werden.
   hat_unseren_port=0
-  # Je Container zurücksetzen: Sonst trüge der nächste die Herkunftsangabe des
-  # vorigen in seiner Verwerfungsbegründung — und die Namensquelle dazu.
-  HERKUNFT=""
+  ZIEL_PORT=""
   namen=""
+
+  # Aus "0.0.0.0:8443->443/tcp, [::]:8080->80/tcp" die rechte Seite zu unserem
+  # Port holen. Mehrere Abbildungen je Container sind der Normalfall.
+  ziel_aus_abbildung() {
+    # `printf '%s\n'`, nicht '%s': Ohne abschließenden Zeilenumbruch verwirft
+    # `read` die letzte Zeile — und damit ausgerechnet den einzigen Eintrag bei
+    # nur einer Abbildung. Beim Testen aufgefallen, nicht beim Schreiben.
+    printf '%s\n' "$1" | tr ',' '\n' | while IFS= read -r teil; do
+      case "$teil" in
+        *:"$PORT"-\>*)
+          rest=${teil#*:"$PORT"->}
+          printf '%s\n' "${rest%%/*}"
+          return 0 ;;
+      esac
+    done
+  }
+
   case "$ports" in
-    *:"$PORT"-\>*) hat_unseren_port=1 ;;
-    *:*-\>*) verworfen "$name" "veröffentlicht Ports, aber nicht $PORT ($ports)"; continue ;;
+    *:"$PORT"-\>*)
+      ZIEL_PORT=$(ziel_aus_abbildung "$ports")
+      hat_unseren_port=1 ;;
+    *:*-\>*)
+      verworfen "$name" "veröffentlicht Ports, aber nicht $PORT ($ports)"; continue ;;
     *)
-      # GAR KEINE Veröffentlichung in DIESER Zeile. Das allein sagt weder ja
-      # noch nein — es heißt nur, dass die Host-Seite woanders steht. Wo, hängt
-      # davon ab, WARUM die Spalte leer ist. Und in beiden Fällen, in denen sie
-      # aus einem guten Grund leer ist, ist die Host-Seite sehr wohl zu
-      # ermitteln. Sie NICHT zu ermitteln hieße, einen fremden nginx auf 80/443
-      # als unseren Proxy auf 8443 zu nehmen und ihn global umzukonfigurieren.
-      # (Befund des Pflicht-Approvers, PR #105 — gegen die Fassung, die hier
-      # nur noch fragte, OB der Container erreichbar ist, nicht mehr WORAUF.)
+      # GAR KEINE Veröffentlichung in DIESER Zeile. Das sagt weder ja noch
+      # nein — nur, dass die Host-Seite woanders steht.
       netz=$($PODMAN inspect "$name" --format '{{.HostConfig.NetworkMode}}|{{.Pod}}' 2>/dev/null) || netz=""
       modus=${netz%%|*}
       pod=${netz#*|}
       if [ -n "$pod" ]; then
-        # POD: Veröffentlicht wird vom Infra-Container des Pods, nicht vom
-        # Mitglied. Die Host-Seite steht also in der Portspalte eines ANDEREN
-        # Containers desselben Pods — dieselbe Schreibweise, dieselbe Prüfung.
+        # POD: Veröffentlicht wird vom Infra-Container, nicht vom Mitglied.
         pod_ports=$($PODMAN ps -a --filter "pod=$pod" --format '{{.Ports}}' 2>/dev/null | tr '\n' ' ') || pod_ports=""
         case "$pod_ports" in
-          *:"$PORT"-\>*) hat_unseren_port=1 ;;
-          *:*-\>*) verworfen "$name" "liegt im Pod $pod, und der Pod veröffentlicht nicht $PORT ($pod_ports)"; continue ;;
+          *:"$PORT"-\>*)
+            ZIEL_PORT=$(ziel_aus_abbildung "$pod_ports")
+            hat_unseren_port=1 ;;
+          *:*-\>*)
+            verworfen "$name" "liegt im Pod $pod, und der Pod veröffentlicht nicht $PORT ($pod_ports)"; continue ;;
           *)
-            # Pod ohne jede Veröffentlichung: Entweder der Pod selbst läuft im
-            # Host-Netzwerk — dann gilt die Betrachtung unten —, oder er ist
-            # abgeschottet und vom Host aus nicht erreichbar.
-            if [ "$modus" != host ]; then
+            # Pod ohne Veröffentlichung — dann trägt nur Host-Netzwerk.
+            # GEFRAGT WIRD DER POD, NICHT DAS MITGLIED: Ein Mitglied meldet als
+            # NetworkMode "container:<infra>", auch wenn der Pod im
+            # Host-Netzwerk läuft. Die vorige Fassung prüfte das Mitglied und
+            # hätte genau diesen Pod verworfen — auf diesem Server kein
+            # Gedankenspiel, der Proxy liegt in einem Pod ohne Portspalte.
+            pod_hostnetz=$($PODMAN pod inspect "$pod" --format '{{.InfraConfig.HostNetwork}}' 2>/dev/null) || pod_hostnetz=""
+            if [ "$pod_hostnetz" != true ] && [ "$modus" != host ]; then
               verworfen "$name" "liegt im Pod $pod, der weder einen Port veröffentlicht noch im Host-Netzwerk läuft — vom Host aus nicht erreichbar"
               continue
-            fi ;;
+            fi
+            ZIEL_PORT="$PORT" ;;
         esac
-      fi
-      if [ "$hat_unseren_port" = 0 ] && [ "$modus" != host ]; then
+      elif [ "$modus" = host ]; then
+        # Host-Netzwerk: keine Abbildung, beide Seiten sind dieselbe Zahl.
+        ZIEL_PORT="$PORT"
+      else
         verworfen "$name" "veröffentlicht keinen Port und ist weder im Host-Netzwerk noch in einem Pod (Netzmodus: ${modus:-unbekannt}) — vom Host aus nicht erreichbar"
         continue
       fi ;;
   esac
+
+  if [ -z "$ZIEL_PORT" ]; then
+    # Sollte nach obiger Fallunterscheidung nicht vorkommen. Wenn doch, ist die
+    # Abbildung unlesbar — und dann ist Nichtstun die richtige Antwort, nicht
+    # eine Zuordnung auf Verdacht.
+    verworfen "$name" "Portabbildung für $PORT nicht lesbar ($ports)"
+    continue
+  fi
 
   if ! $PODMAN exec "$name" nginx -v >/dev/null 2>&1; then
     verworfen "$name" "kein nginx darin"
     continue
   fi
 
-  if [ "$hat_unseren_port" = 0 ]; then
-    # HOST-NETZWERK ohne jede Veröffentlichung. Hier — und AUSSCHLIESSLICH
-    # hier — darf die `listen`-Zahl der Konfiguration gegen den Port aus der
-    # URL gehalten werden. Es gibt keine Abbildung: Der Container teilt sich
-    # den Netzwerk-Namensraum des Hosts, Container-Seite und Host-Seite sind
-    # dieselbe Zahl. Bei einer Abbildung wie 8443->443 wäre genau dieser
-    # Vergleich falsch — deshalb steht er nur in diesem Zweig.
-    #
-    # Und er steht NACH der nginx-Prüfung, nicht davor: Er liest
-    # nginx-Konfiguration, setzt also einen nginx voraus. Stünde er oben,
-    # bekäme ein Container ohne nginx die Begründung „belegt Port X nicht"
-    # statt „kein nginx darin" — eine irreführende Fehlersuche.
-    #
-    # Gelesen wird `nginx -T`, die WIRKSAME Gesamtkonfiguration — und zwar
-    # BLOCKWEISE. Port und Name müssen aus DEMSELBEN server-Block stammen.
-    #
-    # Eine frühere Fassung nahm die Lauschports aus `nginx -T` (ganzer Prozess)
-    # und die Namen aus /data/nginx/proxy_host/*.conf — zwei Quellen, die nie
-    # einander zugeordnet wurden. Ein geteilter Host-nginx mit
-    #
-    #     server { listen 443;  server_name fremd.example; }
-    #     server { listen 8443; server_name ziel.example;  }
-    #
-    # bestand damit für `ziel.example` auf Port 443: irgendwo 443, irgendwo
-    # ziel.example. Auf 443 landet die Anfrage aber beim fremden Host — das
-    # Schnipsel wäre in einen Proxy geschrieben worden, der unsere Domain auf
-    # diesem Port gar nicht ausliefert. (Befund des Pflicht-Approvers, PR #105.)
-    paare=$($PODMAN exec "$name" nginx -T 2>/dev/null | awk '
-      # Je server-Block JEDES Paar aus Lauschport und bedientem Namen, als
-      # "PORT<TAB>NAME". Die Klammertiefe grenzt die Blöcke ab; ohne sie würde
-      # ein location-Block das Ende des server-Blocks vortäuschen.
-      {
-        zeile=$0
-        sub(/#.*$/, "", zeile)   # Kommentar ab # — sonst zählte er als Name
-        n=split(zeile, w, /[ \t]+/)
-        auf=gsub(/\{/, "{", zeile); zu=gsub(/\}/, "}", zeile)
-        wort=""; for (i=1;i<=n;i++) if (w[i]!="") { wort=w[i]; break }
-        if (inserver==0 && wort=="server" && auf>0) { inserver=1; tiefe=0; np=0; nn=0 }
-        if (inserver) {
-          if (wort=="listen") {
-            for (i=1;i<=n;i++) if (w[i]=="listen") { p=w[i+1]; break }
-            sub(/;.*$/, "", p)
-            if (p !~ /^unix:/) {
-              sub(/.*\]:/, "", p)                              # [::]:443 -> 443
-              if (p ~ /^[0-9.]+:[0-9]+$/) sub(/^.*:/, "", p)    # 0.0.0.0:8443 -> 8443
-              if (p ~ /^[0-9]+$/) { np++; ports[np]=p }
-            }
-          }
-          if (wort=="server_name") {
-            gefunden=0
-            for (i=1;i<=n;i++) {
-              if (w[i]=="") continue
-              if (gefunden) {
-                t=w[i]; fertig=(t ~ /;/); sub(/;.*$/, "", t)
-                if (t!="") { nn++; namen[nn]=tolower(t) }
-                if (fertig) break
-              }
-              if (w[i]=="server_name") gefunden=1
-            }
-          }
-          tiefe += auf; tiefe -= zu
-          if (tiefe<=0) {
-            for (a=1;a<=np;a++) for (b=1;b<=nn;b++) print ports[a] "\t" namen[b]
-            inserver=0
+  # Die Namen kommen IMMER aus `nginx -T`, der wirksamen Gesamtkonfiguration,
+  # und IMMER blockweise: gesucht sind die Namen, die auf ZIEL_PORT bedient
+  # werden. Die frühere Quelle /data/nginx/proxy_host/*.conf war nicht falsch,
+  # aber sie kennt den Zusammenhang zum Port nicht — und genau der ist die
+  # Frage. `nginx -T` enthält dieselben Dateien, nur eingeordnet.
+  paare=$($PODMAN exec "$name" nginx -T 2>/dev/null | awk '
+    # Je server-Block JEDES Paar aus Lauschport und bedientem Namen, als
+    # "PORT<TAB>NAME". Die Klammertiefe grenzt die Blöcke ab; ohne sie würde
+    # ein location-Block das Ende des server-Blocks vortäuschen.
+    {
+      zeile=$0
+      sub(/#.*$/, "", zeile)   # Kommentar ab # — sonst zählte er als Name
+      n=split(zeile, w, /[ \t]+/)
+      auf=gsub(/\{/, "{", zeile); zu=gsub(/\}/, "}", zeile)
+      wort=""; for (i=1;i<=n;i++) if (w[i]!="") { wort=w[i]; break }
+      if (inserver==0 && wort=="server" && auf>0) { inserver=1; tiefe=0; np=0; nn=0 }
+      if (inserver) {
+        if (wort=="listen") {
+          for (i=1;i<=n;i++) if (w[i]=="listen") { p=w[i+1]; break }
+          sub(/;.*$/, "", p)
+          if (p !~ /^unix:/) {
+            sub(/.*\]:/, "", p)                              # [::]:443 -> 443
+            if (p ~ /^[0-9.]+:[0-9]+$/) sub(/^.*:/, "", p)    # 0.0.0.0:8443 -> 8443
+            if (p ~ /^[0-9]+$/) { np++; ports[np]=p }
           }
         }
-      }') || paare=""
-    lauscht=$(printf '%s\n' "$paare" | cut -f1 | sort -un | tr '\n' ' ')
-    namen=$(printf '%s\n' "$paare" | awk -F'\t' -v p="$PORT" '$1==p{print $2}')
-    if [ -z "$namen" ]; then
-      verworfen "$name" "läuft im Host-Netzwerk, bedient auf $PORT aber nichts (lauscht auf: ${lauscht:-nichts})"
-      continue
-    fi
-    HERKUNFT=" auf $PORT"
-    hat_unseren_port=1
+        if (wort=="server_name") {
+          gefunden=0
+          for (i=1;i<=n;i++) {
+            if (w[i]=="") continue
+            if (gefunden) {
+              t=w[i]; fertig=(t ~ /;/); sub(/;.*$/, "", t)
+              if (t!="") { nn++; namen[nn]=tolower(t) }
+              if (fertig) break
+            }
+            if (w[i]=="server_name") gefunden=1
+          }
+        }
+        tiefe += auf; tiefe -= zu
+        if (tiefe<=0) {
+          for (a=1;a<=np;a++) for (b=1;b<=nn;b++) print ports[a] "\t" namen[b]
+          inserver=0
+        }
+      }
+    }') || paare=""
+  if [ -z "$paare" ]; then
+    verworfen "$name" "nginx -T liefert keine server-Blöcke mit Namen — nicht zuzuordnen"
+    continue
   fi
-  # Im Container wird nur GELESEN, mit einem FESTEN Kommando. Ausgewertet wird
-  # hier draußen. Zwei Gründe, beide vom Pflicht-Approver gefunden (PR #103):
-  #
-  #  1. Die erste Fassung baute `$HOST` in eine `sh -c`-Zeichenkette. Ein Wert
-  #     wie `x' >/dev/null; true #` hätte die Prüfung immer bestehen lassen —
-  #     und dann schriebe deploy.sh eine globale Konfiguration in den
-  #     erstbesten fremden nginx. Fremde Daten gehören nicht in eine
-  #     Kommandozeichenkette; als Argument an grep sind sie harmlos.
-  #  2. Die erste Fassung zerlegte die ganze Zeile in Wörter — samt Kommentar.
-  #     `server_name fremd.de; # ziel.de` hätte „ziel.de" diesem Container
-  #     zugeordnet. Eine nginx-Direktive endet am Semikolon, und alles hinter
-  #     `#` ist Kommentar.
-  # Im Host-Netzwerk stehen die Namen schon fest — dort wurden sie oben
-  # blockweise zusammen mit dem Port bestimmt. Sonst kommen sie aus den
-  # Proxy-Host-Dateien; die Host-Seite des Ports ist dann bereits über podman
-  # belegt (eigene Portspalte oder die des Pods), und die listen-Zahlen der
-  # Konfiguration sind die Container-Seite, also die falsche Größe.
-  if [ -z "${HERKUNFT:-}" ]; then
-    konf=$($PODMAN exec "$name" sh -c 'cat /data/nginx/proxy_host/*.conf 2>/dev/null') || konf=""
-    if [ -z "$konf" ]; then
-      verworfen "$name" "keine Proxy-Host-Konfiguration unter /data/nginx/proxy_host/"
-      continue
-    fi
-    namen=$(printf '%s\n' "$konf" \
-      | sed 's/#.*$//' \
-      | grep -E '^[[:space:]]*server_name[[:space:]]' \
-      | sed -e 's/;.*$//' -e 's/^[[:space:]]*server_name[[:space:]]*//' \
-      | tr -s ' \t' '\n' | tr 'A-Z' 'a-z') || namen=""
+  lauscht=$(printf '%s\n' "$paare" | cut -f1 | sort -un | tr '\n' ' ')
+  namen=$(printf '%s\n' "$paare" | awk -F'\t' -v p="$ZIEL_PORT" '$1==p{print $2}')
+  if [ -z "$namen" ]; then
+    verworfen "$name" "bedient auf Container-Port $ZIEL_PORT nichts (lauscht auf: ${lauscht:-nichts})"
+    continue
   fi
+
   # nginx' Namenssemantik nachbilden, nicht bloß Zeichen vergleichen. Ein
   # Literalvergleich verfehlte zwei gängige Fälle (Befund des Pflicht-
   # Approvers, PR #103):
@@ -281,7 +282,7 @@ while IFS= read -r zeile; do
     esac
   done <<< "$namen"
   if [ "$passt" != 1 ]; then
-    verworfen "$name" "bedient '$HOST' nicht${HERKUNFT:-}"
+    verworfen "$name" "bedient '$HOST' nicht auf Container-Port $ZIEL_PORT (dort: $(printf '%s' "$namen" | tr '\n' ' '))"
     continue
   fi
 
