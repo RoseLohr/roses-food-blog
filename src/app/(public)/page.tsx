@@ -399,7 +399,17 @@ export default async function HomePage() {
     ) : null;
 
   return (
-    <main>
+    // `data-seite="start"` ist die STRUKTURELLE Kennung dieser Seite: Sie hängt
+    // am <main> und damit an nichts, was die Redaktion leeren kann. Vorher
+    // erkannten die Auslieferungsprüfungen die Startseite an
+    // `section.featured-slider` — die aber wird unten nur bei
+    // `slides.length > 0` gerendert. Ein geleerter Slider hätte damit jeden
+    // Deploy zum Scheitern gebracht (deploy.sh, Abschnitt 9c) und die täglichen
+    // Randmessungen dazu, mit der Meldung „steht nicht die Startseite".
+    // Nicht ins geteilte Layout verschieben: Eine Fehlerseite innerhalb von
+    // (public) trüge die Marke dann mit, und die Prüfung würde genau das nicht
+    // mehr fangen, wofür es sie gibt.
+    <main data-seite="start">
       <JsonLd data={websiteJsonLd(base)} />
       <PageTracker contentType="seite" path="/" />
       <h1 className="sr-only">{dict.home.welcome}</h1>

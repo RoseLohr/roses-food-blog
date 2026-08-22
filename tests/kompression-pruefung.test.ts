@@ -33,13 +33,22 @@ const SKRIPT = path.join(process.cwd(), "scripts/regime/kompression-pruefen.sh")
 const ausfuehren = promisify(execFile);
 
 const STARTSEITE = [
-  '<!doctype html><html><body><section class="featured-slider">Bühne</section>',
+  '<!doctype html><html><body><main data-seite="start">',
+  '<section class="featured-slider">Bühne</section>',
   '<link rel="stylesheet" href="/_next/static/haupt.css">',
   '<script src="/_next/static/haupt.js"></script>',
   '<link rel="preload" href="/fonts/raleway.woff2?v=abc" as="font">',
   ...Array.from({ length: 60 }, (_, i) => `<p>Fülltext ${i} — genug Masse, damit Kompression überhaupt greift.</p>`),
-  "</body></html>",
+  "</main></body></html>",
 ].join("\n");
+
+// Dieselbe Seite, aber mit LEEREM Slider. Genau das liefert die echte
+// Startseite, wenn die Redaktion keine Slider-Einträge gepflegt hat:
+// src/app/(public)/page.tsx rendert die Bühne nur bei slides.length > 0.
+const STARTSEITE_OHNE_BUEHNE = STARTSEITE.replace(
+  '<section class="featured-slider">Bühne</section>\n',
+  "",
+);
 const CSS = Array.from({ length: 200 }, (_, i) => `.k-${i}{color:#123456;padding:1rem}`).join("\n");
 const JS = Array.from({ length: 200 }, (_, i) => `function f${i}(a,b){return a+b+${i}}`).join("\n");
 // Zufallsbytes: wie eine echte woff2 praktisch nicht weiter komprimierbar.
@@ -62,6 +71,8 @@ type Verhalten = {
   abgeschnitten?: boolean;
   /** Startseite ohne CSS-Verweis. */
   ohneCss?: boolean;
+  /** Startseite ohne Slider-Bühne — leerer Slider, redaktioneller Normalfall. */
+  ohneBuehne?: boolean;
   /** Gültiges gzip — aber von FREMDEM Inhalt gleicher Länge. */
   fremdinhalt?: boolean;
   /** Antwortet auf den komprimierten Abruf mit einem Fehlerstatus. */
@@ -77,7 +88,13 @@ let server: Server | undefined;
 function starten(v: Verhalten): Promise<string> {
   const inhalte: Record<string, { koerper: Buffer; typ: string; unveraenderlich: boolean }> = {
     "/": {
-      koerper: Buffer.from(v.ohneCss ? STARTSEITE.replace(/<link rel="stylesheet"[^>]*>/, "") : STARTSEITE),
+      koerper: Buffer.from(
+        v.ohneBuehne
+          ? STARTSEITE_OHNE_BUEHNE
+          : v.ohneCss
+            ? STARTSEITE.replace(/<link rel="stylesheet"[^>]*>/, "")
+            : STARTSEITE,
+      ),
       typ: "text/html; charset=utf-8",
       unveraenderlich: false,
     },
@@ -423,7 +440,7 @@ describe("Kompressionsprüfung", () => {
     const basis = await starten({ komprimiert: ALLES, kurzerRumpf: true });
     const { code, ausgabe } = await pruefen(basis, "ursprung");
     expect(code, ausgabe).not.toBe(0);
-    expect(ausgabe).toMatch(/enthält 'featured-slider' nicht/);
+    expect(ausgabe).toMatch(/enthält 'data-seite="start"' nicht/);
   });
 
   it("prüft die Variante, die es gemessen hat — nicht eine andere", async () => {
@@ -530,5 +547,32 @@ describe("Kompressionsprüfung", () => {
     const { code, ausgabe } = await pruefen(basis, "rand", undefined, { CURL_CA_BUNDLE: bundle });
     expect(code, ausgabe).toBe(0);
     expect(ausgabe).not.toMatch(/Noch \d+ Tage gültig/);
+  });
+
+  it("bricht NICHT ab, wenn die Redaktion den Slider geleert hat", async () => {
+    // src/app/(public)/page.tsx:408 rendert die Bühne nur bei
+    // `slides.length > 0`, und die Einträge kommen aus der Datenbank. Solange
+    // die Prüfung die Startseite an `featured-slider` erkannte, machte ein rein
+    // REDAKTIONELLER Vorgang — Slider leeren, Rezept depublizieren — jeden
+    // Deploy kaputt: Abschnitt 9c von deploy.sh ruft dieses Skript, und ein
+    // Fehlschlag hier endet in `fail "Auslieferung am Ursprung fehlerhaft"`.
+    // Die Meldung hätte gelautet „Unter <url> steht nicht die Startseite" —
+    // wieder eine Fehlersuche in der falschen Richtung.
+    //
+    // Erkannt wird die Seite jetzt an `data-seite="start"` auf ihrem eigenen
+    // <main>. Das ist eine STRUKTURELLE Marke: unabhängig vom Inhalt, aber
+    // trotzdem nur auf dieser Seite — eine Next-Fehlerseite trägt sie nicht
+    // (eine eigene error.tsx gibt es in diesem Projekt nicht).
+    const basis = await starten({ komprimiert: ALLES, ohneBuehne: true });
+    const { code, ausgabe } = await pruefen(basis, "ursprung");
+    expect(code, ausgabe).toBe(0);
+  });
+
+  it("die Startseite trägt die strukturelle Marke außerhalb jeder Bedingung", async () => {
+    // Der Gegenzug: Die Marke muss am <main> selbst hängen. Stünde sie in einem
+    // bedingt gerenderten Block, wäre sie wieder inhaltsabhängig — und der
+    // Fehler von oben käme unter anderem Namen zurück.
+    const seite = fs.readFileSync(path.join(process.cwd(), "src/app/(public)/page.tsx"), "utf8");
+    expect(seite).toContain('<main data-seite="start">');
   });
 });

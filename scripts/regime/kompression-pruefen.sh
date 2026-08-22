@@ -366,7 +366,7 @@ printf 'Kompression auf Ebene "%s": %s%s\n\n' "$EBENE" "$BASIS" \
 SEITE_TMP="$(mktemp)"
 trap 'rm -f "$SEITE_TMP"' EXIT
 "${CURL[@]}" -H 'Accept-Encoding: identity' -o "$SEITE_TMP" "$BASIS/" 2>/dev/null || true
-if ! grep -qa 'featured-slider' "$SEITE_TMP" 2>/dev/null; then
+if ! grep -qa 'data-seite="start"' "$SEITE_TMP" 2>/dev/null; then
   "${CURL[@]}" --compressed -o "$SEITE_TMP" "$BASIS/" 2>/dev/null || true
 fi
 
@@ -377,8 +377,15 @@ fi
 # Dieselbe Marke, an der auch perf-uptime.yml die Startseite erkennt: eine
 # Fehlerseite mit Status 200 trägt weiterhin /_next/static/*.js, und daraus
 # ließen sich fröhlich grüne Kennzahlen ziehen.
-if ! grep -qa 'featured-slider' "$SEITE_TMP"; then
-  echo "FEHLER: Unter $BASIS/ steht nicht die Startseite (keine section.featured-slider)." >&2
+#
+# Die Marke ist STRUKTURELL, nicht redaktionell. Vorher stand hier
+# `featured-slider` — die Bühne der Startseite. Die rendert
+# src/app/(public)/page.tsx aber nur bei `slides.length > 0`, und die Einträge
+# kommen aus der Datenbank. Ein geleerter Slider hätte damit jeden Deploy
+# scheitern lassen (Abschnitt 9c von deploy.sh), mit einer Meldung, die auf den
+# Proxy zeigt statt auf die Redaktion.
+if ! grep -qa 'data-seite="start"' "$SEITE_TMP"; then
+  echo "FEHLER: Unter $BASIS/ steht nicht die Startseite (kein data-seite=\"start\")." >&2
   exit 1
 fi
 
@@ -405,7 +412,7 @@ printf '  %s\n' "$(printf '%.0s-' $(seq 1 110))"
 
 # Beim HTML wird zusätzlich verlangt, dass das Entpackte die Bühne der
 # Startseite noch trägt — dieselbe Marke, an der die Seite oben erkannt wurde.
-textressource "HTML" "$BASIS/" "featured-slider"
+textressource "HTML" "$BASIS/" 'data-seite="start"'
 if [ -n "$CSS" ]; then textressource "CSS" "$BASIS$CSS"
   case "$LETZTE_CACHE" in *immutable*) ;; *) maengel "CSS: kein 'immutable' im Cache-Control ($LETZTE_CACHE)" ;; esac
 else maengel "Keine CSS-Datei in der Startseite gefunden — die Prüfung wäre unvollständig."; fi
