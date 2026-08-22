@@ -118,8 +118,8 @@ Zwei Dinge, die das Inventar zusätzlich festhält:
   Annahmenummern und Pfadverweise ins Leere. Gemessen am Bestand: 312
   Pfadverweise, 4 historische Codeblöcke, alle in Ordnung.
 
-  **Der Pflicht-Approver hat in FÜNF Runden DREIZEHN Umgehungen gefunden** —
-  zehn von ihm benannt, drei beim Nachziehen derselben Klasse. Sechs davon haben
+  **Der Pflicht-Approver hat in SECHS Runden SECHZEHN Umgehungen gefunden** —
+  dreizehn von ihm benannt, drei beim Nachziehen derselben Klasse. Sechs davon haben
   dieselbe Form: *eine Prüfung, die sich still selbst abschaltet.* Eine
   Shell-Zeile „# historisch" INNERHALB eines Codeblocks setzte die Ausnahme für
   alles Folgende; ein Zaun aus drei Tilden galt gar nicht als Code; eingerückter
@@ -195,8 +195,28 @@ Zwei Dinge, die das Inventar zusätzlich festhält:
   verdeckte die tote Nummer, „laut Annahme-A7" blieb grün. Die Ausnahme ist
   gefallen; am Bestand nachgemessen erzeugt das null Fehlalarme.
 
-  62 Selbsttestfälle, Gegenprobe gegen alle fünf Vorfassungen gefahren (alle
-  dreizehn Löcher rutschen dort durch), dazu eine Positivkontrolle am echten
+  **Runde sechs traf die Lehre in ihrem eigenen Rücken.** Zwei der drei neuen
+  Löcher waren wieder Markdown-Sonderfälle — und zwar an der Stelle, an der ein
+  Rest Handarbeit übrig geblieben war, nachdem die Blockzerlegung längst auf
+  `marked` stand: Inline-Code-Spannen wurden gar nicht als Code geprüft (eine
+  Anweisung mitten im Satz blieb grün), und der eigene Backtick-Wähler verbot
+  Leerraum, sodass eine nach CommonMark gültige Spanne mit Rand-Leerraum
+  ungeprüft blieb. Beides ist jetzt ebenfalls Token-Arbeit. Von sechzehn Löchern
+  kamen damit acht aus nachgebauter Grammatik — die Hälfte.
+
+  Der dritte war der zweite Ausbruch: Das Containment rechnete rein lexikalisch,
+  ein verfolgter Symlink aus dem Repository heraus kam durch. Geprüft wird
+  zusätzlich der aufgelöste echte Pfad; der Selbsttest legt dafür wirklich einen
+  Symlink an, statt die Annahme zu glauben.
+
+  Damit die Regel gegen Fließtext nicht kippt, ist sie gemessen worden, bevor
+  sie kam: Von 2468 Inline-Spannen in README und `docs/` tragen drei ein
+  verbotenes Wort, alle drei einwortig — Teil genau des Zitatblocks, der die
+  Abwesenheit feststellt. Eine Spanne zählt deshalb nur als Anweisung, wenn sie
+  mehr als ein Wort ist. Null Fehlalarme am Bestand.
+
+  69 Selbsttestfälle, Gegenprobe gegen alle sechs Vorfassungen gefahren (alle
+  sechzehn Löcher rutschen dort durch), dazu eine Positivkontrolle am echten
   Baum: drei eingeschleuste Verstöße in README, `docs/` und `src/` werden mit
   exakter Zeilennummer gemeldet.
 

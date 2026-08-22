@@ -55,9 +55,9 @@
  * WARUM HIER ZWEI FREMDE PARSER LAUFEN UND KEINE EIGENEN WÄHLER
  *
  * Die ersten Fassungen zerlegten Markdown und TypeScript von Hand. Der
- * Pflicht-Approver hat in FÜNF Runden DREIZEHN Umgehungen gefunden (PR #109) — und
- * das ist kein Ausreißer, sondern die Regel: Ein handgeschriebener Zerleger hat
- * so viele Löcher, wie das Format Sonderfälle hat. Die gefundenen, zur
+ * Pflicht-Approver hat in SECHS Runden SECHZEHN Umgehungen gefunden (PR #109) —
+ * und das ist kein Ausreißer, sondern die Regel: Ein handgeschriebener Zerleger
+ * hat so viele Löcher, wie das Format Sonderfälle hat. Die gefundenen, zur
  * Erinnerung und als Selbsttestfälle unten festgenagelt:
  *
  *   a) Eine Raute IM Codeblock galt als Überschrift und schaltete die
@@ -89,21 +89,32 @@
  *   i) JEDER eindeutige PRÄFIX galt als gültige Abkürzung. Damit lief ein
  *      vertippter Pfad (`src/lib/media.t`) grün durch — die Frage „gibt es
  *      diese Datei?" war ausgehöhlt, nicht bloß umgangen. Siehe `aufloesen`.
+ *   n) NUR BLOCK-CODE WURDE GEPRÜFT, keine Inline-Spannen. Eine Anweisung
+ *      mitten im Satz — `sudo certbot --nginx` — blieb grün.
+ *   o) DER EIGENE BACKTICK-WÄHLER VERBOT LEERRAUM. Eine nach CommonMark
+ *      gültige Spanne mit Rand-Leerraum blieb dadurch ungeprüft.
+ *   p) DAS CONTAINMENT WAR REIN LEXIKALISCH. Ein verfolgter Symlink, der aus
+ *      dem Repository hinauszeigt, kam durch — und `zeilenBefund` hätte die
+ *      fremde Datei gelesen. Siehe `echtDrin`.
  *
- * a, b, c, f und j sind Markdown-Sonderfälle; g ist ein TypeScript-Sonderfall.
- * Sechs von dreizehn Löchern kamen also daher, dass hier zwei Sprachen
- * nachgebaut wurden, die das Projekt längst richtig zerlegen kann:
+ * a, b, c, f, j, n und o sind Markdown-Sonderfälle; g ist ein
+ * TypeScript-Sonderfall. ACHT von sechzehn Löchern kamen also daher, dass hier
+ * zwei Sprachen nachgebaut wurden, die das Projekt längst richtig zerlegen
+ * kann — und n und o kamen erst zutage, NACHDEM die Blockzerlegung schon auf
+ * `marked` stand: Ein Rest Handarbeit an den Inline-Spannen war übrig
+ * geblieben. Die Lehre hält also auch gegen sich selbst.
  *
  *   * `marked` (Produktionsabhängigkeit, treibt `src/lib/markdown.ts`) liefert
- *     Codeblöcke und Überschriften als Token. Alle vier Markdown-Löcher fallen
- *     damit ersatzlos weg — nicht geflickt, sondern gegenstandslos.
+ *     Codeblöcke, Inline-Spannen und Überschriften als Token. Alle sieben
+ *     Markdown-Löcher fallen damit ersatzlos weg — nicht geflickt, sondern
+ *     gegenstandslos.
  *   * `typescript` (Entwicklungsabhängigkeit, treibt `npm run typecheck`)
  *     liefert die Kommentarbereiche aus dem GEPARSTEN Baum. Nachgemessen an
  *     `const r = /a\/\//; // A5`: Der reine Scanner liest daraus „//; // A5"
  *     und liegt falsch, der Parser liefert „// A5" und liegt richtig.
  *
- * d, e, h, i, k, l und m bleiben eigene Logik — sie handeln von Dateien und Zahlen,
- * nicht von Grammatik. j fällt nicht ganz weg: `marked` liefert die
+ * d, e, h, i, k, l, m und p bleiben eigene Logik — sie handeln von Dateien und
+ * Zahlen, nicht von Grammatik. j fällt nicht ganz weg: `marked` liefert die
  * Verschachtelung korrekt, aber WELCHE Überschrift einen Abschnitt aufmacht,
  * ist eine Entscheidung dieses Gates und musste hier getroffen werden.
  *
@@ -182,43 +193,45 @@ function zeileVon(text, pos) {
 }
 
 /**
- * Prüfung 1: verbotene Anleitung in Code.
+ * ALLE Code-Stücke eines Markdown-Textes, in Dokumentreihenfolge, mit
+ * Zeilennummer und Abschnittslage.
  *
  * Was Code ist, entscheidet `marked` — dieselbe Zerlegung, die auch die Seiten
- * rendert. Damit zählen alle drei Markdown-Codeformen (```-Zaun, ~~~-Zaun,
- * Einrückung) ohne eigenes Zutun, und eine Raute im Block ist keine
- * Überschrift.
+ * rendert. Damit zählen alle drei Block-Codeformen (```-Zaun, ~~~-Zaun,
+ * Einrückung) und die Inline-Spannen ohne eigenes Zutun; eine Raute im Block
+ * ist keine Überschrift, und eine Spanne mit Rand-Leerraum (` x `) wird sauber
+ * abgeschält (Loch o — der eigene Backtick-Wähler verbot Leerraum und übersah
+ * sie deshalb).
  *
- * Gibt die beanstandeten Zeilennummern zurück (1-basiert).
+ * Abschnitte macht NUR eine Überschrift auf oberster Ebene. Eine Überschrift in
+ * einem Zitat oder Listenpunkt (`> ## Historisch`) tut das nicht — sie setzte
+ * die Ausnahme trotzdem und ließ jeden folgenden Codeblock ungeprüft, auch
+ * außerhalb des Zitats (Loch j).
  */
-export function verboteneAnleitung(md) {
-  const treffer = [];
+export function codestuecke(md) {
+  const raus = [];
   let unterHistorisch = false;
   let suchAb = 0;
 
   const lauf = (tokens, oberste) => {
     for (const t of tokens) {
-      // Abschnitte macht NUR eine Überschrift auf oberster Ebene. Eine
-      // Überschrift in einem Zitat oder Listenpunkt (`> ## Historisch`) tut das
-      // nicht — sie setzte die Ausnahme trotzdem und ließ jeden folgenden
-      // Codeblock ungeprüft, auch außerhalb des Zitats (Loch j, Befund des
-      // Pflicht-Approvers, vierte Runde; an beiden Formen nachgestellt).
       if (t.type === "heading") {
         if (oberste) unterHistorisch = /historisch/i.test(t.text ?? "");
-      } else if (t.type === "code") {
+      } else if (t.type === "code" || t.type === "codespan") {
         // Vorwärts suchen: Token stehen in Dokumentreihenfolge, auch die in
-        // Listen verschachtelten. Zwei gleiche Blöcke stören deshalb nicht.
+        // Listen verschachtelten. Zwei gleiche Stücke stören deshalb nicht.
         const pos = md.indexOf(t.raw, suchAb);
         if (pos !== -1) suchAb = pos + t.raw.length;
-        if (!unterHistorisch) {
-          const start = pos === -1 ? 0 : zeileVon(md, pos);
-          t.raw.split("\n").forEach((zeile, j) => {
-            if (VERALTETE_ANLEITUNG.test(zeile)) treffer.push(start + j);
-          });
-        }
+        raus.push({
+          art: t.type === "code" ? "block" : "inline",
+          roh: t.raw,
+          text: t.text ?? "",
+          zeile: pos === -1 ? 1 : zeileVon(md, pos),
+          unterHistorisch,
+        });
       }
-      // Verschachtelte Blöcke (Codeblock in einer Liste, in einem Zitat, in
-      // einer Tabellenzelle) hängen an eigenen Token-Listen.
+      // Verschachtelte Stücke (Codeblock in einer Liste, Spanne in einem
+      // Zitat, in einer Tabellenzelle) hängen an eigenen Token-Listen.
       if (Array.isArray(t.tokens)) lauf(t.tokens, false);
       if (Array.isArray(t.items)) lauf(t.items, false);
       if (Array.isArray(t.rows)) for (const zeile of t.rows) lauf(zeile, false);
@@ -227,7 +240,33 @@ export function verboteneAnleitung(md) {
   };
 
   lauf(new Marked({ gfm: true }).lexer(md), true);
-  return treffer.sort((a, b) => a - b);
+  return raus;
+}
+
+/**
+ * Prüfung 1: verbotene Anleitung in Code.
+ *
+ * Gibt die beanstandeten Zeilennummern zurück (1-basiert).
+ */
+export function verboteneAnleitung(md) {
+  const treffer = [];
+  for (const s of codestuecke(md)) {
+    if (s.unterHistorisch) continue;
+    if (s.art === "block") {
+      s.roh.split("\n").forEach((zeile, j) => {
+        if (VERALTETE_ANLEITUNG.test(zeile)) treffer.push(s.zeile + j);
+      });
+      continue;
+    }
+    // EINE INLINE-SPANNE zählt, wenn sie eine ANWEISUNG ist — also mehr als ein
+    // Wort. `sudo certbot --nginx` ist eine; `certbot` allein ist das Wort, und
+    // genau so steht es im Zitatblock von README §2, der die Abwesenheit
+    // feststellt. Vorher waren Inline-Spannen gar nicht geprüft (Loch n).
+    // Am Bestand nachgemessen: Von 2468 Spannen tragen drei ein verbotenes
+    // Wort, alle drei einwortig — die Regel erzeugt heute null Fehlalarme.
+    if (/\s/.test(s.text) && VERALTETE_ANLEITUNG.test(s.text)) treffer.push(s.zeile);
+  }
+  return [...new Set(treffer)].sort((a, b) => a - b);
 }
 
 /** Prüfung 2a: tote Annahmenummer in Fließtext (Markdown, CSS). */
@@ -271,7 +310,13 @@ export function toteNummernInKommentaren(quelle, datei = "x.ts") {
 }
 
 /**
- * Pfadverweise einer Zeile: alles in Backticks, das wie ein Repo-Pfad aussieht.
+ * Der Pfadverweis einer Inline-Code-Spanne — oder `null`, wenn sie keiner ist.
+ *
+ * Die Spannen kommen aus `codestuecke()`, also von `marked`. Ein eigener
+ * Backtick-Wähler stand hier und verbot Leerraum im Inneren; eine nach
+ * CommonMark gültige Spanne mit Rand-Leerraum (` src/x.ts `) blieb dadurch
+ * ungeprüft (Loch o). Dass hier zum dritten Mal ein Loch aus eigener
+ * Markdown-Zerlegung kam, ist die Bestätigung derselben Lehre.
  *
  * Als Verweis gilt ein Stück nur, wenn sein erstes Wegstück ein tatsächlich
  * vorhandenes oberstes Verzeichnis ist — oder wenn es mit `./` ausdrücklich als
@@ -289,27 +334,25 @@ export function toteNummernInKommentaren(quelle, datei = "x.ts") {
  * `A-20/B-05` wären sonst Pfadverweise. Die Herleitung aus den echten obersten
  * Verzeichnissen trennt beides sauber, ohne dass jemand etwas pflegen muss.
  */
-export function pfadverweise(zeile, wurzeln) {
-  const raus = [];
-  for (const m of zeile.matchAll(/`([^`\s]+)`/g)) {
-    if (/[*<>{}]/.test(m[1])) continue;
-    let stueck = m[1];
-    const repoRelativ = stueck.startsWith("./");
-    if (repoRelativ) stueck = stueck.slice(2);
-    const t = ZEILEN_TEIL.exec(stueck);
-    // KEINE Bereinigung nachgestellter Interpunktion: Sie stand hier und wusch
-    // Tippfehler. Innerhalb von Backticks gehört jedes Zeichen zum Verweis; am
-    // Bestand nachgesehen trägt kein einziger Pfad dort einen Punkt am Ende.
-    const pfad = t[1];
-    if (!repoRelativ && !(pfad.includes("/") && wurzeln.has(pfad.slice(0, pfad.indexOf("/"))))) continue;
-    raus.push({
-      text: m[1],
-      pfad,
-      von: t[2] === undefined ? null : Number(t[2]),
-      bis: t[3] === undefined ? (t[2] === undefined ? null : Number(t[2])) : Number(t[3]),
-    });
-  }
-  return raus;
+export function pfadverweis(inhalt, wurzeln) {
+  // Muster (`*`, `<…>`, `{…}`) sind keine Verweise, und ein Stück mit Leerraum
+  // ist kein einzelner Pfad.
+  if (/[*<>{}\s]/.test(inhalt)) return null;
+  let stueck = inhalt;
+  const repoRelativ = stueck.startsWith("./");
+  if (repoRelativ) stueck = stueck.slice(2);
+  const t = ZEILEN_TEIL.exec(stueck);
+  // KEINE Bereinigung nachgestellter Interpunktion: Sie stand hier und wusch
+  // Tippfehler. In einer Code-Spanne gehört jedes Zeichen zum Verweis; am
+  // Bestand nachgesehen trägt kein einziger Pfad dort einen Punkt am Ende.
+  const pfad = t[1];
+  if (!repoRelativ && !(pfad.includes("/") && wurzeln.has(pfad.slice(0, pfad.indexOf("/"))))) return null;
+  return {
+    text: inhalt,
+    pfad,
+    von: t[2] === undefined ? null : Number(t[2]),
+    bis: t[3] === undefined ? (t[2] === undefined ? null : Number(t[2])) : Number(t[3]),
+  };
 }
 
 /** Wurzel des Repositories — von git erfragt, nicht aus dem Arbeitsverzeichnis
@@ -357,6 +400,29 @@ export function istMitglied(rel, alle) {
 }
 
 /**
+ * Bleibt der Pfad auch NACH Auflösung aller Symlinks im Repository?
+ *
+ * `einwaerts()` rechnet rein lexikalisch — ein verfolgter Symlink, der aus dem
+ * Repository hinauszeigt, käme dort durch, wäre Mitglied der Dateiliste, und
+ * `zeilenBefund` läse anschließend die fremde Datei (Loch p, Befund des
+ * Pflicht-Approvers, sechste Runde). Git kann Symlinks verfolgen; die
+ * lexikalische Prüfung allein genügt deshalb nicht.
+ */
+export function echtDrin(rel, wurzel = repoWurzel()) {
+  let echt;
+  let echteWurzel;
+  try {
+    echt = fs.realpathSync(path.resolve(wurzel, rel));
+    echteWurzel = fs.realpathSync(wurzel);
+  } catch {
+    // Gibt es nicht (oder nicht lesbar) → kein Ziel in diesem Repository.
+    return false;
+  }
+  const drin = path.relative(echteWurzel, echt);
+  return drin !== ".." && !drin.startsWith(`..${path.sep}`) && !path.isAbsolute(drin);
+}
+
+/**
  * Löst einen Verweis auf die Datei auf, die er meint.
  *
  * Neben dem exakten Pfad zählt GENAU EINE Abkürzung: die Nummer eines
@@ -384,12 +450,12 @@ export function istMitglied(rel, alle) {
 export function aufloesen(pfad, alle, wurzel = repoWurzel()) {
   const rel = einwaerts(pfad, wurzel);
   if (rel === null) return null;
-  if (istMitglied(rel, alle) && fs.existsSync(rel)) return rel;
+  if (istMitglied(rel, alle) && echtDrin(rel, wurzel)) return rel;
   if (!/(?:^|\/)\d{2}$/.test(rel)) return null;
   // `git ls-files --cached` führt auch Einträge, deren Datei im Arbeitsbaum
   // gerade fehlt. Ohne diese Prüfung stürbe `zeilenBefund` später an einem
   // `statSync` — eine Kontrolle, die abstürzt, meldet nichts.
-  const treffer = alle.filter((f) => f.startsWith(`${rel}-`) && fs.existsSync(f));
+  const treffer = alle.filter((f) => f.startsWith(`${rel}-`) && echtDrin(f, wurzel));
   return treffer.length === 1 ? treffer[0] : null;
 }
 
@@ -454,21 +520,22 @@ function main() {
     }
 
     if (!istMd) continue;
-    zeilen.forEach((zeile, i) => {
-      for (const v of pfadverweise(zeile, wurzeln)) {
-        // In `audit/` nur Verweise MIT Zeilennummer — siehe Kopf.
-        if (imAudit && v.von === null) continue;
-        gezaehlt++;
-        const ziel = aufloesen(v.pfad, alle, wurzel);
-        if (ziel === null) {
-          melde("Pfadverweis ins Leere", `${datei}:${i + 1}`, v.text);
-          continue;
-        }
-        if (v.von === null) continue;
-        const befund = zeilenBefund(ziel, v.von, v.bis);
-        if (befund) melde("Unbrauchbare Zeilenangabe", `${datei}:${i + 1}`, `${v.text} — ${befund}`);
+    for (const s of codestuecke(text)) {
+      if (s.art !== "inline") continue;
+      const v = pfadverweis(s.text, wurzeln);
+      if (v === null) continue;
+      // In `audit/` nur Verweise MIT Zeilennummer — siehe Kopf.
+      if (imAudit && v.von === null) continue;
+      gezaehlt++;
+      const ziel = aufloesen(v.pfad, alle, wurzel);
+      if (ziel === null) {
+        melde("Pfadverweis ins Leere", `${datei}:${s.zeile}`, v.text);
+        continue;
       }
-    });
+      if (v.von === null) continue;
+      const befund = zeilenBefund(ziel, v.von, v.bis);
+      if (befund) melde("Unbrauchbare Zeilenangabe", `${datei}:${s.zeile}`, `${v.text} — ${befund}`);
+    }
   }
 
   if (verstoesse) {
@@ -476,6 +543,34 @@ function main() {
     process.exit(1);
   }
   console.log(`[doku-gate] ${gezaehlt} Pfadverweise, Anleitungen und Nummern geprüft: grün.`);
+}
+
+/** Der Inhalt der ersten Inline-Spanne — für den Selbsttest von Loch o. */
+function spannenText(md) {
+  return codestuecke(md).find((s) => s.art === "inline")?.text ?? null;
+}
+
+/**
+ * Legt WIRKLICH einen Symlink an, der aus dem Repository hinauszeigt, und
+ * fragt `echtDrin`. Gedacht wäre hier zu wenig: Genau die Annahme „das kann ja
+ * nicht durchkommen" war Loch p.
+ *
+ * Das Verzeichnis heißt `.gate-selftest-doku` — dasselbe Muster wie die
+ * übrigen Gate-Selbsttests, und `.gitignore` deckt es über den Eintrag
+ * `.gate-selftest-` samt Stern ab. (Ausgeschrieben stünde hier ein Stern
+ * gefolgt von einem Schrägstrich; das beendet diesen Kommentar mitten im Satz.)
+ */
+function symlinkProbe() {
+  const ordner = path.join(repoWurzel(), ".gate-selftest-doku");
+  const verweis = path.join(ordner, "hinaus");
+  try {
+    fs.mkdirSync(ordner, { recursive: true });
+    fs.rmSync(verweis, { force: true });
+    fs.symlinkSync(path.parse(repoWurzel()).root, verweis);
+    return echtDrin(".gate-selftest-doku/hinaus");
+  } finally {
+    fs.rmSync(ordner, { recursive: true, force: true });
+  }
 }
 
 if (process.argv.includes("--selftest")) {
@@ -498,6 +593,10 @@ if (process.argv.includes("--selftest")) {
     // … aber eine Überschrift IM Zitat oder Listenpunkt macht keinen Abschnitt auf (Loch j).
     ["Zitat-Überschrift leakt nicht (Loch j)", verboteneAnleitung(`## Setup\n\n> ## Historisch: alter Weg\n\n${z3}\nsudo certbot --nginx\n${z3}\n`).length === 1],
     ["Listen-Überschrift leakt nicht (Loch j)", verboteneAnleitung(`## Setup\n\n- ### Historisch\n\n${z3}\nsudo certbot --nginx\n${z3}\n`).length === 1],
+    // Inline-Spannen: die ANWEISUNG zählt, das WORT nicht (Loch n).
+    ["Anweisung als Inline-Spanne (Loch n)", verboteneAnleitung("Ruf `sudo certbot --nginx` auf.\n").length === 1],
+    ["einzelnes Wort als Inline-Spanne bleibt frei", verboteneAnleitung("`certbot` gibt es hier nicht.\n").length === 0],
+    ["Inline-Anweisung im historischen Abschnitt bleibt frei", verboteneAnleitung("## Historisch\n\nRuf `sudo certbot --nginx` auf.\n").length === 0],
     ["Fließtext bleibt frei", verboteneAnleitung("certbot gibt es hier nicht.\n").length === 0],
     ["Zitatblock bleibt frei", verboteneAnleitung("> `certbot` steht hier bewusst nicht mehr.\n").length === 0],
     ["Listenfortsetzung bleibt frei", verboteneAnleitung("- Punkt\n- certbot ist Geschichte\n").length === 0],
@@ -519,19 +618,19 @@ if (process.argv.includes("--selftest")) {
     ["Regex-Literal verwirrt den Parser nicht", toteNummernInKommentaren("const r = /a\\/\\//; // A5").length === 1],
     ["Division verwirrt den Parser nicht", toteNummernInKommentaren("const y = 6 / 2 / 3; // A4").length === 1],
     // Prüfung 3 — Pfad wird erkannt, Muster und Fremdpfade nicht.
-    ["Pfad erkannt", pfadverweise("siehe `src/lib/media.ts`", wurzeln)[0]?.pfad === "src/lib/media.ts"],
-    ["Zeilennummer erkannt", pfadverweise("siehe `src/lib/media.ts:42`", wurzeln)[0]?.bis === 42],
-    ["Bereich erkannt", pfadverweise("siehe `src/lib/media.ts:10-20`", wurzeln)[0]?.von === 10],
-    ["Muster ignoriert", pfadverweise("siehe `scripts/regime/*.mjs`", wurzeln).length === 0],
-    ["Fremdpfad ignoriert", pfadverweise("liegt in `/etc/nginx/conf.d/x.conf`", wurzeln).length === 0],
+    ["Pfad erkannt", pfadverweis("src/lib/media.ts", wurzeln)?.pfad === "src/lib/media.ts"],
+    ["Zeilennummer erkannt", pfadverweis("src/lib/media.ts:42", wurzeln)?.bis === 42],
+    ["Bereich erkannt", pfadverweis("src/lib/media.ts:10-20", wurzeln)?.von === 10],
+    ["Muster ignoriert", pfadverweis("scripts/regime/*.mjs", wurzeln) === null],
+    ["Fremdpfad ignoriert", pfadverweis("/etc/nginx/conf.d/x.conf", wurzeln) === null],
     // Hergeleitete statt verdrahtete Wurzelliste (Loch k).
-    ["verstecktes Verzeichnis wird erkannt (Loch k)", pfadverweise("siehe `.zap/rules.tsv`", wurzeln)[0]?.pfad === ".zap/rules.tsv"],
-    ["`./` gilt als repo-relativ", pfadverweise("siehe `./deploy.sh`", wurzeln)[0]?.pfad === "deploy.sh"],
-    ["kein Pfad: try/catch", pfadverweise("ein `try/catch` im Branding-Pfad", wurzeln).length === 0],
-    ["kein Pfad: text/html", pfadverweise("liefert `text/html`", wurzeln).length === 0],
-    ["kein Pfad: Prüfkennungen", pfadverweise("betrifft `A-20/B-05`", wurzeln).length === 0],
-    ["kein Pfad: Modulkürzel", pfadverweise("importiert `@/db` nicht statisch", wurzeln).length === 0],
-    ["kein Pfad: nackter Dateiname", pfadverweise("siehe `boundary-check.mjs`", wurzeln).length === 0],
+    ["verstecktes Verzeichnis wird erkannt (Loch k)", pfadverweis(".zap/rules.tsv", wurzeln)?.pfad === ".zap/rules.tsv"],
+    ["`./` gilt als repo-relativ", pfadverweis("./deploy.sh", wurzeln)?.pfad === "deploy.sh"],
+    ["kein Pfad: try/catch", pfadverweis("try/catch", wurzeln) === null],
+    ["kein Pfad: text/html", pfadverweis("text/html", wurzeln) === null],
+    ["kein Pfad: Prüfkennungen", pfadverweis("A-20/B-05", wurzeln) === null],
+    ["kein Pfad: Modulkürzel", pfadverweis("@/db", wurzeln) === null],
+    ["kein Pfad: nackter Dateiname", pfadverweis("boundary-check.mjs", wurzeln) === null],
     // Abkürzung löst auf — und die Zeilenprüfung greift trotzdem (Loch d).
     ["Abkürzung löst auf", aufloesen("audit/06", alle) === "audit/06-residual-risk-register.md"],
     ["Erfundener Pfad löst nicht auf", aufloesen("src/gibt-es-nicht.ts", alle) === null],
@@ -550,7 +649,13 @@ if (process.argv.includes("--selftest")) {
     ["Fremde Datei ist kein Mitglied", istMitglied("etc/passwd", alle) === false],
     ["Datei ist Mitglied", istMitglied("src/lib/media.ts", alle) === true],
     ["Verzeichnis ist Mitglied", istMitglied("src/lib", alle) === true],
-    ["Pfad mit Punkt am Ende wird nicht gewaschen", pfadverweise("siehe `src/lib/media.ts.`", wurzeln)[0]?.pfad === "src/lib/media.ts."],
+    // Rand-Leerraum in der Spanne wird abgeschält (Loch o).
+    ["Spanne mit Rand-Leerraum (Loch o)", spannenText("` src/gibt-es-nicht.ts `") === "src/gibt-es-nicht.ts"],
+    ["Spanne ohne Leerraum unverändert", spannenText("`src/lib/media.ts`") === "src/lib/media.ts"],
+    // Symlink aus dem Repository heraus (Loch p) — echt angelegt, nicht gedacht.
+    ["Symlink nach draußen ist nicht drin (Loch p)", symlinkProbe() === false],
+    ["echte Repo-Datei ist drin", echtDrin("src/lib/media.ts") === true],
+    ["Pfad mit Punkt am Ende wird nicht gewaschen", pfadverweis("src/lib/media.ts.", wurzeln)?.pfad === "src/lib/media.ts."],
     ["Zeilenprüfung greift auch bei Abkürzung (Loch d)", zeilenBefund(aufloesen("audit/06", alle), 99999, 99999) !== null],
     // Unmögliche Angaben (Loch e).
     ["Zeile an einem Verzeichnis (Loch e)", zeilenBefund("src/lib", 999, 999) !== null],
