@@ -10,22 +10,13 @@
  *
  * Diese Tests binden beide Rückwege fest.
  */
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { execSync } from "node:child_process";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { frischeDb } from "./helfer/frische-db";
 
-let tmp: string;
-
-beforeAll(() => {
-  tmp = fs.mkdtempSync(path.join(os.tmpdir(), "roses-ai-schalter-"));
-  process.env.DATA_DIR = tmp;
-  execSync("node scripts/migrate.mjs", { env: { ...process.env, DATA_DIR: tmp } });
-});
+// Muss stehen, bevor irgendetwas @/db auswertet — deshalb am Modulanfang.
+frischeDb("ai-schalter");
 
 afterAll(() => {
-  fs.rmSync(tmp, { recursive: true, force: true });
   delete process.env.AI_DISABLED;
   delete process.env.ANTHROPIC_API_KEY;
 });

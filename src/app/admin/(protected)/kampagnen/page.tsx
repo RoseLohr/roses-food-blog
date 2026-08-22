@@ -5,6 +5,9 @@ import { db, schema } from "@/db";
 import { requireAdmin } from "@/lib/auth";
 import { t } from "@/i18n/de";
 import { deleteCampaignAction } from "./actions";
+import { Meldung, meldungAus } from "@/components/admin/meldung";
+import { Statuschip } from "@/components/admin/statuschip";
+import { LoeschForm } from "@/components/admin/loesch-form";
 
 const dict = t();
 const d = dict.admin.campaigns;
@@ -16,8 +19,7 @@ export default async function CampaignsPage(props: {
 }) {
   await requireAdmin();
   const searchParams = await props.searchParams;
-  const message =
-    typeof searchParams.meldung === "string" ? searchParams.meldung : null;
+  const message = meldungAus(searchParams);
 
   const campaigns = await db
     .select({
@@ -43,11 +45,7 @@ export default async function CampaignsPage(props: {
           {d.newCampaign}
         </Link>
       </div>
-      {message && (
-        <p role="status" className="mb-4 bg-amber-50 p-3 text-sm text-amber-900">
-          {message}
-        </p>
-      )}
+      <Meldung text={message} />
       <div className="overflow-x-auto bg-white shadow-sm">
         <table className="w-full text-left text-sm">
           <thead>
@@ -70,17 +68,17 @@ export default async function CampaignsPage(props: {
                 </td>
                 <td className="px-4 py-3">{c.segmentName ?? dict.common.none}</td>
                 <td className="px-4 py-3">
-                  <span
-                    className={
+                  <Statuschip
+                    ton={
                       c.status === "versendet"
-                        ? "bg-green-100 px-2 py-0.5 text-xs text-green-900"
+                        ? "gruen"
                         : c.status === "laeuft"
-                          ? "bg-blue-100 px-2 py-0.5 text-xs text-blue-900"
-                          : "bg-amber-100 px-2 py-0.5 text-xs text-amber-900"
+                          ? "blau"
+                          : "gelb"
                     }
                   >
                     {d.statusLabels[c.status]}
-                  </span>
+                  </Statuschip>
                 </td>
                 <td className="px-4 py-3">{c.recipientCount || dict.common.none}</td>
                 <td className="px-4 py-3">
@@ -88,15 +86,7 @@ export default async function CampaignsPage(props: {
                 </td>
                 <td className="px-4 py-3">
                   {c.status === "entwurf" && (
-                    <form action={deleteCampaignAction}>
-                      <input type="hidden" name="id" value={c.id} />
-                      <button
-                        type="submit"
-                        className="text-red-700 underline-offset-2 hover:underline"
-                      >
-                        {dict.common.delete}
-                      </button>
-                    </form>
+                    <LoeschForm action={deleteCampaignAction} id={c.id} />
                   )}
                 </td>
               </tr>

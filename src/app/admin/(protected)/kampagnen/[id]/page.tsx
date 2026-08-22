@@ -11,6 +11,7 @@ import {
   sendCampaignAction,
   sendTestAction,
 } from "../actions";
+import { Meldung, meldungAus } from "@/components/admin/meldung";
 
 const dict = t();
 const d = dict.admin.campaigns;
@@ -45,8 +46,7 @@ export default async function CampaignDetailPage(props: {
     .select()
     .from(schema.segment)
     .orderBy(asc(schema.segment.name));
-  const message =
-    typeof searchParams.meldung === "string" ? searchParams.meldung : null;
+  const message = meldungAus(searchParams);
 
   const log = campaign
     ? await db
@@ -71,11 +71,7 @@ export default async function CampaignDetailPage(props: {
       <h1 className="mb-6 text-2xl font-bold">
         {isNew ? d.newCampaign : campaign!.subject}
       </h1>
-      {message && (
-        <p role="status" className="mb-4 bg-amber-50 p-3 text-sm text-amber-900">
-          {message}
-        </p>
-      )}
+      <Meldung text={message} />
 
       <div className="grid max-w-5xl gap-6 lg:grid-cols-2">
         <section className="bg-white p-5 shadow-sm">

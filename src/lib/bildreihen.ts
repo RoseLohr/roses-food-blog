@@ -40,7 +40,8 @@ import type { TravelBlock } from "@/lib/travel-blocks";
 const BILD_ABSTAND = 12;
 
 /**
- * Breite des Inhaltsbereichs — dieselbe Kette wie in travel-view.tsx:
+ * Breite des Inhaltsbereichs. DIE Quelle dieser Kette — travel-view.tsx hielt
+ * bis 08/2026 eine zweite, Wort für Wort gleiche Fassung:
  *   Layout `px-4` 2rem + Artikel `p-6 md:p-10` 3rem/5rem, `max-w-4xl` 896 px.
  *   <768: 100vw − 5rem | <929: 100vw − 7rem | ≥929: 816 px
  */

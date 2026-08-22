@@ -70,14 +70,14 @@ export default defineConfig({
    */
   projects: REFERENZ_LAEUFT
     ? [
-        { name: "referenz", testMatch: /seiten-referenz\.spec\.ts/ },
+        { name: "referenz", testMatch: /-referenz\.spec\.ts/ },
         {
           name: "alles-weitere",
-          testIgnore: /seiten-referenz\.spec\.ts/,
+          testIgnore: /-referenz\.spec\.ts/,
           dependencies: ["referenz"],
         },
       ]
-    : [{ name: "alles-weitere", testIgnore: /seiten-referenz\.spec\.ts/ }],
+    : [{ name: "alles-weitere", testIgnore: /-referenz\.spec\.ts/ }],
   use: {
     baseURL: `http://localhost:${PORT}`,
     viewport: { width: 1280, height: 900 },

@@ -14,7 +14,7 @@
 import { useEffect, useId, useState } from "react";
 import { createPortal } from "react-dom";
 import { FocusPointEditor } from "@/components/admin/focus-point-editor";
-import { focusPosition } from "@/lib/media-url";
+import { fokusStil } from "@/lib/media-url";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -120,10 +120,7 @@ export function ImagePicker({
                   loading="lazy"
                   decoding="async"
                   className="h-full w-full object-cover"
-                  style={(() => {
-                    const objectPosition = focusPosition(c.focusX, c.focusY);
-                    return objectPosition ? { objectPosition } : undefined;
-                  })()}
+                  style={fokusStil(c.focusX, c.focusY)}
                 />
                 <button
                   type="button"
@@ -384,10 +381,7 @@ function LibraryModal({
                       loading="lazy"
                       decoding="async"
                       className="h-full w-full object-cover"
-                      style={(() => {
-                        const objectPosition = focusPosition(o.focusX, o.focusY);
-                        return objectPosition ? { objectPosition } : undefined;
-                      })()}
+                      style={fokusStil(o.focusX, o.focusY)}
                     />
                     {active && (
                       <span className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-leaf text-xs font-bold text-white">

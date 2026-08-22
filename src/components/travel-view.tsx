@@ -31,40 +31,26 @@ import { IconLoeffel } from "./icon-loeffel";
 const dict = t();
 
 /**
- * Reale Anzeigebreiten der Bilder — AUSGERECHNET, nicht geschätzt. Ein zu
+ * Reale Anzeigebreite der Gericht-Bühne — AUSGERECHNET, nicht geschätzt. Ein zu
  * großes `sizes` lässt den Browser eine zu schwere Variante laden, ein zu
  * kleines liefert ein unscharfes Bild; beides ist ein Fehler.
  *
- * Die Kette bis zum Inhaltsbereich:
- *   Layout `px-4`          → 2rem  auf jeder Breite
- *   Artikel `p-6 md:p-10`  → 3rem  bis 767 px, darüber 5rem
- *   Artikel `max-w-4xl`    → deckelt bei 896 px, also ab 928 px Viewport
+ * Die Kette bis zum Inhaltsbereich steht EINMAL, in `src/lib/bildreihen.ts`
+ * (`SPALTE_*`). Von dort kommt jedes Maß über die volle Spalte —
+ * `vollbildSizes()`. Hier bleibt nur, was die Restaurant-Karte zusätzlich
+ * abzieht.
  *
- *   <768: 100vw − 5rem | <929: 100vw − 7rem | ≥929: 816 px
+ * Nicht eingerechnet sind die 1-px-Rahmen der Karte (2 px je Bild). Das
+ * deklariert 2 px MEHR als nötig — auf der Variantenleiter (160/320/480/640/…)
+ * ändert das nie die Stufe, und zu großzügig ist die sichere Richtung: die
+ * Gegenrichtung ergäbe ein unscharfes Bild.
  *
- * Das Inhaltsverzeichnis kommt hier NICHT mehr vor, und das ist der Kern des
- * Umbaus: Es steht als umflossener Block (float) im Text, nicht mehr als
- * Rasterspalte. Umflossen werden nur die TEXTZEILEN; alle bildtragenden
- * Blöcke tragen `clear-left` und beginnen unter dem Verzeichnis. Ein Bild ist
- * damit in JEDER Fensterbreite genau so breit wie der Inhaltsbereich —
- * an elf Breiten nachgemessen. Vorher brauchte es dafür zwei Maßtabellen,
- * die durch alle Komponenten gereicht wurden.
- *
- * Nicht eingerechnet sind die 1-px-Rahmen der Restaurant-Karte (2 px je
- * Bild). Das deklariert 2 px MEHR als nötig — auf der Variantenleiter
- * (160/320/480/640/…) ändert das nie die Stufe, und zu großzügig ist die
- * sichere Richtung: die Gegenrichtung ergäbe ein unscharfes Bild.
+ * Bühne eines Gerichts: volle Breite innerhalb der Restaurant-Karte
+ * (`p-4 md:p-6` zieht mobil 2rem ab, ab md 3rem) und abzüglich der
+ * Stationsschiene (36 px Punkt + 16 px Abstand = 52 px = 3.25rem).
  */
-const MASSE = {
-  /** Bild über die volle Breite des Inhalts (Titelbild, Restaurant-Band). */
-  inhalt:
-    "(max-width: 767px) calc(100vw - 5rem), (max-width: 928px) calc(100vw - 7rem), 816px",
-  /** Bühne eines Gerichts: volle Breite innerhalb der Restaurant-Karte
-   *  (`p-4 md:p-6` zieht mobil 2rem ab, ab md 3rem) und abzüglich der
-   *  Stationsschiene (36 px Punkt + 16 px Abstand = 52 px = 3.25rem). */
-  buehne:
-    "(max-width: 767px) calc(100vw - 10.25rem), (max-width: 928px) calc(100vw - 13.25rem), 714px",
-} as const;
+const BUEHNE_SIZES =
+  "(max-width: 767px) calc(100vw - 10.25rem), (max-width: 928px) calc(100vw - 13.25rem), 714px";
 
 /**
  * `sizes` einer Streifen-Kachel. Es gibt genau ZWEI Formen, weil der Streifen
@@ -474,7 +460,7 @@ function DishItem({
                   ? undefined
                   : {
                       className: "aspect-[16/9] w-full object-cover",
-                      sizes: MASSE.buehne,
+                      sizes: BUEHNE_SIZES,
                     }
               }
               thumbSizes={
@@ -586,7 +572,7 @@ function RestaurantCard({
           images={r.images}
           label={`${dict.travelList.restaurantWord} ${r.name}`}
           thumbSizes={
-            r.images.length === 1 ? MASSE.inhalt : restaurantPaarSizes()
+            r.images.length === 1 ? vollbildSizes() : restaurantPaarSizes()
           }
           thumbClassName={
             r.images.length === 1

@@ -3,6 +3,7 @@ import { requireAdmin } from "@/lib/auth";
 import { getNewsletterVisible } from "@/lib/settings";
 import { t } from "@/i18n/de";
 import { saveNewsletterDisplayAction } from "./actions";
+import { Meldung, meldungAus } from "@/components/admin/meldung";
 
 const dict = t();
 const d = dict.admin.newsletterDisplay;
@@ -14,8 +15,7 @@ export default async function NewsletterDisplayPage(props: {
 }) {
   await requireAdmin();
   const searchParams = await props.searchParams;
-  const message =
-    typeof searchParams.meldung === "string" ? searchParams.meldung : null;
+  const message = meldungAus(searchParams);
 
   const visible = getNewsletterVisible();
 
@@ -23,11 +23,7 @@ export default async function NewsletterDisplayPage(props: {
     <>
       <h1 className="mb-2 text-2xl font-bold">{d.title}</h1>
       <p className="mb-6 max-w-2xl text-sm text-ink-soft">{d.intro}</p>
-      {message && (
-        <p role="status" className="mb-4 bg-amber-50 p-3 text-sm text-amber-900">
-          {message}
-        </p>
-      )}
+      <Meldung text={message} />
 
       <form
         action={saveNewsletterDisplayAction}
