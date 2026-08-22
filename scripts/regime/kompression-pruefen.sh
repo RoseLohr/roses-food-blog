@@ -94,9 +94,22 @@ zert_auskunft() {
   # curl hat vorher eine Antwort bekommen, sonst wären wir nicht hier. Genau
   # deshalb ist die Grenze billig und richtig: Sie kostet nichts und nimmt dem
   # Deploy die Möglichkeit, endlos zu warten.
-  local roh begrenzt=()
-  command -v timeout >/dev/null 2>&1 && begrenzt=(timeout 10)
-  roh=$(printf '' | "${begrenzt[@]}" openssl s_client -connect "$ziel:$PORT" -servername "$HOST" 2>/dev/null \
+  # OHNE `timeout` wird gar nicht erst gefragt. Eine frühere Fassung setzte die
+  # Grenze nur, WENN `timeout` vorhanden war — und ließ den Aufruf sonst
+  # unbegrenzt, also genau den Defekt, den sie beheben sollte, nur bedingt.
+  # (Befund des Pflicht-Approvers, PR #105.)
+  #
+  # Die Abwägung ist eindeutig: Die Zertifikatsauskunft ist eine Beigabe, das
+  # Deployment ist es nicht. Eine Auskunft, die sich nicht sicher holen lässt,
+  # wird nicht geholt — und das wird gesagt, statt still zu fehlen.
+  if ! command -v timeout >/dev/null 2>&1; then
+    echo "        (kein 'timeout' vorhanden — Zertifikat NICHT abgefragt. Ein"
+    echo "         unbegrenzter openssl-Aufruf darf hier nicht stehen: er würde"
+    echo "         das Deployment an einer schweigenden Gegenstelle aufhängen.)"
+    return 0
+  fi
+  local roh
+  roh=$(printf '' | timeout 10 openssl s_client -connect "$ziel:$PORT" -servername "$HOST" 2>/dev/null \
         | openssl x509 -noout -subject -enddate 2>/dev/null) || roh=""
   if [ -z "$roh" ]; then
     echo "        (Zertifikat nicht lesbar — die Gegenstelle antwortet nicht oder spricht kein TLS)"

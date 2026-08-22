@@ -642,17 +642,61 @@ describe("Kompressionsprüfung", () => {
     expect(dauer, `${dauer.toFixed(1)}s gebraucht — es darf nur EINE Zeitgrenze sein`).toBeLessThan(45);
   }, 90_000);
 
-  it("begrenzt den openssl-Aufruf der Zertifikatsauskunft", () => {
-    // Der Beleg für die Grenze selbst. Der Weg, auf dem sie greift, verlangt
-    // eine Zustandsänderung zwischen curls Versuch und diesem — nachstellbar
-    // ist er im Test nicht, unbegrenzt darf er trotzdem nicht sein.
+  it("fragt das Zertifikat GAR NICHT ab, wenn es die Grenze nicht setzen kann", async () => {
+    // BEFUND DES PFLICHT-APPROVERS (PR #105) gegen die erste Fassung dieser
+    // Grenze: Sie war OPTIONAL — `command -v timeout && begrenzt=(timeout 10)`
+    // —, und ohne `timeout` lief der Aufruf wieder unbegrenzt. Also derselbe
+    // Defekt, nur bedingt.
+    //
+    // Die Abwägung: Die Zertifikatsauskunft ist eine Beigabe, das Deployment
+    // ist es nicht. Ohne `timeout` wird nicht gefragt — und das wird gesagt.
+    //
+    // Gemessen wird das mit einem PATH, der alles enthält AUSSER `timeout`.
+    const { basis, bundle } = await tlsServerVertrauenswuerdig(30);
+    const ohneTimeout = fs.mkdtempSync(path.join(os.tmpdir(), "ohne-timeout-"));
+    try {
+      for (const verzeichnis of ["/usr/bin", "/bin", "/usr/local/bin"]) {
+        if (!fs.existsSync(verzeichnis)) continue;
+        for (const eintrag of fs.readdirSync(verzeichnis)) {
+          if (eintrag === "timeout") continue;
+          const ziel = path.join(ohneTimeout, eintrag);
+          if (fs.existsSync(ziel)) continue;
+          try {
+            fs.symlinkSync(path.join(verzeichnis, eintrag), ziel);
+          } catch {
+            // Ein Eintrag, der sich nicht verlinken lässt, fehlt eben — für
+            // diese Messung genügt, dass `timeout` sicher nicht dabei ist.
+          }
+        }
+      }
+      expect(fs.existsSync(path.join(ohneTimeout, "timeout")), "timeout darf nicht im PATH sein").toBe(false);
+
+      const { code, ausgabe } = await pruefen(basis, "ursprung", "127.0.0.1", {
+        CURL_CA_BUNDLE: bundle,
+        PATH: ohneTimeout,
+      });
+      expect(code, ausgabe).toBe(0);
+      expect(ausgabe, "es muss gesagt werden, dass nicht gefragt wurde").toMatch(
+        /kein 'timeout' vorhanden — Zertifikat NICHT abgefragt/,
+      );
+      expect(ausgabe, "und es darf keine Restlaufzeit behauptet werden").not.toMatch(/Noch \d+ Tage gültig/);
+    } finally {
+      fs.rmSync(ohneTimeout, { recursive: true, force: true });
+    }
+  }, 60_000);
+
+  it("begrenzt den openssl-Aufruf unbedingt, nicht nur wenn es geht", () => {
     const skript = fs.readFileSync(SKRIPT, "utf8");
     const stelle = skript.slice(skript.indexOf("zert_auskunft()"), skript.indexOf("CURL=("));
-    expect(stelle, "der s_client-Aufruf muss zeitlich begrenzt sein").toMatch(
-      /"\$\{begrenzt\[@\]\}"\s+openssl s_client/,
-    );
-    expect(stelle, "und die Grenze nur setzen, wenn timeout vorhanden ist").toMatch(
-      /command -v timeout .* begrenzt=\(timeout \d+\)/,
-    );
+    const code = stelle
+      .split("\n")
+      .filter((z) => !z.trimStart().startsWith("#"))
+      .join("\n");
+    // JEDE Fundstelle muss hinter einer Grenze stehen, nicht nur eine.
+    const aufrufe = code.split("\n").filter((z) => z.includes("openssl s_client"));
+    expect(aufrufe.length, "es muss überhaupt einen Aufruf geben").toBeGreaterThan(0);
+    for (const zeile of aufrufe) {
+      expect(zeile.trim(), `unbegrenzter Aufruf: ${zeile.trim()}`).toMatch(/timeout \d+ openssl s_client/);
+    }
   });
 });
