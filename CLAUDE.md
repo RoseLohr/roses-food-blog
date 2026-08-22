@@ -53,6 +53,11 @@ diesem Repository arbeitet. Sie ist Teil des Governance-Regimes (A-32/A-33/A-37)
   `npx playwright test seiten-referenz` (33 Aufnahmen, elf Seitentypen × drei
   Breiten). Was sich ändern DARF, wird vorher benannt und danach gezielt neu
   aufgenommen — nie pauschal mit `--update-snapshots`.
+  **Das ist ein ÖRTLICHES Werkzeug und läuft in CI nicht:** Der Läufer rastert
+  Schrift anders, die Seiten werden dort unterschiedlich hoch (Zahlen in
+  `playwright.config.ts` und `audit/offene-befunde.md` B9). Wer es zum Gate
+  machen will, legt zuerst die Rasterungsumgebung fest — die Toleranz wird
+  NICHT angehoben.
 
 ## Arbeitsweise
 - Deutsch in Kommentaren, Commits, UI-Texten. Kleine, atomare Commits.

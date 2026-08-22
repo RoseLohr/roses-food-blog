@@ -162,3 +162,39 @@ anderen (`dependencies`). Das behebt das Symptom für diese eine Kontrolle.
 verändern und nicht aufräumen. Jede künftige Kontrolle, die einen unberührten
 Stand braucht, hat dasselbe Problem. Sauber wäre ein eigenes `DATA_DIR` je
 Spec-Gruppe.
+
+---
+
+## B9 — Die Rasterungsumgebung ist nicht festgelegt
+
+**Befund.** Die 33 Referenzaufnahmen reproduzieren auf dem CI-Läufer NICHT. Es
+ist keine Kantenglättung, sondern eine andere Schriftmetrik: Der Text bricht
+anders um, und die Seiten werden unterschiedlich hoch.
+
+```
+datenschutz @ handy-390:  erwartet 390x6102, erhalten 390x6000   (102 px kürzer)
+datenschutz @ ipad-834:   erwartet 834x3822, erhalten 834x3849   ( 27 px höher)
+datenschutz @ desktop:    erwartet 1280x3785, erhalten 1280x3812 ( 27 px höher)
+ueber-mich  @ desktop:    gleiche Höhe, 8883 Pixel (Verhältnis 0,01)
+```
+
+**Was getan wurde.** Die Referenz ist ein ÖRTLICHES Werkzeug: Sie läuft vor dem
+Push auf einer Maschine und beweist dort, dass ein Umbau nur ändert, was er
+ändern soll (beim Bildgruppen-Umbau: 30 von 33 pixelgleich). In CI läuft sie
+nicht, und die Begründung samt Zahlen steht in `playwright.config.ts`.
+
+**Ausdrücklich NICHT getan.** Die Toleranz wurde nicht angehoben. Bei einer
+Abweichung von 0,20 müsste sie so weit hoch, dass eine verrutschte Bildzeile
+darunter verschwindet — die Kontrolle wäre dann nur noch Dekoration.
+
+**Die Wurzel** ist, dass die Rasterungsumgebung nirgends festgelegt ist. Wer
+die Referenz zum CI-Gate machen will, muss e2e in einem festen Abbild fahren —
+naheliegend dasselbe Container-Abbild, in dem die Anwendung ausgeliefert wird
+(`podman`, siehe README §Betrieb). Dann stimmen Schriften und Rasterung, und
+die Basis ist zwischen Maschinen portabel. Das ist eigene Arbeit und braucht
+eine eigene Abnahme.
+
+**Zwischenstand bis dahin:** Die Struktur der Bildanordnung ist in CI trotzdem
+gedeckt — `tests/e2e/bildreihen.spec.ts` und `tests/e2e/bildgruppe-mock.spec.ts`
+messen Geometrie (gleiche Höhe, Breitensumme, kein Überlauf) statt Pixel und
+sind damit maschinenunabhängig.

@@ -24,6 +24,13 @@ const launchOptions = {
   ...(fs.existsSync(PREINSTALLED) ? { executablePath: PREINSTALLED } : {}),
 };
 
+/**
+ * Laufen die Referenzaufnahmen mit? Örtlich ja, in CI nein (Begründung bei
+ * `projects`). `REFERENZ=1` erzwingt sie — z. B. wenn jemand die Rasterung
+ * seiner Maschine mit der Basis abgleichen will.
+ */
+const REFERENZ_LAEUFT = !process.env.CI || process.env.REFERENZ === "1";
+
 export default defineConfig({
   testDir: "./tests/e2e",
   timeout: 45_000,
@@ -33,32 +40,44 @@ export default defineConfig({
   retries: 0,
   reporter: [["list"]],
   /**
-   * Die Referenzaufnahmen laufen ZUERST, und das ist zugesagt statt gehofft.
+   * DIE REFERENZAUFNAHMEN SIND EIN ÖRTLICHES WERKZEUG, KEIN CI-GATE.
    *
-   * Sie halten den Stand fest, gegen den ein Umbau geprüft wird — also müssen
-   * sie eine unberührte Datenbank sehen. Mehrere Specs schreiben aber in die
-   * gemeinsame Datenbank (cms-paket ändert z. B. den Einleitungstext der
-   * Reisen-Seite über den Admin). Ohne diese Reihenfolge hing die Kontrolle an
-   * der alphabetischen Sortierung der Dateinamen: allein grün, im Verbund rot.
-   * Genau so entsteht eine flatterhafte Kontrolle, und eine flatterhafte
-   * Kontrolle wird abgeschaltet statt beachtet.
+   * Sie halten fest, wie die Seiten AUSSEHEN, damit ein Umbau beweisen kann,
+   * dass er nur das ändert, was er ändern soll. Dafür laufen sie vor dem Push
+   * auf EINER Maschine — und genau dort taugen sie: Beim Bildgruppen-Umbau
+   * waren 30 von 33 Aufnahmen pixelgleich, und die drei anderen waren die
+   * Seite, die sich ändern sollte.
    *
-   * `dependencies` erzwingt die Reihenfolge ausdrücklich. Die Vergleichsbilder
-   * tragen dadurch den Projektnamen im Dateinamen (`…-referenz.png`) — das ist
-   * Playwrights Vorgabe. Ein eigener `snapshotPathTemplate`, um das zu
-   * vermeiden, war der erste Versuch und ein Fehler: Ohne `{snapshotDir}`
-   * wurde der Pfad absolut, lokal fiel es nicht auf, und in CI scheiterten
-   * alle 33 Aufnahmen an `EACCES: mkdir '/seiten-referenz.spec.ts-snapshots'`.
-   * Die Vorgabe des Werkzeugs ist hier verlässlicher als eine eigene Regel.
+   * In CI laufen sie NICHT, und das ist gemessen begründet, nicht bequem:
+   * Der Läufer rastert Schrift anders als diese Umgebung. Nicht ein bisschen —
+   * der Text bricht anders um, und die Seiten werden unterschiedlich HOCH:
+   *
+   *     datenschutz @ handy-390:  erwartet 390x6102, erhalten 390x6000
+   *     datenschutz @ ipad-834:   erwartet 834x3822, erhalten 834x3849
+   *
+   * Eine höhere Toleranz würde das nicht heilen, sondern die Kontrolle
+   * wertlos machen: Bei 0,20 Abweichung müsste die Schwelle so weit hoch, dass
+   * eine verrutschte Bildzeile darunter verschwindet. Die Wurzel ist die nicht
+   * festgelegte Rasterungsumgebung; sie zu fixieren (e2e im selben
+   * Container-Abbild wie die Anwendung) ist eigene Arbeit und steht als B9 in
+   * audit/offene-befunde.md.
+   *
+   * Läuft die Referenz mit, dann ZUERST — zugesagt statt gehofft. Mehrere
+   * Specs schreiben in die gemeinsame Datenbank (cms-paket ändert den
+   * Einleitungstext der Reisen-Seite über den Admin); ohne diese Reihenfolge
+   * hing die Kontrolle an der alphabetischen Sortierung: allein grün, im
+   * Verbund rot.
    */
-  projects: [
-    { name: "referenz", testMatch: /seiten-referenz\.spec\.ts/ },
-    {
-      name: "alles-weitere",
-      testIgnore: /seiten-referenz\.spec\.ts/,
-      dependencies: ["referenz"],
-    },
-  ],
+  projects: REFERENZ_LAEUFT
+    ? [
+        { name: "referenz", testMatch: /seiten-referenz\.spec\.ts/ },
+        {
+          name: "alles-weitere",
+          testIgnore: /seiten-referenz\.spec\.ts/,
+          dependencies: ["referenz"],
+        },
+      ]
+    : [{ name: "alles-weitere", testIgnore: /seiten-referenz\.spec\.ts/ }],
   use: {
     baseURL: `http://localhost:${PORT}`,
     viewport: { width: 1280, height: 900 },
