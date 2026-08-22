@@ -118,8 +118,9 @@ Zwei Dinge, die das Inventar zusätzlich festhält:
   Annahmenummern und Pfadverweise ins Leere. Gemessen am Bestand: 312
   Pfadverweise, 4 historische Codeblöcke, alle in Ordnung.
 
-  **Der Pflicht-Approver hat in SECHS Runden SECHZEHN Umgehungen gefunden** —
-  dreizehn von ihm benannt, drei beim Nachziehen derselben Klasse. Sechs davon haben
+  **Der Pflicht-Approver hat in SECHS Runden SECHZEHN Umgehungen gefunden,
+  eine siebzehnte kam beim eigenen Nachsehen dazu** — dreizehn von ihm benannt,
+  vier beim Nachziehen derselben Klasse. Sechs davon haben
   dieselbe Form: *eine Prüfung, die sich still selbst abschaltet.* Eine
   Shell-Zeile „# historisch" INNERHALB eines Codeblocks setzte die Ausnahme für
   alles Folgende; ein Zaun aus drei Tilden galt gar nicht als Code; eingerückter
@@ -215,8 +216,24 @@ Zwei Dinge, die das Inventar zusätzlich festhält:
   Abwesenheit feststellt. Eine Spanne zählt deshalb nur als Anweisung, wenn sie
   mehr als ein Wort ist. Null Fehlalarme am Bestand.
 
-  69 Selbsttestfälle, Gegenprobe gegen alle sechs Vorfassungen gefahren (alle
-  sechzehn Löcher rutschen dort durch), dazu eine Positivkontrolle am echten
+  **Das siebzehnte Loch habe ich selbst gesucht, statt auf Runde sieben zu
+  warten — und es war die reinste Form der ganzen Klasse:** Aus einem
+  Unterverzeichnis gestartet prüfte das Gate NICHTS und meldete das als „grün".
+  `git ls-files` liefert Pfade relativ zum Aufrufverzeichnis; aus `src/` heraus
+  fand die Filterung keine einzige Markdown-Datei. Das ist genau der Fehlertyp,
+  den dieser Fahrplan im Kopf als „Belege, die nicht fehlschlagen können"
+  benennt — im eigenen Werkzeug.
+
+  Behoben doppelt, weil eine Hälfte nicht genügt: Die Dateiliste kommt jetzt aus
+  der Repo-Wurzel, UND ein Lauf ohne eine einzige geprüfte Datei ist ein
+  Fehlschlag statt eines Erfolgs. Der Selbsttest fährt das Gate dafür in einem
+  frisch angelegten leeren Repository und verlangt den Rückgabewert 1 — die
+  Bedingung nur hinzuschreiben wäre wieder ein Beleg, der nicht fehlschlagen
+  kann. Die Ausgabe nennt seither auch die Zahl der geprüften Dateien, damit ein
+  Leerlauf beim Lesen auffällt.
+
+  70 Selbsttestfälle, Gegenprobe gegen alle sechs Vorfassungen gefahren (alle
+  siebzehn Löcher rutschen dort durch), dazu eine Positivkontrolle am echten
   Baum: drei eingeschleuste Verstöße in README, `docs/` und `src/` werden mit
   exakter Zeilennummer gemeldet.
 

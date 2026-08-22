@@ -55,10 +55,11 @@
  * WARUM HIER ZWEI FREMDE PARSER LAUFEN UND KEINE EIGENEN WÄHLER
  *
  * Die ersten Fassungen zerlegten Markdown und TypeScript von Hand. Der
- * Pflicht-Approver hat in SECHS Runden SECHZEHN Umgehungen gefunden (PR #109) —
- * und das ist kein Ausreißer, sondern die Regel: Ein handgeschriebener Zerleger
- * hat so viele Löcher, wie das Format Sonderfälle hat. Die gefundenen, zur
- * Erinnerung und als Selbsttestfälle unten festgenagelt:
+ * Pflicht-Approver hat in SECHS Runden SECHZEHN Umgehungen gefunden, eine
+ * SIEBZEHNTE kam beim eigenen Nachsehen dazu (PR #109). Das ist kein Ausreißer,
+ * sondern die Regel: Ein handgeschriebener Zerleger hat so viele Löcher, wie
+ * das Format Sonderfälle hat. Alle siebzehn, zur Erinnerung und als
+ * Selbsttestfälle unten festgenagelt:
  *
  *   a) Eine Raute IM Codeblock galt als Überschrift und schaltete die
  *      „historisch"-Ausnahme für den Rest der Datei ein.
@@ -93,12 +94,20 @@
  *      mitten im Satz — `sudo certbot --nginx` — blieb grün.
  *   o) DER EIGENE BACKTICK-WÄHLER VERBOT LEERRAUM. Eine nach CommonMark
  *      gültige Spanne mit Rand-Leerraum blieb dadurch ungeprüft.
+ *   q) AUS EINEM UNTERVERZEICHNIS GESTARTET PRÜFTE DAS GATE NICHTS und meldete
+ *      das als „grün". `git ls-files` liefert Pfade relativ zum
+ *      AUFRUFVERZEICHNIS; aus `src/` heraus fand die Filterung keine einzige
+ *      Markdown-Datei. Nicht vom Approver benannt, sondern beim eigenen
+ *      Nachsehen gefunden — es ist die reinste Form der Klasse, um die es hier
+ *      die ganze Zeit geht. Behoben doppelt: Die Dateiliste kommt jetzt aus der
+ *      Repo-Wurzel, UND ein Lauf ohne eine einzige geprüfte Datei ist ein
+ *      Fehlschlag statt eines Erfolgs.
  *   p) DAS CONTAINMENT WAR REIN LEXIKALISCH. Ein verfolgter Symlink, der aus
  *      dem Repository hinauszeigt, kam durch — und `zeilenBefund` hätte die
  *      fremde Datei gelesen. Siehe `echtDrin`.
  *
  * a, b, c, f, j, n und o sind Markdown-Sonderfälle; g ist ein
- * TypeScript-Sonderfall. ACHT von sechzehn Löchern kamen also daher, dass hier
+ * TypeScript-Sonderfall. ACHT von siebzehn Löchern kamen also daher, dass hier
  * zwei Sprachen nachgebaut wurden, die das Projekt längst richtig zerlegen
  * kann — und n und o kamen erst zutage, NACHDEM die Blockzerlegung schon auf
  * `marked` stand: Ein Rest Handarbeit an den Inline-Spannen war übrig
@@ -113,7 +122,7 @@
  *     `const r = /a\/\//; // A5`: Der reine Scanner liest daraus „//; // A5"
  *     und liegt falsch, der Parser liefert „// A5" und liegt richtig.
  *
- * d, e, h, i, k, l, m und p bleiben eigene Logik — sie handeln von Dateien und
+ * d, e, h, i, k, l, m, p und q bleiben eigene Logik — sie handeln von Dateien und
  * Zahlen, nicht von Grammatik. j fällt nicht ganz weg: `marked` liefert die
  * Verschachtelung korrekt, aber WELCHE Überschrift einen Abschnitt aufmacht,
  * ist eine Entscheidung dieses Gates und musste hier getroffen werden.
@@ -132,6 +141,7 @@
 import { execSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
 import { Marked } from "marked";
 import ts from "typescript";
 
@@ -142,7 +152,14 @@ import ts from "typescript";
  * 2026-08-21 ein Heredoc-Verstoß erst in CI aufgefallen.
  */
 function dateien() {
-  return execSync("git ls-files --cached --others --exclude-standard", { encoding: "utf8" })
+  // `cwd` auf die Repo-Wurzel: `git ls-files` liefert sonst Pfade relativ zum
+  // AUFRUFVERZEICHNIS. Aus `src/` gestartet fand dieses Gate deshalb keine
+  // einzige Markdown-Datei und meldete „0 Pfadverweise … grün" — es hatte
+  // nichts geprüft und gab das als Erfolg aus (Loch q, selbst gefunden).
+  return execSync("git ls-files --cached --others --exclude-standard", {
+    encoding: "utf8",
+    cwd: repoWurzel(),
+  })
     .split("\n")
     .filter(Boolean);
 }
@@ -476,11 +493,12 @@ export function zeilenzahl(roh) {
  * Prüft eine Zeilenangabe gegen die aufgelöste Datei.
  * Gibt den Beanstandungstext zurück oder `null`, wenn sie in Ordnung ist.
  */
-export function zeilenBefund(datei, von, bis) {
-  if (!fs.statSync(datei).isFile()) return "Zeilennummer an einem Verzeichnis";
+export function zeilenBefund(datei, von, bis, wurzel = repoWurzel()) {
+  const voll = path.resolve(wurzel, datei);
+  if (!fs.statSync(voll).isFile()) return "Zeilennummer an einem Verzeichnis";
   if (von < 1) return "Zeilennummer 0 gibt es nicht";
   if (bis < von) return `Zeilenbereich rückwärts (${von}–${bis})`;
-  const zeilen = zeilenzahl(fs.readFileSync(datei, "utf8"));
+  const zeilen = zeilenzahl(fs.readFileSync(voll, "utf8"));
   if (bis > zeilen) return `jenseits des Dateiendes (${datei} hat ${zeilen} Zeilen)`;
   return null;
 }
@@ -496,6 +514,7 @@ function main() {
   };
 
   let gezaehlt = 0;
+  let gepruefteMd = 0;
   for (const datei of alle) {
     const imAudit = datei.startsWith("audit/");
     const endung = path.extname(datei);
@@ -503,8 +522,9 @@ function main() {
     const istTs = datei.startsWith("src/") && (endung === ".ts" || endung === ".tsx");
     const istCss = datei.startsWith("src/") && endung === ".css";
     if (!istMd && !istTs && !istCss) continue;
-    const text = fs.readFileSync(datei, "utf8");
+    const text = fs.readFileSync(path.join(wurzel, datei), "utf8");
     const zeilen = text.split("\n");
+    if (istMd) gepruefteMd++;
 
     if (istMd && !imAudit) {
       for (const nr of verboteneAnleitung(text)) {
@@ -533,16 +553,59 @@ function main() {
         continue;
       }
       if (v.von === null) continue;
-      const befund = zeilenBefund(ziel, v.von, v.bis);
+      const befund = zeilenBefund(ziel, v.von, v.bis, wurzel);
       if (befund) melde("Unbrauchbare Zeilenangabe", `${datei}:${s.zeile}`, `${v.text} — ${befund}`);
     }
+  }
+
+  // EIN LAUF, DER NICHTS GEPRÜFT HAT, IST NICHT GRÜN. Genau das passierte aus
+  // einem Unterverzeichnis heraus: keine Datei gefunden, „grün" gemeldet. Der
+  // Fahrplan nennt diese Klasse selbst — „Belege, die nicht fehlschlagen
+  // können". Diese Zusicherung ist der Riegel davor, und sie ist absichtlich
+  // NICHT als Zahl kalibriert: Es geht nicht um „genug", sondern um „überhaupt".
+  if (gepruefteMd === 0) {
+    console.error(
+      "⛔ Doku-Gate hat KEINE Markdown-Datei gefunden. Das ist kein grüner Lauf, " +
+        "sondern ein kaputter: Entweder ist das Repository leer, oder die Dateiliste " +
+        "kommt aus dem falschen Verzeichnis.",
+    );
+    process.exit(1);
   }
 
   if (verstoesse) {
     console.error(`\n⛔ ${verstoesse} Doku-Gate-Verstoß/Verstöße. Build gestoppt.`);
     process.exit(1);
   }
-  console.log(`[doku-gate] ${gezaehlt} Pfadverweise, Anleitungen und Nummern geprüft: grün.`);
+  console.log(
+    `[doku-gate] ${gepruefteMd} Markdown-Dateien, ${gezaehlt} Pfadverweise, ` +
+      `Anleitungen und Nummern geprüft: grün.`,
+  );
+}
+
+/**
+ * Fährt das Gate in einem FRISCHEN, leeren Repository und meldet, ob es dort
+ * fehlschlägt.
+ *
+ * Das ist der Beweis für den Riegel aus Loch q. Ihn nur zu behaupten wäre
+ * genau die Sorte Beleg, die nicht fehlschlagen kann: Die Bedingung
+ * `gepruefteMd === 0` liest sich richtig, und ob der Lauf dann WIRKLICH mit
+ * Rückgabewert 1 endet, sieht man erst, wenn man es tut.
+ */
+function leerlaufProbe() {
+  const ordner = fs.mkdtempSync(path.join(os.tmpdir(), "doku-gate-leer-"));
+  try {
+    execSync("git init -q", { cwd: ordner, stdio: "pipe" });
+    fs.writeFileSync(path.join(ordner, "nur-text.txt"), "keine Markdown-Datei hier\n");
+    execSync(`node ${JSON.stringify(path.join(repoWurzel(), "scripts/regime/doku-gate.mjs"))}`, {
+      cwd: ordner,
+      stdio: "pipe",
+    });
+    return false; // durchgelaufen → der Riegel greift NICHT
+  } catch {
+    return true; // Fehlschlag → der Riegel greift
+  } finally {
+    fs.rmSync(ordner, { recursive: true, force: true });
+  }
 }
 
 /** Der Inhalt der ersten Inline-Spanne — für den Selbsttest von Loch o. */
@@ -655,6 +718,9 @@ if (process.argv.includes("--selftest")) {
     // Symlink aus dem Repository heraus (Loch p) — echt angelegt, nicht gedacht.
     ["Symlink nach draußen ist nicht drin (Loch p)", symlinkProbe() === false],
     ["echte Repo-Datei ist drin", echtDrin("src/lib/media.ts") === true],
+    // Ein Lauf ohne eine einzige geprüfte Datei ist ein Fehlschlag (Loch q) —
+    // im echten Leerlauf nachgewiesen, nicht behauptet.
+    ["Leerlauf ist rot, nicht grün (Loch q)", leerlaufProbe() === true],
     ["Pfad mit Punkt am Ende wird nicht gewaschen", pfadverweis("src/lib/media.ts.", wurzeln)?.pfad === "src/lib/media.ts."],
     ["Zeilenprüfung greift auch bei Abkürzung (Loch d)", zeilenBefund(aufloesen("audit/06", alle), 99999, 99999) !== null],
     // Unmögliche Angaben (Loch e).
