@@ -64,6 +64,38 @@
   --color-leaf-soft: #5cc4b8; /* heller Ton für Text auf dunklem Grund */
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   AB HIER: @layer components
+   ══════════════════════════════════════════════════════════════════════════
+
+   BEFUND B7 (08/2026): Diese Datei stand in 1094 Zeilen KOMPLETT AUSSERHALB
+   jeder Kaskadenschicht. Tailwind v4 legt seine Utilities per
+   `@import "tailwindcss"` in `@layer utilities` — und ungelayertes CSS schlägt
+   JEDE Schicht, unabhängig von Spezifität. `class="bildgruppe mb-8"` war damit
+   still wirkungslos, sobald `.bildgruppe` selbst ein `margin` setzte.
+
+   Das ist genau der Fehlermodus, dessen Abschaffung diesen ganzen Auftrag
+   ausgelöst hat: eine Regel, die stillschweigend etwas anderes tut, als
+   dasteht. Ein Kommentar davor half nicht — er stand schon da und wurde
+   trotzdem übersehen.
+
+   Jetzt liegt alles Projekt-CSS in `components`. Die Schichtreihenfolge von
+   Tailwind ist theme → base → components → utilities; eine Utility gewinnt
+   also gegen eine Projektklasse, wie man es erwartet. Wer eine Projektklasse
+   von außen NICHT überschreibbar haben will, schreibt sie mit `!` oder höherer
+   Spezifität — bewusst, statt durch Abwesenheit einer Schicht.
+
+   Nicht mit hineingenommen: `@import`, `@font-face` und `@theme` oben. Die
+   gehören nicht in eine Schicht (Tailwind wertet `@theme` selbst aus, und
+   `@font-face` ist keine Kaskadenregel).
+
+   Nachgemessen: 108 der 114 Referenzaufnahmen blieben PIXELGLEICH. Die
+   restlichen SECHS (reise-detail und admin-reise-vorschau, je drei Breiten)
+   haben eine echte Abhängigkeit vom alten „schlägt-alles" aufgedeckt — siehe
+   `.bildgruppe` weiter unten. Genau dafür gibt es die Aufnahmen.
+   ══════════════════════════════════════════════════════════════════════════ */
+@layer components {
+
 /* Sanftes Scrollen zu Ankern (Inhaltsverzeichnis der Reiseberichte).
    Bei prefers-reduced-motion wird scroll-behavior weiter unten global auf
    "auto" zurückgesetzt. Etwas Luft über dem Sprungziel. */
@@ -109,10 +141,14 @@ html {
      braucht es nicht mehr, weil die Gruppe selbst ein Blockkasten ist und
      nichts mehr umflossen wird. */
   clear: both;
-  /* Kein eigener Aussenabstand: Den Abstand zwischen den Bloecken setzt der
-     Behaelter (`[&>*+*]:mt-7` in travel-view.tsx) an EINER Stelle. Zwei Quellen
-     fuer denselben Abstand waeren genau die Art Doppelung, die hier weg soll. */
-  margin: 0;
+  /* Kein eigener Aussenabstand — und zwar wirklich keiner.
+     Hier stand `margin: 0` mit genau diesem Kommentar daneben: „Den Abstand
+     setzt der Behaelter (`[&>*+*]:mt-7` in travel-view.tsx)". Nur tat der Code
+     das Gegenteil dessen, was der Kommentar sagte: Ungelayert schlug
+     `margin: 0` die Utility des Behaelters, und Bildgruppen standen ohne
+     Abstand. Aufgefallen ist es erst, als diese Datei in `@layer components`
+     wanderte (B7) und die Referenzaufnahmen von reise-detail sich aenderten.
+     Eine Deklaration weniger ist hier die Behebung, nicht der Verlust. */
 }
 .bildgruppe > * {
   margin: 0;
@@ -1092,3 +1128,6 @@ a.rgc-logo:hover .rgc-logo__rose {
   max-width: min(60vw, 320px);
   object-fit: contain;
 }
+
+}
+/* Ende @layer components */

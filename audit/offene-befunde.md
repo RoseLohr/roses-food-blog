@@ -226,18 +226,41 @@ Verzeichnis. Das ist die Grenze des Musters, kein Versehen.
 
 ---
 
-## B7 — Kaskadenfalle: `globals.css` hat kein `@layer`
+## B7 — Kaskadenfalle: `globals.css` hat kein `@layer` — ERLEDIGT 08/2026
 
-**Befund.** In 1136 Zeilen steht kein einziges `@layer`. Tailwind v4 legt seine
-Utilities per `@import "tailwindcss"` in `@layer utilities`. Eine ungelayerte
-Projektklasse schlägt damit **jede** Utility, unabhängig von Spezifität:
-`class="karte p-4"` oder `class="bildgruppe mb-8"` wären still wirkungslos.
+**Befund war.** In 1094 Zeilen stand kein einziges `@layer`. Tailwind v4 legt
+seine Utilities in `@layer utilities`; ungelayertes CSS schlägt JEDE Schicht,
+unabhängig von Spezifität. `class="bildgruppe mb-8"` war damit still wirkungslos.
 
-**Warum hier.** Es ist genau der Fehlermodus, dessen Abschaffung diesen Auftrag
-ausgelöst hat — eine Regel, die stillschweigend etwas anderes tut, als
-dasteht. Wer künftig eine Projektklasse einführt, muss `@utility` benutzen. Im
-Bildgruppen-Block steht die Warnung jetzt im Kommentar; sie gehört aber an den
-Anfang der Datei und in die Mandate.
+**Erledigt — und zwar durch Beseitigen statt Bewachen.** Alles Projekt-CSS
+liegt jetzt in `@layer components`; `@import`, `@font-face` und `@theme` bleiben
+außerhalb (die gehören nicht in eine Schicht). Die Reihenfolge ist damit
+theme → base → components → utilities: Eine Utility gewinnt gegen eine
+Projektklasse, wie man es erwartet.
+
+Ein Kommentar hätte es nicht gerichtet — es stand bereits einer da (seit dem
+Bildgruppen-Umbau), und übersehen wurde es trotzdem.
+
+**Die Umstellung hat einen echten Fehler aufgedeckt.** 108 der 114
+Referenzaufnahmen blieben pixelgleich; sechs nicht — `reise-detail` und
+`admin-reise-vorschau`, je drei Breiten. Ursache:
+
+```css
+.bildgruppe {
+  /* Kein eigener Aussenabstand: Den Abstand setzt der Behaelter
+     (`[&>*+*]:mt-7` in travel-view.tsx) an EINER Stelle. */
+  margin: 0;          ← tat GENAU DAS GEGENTEIL
+}
+```
+
+Ungelayert schlug `margin: 0` die Utility des Behälters. Bildgruppen standen
+also ohne Abstand — entgegen der Absicht, die im Kommentar daneben stand. Der
+Code sagte das eine, der Kommentar das andere, und der Code gewann still.
+
+Die Deklaration ist weg; Bildgruppen bekommen jetzt denselben Blockabstand wie
+Text und Restaurants. Das ist eine SICHTBARE Änderung am Reisebericht, sie ist
+hier benannt, und die sechs Aufnahmen sind gezielt neu genommen — nicht
+pauschal.
 
 ---
 
