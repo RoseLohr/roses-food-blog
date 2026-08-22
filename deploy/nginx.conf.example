@@ -1,7 +1,37 @@
-# /etc/nginx/sites-available/roses-blog
-# Reverse Proxy vor dem Podman-Container (127.0.0.1:3000).
-# TLS via certbot: sudo certbot --nginx -d www.example.de -d example.de
-# certbot ergänzt die TLS-Direktiven und die Weiterleitung von Port 80 selbst.
+# HISTORISCH — dieser Server fährt diesen Betrieb NICHT.
+# ======================================================
+#
+# Diese Vorlage beschreibt einen nginx auf dem HOST, unter
+# /etc/nginx/sites-available/roses-blog, mit certbot für TLS. So läuft es hier
+# nicht: Die Auslieferung geht über Cloudflare am Rand und einen Nginx Proxy
+# Manager (OpenResty 1.29.2.5) in einem CONTAINER. Der Host-nginx 1.24.0 ist
+# zwar installiert, sein Dienst ist aber `enabled` UND `failed` und nicht Teil
+# der Kette (audit/11-infrastruktur-befund.md §1).
+#
+# SIE WIRD TROTZDEM NICHT GELÖSCHT. Zwei Werte stehen nirgends sonst
+# maschinenlesbar im Repository:
+#   client_max_body_size 200m  (unten)  — der Admin-Import erlaubt 200 MB
+#                                         (src/app/api/admin/daten/import/route.ts)
+#   proxy_read_timeout    600s (unten)  — so lange darf ein Import brauchen
+# Ob sie am tatsächlichen Proxy gelten, ist NICHT erhoben (Messfrage M2 in
+# audit/12-infrastruktur-fahrplan.md). Bis das geklärt ist, ist diese Datei die
+# einzige Niederschrift — löschen hieße, sie zu verlieren.
+#
+# WO DIE KOMPRESSION WIRKLICH HERKOMMT: deploy/npm/http_top.conf. Die spielt
+# `deploy.sh` (Abschnitt 9c) bei jedem vollen Lauf in den NPM-Container ein und
+# misst danach am Ursprung nach. Wer an der Auslieferung etwas ändern will,
+# ändert sie dort, nicht hier.
+#
+# ZWEI WIDERSPRÜCHE, DIE KEINE SIND:
+#   * Hier steht `add_header Vary Accept-Encoding`, am Ursprung dagegen
+#     `gzip_vary on`. Beides ist an seinem Ort richtig — hier gibt es brotli
+#     neben gzip, dort nicht. Wer angleicht, macht tests/kompression.test.ts rot.
+#   * Der brotli-Block unten gilt nur für diesen historischen Host-Betrieb.
+#     OpenResty hat kein brotli-Modul; am Ursprung wird brotli auch nicht
+#     nachgerüstet, es kommt von Cloudflare.
+#
+# Die Anleitung darunter (certbot, sites-available, apt) beschreibt folgerichtig
+# den historischen Weg und ist für diesen Server gegenstandslos.
 
 server {
     listen 80;

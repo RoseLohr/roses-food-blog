@@ -3,7 +3,9 @@
  *
  * Deploy-Branch = der Branch, den der Server ausliefert (deploy.sh deployt den
  * ausgecheckten Branch bzw. DEPLOY_BRANCH). Dieser ist projektabhängig NICHT
- * zwingend `main`: hier ist der Default-Branch `claude/roses-food-blog-vxs3vm`.
+ * zwingend `main` — deshalb wird er NICHT hartkodiert. (In diesem Repository
+ * ist er es allerdings: `main`. Hier stand früher ein anderer Branchname; über
+ * die GitHub-API geprüft stimmt das nicht.)
  * Welcher Branch triggert, wird daher NICHT hartkodiert, sondern (in dieser
  * Reihenfolge) bestimmt: `DEPLOY_HOOK_BRANCH` (Env-Override) → der im Payload
  * mitgelieferte `repository.default_branch` → Fallback `main`.

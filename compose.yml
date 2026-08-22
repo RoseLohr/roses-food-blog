@@ -13,7 +13,8 @@ services:
       PORT: 3000
       HOSTNAME: 0.0.0.0
     ports:
-      # Nur lokal erreichbar — nginx auf dem Host ist der öffentliche Zugang.
+      # Nur lokal erreichbar. Der öffentliche Zugang läuft über Cloudflare und
+      # den Nginx Proxy Manager im Container, nicht über einen Host-nginx.
       - "127.0.0.1:${PORT:-3000}:3000"
     volumes:
       - ${DATA_DIR:-/srv/roses-blog/data}:/data

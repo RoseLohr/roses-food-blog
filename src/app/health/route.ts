@@ -3,7 +3,12 @@ import { NextResponse } from "next/server";
 export const dynamic = "force-dynamic";
 
 /**
- * Healthcheck für deploy.sh und nginx. Liefert Status, Version und Commit.
+ * Healthcheck. Liefert Status, Version und Commit.
+ *
+ * Belegte Verbraucher: deploy.sh (Schnellpfad, Health-Gate, Stabilitätsfenster),
+ * scripts/healthcheck.mjs im Container, deploy/rollback.sh und
+ * .github/workflows/perf-uptime.yml. Ob der vorgelagerte Proxy /health abruft,
+ * ist nicht belegt — früher stand hier „für deploy.sh und nginx".
  * Ab E1 wird zusätzlich die Datenbankverbindung geprüft.
  */
 export async function GET() {
