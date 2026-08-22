@@ -1,6 +1,7 @@
 # ASSUMPTIONS — dokumentierte Annahmen
 
-Die Annahmen A1–A11 aus dem Projektauftrag gelten unverändert. Zusätzliche
+Die Annahmen A1–A11 stammen aus dem Projektauftrag und sind im Repository
+nirgends niedergeschrieben (`governance/mandate.md` kennt sie nicht); sie gelten. Zusätzliche
 Annahmen, die während der Umsetzung getroffen wurden:
 
 - **B1 — Next.js 16:** „Aktuelle stabile Version" ist Next.js 16 (App Router).
@@ -122,3 +123,23 @@ Annahmen, die während der Umsetzung getroffen wurden:
   Arbeit, es hält auch die native Bibliothek aus dem Anfragepfad heraus.
 - **B18 — Healthcheck:** `/health` prüft auch die DB-Verbindung (einfaches
   `SELECT 1`) und liefert Commit/Version aus dem Build.
+- **B24 — Auslieferungskette (nachgetragen 2026-08-22):** Die Kette ist
+  Cloudflare am Rand → Nginx Proxy Manager (OpenResty) in einem **Container** →
+  Next.js standalone auf `127.0.0.1:<PORT aus der .env>`. Ein nginx ist auf dem
+  Host installiert, sein Dienst ist aber `enabled` UND `failed` und gehört
+  nicht zur Kette.
+  Daraus folgt, was an mehreren Stellen im Code vorausgesetzt wird:
+  **brotli kommt ausschließlich vom Rand** (OpenResty hat kein brotli-Modul und
+  bekommt keins), **am Ursprung komprimiert gzip** aus `deploy/npm/http_top.conf`,
+  eingespielt von `deploy.sh` Abschnitt 9c, und **der Ursprungsport steht in
+  `PORT`** — auf `*:3000` lauscht auf diesem Server ein fremder Dienst.
+  Das ist eine **Lücke**, die hier geschlossen wird, keine Korrektur: Keine der
+  Annahmen B1–B23 hat etwas Unwahres über die Kette behauptet, sie kam nur
+  überhaupt nicht vor.
+  Vier Punkte sind dabei ausdrücklich **nicht** erhoben und dürfen nirgends
+  behauptet werden (`audit/12-infrastruktur-fahrplan.md`):
+  **M1** die Upstream-Adresse des Proxy-Hosts — im Container ist `127.0.0.1`
+  die eigene Loopback-Adresse; **M2** welche `client_max_body_size` und
+  `proxy_read_timeout` am Proxy gelten; **M3** welche Weiterleitungs-Köpfe er
+  setzt; **M5** welchen ACME-Weg er für die Zertifikate benutzt. Auch **wo HSTS
+  gesetzt wird**, ist offen und von keiner dieser Messfragen abgedeckt.
