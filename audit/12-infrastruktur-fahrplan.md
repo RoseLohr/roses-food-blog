@@ -111,6 +111,264 @@ Zwei Dinge, die das Inventar zusätzlich festhält:
   `ASSUMPTIONS Bxx`, Dateipfade in Codeblöcken, die toten A-Nummern). Beides
   ist Regressionsschutz, nicht Drift-Erkennung — und muss auch so heißen.
 
+  *Gebaut 2026-08-22:* `scripts/regime/doku-gate.mjs`, blockierend in CI, mit
+  Selbsttest. Es prüft drei Klassen: veraltete Anleitung (nur in dem, was
+  Markdown als Code liest, ausgenommen unter einer Überschrift mit „historisch" —
+  Fließtext darf weiter sagen, dass es certbot hier nicht gibt), tote
+  Annahmenummern und Pfadverweise ins Leere. Gemessen am Bestand: 312
+  Pfadverweise, 4 historische Codeblöcke, alle in Ordnung.
+
+  **Der Pflicht-Approver hat in ZWÖLF Runden FÜNFUNDZWANZIG Befunde gefunden,
+  einen sechsundzwanzigsten habe ich selbst nachgetragen** — zweiundzwanzig von
+  ihm benannt, vier beim Nachziehen derselben Klasse. Sechs davon haben
+  dieselbe Form: *eine Prüfung, die sich still selbst abschaltet.* Eine
+  Shell-Zeile „# historisch" INNERHALB eines Codeblocks setzte die Ausnahme für
+  alles Folgende; ein Zaun aus drei Tilden galt gar nicht als Code; eingerückter
+  Code wurde nie geprüft; ein Zaun aus VIER Backticks wurde von einem inneren
+  Dreier geschlossen; nur Kommentare am Zeilenanfang wurden gesehen, ein
+  nachgestelltes „// A7" lief durch; die Zeilenprüfung sprang bei einer
+  Abkürzung mit Fantasiezeile ab; Zeilennummer an einem VERZEICHNIS, Bereich
+  rückwärts und Zeile 0 galten als gültig; und die Zeilenzählung addierte bei
+  abschließendem Umbruch eine Phantomzeile.
+
+  **Die eigentliche Lehre steckt in der Verteilung.** Fünf der acht Löcher waren
+  keine Flüchtigkeitsfehler, sondern Sonderfälle von Markdown und TypeScript —
+  entstanden, weil das Gate beide Sprachen VON HAND zerlegte. Ein
+  handgeschriebener Zerleger hat so viele Löcher, wie das Format Sonderfälle
+  hat; jede Runde hätte weitere gefunden. Die Wurzel ist nicht der einzelne
+  Sonderfall, sondern der Nachbau.
+
+  Beide Zerleger gibt es im Projekt längst: `marked` treibt
+  `src/lib/markdown.ts`, `typescript` treibt `npm run typecheck`. Das Gate
+  benutzt jetzt sie. Damit fallen alle fünf Grammatik-Löcher **ersatzlos weg**
+  statt geflickt zu werden — und ein Fall, den keine der Handfassungen
+  beherrschte, fällt gratis mit ab: `const r = /a\/\//; // A5`. Der reine
+  Scanner liest daraus „//; // A5" und liegt falsch; der Parser liefert
+  „// A5". Übrig als eigene Logik bleiben die drei Löcher, die von Dateien und
+  Zahlen handeln statt von Grammatik.
+
+  **Runde drei fand ein neuntes Loch — und es war das gefährlichste**, weil es
+  die Prüfung nicht umging, sondern ihren Zweck aushöhlte: Ein Pfadverweis galt
+  als gültig, sobald er ein eindeutiger PRÄFIX einer vorhandenen Datei war.
+  Damit lief jeder vertippte oder verkürzte Pfad grün durch — nachgemessen an
+  drei Beispielen, die die Vorfassung alle auflöste und die neue Fassung alle
+  zurückweist. Ausgerechnet die Frage „gibt es diese Datei?" wäre damit
+  wirkungslos gewesen.
+
+  Gebraucht wird die Abkürzung an GENAU EINER Stelle im ganzen Bestand: Die
+  Verfassung nennt das Residuals-Register bei seiner Nummer, und sie ist
+  hash-attestiert — sie für eine Linting-Bequemlichkeit umzuschreiben wäre die
+  falsche Richtung. Die Ausnahme heißt deshalb jetzt, was sie ist: zweistellige
+  Dokumentnummer als letztes Wegstück, gefolgt von einem Bindestrich in der
+  gefundenen Datei. Benannt statt offen. Im selben Zug fiel eine Bereinigung
+  nachgestellter Interpunktion weg, die dasselbe tat — Tippfehler waschen.
+
+  **Runde vier fand zwei weitere, und beide sind lehrreich.** Eine Überschrift
+  IN einem Zitat oder Listenpunkt machte einen Abschnitt auf und schaltete die
+  „historisch"-Ausnahme für alles Folgende ein — auch außerhalb des Zitats; an
+  beiden Formen nachgestellt. Und die Liste der obersten Verzeichnisse war
+  VERDRAHTET und unvollständig: `.zap`, `.lighthouse`, `.admin-data` und
+  `.repro-data` fehlten, Verweise dorthin wurden gar nicht erst geprüft. Sie
+  wird jetzt aus dem Repository hergeleitet — dieselbe Lehre wie beim
+  Shell-Syntax-Schritt und bei `tests/gate-verdrahtung.test.ts`: entdecken statt
+  aufzählen. Die Abdeckung stieg dadurch von 300 auf 312 Verweise.
+
+  Zum zweiten Teil desselben Befunds — nackte Dateinamen wie „package.jso" —
+  steht die Messung im Skriptkopf: Von über neunzig solchen Stücken in der
+  Dokumentation sind neun tatsächlich Dateien im Wurzelverzeichnis; der Rest
+  sind Kurzformen für Dateien in Unterverzeichnissen, Versionsnummern, Adressen
+  und Ausdrücke aus dem Quelltext. Eine Prüfung darauf bräuchte eine
+  Ausnahmeliste, und die ist hier ausgeschlossen. Das bleibt eine benannte
+  Grenze, keine stille.
+
+  **Runde fünf fand den ersten echten Ausbruch.** Die Auflösung eines
+  Pfadverweises fragte nur, ob auf der Platte etwas an dieser Stelle liegt —
+  nicht, ob es zu diesem Repository gehört. Ein Verweis auf eine Datei
+  ausserhalb galt damit als gültig, und die Zeilenprüfung hätte sie anschließend
+  zum Zählen gelesen. Der Approver nannte den Weg über das ausdrückliche
+  „Punkt-Schrägstrich"; beim Nachstellen zeigte sich, dass der Aufstieg über
+  Punkt-Punkt durch JEDES zugelassene Wurzelverzeichnis genauso funktioniert —
+  das Loch war größer als der benannte Sonderfall. Geprüft wird jetzt zweierlei:
+  dass der aufgelöste Pfad innerhalb der Repo-Wurzel bleibt, und dass er in der
+  Dateiliste des Repositories vorkommt. Vorhandensein allein genügt nicht mehr.
+
+  Dazu ein zweiter Befund derselben Runde: Ein vorangestellter Bindestrich
+  verdeckte die tote Nummer, „laut Annahme-A7" blieb grün. Die Ausnahme ist
+  gefallen; am Bestand nachgemessen erzeugt das null Fehlalarme.
+
+  **Runde sechs traf die Lehre in ihrem eigenen Rücken.** Zwei der drei neuen
+  Löcher waren wieder Markdown-Sonderfälle — und zwar an der Stelle, an der ein
+  Rest Handarbeit übrig geblieben war, nachdem die Blockzerlegung längst auf
+  `marked` stand: Inline-Code-Spannen wurden gar nicht als Code geprüft (eine
+  Anweisung mitten im Satz blieb grün), und der eigene Backtick-Wähler verbot
+  Leerraum, sodass eine nach CommonMark gültige Spanne mit Rand-Leerraum
+  ungeprüft blieb. Beides ist jetzt ebenfalls Token-Arbeit. Von sechzehn Löchern
+  kamen damit acht aus nachgebauter Grammatik — die Hälfte.
+
+  Der dritte war der zweite Ausbruch: Das Containment rechnete rein lexikalisch,
+  ein verfolgter Symlink aus dem Repository heraus kam durch. Geprüft wird
+  zusätzlich der aufgelöste echte Pfad; der Selbsttest legt dafür wirklich einen
+  Symlink an, statt die Annahme zu glauben.
+
+  Damit die Regel gegen Fließtext nicht kippt, ist sie gemessen worden, bevor
+  sie kam: Von 2468 Inline-Spannen in README und `docs/` tragen drei ein
+  verbotenes Wort, alle drei einwortig — Teil genau des Zitatblocks, der die
+  Abwesenheit feststellt. Eine Spanne zählt deshalb nur als Anweisung, wenn sie
+  mehr als ein Wort ist. Null Fehlalarme am Bestand.
+
+  **Das siebzehnte Loch habe ich selbst gesucht, statt auf Runde sieben zu
+  warten — und es war die reinste Form der ganzen Klasse:** Aus einem
+  Unterverzeichnis gestartet prüfte das Gate NICHTS und meldete das als „grün".
+  `git ls-files` liefert Pfade relativ zum Aufrufverzeichnis; aus `src/` heraus
+  fand die Filterung keine einzige Markdown-Datei. Das ist genau der Fehlertyp,
+  den dieser Fahrplan im Kopf als „Belege, die nicht fehlschlagen können"
+  benennt — im eigenen Werkzeug.
+
+  Behoben doppelt, weil eine Hälfte nicht genügt: Die Dateiliste kommt jetzt aus
+  der Repo-Wurzel, UND ein Lauf ohne eine einzige geprüfte Datei ist ein
+  Fehlschlag statt eines Erfolgs. Der Selbsttest fährt das Gate dafür in einem
+  frisch angelegten leeren Repository und verlangt den Rückgabewert 1 — die
+  Bedingung nur hinzuschreiben wäre wieder ein Beleg, der nicht fehlschlagen
+  kann. Die Ausgabe nennt seither auch die Zahl der geprüften Dateien, damit ein
+  Leerlauf beim Lesen auffällt.
+
+  **Runde sieben brachte eine falsche FUNDSTELLE und eine unbegründete
+  Ausnahme.** Die Tabellenkopfzeile wurde nach den Datenzeilen gelaufen, obwohl
+  sie im Dokument darüber steht; eine Spanne dort wurde deshalb nicht mehr
+  gefunden und auf Zeile 1 gemeldet statt auf ihrer eigenen. Beim Beheben fiel
+  ein zweiter, größerer Teil auf: Für Inline-Token liefert `marked` einen
+  bereits ENTRÜCKTEN Rohtext — die Fortsetzungszeile eines Listenpunkts verliert
+  ihre Einrückung —, er ist damit gar keine Teilkette der Quelle. An CLAUDE.md
+  nachgemessen: Die Spanne mit dem Gate-Kommando steht in Zeile 29 und wurde als
+  Zeile 1 gemeldet. Gesucht wird jetzt über Leerraum tolerant, und ein Stück,
+  das sich NICHT verorten lässt, ist ein eigener Verstoß statt einer erfundenen
+  Zeile 1 — genau dieser Riegel hat die beiden echten Fälle im Bestand
+  überhaupt erst sichtbar gemacht.
+
+  Die zweite Hälfte: `audit/` war auch von Prüfung 1 ausgenommen, ohne
+  Begründung. Für die toten Nummern und die Vorwärtsverweise ist die Ausnahme
+  inhaltlich begründet, für die veraltete Anleitung stand sie nur aus Symmetrie
+  da. Sie ist gefallen; am Bestand nachgemessen vorher: null Treffer.
+
+  **Runde acht brachte einen Tippfehler und eine Grenze.** Ein Tippfehler im
+  ERSTEN Wegstück fiel durch — ein Stück galt gar nicht als Pfad, wenn sein
+  erstes Wegstück kein oberstes Verzeichnis ist. Erkannt wird jetzt über zwei
+  unabhängige Merkmale: bekanntes Wegstück ODER Dateiendung. Am Bestand
+  nachgemessen feuert das auf keine einzige vorhandene Stelle; Branch-Namen,
+  Medientypen, Modulkürzel und Aktionsversionen tragen keine dieser Endungen.
+
+  Der zweite Befund ist keine Umgehung, sondern **die einzige benannte Grenze
+  dieses Gates**, und sie wird ausgesprochen statt versteckt: Eine EINWORTIGE
+  Inline-Spanne, die als Anweisung gemeint ist, fällt durch. Ob eine Nennung
+  eine Anweisung ist, steht im FLIESSTEXT daneben, nicht in der Spanne — kein
+  Wähler auf der Spanne kann das entscheiden. Die Gegenrichtung wäre messbar
+  schlimmer: Von 2468 Spannen tragen sechs ein verbotenes Wort, alle sechs
+  einwortig, alle sechs legitime Feststellungen der ABWESENHEIT — darunter
+  dieser Absatz hier. Einwortige Spannen zu verbieten hieße, das Gate auf dem
+  Text rot zu fahren, der es erklärt, und der einzige Ausweg wäre eine
+  Ausnahmeliste. Vollständig ist dafür die Block-Prüfung, und dort leben
+  Anleitungen.
+
+  **Runde neun hat die Grenze aus Runde acht zu Recht verschoben.** „Mehr als
+  ein Wort" hiess bei mir „enthält Leerraum" — aber eine Kommandoliste braucht
+  gar kein Leerzeichen: Programmname, Semikolon, nächster Befehl. Dasselbe mit
+  doppeltem Kaufmanns-Und, mit senkrechtem Strich, mit einer Umleitung oder in
+  einer Kommandoersetzung. Alle fünf Formen liefen durch; erkannt wird jetzt
+  zusätzlich an Shell-Metazeichen. (Sie stehen hier ohne Backticks — sonst wären
+  sie selbst Anweisungen, und das Gate hat genau diesen Absatz beim ersten Lauf
+  beanstandet. Wieder die Kontrolle bei der Arbeit.) Am Bestand nachgemessen: Von 3818 Inline-Spannen feuert die
+  verschärfte Regel auf NULL — die sechs legitimen Nennungen tragen keines
+  dieser Zeichen. Die benannte Grenze schrumpft damit auf den blossen Namen.
+
+  **Runde zehn traf einen Rückfall, den die Korrektur aus Runde acht selbst
+  eingebaut hatte.** Um fremde Pfade ruhigzustellen, warf eine neue Regel jedes
+  Stück mit führendem Schrägstrich weg — und verschluckte damit auch den Fall,
+  den Runde fünf gerade erst sichtbar gemacht hatte: ein ausdrücklich
+  repo-relativ ausgezeichnetes Stück, das nach draußen zeigt. Das Gate meldete
+  nichts mehr statt eines Verweises ins Leere. Die Regel gilt jetzt nur noch für
+  Stücke OHNE diese Auszeichnung. **Eine Korrektur ist kein Freibrief** — das
+  ist die Lehre dieser Runde und der Grund, warum jede Gegenprobe nicht nur den
+  neuen Fall prüft, sondern auch die alten.
+
+  **In derselben Runde ein Befund, der NICHT zutraf:** Ein zweiter Prüfer
+  meldete die Löcher q, i und p als offen und nannte dabei Zeilennummern aus dem
+  Skriptkopf — also aus der Liste, in der diese Löcher als BEHOBEN
+  dokumentiert sind. Nachgeprüft statt geglaubt: Der Lauf aus einem
+  Unterverzeichnis liefert dasselbe Ergebnis wie der aus der Wurzel (51 Dateien,
+  312 Verweise), die drei vertippten Pfade lösen alle auf `null` auf, und die
+  Symlink-Probe weist den Ausbruch ab. Ein Befund wird geprüft, nicht geglaubt —
+  in beide Richtungen.
+
+  **Runde elf brachte den ersten Befund, der keine Umgehung war, sondern ein
+  FEHLALARM.** Die Blockprüfung las die Zaunzeile mit — deren Infozeichenkette
+  sagt aber etwas ÜBER den Block (Sprache, Titel) und ist keine Anweisung IN
+  ihm. Ein Zaun, dessen Titel den Namen eines der verbotenen Verzeichnisse
+  enthält, wurde als Verstoß gemeldet. Das ist kein Loch, kostet aber dieselbe
+  Glaubwürdigkeit: **Eine Kontrolle, die grundlos rot wird, wird abgeschaltet
+  statt beachtet** — und damit wäre alle Arbeit der zehn Runden davor umsonst.
+
+  **Zum zweiten Mal ein Befund, der nicht zutraf:** Derselbe zweite Prüfer wie
+  in Runde zehn meldete erneut m, p und q als offen und behauptete zusätzlich,
+  die Symlink-Prüfung existiere „nur im Selbsttest, im regulären Ablauf
+  auskommentiert?" — mit Fragezeichen. Nachgesehen statt geglaubt: Sie steht an
+  zwei Stellen im Regelablauf der Auflösung. Auch das gehört ins Protokoll,
+  damit die Bilanz nicht schöner aussieht, als sie ist: Nicht jeder Befund
+  trägt, und das Prüfen kostet jedes Mal denselben Aufwand wie ein echter.
+
+  **Runde zwölf legte den größten fail-open des ganzen PR frei.** Klammern
+  galten pauschal als Muster und disqualifizierten ein Stück als Pfadverweis —
+  aber Next.js schreibt Routengruppen und dynamische Segmente in den
+  DATEINAMEN. In diesem Repository tragen **72 echte Dateien** solche Klammern;
+  Verweise darauf wurden nie geprüft. Ein toter Verweis auf halb `src/app/`
+  blieb grün. Geprüft wird jetzt auf Platzhalter-WEGSTÜCKE statt auf Klammern,
+  und die Muster (Auslassung als eigenes Wegstück, Glob) bleiben draußen.
+
+  **Das Gate hat daraufhin sofort einen echten Doku-Fehler gefunden:**
+  `audit/01-claims-ledger.md` zitierte Zeile 4 eines Pfades, den es so nicht
+  gibt — die Kurzform ohne `src/app/`. Ein Verweis mit Zeilennummer ist eine
+  Behauptung über eine bestehende Datei; er steht jetzt vollständig da. Die
+  Abdeckung stieg von 312 auf 313 Verweise.
+
+  **Und die Gegenprobe hat mich in derselben Runde widerlegt.** Der zweite
+  Befund betraf einen Bindestrich unmittelbar nach einer toten Nummer. Ich hatte
+  als Beispiel eine NUMMERNSPANNE angenommen — die alte Fassung fing sie aber
+  bereits über die zweite Nummer. Der Unterschied liegt allein beim angehängten
+  Wort. Die Beschreibung ist auf das Gemessene zurückgezogen; eine Annahme, die
+  die Gegenprobe nicht trägt, gehört nicht in den Quelltext.
+
+  98 Selbsttestfälle, Gegenprobe gegen alle zwölf Vorfassungen gefahren, dazu
+  eine Positivkontrolle am echten Baum: drei eingeschleuste Verstöße in README,
+  `docs/` und `src/` werden mit exakter Zeilennummer gemeldet.
+
+  Die Gegenbeispiele stehen hier bewusst OHNE Backticks: Das Gate kann eine
+  Veranschaulichung nicht von einem echten Verweis unterscheiden — und hat
+  genau diesen Absatz beim ersten Lauf beanstandet. Das ist kein Mangel,
+  sondern die Kontrolle bei der Arbeit.
+
+  **Zwei Dinge, die es NICHT tut, damit sich niemand darauf verlässt:**
+  - Feste Portzahlen bleiben ungeprüft. `localhost:3000` ist im
+    Entwicklungsabschnitt richtig und am Proxy falsch; ein Gate, das beides
+    nicht auseinanderhalten kann, hätte eine Ausnahmeliste gebraucht — und
+    eine Ausnahmeliste ist der Anfang der Weichspülung. Die Portfrage hängt
+    ohnehin an M1.
+  - `ASSUMPTIONS Bxx` bleibt ungeprüft: `B1`–`B10` sind gleichzeitig die
+    Befundnummern in `audit/offene-befunde.md` und `B-06`/`B-13` die
+    Prüfkennungen. Drei Bezugssysteme auf demselben Zeichen — mechanisch nicht
+    trennbar, ohne zu raten.
+
+  In `audit/` gilt eine engere Regel, mit inhaltlichem Grund: Ein Fahrplan nennt
+  planmäßig Dateien, die es noch nicht gibt (`scripts/regime/erhebung.sh` aus
+  Spur A1). Ein Verweis MIT Zeilennummer kann das nie sein — man zitiert keine
+  Zeile einer Datei, die nicht existiert. Genau die werden dort geprüft.
+
+  **Das Gate war beim ersten Lauf rot, auf zwei echten Fundstellen**, die das
+  A2/A3-Inventar übersehen hatte, weil es nur Doku durchsucht hatte:
+  `src/i18n/de.ts` verwies auf eine tote Annahmenummer, und `src/lib/mailer.ts`
+  behauptete „Konfiguration ausschließlich über .env". Das zweite war nicht nur
+  eine tote Nummer, sondern **sachlich falsch**: `getSmtpConfig()` liest zuerst
+  die Einstellungen aus der Datenbank, `.env` ist bloß der Rückfall. Wer bei
+  einer Störung dem Kommentar gefolgt wäre, hätte in der falschen Datei gesucht.
+
 ## Spur A1/B2/F1 — Erhebung als Regime-Skript, Schwellen, Kadenz
 
 **Trägt:** `scripts/regime/erhebung.sh` als Skript. Zertifikatsrestlaufzeit
@@ -332,11 +590,28 @@ Die neun, mit erster Einschätzung (nicht entschieden):
 | Modern Web Application [10109] | 5 | rein informativ. |
 | Authentication Request Identified [10111] | 1 | rein informativ. |
 
-**D-2 — Die ZAP-Aktion kann ihr eigenes Artefakt nicht hochladen.**
+**D-2 — Die ZAP-Aktion kann ihr eigenes Artefakt nicht hochladen.** *Behoben
+2026-08-22.*
 `Create Artifact Container failed: The artifact name zap_scan is not valid` —
 `zaproxy/action-baseline@v0.12.0` gegen die heutige Artefakt-Schnittstelle. Der
 nachgelagerte eigene Upload (`zap-report`) gelingt, der Bericht ist also da;
 die Fehlermeldung ist trotzdem eine weitere Spur, die in die Irre führt.
+
+Die Wurzel ist nicht der Name — `zap_scan` ist zulässig. Die alte Aktion bringt
+eine abgekündigte `upload-artifact`-Fassung mit, deren Dienst-Schnittstelle
+abgeschaltet ist; die Meldung ist das Symptom davon. `v0.14.0` behebt genau das
+(„stop using deprecated upload-artifact version"), `v0.15.0` ist der aktuelle
+Stand und jetzt gepinnt. Die vier benutzten Eingaben (`target`,
+`rules_file_name`, `fail_action`, `allow_issue_writing`) gibt es dort
+unverändert — an der `action.yml` des Tags nachgesehen, nicht vermutet.
+
+Der eigene Upload bleibt trotzdem stehen: Er liegt außerhalb der Aktion und
+trägt `if: always()`, liefert den Bericht also auch dann, wenn die Aktion selbst
+abbricht. Zwei Artefakte kosten nichts, ein fehlender Bericht kostet den Lauf.
+
+**Was das NICHT heilt:** Der wöchentliche Lauf bleibt rot. Er ist fail-closed
+und fällt über die neun WARN aus D-1 — D-2 war immer nur die irreführende
+Meldung daneben.
 
 **Nebenwirkung dieses Laufs:** Der Meldepfad hat wie vorgesehen einen Kommentar
 an Issue #75 („Wiederkehrender Lauf fehlgeschlagen: DAST") geschrieben. Der

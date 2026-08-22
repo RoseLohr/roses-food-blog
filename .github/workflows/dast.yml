@@ -48,13 +48,29 @@ jobs:
           for i in $(seq 1 30); do
             curl -sf "http://localhost:3000/health" && break || sleep 2
           done
+      # v0.12.0 stand hier und konnte ihr eigenes Artefakt nicht mehr hochladen:
+      #   Create Artifact Container failed: The artifact name zap_scan is not valid
+      # Die Meldung führt in die Irre — `zap_scan` ist ein zulässiger Name. Sie
+      # entsteht, weil die alte Aktion eine abgekündigte `upload-artifact`-
+      # Fassung mitbringt, deren Dienst-Schnittstelle abgeschaltet ist. Genau
+      # das behebt v0.14.0 („stop using deprecated upload-artifact version");
+      # v0.15.0 ist der aktuelle Stand. Die vier hier benutzten Eingaben
+      # (target, rules_file_name, fail_action, allow_issue_writing) gibt es dort
+      # unverändert — an der action.yml des Tags nachgesehen, nicht vermutet.
       - name: ZAP Baseline
-        uses: zaproxy/action-baseline@v0.12.0
+        uses: zaproxy/action-baseline@v0.15.0
         with:
           target: "http://localhost:3000"
           rules_file_name: ".zap/rules.tsv"
           fail_action: true # scheduled: fällt bei ECHTEN Funden (Header-Regeln stehen auf WARN)
           allow_issue_writing: false
+      # BLEIBT, obwohl die Aktion ihr Artefakt (`zap_scan`) nun wieder selbst
+      # hochlädt: Dieser Schritt trägt `if: always()` und liegt AUSSERHALB der
+      # Aktion — er liefert den Bericht auch dann, wenn die Aktion selbst
+      # abbricht. Er war die ganze Zeit der Grund, dass es trotz des Fehlers
+      # oben überhaupt einen Bericht gab. Zwei Artefakte mit verschiedenen Namen
+      # kosten nichts; ein Bericht, der beim nächsten Aktions-Defekt fehlt,
+      # kostet den Lauf.
       - uses: actions/upload-artifact@v4
         if: always()
         with:

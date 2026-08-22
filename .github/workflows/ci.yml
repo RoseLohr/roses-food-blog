@@ -44,6 +44,10 @@ jobs:
         run: node scripts/regime/source-gates.mjs
       - name: Quelltext-Gates-Selbsttest (A-36)
         run: node scripts/regime/source-gates.mjs --selftest
+      - name: Doku-Gates (veraltete Anleitung, tote Nummern, Pfadverweise)
+        run: node scripts/regime/doku-gate.mjs
+      - name: Doku-Gates-Selbsttest (A-36)
+        run: node scripts/regime/doku-gate.mjs --selftest
       - name: Migrations-Journal streng aufsteigend (still übersprungene Migration)
         run: node scripts/regime/migrations-order.mjs
       - name: Migrations-Journal-Selbsttest

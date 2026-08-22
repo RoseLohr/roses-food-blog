@@ -1,7 +1,8 @@
 /**
  * Zentrales deutsches Wörterbuch. Alle UI-Texte kommen aus diesem Modul,
- * damit eine spätere englische Version (A3) nur ein zweites Wörterbuch
- * plus Sprachauswahl braucht — keine hartkodierten Strings in Komponenten.
+ * damit eine spätere englische Version nur ein zweites Wörterbuch plus
+ * Sprachauswahl braucht — keine hartkodierten Strings in Komponenten.
+ * Niedergeschrieben ist das als B15 in `docs/ASSUMPTIONS.md`.
  */
 export const de = {
   site: {
