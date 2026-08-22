@@ -234,6 +234,31 @@ describe("Migrator", () => {
     expect(marke).toBe(zeilen);
   });
 
+  it("bricht ab und rollt zurück, wenn ein Fremdschlüssel ins Leere zeigt", async () => {
+    expect(migriere().code).toBe(0);
+
+    // Eine Waise erzeugen, wo SQLite sie zulässt: `foreign_keys = OFF` wirkt
+    // nur AUSSERHALB einer Transaktion (innerhalb ist das Pragma ein No-op —
+    // nachgemessen, siehe drizzle/0012_bildgruppe.sql). Genau diesen Zustand
+    // hinterlässt ein Tabellen-Neubau, bei dem eine abhängige Tabelle nicht
+    // mitgezogen wurde; SQLite prüft das beim DROP+RENAME NICHT nach.
+    const verbindung = db();
+    verbindung.pragma("foreign_keys = OFF");
+    verbindung
+      .prepare(
+        "INSERT INTO travel_block (travel_post_id, sort_order, type, markdown) VALUES (?,?,?,?)",
+      )
+      .run(999999, 99, "text", "Elternzeile fehlt");
+    expect(verbindung.pragma("foreign_key_check")).toHaveLength(1);
+    verbindung.close();
+
+    // Der Migrator hat nichts anzuwenden — die Zusicherung greift trotzdem.
+    const lauf = migriere();
+    expect(lauf.code).toBe(1);
+    expect(lauf.ausgabe).toContain("Fremdschlüssel ins Leere");
+    expect(lauf.ausgabe).toContain("travel_block");
+  });
+
   it.each([
     ["NULL", null],
     ["Text", "kaputt"],

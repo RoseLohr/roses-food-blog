@@ -328,8 +328,44 @@ const runAll = sqlite.transaction(() => {
   // Der Zeuge von oben. INNERHALB der Transaktion, damit er bei einem Abbruch
   // mit zurückrollt und nie mehr behauptet, als tatsächlich angewendet ist.
   sqlite.pragma(`user_version = ${buchfuehrung.length + applied}`);
+
+  // Fremdschlüssel-Prüfung als echte ZUSICHERUNG, nicht als Deko.
+  //
+  // Eine Migration kann das nicht selbst leisten: `PRAGMA foreign_key_check`
+  // im SQL liefert nur ein Resultset, das niemand liest — es sähe aus wie eine
+  // Prüfung, ohne eine zu sein. Genau so stand es in einem Entwurf von
+  // 0012_bildgruppe.sql, und genau so wäre es durchgegangen.
+  //
+  // Besonders nötig bei Tabellen-Neubauten (CREATE neu → INSERT SELECT → DROP
+  // alt → RENAME): Zeigt danach ein Fremdschlüssel ins Leere, ist die Datenbank
+  // still inkonsistent, und es fällt erst irgendwann im Betrieb auf. Hier
+  // innerhalb der Transaktion: Ein Verstoß rollt den ganzen Lauf zurück,
+  // statt ihn festzuschreiben.
+  const verstoesse = sqlite.pragma("foreign_key_check");
+  if (verstoesse.length > 0) {
+    const zeilen = verstoesse
+      .slice(0, 10)
+      .map((v) => `  - ${v.table}.rowid=${v.rowid} zeigt ins Leere (${v.parent})`)
+      .join("\n");
+    throw new Error(
+      `Nach den Migrationen zeigen ${verstoesse.length} Fremdschlüssel ins Leere:\n` +
+        zeilen +
+        (verstoesse.length > 10 ? `\n  … und ${verstoesse.length - 10} weitere` : "") +
+        "\nDer Lauf wird zurückgerollt. Eine Migration hat Zeilen hinterlassen, " +
+        "deren Elternzeile fehlt — typisch nach einem Tabellen-Neubau, bei dem " +
+        "eine abhängige Tabelle nicht mitgezogen wurde.",
+    );
+  }
 });
-runAll();
+// Der Wurf aus der Transaktion heraus ist nötig, damit sie zurückrollt — die
+// Meldung soll aber wie jeder andere Abbruch hier aussehen und nicht wie ein
+// Absturz.
+try {
+  runAll();
+} catch (fehler) {
+  console.error(`[migrate] ${fehler instanceof Error ? fehler.message : String(fehler)}`);
+  process.exit(1);
+}
 console.log(
   applied === 0
     ? "[migrate] Datenbank ist aktuell — keine neuen Migrationen."

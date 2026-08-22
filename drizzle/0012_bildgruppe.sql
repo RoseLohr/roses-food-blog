@@ -31,10 +31,30 @@
 -- AUSGESCHRIEBENEN Spaltenlisten auf BEIDEN Seiten des INSERT, damit ein
 -- späterer Spaltenzuwachs die Zuordnung nicht still verschiebt.
 --
--- Der Neubau läuft mit ausgeschalteten Fremdschlüsseln (der Migrator setzt
--- `foreign_keys = ON`; ein DROP TABLE räumte sonst per CASCADE die abhängigen
--- Zeilen mit weg) und prüft danach, dass nichts gebrochen ist.
-PRAGMA foreign_keys=OFF;--> statement-breakpoint
+-- WARUM HIER KEIN `PRAGMA foreign_keys=OFF` STEHT — und warum das trotzdem
+-- sicher ist:
+--
+-- Ein erster Entwurf schaltete die Fremdschlüssel für den Neubau ab. Das wäre
+-- WIRKUNGSLOS gewesen und hätte falsche Sicherheit gegeben: SQLite behandelt
+-- dieses Pragma innerhalb einer Transaktion als No-op, und der Migrator führt
+-- jede Migration in einer Transaktion aus (scripts/migrate.mjs). Nachgemessen —
+-- der Wert bleibt bei 1:
+--
+--     vor Transaktion: 1 | IN der Transaktion nach OFF: 1 | danach: 1
+--
+-- Sicher ist der Neubau aus einem anderen Grund: `travel_block` ist überall
+-- KIND, nirgends Elternteil. Kein Fremdschlüssel zeigt auf seine `id` (geprüft
+-- über das ganze Schema und alle Migrationen). Ein `DROP TABLE` löst deshalb
+-- keine ON-DELETE-Aktion aus, es gibt nichts zu kaskadieren.
+--
+-- WER HIER EINE TABELLE NEU BAUT, DIE ELTERNTEIL IST, kann das so nicht tun:
+-- Das Abschalten muss dann AUSSERHALB der Transaktion geschehen. Diese Stelle
+-- ist der falsche Ort dafür.
+--
+-- Dass danach nichts gebrochen ist, behauptet diese Datei nicht mehr selbst —
+-- ein `PRAGMA foreign_key_check` im SQL liefert nur ein Resultset, das niemand
+-- liest, und sähe aus wie eine Prüfung, ohne eine zu sein. Der Migrator prüft
+-- es jetzt für JEDE Migration und bricht bei einem Verstoß ab.
 CREATE TABLE `travel_block_neu` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 	`travel_post_id` integer NOT NULL,
@@ -57,6 +77,4 @@ SELECT
 FROM `travel_block`;--> statement-breakpoint
 DROP TABLE `travel_block`;--> statement-breakpoint
 ALTER TABLE `travel_block_neu` RENAME TO `travel_block`;--> statement-breakpoint
-CREATE INDEX `travel_block_post_idx` ON `travel_block` (`travel_post_id`);--> statement-breakpoint
-PRAGMA foreign_key_check;--> statement-breakpoint
-PRAGMA foreign_keys=ON;
+CREATE INDEX `travel_block_post_idx` ON `travel_block` (`travel_post_id`);
