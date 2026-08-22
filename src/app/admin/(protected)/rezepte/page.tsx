@@ -5,6 +5,9 @@ import { db, schema } from "@/db";
 import { requireAdmin } from "@/lib/auth";
 import { t } from "@/i18n/de";
 import { deleteRecipeAction } from "./actions";
+import { Meldung, meldungAus } from "@/components/admin/meldung";
+import { Statuschip } from "@/components/admin/statuschip";
+import { LoeschForm } from "@/components/admin/loesch-form";
 
 const dict = t();
 
@@ -15,8 +18,7 @@ export default async function RecipesAdminPage(props: {
 }) {
   await requireAdmin();
   const searchParams = await props.searchParams;
-  const message =
-    typeof searchParams.meldung === "string" ? searchParams.meldung : null;
+  const message = meldungAus(searchParams);
   const recipes = await db
     .select()
     .from(schema.recipe)
@@ -33,11 +35,7 @@ export default async function RecipesAdminPage(props: {
           {dict.admin.recipes.newRecipe}
         </Link>
       </div>
-      {message && (
-        <p role="status" className="mb-4 bg-amber-50 p-3 text-sm text-amber-900">
-          {message}
-        </p>
-      )}
+      <Meldung text={message} />
       <div className="overflow-x-auto bg-white shadow-sm">
         <table className="w-full text-left text-sm">
           <thead>
@@ -61,17 +59,13 @@ export default async function RecipesAdminPage(props: {
                   </Link>
                 </td>
                 <td className="px-4 py-3">
-                  <span
-                    className={
-                      r.status === "veroeffentlicht"
-                        ? "bg-green-100 px-2 py-0.5 text-xs text-green-900"
-                        : "bg-amber-100 px-2 py-0.5 text-xs text-amber-900"
-                    }
+                  <Statuschip
+                    ton={r.status === "veroeffentlicht" ? "gruen" : "gelb"}
                   >
                     {r.status === "veroeffentlicht"
                       ? dict.admin.recipes.statusPublished
                       : dict.admin.recipes.statusDraft}
-                  </span>
+                  </Statuschip>
                 </td>
                 <td className="px-4 py-3">{r.likeCount}</td>
                 <td className="px-4 py-3">
@@ -87,15 +81,7 @@ export default async function RecipesAdminPage(props: {
                     >
                       {dict.admin.recipes.preview}
                     </Link>
-                    <form action={deleteRecipeAction}>
-                      <input type="hidden" name="id" value={r.id} />
-                      <button
-                        type="submit"
-                        className="text-red-700 underline-offset-2 hover:underline"
-                      >
-                        {dict.common.delete}
-                      </button>
-                    </form>
+                    <LoeschForm action={deleteRecipeAction} id={r.id} />
                   </div>
                 </td>
               </tr>

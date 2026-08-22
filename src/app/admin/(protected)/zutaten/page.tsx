@@ -11,6 +11,8 @@ import {
   mergeIngredientsAction,
   updateIngredientAction,
 } from "./actions";
+import { Meldung, meldungAus } from "@/components/admin/meldung";
+import { LoeschForm } from "@/components/admin/loesch-form";
 
 const dict = t();
 
@@ -21,8 +23,7 @@ export default async function IngredientsPage(props: {
 }) {
   await requireAdmin();
   const searchParams = await props.searchParams;
-  const message =
-    typeof searchParams.meldung === "string" ? searchParams.meldung : null;
+  const message = meldungAus(searchParams);
 
   const ingredients = await db
     .select({
@@ -65,11 +66,7 @@ export default async function IngredientsPage(props: {
       <p className="mb-6 text-sm text-ink-soft">
         {dict.admin.ingredients.mergeHint}
       </p>
-      {message && (
-        <p role="status" className="mb-4 bg-amber-50 p-3 text-sm text-amber-900">
-          {message}
-        </p>
-      )}
+      <Meldung text={message} />
 
       <form
         action={createIngredientAction}
@@ -194,15 +191,12 @@ export default async function IngredientsPage(props: {
                 </form>
               )}
               {ing.recipeCount === 0 && ing.dishCount === 0 && (
-                <form action={deleteIngredientAction} className="mt-1 text-right">
-                  <input type="hidden" name="id" value={ing.id} />
-                  <button
-                    type="submit"
-                    className="text-xs text-red-700 underline-offset-2 hover:underline"
-                  >
-                    {dict.common.delete}
-                  </button>
-                </form>
+                <LoeschForm
+                  action={deleteIngredientAction}
+                  id={ing.id}
+                  gestalt="klein"
+                  className="mt-1 text-right"
+                />
               )}
             </div>
           </li>

@@ -6,6 +6,8 @@ import {
   createTaxonomyEntryAction,
   deleteTaxonomyEntryAction,
 } from "./actions";
+import { Meldung, meldungAus } from "@/components/admin/meldung";
+import { LoeschForm } from "@/components/admin/loesch-form";
 
 const dict = t();
 
@@ -16,8 +18,7 @@ export default async function TaxonomiesPage(props: {
 }) {
   await requireAdmin();
   const searchParams = await props.searchParams;
-  const message =
-    typeof searchParams.meldung === "string" ? searchParams.meldung : null;
+  const message = meldungAus(searchParams);
 
   const grouped = await taxonomiesByType();
   const lists = TAXONOMY_TYPES.map((type) => [type, grouped[type]] as const);
@@ -25,11 +26,7 @@ export default async function TaxonomiesPage(props: {
   return (
     <>
       <h1 className="mb-6 text-2xl font-bold">{dict.admin.taxonomies.title}</h1>
-      {message && (
-        <p role="status" className="mb-4 bg-amber-50 p-3 text-sm text-amber-900">
-          {message}
-        </p>
-      )}
+      <Meldung text={message} />
       <div className="grid gap-6 lg:grid-cols-2 xl:grid-cols-3">
         {lists.map(([type, entries]) => (
           <section key={type} className="bg-white p-5 shadow-sm">
@@ -43,17 +40,16 @@ export default async function TaxonomiesPage(props: {
                   className="flex items-center gap-1 bg-cream px-3 py-1 text-sm"
                 >
                   {e.name}
-                  <form action={deleteTaxonomyEntryAction} className="inline">
-                    <input type="hidden" name="typ" value={type} />
-                    <input type="hidden" name="id" value={e.id} />
-                    <button
-                      type="submit"
-                      aria-label={`${e.name} ${dict.common.delete}`}
-                      className="ml-1 font-bold text-red-700"
-                    >
-                      ×
-                    </button>
-                  </form>
+                  <LoeschForm
+                    action={deleteTaxonomyEntryAction}
+                    id={e.id}
+                    gestalt="kreuz"
+                    beschriftung={`${e.name} ${dict.common.delete}`}
+                    felder={{ typ: type }}
+                    className="inline"
+                  >
+                    ×
+                  </LoeschForm>
                 </li>
               ))}
             </ul>
