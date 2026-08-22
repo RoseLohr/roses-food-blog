@@ -642,3 +642,104 @@ describe("Deploy-Protokoll: der GRUND des Fehlschlags steht drin", () => {
     }
   });
 });
+
+/**
+ * Befund 4 der Gegenprüfung: Ein zweiter Deploy überschrieb das Rollback-Ziel.
+ *
+ *   Deploy A (gut)  → :previous = ?,  :latest = A
+ *   Deploy B (rot)  → :previous = A,  :latest = B     ← A ist noch da
+ *   Deploy C        → :previous = B,  :latest = C     ← A ist WEG, B ist kaputt
+ *
+ * Nach zwei Fehlschlägen hintereinander gab es keinen bekannt guten Stand mehr,
+ * und ein Rollback hätte auf das kaputte B geführt.
+ */
+describe("Rollback-Ziel überlebt zwei Fehlschläge", () => {
+  it("schreibt den Gut-Zeugen erst NACH dem bestandenen Health-Gate", () => {
+    const zeuge = deploySh.indexOf('> "$DATA_DIR/deploy-image-ok"');
+    const healthGate = deploySh.indexOf("Healthcheck fehlgeschlagen");
+    expect(zeuge).toBeGreaterThan(-1);
+    // Der Zeuge steht im Erfolgspfad ganz am Ende — also hinter dem Gate, das
+    // bei Misserfolg abbricht.
+    expect(zeuge).toBeGreaterThan(healthGate);
+  });
+
+  it("taggt :previous nur, wenn das laufende :latest bezeugt gut ist", () => {
+    const stelle = deploySh.indexOf(
+      "podman tag localhost/roses-blog:latest localhost/roses-blog:previous",
+    );
+    expect(stelle).toBeGreaterThan(-1);
+    const umfeld = deploySh.slice(Math.max(0, stelle - 900), stelle);
+    expect(umfeld).toMatch(/deploy-image-ok/);
+    expect(umfeld).toMatch(/LATEST_ID.*==.*BEKANNT_GUT|"\$LATEST_ID" == "\$BEKANNT_GUT"/s);
+  });
+
+  it("behält lieber ein altes :previous als ein ungeprüftes neues", () => {
+    expect(deploySh).toMatch(/Behalte bisheriges :previous/);
+  });
+});
+
+/**
+ * Befund 2: Startet der Container nach dem Deploy gar nicht, erfuhr es
+ * niemand — der Selbst-Monitor läuft IN der Anwendung.
+ */
+describe("Alarm auch dann, wenn die Anwendung nicht läuft", () => {
+  it("fail() setzt einen Alarm ab", () => {
+    const failBlock = deploySh.slice(
+      deploySh.indexOf("fail() {"),
+      deploySh.indexOf("fail() {") + 900,
+    );
+    expect(failBlock).toMatch(/alarm_absetzen/);
+  });
+
+  it("nimmt dafür das BEKANNT GUTE Image, nicht das gerade gescheiterte", () => {
+    const fn = deploySh.slice(
+      deploySh.indexOf("alarm_absetzen() {"),
+      deploySh.indexOf("alarm_absetzen() {") + 700,
+    );
+    expect(fn).toMatch(/bild=localhost\/roses-blog:previous/);
+  });
+
+  it("blockiert den Fehlschlagpfad nicht, wenn kein Alarmweg da ist", () => {
+    const fn = deploySh.slice(
+      deploySh.indexOf("alarm_absetzen() {"),
+      deploySh.indexOf("alarm_absetzen() {") + 700,
+    );
+    // Zeitgrenze UND ein Rückfallpfad — ein stummer SMTP-Server darf ein
+    // Deployment nicht zusätzlich aufhängen.
+    expect(fn).toMatch(/timeout \d+ podman run/);
+    expect(fn).toMatch(/\|\| deploy_log/);
+  });
+
+  it("das Alarmskript liegt im Laufzeit-Image", () => {
+    expect(containerfile).toMatch(/scripts\/betriebsalarm\.mjs/);
+  });
+});
+
+/**
+ * Befund 5: Ein Container, der beim Start stirbt, wurde ohne Obergrenze neu
+ * gestartet.
+ */
+describe("Neustartschleife hat eine Grenze", () => {
+  it("behält restart: always — sonst startet der Container nach einem Reboot nicht", () => {
+    // podman-restart.service startet NUR Container mit genau dieser Regel.
+    // Ein Tausch auf on-failure:N wäre der naheliegende Griff und würde eine
+    // Störung gegen den Ausfall vom 2026-08-10 eintauschen.
+    expect(compose).toMatch(/^\s*restart: always\s*$/m);
+  });
+
+  it("richtet stattdessen einen Wachhund-Timer ein", () => {
+    expect(deploySh).toMatch(/roses-blog-wachhund\.timer/);
+    expect(deploySh).toMatch(/OnUnitActiveSec=5min/);
+  });
+
+  it("der Wachhund-Dienst koppelt die Container-Lebensdauer ab (KillMode=process)", () => {
+    const start = deploySh.indexOf("wach_dienst=$(cat <<'EOF'");
+    const ende = deploySh.indexOf("\nEOF", start);
+    expect(start).toBeGreaterThan(-1);
+    expect(deploySh.slice(start, ende)).toMatch(/^KillMode=process$/m);
+  });
+
+  it("nennt einen Cron-Ersatzweg, falls der Timer nicht aktivierbar ist", () => {
+    expect(deploySh).toMatch(/\*\/5 \* \* \* \* .*wachhund\.sh/);
+  });
+});

@@ -45,25 +45,70 @@ und die Grundgesamtheit stabilisieren. Beides ist eigenständige Arbeit.
 
 ---
 
-## B3 — Deploy und Rollback: sechs Befunde
+## B3 — Deploy und Rollback: sechs Befunde — ERLEDIGT 08/2026
 
-Aus der adversarischen Gegenprüfung des Deploy-Pfads. Der schwerste zuerst.
+Aus der adversarischen Gegenprüfung des Deploy-Pfads. Alle sechs behoben; die
+Messungen stehen in `tests/rollback-wal.test.ts` und `tests/deploy-betrieb.test.ts`.
 
-1. **`deploy/rollback.sh` kopiert eine laufende WAL-Datenbank mit `cp`.**
-   Gemessen: von 3000 committeten Zeilen überleben 2985 — 15 gehen still
-   verloren, weil der WAL nicht mitkopiert wird.
-2. Kein Alarm, wenn der Container nach dem Deploy gar nicht startet.
-3. Die Diagnose geht mit dem Container verloren: Beim Rollback wird der
-   fehlgeschlagene Container entfernt, bevor seine Protokolle gesichert sind.
-4. Ein zweiter Deploy überschreibt das Rollback-Ziel — nach zwei Fehlschlägen
-   hintereinander gibt es keinen bekannt guten Stand mehr.
-5. Endlose Neustartschleife: Ein Container, der beim Start stirbt, wird ohne
-   Obergrenze neu gestartet.
-6. Rollback meldet Erfolg, während das Schema voraus ist — die alte
-   Anwendungsversion läuft gegen die bereits migrierte Datenbank.
+**1. `deploy/rollback.sh` kopierte eine laufende WAL-Datenbank mit `cp`.**
+Notiert war „von 3000 Zeilen überleben 2985". **Nachgemessen ist es schlimmer:**
+3000 Zeilen in einer Transaktion festgeschrieben, Verbindung offen — `app.db`
+ist 4096 Byte groß (nur der Kopf), das `-wal` 70 KB. Die Kopie enthält nicht
+2985 Zeilen, sie enthält **die Tabelle nicht**. Behoben über die
+Online-Backup-API, dieselbe, die `deploy.sh` und `deploy/backup.sh` längst
+benutzen.
 
-**Warum hier.** Eigener Pfad, eigene Risiken, eigener PR. Befund 1 bedeutet
-echten Datenverlust im Wiederherstellungsweg und sollte zuerst drankommen.
+**1b. Beim Nachstellen kam ein ZWEITER Defekt heraus, der schwerer wiegt.**
+Das Einspielen ließ die alten `-wal`/`-shm`-Dateien liegen. Nach hartem
+Abbruch — also `podman rm -f`, dem Regelfall beim Rollback — spielt SQLite
+dieses WAL über das eingespielte Backup: Angefordert waren 7 gesicherte
+Zeilen, zurück kamen die 3000 alten. **Der Restore tat nichts und meldete
+Erfolg.** Ein stiller No-op im Wiederherstellungsweg ist schlimmer als ein
+Fehlschlag. Behoben: `rm -f app.db-wal app.db-shm` nach dem Einspielen.
+
+**1c. Und die Reihenfolge stimmte nicht.** Der Restore lief VOR dem Stoppen des
+Containers — die Datei wurde unter einer laufenden SQLite-Verbindung
+ausgetauscht. Jetzt: erst stoppen, dann anfassen.
+
+**2. Kein Alarm, wenn der Container nach dem Deploy gar nicht startet.**
+Der Selbst-Monitor alarmiert zuverlässig — aber er läuft IN der Anwendung.
+Genau im schlimmsten Fall schweigt die Meldekette. Neu:
+`scripts/betriebsalarm.mjs`, eigenständig, liest SMTP direkt aus `app.db`,
+gefahren im bekannt guten `:previous`-Image. `fail()` in `deploy.sh` setzt ihn
+ab — mit Zeitgrenze und Rückfallpfad, damit ein stummer SMTP-Server ein
+Deployment nicht zusätzlich aufhängt.
+
+**3. Die Diagnose ging mit dem Container verloren.** `podman rm` nimmt die
+Protokolle mit. Jetzt werden sie VOR dem Entfernen vollständig weggeschrieben
+(`deploy-fehlschlag-*.log`, `rollback-*.log`), nicht nur 40 Zeilen auf den
+Schirm.
+
+**4. Ein zweiter Deploy überschrieb das Rollback-Ziel.** `:previous` wurde bei
+JEDEM Lauf fortgeschrieben; nach zwei Fehlschlägen zeigte es auf den kaputten
+Stand. Jetzt schreibt der Erfolgspfad die Image-ID nach `deploy-image-ok`, und
+umgetaggt wird nur, wenn das laufende `:latest` genau dieser Zeuge ist. Ein
+alter bekannt guter Stand ist mehr wert als ein frischer unbekannter.
+
+**5. Endlose Neustartschleife.** `restart: on-failure:N` wäre der naheliegende
+Griff und **wäre falsch**: `podman-restart.service` startet nach einem
+Rechnerneustart nur Container mit der Regel `always` — der Tausch hätte eine
+Störung gegen den Ausfall vom 2026-08-10 eingetauscht. Die Regel bleibt
+`always`; die Grenze zieht ein Wachhund (`deploy/wachhund.sh` + systemd-Timer,
+alle 5 min). Er stoppt erst, wenn es über mehrere Beobachtungen hinweg rot
+bleibt UND die Neustarts weiter steigen — ein holpriger Start, der sich selbst
+fängt, wird nicht abgewürgt. Die Entscheidung ist eine reine Funktion
+(`scripts/wachhund.mjs`), damit sie ohne Anlage prüfbar ist.
+
+**6. Rollback meldete Erfolg, während das Schema voraus war.** Jetzt vergleicht
+`rollback.sh` `PRAGMA user_version` der Datenbank mit der Zahl der Migrationen
+im `:previous`-Image und bricht ab, statt eine alte Anwendung gegen ein zu
+neues Schema zu starten.
+
+**Was NICHT geprüft werden konnte:** systemd und podman gibt es in der
+Testumgebung nicht. Geprüft sind die reinen Entscheidungen (Wachhund, Alarmweg)
+und die Textinvarianten der Betriebsdateien; der Timer selbst und der
+podman-Aufruf sind erst auf der Anlage belegbar. Das ist benannt, nicht
+kaschiert.
 
 ---
 

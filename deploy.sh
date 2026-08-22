@@ -91,11 +91,40 @@ log()  {
   deploy_log "$*"
   status_write
 }
+# Alarm über das BEKANNT GUTE Image (:previous), nicht über die Anwendung.
+#
+# Befund 2 der Gegenprüfung: Startet der Container nach dem Deploy gar nicht,
+# erfährt es niemand — der Selbst-Monitor läuft IN der Anwendung, und die ist
+# ja tot. Genau im schlimmsten Fall schweigt die Meldekette.
+#
+# Best-Effort und bewusst nie blockierend: Ein fehlender Alarmweg darf den
+# Fehlschlag nicht verschlimmern. Was geschah, steht in jedem Fall im Protokoll.
+alarm_absetzen() {
+  local betreff="$1" text="$2"
+  local bild=localhost/roses-blog:previous
+  podman image exists "$bild" 2>/dev/null || bild=localhost/roses-blog:latest
+  podman image exists "$bild" 2>/dev/null || { deploy_log "Alarm: kein Image verfügbar"; return 0; }
+  timeout 60 podman run --rm --entrypoint node -v "$DATA_DIR:/data" \
+    -e DATA_DIR=/data "$bild" /app/scripts/betriebsalarm.mjs "$betreff" "$text" \
+    2>&1 | sed 's/^/[alarm] /' || deploy_log "Alarm konnte nicht abgesetzt werden."
+}
+
 fail() {
   printf '\n\033[1;31mFEHLER: %s\033[0m\n' "$*"
   DEPLOY_PHASE="Fehler: $*"
   deploy_log "FEHLER: $*"
   status_write
+  # Nur wenn DATA_DIR schon feststeht — davor gibt es weder Datenbank noch
+  # Einstellungen, aus denen ein Empfänger käme.
+  if [[ -n "${DATA_DIR:-}" && -d "${DATA_DIR:-/nicht/vorhanden}" ]]; then
+    alarm_absetzen "⚠ Roses Blog — Deployment fehlgeschlagen" \
+      "Phase: ${DEPLOY_PHASE}
+
+Das Deployment wurde abgebrochen. Der Server läuft möglicherweise noch auf dem
+vorigen Stand — oder gar nicht.
+
+Nächster Schritt: ./deploy/rollback.sh (Protokolle: podman logs roses-blog)"
+  fi
   exit 1
 }
 # Einen langlaufenden Schritt ausführen und seine Ausgabe SOWOHL ins Terminal
@@ -375,8 +404,37 @@ run_logged podman build "${BUILD_OPTS[@]}" --target build -t localhost/roses-blo
 # Rollback-Vorbereitung (A-06/B-11): das aktuell laufende :latest als :previous
 # sichern, BEVOR es überschrieben wird — so kann deploy/rollback.sh es in
 # Sekunden zurückrollen (samt DB-Backup aus Abschnitt 4).
+#
+# ── NUR, WENN :latest BEKANNT GUT IST (Befund 4 der Gegenprüfung) ──────────
+#
+# Bis 08/2026 wurde bei JEDEM Lauf umgetaggt. Zwei Fehlschläge hintereinander
+# löschten damit den letzten guten Stand:
+#
+#   Deploy A (gut)  → :previous = ?,  :latest = A
+#   Deploy B (rot)  → :previous = A,  :latest = B     ← A ist noch da
+#   Deploy C        → :previous = B,  :latest = C     ← A ist WEG, B ist kaputt
+#
+# Ein Rollback hätte danach auf das kaputte B geführt. Deshalb schreibt der
+# Erfolgspfad am Ende dieses Skripts die Image-ID von :latest nach
+# `deploy-image-ok`; hier wird umgetaggt, wenn — und nur wenn — die ID des
+# laufenden :latest genau dieser Zeuge ist. Fehlt der Zeuge oder passt er
+# nicht, bleibt :previous stehen: ein alter bekannt guter Stand ist mehr wert
+# als ein frischer unbekannter.
+BEKANNT_GUT_DATEI="$DATA_DIR/deploy-image-ok"
 if podman image exists localhost/roses-blog:latest 2>/dev/null; then
-  podman tag localhost/roses-blog:latest localhost/roses-blog:previous || true
+  LATEST_ID="$(podman image inspect -f '{{.Id}}' localhost/roses-blog:latest 2>/dev/null || true)"
+  BEKANNT_GUT="$(cat "$BEKANNT_GUT_DATEI" 2>/dev/null || true)"
+  if [[ -n "$LATEST_ID" && "$LATEST_ID" == "$BEKANNT_GUT" ]]; then
+    podman tag localhost/roses-blog:latest localhost/roses-blog:previous || true
+  elif podman image exists localhost/roses-blog:previous 2>/dev/null; then
+    log "Behalte bisheriges :previous — das laufende :latest ist nicht als bekannt gut bezeugt"
+  else
+    # Erststart bzw. erster Lauf nach Einführung des Zeugen: Es gibt noch gar
+    # kein :previous. Dann ist ein ungeprüftes :previous besser als keines —
+    # aber es wird benannt, nicht stillschweigend gesetzt.
+    log "Setze :previous erstmals (ohne Gut-Zeugnis — erster Lauf mit dieser Prüfung)"
+    podman tag localhost/roses-blog:latest localhost/roses-blog:previous || true
+  fi
 fi
 run_logged podman build "${BUILD_OPTS[@]}" -t localhost/roses-blog:latest . \
   || fail "Image-Build fehlgeschlagen (Stufe: Laufzeit-Image)."
@@ -456,9 +514,16 @@ for i in $(seq 1 60); do
 done
 if [[ "${HEALTH_OK:-0}" != "1" ]]; then
   echo
+  # Befund 3: `podman rm` nimmt die Protokolle mit. Wer danach nachsehen will —
+  # und beim Rollback will man das —, findet nichts mehr. Deshalb ZUERST
+  # vollständig auf Platte, dann erst die Kurzfassung auf den Schirm.
+  DIAGNOSE="$DATA_DIR/deploy-fehlschlag-$(date +%Y%m%d-%H%M%S).log"
+  podman logs roses-blog > "$DIAGNOSE" 2>&1 \
+    && echo "Vollständiges Container-Protokoll: $DIAGNOSE" \
+    || echo "WARNUNG: Container-Protokoll nicht lesbar."
   echo "Letzte Container-Logs:"
   podman logs --tail 40 roses-blog || true
-  fail "Healthcheck fehlgeschlagen. Vollständige Logs: podman logs roses-blog"
+  fail "Healthcheck fehlgeschlagen. Vollständiges Protokoll: $DIAGNOSE"
 fi
 
 # --- 7. Autostart nach Reboot -------------------------------------------------
@@ -670,6 +735,58 @@ EOF
     echo "HINWEIS: Panel-Aktualisierung bleibt GESPERRT (KillMode='${UNIT_KILLMODE:-unbekannt}',"
     echo "         NeedDaemonReload='${UNIT_RELOAD:-unbekannt}'). Deploys nur aus dem Terminal."
   fi
+
+  # --- 7e. Wachhund gegen die Neustartschleife (Befund 5) --------------------
+  # `restart: always` bleibt — nur damit startet podman-restart.service den
+  # Container nach einem Rechnerneustart wieder. Die fehlende OBERGRENZE zieht
+  # dieser Timer ein: alle 5 Minuten messen, und wenn der Container über
+  # mehrere Beobachtungen hinweg weiter neu startet UND rot bleibt, wird er
+  # gestoppt und ein Alarm verschickt. Details in deploy/wachhund.sh.
+  wach_dienst=$(cat <<'EOF'
+[Unit]
+Description=Wachhund gegen Neustartschleifen (Roses Food Blog)
+
+[Service]
+Type=oneshot
+WorkingDirectory=@SCRIPT_DIR@
+Environment=HOME=@HOME@
+Environment=PATH=@HOME@/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:@PATH@
+# Derselbe Grund wie bei roses-blog-deploy.service: Ein oneshot-Dienst nimmt
+# beim Aufräumen seiner cgroup sonst conmon und rootlessport mit — und der
+# Wachhund würde genau den Ausfall auslösen, den er verhindern soll.
+KillMode=process
+ExecStart=/usr/bin/env -u INVOCATION_ID bash @SCRIPT_DIR@/deploy/wachhund.sh
+EOF
+)
+  wach_timer=$(cat <<'EOF'
+[Unit]
+Description=Wachhund alle 5 Minuten (Roses Food Blog)
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=5min
+Unit=roses-blog-wachhund.service
+
+[Install]
+WantedBy=timers.target
+EOF
+)
+  rest_wach="$wach_dienst$wach_timer"
+  for platz in @SCRIPT_DIR@ @HOME@ @PATH@; do rest_wach=${rest_wach//"$platz"/}; done
+  if [[ "$rest_wach" =~ @[A-Z_]+@ ]]; then
+    fail "Wachhund-Vorlage enthält einen Platzhalter ohne Wert: ${BASH_REMATCH[0]}"
+  fi
+  wach_dienst=$(einmal_einsetzen "$wach_dienst" \
+    SCRIPT_DIR "$SCRIPT_DIR" HOME "$HOME" PATH "$PATH")
+  printf '%s\n' "$wach_dienst" > "$UNIT_DIR/roses-blog-wachhund.service"
+  printf '%s\n' "$wach_timer"  > "$UNIT_DIR/roses-blog-wachhund.timer"
+  systemctl --user daemon-reload >/dev/null 2>&1 || true
+  if systemctl --user enable --now roses-blog-wachhund.timer >/dev/null 2>&1; then
+    echo "Wachhund: aktiv (alle 5 min, roses-blog-wachhund.timer)."
+  else
+    echo "HINWEIS: Wachhund-Timer nicht aktivierbar — ersatzweise per Cron:"
+    echo "         */5 * * * * $SCRIPT_DIR/deploy/wachhund.sh >> \$HOME/wachhund.log 2>&1"
+  fi
 fi
 
 # --- 8. Aufräumen: alte, nun unbenutzte Images entfernen ---------------------
@@ -802,6 +919,11 @@ fi
 
 # Erst NACH bestandenem Health-Gate: Schnellpfad-State festhalten + Erfolg markieren.
 printf '%s %s\n' "$COMMIT" "$ENV_HASH" > "$STATE_FILE" 2>/dev/null || true
+# Der Zeuge für Befund 4: DIESES Image ist jetzt nachweislich gut — es hat den
+# Healthcheck, den finalen Health-Gate und die Auslieferungsprüfung bestanden.
+# Nur ein Image mit diesem Zeugnis darf beim nächsten Lauf zu :previous werden.
+podman image inspect -f '{{.Id}}' localhost/roses-blog:latest \
+  > "$DATA_DIR/deploy-image-ok" 2>/dev/null || true
 DEPLOY_STATUS_RESULT="erfolgreich"   # EXIT-Trap schreibt deploy-status.json
 log "Deployment erfolgreich (Dauer: ${SECONDS}s)"
 echo "Health:   OK (http://127.0.0.1:$PORT/health)"

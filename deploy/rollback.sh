@@ -77,16 +77,86 @@ if [[ $DRY -eq 1 ]]; then
   exit 0
 fi
 
-# 2. Optional DB zurückspielen (jüngstes Pre-Deploy-Backup).
+# 2. Container STOPPEN — vor JEDEM Eingriff an der Datenbank.
+#
+# Bis 08/2026 stand der DB-Restore VOR dem Stoppen: Die Datei wurde unter einer
+# laufenden SQLite-Verbindung ausgetauscht. Das ist kein Randfall, das ist der
+# Normalfall beim Rollback — der alte Container läuft ja noch.
+#
+# Vorher wird das Protokoll gesichert (Befund 3 der Gegenprüfung): `podman rm`
+# nimmt die Logs mit, und beim Rollback ist gerade das interessant, was der
+# fehlgeschlagene Stand zuletzt gesagt hat.
+PROTOKOLL="$DATA_DIR/rollback-$(date +%Y%m%d-%H%M%S).log"
+if podman container exists roses-blog 2>/dev/null; then
+  log "Sichere Container-Protokoll nach $PROTOKOLL"
+  podman logs roses-blog > "$PROTOKOLL" 2>&1 || log "WARNUNG: Protokoll nicht lesbar."
+fi
+log "Stoppe Container"
+$COMPOSE down --remove-orphans >/dev/null 2>&1 || true
+podman rm -f roses-blog >/dev/null 2>&1 || true
+
+# 3. Optional DB zurückspielen (jüngstes Pre-Deploy-Backup).
+#
+# ── WARUM HIER KEIN `cp` DER LAUFENDEN DATENBANK STEHT ─────────────────────
+#
+# Die Anwendung fährt SQLite im WAL-Modus. Frisch festgeschriebene Daten stehen
+# dann im `-wal`, nicht in `app.db` — bis ein Checkpoint sie überträgt. Ein
+# `cp app.db` nimmt genau diese Daten NICHT mit.
+#
+# Nachgemessen (tests/rollback-wal.test.ts hält es fest): 3000 Zeilen in EINER
+# Transaktion festgeschrieben, Verbindung offen — `app.db` ist danach 4096 Byte
+# groß (nur der Kopf), das `-wal` 70 KB. Die `cp`-Kopie enthält nicht 2985 von
+# 3000 Zeilen, sie enthält die TABELLE NICHT. Die Sicherung des Standes, den
+# man gerade überschreibt, wäre also leer gewesen.
+#
+# Richtig ist die Online-Backup-API — dieselbe, die deploy.sh und
+# deploy/backup.sh längst benutzen. Sie liest das WAL mit und schreibt EINE
+# in sich stimmige Datei. Gefahren wird sie im :previous-Image: Es ist der
+# bekannt gute Stand: das laufende :latest ist ja gerade der Grund für den
+# Rollback.
 if [[ $WITH_DB -eq 1 ]]; then
   BACKUP=$(ls -1t "$DATA_DIR"/backups/pre-deploy-*.db 2>/dev/null | head -1 || true)
   [[ -n "$BACKUP" ]] || fail "--with-db verlangt, aber kein Pre-Deploy-Backup gefunden."
-  log "Sichere aktuelle DB und spiele Backup ein: $BACKUP"
-  cp "$DATA_DIR/app.db" "$DATA_DIR/backups/pre-rollback-$(date +%Y%m%d-%H%M%S).db" 2>/dev/null || true
+  if [[ -f "$DATA_DIR/app.db" ]]; then
+    SICHERUNG="pre-rollback-$(date +%Y%m%d-%H%M%S).db"
+    log "Sichere den JETZIGEN Stand (Online-Backup-API): $SICHERUNG"
+    podman run --rm --entrypoint node -v "$DATA_DIR:/data" localhost/roses-blog:previous \
+      -e "const db=require('better-sqlite3')('/data/app.db',{readonly:true});db.backup('/data/backups/'+process.argv[1]).then(()=>{db.close()}).catch(e=>{console.error(e);process.exit(1)})" \
+      "$SICHERUNG" \
+      || fail "Sicherung des jetzigen Standes fehlgeschlagen — Rollback abgebrochen, statt ohne Netz weiterzumachen."
+  fi
+
+  log "Spiele Backup ein: $BACKUP"
   cp "$BACKUP" "$DATA_DIR/app.db"
+  # ── UND DIE ALTEN WAL-DATEIEN MÜSSEN WEG ────────────────────────────────
+  # Sonst spielt SQLite beim nächsten Öffnen das WAL der ERSETZTEN Datenbank
+  # über das eingespielte Backup. Nachgemessen: nach hartem Abbruch
+  # (`podman rm -f`, also der Regelfall hier) liefert die Datenbank danach die
+  # 3000 ALTEN Zeilen statt der 7 gesicherten — der Restore tut nichts und
+  # meldet Erfolg. Das ist schlimmer als ein Fehlschlag.
+  rm -f "$DATA_DIR/app.db-wal" "$DATA_DIR/app.db-shm"
 fi
 
-# 3. Image zurückrollen + Container neu starten.
+# 3b. Schema-Vorsprung (Befund 6): Läuft die Datenbank bereits auf einem
+# neueren Stand, als die zurückgerollte Anwendung kennt, startet diese gegen
+# ein Schema, das sie nicht erwartet — und der Rollback meldete bisher trotzdem
+# Erfolg. `scripts/migrate.mjs` schreibt die Zahl der angewandten Migrationen
+# nach `PRAGMA user_version`; das :previous-Image trägt seine Migrationen unter
+# /app/drizzle. Beide Zahlen sind vergleichbar.
+if [[ -f "$DATA_DIR/app.db" ]]; then
+  DB_STAND="$(podman run --rm --entrypoint node -v "$DATA_DIR:/data" localhost/roses-blog:previous \
+    -e "const db=require('better-sqlite3')('/data/app.db',{readonly:true});console.log(db.pragma('user_version',{simple:true}));db.close()" 2>/dev/null)" || DB_STAND=""
+  IMAGE_STAND="$(podman run --rm --entrypoint node localhost/roses-blog:previous \
+    -e "console.log(require('fs').readdirSync('/app/drizzle').filter(f=>f.endsWith('.sql')).length)" 2>/dev/null)" || IMAGE_STAND=""
+  if [[ -n "$DB_STAND" && -n "$IMAGE_STAND" && "$DB_STAND" -gt "$IMAGE_STAND" ]]; then
+    fail "Schema ist der zurückgerollten Anwendung VORAUS: Datenbank auf Stand $DB_STAND, \
+:previous kennt $IMAGE_STAND Migrationen. Mit --with-db das passende Pre-Deploy-Backup \
+mit einspielen — ein Rollback auf ein zu neues Schema wird nicht als Erfolg quittiert."
+  fi
+  log "Schema-Stand: Datenbank ${DB_STAND:-?}, :previous kennt ${IMAGE_STAND:-?} Migrationen."
+fi
+
+# 3c. Image zurückrollen + Container starten.
 log "Rolle Image zurück: :previous → :latest"
 podman tag localhost/roses-blog:previous localhost/roses-blog:latest
 # deploy-state entwerten: die Datei beschreibt, welcher Stand ZULETZT ERFOLGREICH
@@ -95,8 +165,10 @@ podman tag localhost/roses-blog:previous localhost/roses-blog:latest
 # aktuell und deployt nie wieder (beobachtet 2026-08-10: „Bereits aktuell
 # (Commit c60bea7)", während das alte Image lief).
 rm -f "$DATA_DIR/deploy-state" 2>/dev/null || true
-$COMPOSE down --remove-orphans >/dev/null 2>&1 || true
-podman rm -f roses-blog >/dev/null 2>&1 || true
+# Ebenso der Zeuge des bekannt guten Images: Nach einem Rollback läuft :previous,
+# und ob DAS gut ist, weiß erst das Health-Gate unten. Ohne dieses Löschen würde
+# der nächste Deploy einen ungeprüften Stand als bekannt gut fortschreiben.
+rm -f "$DATA_DIR/deploy-image-ok" 2>/dev/null || true
 $COMPOSE up -d || fail "Container-Neustart fehlgeschlagen."
 
 # 4. Healthcheck-Gate: erst grün, dann gilt der Rollback als erfolgreich.
@@ -108,4 +180,6 @@ for i in $(seq 1 30); do
   fi
   sleep 2
 done
-fail "Health nach Rollback nicht grün — manuell prüfen (podman logs roses-blog)."
+# Auch der Fehlschlag wird protokolliert, bevor jemand den Container anfasst.
+podman logs roses-blog > "$DATA_DIR/rollback-fehlschlag-$(date +%Y%m%d-%H%M%S).log" 2>&1 || true
+fail "Health nach Rollback nicht grün — manuell prüfen. Protokolle: $DATA_DIR/rollback-fehlschlag-*.log"
