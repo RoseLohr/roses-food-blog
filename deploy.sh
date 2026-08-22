@@ -147,10 +147,25 @@ alarm_absetzen() {
   # findet betriebsalarm.mjs keinen Host, meldet „NICHT verschickt" und endet
   # mit 0; das `||` unten konnte nie greifen. Derselbe Fehler stand in
   # deploy/wachhund.sh.
+  # ── DER NAME AUF DIE BEFEHLSZEILE, DER WERT NICHT ────────────────────────
+  #
+  # Hier stand `-e "$v=${!v}"`. Damit steht SMTP_PASS im Klartext in der
+  # Argumentliste von podman — und die liest jeder lokale Nutzer aus der
+  # Prozessliste oder aus /proc/<pid>/cmdline, solange der Alarm läuft
+  # (Befund gpt-5.6-sol, PR #110, Runde 7).
+  #
+  # `-e VAR` OHNE Wert ist die richtige Form: podman nimmt den Wert aus seiner
+  # EIGENEN Umgebung und reicht ihn weiter; auf der Befehlszeile steht nur der
+  # Name. Das setzt voraus, dass die Variable exportiert ist — .env wird oben
+  # mit `set -a` gelesen, aber ein Aufrufer könnte sie auch anders gesetzt
+  # haben, deshalb hier ausdrücklich.
   local -a smtp=()
   local v
   for v in SMTP_HOST SMTP_PORT SMTP_USER SMTP_PASS SMTP_SECURE SMTP_FROM ADMIN_EMAIL; do
-    [[ -n "${!v:-}" ]] && smtp+=("-e" "$v=${!v}")
+    if [[ -n "${!v:-}" ]]; then
+      export "${v?}"
+      smtp+=("-e" "$v")
+    fi
   done
   timeout 60 podman run --rm --entrypoint node -v "$DATA_DIR:/data" \
     -e DATA_DIR=/data "${smtp[@]}" "$ALARM_BILD" \

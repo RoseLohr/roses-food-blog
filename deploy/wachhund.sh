@@ -39,9 +39,17 @@ log(){ echo "[wachhund] $*"; }
 # (tests/betriebsalarm.test.ts, „nimmt die Umgebung, wenn die Datenbank nichts
 # hergibt"). Nur konnte ihn kein Aufrufer erreichen — ein grüner Test über einem
 # unerreichbaren Pfad.
+#
+# Übergeben wird nur der NAME (`-e VAR`), nicht `-e VAR=Wert`: podman nimmt den
+# Wert dann aus seiner eigenen Umgebung. Sonst stünde SMTP_PASS im Klartext in
+# der Argumentliste und wäre für jeden lokalen Nutzer aus der Prozessliste
+# bzw. /proc/<pid>/cmdline lesbar, solange der Alarm läuft.
 SMTP_DURCHREICHEN=()
 for v in SMTP_HOST SMTP_PORT SMTP_USER SMTP_PASS SMTP_SECURE SMTP_FROM ADMIN_EMAIL; do
-  [[ -n "${!v:-}" ]] && SMTP_DURCHREICHEN+=("-e" "$v=${!v}")
+  if [[ -n "${!v:-}" ]]; then
+    export "${v?}"
+    SMTP_DURCHREICHEN+=("-e" "$v")
+  fi
 done
 
 # Ohne Image lässt sich nicht urteilen — und ohne Urteil wird nicht gehandelt.

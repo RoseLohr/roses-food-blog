@@ -662,3 +662,38 @@ kennt kein `--force-recreate`, anders als die Schwesterstelle in `deploy.sh`
 — seit Befund 2 oben ist das aber entschärft, weil der Container davor
 nachweislich weg ist.
 
+---
+
+## B15 — Die Reparatur eines Befundes war selbst eine Lücke — ERLEDIGT 08/2026
+
+**Befund (gpt-5.6-sol, PR #110, Runde 7).** Um den stummen Alarm zu beheben
+(B13/4), reicht `deploy.sh` und `deploy/wachhund.sh` die SMTP-Zugangsdaten in
+den Alarm-Container. Geschrieben war das als `-e VAR=Wert` — damit steht
+`SMTP_PASS` im Klartext in der Argumentliste von podman, und die liest jeder
+lokale Nutzer aus der Prozessliste oder aus `/proc/<pid>/cmdline`, solange der
+Alarm läuft.
+
+Das ist ein Geheimnis in einer Prozesszeile, also dieselbe Familie wie B-06,
+nur zur Laufzeit statt im Quelltext — und es war MEINE Reparatur, die es
+eingeführt hat. Zwei Runden zuvor war der Alarm stumm; die Behebung machte ihn
+laut und undicht zugleich.
+
+**Wurzel behoben.** `-e VAR` OHNE Wert: podman nimmt den Wert aus seiner
+eigenen Umgebung und reicht ihn weiter, auf der Befehlszeile steht nur der
+Name. Die Variable wird dafür ausdrücklich exportiert, damit es nicht davon
+abhängt, wie der Aufrufer sie gesetzt hat. Nicht gesetzte Variablen werden
+weiterhin gar nicht genannt — ein leerer Wert im Container würde den Rückfall
+auf die `setting`-Tabelle aushebeln.
+
+Belegt an BEIDEN Aufrufstellen (`tests/wachhund-verdrahtung.test.ts` und
+`tests/deploy-betriebsabsicherung.test.ts`): Der Wert taucht in keiner
+podman-Argumentliste auf, der Name sehr wohl — und die Attrappe zeigt zugleich,
+dass der Wert in ihrer Umgebung ankommt, also weitergereicht werden kann.
+Gegenprobe gegen den vorigen Stand: beide Fälle fallen um.
+
+**Anmerkung zur Runde.** Die beiden anderen Stimmen des Panels haben in
+derselben Runde Punkte genannt, die auf diesem Stand nicht mehr zutreffen (der
+Container-Stopp im Rollback ist seit Runde 4 geprüft, die SMTP-Übergabe seit
+Runde 3/4 vorhanden). Nachgesehen und verworfen; der Pflicht-Approver hatte
+recht, die dritte Stimme las einen älteren Stand.
+

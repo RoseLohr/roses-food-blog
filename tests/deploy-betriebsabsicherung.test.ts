@@ -218,6 +218,47 @@ describe("Befund 1: der Alarm braucht ein Image, das das Alarmskript kennt", () 
     expect(lauf.code).toBe(0);
   });
 
+  it("schreibt KEINEN Geheimniswert auf die Befehlszeile", () => {
+    const { daten, bin } = spielwiese();
+    fakePodman(bin, [P, L], [L]);
+
+    // Dieselbe Lücke wie in deploy/wachhund.sh: `-e VAR=Wert` legt SMTP_PASS
+    // im Klartext in podmans Argumentliste, lesbar aus der Prozessliste und
+    // aus /proc/<pid>/cmdline (Befund gpt-5.6-sol, PR #110, Runde 7).
+    const protokoll = path.join(tmp, "protokoll.txt");
+    fs.writeFileSync(protokoll, "");
+    const skript = path.join(tmp, "harness.sh");
+    fs.writeFileSync(
+      skript,
+      `#!/usr/bin/env bash\nset -euo pipefail\nDATA_DIR="${daten}"\n` +
+        `${zuweisung("WACHHUND_FEHLT")}\n${zuweisung("ALARM_BILD")}\n` +
+        `${zuweisung("ALARM_BILD_GEPRUEFT")}\n` +
+        `deploy_log(){ echo "[log] $*"; }\n` +
+        `${funktion("alarm_bild_waehlen")}\n${funktion("alarm_absetzen")}\n` +
+        `alarm_absetzen "Betreff" "Text"\n`,
+      { mode: 0o755 },
+    );
+    execFileSync("bash", [skript], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      env: {
+        ...process.env,
+        PATH: `${bin}:${process.env.PATH}`,
+        FAKE_PROTOKOLL: protokoll,
+        DATA_DIR: daten,
+        SMTP_HOST: "mail.example.org",
+        SMTP_USER: "alarm@example.org",
+        SMTP_PASS: "streng-geheim",
+      },
+    });
+
+    const argv = fs.readFileSync(protokoll, "utf8");
+    expect(argv).not.toContain("streng-geheim");
+    expect(argv).not.toContain("SMTP_PASS=");
+    // Der NAME muss dastehen — sonst reicht podman nichts weiter.
+    expect(argv).toMatch(/-e SMTP_PASS(\s|$)/m);
+  });
+
   it("prüft die Kandidaten nur EINMAL, auch bei mehreren Alarmen", () => {
     const { daten, bin } = spielwiese();
     fakePodman(bin, [P, L], [L]);

@@ -88,6 +88,10 @@ case "$1" in
         fi
       done
       echo "ALARM env:$UEBERGEBEN" >> "$FAKE_PROTOKOLL"
+      # Was podman weiterreichen KOENNTE: seine eigene Umgebung. Bei "-e VAR"
+      # ohne Wert ist genau das die Quelle — steht die Variable hier nicht,
+      # kaeme im Container nichts an. (Keine Backticks: JS-Template.)
+      echo "ALARM sicht: HOST=\${SMTP_HOST:-} USER=\${SMTP_USER:-} PASS=\${SMTP_PASS:-}" >> "$FAKE_PROTOKOLL"
       exit 0
     fi
     exit 0 ;;
@@ -219,11 +223,36 @@ describe("Der Alarm bekommt die SMTP-Umgebung, sonst ist er stumm", () => {
     });
 
     expect(lauf.code).toBe(0);
+    // Übergeben werden die NAMEN …
     const zeile = lauf.protokoll.find((z) => z.startsWith("ALARM env:"));
     expect(zeile, lauf.protokoll.join("\n")).toBeDefined();
-    expect(zeile).toContain("SMTP_HOST=mail.example.org");
-    expect(zeile).toContain("SMTP_USER=alarm@example.org");
-    expect(zeile).toContain("SMTP_PASS=geheim");
+    expect(zeile).toContain("SMTP_HOST");
+    expect(zeile).toContain("SMTP_USER");
+    expect(zeile).toContain("SMTP_PASS");
+    // … und die Werte kommen trotzdem an, weil podman sie aus seiner eigenen
+    // Umgebung nimmt.
+    const sicht = lauf.protokoll.find((z) => z.startsWith("ALARM sicht:"));
+    expect(sicht).toContain("HOST=mail.example.org");
+    expect(sicht).toContain("PASS=geheim");
+  });
+
+  it("schreibt KEINEN Geheimniswert auf die Befehlszeile", () => {
+    // Der Befund: `-e VAR=Wert` legt SMTP_PASS im Klartext in podmans
+    // Argumentliste. Jeder lokale Nutzer liest das aus der Prozessliste oder
+    // aus /proc/<pid>/cmdline, solange der Alarm läuft. `-e VAR` ohne Wert
+    // vermeidet das — podman holt den Wert aus seiner eigenen Umgebung.
+    const lauf = fahre(spielwiese(), {
+      SMTP_HOST: "mail.example.org",
+      SMTP_USER: "alarm@example.org",
+      SMTP_PASS: "streng-geheim",
+    });
+
+    const argv = lauf.protokoll.filter((z) => z.startsWith("podman ")).join("\n");
+    expect(argv).not.toContain("streng-geheim");
+    expect(argv).not.toContain("SMTP_PASS=");
+    expect(argv).not.toContain("SMTP_USER=");
+    // Der Name steht sehr wohl da — sonst reicht podman nichts weiter.
+    expect(argv).toMatch(/-e SMTP_PASS(\s|$)/m);
   });
 
   it("gibt nur weiter, was gesetzt ist — keine leeren Variablen", () => {
@@ -231,10 +260,10 @@ describe("Der Alarm bekommt die SMTP-Umgebung, sonst ist er stumm", () => {
 
     const aufruf = lauf.protokoll.find((z) => z.includes("betriebsalarm.mjs"));
     expect(aufruf).toBeDefined();
-    // Ein `-e SMTP_USER=` ohne Wert würde im Container eine leere Zeichenkette
-    // setzen und den Rückfall auf die Datenbank aushebeln.
-    expect(aufruf).not.toMatch(/-e SMTP_USER=(\s|$)/);
-    expect(aufruf).toContain("-e SMTP_HOST=mail.example.org");
+    // Ein nicht gesetzter Benutzer darf gar nicht erst genannt werden, sonst
+    // hebelt eine leere Zeichenkette den Rückfall auf die Datenbank aus.
+    expect(aufruf).not.toMatch(/-e SMTP_USER(\s|$)/);
+    expect(aufruf).toMatch(/-e SMTP_HOST(\s|$)/);
   });
 
   it("kommt ohne jede SMTP-Variable aus, ohne zu stolpern", () => {
