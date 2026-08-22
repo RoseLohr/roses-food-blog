@@ -87,6 +87,15 @@ const SEITEN: Seitentyp[] = [
   { name: "admin-start", ziel: async () => "/admin", maskiert: true },
 
   { name: "admin-rezepte", ziel: async () => "/admin/rezepte", maskiert: true },
+  {
+    // MIT Statusmeldung. Ohne `?meldung=` zeigt keine Admin-Seite den
+    // Meldungskasten — er wäre in 75 Aufnahmen nicht ein einziges Mal zu
+    // sehen und damit unbelegt. Genau dieser Kasten stand 17-mal
+    // gleichlautend im Quelltext (B6, Eintrag 3).
+    name: "admin-rezepte-meldung",
+    ziel: async () => `/admin/rezepte?meldung=${encodeURIComponent("Rezept gespeichert.")}`,
+    maskiert: true,
+  },
   { name: "admin-rezept-neu", ziel: async () => "/admin/rezepte/neu" },
   { name: "admin-rezept-bearbeiten", ziel: async () => `/admin/rezepte/${session.recipeId}` },
   {
@@ -105,6 +114,13 @@ const SEITEN: Seitentyp[] = [
   { name: "admin-seiten", ziel: async () => "/admin/seiten" },
   { name: "admin-seite-bearbeiten", ziel: ersteSeitenId },
   { name: "admin-taxonomien", ziel: async () => "/admin/taxonomien" },
+  {
+    // Zweite Aufnahme mit Meldung, auf einer Seite ohne Tabelle: Der Kasten
+    // sitzt hier direkt über einem Raster statt über einer Liste, und sein
+    // Abstand nach unten (`mb-4`) wirkt anders.
+    name: "admin-taxonomien-meldung",
+    ziel: async () => `/admin/taxonomien?meldung=${encodeURIComponent("Eintrag gelöscht.")}`,
+  },
   { name: "admin-zutaten", ziel: async () => "/admin/zutaten" },
   { name: "admin-startseite", ziel: async () => "/admin/startseite" },
   { name: "admin-medien", ziel: async () => "/admin/medien" },
