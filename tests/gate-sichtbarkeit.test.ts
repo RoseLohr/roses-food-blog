@@ -73,6 +73,11 @@ describe("Gates sehen auch neue Dateien", () => {
       "scripts/regime/responsive-images.mjs",
       "scripts/regime/secret-scan.mjs",
       "scripts/regime/source-gates.mjs",
+      // Nachgetragen 2026-08-22: Diese Liste umfasste anfangs nur die vier
+      // Kontrollen, die beim Vorfall aufgefallen waren. Der Shell-Syntax-Schritt
+      // in CI zählte weiter ohne Flags auf und blieb deshalb unentdeckt — die
+      // Regressionssperre hatte dieselbe Lücke wie das, wovor sie schützt.
+      ".github/workflows/ci.yml",
     ];
     const ohneFlags: string[] = [];
     for (const datei of dateien) {

@@ -42,6 +42,8 @@ jobs:
         run: npm run lint
       - name: Quelltext-Gates (Stubs A-16, Modell-Aliase B-13)
         run: node scripts/regime/source-gates.mjs
+      - name: Quelltext-Gates-Selbsttest (A-36)
+        run: node scripts/regime/source-gates.mjs --selftest
       - name: Migrations-Journal streng aufsteigend (still übersprungene Migration)
         run: node scripts/regime/migrations-order.mjs
       - name: Migrations-Journal-Selbsttest
@@ -62,10 +64,22 @@ jobs:
         run: npx jscpd --config .jscpd.json --silent
       - name: Secret-Scan (B-06, STOP-SHIP)
         run: node scripts/regime/secret-scan.mjs
+      - name: Secret-Scan-Selbsttest (A-36, STOP-SHIP-Kontrolle fängt nachweislich)
+        run: node scripts/regime/secret-scan.mjs --selftest
       - name: Gewaltenteilung (B-35, CODEOWNERS deckt geschützte Pfade)
         run: node scripts/regime/separation-check.mjs
+      - name: Gewaltenteilungs-Selbsttest (A-36)
+        run: node scripts/regime/separation-check.mjs --selftest
       - name: Gate-Selbsttest (A-01/B-01, Gate blockiert nachweislich)
         run: node scripts/regime/gate-selftest.mjs
+      # Beide Skripte laufen produktiv in EIGENEN Workflows (perf-uptime.yml
+      # bzw. independent-verify.yml), die nicht bei jedem Pull Request feuern.
+      # Ihr Wirksamkeitsnachweis gehört trotzdem in das Gate, das die Änderung
+      # an ihnen sieht — sonst prüft ihn erst der nächste Zeitplanlauf.
+      - name: Lighthouse-Budget-Selbsttest (A-36)
+        run: node scripts/regime/lighthouse-budget.mjs --selftest
+      - name: Unabhängige-Verifikation-Selbsttest (A-36)
+        run: node scripts/regime/independent-verify.mjs --selftest
       - name: Authz-Coverage (C-01, jeder Admin-Handler server-seitig geguardet)
         run: node scripts/regime/authz-coverage.mjs --selftest
       - name: KI-Fähigkeits-Guard (Track C, N/A-Reaktivierung bei Tool/RAG/Agent)
@@ -96,7 +110,10 @@ jobs:
       - name: Shell-Syntax (alle *.sh)
         run: |
           set -euo pipefail
-          dateien=$(git ls-files '*.sh')
+          # Ohne --others --exclude-standard listet git nur VERFOLGTE Dateien:
+          # eine frisch geschriebene .sh waere im lokalen Gate-Lauf unsichtbar
+          # (Vorfall 2026-08-21, tests/gate-sichtbarkeit.test.ts).
+          dateien=$(git ls-files --cached --others --exclude-standard '*.sh')
           test -n "$dateien" || { echo "Keine Shell-Dateien gefunden — pruefe den Glob."; exit 1; }
           for f in $dateien; do echo "bash -n $f"; bash -n "$f"; done
       - name: Kalibrierung (A-36, Kontrollen fangen ihre Seeds — inkl. Track C)
@@ -108,6 +125,8 @@ jobs:
       # Erst NACH dem Build — vorher gibt es die Chunks nicht.
       - name: JS-Budget (First Load, gemessen am Artefakt)
         run: node scripts/regime/bundle-budget.mjs
+      - name: JS-Budget-Selbsttest (A-36)
+        run: node scripts/regime/bundle-budget.mjs --selftest
       - name: Findings-Gate (Report; scharf sobald Blocker geschlossen)
         run: node scripts/regime/findings-gate.mjs
       - name: Verfassung geladen & gehasht (Session-Steuer, §9.10.5)
@@ -219,6 +238,8 @@ jobs:
         run: node scripts/regime/mandate-hash.mjs --verify
       - name: Lizenz-Scan (C-25, Copyleft-Konflikte blockieren)
         run: node scripts/regime/license-scan.mjs
+      - name: Lizenz-Selbsttest (A-36)
+        run: node scripts/regime/license-scan.mjs --selftest
       - uses: actions/upload-artifact@v4
         with:
           name: sbom
