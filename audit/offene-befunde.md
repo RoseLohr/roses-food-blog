@@ -301,20 +301,51 @@ pauschal.
 
 ---
 
-## B8 — E2E-Specs schreiben in eine gemeinsame Datenbank
+## B8 — E2E-Specs schreiben in eine gemeinsame Datenbank — ERLEDIGT 08/2026
 
-**Befund.** `tests/e2e/cms-paket.spec.ts` ändert über den Admin den
-Einleitungstext der Reisen-Seite. Alles, was danach läuft, sieht den geänderten
-Stand. Die Referenzaufnahmen liefen dadurch allein grün und im Verbund rot.
+**Befund war.** `cms-paket.spec.ts` änderte über den Admin den Einleitungstext
+der Reisen-Seite. Alles, was danach lief, sah den geänderten Stand — die
+Referenzaufnahmen waren allein grün und im Verbund rot. Behoben war damals nur
+das SYMPTOM (Referenz läuft als eigenes Projekt zuerst).
 
-**Was getan wurde.** Die Reihenfolge ist jetzt ZUGESAGT statt gehofft:
-`playwright.config.ts` fährt die Referenz als eigenes Projekt vor allem
-anderen (`dependencies`). Das behebt das Symptom für diese eine Kontrolle.
+**Erledigt: die Ursache ist jetzt bewacht.** `server-mit-frischer-db.sh`
+schreibt unmittelbar nach dem Seeden einen Fingerabdruck der
+`setting`-Tabelle; `tests/e2e/zustand-ende.spec.ts` läuft als LETZTES
+Playwright-Projekt und vergleicht. Bleibt etwas zurück, nennt die Meldung den
+Schlüssel und beide Werte — statt „irgendeine Kontrolle drei Dateien später
+ist rot".
 
-**Was offen bleibt.** Die Ursache ist, dass Specs gemeinsamen Zustand
-verändern und nicht aufräumen. Jede künftige Kontrolle, die einen unberührten
-Stand braucht, hat dasselbe Problem. Sauber wäre ein eigenes `DATA_DIR` je
-Spec-Gruppe.
+**Dabei kam heraus, dass die Fläche größer ist als der Befund sagte.** Nach dem
+Seeden ist die `setting`-Tabelle **leer**; alle zwölf Schlüssel, die am Ende
+darin stehen, stammen aus Testläufen. Zwei Verursacher:
+
+* `cms-paket.spec.ts` → `reisen_text_unten`. Das ist der Fall, der eine
+  Kontrolle gebrochen hat. **Räumt jetzt auf** — und zwar durch ENTFERNEN des
+  Schlüssels, nicht durch Leeren: Die Saat setzt ihn gar nicht, ein leerer Wert
+  wäre ein anderer Zustand als keiner.
+* Das Einstellungsformular (über `ki-schalter.spec.ts`) schreibt beim Absenden
+  alle seine Felder mit, auch die leeren. Das IST der Test; diese elf Schlüssel
+  stehen als **angemeldeter** Rückstand in `ERLAUBTER_RUECKSTAND` — jeder mit
+  Begründung.
+
+**Warum eine Liste und keine erzwungene Rücksetzung überall:** Ein Test, der
+das Einstellungsformular prüft, muss es absenden. Die Rückstände wegzuräumen
+wäre Aufwand ohne Gegenwert. Der Wert liegt darin, dass die geteilte Fläche an
+EINER Stelle sichtbar ist und alles Unangemeldete sofort auffällt. Ein zweiter
+Test hält die Liste aktuell: Ein Eintrag, den kein Spec mehr hinterlässt, muss
+weg — sonst wiegt die Liste in falscher Sicherheit.
+
+**Gegenprobe gefahren:** Aufräumen in `cms-paket` entfernt →
+
+```
+Unangemeldeter Rückstand:
+  reisen_text_unten: NEU ("**E2E-Text NACH der Weltkarte.**")
+```
+
+**Was bewusst NICHT geprüft wird:** Inhalte, die ein Spec anlegt (ein Rezept,
+ein Kontakt). Die sind additiv und stören keine andere Kontrolle; sie
+mitzuprüfen hieße, jedem Spec das Aufräumen seiner Fixtures aufzuzwingen, ohne
+dass ein Schaden dem gegenüberstünde.
 
 ---
 

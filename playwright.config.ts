@@ -85,8 +85,15 @@ export default defineConfig({
     { name: "referenz", testMatch: /-referenz\.spec\.ts/ },
     {
       name: "alles-weitere",
-      testIgnore: /-referenz\.spec\.ts/,
+      testIgnore: /(-referenz|zustand-ende)\.spec\.ts/,
       dependencies: ["referenz"],
+    },
+    // Ganz zum Schluss: Hat ein Spec gemeinsamen Zustand hinterlassen? (B8)
+    // Braucht `dependencies`, damit es wirklich das letzte Wort hat.
+    {
+      name: "zustand-ende",
+      testMatch: /zustand-ende\.spec\.ts/,
+      dependencies: ["alles-weitere"],
     },
   ],
   use: {
