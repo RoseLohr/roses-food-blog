@@ -65,6 +65,13 @@ jobs:
         run: node scripts/regime/prompt-scan.mjs --selftest
       - name: KI-Budget (C-05/B-08, Caps im KI-Pfad)
         run: node scripts/regime/ai-budget-check.mjs --selftest
+      # Die Entscheidungslogik des Fremd-Vendor-Verifiers (decide, requireApprovals,
+      # attestReasons, attestProof, validateRangeInputs, normalizeBase, authHeader,
+      # strictAnyRefutation) hatte bis hierher KEINE automatisierte Abdeckung: der
+      # --selftest existierte, wurde aber von keinem Workflow und keinem npm-Script
+      # aufgerufen. Ein gut gebauter, nie ausgefuehrter Selbsttest ist kein Test.
+      - name: Fremd-Vendor-Verifier Selbsttest (A-01/A-39, Entscheidungslogik)
+        run: node scripts/regime/independent-verify.mjs --selftest
       - name: Trust-Boundary-Detektor (C-02, neue Integration deklariert)
         run: node scripts/regime/boundary-check.mjs --selftest
       - name: Provenance-Rekonstruktion (C-37, jede Datei einer Owning-Role)
