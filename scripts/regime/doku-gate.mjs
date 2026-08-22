@@ -55,7 +55,7 @@
  * WARUM HIER ZWEI FREMDE PARSER LAUFEN UND KEINE EIGENEN WÄHLER
  *
  * Die ersten Fassungen zerlegten Markdown und TypeScript von Hand. Der
- * Pflicht-Approver hat in VIER Runden ELF Umgehungen gefunden (PR #109) — und
+ * Pflicht-Approver hat in FÜNF Runden DREIZEHN Umgehungen gefunden (PR #109) — und
  * das ist kein Ausreißer, sondern die Regel: Ein handgeschriebener Zerleger hat
  * so viele Löcher, wie das Format Sonderfälle hat. Die gefundenen, zur
  * Erinnerung und als Selbsttestfälle unten festgenagelt:
@@ -78,13 +78,21 @@
  *   k) DIE LISTE DER OBERSTEN VERZEICHNISSE WAR VERDRAHTET und unvollständig
  *      (`.zap`, `.lighthouse`, `.admin-data`, `.repro-data` fehlten). Sie wird
  *      jetzt aus dem Repository HERGELEITET — entdecken statt aufzählen.
+ *   l) EIN VORANGESTELLTER BINDESTRICH schloss die tote Nummer aus —
+ *      „laut Annahme-A7" blieb grün. Am Bestand nachgemessen: Die Ausnahme
+ *      fallen zu lassen erzeugt null Fehlalarme.
+ *   m) DIE AUFLÖSUNG FRAGTE NUR `fs.existsSync` — also „liegt da etwas auf der
+ *      Platte" statt „gehört das zu diesem Repository". `.//etc/passwd` und
+ *      `src/../../../../etc/passwd` führten beide aus dem Repository heraus und
+ *      galten als gültige Verweise; `zeilenBefund` hätte die fremde Datei
+ *      danach zum Zeilenzählen gelesen. Siehe `einwaerts` und `istMitglied`.
  *   i) JEDER eindeutige PRÄFIX galt als gültige Abkürzung. Damit lief ein
  *      vertippter Pfad (`src/lib/media.t`) grün durch — die Frage „gibt es
  *      diese Datei?" war ausgehöhlt, nicht bloß umgangen. Siehe `aufloesen`.
  *
  * a, b, c, f und j sind Markdown-Sonderfälle; g ist ein TypeScript-Sonderfall.
- * Sechs von elf Löchern kamen also daher, dass hier zwei Sprachen nachgebaut
- * wurden, die das Projekt längst richtig zerlegen kann:
+ * Sechs von dreizehn Löchern kamen also daher, dass hier zwei Sprachen
+ * nachgebaut wurden, die das Projekt längst richtig zerlegen kann:
  *
  *   * `marked` (Produktionsabhängigkeit, treibt `src/lib/markdown.ts`) liefert
  *     Codeblöcke und Überschriften als Token. Alle vier Markdown-Löcher fallen
@@ -94,7 +102,7 @@
  *     `const r = /a\/\//; // A5`: Der reine Scanner liest daraus „//; // A5"
  *     und liegt falsch, der Parser liefert „// A5" und liegt richtig.
  *
- * d, e, h, i und k bleiben eigene Logik — sie handeln von Dateien und Zahlen,
+ * d, e, h, i, k, l und m bleiben eigene Logik — sie handeln von Dateien und Zahlen,
  * nicht von Grammatik. j fällt nicht ganz weg: `marked` liefert die
  * Verschachtelung korrekt, aber WELCHE Überschrift einen Abschnitt aufmacht,
  * ist eine Entscheidung dieses Gates und musste hier getroffen werden.
@@ -153,10 +161,20 @@ const ZEILEN_TEIL = /^(.*?)(?::(\d+)(?:-(\d+))?)?$/;
 /** Anweisungen, die zum abgeschalteten Host-nginx-Betrieb gehören. */
 export const VERALTETE_ANLEITUNG = /\bcertbot\b|\bsites-available\b|\/etc\/letsencrypt\b/;
 
-/** „A1"…„A11" ohne Bindestrich — die Nummerierung, die es nicht gibt.
- *  Der Bindestrich trennt sie von den Prüfkennungen A-16, A-20, A-33; das
- *  vorangestellte `/` von Pfadbestandteilen wie `https://x/A7/y`. */
-export const TOTE_NUMMER = /(?<![A-Za-z0-9_/.-])A(1[01]|[1-9])(?![0-9A-Za-z-])/;
+/**
+ * „A1"…„A11" — die Nummerierung, die es nicht gibt.
+ *
+ * Der NACHGESTELLTE Bindestrich trennt sie von den Prüfkennungen A-16, A-20,
+ * A-33 (dort folgt auf das A kein Ziffernpaar, sondern ein Bindestrich); das
+ * vorangestellte `/` von Pfadbestandteilen wie `https://x/A7/y`.
+ *
+ * Der VORANGESTELLTE Bindestrich stand hier ebenfalls in der Ausnahme und war
+ * ein Loch (l): „laut Annahme-A7" blieb grün, obwohl der Verweis genauso tot
+ * ist. Am Bestand nachgemessen, bevor die Ausnahme fiel: null Fehlalarme —
+ * Kennungen wie `R-A33` und `R-A07` trifft die Regex ohnehin nicht, weil auf
+ * das A keine passende Zahl folgt.
+ */
+export const TOTE_NUMMER = /(?<![A-Za-z0-9_/.])A(1[01]|[1-9])(?![0-9A-Za-z-])/;
 
 /** Zeilennummer (1-basiert) des Zeichens an `pos`. */
 function zeileVon(text, pos) {
@@ -294,6 +312,50 @@ export function pfadverweise(zeile, wurzeln) {
   return raus;
 }
 
+/** Wurzel des Repositories — von git erfragt, nicht aus dem Arbeitsverzeichnis
+ *  geraten. Einmal ermittelt und gemerkt. */
+let gemerkteWurzel = null;
+export function repoWurzel() {
+  if (gemerkteWurzel === null) {
+    gemerkteWurzel = execSync("git rev-parse --show-toplevel", { encoding: "utf8" }).trim();
+  }
+  return gemerkteWurzel;
+}
+
+/**
+ * Pfad relativ zur Repo-Wurzel — oder `null`, wenn er dort HINAUSFÜHRT.
+ *
+ * Das war Loch m (Befund des Pflicht-Approvers, fünfte Runde). Die Auflösung
+ * fragte nur `fs.existsSync`, also „liegt da irgendetwas auf der Platte" statt
+ * „ist das eine Datei dieses Repositories". Nachgestellt:
+ *
+ *   `.//etc/passwd`               → nach dem `./`-Abschnitt `/etc/passwd`, und
+ *                                   das existiert → galt als gültiger Verweis.
+ *   `src/../../../../etc/passwd`  → geht durch ein ECHTES Wurzelverzeichnis und
+ *                                   landet trotzdem bei `/etc/passwd`.
+ *
+ * Der zweite Fall zeigt, dass das Loch größer war als der `./`-Sonderfall: Der
+ * Ausbruch gelang durch jedes zugelassene Wurzelverzeichnis hindurch. Und
+ * `zeilenBefund` hätte die fremde Datei anschließend zum Zeilenzählen gelesen.
+ */
+export function einwaerts(pfad, wurzel = repoWurzel()) {
+  const rel = path.relative(wurzel, path.resolve(wurzel, pfad));
+  if (rel === "" || rel === ".." || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) return null;
+  return rel.split(path.sep).join("/");
+}
+
+/**
+ * Gehört der Pfad zum Repository? Datei oder Verzeichnis.
+ *
+ * Bewusst gegen die Dateiliste statt gegen die Platte: Ein Pfad, der zufällig
+ * existiert, aber nicht zum Repository gehört, ist kein Verweis auf dieses
+ * Repository. `git ls-files` listet nur Dateien — ein Verzeichnis erkennt man
+ * daran, dass Einträge darunter liegen.
+ */
+export function istMitglied(rel, alle) {
+  return alle.includes(rel) || alle.some((f) => f.startsWith(`${rel}/`));
+}
+
 /**
  * Löst einen Verweis auf die Datei auf, die er meint.
  *
@@ -319,13 +381,15 @@ export function pfadverweise(zeile, wurzeln) {
  * nicht" verworfen: Sonst hängt die Zeilenprüfung am Rohpfad und springt bei
  * jeder Abkürzung ab (Loch d).
  */
-export function aufloesen(pfad, alle) {
-  if (fs.existsSync(pfad)) return pfad;
-  if (!/(?:^|\/)\d{2}$/.test(pfad)) return null;
+export function aufloesen(pfad, alle, wurzel = repoWurzel()) {
+  const rel = einwaerts(pfad, wurzel);
+  if (rel === null) return null;
+  if (istMitglied(rel, alle) && fs.existsSync(rel)) return rel;
+  if (!/(?:^|\/)\d{2}$/.test(rel)) return null;
   // `git ls-files --cached` führt auch Einträge, deren Datei im Arbeitsbaum
   // gerade fehlt. Ohne diese Prüfung stürbe `zeilenBefund` später an einem
   // `statSync` — eine Kontrolle, die abstürzt, meldet nichts.
-  const treffer = alle.filter((f) => f.startsWith(`${pfad}-`) && fs.existsSync(f));
+  const treffer = alle.filter((f) => f.startsWith(`${rel}-`) && fs.existsSync(f));
   return treffer.length === 1 ? treffer[0] : null;
 }
 
@@ -358,6 +422,7 @@ export function zeilenBefund(datei, von, bis) {
 function main() {
   const alle = dateien();
   const wurzeln = wurzelnAus(alle);
+  const wurzel = repoWurzel();
   let verstoesse = 0;
   const melde = (art, ort, text) => {
     console.error(`❌ ${art} ${ort}: ${text}`);
@@ -394,7 +459,7 @@ function main() {
         // In `audit/` nur Verweise MIT Zeilennummer — siehe Kopf.
         if (imAudit && v.von === null) continue;
         gezaehlt++;
-        const ziel = aufloesen(v.pfad, alle);
+        const ziel = aufloesen(v.pfad, alle, wurzel);
         if (ziel === null) {
           melde("Pfadverweis ins Leere", `${datei}:${i + 1}`, v.text);
           continue;
@@ -419,6 +484,7 @@ if (process.argv.includes("--selftest")) {
   const welle = "~~~";
   const alle = dateien();
   const wurzeln = wurzelnAus(alle);
+  const wurzel = repoWurzel();
   const faelle = [
     // Prüfung 1 — der Verstoß wird in ALLEN Markdown-Codeformen gefangen.
     ["Anleitung im ```-Zaun", verboteneAnleitung(`## Setup\n\n${z3}\nsudo certbot --nginx\n${z3}\n`).length === 1],
@@ -440,6 +506,9 @@ if (process.argv.includes("--selftest")) {
     ["tote Nummer", toteNummern("gilt laut A7 weiterhin").length === 1],
     ["Prüfkennung bleibt frei", toteNummern("A-16 verbietet Stubs, A-33 fordert SLI").length === 0],
     ["Pfadbestandteil bleibt frei", toteNummern("siehe https://x/A7/y").length === 0],
+    // Bindestrich DAVOR verdeckt die tote Nummer nicht mehr (Loch l).
+    ["Bindestrich davor verdeckt nichts (Loch l)", toteNummern("gilt laut Annahme-A7").length === 1],
+    ["Kennung mit Ziffernpaar bleibt frei", toteNummern("Residual R-A33 und R-A07").length === 0],
     // Prüfung 2b — im Quelltext zählt NUR der Kommentar, aber jeder.
     ["Bezeichner bleibt frei", toteNummernInKommentaren("const A2 = messwert;").length === 0],
     ["Blockkommentar wird gesehen", toteNummernInKommentaren("/**\n * i18n-vorbereitet (A3)\n */\nexport const x = 1;").length === 1],
@@ -470,6 +539,17 @@ if (process.argv.includes("--selftest")) {
     ["vertippter Pfad löst nicht auf (Loch i)", aufloesen("src/lib/media.t", alle) === null],
     ["Verkürzung löst nicht auf (Loch i)", aufloesen("src/lib/bildreihe", alle) === null],
     ["einstellige Nummer ist keine Abkürzung", aufloesen("audit/0", alle) === null],
+    // Kein Ausbruch aus dem Repository (Loch m).
+    ["`.//etc/passwd` bricht nicht aus (Loch m)", aufloesen("/etc/passwd", alle) === null],
+    ["Aufstieg über `..` bricht nicht aus (Loch m)", aufloesen("src/../../../../etc/passwd", alle) === null],
+    ["einwaerts weist absolute Pfade ab", einwaerts("/etc/passwd") === null],
+    ["einwaerts weist den Aufstieg ab", einwaerts("../nachbar") === null],
+    ["einwaerts lässt Repo-Pfade durch", einwaerts("src/lib/media.ts") === "src/lib/media.ts"],
+    ["einwaerts normalisiert innen", einwaerts("src/lib/../lib/media.ts") === "src/lib/media.ts"],
+    // Vorhandensein allein genügt nicht — es muss zum Repository gehören.
+    ["Fremde Datei ist kein Mitglied", istMitglied("etc/passwd", alle) === false],
+    ["Datei ist Mitglied", istMitglied("src/lib/media.ts", alle) === true],
+    ["Verzeichnis ist Mitglied", istMitglied("src/lib", alle) === true],
     ["Pfad mit Punkt am Ende wird nicht gewaschen", pfadverweise("siehe `src/lib/media.ts.`", wurzeln)[0]?.pfad === "src/lib/media.ts."],
     ["Zeilenprüfung greift auch bei Abkürzung (Loch d)", zeilenBefund(aufloesen("audit/06", alle), 99999, 99999) !== null],
     // Unmögliche Angaben (Loch e).

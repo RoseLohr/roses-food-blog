@@ -118,8 +118,8 @@ Zwei Dinge, die das Inventar zusätzlich festhält:
   Annahmenummern und Pfadverweise ins Leere. Gemessen am Bestand: 312
   Pfadverweise, 4 historische Codeblöcke, alle in Ordnung.
 
-  **Der Pflicht-Approver hat in VIER Runden ELF Umgehungen gefunden** — acht
-  von ihm benannt, drei beim Nachziehen derselben Klasse. Sechs davon haben
+  **Der Pflicht-Approver hat in FÜNF Runden DREIZEHN Umgehungen gefunden** —
+  zehn von ihm benannt, drei beim Nachziehen derselben Klasse. Sechs davon haben
   dieselbe Form: *eine Prüfung, die sich still selbst abschaltet.* Eine
   Shell-Zeile „# historisch" INNERHALB eines Codeblocks setzte die Ausnahme für
   alles Folgende; ein Zaun aus drei Tilden galt gar nicht als Code; eingerückter
@@ -180,10 +180,25 @@ Zwei Dinge, die das Inventar zusätzlich festhält:
   Ausnahmeliste, und die ist hier ausgeschlossen. Das bleibt eine benannte
   Grenze, keine stille.
 
-  51 Selbsttestfälle, Gegenprobe gegen alle vier Vorfassungen gefahren (alle elf
-  Löcher rutschen dort durch), dazu eine Positivkontrolle am echten Baum: drei
-  eingeschleuste Verstöße in README, `docs/` und `src/` werden mit exakter
-  Zeilennummer gemeldet.
+  **Runde fünf fand den ersten echten Ausbruch.** Die Auflösung eines
+  Pfadverweises fragte nur, ob auf der Platte etwas an dieser Stelle liegt —
+  nicht, ob es zu diesem Repository gehört. Ein Verweis auf eine Datei
+  ausserhalb galt damit als gültig, und die Zeilenprüfung hätte sie anschließend
+  zum Zählen gelesen. Der Approver nannte den Weg über das ausdrückliche
+  „Punkt-Schrägstrich"; beim Nachstellen zeigte sich, dass der Aufstieg über
+  Punkt-Punkt durch JEDES zugelassene Wurzelverzeichnis genauso funktioniert —
+  das Loch war größer als der benannte Sonderfall. Geprüft wird jetzt zweierlei:
+  dass der aufgelöste Pfad innerhalb der Repo-Wurzel bleibt, und dass er in der
+  Dateiliste des Repositories vorkommt. Vorhandensein allein genügt nicht mehr.
+
+  Dazu ein zweiter Befund derselben Runde: Ein vorangestellter Bindestrich
+  verdeckte die tote Nummer, „laut Annahme-A7" blieb grün. Die Ausnahme ist
+  gefallen; am Bestand nachgemessen erzeugt das null Fehlalarme.
+
+  62 Selbsttestfälle, Gegenprobe gegen alle fünf Vorfassungen gefahren (alle
+  dreizehn Löcher rutschen dort durch), dazu eine Positivkontrolle am echten
+  Baum: drei eingeschleuste Verstöße in README, `docs/` und `src/` werden mit
+  exakter Zeilennummer gemeldet.
 
   Die Gegenbeispiele stehen hier bewusst OHNE Backticks: Das Gate kann eine
   Veranschaulichung nicht von einem echten Verweis unterscheiden — und hat
