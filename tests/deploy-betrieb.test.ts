@@ -404,7 +404,14 @@ describe("Heredocs: gar keine unquotierten — es gibt nichts zu substituieren",
    * Diese Suche darf grob sein: Sie findet im Zweifel ZU VIEL, und zu viel
    * kostet nur eine Zeile Begründung. Zu wenig kostet ein Leck.
    */
-  const shellDateien = execFileSync("git", ["ls-files", "*.sh"], {
+  // NEUE, NOCH NICHT VERFOLGTE DATEIEN GEHÖREN DAZU (`--others`).
+  // `git ls-files` allein listet nur VERFOLGTE Dateien. Wer eine neue Datei
+  // schreibt und vor dem Committen das Gate laufen lässt, bekommt Grün — die
+  // Datei war für die Prüfung gar nicht da. Genau so ist am 2026-08-21 ein
+  // Heredoc-Verstoß durch den lokalen Lauf gerutscht und erst in CI aufgefallen,
+  // wo der Commit die Datei verfolgt machte. `--exclude-standard` hält dabei
+  // .gitignore in Kraft, node_modules bleibt also draußen (nachgemessen).
+  const shellDateien = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard", "*.sh"], {
     cwd: ROOT,
     encoding: "utf8",
   })

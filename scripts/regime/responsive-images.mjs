@@ -122,7 +122,14 @@ export function checkImgTag(tag) {
 }
 
 function scan() {
-  const files = execSync("git ls-files src", { encoding: "utf8" })
+  // NEUE, NOCH NICHT VERFOLGTE DATEIEN GEHÖREN DAZU (`--others`).
+  // `git ls-files` allein listet nur VERFOLGTE Dateien. Wer eine neue Datei
+  // schreibt und vor dem Committen das Gate laufen lässt, bekommt Grün — die
+  // Datei war für die Prüfung gar nicht da. Genau so ist am 2026-08-21 ein
+  // Heredoc-Verstoß durch den lokalen Lauf gerutscht und erst in CI aufgefallen,
+  // wo der Commit die Datei verfolgt machte. `--exclude-standard` hält dabei
+  // .gitignore in Kraft, node_modules bleibt also draußen (nachgemessen).
+  const files = execSync("git ls-files --cached --others --exclude-standard src", { encoding: "utf8" })
     .trim()
     .split("\n")
     .filter((f) => /\.(tsx|jsx)$/.test(f));

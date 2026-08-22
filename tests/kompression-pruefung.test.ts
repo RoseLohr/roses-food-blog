@@ -351,6 +351,30 @@ describe("Kompressionsprüfung", () => {
     expect(ausgabe).toMatch(/meldet 'br', lässt sich aber nicht entpacken/);
   });
 
+  it("weist eine unbrauchbare Basis mit dem WERT in der Meldung zurück", async () => {
+    // DER ERSTE PRODUKTIONSLAUF SCHEITERTE HIERAN. deploy.sh zerlegte BASE_URL
+    // und setzte sie wieder zusammen; bei `https:/…` mit nur einem
+    // Schrägstrich kam als Name „https" heraus. Die Meldung nannte damals nur
+    // dieses Ergebnis, nicht die Eingabe — und wer nur „Name https" liest,
+    // sucht an der falschen Stelle. deploy.sh reicht BASE_URL inzwischen
+    // unverändert durch; diese Prüfung hält fest, dass ein trotzdem kaputter
+    // Wert benannt wird.
+    const { code, ausgabe } = await pruefen("https:/gourmetcompass.de", "ursprung");
+    expect(code, ausgabe).toBe(2);
+    expect(ausgabe).toMatch(/keine brauchbare URL: 'https:\/gourmetcompass\.de'/);
+  });
+
+  it("weist einen Namen zurück, der wie eine Shell-Einschleusung aussieht", async () => {
+    // Die Zerlegung in scripts/regime/url-teile.sh verlangt, dass der Name wie
+    // ein Name aussieht. Das ist die Wurzel, an der eine ganze Fehlerklasse
+    // verschwindet: Anführungszeichen und Semikolons kommen gar nicht erst bei
+    // einem Aufrufer an, der sie womöglich in eine Kommandozeichenkette
+    // schreibt — so geschehen in npm-container-finden.sh (PR #103).
+    const { code, ausgabe } = await pruefen("https://x';true;x='", "ursprung");
+    expect(code, ausgabe).toBe(2);
+    expect(ausgabe).toMatch(/keine brauchbare URL/);
+  });
+
   it("misst nichts auf einer Fehlerseite mit Status 200", async () => {
     server = createServer((_a, antwort) => {
       antwort.writeHead(200, { "Content-Type": "text/html" }).end("<html><body>Störung</body></html>");

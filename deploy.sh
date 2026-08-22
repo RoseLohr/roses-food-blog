@@ -461,33 +461,6 @@ if [[ "${HEALTH_OK:-0}" != "1" ]]; then
   fail "Healthcheck fehlgeschlagen. Vollständige Logs: podman logs roses-blog"
 fi
 
-# --- 6b. Auslieferung am Ursprung ---------------------------------------------
-# Die App liefert bewusst UNKOMPRIMIERT aus (next.config.ts: compress:false),
-# damit der Reverse Proxy komprimieren kann. Ob er das tut, hat vier Wochen lang
-# niemand gemessen: Die tägliche Prüfung in perf-uptime.yml lief gegen die
-# öffentliche Domain und damit gegen Cloudflare, das nachkomprimierte. Am
-# Ursprung liefen CSS und JavaScript derweil vollständig unkomprimiert
-# (audit/11-infrastruktur-befund.md, B1/B2).
-#
-# WARUM DIE PRÜFUNG HIER STEHT und nicht in GitHub Actions: Von dort aus wäre
-# der Ursprung nur über seine IP-Adresse messbar, und die gehört nicht in ein
-# öffentliches Repository (B7). Auf dem Server ist er über 127.0.0.1 erreichbar
-# — und bleibt es auch, wenn der Zugang von außen später auf die
-# Cloudflare-Bereiche eingeschränkt wird.
-#
-# WARUM SIE HART FEHLSCHLÄGT: Ein Deployment, dessen Ergebnis falsch
-# ausgeliefert wird, ist kein abgeschlossenes Deployment. Die Meldung unten
-# nennt den Weg zur Behebung; unterdrückt wird hier nichts.
-URSPRUNG_HOST="${BASE_URL#*://}"; URSPRUNG_HOST="${URSPRUNG_HOST%%/*}"; URSPRUNG_HOST="${URSPRUNG_HOST%%:*}"
-log "Prüfe Auslieferung am Ursprung ($URSPRUNG_HOST über 127.0.0.1)"
-if ! "$SCRIPT_DIR/scripts/regime/kompression-pruefen.sh" \
-      --basis "https://$URSPRUNG_HOST" --aufloesen 127.0.0.1 --ebene ursprung; then
-  echo
-  echo "Der Reverse Proxy liefert nicht so aus, wie next.config.ts es voraussetzt."
-  echo "Vorlage und Einspielweg stehen im Kopf von deploy/npm/http_top.conf."
-  fail "Auslieferung am Ursprung fehlerhaft (siehe Mängel oben)."
-fi
-
 # --- 7. Autostart nach Reboot -------------------------------------------------
 # Zwei unabhängige Voraussetzungen — beide bei JEDEM Lauf sicherstellen, sonst
 # startet der Container nach einem Reboot nicht (Autostart still kaputt).
@@ -748,6 +721,85 @@ for _ in $(seq 1 $((STABIL_SEK / 10))); do
     fail "App war erreichbar, ist aber im Stabilitätsfenster wieder ausgefallen — Deployment NICHT erfolgreich. Logs oben prüfen."
   fi
 done
+# --- 9c. Auslieferung am Ursprung ---------------------------------------------
+# Die App liefert bewusst UNKOMPRIMIERT aus (next.config.ts: compress:false),
+# damit der Reverse Proxy komprimieren kann. Ob er das tut, hat vier Wochen lang
+# niemand gemessen: Die tägliche Prüfung in perf-uptime.yml lief gegen die
+# öffentliche Domain und damit gegen Cloudflare, das nachkomprimierte. Am
+# Ursprung liefen CSS und JavaScript derweil vollständig unkomprimiert
+# (audit/11-infrastruktur-befund.md, B1/B2).
+#
+# WARUM DIE PRÜFUNG HIER STEHT und nicht in GitHub Actions: Von dort aus wäre
+# der Ursprung nur über seine IP-Adresse messbar, und die gehört nicht in ein
+# öffentliches Repository (B7). Auf dem Server ist er über 127.0.0.1 erreichbar
+# — und bleibt es auch, wenn der Zugang von außen später auf die
+# Cloudflare-Bereiche eingeschränkt wird.
+#
+# WARUM SIE HART FEHLSCHLÄGT: Ein Deployment, dessen Ergebnis falsch
+# ausgeliefert wird, ist kein abgeschlossenes Deployment. Die Meldung unten
+# nennt den Weg zur Behebung; unterdrückt wird hier nichts.
+#
+# WARUM SIE GANZ AM ENDE STEHT und nicht direkt hinter dem Healthcheck: Dort
+# stand sie zuerst — und ein Fehlschlag hätte damit die Abschnitte 7 und 7c
+# übersprungen. Genau die stellen bei JEDEM Lauf den Autostart sicher
+# (podman-restart.service, Linger); ohne sie startet der Container nach einem
+# Reboot nicht, und zwar still. Ein Kompressionsmangel hätte also die
+# Reboot-Festigkeit gekappt. Hier unten sind alle Invarianten hergestellt, das
+# Aufräumen ist durch und das Stabilitätsfenster bestanden; ein Fehlschlag
+# kostet nur noch die Erfolgsmeldung — und die ist dann auch zu Recht weg.
+# ZUERST die Voraussetzung HERSTELLEN, dann messen. Eine Prüfung, die eine
+# unerfüllte Voraussetzung nur beklagt, hat nichts sichergestellt — und ein
+# Handgriff, den sich jemand merken muss, wird irgendwann vergessen. Genau so
+# hält es Abschnitt 7 mit dem Autostart: bei JEDEM Lauf herstellen, nicht
+# einmalig einrichten.
+#
+# Das Schnipsel gilt für den GESAMTEN Proxy, also auch für andere Hosts darauf.
+# Deshalb liegt das Einspielen in einem eigenen Skript mit Rückrollpfad: Lehnt
+# nginx die Fassung ab, bleibt sie NICHT liegen — sonst käme der Proxy beim
+# nächsten Neustart für alle Seiten nicht mehr hoch. Nachgestellt in
+# tests/npm-snippet.test.ts.
+#
+# Welcher Container das ist, wird POSITIV zugeordnet, nicht geraten: Die erste
+# Fassung nahm den ersten Treffer auf `:80->`/`:443->`/„openresty" — auf einem
+# Host mit mehreren solchen Containern hätte das Deploy eine GLOBALE
+# nginx-Konfiguration in einen fremden geschrieben. Genau diese Lage liegt hier
+# vor; auf demselben Proxy laufen weitere Domains.
+# npm-container-finden.sh verlangt: veröffentlicht 80/443, ist wirklich ein
+# nginx, UND bedient laut /data/nginx/proxy_host/ genau diesen Namen.
+# BASE_URL wird auch hier UNVERÄNDERT durchgereicht — die Zerlegung liegt in
+# scripts/regime/url-teile.sh, an einer Stelle für alle.
+NPM_CONTAINER=$("$SCRIPT_DIR/scripts/regime/npm-container-finden.sh" --basis "$BASE_URL") || NPM_CONTAINER=""
+if [ -n "$NPM_CONTAINER" ]; then
+  log "Stelle Kompression im Reverse Proxy sicher ($NPM_CONTAINER)"
+  if ! "$SCRIPT_DIR/scripts/regime/npm-snippet-einspielen.sh" \
+        --container "$NPM_CONTAINER" --datei "$SCRIPT_DIR/deploy/npm/http_top.conf"; then
+    fail "Kompressionsschnipsel ließ sich nicht einspielen (siehe oben)."
+  fi
+else
+  echo "  Kein eindeutig zugeordneter Proxy-Container — es wird nichts eingespielt."
+  echo "  In fremde oder mehrdeutige Container zu schreiben wäre schlimmer als"
+  echo "  nichts zu tun. Die Messung unten prüft trotzdem, was TATSÄCHLICH"
+  echo "  ausgeliefert wird — durchgewunken wird also nichts."
+fi
+
+# BASE_URL wird UNVERÄNDERT durchgereicht. Die erste Fassung zerlegte sie in
+# Bestandteile und setzte daraus „https://$HOST" wieder zusammen — und daran
+# ist der erste Produktionslauf gescheitert: Steht in der .env eine URL mit nur
+# einem Schrägstrich (`https:/…`), liefert die Zerlegung den Host „https", und
+# die Prüfung lief gegen einen Namen, den es nicht gibt.
+#
+# Der Fehler war nicht die Zerlegung, sondern dass es sie gab: BASE_URL IST
+# bereits eine URL. Sie auseinanderzunehmen und neu zusammenzusetzen konnte nur
+# verlieren. kompression-pruefen.sh liest Schema, Name und Port selbst.
+log "Prüfe Auslieferung am Ursprung ($BASE_URL über 127.0.0.1)"
+if ! "$SCRIPT_DIR/scripts/regime/kompression-pruefen.sh" \
+      --basis "$BASE_URL" --aufloesen 127.0.0.1 --ebene ursprung; then
+  echo
+  echo "Der Reverse Proxy liefert nicht so aus, wie next.config.ts es voraussetzt."
+  echo "Vorlage und Einspielweg stehen im Kopf von deploy/npm/http_top.conf."
+  fail "Auslieferung am Ursprung fehlerhaft (siehe Mängel oben)."
+fi
+
 # Erst NACH bestandenem Health-Gate: Schnellpfad-State festhalten + Erfolg markieren.
 printf '%s %s\n' "$COMMIT" "$ENV_HASH" > "$STATE_FILE" 2>/dev/null || true
 DEPLOY_STATUS_RESULT="erfolgreich"   # EXIT-Trap schreibt deploy-status.json

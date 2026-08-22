@@ -259,7 +259,7 @@ Image-Neubau, überlebt NPM-Updates.
 
 | | Schritt | Wirkung |
 |---|---|---|
-| C1 | `gzip_types`, `gzip_vary on`, `gzip_comp_level`, `gzip_min_length` (B1, B4) — Vorlage liegt als `deploy/npm/http_top.conf` bereit, **Einspielen auf dem Server steht aus** | CSS 67,8 KB → ~13 KB je Cache-Miss |
+| C1 | `gzip_types`, `gzip_vary on`, `gzip_comp_level`, `gzip_min_length` (B1, B4) — **erledigt**: `deploy/npm/http_top.conf`, von `deploy.sh` bei jedem Lauf eingespielt | CSS 67,8 KB → ~13 KB je Cache-Miss |
 | C2 | Cloudflare-Adressbereiche in `set_real_ip_from` + `real_ip_header CF-Connecting-IP` (B6) | Ratenbegrenzung und Protokolle werden wieder wahr |
 | C3 | `proxy_http_version 1.1` + Keepalive — **erst nach Beleg** der Hypothese aus B9 | Latenz je Anfrage, evtl. der Absturz |
 | C4 | Proxy-Host für `www.` samt Zertifikat (B8) | 525 verschwindet |
@@ -268,6 +268,12 @@ Zu C1 gehört eine Gegenprobe: Die NPM-Vorlage setzt `add_header` sowohl im
 `server`- als auch im `location`-Block, weil ein `add_header` in `location`
 alle geerbten verwirft. Wer dort später Header ergänzt, muss `server_proxy.conf`
 nehmen, nicht `http_top.conf`.
+
+Und zwei Dinge, die beim Bauen von C1 gelernt wurden: NPM setzt `gzip on;`
+bereits selbst — ein zweites im Schnipsel lässt `nginx -t` scheitern. Und das
+Schnipsel gilt für den GESAMTEN Proxy, also auch für die anderen Hosts darauf;
+deshalb hat das Einspielen einen Rückrollpfad, damit eine abgelehnte Fassung
+dort niemals liegen bleibt.
 
 ### Spur D — Der große Hebel: cachebares HTML
 
