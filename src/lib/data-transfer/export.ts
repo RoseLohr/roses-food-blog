@@ -348,7 +348,7 @@ async function collectTravel(
         contentBlocks.push({ type: "text", markdown: b.markdown });
       } else if (b.type === "bild") {
         const ref = images.ref(b.imageId);
-        if (ref) contentBlocks.push({ type: "bild", image: ref, groesse: b.groesse });
+        if (ref) contentBlocks.push({ type: "bild", image: ref });
       } else if (b.restaurantId != null) {
         const idx = restaurantIndexById.get(b.restaurantId);
         if (idx !== undefined) contentBlocks.push({ type: "restaurant", index: idx });

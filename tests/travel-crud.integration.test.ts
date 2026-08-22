@@ -207,8 +207,8 @@ describe("Reise-CRUD", () => {
       JSON.stringify([
         { type: "text", markdown: "## Ankunft\n\nErster Abend." },
         { type: "bild", imageId: img.id }, // ohne Angaben → 'm', rechts, allein
-        { type: "bild", imageId: img.id, groesse: "s", platz: "links", mitVorherigem: true },
-        { type: "bild", imageId: img.id, groesse: "l" },
+        { type: "bild", imageId: img.id },
+        { type: "bild", imageId: img.id },
         { type: "restaurant", index: 1 }, // zeigt aufs 2. (nach Filterung 1.)
         { type: "text", markdown: "   " }, // leer → entfällt
       ]),
@@ -220,13 +220,13 @@ describe("Reise-CRUD", () => {
     // search_text = zusammengefügte Textblöcke (FTS-Quelle)
     expect(full!.post.searchText).toBe("## Ankunft\n\nErster Abend.");
     // Blockfolge: Text, Bild, Bild, Bild, Restaurant (Index nach Filterung auf
-    // 0 gemappt). Größe, Platz und Paarung überleben das Speichern; fehlen sie
+    // 0 gemappt). Der Bildblock trägt nichts über sein Aussehen; fehlen Felder
     // im Editor-JSON (Bestandsdaten), gelten 'm', 'rechts' und „allein".
     expect(full!.blocks).toEqual([
       { type: "text", markdown: "## Ankunft\n\nErster Abend." },
-      { type: "bild", imageId: img.id, groesse: "m", platz: "rechts", mitVorherigem: false },
-      { type: "bild", imageId: img.id, groesse: "s", platz: "links", mitVorherigem: true },
-      { type: "bild", imageId: img.id, groesse: "l", platz: "rechts", mitVorherigem: false },
+      { type: "bild", imageId: img.id },
+      { type: "bild", imageId: img.id },
+      { type: "bild", imageId: img.id },
       { type: "restaurant", index: 0 },
     ]);
     expect(full!.blockImages[img.id]?.fileKey).toBe("blocktest");
@@ -251,39 +251,45 @@ describe("Reise-CRUD", () => {
     expect(full!.blocks).toEqual([{ type: "text", markdown: code }]);
   });
 
-  it("behält eine Paarung, auch wenn der Block darüber aussortiert wird", async () => {
-    // `mitVorherigem` ist eine ABSICHT und wird beim Speichern nicht
-    // angetastet. Fällt der Block darüber weg (hier: ein Bild, dessen Foto es
-    // nicht gibt), rückt das Bild eine Stelle nach oben — und die Absicht
-    // „neben dem Bild darüber" gilt dann eben für das nächste. Wo sie WIRKT,
-    // entscheidet `gruppiere()` beim Rendern. Sie hier zu streichen hieße, aus
-    // einem vorübergehenden Zustand einen dauerhaften Verlust zu machen.
+  it("ein aussortierter Block rückt die Gruppe zusammen, statt sie zu zerreißen", async () => {
+    // Hier stand der Test „behält eine Paarung, auch wenn der Block darüber
+    // aussortiert wird". Die Paarung war ein Feld AM BLOCK (`mitVorherigem`),
+    // das eine Aussage über seine Nachbarn machte — und genau daran zerbrach
+    // die Anordnung. Es gibt sie nicht mehr.
+    //
+    // Was jetzt gilt und hier festgenagelt wird: Fällt ein Block beim Speichern
+    // weg (hier ein Bild, dessen Foto es nicht gibt), rücken die übrigen
+    // zusammen und bilden EINE Gruppe. Früher blieb die Gruppe zerrissen zurück,
+    // weil die Flagge des Nachbarn ins Leere zeigte.
     const { saveTravelFromForm } = await import("@/lib/travel-save");
     const { getFullTravelPost } = await import("@/lib/travel");
+    const { zuRenderBloecken } = await import("@/lib/bildreihen");
     const { db, schema } = await import("@/db");
-    const [img] = await db
+    const bilder = await db
       .insert(schema.mediaImage)
-      .values({
-        fileKey: "geistflagge",
-        originalName: "geist.jpg",
-        width: 800,
-        height: 600,
-        sizeBytes: 1000,
-        createdAt: new Date(),
-      })
+      .values(
+        [1, 2].map((n) => ({
+          fileKey: `zusammen-${n}`,
+          originalName: `z${n}.jpg`,
+          width: 800,
+          height: 600,
+          sizeBytes: 1000,
+          createdAt: new Date(),
+        })),
+      )
       .returning();
 
     const fd = new FormData();
-    fd.set("titel", "Geisterflagge");
+    fd.set("titel", "Zusammengerückt");
     fd.set("status", "entwurf");
     fd.set("restaurants", JSON.stringify([]));
     fd.set(
       "bloecke",
       JSON.stringify([
+        { type: "bild", imageId: bilder[0].id },
         // Dieses Bild gibt es nicht — der Block fällt beim Speichern weg.
-        { type: "bild", imageId: 999999, groesse: "s" },
-        // …und damit steht über diesem Bild nichts mehr.
-        { type: "bild", imageId: img.id, groesse: "s", mitVorherigem: true },
+        { type: "bild", imageId: 999999 },
+        { type: "bild", imageId: bilder[1].id },
       ]),
     );
     const result = await saveTravelFromForm(fd, adminId);
@@ -291,8 +297,13 @@ describe("Reise-CRUD", () => {
       id: (result as { travelId: number }).travelId,
     });
     expect(full!.blocks).toEqual([
-      { type: "bild", imageId: img.id, groesse: "s", platz: "rechts", mitVorherigem: true },
+      { type: "bild", imageId: bilder[0].id },
+      { type: "bild", imageId: bilder[1].id },
     ]);
+    // Und beim Rendern sind es EINE Gruppe, nicht zwei.
+    expect(
+      zuRenderBloecken(full!.blocks).filter((b) => b.art === "bild"),
+    ).toEqual([{ art: "bild", imageIds: [bilder[0].id, bilder[1].id] }]);
   });
 
   it("schlägt ähnliche Rezepte nur bei Kategorie+Küche+Zutat-Überschneidung vor", async () => {

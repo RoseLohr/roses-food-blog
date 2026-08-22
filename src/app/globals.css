@@ -85,108 +85,66 @@ html {
 
 /* Bilder im Reisebericht — die Layout-Regel aus src/lib/bildreihen.ts.
 
-   DIE BREITE IST DER REGLER. Vorher stellte der Admin die Höhe ein und die
-   Breite ergab sich aus Höhe × Seitenverhältnis, war also je Foto eine andere.
-   Jetzt ist die Breite ein Anteil der Spalte: s = ein Drittel, m = die Hälfte,
-   l = die ganze Spalte. Die Höhe folgt dem Foto.
+   DIE POSITION IST DIE GANZE REGEL: Das erste Bild einer Gruppe steht über die
+   ganze Breite, alle weiteren darunter in EINER Reihe, gleich hoch.
 
-   Warum Prozent und nicht Pixel: Der Anteil gilt damit in JEDER Fensterbreite,
-   ohne dass die Spaltenkette (100vw − 5rem / − 7rem / 816 px) hier noch einmal
-   nachgebaut werden müsste. Sie steht genau an einer Stelle, in bildreihen.ts,
-   und dort wird auch das sizes-Attribut daraus gerechnet.
+   WAS HIER VORHER STAND: Anteilsklassen (br-1-3, br-1-2, br-2-3, br-5-6,
+   br-1-1), Float-Klassen (pl-links, pl-rechts) und ein flow-root-Kasten, der
+   den Float einschloss — zusammen mit fuenf Reglern am Block. Gemessen an der
+   ausgelieferten Seite war das Ergebnis: zwei Bilder bei 2/3 nebeneinander, das
+   dritte mit 1/3 darunter, weil 2/3 + 1/3 zusammen 100 % PLUS zweimal
+   margin-right 1.5rem ergaben. Es gibt hier jetzt keine Floats mehr, keine
+   Anteile und keine zweite Zeile, die umbrechen koennte.
 
-   `clear: both` an jedem Bildplatz macht das Ergebnis vorhersagbar: Jedes Bild
-   beginnt unterhalb des vorigen und unterhalb des Inhaltsverzeichnisses. Ohne
-   diese Regel entschiede allein die Länge des Absatzes darüber, ob sich zwei
-   Bilder nebeneinander schieben — ein Satz mehr im Text, und das Layout
-   springt um. Wer zwei Bilder nebeneinander will, sagt es (siehe .bildpaar). */
-/* Der Kasten um Bild UND folgenden Text. `flow-root` schließt den Float ein:
-   Der Kasten wächst auf die Höhe des höheren von beiden, und kein späterer
-   Block kann in ihn hineinlaufen. `clear: both` rückt ihn als GANZES unter das
-   Inhaltsverzeichnis und unter das vorige Bild — vorher rückte nur das Bild,
-   der Textkasten blieb oben, und das Bild hing ohne eine Zeile neben sich in
-   der Luft (am geseedeten Bericht gemessen: Bild y=1596, sein Text y=1381). */
-.bildlauf {
-  display: flow-root;
+   ACHTUNG bei Aenderungen: Diese Datei benutzt kein @layer, Tailwind v4 legt
+   seine Utilities aber in @layer utilities. Eine blanke Klasse hier schlaegt
+   deshalb JEDE Utility — `class="bildgruppe mb-8"` bliebe wirkungslos. Wer
+   einen Wert von aussen ueberschreibbar machen will, braucht @utility. */
+.bildgruppe {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  /* `clear` haelt die Gruppe UNTER dem schwebenden Inhaltsverzeichnis. Vorher
+     leistete das ein eigener flow-root-Kasten um Bild und Folgetext; den
+     braucht es nicht mehr, weil die Gruppe selbst ein Blockkasten ist und
+     nichts mehr umflossen wird. */
   clear: both;
+  /* Kein eigener Aussenabstand: Den Abstand zwischen den Bloecken setzt der
+     Behaelter (`[&>*+*]:mt-7` in travel-view.tsx) an EINER Stelle. Zwei Quellen
+     fuer denselben Abstand waeren genau die Art Doppelung, die hier weg soll. */
+  margin: 0;
 }
-.bildplatz {
-  margin-bottom: 0.875rem;
-  height: auto;
+.bildgruppe > * {
+  margin: 0;
 }
-/* Das Bild füllt seinen Platz aus — den Anteil der Spalte bestimmt der Platz
-   selbst (bzw. beim Paar dessen Flex-Kinder). */
-.bildplatz img {
+.bildgruppe img {
+  display: block;
   width: 100%;
   height: auto;
 }
 
-/* Die Breite einer ZEILE ist die Summe der Anteile ihrer Bilder: S+S = zwei
-   Drittel, S+S+S oder M+M = die ganze Spalte, M+S fünf Sechstel. Der Renderer
-   vergibt die Klasse als gekürzten Bruch (`br-2-3`), damit im DOM steht, was
-   gerechnet wurde.
+/* Die weiteren Bilder: EINE Reihe, die nicht umbricht.
 
-   Unter 768 px kein Umfluss: Die Spalte ist dort 310 px breit, ein Drittel
-   davon wären 103 px, und daneben blieben rund fünfzehn Zeichen je Zeile —
-   das ist keine Spalte mehr, sondern ein Rand. Einzelbilder stehen dort über
-   die volle Breite; eine ZEILE bleibt nebeneinander (siehe unten). */
-@media (min-width: 768px) {
-  .bildplatz.br-1-3 {
-    width: 33.3333%;
-  }
-  .bildplatz.br-1-2 {
-    width: 50%;
-  }
-  .bildplatz.br-2-3 {
-    width: 66.6667%;
-  }
-  .bildplatz.br-5-6 {
-    width: 83.3333%;
-  }
-  .bildplatz.pl-links {
-    float: left;
-    margin-right: 1.5rem;
-  }
-  .bildplatz.pl-rechts {
-    float: right;
-    margin-left: 1.5rem;
-  }
-}
-/* Die volle Spalte hat keine Seite — der Renderer vergibt dort gar keine
-   pl-Klasse, ebenso ab fünf Sechsteln (daneben bliebe nur noch ein Rand). */
-.bildplatz.br-1-1 {
-  width: 100%;
-}
+   `flex: var(--ar) 1 0` ist die ganze Mechanik. flex-basis 0 heisst, die
+   gesamte Breite ist freier Platz, und der wird im Verhaeltnis der
+   Seitenverhaeltnisse verteilt. Damit gilt Breite_i proportional Format_i, also
+   ist Breite_i / Format_i fuer alle gleich — sie sind exakt gleich hoch und
+   schliessen unten buendig ab, ohne Zuschnitt und ohne eine Zeile JavaScript.
+   Dieselbe Rechnung fuehrt bildgruppeSizes() aus, deshalb stimmt die
+   Deklaration mit dem Gerenderten ueberein und nicht nur ungefaehr.
 
-/* ------------------------------------------------------------------------
-   PAAR — zwei Bilder teilen sich EINEN Bildplatz.
-
-   `flex: var(--ar) 1 0` ist die ganze Mechanik: flex-basis 0 heißt, die
-   gesamte Breite des Platzes ist freier Platz, und der wird im Verhältnis der
-   Seitenverhältnisse verteilt. Damit gilt Breite_i ∝ Format_i, also ist
-   Breite_i / Format_i für beide gleich — sie sind exakt gleich hoch und
-   schließen unten bündig ab, ohne Zuschnitt und ohne eine Zeile JavaScript.
-   Dieselbe Rechnung führt bildSizes() aus, deshalb stimmt die Deklaration mit
-   dem Gerenderten überein und nicht nur ungefähr.
-
-   Das Paar bleibt auch unter 768 px nebeneinander: Es ist der einzige Fall, in
-   dem zwei Bilder eine Zeile teilen, und der einzige, in dem das jemand
-   ausdrücklich so bestellt hat. */
-.bildpaar {
+   KEIN flex-wrap: Ein Umbruch waere genau der Fehler, den diese Umstellung
+   beseitigt. Statt umzubrechen werden die Kacheln schmaler — auch auf dem
+   Handy, denn eine Gruppe ist die einzige Stelle, an der sich mehrere Bilder
+   eine Reihe teilen, und der einzige Fall, in dem das jemand bestellt hat. */
+.bildgruppe-weitere {
   display: flex;
   gap: 12px;
   align-items: flex-start;
 }
-/* Flex-Kind ist der KLICK-RAHMEN, nicht das Bild: Jedes Bild lässt sich zum
-   Vergrößern anklicken, und der Rahmen darum nimmt am Layout teil. Das Bild
-   füllt ihn aus, die Höhe folgt dem Foto — die Rechnung oben bleibt dieselbe. */
-.bildpaar > * {
+.bildgruppe-weitere > * {
   flex: var(--ar) 1 0;
   min-width: 0;
-}
-.bildpaar img {
-  width: 100%;
-  height: auto;
 }
 
 /* ------------------------------------------------------------------------

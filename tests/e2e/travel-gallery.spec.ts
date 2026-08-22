@@ -123,29 +123,33 @@ test.describe("Reisebericht: Foto-Galerie / Lightbox", () => {
     await expect(caption).toHaveText(alt2 ?? "");
   });
 
-  test("Bilder im Fließtext: Einzelbild, Paar und Galerie öffnen groß", async ({
+  test("Bildgruppen im Fließtext: Einzelbild, Gruppe und Galerie öffnen groß", async ({
     page,
   }) => {
     await page.goto(REPORT);
 
-    // Einzelnes Bild im Text: ein Klick, ein großes Bild, kein Blättern.
-    const einzel = page.locator("article .bildplatz.br-1-3").first();
-    await expect(einzel).toBeVisible();
-    await einzel.click();
+    // Eine Gruppe aus EINEM Bild: ein Klick, ein großes Bild, kein Blättern.
+    const gruppen = page.locator("article .bildgruppe");
+    const einzeln = gruppen.filter({ hasNot: page.locator(".bildgruppe-weitere") }).first();
+    await expect(einzeln.locator("img")).toHaveCount(1);
+    await einzeln.locator("button:has(img)").click();
     const dialog = page.getByRole("dialog", { name: G.dialogLabel });
     await expect(dialog).toBeVisible();
     await expect(page.getByRole("button", { name: G.next })).toHaveCount(0);
     await page.keyboard.press("Escape");
     await expect(dialog).toBeHidden();
 
-    // Ein Paar gehört zusammen — im Pop-up wird zwischen beiden geblättert.
-    const paar = page.locator("article .bildpaar").first();
-    await expect(paar.locator("img")).toHaveCount(2);
-    await paar.locator("button:has(img)").first().click();
+    // Eine Gruppe aus DREI Bildern gehört zusammen: Bühne und Reihe sind EINE
+    // Galerie, das Pop-up blättert über alle drei und zählt alle drei.
+    const dreier = gruppen.nth(4);
+    await expect(dreier.locator("img")).toHaveCount(3);
+    await dreier.locator("button:has(img)").first().click();
     await expect(dialog).toBeVisible();
-    await expect(page.getByText(G.counter(1, 2))).toBeVisible();
+    await expect(page.getByText(G.counter(1, 3))).toBeVisible();
     await page.getByRole("button", { name: G.next }).click();
-    await expect(page.getByText(G.counter(2, 2))).toBeVisible();
+    await expect(page.getByText(G.counter(2, 3))).toBeVisible();
+    await page.getByRole("button", { name: G.next }).click();
+    await expect(page.getByText(G.counter(3, 3))).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(dialog).toBeHidden();
 

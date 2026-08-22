@@ -140,7 +140,6 @@ const contentBlockSchema = z.discriminatedUnion("type", [
     type: z.literal("bild"),
     image: z.string().nullable().default(null),
     /** Höhenstufe (siehe lib/bildreihen.ts); ältere Archive ohne Feld → 'm'. */
-    groesse: z.enum(["s", "m", "l"]).default("m"),
   }),
   z.object({ type: z.literal("restaurant"), index: z.number().int().nonnegative() }),
 ]);

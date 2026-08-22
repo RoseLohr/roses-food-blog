@@ -38,6 +38,27 @@ diesem Repository arbeitet. Sie ist Teil des Governance-Regimes (A-32/A-33/A-37)
 - Deploy-Freigabe liest `audit/engagement-status.json` → `production_eligible`
   (aktuell `false`, bis Part 2/Track C schließt). **Fail-closed.**
 
+## Layout-Regeln, die nicht verhandelbar sind
+- **Bilder im Reisebericht:** Das ERSTE Bild einer Gruppe steht über die ganze
+  Breite, ALLE weiteren darunter in EINER Reihe, gleich hoch. Eine Gruppe ist
+  ein ununterbrochener Lauf von Bildblöcken. Der Block trägt **kein** Feld über
+  sein Aussehen — die Anordnung folgt allein aus der Position. Wer hier wieder
+  einen Regler einführt, führt die Fehlerklasse mit ein, die 0012 beseitigt hat.
+- **`src/app/globals.css` benutzt kein `@layer`.** Tailwind v4 legt seine
+  Utilities in `@layer utilities`; eine blanke Projektklasse schlägt deshalb
+  JEDE Utility (`class="bildgruppe mb-8"` bliebe wirkungslos). Wer einen Wert
+  von außen überschreibbar machen will, braucht `@utility`. Siehe
+  `audit/offene-befunde.md` B7.
+- **Vor und nach jedem Layout-Umbau die Referenzaufnahmen fahren:**
+  `npx playwright test seiten-referenz` (33 Aufnahmen, elf Seitentypen × drei
+  Breiten). Was sich ändern DARF, wird vorher benannt und danach gezielt neu
+  aufgenommen — nie pauschal mit `--update-snapshots`.
+  **Das ist ein ÖRTLICHES Werkzeug und läuft in CI nicht:** Der Läufer rastert
+  Schrift anders, die Seiten werden dort unterschiedlich hoch (Zahlen in
+  `playwright.config.ts` und `audit/offene-befunde.md` B9). Wer es zum Gate
+  machen will, legt zuerst die Rasterungsumgebung fest — die Toleranz wird
+  NICHT angehoben.
+
 ## Arbeitsweise
 - Deutsch in Kommentaren, Commits, UI-Texten. Kleine, atomare Commits.
 - Committer: `Claude <noreply@anthropic.com>`; Push auf den Arbeits-Branch.

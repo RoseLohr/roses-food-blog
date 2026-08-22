@@ -14,19 +14,7 @@ import {
 } from "@/components/admin/quick-add-checkboxes";
 import { RichTextEditor } from "@/components/admin/rich-text-editor";
 import { RESTAURANT_FOTOS_MAX } from "@/lib/restaurant-fotos";
-import {
-  BILD_GROESSEN,
-  BILD_PLAETZE,
-  bildBreitenGross,
-  fliesstText,
-  passtInZeile,
-  tauscheBloecke,
-  seitenverhaeltnis,
-  zeilenBreite,
-  zeilenIndizes,
-  type BildGroesse,
-  type BildPlatz,
-} from "@/lib/bildreihen";
+import { zuRenderBloecken } from "@/lib/bildreihen";
 import {
   bildWirdGespeichert,
   restaurantWirdGespeichert,
@@ -63,13 +51,7 @@ interface EditorRestaurant {
 /** Inhalts-Block (siehe lib/travel-blocks.ts); imageId 0 = noch kein Bild. */
 export type EditorBlockData =
   | { type: "text"; markdown: string }
-  | {
-      type: "bild";
-      imageId: number;
-      groesse: BildGroesse;
-      platz: BildPlatz;
-      mitVorherigem: boolean;
-    }
+  | { type: "bild"; imageId: number }
   | { type: "restaurant"; index: number };
 type EditorBlock = EditorBlockData & { key: string };
 
@@ -112,71 +94,34 @@ const btnSecondary =
   "rounded-lg border border-ink/20 px-3 py-1.5 text-sm hover:bg-cream";
 
 /**
- * Was der Editor über die Zeilen wissen muss — abgeleitet aus DERSELBEN
- * Gruppierung, die auch der Renderer benutzt (`zeilenIndizes`). Die Regel wird
- * hier also nicht ein zweites Mal formuliert, sondern nur angezeigt.
+ * Wo steht jedes Bild in seiner Gruppe? — abgeleitet aus DERSELBEN Regel, die
+ * der Renderer anwendet (`zuRenderBloecken`): Aufeinander folgende Bildblöcke
+ * bilden eine Gruppe, das erste steht über die ganze Breite, alle weiteren
+ * teilen sich die Reihe darunter.
+ *
+ * Gerechnet wird auf der WIRKSAMEN Folge — also der, die nach dem Speichern
+ * übrig bleibt —, und das Ergebnis danach auf die Editor-Indizes zurück
+ * übersetzt. Sonst zeigte der Editor eine Lage an, die es gar nicht gibt.
  */
-interface Zeilenwissen {
-  /** Blockindizes der Zeile, zu der dieser Block gehört. */
-  zeile: number[];
-  /** Greift das Häkchen bei diesem Block wirklich (er ist nicht der erste)? */
-  angehaengt: boolean;
-  /** Darf das Häkchen überhaupt angeboten werden — passt das Bild daneben? */
-  anbietbar: boolean;
-  /**
-   * Die Größen der Zeile DARÜBER. Leer, wenn darüber gar kein Bild steht.
-   *
-   * Für den Hinweis: „geht nicht" ist keine Auskunft. Es gibt genau zwei
-   * Gründe, und sie führen zu verschiedenen Handgriffen — darüber steht kein
-   * Bild (dann eines dorthin schieben), oder die Zeile darüber ist schon voll
-   * (dann eine Größe verkleinern). Der Editor muss sagen, welcher gilt.
-   */
-  davor: BildGroesse[];
-}
-
-function zeilenwissen(
+function gruppenlage(
   blocks: EditorBlock[],
   wirksam: number[],
-): Map<number, Zeilenwissen> {
-  // Gerechnet wird auf der Folge, die WIRKLICH GESPEICHERT wird — nicht auf
-  // dem, was im Editor untereinander steht. Ein Block, den der Server ohnehin
-  // verwirft (Restaurant ohne Namen, Bild ohne Foto, leerer Text), steht im
-  // Bericht nicht und darf deshalb auch keine Bildzeile brechen. Vorher tat er
-  // es: Der Editor strich die Zeilenzugehörigkeit des unteren Bildes, der
-  // Server warf den Block weg — und übrig blieb eine zerrissene Zeile ohne
-  // sichtbare Ursache.
+): Map<number, { pos: number; anzahl: number }> {
   const folge = wirksam.map((i) => blocks[i]);
-  const zeilen = zeilenIndizes(folge);
-  const zeileVon = new Map<number, number[]>();
-  for (const z of zeilen) for (const e of z) zeileVon.set(e, z);
-
-  const wissen = new Map<number, Zeilenwissen>();
-  for (const [e, zeile] of zeileVon) {
-    const block = folge[e];
-    if (block.type !== "bild") continue;
-    // Anbietbar ist das Häkchen, wenn direkt darüber ein Bild steht und dieses
-    // Bild noch in dessen Zeile passt — also die Summe der Anteile die Spalte
-    // nicht überschreitet. Steht der Block schon in einer Zeile mit anderen,
-    // ist die Frage schon beantwortet.
-    const davor = zeileVon.get(e - 1);
-    const davorGroessen = (davor ?? [])
-      .filter((k) => k !== e)
-      .map((k) => folge[k])
-      .filter((b) => b.type === "bild")
-      .map((b) => b.groesse);
-    // Nach außen wieder in Original-Indizes, damit die Anzeige weiß, welcher
-    // Block im Editor gemeint ist.
-    wissen.set(wirksam[e], {
-      zeile: zeile.map((k) => wirksam[k]),
-      angehaengt: zeile[0] !== e,
-      anbietbar:
-        davor !== undefined &&
-        davorGroessen.length > 0 &&
-        passtInZeile(davorGroessen, block.groesse),
-      davor: davor === undefined ? [] : davorGroessen,
-    });
-  }
-  return wissen;
+  const lage = new Map<number, { pos: number; anzahl: number }>();
+  let gruppe: number[] = [];
+  const schliessen = () => {
+    for (const [pos, k] of gruppe.entries()) {
+      lage.set(wirksam[k], { pos, anzahl: gruppe.length });
+    }
+    gruppe = [];
+  };
+  folge.forEach((b, k) => {
+    if (b.type === "bild") gruppe.push(k);
+    else schliessen();
+  });
+  schliessen();
+  return lage;
 }
 
 /**
@@ -205,116 +150,6 @@ function wirksameIndizes(
     if (bleibt) out.push(i);
   });
   return out;
-}
-
-/**
- * Fertige Anzeigegröße eines Bildes in Pixeln — die Antwort auf die Frage,
- * die der alte Höhen-Schalter offenließ. Spalte 816 px ab 929 px Fenster.
- *
- * Steht das Bild in einer Zeile mit anderen, hängt seine Breite von DEREN
- * Formaten ab (die Zeile wird nach Seitenverhältnis verteilt). Gerechnet wird
- * deshalb mit derselben Funktion wie im Frontend, nicht mit einer Näherung.
- */
-function fertigeGroesse(
-  blocks: EditorBlock[],
-  zeile: number[],
-  i: number,
-  bildZu: (id: number) => { width?: number; height?: number } | undefined,
-): { breite: number; hoehe: number } | null {
-  const bilder = zeile
-    .map((k) => blocks[k])
-    .filter((b) => b.type === "bild")
-    .map((b) => ({ block: b, bild: bildZu(b.imageId) }));
-  if (bilder.some((x) => !x.bild?.width || !x.bild.height)) return null;
-
-  const breiten = bildBreitenGross(
-    zeilenBreite(bilder.map((x) => x.block.groesse)),
-    bilder.map((x) => seitenverhaeltnis(x.bild!.width!, x.bild!.height!)),
-  );
-  const pos = zeile.indexOf(i);
-  const eigen = bilder[pos];
-  const breite = breiten[pos];
-  if (breite === undefined || eigen === undefined) return null;
-  return {
-    breite,
-    hoehe: Math.round((breite * eigen.bild!.height!) / eigen.bild!.width!),
-  };
-}
-
-function GroessenSchalter({
-  wert,
-  gesperrt,
-  onChange,
-}: {
-  wert: BildGroesse;
-  gesperrt: boolean;
-  onChange: (g: BildGroesse) => void;
-}) {
-  return (
-    <div
-      role="group"
-      aria-label={d.blockSize}
-      className="inline-flex overflow-hidden rounded-lg border border-ink/20"
-    >
-      {BILD_GROESSEN.map((g) => {
-        const aktiv = g === wert;
-        return (
-          <button
-            key={g}
-            type="button"
-            aria-pressed={aktiv}
-            disabled={gesperrt}
-            title={d.blockSizeOptions[g].title}
-            onClick={() => onChange(g)}
-            className={`border-r border-ink/15 px-4 py-1.5 text-sm font-semibold last:border-r-0 ${
-              aktiv ? "bg-leaf text-white" : "hover:bg-cream"
-            } ${gesperrt ? "opacity-40" : ""}`}
-          >
-            {d.blockSizeOptions[g].label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-/** Links oder rechts. Bei `l` gibt es keine Seite, bei einem angehängten Bild
- *  kommt sie vom Partner — in beiden Fällen steht der Schalter still. */
-function PlatzSchalter({
-  wert,
-  gesperrt,
-  onChange,
-}: {
-  wert: BildPlatz;
-  gesperrt: boolean;
-  onChange: (p: BildPlatz) => void;
-}) {
-  return (
-    <div
-      role="group"
-      aria-label={d.blockPlace}
-      className="inline-flex overflow-hidden rounded-lg border border-ink/20"
-    >
-      {BILD_PLAETZE.map((p) => {
-        const aktiv = p === wert;
-        return (
-          <button
-            key={p}
-            type="button"
-            aria-pressed={aktiv}
-            disabled={gesperrt}
-            title={d.blockPlaceOptions[p].title}
-            onClick={() => onChange(p)}
-            className={`border-r border-ink/15 px-4 py-1.5 text-sm font-semibold last:border-r-0 ${
-              aktiv ? "bg-leaf text-white" : "hover:bg-cream"
-            } ${gesperrt ? "opacity-40" : ""}`}
-          >
-            {d.blockPlaceOptions[p].label}
-          </button>
-        );
-      })}
-    </div>
-  );
 }
 
 function emptyDish(): EditorDish {
@@ -373,33 +208,23 @@ export function TravelEditor({
     () => wirksameIndizes(blocks, restaurants),
     [blocks, restaurants],
   );
-  const wissen = zeilenwissen(blocks, wirksam);
   const wirksamSet = new Set(wirksam);
-
-  // Der Editor STREICHT keine Zeilenzugehörigkeit mehr.
-  //
-  // Vorher tat er es: Er rechnete aus, welche Blöcke das Speichern behalten
-  // würde, und löschte jede Flagge, die in dieser Folge nicht wirken könnte.
-  // Das war eine VERMUTUNG über den Server — und jede Vermutung ist eine
-  // Stelle, an der beide auseinandergehen. Die unabhängige Prüfung hat drei
-  // davon gefunden: ein Restaurant ohne Namen, ein leerer Textblock, und ein
-  // Altbestand-Block, der nur aus `&#8203;` besteht. In allen drei Fällen
-  // strich der Editor eine Flagge, der Server warf danach den Block weg — und
-  // die Bildzeile blieb zerrissen, obwohl nichts mehr dazwischenstand.
-  //
-  // Die Absicht bleibt jetzt stehen, und WO sie wirkt, entscheidet erst
-  // `gruppiere()` beim Rendern — auf der endgültigen, gespeicherten Folge. Ein
-  // Häkchen, das gerade nicht greift, ist kein Fehler: Es ist eine Absicht, die
-  // wieder greift, sobald nichts mehr dazwischensteht. Der Editor zeigt es
-  // angehakt und sagt dazu, warum es hier gerade nichts bewirkt.
+  // Wo landet welches Bild? Abgeleitet aus DERSELBEN Gruppierung, die auch der
+  // Renderer benutzt, und auf der Folge, die das Speichern übrig lässt — sonst
+  // zeigte der Editor eine Lage an, die es nach dem Speichern nicht gibt.
+  const lage = gruppenlage(blocks, wirksam);
   const updateBlock = (i: number, patch: Partial<EditorBlockData>) =>
     setBlocks((prev) =>
       prev.map((b, idx) => (idx === i ? ({ ...b, ...patch } as EditorBlock) : b)),
     );
   const moveBlock = (i: number, dir: -1 | 1) =>
-    // Beim Tauschen bleiben die Flaggen an ihrer POSITION — sonst zerfiele eine
-    // Zeile, in der jemand nur die Reihenfolge geändert hat.
-    setBlocks((prev) => tauscheBloecke(prev, i, dir));
+    setBlocks((prev) => {
+      const j = i + dir;
+      if (j < 0 || j >= prev.length) return prev;
+      const next = [...prev];
+      [next[i], next[j]] = [next[j], next[i]];
+      return next;
+    });
   const removeBlock = (i: number) =>
     setBlocks((prev) => prev.filter((_, idx) => idx !== i));
   const addBlock = (b: EditorBlockData) =>
@@ -652,125 +477,30 @@ export function TravelEditor({
                       onChange={(md) => updateBlock(i, { markdown: md })}
                     />
                   )}
-                  {b.type === "bild" &&
-                    (() => {
-                      const w = wissen.get(i);
-                      const gepaart = w?.angehaengt ?? false;
-                      const anbietbar = w?.anbietbar ?? false;
-                      const davor = w?.davor ?? [];
-                      // Warum das Häkchen nicht greift — die beiden Gründe
-                      // führen zu verschiedenen Handgriffen.
-                      const grund = anbietbar
-                        ? undefined
-                        : davor.length === 0
-                          ? d.blockWithPreviousOff
-                          : d.blockWithPreviousNoFit(davor, b.groesse);
-                      const zeile = w?.zeile ?? [i];
-                      const zeilenGroessen = zeile
-                        .map((k) => blocks[k])
-                        .filter((x) => x.type === "bild")
-                        .map((x) => x.groesse);
-                      // Seite und Umfluss gelten für die ganze Zeile und kommen
-                      // vom ersten Bild — dieselbe Regel wie im Frontend.
-                      const erstes = blocks[zeile[0]];
-                      const zeilenPlatz =
-                        erstes?.type === "bild" && fliesstText(zeilenGroessen)
-                          ? erstes.platz
-                          : null;
-                      const fertig = fertigeGroesse(
-                        blocks,
-                        zeile,
-                        i,
-                        (id) => images.find((x) => x.id === id),
-                      );
-                      return (
-                        <>
-                          <ImagePicker
-                            legend={d.blockImage}
-                            options={images}
-                            multiple={false}
-                            value={b.imageId > 0 ? [b.imageId] : []}
-                            onChange={(ids) =>
-                              updateBlock(i, { imageId: ids[0] ?? 0 })
-                            }
-                          />
-                          <div className="mt-3 flex flex-wrap items-end gap-x-6 gap-y-3">
-                            <div>
-                              <span className={labelCls}>{d.blockSize}</span>
-                              {/* Auch in einer Zeile behält jedes Bild seine
-                                  eigene Größe — sie ist sein Anteil an der
-                                  Zeile. Nur die SEITE kommt vom ersten Bild. */}
-                              <GroessenSchalter
-                                wert={b.groesse}
-                                gesperrt={false}
-                                onChange={(g) => updateBlock(i, { groesse: g })}
-                              />
-                            </div>
-                            <div>
-                              <span className={labelCls}>{d.blockPlace}</span>
-                              <PlatzSchalter
-                                wert={b.platz}
-                                gesperrt={gepaart || b.groesse === "l"}
-                                onChange={(p) => updateBlock(i, { platz: p })}
-                              />
-                            </div>
-                          </div>
-                          <label
-                            className={`mt-3 flex items-start gap-2 text-sm ${
-                              anbietbar ? "" : "opacity-50"
-                            }`}
-                            title={grund}
-                          >
-                            <input
-                              type="checkbox"
-                              className="mt-1 h-4 w-4 accent-leaf"
-                              /* Die ABSICHT, nicht die abgeleitete Wirkung: Was
-                                 hier steht, ist das, was gespeichert wird. Beide
-                                 fallen zusammen, weil jede Änderung durch
-                                 normalisiereZeilen läuft — vorher konnte eine
-                                 gespeicherte Flagge unangekreuzt danebenstehen
-                                 und später still greifen. */
-                              checked={b.mitVorherigem}
-                              /* NIE gesperrt. Das Häkchen trägt eine Absicht,
-                                 und eine Absicht muss man zurücknehmen können:
-                                 Ein gesetztes Häkchen, das nicht mehr abwählbar
-                                 ist, bleibt gespeichert und greift wieder,
-                                 sobald über dem Bild eines steht — ohne dass
-                                 jemand das noch ändern konnte. Warum es hier
-                                 gerade nichts bewirkt, sagt der Hinweis
-                                 darunter. */
-                              onChange={(e) =>
-                                updateBlock(i, { mitVorherigem: e.target.checked })
-                              }
-                            />
-                            <span>{d.blockWithPrevious}</span>
-                          </label>
-                          {grund && (
-                            <p className="mt-1 text-xs text-ink-soft">{grund}</p>
-                          )}
-                          <p className="mt-2 border-l-2 border-leaf bg-leaf/[0.06] px-3 py-1.5 text-xs text-ink-soft">
-                            {zeilenPlatz === null
-                              ? zeilenBreite(zeilenGroessen).n === 1
-                                ? d.blockFullWidth
-                                : d.blockNoFlow
-                              : zeilenPlatz === "rechts"
-                                ? d.blockFloatRight
-                                : d.blockFloatLeft}
-                            {zeilenGroessen.length > 1 && (
-                              <> {d.blockInRow(zeilenGroessen.length)}</>
-                            )}
-                            {fertig && (
-                              <>
-                                {" "}
-                                <b className="font-semibold text-ink">
-                                  {d.blockRendered(fertig.breite, fertig.hoehe)}
-                                </b>
-                              </>
-                            )}
-                          </p>
-                        </>
-                      );
-                    })()}
+                  {b.type === "bild" && (
+                    <>
+                      <ImagePicker
+                        legend={d.blockImage}
+                        options={images}
+                        multiple={false}
+                        value={b.imageId > 0 ? [b.imageId] : []}
+                        onChange={(ids) => updateBlock(i, { imageId: ids[0] ?? 0 })}
+                      />
+                      {/* Kein Regler mehr — nur die Auskunft, WO dieses Bild
+                          landet. Die Anordnung folgt allein aus der Position:
+                          das erste Bild einer Gruppe über die ganze Breite,
+                          alle weiteren in der Reihe darunter. */}
+                      <p className="mt-2 border-l-2 border-leaf bg-leaf/[0.06] px-3 py-1.5 text-xs text-ink-soft">
+                        {(() => {
+                          const g = lage.get(i);
+                          if (!g) return d.blockGruppeAllein;
+                          return g.pos === 0
+                            ? d.blockGruppeErstes(g.anzahl)
+                            : d.blockGruppeWeiteres(g.pos + 1, g.anzahl);
+                        })()}
+                      </p>
+                    </>
+                  )}
                   {!wirksamSet.has(i) && (
                     <p className="mb-2 border-l-2 border-ink/25 bg-ink/[0.04] px-3 py-1.5 text-xs text-ink-soft">
                       {d.blockNichtGespeichert[b.type]}
@@ -807,13 +537,7 @@ export function TravelEditor({
                 </button>
                 <button
                   type="button"
-                  onClick={() => addBlock({
-                      type: "bild",
-                      imageId: 0,
-                      groesse: "m",
-                      platz: "rechts",
-                      mitVorherigem: false,
-                    })}
+                  onClick={() => addBlock({ type: "bild", imageId: 0 })}
                   className={btnSecondary}
                 >
                   + {d.blockImage}

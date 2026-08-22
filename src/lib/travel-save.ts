@@ -435,9 +435,6 @@ export async function saveTravelFromForm(
             sortOrder: i,
             type: "bild" as const,
             imageId: b.imageId,
-            groesse: b.groesse,
-            platz: b.platz,
-            mitVorherigem: b.mitVorherigem,
           };
         }
         return {

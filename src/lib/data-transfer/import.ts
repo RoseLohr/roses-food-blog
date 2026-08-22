@@ -420,17 +420,11 @@ export async function importBundle(
       } else if (b.type === "bild") {
         const imgId = await importImage(b.image);
         if (imgId != null)
-          blocks.push({
-            type: "bild",
-            imageId: imgId,
-            groesse: b.groesse,
-            // Ein Export von vor dem Umbau kennt Platz und Paarung nicht; die
-            // Vorgaben stellen jedes Bild einzeln nach rechts. Die Berichte
-            // werden danach von Hand nachgezogen (so abgestimmt) — raten wäre
-            // schlechter als eine sichtbare, einheitliche Ausgangslage.
-            platz: "rechts",
-            mitVorherigem: false,
-          });
+          // Der Bildblock trägt nichts über sein Aussehen — die Anordnung
+          // folgt aus der Position. Ein Archiv von vor dem Umbau bringt zwar
+          // noch `groesse`/`platz` mit; die Felder werden schlicht nicht mehr
+          // gelesen, und die Reihenfolge im Archiv genügt.
+          blocks.push({ type: "bild", imageId: imgId });
       } else if (b.index < tv.restaurants.length) {
         blocks.push({ type: "restaurant", index: b.index });
       }
@@ -585,7 +579,6 @@ export async function importBundle(
           sortOrder: i,
           type: "bild",
           imageId: b.imageId,
-          groesse: b.groesse,
         });
       } else {
         const restaurantId = restaurantIdByIndex[b.index];

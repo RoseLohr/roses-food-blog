@@ -269,9 +269,6 @@ export async function getFullTravelPost(
         blocks.push({
           type: "bild",
           imageId: b.imageId,
-          groesse: b.groesse,
-          platz: b.platz,
-          mitVorherigem: b.mitVorherigem,
         });
     } else {
       const idx =
