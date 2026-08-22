@@ -113,9 +113,21 @@ jobs:
           # Ohne --others --exclude-standard listet git nur VERFOLGTE Dateien:
           # eine frisch geschriebene .sh waere im lokalen Gate-Lauf unsichtbar
           # (Vorfall 2026-08-21, tests/gate-sichtbarkeit.test.ts).
-          dateien=$(git ls-files --cached --others --exclude-standard '*.sh')
-          test -n "$dateien" || { echo "Keine Shell-Dateien gefunden — pruefe den Glob."; exit 1; }
-          for f in $dateien; do echo "bash -n $f"; bash -n "$f"; done
+          #
+          # Und NUL-getrennt statt zeilen-/wortweise: `for f in $dateien` zerlegt
+          # an Leerzeichen. Gemessen an einer Datei „mit luecke.sh": Sie zerfaellt
+          # in zwei nicht existierende Pfade, `bash -n` meldet „No such file" —
+          # und der echte Syntaxfehler IN der Datei wird nie geprueft. Mit
+          # --others sind unverfolgte Dateien dabei, bei denen so etwas
+          # wahrscheinlicher ist als bei verfolgten.
+          anzahl=0
+          while IFS= read -r -d "" f; do
+            echo "bash -n $f"
+            bash -n "$f"
+            anzahl=$((anzahl + 1))
+          done < <(git ls-files -z --cached --others --exclude-standard '*.sh')
+          test "$anzahl" -gt 0 || { echo "Keine Shell-Dateien gefunden — pruefe den Glob."; exit 1; }
+          echo "$anzahl Shell-Dateien geprueft."
       - name: Kalibrierung (A-36, Kontrollen fangen ihre Seeds — inkl. Track C)
         run: node scripts/regime/calibration/inject.mjs --strict
       - name: Tests (vitest)

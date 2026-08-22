@@ -65,6 +65,69 @@ describe("Gates sehen auch neue Dateien", () => {
     expect(gefunden, ".gitignore muss weiter gelten").not.toContain("ignoriert.sh");
   });
 
+  it("ein Dateiname mit Leerzeichen zerfällt bei Wortzerlegung — NUL-getrennt nicht", () => {
+    // BEFUND DES PFLICHT-APPROVERS (PR #105) zum Shell-Syntax-Schritt: Die
+    // Aufzählung wurde mit `for f in $dateien` durchlaufen, und das zerlegt an
+    // Leerzeichen. Gemessen — nicht behauptet — in einem Wegwerf-Repository:
+    // Eine Datei „mit luecke.sh" mit ECHTEM Syntaxfehler zerfällt in zwei nicht
+    // existierende Pfade; `bash -n` meldet „No such file", und der Fehler IN
+    // der Datei wird nie gesehen.
+    //
+    // Das wiegt seit dem 21.08. schwerer: Mit `--others` sind unverfolgte
+    // Dateien dabei, bei denen ungewöhnliche Namen wahrscheinlicher sind.
+    const verzeichnis = fs.mkdtempSync(path.join(os.tmpdir(), "gate-ws-"));
+    try {
+      const git = (...args: string[]) => execFileSync("git", args, { cwd: verzeichnis, encoding: "utf8" });
+      git("init", "-q");
+      // Unvollständiges if: bash -n MUSS das beanstanden.
+      fs.writeFileSync(path.join(verzeichnis, "mit luecke.sh"), "#!/bin/sh\nif [ 1 = 1 ]\n");
+      fs.writeFileSync(path.join(verzeichnis, "sauber.sh"), "#!/bin/sh\ntrue\n");
+
+      const wortweise = execFileSync(
+        "bash",
+        ["-c", 'd=$(git ls-files --cached --others --exclude-standard "*.sh"); for f in $d; do echo "[$f]"; done'],
+        { cwd: verzeichnis, encoding: "utf8" },
+      ).trim().split("\n");
+      expect(wortweise, "die Wortzerlegung zerreißt den Namen").toContain("[mit]");
+      expect(wortweise).not.toContain("[mit luecke.sh]");
+
+      const nulweise = execFileSync(
+        "bash",
+        [
+          "-c",
+          'while IFS= read -r -d "" f; do echo "[$f]"; done < <(git ls-files -z --cached --others --exclude-standard "*.sh")',
+        ],
+        { cwd: verzeichnis, encoding: "utf8" },
+      ).trim().split("\n");
+      expect(nulweise, "NUL-getrennt bleibt der Name ganz").toContain("[mit luecke.sh]");
+      expect(nulweise).toContain("[sauber.sh]");
+    } finally {
+      fs.rmSync(verzeichnis, { recursive: true, force: true });
+    }
+  });
+
+  it("der Shell-Syntax-Schritt in CI zerlegt nicht an Leerzeichen", () => {
+    const ci = fs.readFileSync(path.join(ROOT, ".github/workflows/ci.yml"), "utf8");
+    const roh = ci.slice(ci.indexOf("Shell-Syntax"), ci.indexOf("Kalibrierung"));
+    // Die Kommentare abtrennen. Der Schritt ERKLÄRT, warum er nicht mehr
+    // `for f in $dateien` benutzt — und nennt die Form dabei. Eine Prüfung auf
+    // dem Rohtext scheiterte an genau dieser Erklärung und wäre nur durch
+    // Umformulieren zu befriedigen. Dieselbe Falle steckt in der
+    // Heredoc-Prüfung von tests/deploy-betrieb.test.ts.
+    const code = roh
+      .split("\n")
+      .filter((z) => !z.trimStart().startsWith("#"))
+      .join("\n");
+    expect(roh, "die Begründung im Kommentar soll erhalten bleiben").toMatch(/for f in \$/);
+    expect(code, "die Abtrennung muss den Kommentar wirklich entfernen").not.toMatch(/zerlegt an Leerzeichen/);
+
+    expect(code, "die Liste muss NUL-getrennt gelesen werden").toContain("git ls-files -z");
+    expect(code, "und NUL-getrennt durchlaufen werden").toMatch(/while IFS= read -r -d ""/);
+    expect(code, "kein `for f in $…` über die Liste").not.toMatch(/for f in \$/);
+    // Und die Aufzählung darf nicht stillschweigend leer sein.
+    expect(code).toMatch(/anzahl.*-gt 0/);
+  });
+
   it("alle Kontrollen, die so aufzählen, benutzen die Flags", () => {
     // Der Regress-Schutz: Wer künftig eine Kontrolle mit `git ls-files` baut
     // oder die Flags entfernt, fällt hier auf.

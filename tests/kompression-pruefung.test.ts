@@ -22,6 +22,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { execFile } from "node:child_process";
 import { createServer, type Server } from "node:http";
 import { createServer as createServerTls } from "node:https";
+import net from "node:net";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -281,6 +282,39 @@ function tlsServerVertrauenswuerdig(tage: number): Promise<{ basis: string; bund
   });
 }
 
+/**
+ * Nimmt die TCP-Verbindung an und schweigt danach — kein TLS, keine Antwort.
+ * Genau die Lage, in der `openssl s_client` unbegrenzt wartet (nachgemessen:
+ * nach 12 s noch immer offen) und in der eine Prüfung ohne Zeitgrenze das
+ * ganze Deployment hängen lässt.
+ */
+function schwarzesLochStarten(): Promise<string> {
+  return new Promise((aufloesen) => {
+    // Die offenen Sitzungen festhalten und beim Abräumen zerstören: `close()`
+    // wartet sonst auf eine Verbindung, die per Konstruktion nie endet — der
+    // afterEach-Haken lief in seine eigene Zeitgrenze.
+    const sitzungen: net.Socket[] = [];
+    const lauscher = net.createServer((sitzung) => {
+      sitzungen.push(sitzung);
+      sitzung.on("error", () => {
+        // Der Client bricht ab, wenn seine Zeitgrenze greift. Das ist der
+        // erwartete Verlauf, kein Fehler dieser Attrappe.
+      });
+    });
+    const schliessen = lauscher.close.bind(lauscher);
+    lauscher.close = ((rueckruf?: (f?: Error) => void) => {
+      for (const s of sitzungen) s.destroy();
+      return schliessen(rueckruf);
+    }) as typeof lauscher.close;
+    server = lauscher as unknown as Server;
+    lauscher.listen(0, "127.0.0.1", () => {
+      const adresse = lauscher.address();
+      if (typeof adresse === "string" || adresse === null) throw new Error("keine Adresse");
+      aufloesen(`https://127.0.0.1:${adresse.port}`);
+    });
+  });
+}
+
 const ALLES = new Set(["text/html", "text/css", "application/javascript"]);
 
 describe("Kompressionsprüfung", () => {
@@ -396,10 +430,17 @@ describe("Kompressionsprüfung", () => {
     //
     // Hier verlangt der Aufruf eine andere Adresse als die, unter der der
     // Prüfstand wirklich läuft. Stillschweigend weitermessen wäre der Fehler.
+    // NACHTRAG 2026-08-22: Diese Prüfung erwartete die Meldung „blieb
+    // wirkungslos" — und die war für genau diesen Aufbau FALSCH. curl wendet
+    // die --resolve-Angabe hier sehr wohl an und wählt 127.0.0.2; dort lauscht
+    // nur nichts. Die alte Meldung entstand, weil der Wirksamkeitstest
+    // %{remote_ip} liest und der bei einer abgelehnten Verbindung leer bleibt.
+    // Dieselbe Fehlerklasse wie beim TLS-Abbruch: eine Meldung, die woanders
+    // hinzeigt. Der Abbruch bleibt richtig, die Begründung ist jetzt die wahre.
     const basis = await starten({ komprimiert: ALLES });
     const { code, ausgabe } = await pruefen(basis, "ursprung", "127.0.0.2");
     expect(code, ausgabe).not.toBe(0);
-    expect(ausgabe).toMatch(/blieb wirkungslos/);
+    expect(ausgabe).toMatch(/Verbindung zu 127\.0\.0\.2:\d+ \(für '127\.0\.0\.1' aufgelöst\) wird abgelehnt/);
   });
 
   it("misst mit --aufloesen auf dem tatsächlichen Port weiter", async () => {
@@ -574,5 +615,44 @@ describe("Kompressionsprüfung", () => {
     // Fehler von oben käme unter anderem Namen zurück.
     const seite = fs.readFileSync(path.join(process.cwd(), "src/app/(public)/page.tsx"), "utf8");
     expect(seite).toContain('<main data-seite="start">');
+  });
+
+  it("hängt nicht an einer Gegenstelle, die annimmt und dann schweigt", async () => {
+    // BEFUND DES PFLICHT-APPROVERS (PR #105): `openssl s_client` in der
+    // Zertifikatsauskunft hatte keine Zeitgrenze. Dieses Skript läuft in
+    // deploy.sh Abschnitt 9c — ein unbegrenzter Aufruf hängt dort das
+    // Deployment, und zwar in einer Funktion, die bei einer Störung helfen soll.
+    //
+    // Zusätzlich hier festgehalten: Eine stumme Gegenstelle lief vorher in DREI
+    // Zeitgrenzen nacheinander (diese Prüfung, dann beide Abrufe der
+    // Startseite) und meldete am Ende „Startseite nicht abrufbar" — dreimal so
+    // lange gewartet für eine Auskunft, die schon beim ersten Versuch feststand.
+    const basis = await schwarzesLochStarten();
+    const begonnen = Date.now();
+    const { code, ausgabe } = await pruefen(basis, "ursprung");
+    const dauer = (Date.now() - begonnen) / 1000;
+
+    expect(code, ausgabe).toBe(1);
+    expect(ausgabe, "die Meldung muss sagen, dass gar keine Antwort kam").toMatch(
+      /keine Antwort von .* innerhalb der Zeitgrenze/,
+    );
+    expect(ausgabe, "und dass das kein Kompressionsbefund ist").toMatch(/kein Kompressionsbefund/);
+    // Eine Zeitgrenze von curl (25 s) plus Anlauf. Ohne die Klassifizierung
+    // oben wären es drei davon.
+    expect(dauer, `${dauer.toFixed(1)}s gebraucht — es darf nur EINE Zeitgrenze sein`).toBeLessThan(45);
+  }, 90_000);
+
+  it("begrenzt den openssl-Aufruf der Zertifikatsauskunft", () => {
+    // Der Beleg für die Grenze selbst. Der Weg, auf dem sie greift, verlangt
+    // eine Zustandsänderung zwischen curls Versuch und diesem — nachstellbar
+    // ist er im Test nicht, unbegrenzt darf er trotzdem nicht sein.
+    const skript = fs.readFileSync(SKRIPT, "utf8");
+    const stelle = skript.slice(skript.indexOf("zert_auskunft()"), skript.indexOf("CURL=("));
+    expect(stelle, "der s_client-Aufruf muss zeitlich begrenzt sein").toMatch(
+      /"\$\{begrenzt\[@\]\}"\s+openssl s_client/,
+    );
+    expect(stelle, "und die Grenze nur setzen, wenn timeout vorhanden ist").toMatch(
+      /command -v timeout .* begrenzt=\(timeout \d+\)/,
+    );
   });
 });

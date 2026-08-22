@@ -83,8 +83,20 @@ zert_auskunft() {
     echo "        (openssl nicht vorhanden — Restlaufzeit nicht ermittelt)"
     return 0
   fi
-  local roh
-  roh=$(printf '' | openssl s_client -connect "$ziel:$PORT" -servername "$HOST" 2>/dev/null \
+  # `openssl s_client` hat keine Zeitgrenze für den Handshake. Nimmt die
+  # Gegenstelle die TCP-Verbindung an und schweigt danach, wartet es
+  # UNBEGRENZT — nachgestellt: nach 12 s noch immer offen. Dieses Skript läuft
+  # in deploy.sh Abschnitt 9c; ein unbegrenzter Aufruf hängt dort das ganze
+  # Deployment, und zwar ausgerechnet in einer Funktion, die bei einer Störung
+  # helfen soll. (Befund des Pflicht-Approvers, PR #105.)
+  #
+  # Der Fall braucht eine Zustandsänderung zwischen curls Versuch und diesem —
+  # curl hat vorher eine Antwort bekommen, sonst wären wir nicht hier. Genau
+  # deshalb ist die Grenze billig und richtig: Sie kostet nichts und nimmt dem
+  # Deploy die Möglichkeit, endlos zu warten.
+  local roh begrenzt=()
+  command -v timeout >/dev/null 2>&1 && begrenzt=(timeout 10)
+  roh=$(printf '' | "${begrenzt[@]}" openssl s_client -connect "$ziel:$PORT" -servername "$HOST" 2>/dev/null \
         | openssl x509 -noout -subject -enddate 2>/dev/null) || roh=""
   if [ -z "$roh" ]; then
     echo "        (Zertifikat nicht lesbar — die Gegenstelle antwortet nicht oder spricht kein TLS)"
@@ -141,10 +153,41 @@ case "$ERST_RC" in
     zert_auskunft "$AUFLOESEN" >&2
     echo "        Solange das nicht behoben ist, wird hier nichts gemessen." >&2
     exit 1 ;;
+  # Gar keine Antwort. Ohne diesen Zweig liefe eine stumme Gegenstelle in DREI
+  # Zeitgrenzen nacheinander (dieser Versuch, dann beide Abrufe der Startseite)
+  # und meldete am Ende „Startseite nicht abrufbar" — dreimal so lange gewartet
+  # für eine Auskunft, die schon hier feststeht.
+  #   6 Name nicht auflösbar · 7 Verbindung abgelehnt · 28 Zeitgrenze
+  6|7|28)
+    # Die Adresse, die WIRKLICH gewählt wurde, benennen — nicht den Namen aus
+    # der Basis. Mit --aufloesen sind das verschiedene Dinge, und eine Meldung,
+    # die auf den Namen zeigt, während die Verbindung zur aufgelösten Adresse
+    # ging, schickt die Fehlersuche an die falsche Stelle.
+    if [ -n "$AUFLOESEN" ]; then
+      wohin="$AUFLOESEN:$PORT (für '$HOST' aufgelöst)"
+    else
+      wohin="$HOST:$PORT"
+    fi
+    case "$ERST_RC" in
+      6) grund="Name '$HOST' ist nicht auflösbar" ;;
+      7) grund="Verbindung zu $wohin wird abgelehnt" ;;
+      *) grund="keine Antwort von $wohin innerhalb der Zeitgrenze" ;;
+    esac
+    echo "FEHLER: $grund (curl-Rückgabewert $ERST_RC)." >&2
+    echo "        Hier wird nichts gemessen — das ist kein Kompressionsbefund." >&2
+    exit 1 ;;
 esac
 
 # Und weil eine still wirkungslose Auflösung genau der Fehler wäre, den diese
-# Datei verhindern soll: nachsehen, ob sie wirklich gegriffen hat. Ein
+# Datei verhindern soll: nachsehen, ob sie wirklich gegriffen hat.
+#
+# HINWEIS zur Reichweite: Seit der Port aus der Basis kommt (statt fest 80/443
+# zu sein), passt die --resolve-Angabe immer zur Anfrage — der ursprüngliche
+# Auslöser aus PR #102 ist damit von außen nicht mehr herstellbar. Diese Prüfung
+# ist deshalb heute Regressionsschutz gegen eine künftige Codeänderung, nicht
+# mehr eine Prüfung gegen eine erreichbare Fehlbedienung. Eine tote Zieladresse
+# fällt schon oben durch (Rückgabewert 7) — und wird dort auch als das benannt,
+# was sie ist, statt als „Auflösung wirkungslos". Ein
 # `--resolve` greift zum Beispiel auch dann nicht, wenn die Basis bereits eine
 # IP-Adresse statt eines Namens trägt. Ohne diese Nachfrage könnte das
 # Ursprungs-Gate grün melden, während es das CDN vermessen hat.
