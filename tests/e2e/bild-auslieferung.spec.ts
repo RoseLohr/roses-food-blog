@@ -85,6 +85,10 @@ interface Messung {
   naturalWidth: number;
   /** Für die Flächengewichtung im Budget: echtes Seitenverhältnis der Datei. */
   naturalHeight: number;
+  /** Nur für die Diagnose eines Ausreißers — nicht für die Bewertung. */
+  sizes: string;
+  /** dito: die Klassen des Bildes und seines Elternelements. */
+  klassen: string;
 }
 
 function verfuegbareBreiten(m: Messung): number[] {
@@ -137,6 +141,42 @@ async function messeSeite(
     )
     .toEqual([]);
 
+  // ── UND DIE SEITE MUSS ZUR RUHE GEKOMMEN SEIN (B2) ────────────────────────
+  //
+  // „Alle geladen" heißt nicht „alle da". Gemessen wurden je Lauf
+  // unterschiedlich viele Bilder — 141, 143, 150 über drei Läufe. Bilder
+  // kommen nach der Hydration noch dazu (Galerie-Streifen, Slider-Folien), und
+  // ein Bild, dessen Layout noch nicht steht, hat Breite 0 und fällt aus der
+  // Messung. Die Grundgesamtheit hing damit am Zeitpunkt.
+  //
+  // Deshalb: warten, bis die ANZAHL messbarer Upload-Bilder über mehrere
+  // Stichproben gleich bleibt. Kein festes `waitForTimeout` — das wäre wieder
+  // eine Wette auf die Maschine.
+  const zaehle = () =>
+    page.evaluate(
+      () =>
+        Array.from(document.querySelectorAll("img")).filter(
+          (i) =>
+            i.currentSrc.includes("/uploads/") &&
+            i.getBoundingClientRect().width > 0,
+        ).length,
+    );
+  let ruhig = 0;
+  let letzte = -1;
+  const bis = Date.now() + 15_000;
+  while (ruhig < 3 && Date.now() < bis) {
+    const jetzt = await zaehle();
+    ruhig = jetzt === letzte ? ruhig + 1 : 0;
+    letzte = jetzt;
+    if (ruhig < 3) await page.waitForTimeout(150);
+  }
+  expect(
+    ruhig,
+    `${seite} (${kontext.name}): Zahl der messbaren Bilder kam nicht zur Ruhe ` +
+      `(zuletzt ${letzte}). Ohne feste Grundgesamtheit ist das Budget nicht ` +
+      `vergleichbar.`,
+  ).toBeGreaterThanOrEqual(3);
+
   const daten = await page.evaluate(() =>
     Array.from(document.querySelectorAll("img"))
       .map((img) => ({
@@ -145,6 +185,13 @@ async function messeSeite(
         breite: img.getBoundingClientRect().width,
         naturalWidth: img.naturalWidth,
         naturalHeight: img.naturalHeight,
+        // Diagnose: Ein Ausreißer ist fast immer ein `sizes`, das für DIESE
+        // Stelle nicht stimmt. Ohne die Angabe muss man sie im Quelltext
+        // suchen — und die Klassen sagen einem, WO man suchen muss.
+        sizes: img.getAttribute("sizes") ?? "(kein sizes)",
+        klassen:
+          `${img.className || "—"}` +
+          (img.parentElement ? ` | Eltern: ${img.parentElement.className || "—"}` : ""),
       }))
       .filter((d) => d.current.includes("/uploads/") && d.breite > 0),
   );
@@ -261,14 +308,22 @@ test.describe("Bild-Auslieferung: gewählte Variante passt zur Rendergröße", (
  */
 /**
  * Gemessen mit der korrigierten Metrik: alte Leiter 41,2 %, mit der Stufe 1152
- * noch 28,8 % (101 gewertete Bilder, 7 unterlieferte bleiben außen vor).
- * Der Deckel liegt dazwischen — wer 1152 wieder entfernt, wird rot, und
- * zugleich bleibt genug Luft für Rundungsunterschiede zwischen dem lokalen
- * und dem in CI installierten Chromium.
+ * noch 28,8 % (damals 101 gewertete Bilder). Wer 1152 wieder entfernt, wird rot.
  *
- * Die Zahlen sind DEUTLICH höher als in den ersten beiden Fassungen (26,6 /
- * 18,5 %). Das ist kein Anstieg der Übergröße, sondern ihre ehrliche Messung:
- * Vorher verdünnten die unterlieferten Bilder den Nenner mit.
+ * STAND 08/2026, nach der Stabilisierung der Grundgesamtheit (B2):
+ *
+ *     Übergröße 30,0 % · 150 gewertet · 18 unterliefert
+ *
+ * und zwar in VIER Läufen hintereinander identisch — vorher schwankte allein
+ * die Zahl der gemessenen Bilder zwischen 141 und 150, weil gemessen wurde,
+ * bevor die Seite zur Ruhe gekommen war. Die Quote selbst war davon kaum
+ * berührt (30,0–30,1 %); die Flatterhaftigkeit saß in der Grundgesamtheit.
+ *
+ * Der Deckel bleibt bei 34 % und wird NICHT nachgezogen, obwohl der Wert jetzt
+ * reproduzierbar ist: Die vier Punkte Abstand decken die Rundungsunterschiede
+ * zwischen dem hier laufenden Chromium 141 und dem in CI installierten Build
+ * ab (siehe B9). Sobald beide Umgebungen denselben Build fahren, ist das
+ * Nachziehen fällig — dann ist es messbar statt geschätzt.
  */
 const UEBERGROESSE_DECKEL = 0.34;
 
@@ -303,7 +358,10 @@ test.describe("Bild-Auslieferung: Budget über alle Seiten", () => {
           gewertet++;
           schlimmste.push({
             faktor: (gewaehlt * gewaehlt) / (bedarf * bedarf),
-            info: `${seite} · ${kontext.name} · Bedarf ${bedarf}px → w${gewaehlt}`,
+            info:
+              `${seite} · ${kontext.name} · Bedarf ${bedarf}px → w${gewaehlt}\n` +
+              `        sizes:   ${m.sizes}\n` +
+              `        Klassen: ${m.klassen}`,
           });
         }
       }
@@ -315,6 +373,16 @@ test.describe("Bild-Auslieferung: Budget über alle Seiten", () => {
 
     const uebergroesse = zuviel / bedarfsflaeche;
     schlimmste.sort((a, b) => b.faktor - a.faktor);
+    // Auch bei Erfolg ausgeben. Ein Budget, dessen Ausnutzung man nur im
+    // Fehlerfall sieht, lässt sich nicht beobachten — man erfährt vom
+    // Heranschleichen an den Deckel erst, wenn er gerissen ist. Und die
+    // Grundgesamtheit gehört dazu: Ändert SIE sich, ändert sich die Quote,
+    // ohne dass ein einziges Bild anders ausgeliefert würde (B2).
+    console.log(
+      `[bild-budget] Übergröße ${(uebergroesse * 100).toFixed(1)} % · ` +
+        `${gewertet} gewertet · ${unterliefert} unterliefert · ` +
+        `Deckel ${(UEBERGROESSE_DECKEL * 100).toFixed(0)} %`,
+    );
     const bericht = schlimmste
       .slice(0, 8)
       .map((s) => `  ×${s.faktor.toFixed(2)}  ${s.info}`)

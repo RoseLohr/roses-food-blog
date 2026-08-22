@@ -20,7 +20,7 @@ export default async function PagesAdminPage(props: {
   await requireAdmin();
   const searchParams = await props.searchParams;
   const message = meldungAus(searchParams);
-  const pages = await db.select().from(schema.page).orderBy(asc(schema.page.title));
+  const pages = await db.select().from(schema.page).orderBy(asc(schema.page.title), asc(schema.page.id));
 
   return (
     <>

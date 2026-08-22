@@ -46,7 +46,7 @@ export default async function IngredientsPage(props: {
       fileKey: schema.mediaImage.fileKey,
     })
     .from(schema.mediaImage)
-    .orderBy(asc(schema.mediaImage.originalName));
+    .orderBy(asc(schema.mediaImage.originalName), asc(schema.mediaImage.id));
   const widthsById = await variantWidthsByImage([
     ...imageRows.map((i) => i.id),
     ...ingredients.flatMap((i) => (i.imageId ? [i.imageId] : [])),

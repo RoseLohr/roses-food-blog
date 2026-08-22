@@ -24,7 +24,7 @@ export default async function TravelAdminPage(props: {
   const posts = await db
     .select()
     .from(schema.travelPost)
-    .orderBy(desc(schema.travelPost.updatedAt));
+    .orderBy(desc(schema.travelPost.updatedAt), desc(schema.travelPost.id));
   const textUnten = getReisenTextUnten();
 
   return (

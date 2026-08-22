@@ -40,20 +40,57 @@ gemessen und benannt, die drei Aufnahmen gezielt neu genommen.
 
 ---
 
-## B2 — Flatterhafte Kontrolle: Bild-Auslieferungsbudget
+## B2 — Flatterhafte Kontrolle: Bild-Auslieferungsbudget — ERLEDIGT 08/2026
 
-**Befund.** `tests/e2e/bild-auslieferung.spec.ts` schlug in neun Läufen einmal
-fehl. Die gemessene Überschreitung an der echten Seite lag beim Schlimmsten bei
-Faktor 2,5 und damit klar im Budget; die Streuung kommt aus der gemessenen
-Grundgesamtheit.
+**Befund war.** `tests/e2e/bild-auslieferung.spec.ts` schlug in neun Läufen
+einmal fehl. Verdacht: Die Startseite sortiert „beliebt" nach Likes, und
+E2E-Tests vergeben Likes — welche Bilder gemessen werden, hinge damit an der
+Reihenfolge der Testdateien.
 
-**Ursache (Verdacht, nicht bewiesen).** Die Startseite sortiert „beliebt" nach
-Likes, und E2E-Tests vergeben Likes. Welche Bilder gemessen werden, hängt damit
-von der Reihenfolge der Testdateien ab.
+**Der Verdacht war halb richtig, die Ursache größer.** Nachgemessen sind es
+zwei unabhängige Quellen:
 
-**Warum hier.** Die Schwelle wird NICHT angehoben. Zu tun ist zweierlei:
-Diagnose verbessern (bei einem Ausreißer `sizes`, Klasse und Seite ausgeben)
-und die Grundgesamtheit stabilisieren. Beides ist eigenständige Arbeit.
+**1. Sortierungen ohne eindeutigen Zweitschlüssel.** Nicht nur „beliebt": Eine
+Durchmusterung aller 50 `orderBy`-Stellen (mit Gegenprüfung jeder Behauptung)
+fand **20** Stellen, an denen SQLite bei Gleichstand keine definierte
+Reihenfolge liefert — 30 waren nachweislich eindeutig, keine Behauptung wurde
+widerlegt. Der Saatzustand macht Gleichstand zum Normalfall: `like_count`
+steht überall auf 0, und `scripts/seed.ts` gibt allen Rezepten EINEN
+gemeinsamen `publishedAt`. Bei `limit` entschied das sogar, WELCHE Rezepte
+erscheinen. Überall steht jetzt die `id` als Zweitschlüssel.
+
+**2. Gemessen wurde, bevor die Seite zur Ruhe war.** „Alle Bilder geladen"
+heißt nicht „alle Bilder da": Nach der Hydration kommen welche dazu
+(Galerie-Streifen, Slider-Folien), und ein Bild ohne fertiges Layout hat
+Breite 0 und fällt aus der Messung. Gemessen: 141, 143, 150 Bilder in drei
+Läufen. Jetzt wird gewartet, bis die Zahl messbarer Bilder über drei
+Stichproben gleich bleibt — kein festes `waitForTimeout`, das wäre wieder eine
+Wette auf die Maschine.
+
+**Ergebnis, vier Läufe hintereinander identisch:**
+
+```
+[bild-budget] Übergröße 30,0 % · 150 gewertet · 18 unterliefert · Deckel 34 %
+```
+
+**Diagnose verbessert.** Ein Ausreißer nennt jetzt `sizes` und die Klassen von
+Bild und Elternelement, nicht nur Seite und Faktor:
+
+```
+×6.25  /suche?q=pasta · Desktop 1280px @ DPR 1 · Bedarf 64px → w160
+       sizes:   64px
+       Klassen: h-16 w-16 shrink-0 object-cover | Eltern: flex items-start gap-3 …
+```
+
+Die Quote steht außerdem bei JEDEM Lauf im Protokoll, nicht nur im Fehlerfall —
+ein Budget, dessen Ausnutzung man nur beim Reißen sieht, kann man nicht
+beobachten.
+
+**Der Deckel wurde NICHT angehoben** — und auch nicht nachgezogen, obwohl der
+Wert jetzt reproduzierbar ist: Die vier Punkte Abstand decken die
+Rundungsunterschiede zwischen den beiden Chromium-Builds ab (B9). Sobald beide
+Umgebungen denselben Build fahren, ist das Nachziehen fällig — dann ist es
+messbar statt geschätzt.
 
 ---
 

@@ -28,7 +28,7 @@ export default async function SequencesPage(props: {
   const sequences = await db
     .select()
     .from(schema.sequence)
-    .orderBy(asc(schema.sequence.name));
+    .orderBy(asc(schema.sequence.name), asc(schema.sequence.id));
   const allSteps = await db
     .select()
     .from(schema.sequenceStep)

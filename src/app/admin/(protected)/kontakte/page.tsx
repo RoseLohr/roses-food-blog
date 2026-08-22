@@ -69,8 +69,11 @@ export default async function ContactsPage(props: {
         .select()
         .from(schema.contact)
         .where(and(...conditions))
-        .orderBy(desc(schema.contact.signupAt))
-    : db.select().from(schema.contact).orderBy(desc(schema.contact.signupAt)));
+        .orderBy(desc(schema.contact.signupAt), desc(schema.contact.id))
+    : db
+        .select()
+        .from(schema.contact)
+        .orderBy(desc(schema.contact.signupAt), desc(schema.contact.id)));
 
   const interestRows = contacts.length
     ? await db
