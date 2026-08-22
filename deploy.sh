@@ -180,8 +180,18 @@ wachhund_verankern() {
   echo "FEHLER: Wachhund-Timer NICHT aktiv (Zustand: ${zustand:-unbekannt})."
   echo "        Ohne ihn ist 'restart: always' unbegrenzt — das ist die Lage"
   echo "        vom 2026-08-10. Der Deploy wird deshalb nicht als erfolgreich"
-  echo "        quittiert; die Ursache gehört behoben (systemctl --user status"
-  echo "        roses-blog-wachhund.timer), nicht ersetzt."
+  echo "        quittiert; die Ursache gehört behoben, nicht ersetzt."
+  if command -v systemctl >/dev/null 2>&1; then
+    echo "        Nachsehen: systemctl --user status roses-blog-wachhund.timer"
+  else
+    # Der Zustand ist leer, weil es gar kein systemctl gibt. Das ist eine
+    # andere Ursache mit derselben Folge — und sie gehört benannt, sonst sucht
+    # jemand an einem Timer, den es auf dieser Anlage nie geben kann.
+    echo "        Auf dieser Anlage gibt es kein systemctl: Der Wachhund kann"
+    echo "        so nicht laufen. Ohne systemd-User-Manager fehlt dem Betrieb"
+    echo "        die Obergrenze — das ist eine Frage der Anlage, nicht des"
+    echo "        Skripts."
+  fi
 }
 
 fail() {
@@ -887,8 +897,25 @@ EOF
   #
   # Der Zeuge macht die Sicherung ÜBERPRÜFBAR statt vorausgesetzt, genauso wie
   # `deploy-unit-ok` es für die Panel-Freigabe tut.
-  wachhund_verankern
+  # Die Unit-Dateien schreiben und den Timer starten geht nur, wo es systemd
+  # gibt — deshalb steht das hier drin. Die FESTSTELLUNG, ob der Wachhund
+  # wirklich verankert ist, steht bewusst außerhalb: siehe unter dem `fi`.
 fi
+
+# --- 7f. Ist der Wachhund verankert? AUSSERHALB jeder Bedingung ------------
+#
+# Diese eine Zeile stand bis 08/2026 im Block darüber, also hinter
+# `if command -v systemctl`. Auf einer Anlage ohne systemd wurde sie damit nie
+# erreicht: `wachhund_verankern` lief nicht, WACHHUND_FEHLT blieb 0, und der
+# Deploy quittierte Erfolg — ohne Timer, mit unbegrenztem `restart: always`.
+# Also genau der Zustand, den der Abschnitt darüber verhindern soll, nur auf
+# einem anderen Weg erreicht (Befund gpt-5.6-sol, PR #110, Runde 5).
+#
+# Die Frage „ist die Obergrenze da?" hängt nicht davon ab, WARUM sie fehlen
+# könnte. Sie wird deshalb immer gestellt. Fehlt systemctl, liefert die
+# Abfrage in wachhund_verankern nichts, und das Ergebnis ist dasselbe wie bei
+# einem Timer, der nicht anspringt: Der Lauf gilt nicht als erfolgreich.
+wachhund_verankern
 
 # --- 8. Aufräumen: alte, nun unbenutzte Images entfernen ---------------------
 # Jeder Build hinterlässt das vorige Image als dangling <none>; ohne Prune

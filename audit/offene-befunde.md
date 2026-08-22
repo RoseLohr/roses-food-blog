@@ -549,7 +549,7 @@ Wahrheit, und gegen den jeweils vorigen Stand fallen die Fälle korrekt um.
 
 ---
 
-## B14 — Elf weitere Befunde aus derselben Prüfung — DREI DAVON ERLEDIGT 08/2026
+## B14 — Elf weitere Befunde aus derselben Prüfung — SECHS DAVON ERLEDIGT 08/2026
 
 Die Gegenprüfung war auf sechs Befunde gedeckelt; die folgenden sind gefunden,
 aber zunächst weder von Skeptikern geprüft noch behoben worden. Sie standen
@@ -582,26 +582,53 @@ Verdachtsmomente mehr und behoben:
   Kommentare, und dass der Rollback bei gleichen Image-IDs wirklich abbricht,
   misst `tests/rollback-ablauf.test.ts` am laufenden Skript.
 
-Die übrigen acht bleiben unbestätigt und offen. **Keiner davon ist geprüft** —
-sie sind Verdachtsmomente mit Fundstelle.
+**Zweiter Nachtrag.** Nach der fünften Veto-Runde sind die restlichen Punkte
+IM ZWEIG nicht mehr abgewartet, sondern selbst geprüft und behoben worden —
+die Nummern 1, 2 und 7. Fünf Runden haben gezeigt, dass ein Verdacht in einer
+Datei, die dieser Zweig ohnehin umbaut, nicht liegen bleiben sollte: Er kommt
+als Veto zurück.
+
+**Was bewusst OFFEN bleibt — und warum:**
+
+* **Nr. 5 (`scripts/wachhund.mjs:59`)** ist die einzige der Beobachtungen, die
+  eine echte ENTWURFSÄNDERUNG verlangt, nicht eine Absicherung. Heute setzt
+  eine gesunde Messung `neuerStand: null` und verwirft damit auch den
+  Neustartzähler; eine Schleife, die zwischendurch kurz gesund aussieht (etwa
+  ein OOM-Kill nach dem Warmlaufen), erreicht die Schwelle von drei
+  ununterbrochen roten Beobachtungen nie. Das Zurücksetzen selbst ist
+  ABSICHTLICH (ein überstandener Holperstart darf sich nicht anrechnen), und
+  die kleine Variante — den Zähler behalten, nur `rotSeit` nullen — schließt
+  die Lücke NICHT, weil die Schleifenbedingung weiterhin an `rotSeit` hängt.
+  Es braucht ein zusätzliches Kriterium („der Neustartzähler ist seit der
+  ersten Beobachtung um mehr als N gestiegen"), also neuen Zustand und eine
+  neue Schwelle. Das ist ein Eingriff in eine Sicherheitskomponente, den
+  niemand angefordert hat und der bisher von keiner Gegenprüfung bestätigt
+  wurde. Er gehört in einen eigenen Schritt mit eigener Messung, nicht als
+  Beifang in diesen Zweig.
+
+Die beiden vorbestehenden Punkte außerhalb des Zweigs (Nummern 8 und 9)
+bleiben ebenfalls offen und unbestätigt.
 
 Im Zweig von PR #110 (also selbst verursacht, gehört zuerst geprüft):
 
-1. `deploy/rollback.sh:74` — `--dry-run` fährt KEINE der drei Vorprüfungen und
-   endet vor ihnen mit `exit 0`. Ein grüner Probelauf sagt damit nichts über
-   den Ernstfall. Kein Test betritt den Zweig.
-2. `deploy/rollback.sh:231` — die Sicherung des jetzigen Standes (das Netz)
-   wird nur am Exit-Status von `db.backup()` gemessen, während das eingehende
-   Backup drei Prüfungen durchläuft. Asymmetrie ohne Begründung.
+1. ~~`deploy/rollback.sh:74`~~ — ERLEDIGT 08/2026. Der Probelauf endet jetzt
+   NACH den Vorprüfungen statt vor ihnen; alles oberhalb ist lesend, er kann
+   sie also vollständig fahren, ohne etwas anzufassen. Vier Fälle in
+   `tests/rollback-ablauf.test.ts`, alle vier fallen gegen den vorigen Stand.
+2. ~~`deploy/rollback.sh:231`~~ — ERLEDIGT 08/2026. Die Sicherung des jetzigen
+   Standes läuft jetzt durch denselben `integrity_check` wie das eingehende
+   Backup, und zwar bevor die Datenbank ersetzt wird — später ginge es nicht
+   mehr.
 3. ~~`deploy/rollback.sh:238`~~ — ERLEDIGT, siehe oben.
 4. ~~`deploy/wachhund.sh:53`~~ — ERLEDIGT, siehe oben.
 5. `scripts/wachhund.mjs:59` — ein einziger gesunder Augenblick setzt
    `neuerStand: null` und verwirft damit auch den Neustartzähler. Eine
    flatternde, aber echte Schleife würde nie erkannt.
 6. ~~`tests/deploy-betrieb.test.ts:314`~~ — ERLEDIGT, siehe oben.
-7. `scripts/regime/rollback-check.mjs:54` — die Invariante „Fehlschlagpfad bei
-   roter Health" prüft eine literale Zeichenkette, die ein `log` genauso trägt
-   wie ein `fail`.
+7. ~~`scripts/regime/rollback-check.mjs:54`~~ — ERLEDIGT 08/2026. Die literale
+   Alternative ist raus; geblieben ist die strukturelle Prüfung, dass nach der
+   Health-Schleife ein `fail` oder `exit 1` steht. Gegenprobe: Ersetzt man das
+   `fail` durch ein `log`, wird das Gate rot (vorher blieb es grün).
 
 Außerhalb dieses Zweigs (vorbestehend, hier nur notiert):
 

@@ -304,6 +304,38 @@ describe("der Deploy zieht die Konsequenz aus dem fehlenden Wachhund", () => {
     expect(state).toBeGreaterThan(abbruch);
   });
 
+  it("stellt den Wachhund AUSSERHALB des systemd-Zweigs fest", () => {
+    // Der Aufruf stand bis 08/2026 im Block `if command -v systemctl`. Auf
+    // einer Anlage ohne systemd wurde er nie erreicht: WACHHUND_FEHLT blieb 0,
+    // und der Deploy quittierte Erfolg ohne Timer — dieselbe Lücke wie ein
+    // nicht anspringender Timer, nur über einen anderen Weg
+    // (Befund gpt-5.6-sol, PR #110, Runde 5).
+    //
+    // Geprüft wird der BLOCK, nicht eine Zeilennummer: Alles zwischen
+    // `if command -v systemctl` und dem `fi` am Zeilenanfang gehört dazu.
+    const start = zeilen.findIndex((z) =>
+      /^if command -v systemctl /.test(z),
+    );
+    expect(start).toBeGreaterThan(-1);
+    const ende = zeilen.findIndex((z, i) => i > start && z === "fi");
+    expect(ende).toBeGreaterThan(start);
+
+    const imBlock = zeilen
+      .slice(start, ende + 1)
+      .filter((z) => /^\s*wachhund_verankern\s*$/.test(z));
+    expect(imBlock, "wachhund_verankern steht noch im systemd-Zweig").toHaveLength(
+      0,
+    );
+
+    // …und danach, auf oberster Ebene (keine Einrückung = keine Bedingung).
+    const danach = zeilen
+      .slice(ende + 1)
+      .filter((z) => /^wachhund_verankern$/.test(z));
+    expect(danach, "wachhund_verankern wird nach dem Block nicht gerufen").toHaveLength(
+      1,
+    );
+  });
+
   it("meldet den Lauf erst nach der Absicherung als erfolgreich", () => {
     const abbruch = stelle(/if \[\[ "\$WACHHUND_FEHLT" -eq 1 \]\]; then/);
     const erfolg = stelle(/^DEPLOY_STATUS_RESULT="erfolgreich"/);

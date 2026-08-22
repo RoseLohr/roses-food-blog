@@ -39,6 +39,12 @@ type Modus = {
   schema?: "ok" | "fehler" | "unsinn";
   /** Wie sich `podman run … integrity_check` verhält. */
   backupLesbar?: boolean;
+  /**
+   * Ob die SICHERUNG des jetzigen Standes (pre-rollback-*.db) lesbar ist.
+   * Getrennt von `backupLesbar`, weil beide denselben integrity_check fahren
+   * und der Test sonst nicht sagen könnte, welche der beiden er meint.
+   */
+  sicherungLesbar?: boolean;
   /** Sind :previous und :latest dasselbe Image? Dann gibt es nichts zu tun. */
   gleicheImages?: boolean;
   /**
@@ -80,6 +86,7 @@ function spielwiese(modus: Modus = {}) {
   const backupStand = modus.backupStand ?? 3;
   const stoppGelingt = modus.stoppGelingt ?? true;
   const gleicheImages = modus.gleicheImages ?? false;
+  const sicherungLesbar = modus.sicherungLesbar ?? true;
 
   fs.writeFileSync(
     path.join(bin, "podman"),
@@ -124,6 +131,10 @@ case "$1" in
     fi
     if [[ "$*" == *readdirSync* ]]; then echo 5; exit 0; fi
     if [[ "$*" == *integrity_check* ]]; then
+      # Welche der beiden Prüfungen? Der Dateiname im letzten Argument sagt es.
+      if [[ "\${!#}" == pre-rollback-* ]]; then
+        ${sicherungLesbar ? "exit 0" : 'echo "*** in database main ***" >&2; exit 1'}
+      fi
       ${backupLesbar ? "exit 0" : 'echo "*** in database main ***" >&2; exit 1'}
     fi
     # db.backup(…) — die Sicherung des jetzigen Standes
@@ -308,6 +319,88 @@ describe("Befund 4: der Stopp wird festgestellt, nicht gehofft", () => {
 
     expect(lauf.code).toBe(0);
     expect(lauf.ausgabe).toMatch(/Rollback erfolgreich/);
+  });
+});
+
+describe("Der Probelauf probt, was der Ernstfall tut", () => {
+  it("--dry-run bricht ab, wenn --with-db kein Backup findet", () => {
+    // Vorher endete der Probelauf VOR den Vorprüfungen und meldete Erfolg. Er
+    // bescheinigte damit eine Machbarkeit, die er nie angesehen hatte.
+    const lauf = fahre(["--dry-run", "--with-db"], spielwiese());
+
+    expect(lauf.code).not.toBe(0);
+    expect(lauf.ausgabe).toMatch(/kein Pre-Deploy-Backup gefunden/);
+  });
+
+  it("--dry-run bricht ab, wenn das Backup beschädigt ist", () => {
+    const platz = spielwiese({ backupLesbar: false });
+    fs.writeFileSync(
+      path.join(platz.daten, "backups", "pre-deploy-20260822.db"),
+      "kaputt",
+    );
+
+    const lauf = fahre(["--dry-run", "--with-db"], platz);
+
+    expect(lauf.code).not.toBe(0);
+    expect(lauf.ausgabe).toMatch(/unlesbar oder beschädigt/);
+  });
+
+  it("--dry-run bricht ab, wenn das Backup schema-seitig zu neu ist", () => {
+    const platz = spielwiese({ backupStand: 9 });
+    fs.writeFileSync(
+      path.join(platz.daten, "backups", "pre-deploy-20260822.db"),
+      "backup",
+    );
+
+    const lauf = fahre(["--dry-run", "--with-db"], platz);
+
+    expect(lauf.code).not.toBe(0);
+    expect(lauf.ausgabe).toMatch(/VORAUS/);
+  });
+
+  it("--dry-run fasst nichts an, wenn alles in Ordnung ist", () => {
+    const platz = spielwiese();
+    fs.writeFileSync(
+      path.join(platz.daten, "backups", "pre-deploy-20260822.db"),
+      "backup",
+    );
+    fs.writeFileSync(path.join(platz.daten, "app.db"), "die echten daten");
+
+    const lauf = fahre(["--dry-run", "--with-db"], platz);
+
+    expect(lauf.code).toBe(0);
+    expect(lauf.ausgabe).toMatch(/DRY-RUN: Vorbedingungen geprüft/);
+    // Die Prüfungen sind gelaufen …
+    expect(lauf.protokoll.some((z) => z.includes("integrity_check"))).toBe(true);
+    // … und sonst nichts.
+    expect(dienstAngefasst(lauf)).toBe(false);
+    expect(lauf.protokoll.some((z) => z.startsWith("podman tag"))).toBe(false);
+    expect(fs.readFileSync(path.join(platz.daten, "app.db"), "utf8")).toBe(
+      "die echten daten",
+    );
+  });
+});
+
+describe("Das Netz wird geprüft, nicht nur ausgelegt", () => {
+  it("bricht ab, wenn die Sicherung des jetzigen Standes unlesbar ist", () => {
+    // Für das EINGEHENDE Backup galten drei Prüfungen, für die AUSGEHENDE
+    // Sicherung nur der Exit-Status von db.backup(). Sie ist aber das Netz —
+    // und ein Netz, in das niemand hineingesehen hat, ist keins.
+    const platz = spielwiese({ sicherungLesbar: false });
+    fs.writeFileSync(
+      path.join(platz.daten, "backups", "pre-deploy-20260822.db"),
+      "backup-inhalt",
+    );
+    fs.writeFileSync(path.join(platz.daten, "app.db"), "die echten daten");
+
+    const lauf = fahre(["--with-db"], platz);
+
+    expect(lauf.code).not.toBe(0);
+    expect(lauf.ausgabe).toMatch(/Sicherung .* ist nicht lesbar/);
+    // Entscheidend: Die Datenbank ist noch da, wie sie war.
+    expect(fs.readFileSync(path.join(platz.daten, "app.db"), "utf8")).toBe(
+      "die echten daten",
+    );
   });
 });
 

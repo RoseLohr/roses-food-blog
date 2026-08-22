@@ -51,8 +51,13 @@ const RB_INVARIANTS = [
     ok: (s) => !/curl -sf "\$HEALTH_URL"[^\n]*\|\|\s*true/.test(s),
   },
   {
-    what: "Fehlschlag-Pfad bei nicht-grüner Health (`fail`/`exit 1` nach der Health-Schleife)",
-    ok: (s) => /Health nach Rollback nicht grün|for [^\n]*seq 1 30[\s\S]{0,400}?\bfail\b/.test(s),
+    // Die erste Alternative war eine literale Meldung („Health nach Rollback
+    // nicht grün") — und die trägt ein `log` genauso wie ein `fail`. Wer den
+    // Abbruch durch eine Protokollzeile ersetzt hätte, wäre durchgekommen.
+    // Geblieben ist nur die strukturelle Prüfung: Nach der Health-Schleife
+    // MUSS ein `fail` oder `exit 1` stehen.
+    what: "Fehlschlag-Pfad bei nicht-grüner Health (`fail`/`exit 1` NACH der Health-Schleife)",
+    ok: (s) => /for [^\n]*seq 1 30[\s\S]{0,600}?(\bfail\b|\bexit 1\b)/.test(s),
   },
   {
     what: "getimt: `start=$(date +%s)` UND reale Dauerberechnung `$(( $(date +%s) - start ))`",

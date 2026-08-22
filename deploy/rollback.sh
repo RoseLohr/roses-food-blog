@@ -83,11 +83,6 @@ AKTUELL_ID="$(podman image inspect -f '{{.Id}}' localhost/roses-blog:latest 2>/d
 [[ "$VORIG_ID" != "$AKTUELL_ID" ]] \
   || fail ":previous und :latest sind identisch — es gibt nichts zurückzurollen (kein stiller No-op)."
 
-if [[ $DRY -eq 1 ]]; then
-  log "DRY-RUN: würde :previous → :latest taggen, Container neu starten$( [[ $WITH_DB -eq 1 ]] && echo ', DB-Backup einspielen' )."
-  ls -1t "$DATA_DIR"/backups/pre-deploy-*.db 2>/dev/null | head -1 | sed 's/^/[rollback] jüngstes Backup: /' || true
-  exit 0
-fi
 
 # ── UNBEKANNT IST UNSICHER — AUCH BEIM SCHEMA-STAND ─────────────────────────
 #
@@ -199,6 +194,22 @@ else
   schema_pruefen
 fi
 
+# 2b. Der Probelauf endet HIER — nach den Vorprüfungen, nicht vor ihnen.
+#
+# Bis 08/2026 stand dieser Abzweig ganz oben und beendete den Lauf, BEVOR
+# irgendeine der drei Vorbedingungen geprüft war. Ein grüner Probelauf sagte
+# damit nichts über den Ernstfall: Er bescheinigte eine Machbarkeit, die er nie
+# angesehen hatte. Ein Drill, der die Prüfungen überspringt, die er proben
+# soll, ist kein Drill.
+#
+# Alles oberhalb ist lesend — Image-IDs, Lesbarkeit des Backups, Schema-Stand.
+# Der Probelauf kann sie also vollständig fahren, ohne irgendetwas anzufassen.
+if [[ $DRY -eq 1 ]]; then
+  log "DRY-RUN: Vorbedingungen geprüft — es würde :previous → :latest getaggt \
+und der Container neu gestartet$( [[ $WITH_DB -eq 1 ]] && echo ", Backup: $BACKUP" )."
+  exit 0
+fi
+
 # 3. Container STOPPEN — vor JEDEM Eingriff an der Datenbank.
 #
 # Bis 08/2026 stand der DB-Restore VOR dem Stoppen: Die Datei wurde unter einer
@@ -268,6 +279,18 @@ if [[ $WITH_DB -eq 1 ]]; then
       -e "const db=require('better-sqlite3')('/data/app.db',{readonly:true});db.backup('/data/backups/'+process.argv[1]).then(()=>{db.close()}).catch(e=>{console.error(e);process.exit(1)})" \
       "$SICHERUNG" \
       || fail "Sicherung des jetzigen Standes fehlgeschlagen — Rollback abgebrochen, statt ohne Netz weiterzumachen."
+    # ── UND SIE WIRD GEPRÜFT, NICHT NUR ABGESETZT ─────────────────────────
+    # Für das EINGEHENDE Backup gelten drei Fragen (vorhanden, lesbar, Schema).
+    # Für diese Sicherung galt nur der Exit-Status von db.backup(). Das ist
+    # dieselbe Asymmetrie wie „unbekannt ist in Ordnung": Sie ist das Netz,
+    # und ein Netz, in das niemand hineingesehen hat, ist keins. Gleich hier
+    # geprüft, weil danach die Datenbank ersetzt wird — später ginge es nicht
+    # mehr.
+    podman run --rm --entrypoint node -v "$DATA_DIR:/data" localhost/roses-blog:previous \
+      -e "const db=require('better-sqlite3')('/data/backups/'+process.argv[1],{readonly:true});const r=db.pragma('integrity_check',{simple:true});db.close();if(r!=='ok'){console.error(r);process.exit(1)}" \
+      "$SICHERUNG" \
+      || fail "Die Sicherung $SICHERUNG ist nicht lesbar — Rollback abgebrochen. \
+Der jetzige Stand liegt noch unverändert in $DATA_DIR/app.db."
   fi
 
   log "Spiele Backup ein: $BACKUP"
