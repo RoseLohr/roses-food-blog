@@ -118,17 +118,38 @@ Zwei Dinge, die das Inventar zusätzlich festhält:
   Annahmenummern und Pfadverweise ins Leere. Gemessen am Bestand: 300
   Pfadverweise, 4 historische Codeblöcke, alle in Ordnung.
 
-  **Die erste Fassung hatte fünf Umgehungen** — drei benannt vom
-  Pflicht-Approver (PR #109), zwei beim Nachziehen derselben Klasse gefunden.
-  Sie sind lehrreich, weil vier davon dieselbe Form haben: *eine Prüfung, die
-  sich still selbst abschaltet.* Eine Shell-Zeile „# historisch" INNERHALB
-  eines Codeblocks setzte die Ausnahme für alles Folgende; ein Zaun aus drei
-  Tilden galt gar nicht als Code; eingerückter Code wurde nie geprüft; die
-  Zeilenprüfung sprang bei einer Abkürzung mit Fantasiezeile ab („audit/06"
-  plus Zeile 99999); und eine Zeilennummer an einem VERZEICHNIS, ein Bereich
-  rückwärts (100–10) und die Zeile 0 liefen als gültig durch. Jede ist jetzt
-  ein Selbsttestfall (24 insgesamt), und die Gegenprobe gegen die Vorfassung
-  ist gefahren: alle fünf rutschen dort durch, alle fünf werden hier gefangen.
+  **Der Pflicht-Approver hat in ZWEI Runden ACHT Umgehungen gefunden** — fünf
+  von ihm benannt, drei beim Nachziehen derselben Klasse. Sechs davon haben
+  dieselbe Form: *eine Prüfung, die sich still selbst abschaltet.* Eine
+  Shell-Zeile „# historisch" INNERHALB eines Codeblocks setzte die Ausnahme für
+  alles Folgende; ein Zaun aus drei Tilden galt gar nicht als Code; eingerückter
+  Code wurde nie geprüft; ein Zaun aus VIER Backticks wurde von einem inneren
+  Dreier geschlossen; nur Kommentare am Zeilenanfang wurden gesehen, ein
+  nachgestelltes „// A7" lief durch; die Zeilenprüfung sprang bei einer
+  Abkürzung mit Fantasiezeile ab; Zeilennummer an einem VERZEICHNIS, Bereich
+  rückwärts und Zeile 0 galten als gültig; und die Zeilenzählung addierte bei
+  abschließendem Umbruch eine Phantomzeile.
+
+  **Die eigentliche Lehre steckt in der Verteilung.** Fünf der acht Löcher waren
+  keine Flüchtigkeitsfehler, sondern Sonderfälle von Markdown und TypeScript —
+  entstanden, weil das Gate beide Sprachen VON HAND zerlegte. Ein
+  handgeschriebener Zerleger hat so viele Löcher, wie das Format Sonderfälle
+  hat; jede Runde hätte weitere gefunden. Die Wurzel ist nicht der einzelne
+  Sonderfall, sondern der Nachbau.
+
+  Beide Zerleger gibt es im Projekt längst: `marked` treibt
+  `src/lib/markdown.ts`, `typescript` treibt `npm run typecheck`. Das Gate
+  benutzt jetzt sie. Damit fallen alle fünf Grammatik-Löcher **ersatzlos weg**
+  statt geflickt zu werden — und ein Fall, den keine der Handfassungen
+  beherrschte, fällt gratis mit ab: `const r = /a\/\//; // A5`. Der reine
+  Scanner liest daraus „//; // A5" und liegt falsch; der Parser liefert
+  „// A5". Übrig als eigene Logik bleiben die drei Löcher, die von Dateien und
+  Zahlen handeln statt von Grammatik.
+
+  38 Selbsttestfälle, Gegenprobe gegen beide Vorfassungen gefahren (alle acht
+  rutschen dort durch), dazu eine Positivkontrolle am echten Baum: drei
+  eingeschleuste Verstöße in README, `docs/` und `src/` werden mit exakter
+  Zeilennummer gemeldet.
 
   Die Gegenbeispiele stehen hier bewusst OHNE Backticks: Das Gate kann eine
   Veranschaulichung nicht von einem echten Verweis unterscheiden — und hat

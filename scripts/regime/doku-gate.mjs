@@ -20,11 +20,10 @@
  *    A-37-Takeover-Drill war das der schwerwiegendste Befund.
  *
  *    Verboten sind die Anweisungen, nicht die Wörter: geprüft wird NUR, was
- *    Code ist — umzäunt (``` oder ~~~) oder eingerückt. Fließtext darf und
- *    soll weiter sagen, dass es certbot hier nicht gibt; genau das steht als
- *    Zitatblock in README §2. Ein Codeblock unter einer Überschrift, die
- *    „historisch" enthält, ist ausgenommen; so ist der aufbewahrte
- *    Host-nginx-Weg gekennzeichnet.
+ *    Markdown als CODE liest. Fließtext darf und soll weiter sagen, dass es
+ *    certbot hier nicht gibt; genau das steht als Zitatblock in README §2. Ein
+ *    Codeblock unter einer Überschrift, die „historisch" enthält, ist
+ *    ausgenommen; so ist der aufbewahrte Host-nginx-Weg gekennzeichnet.
  *
  * 2. TOTE ANNAHMENUMMERN. Verweise der Form „A1"…„A11" zeigten auf eine
  *    Nummerierung aus dem Projektauftrag, die im Repository NIRGENDS
@@ -35,8 +34,7 @@
  *    `audit/` ist ausgenommen, und das ist kein Schlupfloch: Dort sind A1–A3
  *    die SPURENNAMEN der Infrastruktur-Erhebung, in derselben Datei in einer
  *    Tabelle definiert (`audit/11-infrastruktur-befund.md`). Gleiches Zeichen,
- *    anderes Bezugssystem. In `src/` wird nur in Kommentarzeilen gesucht —
- *    „A2" kann dort sonst ein Bezeichner sein.
+ *    anderes Bezugssystem.
  *
  * 3. PFADVERWEISE INS LEERE. Beim A2/A3-Inventar waren von 565 nachgeschlagenen
  *    Referenzen 53 Zeilennummern falsch und 43 Fundstellen übersehen. Ein
@@ -53,33 +51,59 @@
  *    denselben Backticks steht (`datei.ts:42`). Steht sie als eigenes Stück
  *    hinter dem Pfad, sieht dieses Gate sie nicht.
  *
- * FÜNF LÖCHER, DIE DIE ERSTE FASSUNG HATTE (Veto des Pflicht-Approvers
- * gpt-5.6-sol, PR #109 — drei davon von ihm benannt, zwei beim Nachziehen
- * derselben Klasse gefunden). Jedes ist unten als Selbsttestfall festgenagelt:
+ * ─────────────────────────────────────────────────────────────────────────
+ * WARUM HIER ZWEI FREMDE PARSER LAUFEN UND KEINE EIGENEN WÄHLER
  *
- *   a) ÜBERSCHRIFTEN WURDEN AUCH IM CODEBLOCK AUSGEWERTET. Eine Shell-Zeile
- *      `# historisch: alter Weg` INNERHALB eines Zauns setzte die Ausnahme —
- *      und schaltete das Anleitungsgate für den Rest des Blocks und alles
- *      danach ab. In Markdown ist eine Raute im Zaun gar keine Überschrift.
- *   b) `~~~` GALT NICHT ALS ZAUN. Ein damit umzäunter Block wurde nicht als
- *      Code erkannt und deshalb GAR NICHT geprüft — die Umgehung bestand aus
- *      einem anderen Zaunzeichen.
- *   c) EINGERÜCKTER CODE WURDE NICHT GEPRÜFT. Markdown kennt drei Codeformen;
- *      erkannt wurde eine.
- *   d) DIE ZEILENPRÜFUNG SPRANG BEI EINER ABKÜRZUNG AB. `audit/06:99999`
- *      löste nur für die Existenzfrage auf; die Zeilenzahl wurde danach
- *      übersprungen, weil der Rohpfad nicht existiert.
- *   e) UNMÖGLICHE ANGABEN GALTEN ALS GÜLTIG. `src/lib:999` (Zeile an einem
- *      VERZEICHNIS), `datei:100-10` (Bereich rückwärts) und `datei:0` liefen
- *      grün durch, weil nur die Obergrenze gegen die Dateilänge geprüft wurde.
+ * Die ersten beiden Fassungen zerlegten Markdown und TypeScript von Hand. Der
+ * Pflicht-Approver hat in ZWEI Runden ACHT Umgehungen gefunden (PR #109) — und
+ * das ist kein Ausreißer, sondern die Regel: Ein handgeschriebener Zerleger hat
+ * so viele Löcher, wie das Format Sonderfälle hat. Die gefundenen, zur
+ * Erinnerung und als Selbsttestfälle unten festgenagelt:
+ *
+ *   a) Eine Raute IM Codeblock galt als Überschrift und schaltete die
+ *      „historisch"-Ausnahme für den Rest der Datei ein.
+ *   b) `~~~` galt nicht als Zaun — der Block wurde gar nicht erst geprüft.
+ *   c) Eingerückter Code wurde nie geprüft (Markdown kennt drei Codeformen).
+ *   f) Ein Zaun aus VIER Backticks wurde von einem inneren Dreier geschlossen.
+ *   g) Nur Kommentare am ZEILENANFANG wurden gesehen; `const x = 1; // A7`
+ *      lief durch.
+ *   d) Die Zeilenprüfung sprang bei einer eindeutigen Abkürzung ab.
+ *   e) Zeilennummer an einem VERZEICHNIS, Bereich rückwärts, Zeile 0 galten
+ *      als gültig.
+ *   h) `split("\n").length` zählte bei abschließendem Umbruch eine Zeile zu
+ *      viel — ein Verweis auf N+1 war grün.
+ *
+ * a, b, c und f sind Markdown-Sonderfälle; g ist ein TypeScript-Sonderfall.
+ * Fünf von acht Löchern kamen also daher, dass hier zwei Sprachen nachgebaut
+ * wurden, die das Projekt längst richtig zerlegen kann:
+ *
+ *   * `marked` (Produktionsabhängigkeit, treibt `src/lib/markdown.ts`) liefert
+ *     Codeblöcke und Überschriften als Token. Alle vier Markdown-Löcher fallen
+ *     damit ersatzlos weg — nicht geflickt, sondern gegenstandslos.
+ *   * `typescript` (Entwicklungsabhängigkeit, treibt `npm run typecheck`)
+ *     liefert die Kommentarbereiche aus dem GEPARSTEN Baum. Nachgemessen an
+ *     `const r = /a\/\//; // A5`: Der reine Scanner liest daraus „//; // A5"
+ *     und liegt falsch, der Parser liefert „// A5" und liegt richtig.
+ *
+ * d, e und h bleiben eigene Logik — sie handeln von Dateien und Zahlen, nicht
+ * von Grammatik.
+ *
+ * `.css` wird BEWUSST als Ganzes durchsucht statt über einen dritten Zerleger:
+ * CSS kennt keine Bezeichner der Form „A2", der Anlass für die
+ * Kommentar-Einschränkung entfällt dort also. Ein Fehlalarm wäre ein
+ * `grid-area: A2` — sichtbar und in einem Zug korrigierbar. Ein dritter
+ * handgeschriebener Zerleger wäre die Wiederholung genau des Fehlers, den
+ * dieser Umbau abstellt.
  *
  * Kalibrierung (A-36): `--selftest` führt für jede Prüfung einen synthetischen
- * Verstoß ein und bestätigt, dass sie ihn fängt — und für die Ausnahmen
- * (historischer Block, Fließtext, Prüfkennung, Bezeichner in `src/`), dass sie
- * NICHT feuern.
+ * Verstoß ein und bestätigt, dass sie ihn fängt — und für die Ausnahmen, dass
+ * sie NICHT feuern.
  */
 import { execSync } from "node:child_process";
 import fs from "node:fs";
+import path from "node:path";
+import { Marked } from "marked";
+import ts from "typescript";
 
 /**
  * Dateiliste wie in `source-gates.mjs`: `--others --exclude-standard` nimmt
@@ -101,61 +125,97 @@ const PFAD_RE = new RegExp(`^((?:${WURZELN})/[^:\\s]*?)(?::(\\d+)(?:-(\\d+))?)?$
 export const VERALTETE_ANLEITUNG = /\bcertbot\b|\bsites-available\b|\/etc\/letsencrypt\b/;
 
 /** „A1"…„A11" ohne Bindestrich — die Nummerierung, die es nicht gibt.
- *  Der Bindestrich trennt sie von den Prüfkennungen A-16, A-20, A-33. */
+ *  Der Bindestrich trennt sie von den Prüfkennungen A-16, A-20, A-33; das
+ *  vorangestellte `/` von Pfadbestandteilen wie `https://x/A7/y`. */
 export const TOTE_NUMMER = /(?<![A-Za-z0-9_/.-])A(1[01]|[1-9])(?![0-9A-Za-z-])/;
 
-/** Kommentarzeile in TypeScript/CSS — nur dort wird in `src/` gesucht. */
-export const KOMMENTARZEILE = /^\s*(\/\/|\/\*|\*)/;
+/** Zeilennummer (1-basiert) des Zeichens an `pos`. */
+function zeileVon(text, pos) {
+  return text.slice(0, pos).split("\n").length;
+}
 
 /**
  * Prüfung 1: verbotene Anleitung in Code.
  *
- * Markdown kennt DREI Codeformen, und alle drei zählen: ```-Zaun, ~~~-Zaun und
- * Einrückung. Eine eingerückte Zeile, die mit einem Listenzeichen oder `>`
- * beginnt, ist Fortsetzung von Fließtext und kein Code.
+ * Was Code ist, entscheidet `marked` — dieselbe Zerlegung, die auch die Seiten
+ * rendert. Damit zählen alle drei Markdown-Codeformen (```-Zaun, ~~~-Zaun,
+ * Einrückung) ohne eigenes Zutun, und eine Raute im Block ist keine
+ * Überschrift.
  *
  * Gibt die beanstandeten Zeilennummern zurück (1-basiert).
  */
-export function verboteneAnleitung(text) {
+export function verboteneAnleitung(md) {
   const treffer = [];
-  let zaun = null; // Zeichen des offenen Zauns, oder null
   let unterHistorisch = false;
+  let suchAb = 0;
+
+  const lauf = (tokens) => {
+    for (const t of tokens) {
+      if (t.type === "heading") {
+        unterHistorisch = /historisch/i.test(t.text ?? "");
+      } else if (t.type === "code") {
+        // Vorwärts suchen: Token stehen in Dokumentreihenfolge, auch die in
+        // Listen verschachtelten. Zwei gleiche Blöcke stören deshalb nicht.
+        const pos = md.indexOf(t.raw, suchAb);
+        if (pos !== -1) suchAb = pos + t.raw.length;
+        if (!unterHistorisch) {
+          const start = pos === -1 ? 0 : zeileVon(md, pos);
+          t.raw.split("\n").forEach((zeile, j) => {
+            if (VERALTETE_ANLEITUNG.test(zeile)) treffer.push(start + j);
+          });
+        }
+      }
+      // Verschachtelte Blöcke (Codeblock in einer Liste, in einem Zitat, in
+      // einer Tabellenzelle) hängen an eigenen Token-Listen.
+      if (Array.isArray(t.tokens)) lauf(t.tokens);
+      if (Array.isArray(t.items)) lauf(t.items);
+      if (Array.isArray(t.rows)) for (const zeile of t.rows) lauf(zeile);
+      if (Array.isArray(t.header)) lauf(t.header);
+    }
+  };
+
+  lauf(new Marked({ gfm: true }).lexer(md));
+  return treffer.sort((a, b) => a - b);
+}
+
+/** Prüfung 2a: tote Annahmenummer in Fließtext (Markdown, CSS). */
+export function toteNummern(text) {
+  const treffer = [];
   text.split("\n").forEach((zeile, i) => {
-    const zaunZeile = /^\s*(```|~~~)/.exec(zeile);
-    if (zaunZeile) {
-      if (zaun === null) {
-        zaun = zaunZeile[1];
-        return;
-      }
-      if (zaun === zaunZeile[1]) {
-        zaun = null;
-        return;
-      }
-      // Fremdes Zaunzeichen INNERHALB eines Zauns schließt nichts — die Zeile
-      // ist gewöhnlicher Code und fällt unten durch die Prüfung.
-    }
-    // Überschriften NUR außerhalb eines Zauns: `# …` im Codeblock ist eine
-    // Raute, keine Überschrift (Loch a).
-    if (zaun === null && /^#{1,6}\s/.test(zeile)) {
-      unterHistorisch = /historisch/i.test(zeile);
-      return;
-    }
-    const eingerueckt = /^(\t| {4})/.test(zeile) && !/^\s*([-*+>]|\d+\.)\s/.test(zeile);
-    if ((zaun !== null || eingerueckt) && !unterHistorisch && VERALTETE_ANLEITUNG.test(zeile)) {
-      treffer.push(i + 1);
-    }
+    if (TOTE_NUMMER.test(zeile)) treffer.push(i + 1);
   });
   return treffer;
 }
 
-/** Prüfung 2: tote Annahmenummer. `nurKommentare` für Quelltext. */
-export function toteNummern(text, nurKommentare) {
-  const treffer = [];
-  text.split("\n").forEach((zeile, i) => {
-    if (nurKommentare && !KOMMENTARZEILE.test(zeile)) return;
-    if (TOTE_NUMMER.test(zeile)) treffer.push(i + 1);
-  });
-  return treffer;
+/**
+ * Prüfung 2b: tote Annahmenummer in einem TypeScript-KOMMENTAR.
+ *
+ * Nur im Kommentar, weil „A2" im Code ein Bezeichner sein darf. Die
+ * Kommentarbereiche kommen aus dem geparsten Baum statt aus einem eigenen
+ * Zeichenlauf — nur so sind nachgestellte Kommentare, Zeichenketten,
+ * Vorlagenliterale und Regex-Literale sicher auseinanderzuhalten.
+ */
+export function toteNummernInKommentaren(quelle, datei = "x.ts") {
+  const art = datei.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
+  const sf = ts.createSourceFile(datei, quelle, ts.ScriptTarget.Latest, true, art);
+  const bereiche = new Map();
+  const merke = (r) => {
+    if (r) for (const b of r) bereiche.set(`${b.pos}:${b.end}`, b);
+  };
+  const lauf = (n) => {
+    merke(ts.getLeadingCommentRanges(quelle, n.getFullStart()));
+    merke(ts.getTrailingCommentRanges(quelle, n.getEnd()));
+    n.getChildren().forEach(lauf);
+  };
+  lauf(sf);
+
+  const treffer = new Set();
+  for (const b of bereiche.values()) {
+    const text = quelle.slice(b.pos, b.end);
+    const global = new RegExp(TOTE_NUMMER.source, "g");
+    for (const m of text.matchAll(global)) treffer.add(zeileVon(quelle, b.pos + m.index));
+  }
+  return [...treffer].sort((a, b) => a - b);
 }
 
 /**
@@ -192,8 +252,24 @@ export function pfadverweise(zeile) {
  */
 export function aufloesen(pfad, alle) {
   if (fs.existsSync(pfad)) return pfad;
-  const treffer = alle.filter((f) => f.startsWith(pfad));
+  // `git ls-files --cached` führt auch Einträge, deren Datei im Arbeitsbaum
+  // gerade fehlt. Ohne diese Prüfung stürbe `zeilenBefund` später an einem
+  // `statSync` — eine Kontrolle, die abstürzt, meldet nichts.
+  const treffer = alle.filter((f) => f.startsWith(pfad) && fs.existsSync(f));
   return treffer.length === 1 ? treffer[0] : null;
+}
+
+/**
+ * Zahl der Zeilen einer Datei.
+ *
+ * `split("\n").length` ist hier falsch: Endet die Datei mit einem
+ * Zeilenumbruch — das tut praktisch jede —, liefert die Zerlegung ein leeres
+ * letztes Stück und damit eine Zeile zu viel. Ein Verweis auf N+1 galt so als
+ * gültig (Loch h).
+ */
+export function zeilenzahl(roh) {
+  if (roh === "") return 0;
+  return roh.replace(/\r?\n$/, "").split(/\r?\n/).length;
 }
 
 /**
@@ -204,7 +280,7 @@ export function zeilenBefund(datei, von, bis) {
   if (!fs.statSync(datei).isFile()) return "Zeilennummer an einem Verzeichnis";
   if (von < 1) return "Zeilennummer 0 gibt es nicht";
   if (bis < von) return `Zeilenbereich rückwärts (${von}–${bis})`;
-  const zeilen = fs.readFileSync(datei, "utf8").split("\n").length;
+  const zeilen = zeilenzahl(fs.readFileSync(datei, "utf8"));
   if (bis > zeilen) return `jenseits des Dateiendes (${datei} hat ${zeilen} Zeilen)`;
   return null;
 }
@@ -220,9 +296,11 @@ function main() {
   let gezaehlt = 0;
   for (const datei of alle) {
     const imAudit = datei.startsWith("audit/");
-    const istQuelle = datei.startsWith("src/") && /\.(ts|tsx|css)$/.test(datei);
-    const istMd = datei.endsWith(".md");
-    if (!istMd && !istQuelle) continue;
+    const endung = path.extname(datei);
+    const istMd = endung === ".md";
+    const istTs = datei.startsWith("src/") && (endung === ".ts" || endung === ".tsx");
+    const istCss = datei.startsWith("src/") && endung === ".css";
+    if (!istMd && !istTs && !istCss) continue;
     const text = fs.readFileSync(datei, "utf8");
     const zeilen = text.split("\n");
 
@@ -233,7 +311,8 @@ function main() {
     }
 
     if (!imAudit) {
-      for (const nr of toteNummern(text, istQuelle)) {
+      const nummern = istTs ? toteNummernInKommentaren(text, datei) : toteNummern(text);
+      for (const nr of nummern) {
         melde("Verweis auf eine Nummerierung, die es nicht gibt", `${datei}:${nr}`, zeilen[nr - 1].trim());
       }
     }
@@ -264,30 +343,37 @@ function main() {
 }
 
 if (process.argv.includes("--selftest")) {
-  const zaun = "```";
+  const z3 = "```";
+  const z4 = "````";
   const welle = "~~~";
   const alle = dateien();
   const faelle = [
-    // Prüfung 1 — fängt den Verstoß in allen drei Codeformen …
-    ["Anleitung im ```-Zaun", verboteneAnleitung(`## Setup\n${zaun}\nsudo certbot --nginx\n${zaun}\n`).length === 1],
-    ["Anleitung im ~~~-Zaun (Loch b)", verboteneAnleitung(`## Setup\n${welle}\nsudo certbot --nginx\n${welle}\n`).length === 1],
+    // Prüfung 1 — der Verstoß wird in ALLEN Markdown-Codeformen gefangen.
+    ["Anleitung im ```-Zaun", verboteneAnleitung(`## Setup\n\n${z3}\nsudo certbot --nginx\n${z3}\n`).length === 1],
+    ["Anleitung im ~~~-Zaun (Loch b)", verboteneAnleitung(`## Setup\n\n${welle}\nsudo certbot --nginx\n${welle}\n`).length === 1],
     ["Anleitung eingerückt (Loch c)", verboteneAnleitung("## Setup\n\n    sudo certbot --nginx\n").length === 1],
-    // … und feuert NICHT unter einer historischen Überschrift …
-    ["historischer Block bleibt frei", verboteneAnleitung(`## Historisch: alter Weg\n${zaun}\nsudo certbot --nginx\n${zaun}\n`).length === 0],
-    // … nicht im Fließtext, der die Abwesenheit gerade feststellt …
+    ["Vierer-Zaun bleibt offen (Loch f)", verboteneAnleitung(`## Setup\n\n${z4}\n${z3}\nsudo certbot --nginx\n${z4}\n`).length === 1],
+    ["Raute im Zaun schaltet nichts ab (Loch a)", verboteneAnleitung(`## Setup\n\n${z3}\n# historisch: alter Weg\nsudo certbot --nginx\n${z3}\n`).length === 1],
+    ["Codeblock in einer Liste wird gesehen", verboteneAnleitung(`## Setup\n\n- Schritt:\n\n  ${z3}\n  sudo certbot --nginx\n  ${z3}\n`).length === 1],
+    // … und feuert NICHT, wo er nicht feuern darf.
+    ["historischer Block bleibt frei", verboteneAnleitung(`## Historisch: alter Weg\n\n${z3}\nsudo certbot --nginx\n${z3}\n`).length === 0],
     ["Fließtext bleibt frei", verboteneAnleitung("certbot gibt es hier nicht.\n").length === 0],
     ["Zitatblock bleibt frei", verboteneAnleitung("> `certbot` steht hier bewusst nicht mehr.\n").length === 0],
-    ["Listenfortsetzung bleibt frei", verboteneAnleitung("- Punkt\n    - certbot ist Geschichte\n").length === 0],
-    // … und eine Raute IM Zaun schaltet nichts ab (Loch a).
-    [
-      "Raute im Zaun schaltet nichts ab (Loch a)",
-      verboteneAnleitung(`## Setup\n${zaun}\n# historisch: alter Weg\nsudo certbot --nginx\n${zaun}\n`).length === 1,
-    ],
-    // Prüfung 2 — tote Nummer, aber keine Prüfkennung und kein Bezeichner.
-    ["tote Nummer", toteNummern("gilt laut A7 weiterhin", false).length === 1],
-    ["Prüfkennung bleibt frei", toteNummern("A-16 verbietet Stubs, A-33 fordert SLI", false).length === 0],
-    ["Bezeichner bleibt frei", toteNummern("const A2 = messwert;", true).length === 0],
-    ["Kommentar wird gesehen", toteNummern(" * i18n-vorbereitet (A3)", true).length === 1],
+    ["Listenfortsetzung bleibt frei", verboteneAnleitung("- Punkt\n- certbot ist Geschichte\n").length === 0],
+    ["Zeilennummer stimmt", verboteneAnleitung(`## Setup\n\n${z3}\nsudo certbot --nginx\n${z3}\n`)[0] === 4],
+    // Prüfung 2 — tote Nummer im Fließtext, aber keine Prüfkennung.
+    ["tote Nummer", toteNummern("gilt laut A7 weiterhin").length === 1],
+    ["Prüfkennung bleibt frei", toteNummern("A-16 verbietet Stubs, A-33 fordert SLI").length === 0],
+    ["Pfadbestandteil bleibt frei", toteNummern("siehe https://x/A7/y").length === 0],
+    // Prüfung 2b — im Quelltext zählt NUR der Kommentar, aber jeder.
+    ["Bezeichner bleibt frei", toteNummernInKommentaren("const A2 = messwert;").length === 0],
+    ["Blockkommentar wird gesehen", toteNummernInKommentaren("/**\n * i18n-vorbereitet (A3)\n */\nexport const x = 1;").length === 1],
+    ["nachgestellter Kommentar wird gesehen (Loch g)", toteNummernInKommentaren("const x = 1; // A7").length === 1],
+    ["Kommentar hinter einer Zeichenkette", toteNummernInKommentaren('const u = "https://x"; /* A7 */').length === 1],
+    ["tote Nummer IN einer Zeichenkette bleibt frei", toteNummernInKommentaren('const s = "// A7";').length === 0],
+    ["Vorlagenliteral bleibt frei", toteNummernInKommentaren("const t = `hallo // A9`;").length === 0],
+    ["Regex-Literal verwirrt den Parser nicht", toteNummernInKommentaren("const r = /a\\/\\//; // A5").length === 1],
+    ["Division verwirrt den Parser nicht", toteNummernInKommentaren("const y = 6 / 2 / 3; // A4").length === 1],
     // Prüfung 3 — Pfad wird erkannt, Muster und Fremdpfade nicht.
     ["Pfad erkannt", pfadverweise("siehe `src/lib/media.ts`")[0]?.pfad === "src/lib/media.ts"],
     ["Zeilennummer erkannt", pfadverweise("siehe `src/lib/media.ts:42`")[0]?.bis === 42],
@@ -297,15 +383,17 @@ if (process.argv.includes("--selftest")) {
     // Abkürzung löst auf — und die Zeilenprüfung greift trotzdem (Loch d).
     ["Abkürzung löst auf", aufloesen("audit/06", alle) === "audit/06-residual-risk-register.md"],
     ["Erfundener Pfad löst nicht auf", aufloesen("src/gibt-es-nicht.ts", alle) === null],
-    [
-      "Zeilenprüfung greift auch bei Abkürzung (Loch d)",
-      zeilenBefund(aufloesen("audit/06", alle), 99999, 99999) !== null,
-    ],
+    ["Zeilenprüfung greift auch bei Abkürzung (Loch d)", zeilenBefund(aufloesen("audit/06", alle), 99999, 99999) !== null],
     // Unmögliche Angaben (Loch e).
     ["Zeile an einem Verzeichnis (Loch e)", zeilenBefund("src/lib", 999, 999) !== null],
     ["Bereich rückwärts (Loch e)", zeilenBefund("package.json", 100, 10) !== null],
     ["Zeile 0 (Loch e)", zeilenBefund("package.json", 0, 0) !== null],
     ["gültige Zeile bleibt frei", zeilenBefund("package.json", 1, 2) === null],
+    // Phantomzeile am Dateiende (Loch h).
+    ["abschließender Umbruch zählt nicht (Loch h)", zeilenzahl("a\nb\n") === 2],
+    ["ohne abschließenden Umbruch", zeilenzahl("a\nb") === 2],
+    ["leere Datei hat null Zeilen", zeilenzahl("") === 0],
+    ["CRLF zählt gleich", zeilenzahl("a\r\nb\r\n") === 2],
   ];
   const schlecht = faelle.filter(([, ok]) => !ok).map(([name]) => name);
   console.log(
