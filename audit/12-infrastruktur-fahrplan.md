@@ -45,6 +45,8 @@ Repository belegbar und hingen an keiner Messung:
   2026-08-21; die Regressionssperre dafür hatte selbst die Lücke.
 - **Ein TLS-Fehler am Ursprung wurde der Kompression angelastet** — siehe
   Spur A1/B2/F1. Datiert: `npm-20` läuft am 31.10.2026 ab.
+- **Vier Sicherheitsregeln waren mit falscher Begründung entschärft** — siehe
+  den eigenen Abschnitt „DAST" unten.
 - **Der Deploy-Webhook-Kommentar nennt einen falschen Default-Branch.**
   `src/app/api/deploy-hook/route.ts` behauptet, der Default-Branch dieses
   Repositories sei `claude/roses-food-blog-vxs3vm`; über die GitHub-API
@@ -85,6 +87,29 @@ Messung.
 Upstream-Adresse zu behaupten; `nginx.conf.example` im Kopf als „historisch,
 beschreibt nicht diesen Server; die Werte hier sind die einzige Niederschrift"
 kennzeichnen. Löschung und `bootstrap.sh`-Umbau an die Messung M1/M2 binden.
+
+*Inventar erstellt (2026-08-22).* Fünf Bereiche einzeln durchgegangen — README,
+`docs/`, `bootstrap.sh` + `deploy/`, Quelltext-Kommentare, und die Tests, die
+den Host-nginx-Betrieb heute festhalten —, jeder mit einer Gegenprüfung, die
+jede Datei-Zeile am Arbeitsbaum nachgeschlagen hat. Von 565 nachgeschlagenen
+Referenzen waren **53 Zeilennummern falsch, 31 Ersatzaussagen unbelegt und 43
+Fundstellen übersehen**; alle drei Klassen sind vor der Konsolidierung
+korrigiert worden. Ergebnis: sechs Änderungsgruppen (Vorlagenkopf, Portangaben,
+README, `docs/`, Quelltext-Kommentare, DAST-Begründung) mit Reihenfolge und
+Gate-Risiko je Gruppe.
+
+Zwei Dinge, die das Inventar zusätzlich festhält:
+- **`tests/kompression.test.ts` nagelt die falsche Welt aktiv fest.** 14 seiner
+  22 Prüfungen werden rot, sobald A3 *entfernt* statt *kennzeichnet* — unter
+  anderem verbietet `:110-137` ausgerechnet `gzip_vary on;`, also die am
+  Ursprung richtige Direktive.
+- **Eine Prüfung gegen Doku-Drift gibt es heute nicht** und kann es für
+  Aussagen über die Topologie auch nicht geben, solange M1–M8 offen sind.
+  Möglich und lohnend sind zwei rein statische Gates: ein Negativ-Gate gegen
+  die Wiedereinführung fester Portzahlen, `certbot`, `sites-available` außerhalb
+  ausdrücklich historischer Blöcke, und ein Querverweis-Gate (`README §N`,
+  `ASSUMPTIONS Bxx`, Dateipfade in Codeblöcken, die toten A-Nummern). Beides
+  ist Regressionsschutz, nicht Drift-Erkennung — und muss auch so heißen.
 
 ## Spur A1/B2/F1 — Erhebung als Regime-Skript, Schwellen, Kadenz
 
@@ -260,6 +285,63 @@ Verbotsliste, keine Zielzahl für das Aufräumen.
 **Nächster Schritt:** Reihenfolge umdrehen — A2/A3 vor E3. E4 erst nach der
 Speicherfrage. E1 zuletzt, mit Ausgangsmesswert und mit dem vorhandenen
 Zuordnungsskript statt einer Heuristik.
+
+## DAST — was ein echter Lauf gezeigt hat (2026-08-22)
+
+`.zap/rules.tsv` stufte fünf Header-Regeln von FAIL auf WARN herab, begründet
+mit „in Produktion von nginx gesetzt (in CI aber fehlen)". Für vier davon war
+das falsch: Content-Security-Policy, X-Content-Type-Options, X-Frame-Options
+und Permissions-Policy setzt die **Anwendung** für jede Route
+(`next.config.ts`, `source: "/:path*"`). Sie sind auf dem Draht — an der
+gebauten App in genau der Konfiguration von `dast.yml` nachgemessen, auf der
+Startseite und auf `/health`.
+
+Die vier stehen wieder auf FAIL. Ein angestoßener Lauf gegen den Arbeitsbranch
+belegt, dass das trägt:
+
+```
+FAIL-NEW: 0   FAIL-INPROG: 0   WARN-NEW: 9   PASS: 58
+```
+
+Keine der verschärften Regeln feuert; `Permissions Policy Header Not Set
+[10063]` steht ausdrücklich unter PASS. HSTS (10035) bleibt WARN — die
+Anwendung setzt es bewusst nicht, und wo es gesetzt wird, ist nicht erhoben.
+
+**Derselbe Lauf hat aber zwei weitere Befunde freigelegt, beide offen:**
+
+**D-1 — Der DAST-Lauf ist nicht „informativ", er ist fail-closed und seit
+Wochen rot.** Der Workflow-Kopf behauptete, er laufe informativ. Tatsächlich
+steht `fail_action: true`, und die ZAP-Aktion scheitert bei **jedem** Alarm,
+auch bei WARN (Docker-Rückgabewert 2). Neun WARN genügen. Das erklärt die vier
+unbemerkten Fehlschläge, die im Kopf desselben Workflows als Gründungsbefund
+stehen — und die Begründung dort zeigte in die falsche Richtung. Zu entscheiden
+ist, was die neun Warnungen wert sind; sie einfach zu dulden wäre das
+Weichspülen, das CLAUDE.md verbietet.
+
+Die neun, mit erster Einschätzung (nicht entschieden):
+
+| Regel | Zahl | Erste Einschätzung |
+|---|---:|---|
+| CSP: `script-src unsafe-inline` [10055] | 9 | **echt.** `next.config.ts` erlaubt `'unsafe-inline'` für Skripte. Behebbar nur mit Nonce/Hash — echte Arbeit, echter Nutzen. |
+| Cross-Origin-Opener-Policy fehlt [90004] | 8 | **echt und billig.** Ein Kopf mehr in `next.config.ts`. |
+| Absence of Anti-CSRF Tokens [10202] | 5 | zu prüfen: Die Anwendung hat eigenen Schutz (`src/lib/csrf.ts`, Origin/Sec-Fetch-Site). ZAP sieht ihn nicht. |
+| User Controllable HTML Element Attribute [10031] | 13 | zu prüfen — betrifft `/suche` mit Parametern und die Startseite. |
+| Content-Type Header Missing [10019] | 3 | betrifft nur 308-Weiterleitungen ohne Rumpf. |
+| Non-Storable Content [10049] | 8 | Folge von `no-store` auf dynamischen Seiten — vermutlich beabsichtigt. |
+| Big Redirect Detected [10044] | 1 | `/admin` 307. |
+| Modern Web Application [10109] | 5 | rein informativ. |
+| Authentication Request Identified [10111] | 1 | rein informativ. |
+
+**D-2 — Die ZAP-Aktion kann ihr eigenes Artefakt nicht hochladen.**
+`Create Artifact Container failed: The artifact name zap_scan is not valid` —
+`zaproxy/action-baseline@v0.12.0` gegen die heutige Artefakt-Schnittstelle. Der
+nachgelagerte eigene Upload (`zap-report`) gelingt, der Bericht ist also da;
+die Fehlermeldung ist trotzdem eine weitere Spur, die in die Irre führt.
+
+**Nebenwirkung dieses Laufs:** Der Meldepfad hat wie vorgesehen einen Kommentar
+an Issue #75 („Wiederkehrender Lauf fehlgeschlagen: DAST") geschrieben. Der
+Kommentar stammt aus einem absichtlich angestoßenen Prüflauf, nicht aus einem
+neuen Fehler.
 
 ## Was gemessen werden muss, bevor weitergebaut wird
 
