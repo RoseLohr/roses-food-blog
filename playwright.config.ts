@@ -32,6 +32,31 @@ export default defineConfig({
   workers: 1,
   retries: 0,
   reporter: [["list"]],
+  /**
+   * Die Referenzaufnahmen laufen ZUERST, und das ist zugesagt statt gehofft.
+   *
+   * Sie halten den Stand fest, gegen den ein Umbau geprüft wird — also müssen
+   * sie eine unberührte Datenbank sehen. Mehrere Specs schreiben aber in die
+   * gemeinsame Datenbank (cms-paket ändert z. B. den Einleitungstext der
+   * Reisen-Seite über den Admin). Ohne diese Reihenfolge hing die Kontrolle an
+   * der alphabetischen Sortierung der Dateinamen: allein grün, im Verbund rot.
+   * Genau so entsteht eine flatterhafte Kontrolle, und eine flatterhafte
+   * Kontrolle wird abgeschaltet statt beachtet.
+   *
+   * `dependencies` erzwingt die Reihenfolge ausdrücklich. Der Pfad der
+   * Vergleichsbilder wird dabei bewusst OHNE Projektnamen geschrieben — sonst
+   * benennte allein diese Umstellung alle 33 Aufnahmen um.
+   */
+  projects: [
+    { name: "referenz", testMatch: /seiten-referenz\.spec\.ts/ },
+    {
+      name: "alles-weitere",
+      testIgnore: /seiten-referenz\.spec\.ts/,
+      dependencies: ["referenz"],
+    },
+  ],
+  snapshotPathTemplate:
+    "{testFileDir}/{testFileName}-snapshots/{arg}{-snapshotSuffix}{ext}",
   use: {
     baseURL: `http://localhost:${PORT}`,
     viewport: { width: 1280, height: 900 },

@@ -8,9 +8,8 @@
 import Link from "next/link";
 import type { FullDish, FullRestaurant, FullTravelPost } from "@/lib/travel";
 import type { MediaImage } from "@/lib/recipes";
-import type { BildPlatz, Bruch } from "@/lib/bildreihen";
 import {
-  bildSizes,
+  bildgruppeSizes,
   galerieSizes,
   restaurantPaarSizes,
   seitenverhaeltnis,
@@ -104,57 +103,41 @@ function arStil(img: MediaImage): React.CSSProperties {
 }
 
 /**
- * Eine BILDZEILE: ein Bild oder mehrere nebeneinander, in der Summe ihrer
- * Anteile und an der gewählten Seite. Der Text fließt daneben weiter, solange
- * die Zeile höchstens zwei Drittel der Spalte einnimmt (sonst `platz === null`).
+ * Eine BILDGRUPPE: das erste Bild über die ganze Breite, alle weiteren darunter
+ * in EINER Reihe, gleich hoch.
  *
- * Innerhalb der Zeile teilen sich die Bilder die Breite über
- * `flex: var(--ar) 1 0` im Verhältnis ihrer Seitenverhältnisse. Die gesamte
- * Breite ist freier Platz, der proportional zum Format verteilt wird — dadurch
- * ist Breite_i / Format_i für alle gleich, sie sind also exakt gleich hoch und
- * schließen unten bündig ab, ohne Zuschnitt und ohne eine Zeile JavaScript.
+ * Die Anordnung steckt vollständig im CSS (.bildgruppe / .bildgruppe-weitere);
+ * hier wird nur gesagt, WELCHES Bild die Bühne ist. Dass beide Teile zu EINER
+ * Galerie gehören — das Pop-up blättert über die ganze Gruppe und zählt alle
+ * Fotos —, leistet `lead` in GalleryLightbox; dieselbe Mechanik trägt schon die
+ * Gericht-Bühne.
+ *
+ * Kein Regler, keine Fallunterscheidung nach Bildzahl: Ein einzelnes Bild ist
+ * die Bühne ohne Reihe darunter, und das ergibt sich von selbst.
  */
-function Bildzeile({
-  images,
-  breite,
-  platz,
-}: {
-  images: MediaImage[];
-  breite: Bruch;
-  platz: BildPlatz | null;
-}) {
+function Bildgruppe({ images }: { images: MediaImage[] }) {
   if (images.length === 0) return null;
-  const sizes = bildSizes(
-    breite,
+  const sizes = bildgruppeSizes(
     images.map((img) => seitenverhaeltnis(img.width, img.height)),
   );
-  // Ohne Seite entfällt die pl-Klasse, damit im CSS gar nicht erst eine
-  // Float-Regel greift, die dann wieder aufgehoben werden müsste.
-  const klassen = `bildplatz br-${breite.z}-${breite.n}${platz === null ? "" : ` pl-${platz}`}`;
-
-  // Ein einzelnes Bild: Der Klick-Rahmen IST die Zeile — er schwebt im Text,
-  // also trägt er die Layout-Klassen. Mehrere: Die Zeile bleibt der Kasten
-  // außen herum, die Rahmen sind ihre Flex-Kinder und tragen je ihr
-  // Seitenverhältnis. Beide Male gehören die Bilder zu EINER Galerie — im
-  // Pop-up blättert man deshalb durch die ganze Zeile.
-  const galerie = images.map((img, i) => ({
-    ...img,
-    thumb:
-      images.length === 1
-        ? { sizes: sizes[i], frameClassName: klassen }
-        : { sizes: sizes[i], frameStyle: arStil(img) },
-  }));
-  const lightbox = (
-    <GalleryLightbox
-      images={galerie}
-      thumbSizes={sizes[0]}
-      groupClassName={images.length === 1 ? undefined : "bildpaar"}
-    />
-  );
-  return images.length === 1 ? (
-    lightbox
-  ) : (
-    <div className={klassen}>{lightbox}</div>
+  return (
+    <div className="bildgruppe">
+      <GalleryLightbox
+        images={images.map((img, i) => ({
+          ...img,
+          // Nur die Bilder der unteren Reihe brauchen ihr Seitenverhältnis:
+          // Danach verteilt `flex: var(--ar) 1 0` die Breite. Die Bühne füllt
+          // die Spalte und braucht nichts.
+          thumb: {
+            sizes: sizes[i],
+            ...(i === 0 ? {} : { frameStyle: arStil(img) }),
+          },
+        }))}
+        thumbSizes={sizes[0]}
+        lead={{ className: "", sizes: sizes[0] }}
+        groupClassName="bildgruppe-weitere"
+      />
+    </div>
   );
 }
 
@@ -861,78 +844,33 @@ export async function TravelView({
           {/* Der erste Block startet auf gleicher Höhe wie das Verzeichnis. */}
           {full.blocks.length > 0 && (
             <div className="[&>*+*]:mt-7">
-              {(() => {
-                /**
-                 * BILD UND SEIN TEXT GEHÖREN IN EINEN KASTEN.
-                 *
-                 * Ein Float wirkt auf die Zeilen, die ihm folgen — nicht auf
-                 * die Kästen. Standen Bild und Text als Geschwister im Fluss,
-                 * schob `clear` das BILD nach unten (unter das Verzeichnis,
-                 * unter das vorige Bild), während der Textkasten oben blieb:
-                 * Am geseedeten Bericht gemessen begann das Bild bei y=1596,
-                 * sein Text schon bei y=1381 und war 54 px später zu Ende. Das
-                 * Bild hing dann ohne eine Zeile neben sich in der Luft — genau
-                 * das, was ein Umfluss verhindern soll.
-                 *
-                 * Deshalb umschließt `.bildlauf` (display: flow-root) das Bild
-                 * zusammen mit dem unmittelbar folgenden Textblock. Der Kasten
-                 * rückt als Ganzes nach unten, Bild und Text beginnen auf
-                 * derselben Höhe, und weil er den Float einschließt, kann kein
-                 * späterer Block in ihn hineinlaufen. Folgt kein Text, steht das
-                 * Bild allein im Kasten — dann gibt es nichts zu umfließen.
-                 */
-                const bloecke = zuRenderBloecken(full.blocks);
-                const ausgabe = [];
-                for (let i = 0; i < bloecke.length; i++) {
-                  const b = bloecke[i];
-                  if (b.art === "text") {
-                    ausgabe.push(
-                      <div
-                        key={i}
-                        className="prose-content"
-                        dangerouslySetInnerHTML={{
-                          __html: renderMarkdown(b.markdown),
-                        }}
-                      />,
-                    );
-                    continue;
-                  }
-                  if (b.art === "bild") {
-                    const bilder = b.imageIds
-                      .map((id) => full.blockImages[id])
-                      .filter((img) => img !== undefined);
-                    const naechster = bloecke[i + 1];
-                    const mitText = naechster?.art === "text" ? naechster : undefined;
-                    if (mitText) i++; // wird hier mitgerendert
-                    ausgabe.push(
-                      <div key={i} className="bildlauf">
-                        <Bildzeile
-                          images={bilder}
-                          breite={b.breite}
-                          platz={b.platz}
-                        />
-                        {mitText && (
-                          <div
-                            className="prose-content"
-                            dangerouslySetInnerHTML={{
-                              __html: renderMarkdown(mitText.markdown),
-                            }}
-                          />
-                        )}
-                      </div>,
-                    );
-                    continue;
-                  }
-                  const r = full.restaurants[b.index];
-                  if (r)
-                    ausgabe.push(
-                      <div key={i} className="md:clear-left">
-                        <RestaurantCard r={r} similarByDish={similarByDish} />
-                      </div>,
-                    );
+              {zuRenderBloecken(full.blocks).map((b, i) => {
+                if (b.art === "text") {
+                  return (
+                    <div
+                      key={i}
+                      className="prose-content"
+                      dangerouslySetInnerHTML={{ __html: renderMarkdown(b.markdown) }}
+                    />
+                  );
                 }
-                return ausgabe;
-              })()}
+                if (b.art === "bild") {
+                  return (
+                    <Bildgruppe
+                      key={i}
+                      images={b.imageIds
+                        .map((id) => full.blockImages[id])
+                        .filter((img) => img !== undefined)}
+                    />
+                  );
+                }
+                const r = full.restaurants[b.index];
+                return r ? (
+                  <div key={i} className="md:clear-left">
+                    <RestaurantCard r={r} similarByDish={similarByDish} />
+                  </div>
+                ) : null;
+              })}
             </div>
           )}
 

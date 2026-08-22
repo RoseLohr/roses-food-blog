@@ -67,16 +67,98 @@ echten Datenverlust im Wiederherstellungsweg und sollte zuerst drankommen.
 
 ---
 
-## B4 — Export/Import verliert Layout-Angaben des Bildblocks
+## B4 — Export/Import verlor Layout-Angaben des Bildblocks — ERLEDIGT
 
-**Befund.** `src/lib/data-transfer/types.ts` bildet vom Bildblock nur `image`
-und `groesse` ab; `import.ts` setzt beim Einlesen `platz: "rechts"` und
-`mitVorherigem: false`. Ein exportierter und wieder eingelesener Bericht
-verliert damit seine Bildanordnung.
+Der Bildblock trägt keine Layout-Felder mehr; es kann nichts mehr verloren
+gehen. Der Archivvertrag ist additiv geblieben: Ein Archiv von vor dem Umbau
+bringt `groesse` noch mit, das Feld wird nur nicht mehr gelesen und kippt den
+Import nicht (festgehalten in `tests/data-transfer.integration.test.ts`).
 
-**Beleg.** Vollständiger ZIP-Rundlauf in der Gegenprüfung.
+---
 
-**Status.** Wird durch den Bildgruppen-Umbau weitgehend gegenstandslos: Wenn
-die Anordnung nur noch aus der POSITION folgt, gibt es keine Layout-Felder
-mehr, die verloren gehen könnten. Bleibt hier stehen, bis der Umbau
-abgeschlossen ist — dann streichen oder auf den Rest eindampfen.
+## B5 — Referenzaufnahmen decken den Admin nicht ab
+
+**Befund.** `tests/e2e/seiten-referenz.spec.ts` hält elf ÖFFENTLICHE Seitentypen
+an drei Breiten fest. Für `/admin` gibt es keine einzige Aufnahme. Ein Umbau im
+Admin lässt sich damit nicht als „sieht gleich aus" nachweisen.
+
+**Warum das zählt.** Die Durchmusterung (58 Agenten) hat zwölf
+Generalisierungen vorgeschlagen, die der Gegenprüfung standhielten oder in
+deren Korrektur überlebten. **Fünf davon liegen im Admin** — sie sind ohne
+Beweismittel nicht abnehmbar.
+
+**Vorschlag.** Kein Screenshot, sondern ein HTML-Vergleich: vor dem Umbau das
+gerenderte Markup der betroffenen Admin-Routen wegschreiben, danach
+byte-vergleichen. Die Kandidaten behaupten byte-gleiches Markup — genau das
+prüft man so direkt statt über Pixel. Wegwerf-Skript, kein Dauertest.
+
+---
+
+## B6 — Arbeitsliste Code-Reduktion (aus der Durchmusterung)
+
+Ergebnis von 58 Agenten über sechs Bereiche, jeder Vorschlag anschließend
+angegriffen. Die meisten Kandidaten sind GEFALLEN — das ist selbst ein Befund:
+Der Code ist weniger doppelt, als er aussieht. Was standhielt, geordnet nach
+Ertrag pro Risiko:
+
+| # | Was | Datei(en) | Zeilen |
+|---|---|---|---|
+| 1 | Zwölf ausgeschriebene Quellen → Tupel-Tabelle + `.map` | `src/lib/media-verwendung.ts:35-132` | −72 |
+| 2 | Vier identische Formularaufbauten → ein Bauer | `tests/travel-dish-images.integration.test.ts` | −65 |
+| 3 | 17× dieselbe Statusmeldung → `<Meldung>` | 17 Admin-Seiten | −40 bis −52 |
+| 4 | Testaufbau „frische Datenbank" → `frischeDb()` | 23 Testdateien | −95 bis −105 |
+| 5 | Testdaten „Admin anlegen" → `adminAnlegen()` | 7 Testdateien | −42 |
+| 6 | Löschen-Formular → `<LoeschForm>` | 9 Admin-Seiten | −25 |
+| 7 | Vier Inline-Setter → vorhandenes `updateDish` | `travel-editor.tsx` | −18 |
+| 8 | `MASSE.inhalt` ist ein Doppelgänger von `vollbildSizes()` | `travel-view.tsx:59-68` | −3 bis −14 |
+| 9 | Publikationsstatus-Chip → eine Komponente | 3 Admin-Seiten | −8 bis −13 |
+| 10 | Wurzelkrume in `breadcrumbJsonLd` ziehen | `src/lib/jsonld.tsx` + 6 Seiten | −8 |
+| 11 | `GalleryImage extends MediaImageLike` | `gallery-lightbox.tsx:34-65` | −8 |
+| 12 | Zwei sofort ausgeführte Funktionen auflösen | `image-picker.tsx` | −3 |
+
+**Gesamt realistisch ≈ −395** (untere Kante; der Hausstil verlangt an jeder
+neuen Datei einen deutschen Doc-Kommentar, das kostet je Eintrag 5–15 Zeilen
+gegenüber der Rohrechnung). Einträge 1, 2 und 4 tragen davon ≈ 235 — kippt
+einer, kippt die Bilanz.
+
+**Reihenfolge.** Erst B5 (Admin-Beweismittel), sonst sind 3, 6, 9 und 12 nicht
+abnehmbar. Dann 1, 8, 10, 11 (unabhängig, durch vorhandene Kontrollen gedeckt).
+Dann 2+4+5 in EINEM Durchgang je Testdatei — sie fassen dieselben
+`beforeAll`-Blöcke an.
+
+**Voraussetzung für Eintrag 4:** Der Helfer darf `@/db` nicht statisch
+importieren (`src/db/index.ts:92` legt die Verbindung eager an). Heute schützt
+davor die handgeschriebene Reihenfolge; danach schützt nichts mehr. **Erst die
+Kontrolle bauen, dann den Helfer.**
+
+---
+
+## B7 — Kaskadenfalle: `globals.css` hat kein `@layer`
+
+**Befund.** In 1136 Zeilen steht kein einziges `@layer`. Tailwind v4 legt seine
+Utilities per `@import "tailwindcss"` in `@layer utilities`. Eine ungelayerte
+Projektklasse schlägt damit **jede** Utility, unabhängig von Spezifität:
+`class="karte p-4"` oder `class="bildgruppe mb-8"` wären still wirkungslos.
+
+**Warum hier.** Es ist genau der Fehlermodus, dessen Abschaffung diesen Auftrag
+ausgelöst hat — eine Regel, die stillschweigend etwas anderes tut, als
+dasteht. Wer künftig eine Projektklasse einführt, muss `@utility` benutzen. Im
+Bildgruppen-Block steht die Warnung jetzt im Kommentar; sie gehört aber an den
+Anfang der Datei und in die Mandate.
+
+---
+
+## B8 — E2E-Specs schreiben in eine gemeinsame Datenbank
+
+**Befund.** `tests/e2e/cms-paket.spec.ts` ändert über den Admin den
+Einleitungstext der Reisen-Seite. Alles, was danach läuft, sieht den geänderten
+Stand. Die Referenzaufnahmen liefen dadurch allein grün und im Verbund rot.
+
+**Was getan wurde.** Die Reihenfolge ist jetzt ZUGESAGT statt gehofft:
+`playwright.config.ts` fährt die Referenz als eigenes Projekt vor allem
+anderen (`dependencies`). Das behebt das Symptom für diese eine Kontrolle.
+
+**Was offen bleibt.** Die Ursache ist, dass Specs gemeinsamen Zustand
+verändern und nicht aufräumen. Jede künftige Kontrolle, die einen unberührten
+Stand braucht, hat dasselbe Problem. Sauber wäre ein eigenes `DATA_DIR` je
+Spec-Gruppe.

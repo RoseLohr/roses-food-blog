@@ -1,120 +1,42 @@
 /**
- * Bilder im Reisebericht — die BREITE ist der Regler.
+ * Bilder im Reisebericht — die POSITION ist die ganze Regel.
  *
- * Vorher stellte der Admin die HÖHE ein, und daraus ergaben sich drei Dinge,
- * die auf dem Schalter nicht standen: die Breite (Höhe × Seitenverhältnis, also
- * je Foto anders), das Nebeneinander (entstand aus der Nachbarschaft zweier
- * Bildblöcke) und die Seite (ein Zähler wechselte automatisch ab). Dazu eine
- * vierte Regel, die die erste aufhob: In einer Reihe wirkte die Höhe gar nicht.
- * Vier Mechanismen für ein Bild — und keinen davon konnte man ansehen.
+ *   Das ERSTE Bild einer Gruppe steht über die ganze Breite.
+ *   ALLE weiteren stehen darunter in EINEM Behälter, teilen sich die Breite
+ *   und sind gleich hoch.
  *
- * Jetzt gilt:
+ * Eine Gruppe ist ein ununterbrochener Lauf von Bildblöcken. Ein Text- oder
+ * Restaurant-Block beendet sie. Mehr gibt es nicht einzustellen.
  *
- *   GRÖSSE   Breite als Anteil der Inhaltsspalte.
- *            S = ein Drittel (272 px), M = die Hälfte (408 px),
- *            L = die ganze Spalte (816 px). Die Höhe folgt dem Foto — die Form
- *            des Fotos ist Sache des Fotos.
- *   PLATZ    links oder rechts; der Text fließt daneben weiter. Bei L gibt es
- *            keinen Platz, die ganze Spalte hat keine Seite.
- *   ZEILE    Ein Bild kann „neben dem Bild darüber" stehen. Die Bilder bilden
- *            dann EINE Zeile, und deren Breite ist die SUMME ihrer Anteile:
- *            S+S+S ergibt die ganze Spalte, M+S fünf Sechstel, S+S zwei
- *            Drittel. Was nicht mehr hineinpasst, beginnt eine neue Zeile.
- *            Innerhalb der Zeile wird die Breite nach Seitenverhältnis
- *            verteilt — dadurch sind die Bilder exakt gleich hoch und
- *            schließen unten bündig ab.
+ * WAS HIER VORHER STAND, und warum es weg ist: Die Anordnung hing an FÜNF
+ * Reglern — Größe (s/m/l), Platz (links/rechts), „steht neben dem Bild
+ * darüber", einer Sechstel-Summe je Zeile und einer Umfluss-Grenze. Vier davon
+ * waren Felder AM BLOCK, die eine Aussage über seine NACHBARN machten. Genau
+ * daran brach es reihenweise: Ein Block dazwischen, ein Umsortieren, ein
+ * Größenwechsel — und die Aussage stimmte nicht mehr, ohne dass jemand etwas
+ * gesagt hätte. Zuletzt gemessen an der ausgelieferten Seite: Zwei Bilder
+ * standen bei 2/3 der Spalte nebeneinander, das dritte rutschte mit 1/3
+ * darunter, weil 2/3 + 1/3 zusammen 100 % PLUS zweimal `margin-right: 1.5rem`
+ * ergaben.
  *
- * Damit wird „passt nebeneinander" zu einer Rechnung, die man im Kopf macht,
- * und `sizes` zu einer Zahl statt einer Vorhersage.
+ * Jetzt gibt es nichts mehr, das nicht stimmen kann: Kein Feld am Block
+ * beschreibt seine Nachbarn, und keine Summe muss aufgehen.
  *
- * Text fließt nur neben einer Zeile weiter, die höchstens ZWEI DRITTEL der
- * Spalte einnimmt. Bei fünf Sechsteln blieben daneben 136 px — das ist keine
- * Spalte mehr, sondern ein Rand; dieselbe Überlegung, aus der auf dem Handy
- * gar kein Umfluss stattfindet (dort wäre ein Drittel 103 px breit).
- * Einzelbilder stehen auf dem Handy deshalb über die volle Breite; eine Zeile
- * bleibt nebeneinander — sie ist der einzige Fall, in dem sich mehrere Bilder
- * eine Zeile teilen, und der einzige, in dem das jemand bestellt hat.
+ * Die einzige Rechnung steckt in der unteren Reihe und ist eine Zeile CSS:
+ * `flex: var(--ar) 1 0`. `flex-basis: 0` heißt, die gesamte Breite ist freier
+ * Platz; verteilt wird er im Verhältnis der Seitenverhältnisse. Damit ist
+ * Breite_i / Format_i für alle gleich — sie sind exakt gleich hoch und
+ * schließen unten bündig ab, ohne Zuschnitt und ohne eine Zeile JavaScript.
+ * `bildgruppeSizes` führt dieselbe Rechnung aus, damit die `sizes`-Angabe mit
+ * dem Gerenderten übereinstimmt und nicht nur ungefähr.
+ *
+ * Nachgemessen an echtem Chromium (tests/e2e/bildgruppe-mock.spec.ts, fünf
+ * Bildzahlen × vier Breiten): bei drei Bildern auf 1280 px ergeben
+ * 365,53 + 182,77 + 243,69 + 2×12 genau 816,00 — die Spalte.
  */
 import type { TravelBlock } from "@/lib/travel-blocks";
 
-/** Breite eines Bildes als Anteil der Inhaltsspalte. */
-export const BILD_GROESSEN = ["s", "m", "l"] as const;
-export type BildGroesse = (typeof BILD_GROESSEN)[number];
-
-/** Seite, an der ein Bild steht und der Text daneben weiterläuft. */
-export const BILD_PLAETZE = ["links", "rechts"] as const;
-export type BildPlatz = (typeof BILD_PLAETZE)[number];
-
-/**
- * Anteil der Inhaltsspalte je Größe, in SECHSTELN gerechnet.
- *
- * Sechstel, weil sich damit alle drei Größen ganzzahlig addieren lassen
- * (S = 2, M = 3, L = 6). Die Summe einer Zeile ist deshalb eine ganze Zahl —
- * kein Gleitkomma-Vergleich entscheidet, ob ein Bild „noch passt".
- */
-const SECHSTEL: Record<BildGroesse, number> = { s: 2, m: 3, l: 6 };
-
-/** Eine volle Zeile. */
-const ZEILE = 6;
-
-/**
- * Bis hierhin fließt der Text neben der Zeile weiter (zwei Drittel).
- * Darüber blieben bei 816 px Spalte höchstens 136 px daneben — ein Rand,
- * keine Spalte.
- */
-const UMFLUSS_MAX = 4;
-
-/** Breite als gekürzter Bruch der Inhaltsspalte. */
-export interface Bruch {
-  z: number;
-  n: number;
-}
-
-function ggt(a: number, b: number): number {
-  return b === 0 ? a : ggt(b, a % b);
-}
-
-/** Sechstel als gekürzten Bruch. */
-function alsBruch(sechstel: number): Bruch {
-  const t = ggt(sechstel, ZEILE);
-  return { z: sechstel / t, n: ZEILE / t };
-}
-
-/** Summe der Anteile einer Zeile, in Sechsteln. */
-function summeSechstel(groessen: BildGroesse[]): number {
-  return groessen.reduce((s, g) => s + SECHSTEL[g], 0);
-}
-
-/**
- * Fließt neben dieser Zeile noch Text weiter?
- *
- * Nur bis zwei Drittel der Spalte. Bei fünf Sechsteln blieben daneben 136 px —
- * das ist keine Spalte mehr, sondern ein Rand.
- */
-export function fliesstText(groessen: BildGroesse[]): boolean {
-  return summeSechstel(groessen) <= UMFLUSS_MAX;
-}
-
-/** Breite einer Zeile als Anteil der Spalte. */
-export function zeilenBreite(groessen: BildGroesse[]): Bruch {
-  return alsBruch(Math.min(summeSechstel(groessen), ZEILE));
-}
-
-/**
- * Passt ein weiteres Bild neben die bestehende Zeile?
- *
- * Die Frage stellt der Renderer (darf das Häkchen greifen?) und der Editor
- * (darf das Häkchen überhaupt angeboten werden?) — beide über DIESE Funktion,
- * damit sie nicht auseinanderlaufen können.
- */
-export function passtInZeile(
-  zeile: BildGroesse[],
-  weiteres: BildGroesse,
-): boolean {
-  return summeSechstel(zeile) + SECHSTEL[weiteres] <= ZEILE;
-}
-
-/** Abstand zwischen zwei Bildern einer Zeile (gap-3 = 12 px). */
+/** Abstand zwischen zwei Bildern einer Gruppe (gap-3 = 12 px). */
 const BILD_ABSTAND = 12;
 
 /**
@@ -129,6 +51,9 @@ const SPALTE_GROSS = 816;
 /** Zeilenhöhe der Galerie. Fest, nicht wachsend — siehe `galerieSizes`. */
 const GALERIE_HOEHE = 220;
 
+/** Abstand zwischen zwei Fotos im Restaurant-Band (gap-2 = 8 px). */
+const BAND_ABSTAND = 8;
+
 /** Seitenverhältnis Breite/Höhe. Unbrauchbare Maße (0, negativ) → quadratisch:
  *  ein Bild ohne verwertbare Maße darf das Layout nicht in eine Division durch
  *  Null oder eine negative Breite ziehen. */
@@ -137,217 +62,40 @@ export function seitenverhaeltnis(breite: number, hoehe: number): number {
   return breite / hoehe;
 }
 
-/** Blockfolge, wie sie gerendert wird — Größe und Platz bereits entschieden. */
+/** Blockfolge, wie sie gerendert wird. Eine „bild"-Gruppe ist ein
+ *  ununterbrochener Lauf von Bildblöcken. */
 export type RenderBlock =
   | { art: "text"; markdown: string }
   | { art: "restaurant"; index: number }
-  /**
-   * Eine Bildzeile: ein Bild oder mehrere nebeneinander. Die Breite ist die
-   * Summe der Anteile; der Platz kommt vom ERSTEN Bild und ist `null`, wenn
-   * daneben kein Text mehr Platz hätte (mehr als zwei Drittel der Spalte).
-   */
-  | {
-      art: "bild";
-      imageIds: number[];
-      groessen: BildGroesse[];
-      breite: Bruch;
-      platz: BildPlatz | null;
-    };
-
-/** Eine Bildzeile im Renderbaum. */
-type Zeile = Extract<RenderBlock, { art: "bild" }>;
+  | { art: "bild"; imageIds: number[] };
 
 /**
- * Gruppiert die Blockfolge: je Eintrag entweder ein Nicht-Bildblock oder eine
- * Bildzeile mit den Blockindizes, die zu ihr gehören.
+ * Fasst die Blockfolge des Editors zu Renderblöcken zusammen: aufeinander
+ * folgende Bildblöcke werden EINE Gruppe.
  *
- * Die einzige Beziehung zwischen zwei Blöcken ist `mitVorherigem` — und die
- * wird gesagt, nicht erraten. Sie greift nur, wenn direkt darüber eine
- * Bildzeile steht, in die das Bild noch HINEINPASST: Die Summe der Anteile
- * darf die Spalte nicht überschreiten (drei S füllen sie genau, ein viertes
- * beginnt eine neue Zeile). Über einem Text- oder Restaurant-Block gibt es
- * nichts, wozu sich etwas stellen könnte.
- *
- * Renderer UND Editor bauen auf diesem einen Durchlauf auf — der Editor muss
- * die Regel anzeigen, bevor gespeichert wird, und beide dürfen dabei nicht
- * auseinanderlaufen.
+ * Das ist der ganze Algorithmus. Es gibt keine Bedingung, unter der zwei
+ * benachbarte Bilder NICHT zusammengehören — deshalb kann hier auch nichts
+ * mehr auseinanderfallen.
  */
-function gruppiere(
-  blocks: TravelBlock[],
-): Array<{ block: TravelBlock; indizes: number[] }> {
-  const out: Array<{ block: TravelBlock; indizes: number[] }> = [];
-  // Die zuletzt geöffnete Bildzeile: ihre Größen und ihre Blockindizes.
-  let offen: { groessen: BildGroesse[]; indizes: number[] } | null = null;
-
-  blocks.forEach((b, i) => {
-    if (b.type !== "bild") {
-      out.push({ block: b, indizes: [i] });
-      offen = null;
-      return;
-    }
-    if (b.mitVorherigem && offen !== null && passtInZeile(offen.groessen, b.groesse)) {
-      offen.groessen.push(b.groesse);
-      offen.indizes.push(i);
-      return;
-    }
-    offen = { groessen: [b.groesse], indizes: [i] };
-    out.push({ block: b, indizes: offen.indizes });
-  });
-
-  return out;
-}
-
-/**
- * Blockindizes je Bildzeile, in Reihenfolge — für den Editor, der zeigen muss,
- * was beim Speichern herauskäme. Nicht-Bildblöcke kommen nicht vor.
- */
-export function zeilenIndizes(blocks: TravelBlock[]): number[][] {
-  return gruppiere(blocks)
-    .filter((g) => g.block.type === "bild")
-    .map((g) => g.indizes);
-}
-
-/**
- * Zwei benachbarte Blöcke tauschen.
- *
- * Die Zeilenzugehörigkeit bleibt dabei an ihrer POSITION: Tauschen zwei Bilder
- * die Plätze, behält jede Stelle ihre Flagge. Sonst zerfiele eine Zeile, in der
- * jemand nur die Reihenfolge ändern wollte — die Flagge des zweiten Bildes
- * wanderte nach ganz oben, wo über ihr nichts steht, und das dritte Bild
- * rutschte nach unten.
- *
- * Zwischen einem Bild und einem Textblock gibt es nichts zu tauschen: Dort
- * ändert sich die Nachbarschaft wirklich, und jeder Block behält seine eigene
- * Flagge.
- */
-export function tauscheBloecke<T extends TravelBlock>(
-  blocks: T[],
-  i: number,
-  richtung: -1 | 1,
-): T[] {
-  const j = i + richtung;
-  if (j < 0 || j >= blocks.length) return blocks;
-  const next = [...blocks];
-  [next[i], next[j]] = [next[j], next[i]];
-  const a = blocks[i];
-  const b = blocks[j];
-  if (a.type === "bild" && b.type === "bild") {
-    next[i] = { ...next[i], mitVorherigem: a.mitVorherigem };
-    next[j] = { ...next[j], mitVorherigem: b.mitVorherigem };
-  }
-  return next;
-}
-
-/** Fasst die Blockfolge des Editors zu Renderblöcken zusammen. */
 export function zuRenderBloecken(blocks: TravelBlock[]): RenderBlock[] {
-  return gruppiere(blocks).map(({ block, indizes }) => {
-    if (block.type === "text") return { art: "text", markdown: block.markdown };
-    if (block.type === "restaurant") return { art: "restaurant", index: block.index };
-
-    const teile = indizes.map((i) => blocks[i]).filter((b) => b.type === "bild");
-    const groessen = teile.map((b) => b.groesse);
-    const zeile: Zeile = {
-      art: "bild",
-      imageIds: teile.map((b) => b.imageId),
-      groessen,
-      breite: zeilenBreite(groessen),
-      // Der Platz kommt vom ERSTEN Bild der Zeile; bei L ist er bedeutungslos,
-      // wird aber mitgeführt, damit ein Wechsel L → M ihn nicht verliert.
-      // Ab fünf Sechsteln bliebe daneben kein Text mehr — dann keine Seite.
-      platz: fliesstText(groessen) ? block.platz : null,
-    };
-    return zeile;
-  });
+  const out: RenderBlock[] = [];
+  for (const b of blocks) {
+    if (b.type === "text") {
+      out.push({ art: "text", markdown: b.markdown });
+    } else if (b.type === "restaurant") {
+      out.push({ art: "restaurant", index: b.index });
+    } else {
+      const letzte = out[out.length - 1];
+      if (letzte?.art === "bild") letzte.imageIds.push(b.imageId);
+      else out.push({ art: "bild", imageIds: [b.imageId] });
+    }
+  }
+  return out;
 }
 
 /** Anteil als kürzest mögliche Zahl (0.5 statt 0.5000) für den CSS-Faktor. */
 function faktorText(anteil: number): string {
   return String(Number(anteil.toFixed(4)));
-}
-
-/**
- * Breite einer Bildzeile als CSS-Ausdruck OHNE `calc()`-Hülle, je Breakpoint.
- * Der Aufrufer setzt die Hülle — so bleibt der Ausdruck flach, statt ein
- * `calc()` in ein `calc()` zu schachteln.
- *
- * Der Bruch wird als `* z / n` ausgeschrieben statt als Kommazahl: `* 2 / 3`
- * ist exakt, `* 0.6667` wäre gerundet — und die Rundung stünde ausgerechnet in
- * der Angabe, mit der der Browser die Variante wählt.
- *
- * Auf dem Handy (<768) füllt JEDE Bildzeile die Spalte — dort gibt es keinen
- * Umfluss, also auch keine Anteile.
- */
-function zeilenBreiteCss(breite: Bruch, bp: "handy" | "mittel"): string {
-  if (bp === "handy") return `100vw - ${SPALTE_HANDY_ABZUG / 16}rem`;
-  const spalte = `100vw - ${SPALTE_MITTEL_ABZUG / 16}rem`;
-  if (breite.n === 1) return spalte;
-  if (breite.z === 1) return `(${spalte}) / ${breite.n}`;
-  return `(${spalte}) * ${breite.z} / ${breite.n}`;
-}
-
-/** Dasselbe für den festen Breakpoint ab 929 px, in Pixeln. */
-function zeilenBreiteGross(breite: Bruch): number {
-  return Math.round((SPALTE_GROSS * breite.z) / breite.n);
-}
-
-/**
- * Breite JEDES Bildes einer Zeile in Pixeln, bei 816 px Spalte.
- *
- * Ein Bild allein: die Zeile selbst. Mehrere: die Zeile minus die Abstände,
- * verteilt im Verhältnis der Seitenverhältnisse — dadurch ist Breite/Format
- * für alle gleich, sie sind also exakt gleich hoch und schließen bündig ab.
- *
- * Dieselbe Rechnung führt das CSS über `flex: var(--ar) 1 0` aus. Sie steht
- * hier EINMAL und versorgt beides: die `sizes`-Angabe und den Hinweis im
- * Editor, der die fertige Größe nennt.
- */
-export function bildBreitenGross(
-  breite: Bruch,
-  seitenverhaeltnisse: number[],
-): number[] {
-  const anzahl = seitenverhaeltnisse.length;
-  if (anzahl === 0) return [];
-  const gesamt = zeilenBreiteGross(breite);
-  if (anzahl === 1) return [gesamt];
-  const summe = seitenverhaeltnisse.reduce((a, b) => a + b, 0);
-  const frei = gesamt - BILD_ABSTAND * (anzahl - 1);
-  return seitenverhaeltnisse.map((ar) => Math.round((frei * ar) / summe));
-}
-
-/**
- * `sizes` je Bild einer Bildzeile — eine Angabe je Bild, in DOM-Reihenfolge.
- *
- * Die Pixelangabe für den festen Breakpoint kommt aus `bildBreitenGross`,
- * damit Deklaration und Rechnung nicht auseinanderlaufen können.
- */
-export function bildSizes(
-  breite: Bruch,
-  seitenverhaeltnisse: number[],
-): string[] {
-  const anzahl = seitenverhaeltnisse.length;
-  if (anzahl === 0) return [];
-  const gross = bildBreitenGross(breite, seitenverhaeltnisse);
-
-  if (anzahl === 1) {
-    return [
-      [
-        `(max-width: 767px) calc(${zeilenBreiteCss(breite, "handy")})`,
-        `(max-width: 928px) calc(${zeilenBreiteCss(breite, "mittel")})`,
-        `${gross[0]}px`,
-      ].join(", "),
-    ];
-  }
-
-  const summe = seitenverhaeltnisse.reduce((a, b) => a + b, 0);
-  const rest = BILD_ABSTAND * (anzahl - 1);
-  return seitenverhaeltnisse.map((ar, i) => {
-    const anteil = faktorText(ar / summe);
-    return [
-      `(max-width: 767px) calc((${zeilenBreiteCss(breite, "handy")} - ${rest}px) * ${anteil})`,
-      `(max-width: 928px) calc((${zeilenBreiteCss(breite, "mittel")} - ${rest}px) * ${anteil})`,
-      `${gross[i]}px`,
-    ].join(", ");
-  });
 }
 
 /**
@@ -382,22 +130,46 @@ function gedeckeltSizes(wunsch: number): string {
   return teile.join(", ");
 }
 
-/** `sizes` eines Bildes über die volle Inhaltsspalte (Restaurant-Band, Titelbild). */
+/** `sizes` eines Bildes über die volle Inhaltsspalte (Restaurant-Band, Titelbild,
+ *  erstes Bild einer Gruppe). */
 export function vollbildSizes(): string {
   return gedeckeltSizes(SPALTE_GROSS);
 }
 
-/** Abstand zwischen zwei Fotos im Restaurant-Band (gap-2 = 8 px). */
-const BAND_ABSTAND = 8;
+/**
+ * `sizes` je Bild einer Gruppe, in DOM-Reihenfolge.
+ *
+ * Das erste Bild füllt die Spalte. Die weiteren teilen sich die Spalte abzüglich
+ * der Abstände, im Verhältnis ihrer Seitenverhältnisse — dieselbe Rechnung, die
+ * das CSS über `flex: var(--ar) 1 0` ausführt.
+ */
+export function bildgruppeSizes(seitenverhaeltnisse: number[]): string[] {
+  if (seitenverhaeltnisse.length === 0) return [];
+  const [, ...weitere] = seitenverhaeltnisse;
+  const erstes = vollbildSizes();
+  if (weitere.length === 0) return [erstes];
+
+  const summe = weitere.reduce((a, b) => a + b, 0);
+  const luecken = BILD_ABSTAND * (weitere.length - 1);
+  return [
+    erstes,
+    ...weitere.map((ar) => {
+      const anteil = faktorText(ar / summe);
+      return [
+        `(max-width: 767px) calc((100vw - ${SPALTE_HANDY_ABZUG / 16}rem - ${luecken}px) * ${anteil})`,
+        `(max-width: 928px) calc((100vw - ${SPALTE_MITTEL_ABZUG / 16}rem - ${luecken}px) * ${anteil})`,
+        `${Math.round(((SPALTE_GROSS - luecken) * ar) / summe)}px`,
+      ].join(", ");
+    }),
+  ];
+}
 
 /**
  * `sizes` eines von ZWEI Fotos im Restaurant-Band.
  *
  * Das Band ist so breit wie die Inhaltsspalte; zwei Fotos teilen sie sich
- * hälftig, der Abstand dazwischen herausgerechnet. Beide Kacheln haben
- * dasselbe Format (Zuschnitt 4:3), also dieselbe Breite — eine Angabe genügt
- * für beide, anders als in der Bildzeile des Fließtexts, wo sich die Breite
- * nach dem Format richtet.
+ * hälftig, der Abstand dazwischen herausgerechnet. Beide Kacheln haben dasselbe
+ * Format (Zuschnitt 4:3), also dieselbe Breite — eine Angabe genügt für beide.
  */
 export function restaurantPaarSizes(): string {
   const haelfte = (spalte: string) => `(${spalte} - ${BAND_ABSTAND}px) / 2`;
@@ -419,10 +191,6 @@ export function restaurantPaarSizes(): string {
  * werden musste die Obergrenze, gerendert wurde deutlich weniger: ein 241 px
  * breites Bild lud die 480er-Variante statt der 320er. Der Auslieferungs-
  * Guardrail (tests/e2e/bild-auslieferung.spec.ts) hat genau das gefangen.
- *
- * Mit fester Zeilenhöhe ist die Breite wieder eine Zahl — und die Galerie wird
- * nebenbei ruhiger: ALLE Bilder sind gleich hoch, die Zeilen brechen um, jede
- * beginnt auf der linken Textkante.
  */
 export function galerieSizes(seitenverhaeltnisWert: number): string {
   return gedeckeltSizes(Math.round(GALERIE_HOEHE * seitenverhaeltnisWert));

@@ -497,23 +497,11 @@ export const travelBlock = sqliteTable(
     imageId: integer("image_id").references(() => mediaImage.id, {
       onDelete: "restrict",
     }),
-    /** Breite eines Bild-Blocks als Anteil der Spalte (siehe
-     *  lib/bildreihen.ts): s = Drittel, m = Hälfte, l = ganze Spalte. Für Text-
-     *  und Restaurant-Blöcke bedeutungslos; 'm' ist der Normalfall. */
-    groesse: text("groesse", { enum: ["s", "m", "l"] })
-      .notNull()
-      .default("m"),
-    /** Seite, an der das Bild steht und der Text daneben weiterläuft. Bei
-     *  groesse = 'l' bedeutungslos, wird aber mitgeführt, damit ein Wechsel
-     *  zurück auf 's'/'m' die vorher gewählte Seite nicht verliert. */
-    platz: text("platz", { enum: ["links", "rechts"] })
-      .notNull()
-      .default("rechts"),
-    /** „neben dem Bild darüber": stellt dieses Bild in denselben Bildplatz
-     *  wie das unmittelbar vorangehende. */
-    mitVorherigem: integer("mit_vorherigem", { mode: "boolean" })
-      .notNull()
-      .default(false),
+    /* Hier standen `groesse`, `platz` und `mit_vorherigem`. Alle drei waren
+       Aussagen eines Blocks über seine NACHBARN — und genau daran zerfiel die
+       Anordnung, sobald sich die Nachbarschaft änderte. Die Anordnung folgt
+       jetzt allein aus der Reihenfolge (siehe lib/bildreihen.ts), also gibt es
+       nichts mehr zu speichern. Entfernt in 0012_bildgruppe.sql. */
     restaurantId: integer("restaurant_id").references(() => restaurant.id, {
       onDelete: "cascade",
     }),
@@ -524,8 +512,6 @@ export const travelBlock = sqliteTable(
       "travel_block_type_check",
       sql`${t.type} IN ('text','bild','restaurant')`,
     ),
-    check("travel_block_groesse_check", sql`${t.groesse} IN ('s','m','l')`),
-    check("travel_block_platz_check", sql`${t.platz} IN ('links','rechts')`),
     check(
       "travel_block_restaurant_check",
       sql`(${t.type} = 'restaurant') = (${t.restaurantId} IS NOT NULL)`,

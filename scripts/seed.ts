@@ -425,8 +425,6 @@ async function main() {
       sortOrder: 1,
       type: "bild",
       imageId: bildGasse,
-      groesse: "s",
-      platz: "links",
     },
     {
       travelPostId: travel.id,
@@ -456,8 +454,6 @@ async function main() {
       sortOrder: 3,
       type: "bild",
       imageId: bildMarkt,
-      groesse: "m",
-      platz: "rechts",
     },
     {
       travelPostId: travel.id,
@@ -468,25 +464,19 @@ async function main() {
         "später kommt, findet leere Kisten und nasses Kopfsteinpflaster — und " +
         "die Cafés ringsum voll mit Leuten, die schon fertig sind.",
     },
-    // Eine ZEILE aus zwei S: die Anteile addieren sich zu zwei Dritteln, der
-    // Text fließt weiter daneben. Nachbarschaft allein reicht dafür nicht —
-    // das Häkchen am zweiten Bild ist die Ansage.
+    // Eine Gruppe aus ZWEI Bildern: das erste über die ganze Breite, das
+    // zweite darunter. Die Anordnung folgt allein aus der Nachbarschaft.
     {
       travelPostId: travel.id,
       sortOrder: 5,
       type: "bild",
       imageId: bildHafen,
-      groesse: "s",
-      platz: "links",
     },
     {
       travelPostId: travel.id,
       sortOrder: 6,
       type: "bild",
       imageId: bildZeile[3],
-      groesse: "s",
-      platz: "links",
-      mitVorherigem: true,
     },
     {
       travelPostId: travel.id,
@@ -502,44 +492,44 @@ async function main() {
       sortOrder: 8,
       type: "bild",
       imageId: bildSalz,
-      groesse: "l",
     },
-    // Drei S nebeneinander: Die Anteile addieren sich zur ganzen Spalte, die
-    // Zeile wird nach Seitenverhältnis verteilt (gleich hoch, unten bündig).
     {
       travelPostId: travel.id,
       sortOrder: 9,
-      type: "bild",
-      imageId: bildZeile[0],
-      groesse: "s",
-      platz: "links",
+      type: "text",
+      markdown:
+        "Zwischen den Salinen und der Stadt liegt eine Straße, an der alle " +
+        "zwanzig Kilometer ein Stand mit Zitronen steht.",
     },
+    // Eine Gruppe aus DREI Bildern — der Fall, an dem die alte Anordnung
+    // zerbrach: erstes über die ganze Breite, die beiden anderen darunter in
+    // einer Reihe, nach Seitenverhältnis verteilt (gleich hoch, unten bündig).
     {
       travelPostId: travel.id,
       sortOrder: 10,
       type: "bild",
-      imageId: bildZeile[1],
-      groesse: "s",
-      platz: "links",
-      mitVorherigem: true,
+      imageId: bildZeile[0],
     },
     {
       travelPostId: travel.id,
       sortOrder: 11,
       type: "bild",
-      imageId: bildZeile[2],
-      groesse: "s",
-      platz: "links",
-      mitVorherigem: true,
+      imageId: bildZeile[1],
     },
     {
       travelPostId: travel.id,
       sortOrder: 12,
+      type: "bild",
+      imageId: bildZeile[2],
+    },
+    {
+      travelPostId: travel.id,
+      sortOrder: 13,
       type: "text",
       markdown:
-        "Drei Bilder nebeneinander: Jedes bringt sein Drittel mit, zusammen " +
-        "füllen sie die Zeile. Die Breite verteilt sich nach Format, deshalb " +
-        "sind alle drei exakt gleich hoch.",
+        "Drei Bilder als eine Gruppe: das erste über die ganze Breite, die " +
+        "beiden anderen darunter in einer Reihe. Ihre Breite verteilt sich " +
+        "nach Format, deshalb sind sie exakt gleich hoch.",
     },
   ]);
 
