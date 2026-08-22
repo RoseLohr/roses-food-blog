@@ -77,7 +77,82 @@ if [[ $DRY -eq 1 ]]; then
   exit 0
 fi
 
-# 2. Container STOPPEN — vor JEDEM Eingriff an der Datenbank.
+# ── UNBEKANNT IST UNSICHER — AUCH BEIM SCHEMA-STAND ─────────────────────────
+#
+# Schema-Vorsprung (Befund 6): Läuft die Datenbank bereits auf einem neueren
+# Stand, als die zurückgerollte Anwendung kennt, startet diese gegen ein Schema,
+# das sie nicht erwartet. `scripts/migrate.mjs` schreibt die Zahl der
+# angewandten Migrationen nach `PRAGMA user_version`; das :previous-Image trägt
+# seine Migrationen unter /app/drizzle. Beide Zahlen sind vergleichbar.
+#
+# Bis 08/2026 fing dieser Block einen Abfragefehler mit `|| DB_STAND=""` ab und
+# ÜBERSPRANG daraufhin den Vergleich (`if [[ -n "$DB_STAND" && … ]]`). Der
+# Rollback lief also genau dann ungeprüft durch, wenn die Prüfung nicht möglich
+# war — und quittierte Erfolg. Das ist dieselbe Fehlerklasse, die oben für die
+# Image-IDs schon ausdrücklich verworfen ist; sie stand hier zwei Absätze
+# weiter unten trotzdem im Skript (Befund gpt-5.6-sol, PR #110).
+#
+# Jetzt bricht ein nicht ermittelbarer Stand ab, und die Fehlerausgabe der
+# Abfrage bleibt sichtbar, statt nach /dev/null zu gehen. Auch ein Wert, der
+# keine Zahl ist, gilt als nicht ermittelt: `[[ "x" -gt 3 ]]` wäre in bash
+# still `false` gewesen — wieder eine übersprungene Prüfung, die wie eine
+# bestandene aussieht.
+zahl(){ [[ "$1" =~ ^[0-9]+$ ]]; }
+schema_pruefen(){
+  [[ -f "$DATA_DIR/app.db" ]] || return 0
+  local db_stand image_stand
+  db_stand="$(podman run --rm --entrypoint node -v "$DATA_DIR:/data" localhost/roses-blog:previous \
+    -e "const db=require('better-sqlite3')('/data/app.db',{readonly:true});console.log(db.pragma('user_version',{simple:true}));db.close()")" \
+    || fail "Schema-Stand der Datenbank nicht ermittelbar — Abbruch statt ungeprüftem Start."
+  image_stand="$(podman run --rm --entrypoint node localhost/roses-blog:previous \
+    -e "console.log(require('fs').readdirSync('/app/drizzle').filter(f=>f.endsWith('.sql')).length)")" \
+    || fail "Migrationsstand des :previous-Images nicht ermittelbar — Abbruch statt ungeprüftem Start."
+  zahl "$db_stand" \
+    || fail "Schema-Stand der Datenbank ist keine Zahl ('$db_stand') — Abbruch statt ungeprüftem Start."
+  zahl "$image_stand" \
+    || fail "Migrationsstand des :previous-Images ist keine Zahl ('$image_stand') — Abbruch statt ungeprüftem Start."
+  [[ "$db_stand" -le "$image_stand" ]] || fail "Schema ist der zurückgerollten Anwendung VORAUS: \
+Datenbank auf Stand $db_stand, :previous kennt $image_stand Migrationen. Mit --with-db das \
+passende Pre-Deploy-Backup mit einspielen — ein Rollback auf ein zu neues Schema wird nicht \
+als Erfolg quittiert."
+  log "Schema-Stand: Datenbank $db_stand, :previous kennt $image_stand Migrationen."
+}
+
+# 2. Vorbedingungen, die KEINEN Stillstand rechtfertigen — vor dem Stoppen.
+#
+# Bis 08/2026 stand die Suche nach dem Backup HINTER dem `podman rm -f`: Wer
+# `--with-db` rief und kein Pre-Deploy-Backup hatte, stand danach ohne Dienst da
+# — abgeschaltet für einen Lauf, der unmittelbar darauf abbrach. Ein Fehlschlag,
+# der zusätzlich den intakten Dienst kostet, ist teurer als der Fehlschlag
+# selbst (Befund gpt-5.6-sol, PR #110).
+#
+# Alles, was ohne Stillstand feststellbar ist, wird deshalb hier festgestellt —
+# einschließlich der Frage, ob das Backup überhaupt LESBAR ist. Ein
+# abgeschnittenes oder halb geschriebenes Backup fiel bisher erst auf, nachdem
+# `cp` es über die laufende Datenbank gelegt hatte.
+#
+# Der Lesetest fährt dabei genau die Maschinerie an, die die Sicherung in
+# Schritt 4 braucht: das :previous-Image, den Mount, better-sqlite3. Was danach
+# beim Sichern noch schiefgehen kann, ist ein echter Fehler (volle Platte etwa)
+# — dann ist der Abbruch richtig, auch wenn der Dienst dafür schon steht.
+if [[ $WITH_DB -eq 1 ]]; then
+  BACKUP=$(ls -1t "$DATA_DIR"/backups/pre-deploy-*.db 2>/dev/null | head -1 || true)
+  [[ -n "$BACKUP" ]] \
+    || fail "--with-db verlangt, aber kein Pre-Deploy-Backup gefunden — Dienst läuft unverändert weiter."
+  log "Prüfe das Backup auf Lesbarkeit: $BACKUP"
+  podman run --rm --entrypoint node -v "$DATA_DIR:/data" localhost/roses-blog:previous \
+    -e "const db=require('better-sqlite3')('/data/backups/'+process.argv[1],{readonly:true});const r=db.pragma('integrity_check',{simple:true});db.close();if(r!=='ok'){console.error(r);process.exit(1)}" \
+    "$(basename "$BACKUP")" \
+    || fail "Backup $BACKUP ist unlesbar oder beschädigt — Rollback abgebrochen, Dienst läuft unverändert weiter."
+else
+  # Ohne --with-db bleibt die Datenbank, wie sie ist — ob ihr Schema der
+  # zurückgerollten Anwendung voraus ist, steht damit JETZT schon fest und
+  # braucht den Stillstand nicht. Mit --with-db entscheidet darüber erst das
+  # eingespielte Backup; dann prüft Schritt 4b.
+  schema_pruefen
+fi
+
+# 3. Container STOPPEN — vor JEDEM Eingriff an der Datenbank.
 #
 # Bis 08/2026 stand der DB-Restore VOR dem Stoppen: Die Datei wurde unter einer
 # laufenden SQLite-Verbindung ausgetauscht. Das ist kein Randfall, das ist der
@@ -95,7 +170,7 @@ log "Stoppe Container"
 $COMPOSE down --remove-orphans >/dev/null 2>&1 || true
 podman rm -f roses-blog >/dev/null 2>&1 || true
 
-# 3. Optional DB zurückspielen (jüngstes Pre-Deploy-Backup).
+# 4. Optional DB zurückspielen (jüngstes Pre-Deploy-Backup, oben geprüft).
 #
 # ── WARUM HIER KEIN `cp` DER LAUFENDEN DATENBANK STEHT ─────────────────────
 #
@@ -115,8 +190,6 @@ podman rm -f roses-blog >/dev/null 2>&1 || true
 # bekannt gute Stand: das laufende :latest ist ja gerade der Grund für den
 # Rollback.
 if [[ $WITH_DB -eq 1 ]]; then
-  BACKUP=$(ls -1t "$DATA_DIR"/backups/pre-deploy-*.db 2>/dev/null | head -1 || true)
-  [[ -n "$BACKUP" ]] || fail "--with-db verlangt, aber kein Pre-Deploy-Backup gefunden."
   if [[ -f "$DATA_DIR/app.db" ]]; then
     SICHERUNG="pre-rollback-$(date +%Y%m%d-%H%M%S).db"
     log "Sichere den JETZIGEN Stand (Online-Backup-API): $SICHERUNG"
@@ -135,28 +208,12 @@ if [[ $WITH_DB -eq 1 ]]; then
   # 3000 ALTEN Zeilen statt der 7 gesicherten — der Restore tut nichts und
   # meldet Erfolg. Das ist schlimmer als ein Fehlschlag.
   rm -f "$DATA_DIR/app.db-wal" "$DATA_DIR/app.db-shm"
+
+  # 4b. Erst jetzt steht fest, welches Schema die Anwendung vorfindet.
+  schema_pruefen
 fi
 
-# 3b. Schema-Vorsprung (Befund 6): Läuft die Datenbank bereits auf einem
-# neueren Stand, als die zurückgerollte Anwendung kennt, startet diese gegen
-# ein Schema, das sie nicht erwartet — und der Rollback meldete bisher trotzdem
-# Erfolg. `scripts/migrate.mjs` schreibt die Zahl der angewandten Migrationen
-# nach `PRAGMA user_version`; das :previous-Image trägt seine Migrationen unter
-# /app/drizzle. Beide Zahlen sind vergleichbar.
-if [[ -f "$DATA_DIR/app.db" ]]; then
-  DB_STAND="$(podman run --rm --entrypoint node -v "$DATA_DIR:/data" localhost/roses-blog:previous \
-    -e "const db=require('better-sqlite3')('/data/app.db',{readonly:true});console.log(db.pragma('user_version',{simple:true}));db.close()" 2>/dev/null)" || DB_STAND=""
-  IMAGE_STAND="$(podman run --rm --entrypoint node localhost/roses-blog:previous \
-    -e "console.log(require('fs').readdirSync('/app/drizzle').filter(f=>f.endsWith('.sql')).length)" 2>/dev/null)" || IMAGE_STAND=""
-  if [[ -n "$DB_STAND" && -n "$IMAGE_STAND" && "$DB_STAND" -gt "$IMAGE_STAND" ]]; then
-    fail "Schema ist der zurückgerollten Anwendung VORAUS: Datenbank auf Stand $DB_STAND, \
-:previous kennt $IMAGE_STAND Migrationen. Mit --with-db das passende Pre-Deploy-Backup \
-mit einspielen — ein Rollback auf ein zu neues Schema wird nicht als Erfolg quittiert."
-  fi
-  log "Schema-Stand: Datenbank ${DB_STAND:-?}, :previous kennt ${IMAGE_STAND:-?} Migrationen."
-fi
-
-# 3c. Image zurückrollen + Container starten.
+# 5. Image zurückrollen + Container starten.
 log "Rolle Image zurück: :previous → :latest"
 podman tag localhost/roses-blog:previous localhost/roses-blog:latest
 # deploy-state entwerten: die Datei beschreibt, welcher Stand ZULETZT ERFOLGREICH
@@ -171,7 +228,7 @@ rm -f "$DATA_DIR/deploy-state" 2>/dev/null || true
 rm -f "$DATA_DIR/deploy-image-ok" 2>/dev/null || true
 $COMPOSE up -d || fail "Container-Neustart fehlgeschlagen."
 
-# 4. Healthcheck-Gate: erst grün, dann gilt der Rollback als erfolgreich.
+# 6. Healthcheck-Gate: erst grün, dann gilt der Rollback als erfolgreich.
 for i in $(seq 1 30); do
   if curl -sf "$HEALTH_URL" >/dev/null 2>&1; then
     dur=$(( $(date +%s) - start ))
