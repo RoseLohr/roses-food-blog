@@ -141,8 +141,20 @@ alarm_absetzen() {
   local betreff="$1" text="$2"
   alarm_bild_waehlen
   [[ -n "$ALARM_BILD" ]] || return 0
+  # Die SMTP-Zugangsdaten stehen laut README in der `.env`, nicht in der
+  # `setting`-Tabelle. Sie stecken in DIESER Shell (oben aus .env geladen), der
+  # Alarm läuft aber im CONTAINER — und der bekam bisher nur DATA_DIR. Dann
+  # findet betriebsalarm.mjs keinen Host, meldet „NICHT verschickt" und endet
+  # mit 0; das `||` unten konnte nie greifen. Derselbe Fehler stand in
+  # deploy/wachhund.sh.
+  local -a smtp=()
+  local v
+  for v in SMTP_HOST SMTP_PORT SMTP_USER SMTP_PASS SMTP_SECURE SMTP_FROM ADMIN_EMAIL; do
+    [[ -n "${!v:-}" ]] && smtp+=("-e" "$v=${!v}")
+  done
   timeout 60 podman run --rm --entrypoint node -v "$DATA_DIR:/data" \
-    -e DATA_DIR=/data "$ALARM_BILD" /app/scripts/betriebsalarm.mjs "$betreff" "$text" \
+    -e DATA_DIR=/data "${smtp[@]}" "$ALARM_BILD" \
+    /app/scripts/betriebsalarm.mjs "$betreff" "$text" \
     2>&1 | sed 's/^/[alarm] /' || deploy_log "Alarm konnte nicht abgesetzt werden."
 }
 

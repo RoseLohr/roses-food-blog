@@ -10,7 +10,7 @@
  * nicht zusätzlich blockieren — aber er darf auch nicht unbemerkt bleiben.
  */
 import { describe, expect, it } from "vitest";
-import { alarmplan, empfaenger } from "../scripts/betriebsalarm.mjs";
+import { alarmplan, empfaenger, smtpZugang } from "../scripts/betriebsalarm.mjs";
 
 describe("Betriebsalarm", () => {
   it("nimmt dieselbe Empfänger-Rangfolge wie der Selbst-Monitor", () => {
@@ -47,5 +47,47 @@ describe("Betriebsalarm", () => {
       grund: "",
       an: "a@x.de",
     });
+  });
+});
+
+describe("Die Anmeldung kommt notfalls auch aus der Umgebung", () => {
+  it("nimmt Benutzer und Passwort aus der Umgebung, wenn die Datenbank schweigt", () => {
+    // Genau der Fall der dokumentierten Installation: bootstrap.sh legt die
+    // SMTP-Daten NUR in die .env. Vorher endete der Rückfall bei Host, Port
+    // und Absender — verbunden wurde dann ohne Anmeldung, und der Versand
+    // scheiterte an der Auth, ohne dass es jemand erfuhr.
+    const z = smtpZugang(
+      {},
+      { SMTP_HOST: "mail", SMTP_USER: "u", SMTP_PASS: "p" },
+    );
+    expect(z.host).toBe("mail");
+    expect(z.auth).toEqual({ user: "u", pass: "p" });
+  });
+
+  it("die Datenbank hat Vorrang vor der Umgebung", () => {
+    const z = smtpZugang(
+      { smtp_host: "db-host", smtp_user: "db-user", smtp_pass: "db-pass" },
+      { SMTP_HOST: "env-host", SMTP_USER: "env-user", SMTP_PASS: "env-pass" },
+    );
+    expect(z.host).toBe("db-host");
+    expect(z.auth).toEqual({ user: "db-user", pass: "db-pass" });
+  });
+
+  it("ohne Benutzer wird ohne Anmeldung verbunden — nicht mit leerer", () => {
+    // `auth: { user: "", pass: "" }` würde nodemailer zu einem AUTH-Versuch
+    // mit leeren Angaben bewegen; `undefined` heißt „gar keine Anmeldung".
+    const z = smtpZugang({}, { SMTP_HOST: "mail" });
+    expect(z.auth).toBeUndefined();
+  });
+
+  it("nimmt das Passwort aus der Umgebung, wenn nur der Benutzer in der DB steht", () => {
+    // Der Fall, den das Admin-Formular erzeugt: Es schreibt smtp_pass nur bei
+    // Neueingabe, den Benutzer aber immer.
+    const z = smtpZugang({ smtp_user: "u" }, { SMTP_PASS: "aus-env" });
+    expect(z.auth).toEqual({ user: "u", pass: "aus-env" });
+  });
+
+  it("der Standard-Port ist 587, wenn nirgends einer steht", () => {
+    expect(smtpZugang({}, {}).port).toBe(587);
   });
 });

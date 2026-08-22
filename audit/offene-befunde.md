@@ -479,3 +479,120 @@ gegen ein vorgetäuschtes podman/systemctl. Gegenprobe: Wird die Bildwahl auf
 die alte, naive Fassung zurückgedreht, fallen genau die zwei
 Verhaltensfälle um.
 
+---
+
+## B13 — Selbstprüfung des Betriebspfades: vier bestätigte Befunde — ERLEDIGT 08/2026
+
+Nachdem der Pflicht-Approver in PR #110 **dreimal** echte Defekte im selben
+Pfad gefunden hatte, ist der Betriebs-/Rollback-Pfad einmal geschlossen
+gegengeprüft worden: fünf unabhängige Linsen über `deploy.sh`,
+`deploy/rollback.sh`, `deploy/wachhund.sh`, `scripts/wachhund.mjs`,
+`scripts/betriebsalarm.mjs` und die zugehörigen Tests, jeder Befund danach von
+zwei Skeptikern mit dem Auftrag, ihn zu WIDERLEGEN (im Zweifel gilt er als
+widerlegt). Vier haben das überstanden, einer ist gefallen.
+
+**1. `deploy/rollback.sh:52` — ein `case` ohne `*)`.** Jedes unbekannte
+Argument wurde stillschweigend verworfen. Nachgestellt: `--dryrun` (Tippfehler)
+ließ `DRY=0` und fuhr den ECHTEN Rollback; `--with_db` rollte das Image zurück,
+ohne die Datenbank mitzunehmen. Wer sich unter Zeitdruck vertippt, bekommt
+jetzt einen Abbruch.
+
+**2. `deploy/rollback.sh:205` — der Stopp wurde nur versucht, nie
+festgestellt.** Beide Zeilen werfen ihren Rückgabewert weg (`|| true`), und
+danach prüfte NICHTS, ob der Container weg ist — obwohl die Überschrift des
+Abschnitts das Stoppen zur Voraussetzung für jeden Eingriff an der Datenbank
+erklärt. Nachgestellt mit einem podman, dessen `rm` fehlschlägt: Das Skript
+legte das Backup unter der noch offenen SQLite-Verbindung ab, löschte deren
+`-wal` und meldete „Rollback erfolgreich (Health grün)" — den Health-Ping hatte
+der ALTE Container beantwortet. Exit 0. Das passende Idiom
+(`podman container exists`) stand sechs Zeilen höher und wurde nur zum Sichern
+des Protokolls benutzt.
+
+**3. `deploy/wachhund.sh:32` — „Image vorhanden" heißt nicht „Image kann
+urteilen".** `scripts/wachhund.mjs` kam erst mit diesem Zweig in die
+Containerfile; jedes ältere Image kennt es nicht. Der Lauf fiel dann in
+`|| { … exit 0; }` und meldete Erfolg — ein Wachhund, der bei jedem Weckruf
+zufrieden wieder einschläft, und ein Timer, der grün aussieht. Jetzt wird der
+Inhalt geprüft, und ein nicht ermittelbares Urteil beendet den Lauf mit 1
+statt mit 0 (eingegriffen wird weiterhin nicht — ohne Urteil weiß niemand, ob
+eingegriffen gehört).
+
+**4. `deploy/wachhund.sh:64` — der Alarm-Container bekam die SMTP-Umgebung
+nicht.** Die Zugangsdaten stehen laut README in der `.env`, nicht in der
+`setting`-Tabelle; `bootstrap.sh` legt sie ausschließlich dort ab. Das Skript
+lädt sie in die HOST-Shell, startete den Alarm aber mit nur `-e DATA_DIR`.
+`betriebsalarm.mjs` fand keinen Host, meldete „NICHT verschickt" und endete mit
+0 — das einzige Netz (`|| log "WARNUNG…"`) konnte prinzipiell nie greifen.
+Derselbe Fehler stand in `deploy.sh`. Besonders bitter: Der Env-Weg ist in
+`betriebsalarm.mjs` vorgesehen UND getestet
+(`tests/betriebsalarm.test.ts`, „nimmt die Umgebung, wenn die Datenbank nichts
+hergibt") — nur konnte ihn kein Aufrufer erreichen. Ein grüner Test über einem
+unerreichbaren Pfad. Dabei fiel auf, dass der Rückfall ohnehin unvollständig
+war: Host, Port und Absender kannten ihn, die ANMELDUNG nicht.
+
+**Gefallen (nicht behoben):** „Ein LEERES Backup besteht alle drei
+Vorprüfungen." Die technische Aussage stimmt — eine 0-Byte-Datei ist für SQLite
+eine gültige leere Datenbank, `integrity_check` liefert `ok`. Widerlegt sind
+aber Entstehung und Folge: better-sqlite3 räumt eine abgebrochene Sicherung
+selbst weg (`backup.cpp:29`), es bleibt nur ein `-journal`, das der Glob
+`pre-deploy-*.db` nicht trifft. Übrig bleibt ein Rennen von rund 28 ms, und
+selbst dann liegt der vorherige Stand vollständig als `pre-rollback-*.db` da.
+Eine Inhaltsprüfung würde zudem ein ehrliches leeres Backup fälschlich
+abweisen.
+
+**Und zweimal hat die Attrappe über den Prüfling gelogen** — dieselbe Klasse
+wie B11. Einmal meldete das falsche `podman` für `app.db` immer den alten
+Schema-Stand, auch nachdem das Backup daraufkopiert war; einmal las es die
+SMTP-Werte aus seiner EIGENEN Umgebung statt aus den `-e`-Argumenten und war
+damit auch gegen den defekten Stand grün. Beide Attrappen sagen jetzt die
+Wahrheit, und gegen den jeweils vorigen Stand fallen die Fälle korrekt um.
+
+---
+
+## B14 — Elf weitere Befunde aus derselben Prüfung, NICHT gegengeprüft — OFFEN
+
+Die Gegenprüfung war auf sechs Befunde gedeckelt; die folgenden sind gefunden,
+aber weder von Skeptikern geprüft noch behoben. Sie stehen hier, damit sie
+nicht verloren gehen und nicht heimlich mitgeschleppt werden. **Keiner davon
+ist bestätigt** — sie sind Verdachtsmomente mit Fundstelle.
+
+Im Zweig von PR #110 (also selbst verursacht, gehört zuerst geprüft):
+
+1. `deploy/rollback.sh:74` — `--dry-run` fährt KEINE der drei Vorprüfungen und
+   endet vor ihnen mit `exit 0`. Ein grüner Probelauf sagt damit nichts über
+   den Ernstfall. Kein Test betritt den Zweig.
+2. `deploy/rollback.sh:231` — die Sicherung des jetzigen Standes (das Netz)
+   wird nur am Exit-Status von `db.backup()` gemessen, während das eingehende
+   Backup drei Prüfungen durchläuft. Asymmetrie ohne Begründung.
+3. `deploy/rollback.sh:238` — zwischen `cp` und dem Entfernen von `-wal`/`-shm`
+   liegt ein Zustand, der bei Abbruch genau den stillen No-op aus B3 ergibt.
+4. `deploy/wachhund.sh:53` — der Stand wird ohne temporäre Datei und ohne
+   Prüfung geschrieben; bei voller Platte friert `rotSeit` auf 1 ein. Eine
+   volle Platte ist ein klassischer Auslöser genau der Schleife, die der
+   Wachhund erkennen soll.
+5. `scripts/wachhund.mjs:59` — ein einziger gesunder Augenblick setzt
+   `neuerStand: null` und verwirft damit auch den Neustartzähler. Eine
+   flatternde, aber echte Schleife würde nie erkannt.
+6. `tests/deploy-betrieb.test.ts:314` — der No-op-Wächter (`:previous` ==
+   `:latest`) wird von einer Regex gehalten, die schon der KOMMENTAR im
+   geprüften Skript erfüllt.
+7. `scripts/regime/rollback-check.mjs:54` — die Invariante „Fehlschlagpfad bei
+   roter Health" prüft eine literale Zeichenkette, die ein `log` genauso trägt
+   wie ein `fail`.
+
+Außerhalb dieses Zweigs (vorbestehend, hier nur notiert):
+
+8. `deploy/backup.sh:33` — meldet Erfolg, wenn das DB-Backup fehlschlägt, und
+   rotiert die letzten vorhandenen trotzdem weg. Das nächtliche Cron läuft ohne
+   Login-Session, wo rootless `podman run` scheitern kann.
+9. `scripts/regime/restore-drill.sh:38` — der Drill belegt B-31 über einen Weg,
+   den der Betrieb nicht geht: eigene Quelle, Host-node statt `deploy/backup.sh`,
+   `cp` in ein leeres Verzeichnis.
+
+Sowie zwei Beobachtungen ohne eigene Fundstelle: das Health-Gate des Rollbacks
+verwirft den Antwortrumpf, obwohl `/health` den `commit` liefert (es könnte
+also feststellen, WELCHER Stand antwortet); und `$COMPOSE up -d` im Rollback
+kennt kein `--force-recreate`, anders als die Schwesterstelle in `deploy.sh`
+— seit Befund 2 oben ist das aber entschärft, weil der Container davor
+nachweislich weg ist.
+

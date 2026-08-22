@@ -40,6 +40,12 @@ type Modus = {
   /** Wie sich `podman run … integrity_check` verhält. */
   backupLesbar?: boolean;
   /**
+   * Ob `podman rm -f` den Container wirklich entfernt. `false` stellt den Fall
+   * nach, in dem das Stoppen scheitert (gesperrter podman-Store, hängende
+   * OCI-Runtime) — bis 08/2026 lief das Skript dann trotzdem weiter.
+   */
+  stoppGelingt?: boolean;
+  /**
    * Der `user_version`-Wert des BACKUPS, falls er sich von dem der laufenden
    * Datenbank unterscheiden soll. Genau daran hing der Nachschlag zu Befund 1:
    * Ein gültiges, aber zu neues Backup kam durch die Lesbarkeitsprüfung.
@@ -70,20 +76,26 @@ function spielwiese(modus: Modus = {}) {
   const schema = modus.schema ?? "ok";
   const backupLesbar = modus.backupLesbar ?? true;
   const backupStand = modus.backupStand ?? 3;
+  const stoppGelingt = modus.stoppGelingt ?? true;
 
   fs.writeFileSync(
     path.join(bin, "podman"),
     `#!/usr/bin/env bash
 echo "podman $*" >> "$FAKE_PROTOKOLL"
+# Der Container ist da, bis "podman rm -f" ihn entfernt hat — die Attrappe
+# fuehrt darueber Buch, sonst koennte sie den misslungenen Stopp gar nicht
+# abbilden. (Keine Backticks hier: Der Text steht in einem JS-Template.)
+WEG="$(dirname "$FAKE_PROTOKOLL")/container-weg"
 case "$1 $2" in
   "image exists") exit 0 ;;
-  "container exists") exit 0 ;;
+  "container exists") [[ -e "$WEG" ]] && exit 1 || exit 0 ;;
   "image inspect")
     [[ "$*" == *previous* ]] && echo "sha256:aaaa" || echo "sha256:bbbb"; exit 0 ;;
 esac
 case "$1" in
   logs) echo "letzte Worte des alten Standes"; exit 0 ;;
-  tag|rm) exit 0 ;;
+  tag) exit 0 ;;
+  rm) ${stoppGelingt} && touch "$WEG"; exit 0 ;;
   run)
     if [[ "$*" == *user_version* ]]; then
       case "${schema}" in
@@ -251,6 +263,71 @@ describe("Befund 1: ein Fehlschlag darf nicht zusätzlich den Dienst kosten", ()
     expect(pruefung).toBeGreaterThan(-1);
     expect(stopp).toBeGreaterThan(-1);
     expect(pruefung).toBeLessThan(stopp);
+  });
+});
+
+describe("Befund 4: der Stopp wird festgestellt, nicht gehofft", () => {
+  it("bricht ab, wenn der Container nach dem Stoppen noch da ist", () => {
+    const platz = spielwiese({ stoppGelingt: false });
+    fs.writeFileSync(
+      path.join(platz.daten, "backups", "pre-deploy-20260822.db"),
+      "backup-inhalt",
+    );
+    fs.writeFileSync(path.join(platz.daten, "app.db"), "die echten daten");
+    fs.writeFileSync(path.join(platz.daten, "app.db-wal"), "das echte wal");
+
+    const lauf = fahre(["--with-db"], platz);
+
+    expect(lauf.code).not.toBe(0);
+    expect(lauf.ausgabe).toMatch(/ist nach dem Stoppen NOCH DA/);
+    // Der eigentliche Schaden, den der alte Stand anrichtete: Er legte das
+    // Backup unter der noch offenen SQLite-Verbindung ab und löschte deren WAL.
+    expect(fs.readFileSync(path.join(platz.daten, "app.db"), "utf8")).toBe(
+      "die echten daten",
+    );
+    expect(fs.existsSync(path.join(platz.daten, "app.db-wal"))).toBe(true);
+    // …und er quittierte am Ende Erfolg, weil der ALTE Container den
+    // Health-Ping beantwortete.
+    expect(lauf.protokoll.some((z) => z.startsWith("podman tag"))).toBe(false);
+    expect(lauf.ausgabe).not.toMatch(/Rollback erfolgreich/);
+  });
+
+  it("läuft normal durch, wenn der Container wirklich verschwindet", () => {
+    const platz = spielwiese();
+    fs.writeFileSync(
+      path.join(platz.daten, "backups", "pre-deploy-20260822.db"),
+      "backup-inhalt",
+    );
+    fs.writeFileSync(path.join(platz.daten, "app.db"), "alter stand");
+
+    const lauf = fahre(["--with-db"], platz);
+
+    expect(lauf.code).toBe(0);
+    expect(lauf.ausgabe).toMatch(/Rollback erfolgreich/);
+  });
+});
+
+describe("Befund 5: ein unbekanntes Argument ist ein Abbruch, keine Stille", () => {
+  for (const tippfehler of ["--dryrun", "--with_db", "-n"]) {
+    it(`weist '${tippfehler}' zurück, statt den echten Rollback zu fahren`, () => {
+      const platz = spielwiese();
+      fs.writeFileSync(path.join(platz.daten, "app.db"), "die echten daten");
+
+      const lauf = fahre([tippfehler], platz);
+
+      expect(lauf.code).not.toBe(0);
+      expect(lauf.ausgabe).toMatch(/Unbekannte Option/);
+      // Nichts angefasst — vorher fuhr `--dryrun` den ECHTEN Rollback durch.
+      expect(dienstAngefasst(lauf)).toBe(false);
+      expect(lauf.protokoll.some((z) => z.startsWith("podman tag"))).toBe(false);
+    });
+  }
+
+  it("nimmt die richtig geschriebenen Optionen weiterhin an", () => {
+    const platz = spielwiese();
+    const lauf = fahre(["--dry-run"], platz);
+    expect(lauf.code).toBe(0);
+    expect(lauf.ausgabe).toMatch(/DRY-RUN/);
   });
 });
 

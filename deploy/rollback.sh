@@ -49,7 +49,19 @@ else
   }
 fi
 WITH_DB=0; DRY=0
-for a in "$@"; do case "$a" in --with-db) WITH_DB=1;; --dry-run) DRY=1;; esac; done
+# Ein `case` OHNE `*)`-Zweig verschluckt jedes unbekannte Argument stillschweigend.
+# Das ist hier kein Schönheitsfehler, sondern ein destruktiver Weg: `--dryrun`
+# (Tippfehler) ließ DRY auf 0 stehen und fuhr den ECHTEN Rollback; `--with_db`
+# rollte das Image zurück, ohne die Datenbank mitzunehmen — beide ohne ein Wort.
+# Wer sich unter Zeitdruck vertippt, bekommt jetzt einen Abbruch statt einer
+# Überraschung.
+for a in "$@"; do
+  case "$a" in
+    --with-db) WITH_DB=1 ;;
+    --dry-run) DRY=1 ;;
+    *) fail "Unbekannte Option '$a'. Erlaubt sind: --with-db, --dry-run." ;;
+  esac
+done
 
 # 1. Vorbedingung: es GIBT ein voriges Image.
 podman image exists localhost/roses-blog:previous 2>/dev/null \
@@ -204,6 +216,30 @@ fi
 log "Stoppe Container"
 $COMPOSE down --remove-orphans >/dev/null 2>&1 || true
 podman rm -f roses-blog >/dev/null 2>&1 || true
+# ── UND JETZT FESTSTELLEN, DASS ER WIRKLICH WEG IST ───────────────────────
+#
+# Beide Zeilen darüber werfen ihren Rückgabewert weg (`|| true`) — bewusst, denn
+# „war schon weg" ist kein Fehler. Bis 08/2026 prüfte danach aber NICHTS, ob der
+# Container tatsächlich verschwunden ist, obwohl die Überschrift dieses
+# Abschnitts das Stoppen zur Voraussetzung für JEDEN Eingriff an der Datenbank
+# erklärt.
+#
+# Nachgestellt mit einem podman, das bei `rm` fehlschlägt: Das Skript legte das
+# Backup unter der noch offenen SQLite-Verbindung ab, löschte deren `-wal`, und
+# meldete am Ende „Rollback erfolgreich (Health grün)" — beantwortet hatte den
+# Health-Ping der ALTE Container, der nie gestoppt worden war. Exit 0. Das
+# Health-Gate kann „zurückgerollt" und „nie gestoppt" nicht unterscheiden.
+#
+# Das passende Idiom steht sechs Zeilen weiter oben und wurde nur zum Sichern
+# des Protokolls benutzt. Hier ist es die Bedingung dafür, überhaupt
+# weiterzumachen: Ein `$COMPOSE up -d` weiter unten trifft danach garantiert
+# keinen bestehenden Container mehr an.
+if podman container exists roses-blog 2>/dev/null; then
+  fail "Container roses-blog ist nach dem Stoppen NOCH DA — die Datenbank bleibt \
+unangetastet. Ein Eingriff unter einer laufenden SQLite-Verbindung ist genau der \
+Datenverlust, den dieses Skript verhindern soll. Von Hand nachsehen: \
+podman ps -a --filter name=roses-blog"
+fi
 
 # 4. Optional DB zurückspielen (jüngstes Pre-Deploy-Backup, oben geprüft).
 #
@@ -235,7 +271,12 @@ if [[ $WITH_DB -eq 1 ]]; then
   fi
 
   log "Spiele Backup ein: $BACKUP"
-  cp "$BACKUP" "$DATA_DIR/app.db"
+  # Mit `|| fail`, wie jede andere riskante Operation hier auch: Ein an der
+  # vollen Platte abgebrochenes `cp` hinterlässt eine HALBE Datenbank — und der
+  # Lauf machte bisher weiter, löschte das WAL und quittierte Erfolg.
+  cp "$BACKUP" "$DATA_DIR/app.db" \
+    || fail "Einspielen von $BACKUP fehlgeschlagen — app.db ist möglicherweise \
+unvollständig. Die Sicherung des vorigen Standes liegt in $DATA_DIR/backups/."
   # ── UND DIE ALTEN WAL-DATEIEN MÜSSEN WEG ────────────────────────────────
   # Sonst spielt SQLite beim nächsten Öffnen das WAL der ERSETZTEN Datenbank
   # über das eingespielte Backup. Nachgemessen: nach hartem Abbruch

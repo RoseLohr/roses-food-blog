@@ -707,10 +707,12 @@ describe("Alarm auch dann, wenn die Anwendung nicht läuft", () => {
   });
 
   it("blockiert den Fehlschlagpfad nicht, wenn kein Alarmweg da ist", () => {
-    const fn = deploySh.slice(
-      deploySh.indexOf("alarm_absetzen() {"),
-      deploySh.indexOf("alarm_absetzen() {") + 700,
-    );
+    // Bis zur SCHLIESSENDEN KLAMMER, nicht „die nächsten 700 Zeichen": Das
+    // feste Fenster ist mitgewandert, als die Funktion wuchs, und schnitt die
+    // geprüfte Zeile einfach ab. Ein Wächter, der von der Länge seines
+    // Prüflings abhängt, hört irgendwann unbemerkt auf zu wachen.
+    const start = deploySh.indexOf("alarm_absetzen() {");
+    const fn = deploySh.slice(start, deploySh.indexOf("\n}", start));
     // Zeitgrenze UND ein Rückfallpfad — ein stummer SMTP-Server darf ein
     // Deployment nicht zusätzlich aufhängen.
     expect(fn).toMatch(/timeout \d+ podman run/);

@@ -54,6 +54,29 @@ export function alarmplan(einstellungen, env) {
   return { verschicken: true, grund: "", an };
 }
 
+/**
+ * Die Verbindungsdaten für den Versand — Datenbank zuerst, dann die Umgebung.
+ *
+ * Eigene, exportierte Funktion, damit sie prüfbar ist: Bis 08/2026 stand das
+ * Objekt inline in `hauptlauf`, und der Rückfall auf die Umgebung endete dort
+ * bei Host, Port und Absender. Die ANMELDUNG kannte ihn nicht. Auf einer
+ * Anlage, die ihre Zugangsdaten nur in der `.env` hat — so richtet bootstrap.sh
+ * sie ein —, wurde deshalb ohne Benutzer und Passwort verbunden, und der
+ * Versand scheiterte an der Auth. Gemerkt hätte es niemand: Der Alarm quittiert
+ * bewusst mit 0.
+ */
+export function smtpZugang(einstellungen, env) {
+  const benutzer = einstellungen.smtp_user || env.SMTP_USER;
+  return {
+    host: einstellungen.smtp_host || env.SMTP_HOST,
+    port: Number(einstellungen.smtp_port || env.SMTP_PORT || 587),
+    secure: (einstellungen.smtp_secure || env.SMTP_SECURE) === "true",
+    auth: benutzer
+      ? { user: benutzer, pass: einstellungen.smtp_pass || env.SMTP_PASS || "" }
+      : undefined,
+  };
+}
+
 /** Die `setting`-Tabelle als schlichtes Objekt. Fehlt die Datei, ist sie leer. */
 export function einstellungenLesen(datenverzeichnis, Database) {
   const datei = path.join(datenverzeichnis, "app.db");
@@ -86,14 +109,9 @@ async function hauptlauf() {
     return;
   }
   const { default: nodemailer } = await import("nodemailer");
-  const transport = nodemailer.createTransport({
-    host: einstellungen.smtp_host || process.env.SMTP_HOST,
-    port: Number(einstellungen.smtp_port || process.env.SMTP_PORT || 587),
-    secure: (einstellungen.smtp_secure || process.env.SMTP_SECURE) === "true",
-    auth: einstellungen.smtp_user
-      ? { user: einstellungen.smtp_user, pass: einstellungen.smtp_pass || "" }
-      : undefined,
-  });
+  const transport = nodemailer.createTransport(
+    smtpZugang(einstellungen, process.env),
+  );
   await transport.sendMail({
     from: einstellungen.smtp_from || process.env.SMTP_FROM || plan.an,
     to: plan.an,
