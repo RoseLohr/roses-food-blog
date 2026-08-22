@@ -1,10 +1,18 @@
 # DAST (A-08) — dynamische Sicherheitsanalyse gegen die laufende App.
 # Startet die gebaute App in CI und lässt OWASP ZAP (Baseline) laufen. Der Report
-# wird als Artefakt hochgeladen. HINWEIS: In CI fehlt die nginx-Schicht der
-# greenbox (CSP/HSTS-Header sitzen dort), daher läuft der CI-DAST informativ; der
-# BLOCKIERENDE Prod-DAST gegen die greenbox ist die begleitende Betreiber-Aktion
-# (siehe README / Nutzer-Aktionsliste). Passive Header-Regeln sind in .zap/rules.tsv
-# auf WARN gesetzt, damit keine Falsch-Positiven aus fehlenden Prod-Headern kommen.
+# wird als Artefakt hochgeladen.
+#
+# KORREKTUR 08/2026: Hier stand, in CI fehle „die nginx-Schicht", in der die
+# CSP-/Header sitzen — deshalb liefen die passiven Header-Regeln nur informativ.
+# Das war für vier von fünf Regeln falsch. Content-Security-Policy,
+# X-Content-Type-Options, X-Frame-Options und Permissions-Policy setzt die
+# ANWENDUNG, für jede Route (next.config.ts, source: "/:path*"); nachgemessen an
+# der gebauten App in genau dieser Konfiguration. Sie fehlen in CI also nicht,
+# und die vier Regeln stehen wieder auf FAIL (.zap/rules.tsv).
+#
+# Offen bleibt allein HSTS: Die Anwendung setzt es bewusst nicht, und WO es
+# gesetzt wird, ist nicht erhoben. Regel 10035 bleibt deshalb auf WARN — mit
+# einer offenen Frage als Vermerk, nicht mit einer Behauptung.
 name: DAST
 
 on:
