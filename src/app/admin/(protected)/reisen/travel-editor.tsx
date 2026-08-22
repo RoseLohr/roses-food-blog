@@ -14,7 +14,6 @@ import {
 } from "@/components/admin/quick-add-checkboxes";
 import { RichTextEditor } from "@/components/admin/rich-text-editor";
 import { RESTAURANT_FOTOS_MAX } from "@/lib/restaurant-fotos";
-import { zuRenderBloecken } from "@/lib/bildreihen";
 import {
   bildWirdGespeichert,
   restaurantWirdGespeichert,
@@ -292,18 +291,27 @@ export function TravelEditor({
     setRestaurants((prev) =>
       prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)),
     );
-  const updateDish = (ri: number, di: number, patch: Partial<EditorDish>) =>
+  /**
+   * Die Gerichte EINES Restaurants ändern.
+   *
+   * Wichtig ist das `prev`: Die Liste, auf der gerechnet wird, kommt aus dem
+   * Zustands-Aktualisierer, nicht aus dem Renderdurchlauf. Sechs Stellen
+   * bauten bis 08/2026 ihre neue Liste aus dem gerenderten `r.dishes`. Fallen
+   * zwei Änderungen in dieselbe Stapelverarbeitung, rechnet die zweite auf dem
+   * Stand VOR der ersten und macht sie zunichte.
+   */
+  const updateDishes = (
+    ri: number,
+    aendern: (dishes: EditorDish[]) => EditorDish[],
+  ) =>
     setRestaurants((prev) =>
       prev.map((r, idx) =>
-        idx === ri
-          ? {
-              ...r,
-              dishes: r.dishes.map((x, dIdx) =>
-                dIdx === di ? { ...x, ...patch } : x,
-              ),
-            }
-          : r,
+        idx === ri ? { ...r, dishes: aendern(r.dishes) } : r,
       ),
+    );
+  const updateDish = (ri: number, di: number, patch: Partial<EditorDish>) =>
+    updateDishes(ri, (dishes) =>
+      dishes.map((x, dIdx) => (dIdx === di ? { ...x, ...patch } : x)),
     );
 
   return (
@@ -661,11 +669,7 @@ export function TravelEditor({
                         placeholder={d.dishName}
                         value={dish.name}
                         onChange={(e) =>
-                          updateRestaurant(ri, {
-                            dishes: r.dishes.map((x, idx) =>
-                              idx === di ? { ...x, name: e.target.value } : x,
-                            ),
-                          })
+                          updateDish(ri, di, { name: e.target.value })
                         }
                         className={inputCls}
                       />
@@ -674,13 +678,7 @@ export function TravelEditor({
                         placeholder={d.dishIngredients}
                         value={dish.ingredientsText}
                         onChange={(e) =>
-                          updateRestaurant(ri, {
-                            dishes: r.dishes.map((x, idx) =>
-                              idx === di
-                                ? { ...x, ingredientsText: e.target.value }
-                                : x,
-                            ),
-                          })
+                          updateDish(ri, di, { ingredientsText: e.target.value })
                         }
                         className={inputCls}
                       />
@@ -690,11 +688,7 @@ export function TravelEditor({
                           initialMarkdown={dish.description}
                           minHeightClass="min-h-20"
                           onChange={(md) =>
-                            updateRestaurant(ri, {
-                              dishes: r.dishes.map((x, idx) =>
-                                idx === di ? { ...x, description: md } : x,
-                              ),
-                            })
+                            updateDish(ri, di, { description: md })
                           }
                         />
                       </div>
@@ -703,11 +697,7 @@ export function TravelEditor({
                         options={images}
                         value={dish.imageIds}
                         onChange={(ids) =>
-                          updateRestaurant(ri, {
-                            dishes: r.dishes.map((x, idx) =>
-                              idx === di ? { ...x, imageIds: ids } : x,
-                            ),
-                          })
+                          updateDish(ri, di, { imageIds: ids })
                         }
                         multiple
                       />
@@ -771,9 +761,9 @@ export function TravelEditor({
                     <button
                       type="button"
                       onClick={() =>
-                        updateRestaurant(ri, {
-                          dishes: r.dishes.filter((_, idx) => idx !== di),
-                        })
+                        updateDishes(ri, (dishes) =>
+                          dishes.filter((_, idx) => idx !== di),
+                        )
                       }
                       className={`${btnSecondary} mt-2`}
                     >
@@ -784,7 +774,7 @@ export function TravelEditor({
                 <button
                   type="button"
                   onClick={() =>
-                    updateRestaurant(ri, { dishes: [...r.dishes, emptyDish()] })
+                    updateDishes(ri, (dishes) => [...dishes, emptyDish()])
                   }
                   className={`${btnSecondary} self-start`}
                 >
