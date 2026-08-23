@@ -689,12 +689,8 @@ Im Zweig von PR #110 (also selbst verursacht, gehört zuerst geprüft):
 
 Außerhalb dieses Zweigs (vorbestehend, hier nur notiert):
 
-8. `deploy/backup.sh:33` — meldet Erfolg, wenn das DB-Backup fehlschlägt, und
-   rotiert die letzten vorhandenen trotzdem weg. Das nächtliche Cron läuft ohne
-   Login-Session, wo rootless `podman run` scheitern kann.
-9. `scripts/regime/restore-drill.sh:38` — der Drill belegt B-31 über einen Weg,
-   den der Betrieb nicht geht: eigene Quelle, Host-node statt `deploy/backup.sh`,
-   `cp` in ein leeres Verzeichnis.
+8. ~~`deploy/backup.sh:33`~~ — ERLEDIGT 08/2026, siehe B16.
+9. ~~`scripts/regime/restore-drill.sh:38`~~ — ERLEDIGT 08/2026, siehe B17.
 
 Sowie zwei Beobachtungen ohne eigene Fundstelle: das Health-Gate des Rollbacks
 verwirft den Antwortrumpf, obwohl `/health` den `commit` liefert (es könnte
@@ -737,4 +733,103 @@ derselben Runde Punkte genannt, die auf diesem Stand nicht mehr zutreffen (der
 Container-Stopp im Rollback ist seit Runde 4 geprüft, die SMTP-Übergabe seit
 Runde 3/4 vorhanden). Nachgesehen und verworfen; der Pflicht-Approver hatte
 recht, die dritte Stimme las einen älteren Stand.
+
+---
+
+## B16 — Ein Backup-Lauf, der Erfolg meldet und nichts gesichert hat — ERLEDIGT 08/2026
+
+**Befund (B14/8, vorbestehend).** `deploy/backup.sh` meldete Erfolg, wenn das
+DB-Backup fehlschlug: ein `echo "WARNUNG…"` und Exit 0. Für Cron war der Lauf
+in Ordnung. Und die Rotation lief danach UNBEDINGT weiter — nach vierzehn
+Fehlläufen in Folge war kein Backup mehr da. Gemerkt hätte es erst, wer eines
+gebraucht hätte. Das nächtliche Cron läuft ohne Login-Session, wo rootless
+`podman run` scheitern kann; der Fall ist also nicht theoretisch.
+
+**Beim Nachlesen kamen drei weitere Fehler im selben Block heraus:**
+
+* Lief `podman` durch und scheiterte erst `gzip`, löschte der Aufräum-Zweig
+  eine GÜLTIGE unkomprimierte Sicherung. Er unterschied nicht, was er wegwarf.
+* Die Sicherung wurde nie GELESEN. Nur der Exit-Status von `db.backup()`
+  zählte. `deploy/rollback.sh` prüft jedes Backup mit `integrity_check`, bevor
+  es sich darauf verlässt — die Stelle, die es ERZEUGT, tat es nicht.
+* Ein `podman`, das 0 meldet und nichts schreibt, ergab einen „erfolgreichen"
+  Lauf ganz ohne Backup. **Diesen dritten Fehler hat erst der Test gefunden,
+  nicht das Nachdenken** — er entstand in der Reparatur selbst und ist damit
+  wieder ein Fall der Klasse „die Behebung war die nächste Lücke" (vgl. B15).
+
+**Wurzel behoben.** Die Regeln, die das Skript jetzt trägt:
+
+1. Ein Lauf ohne gültiges DB-Backup endet mit Exit ≠ 0.
+2. Gelöscht wird nur, was ERSETZT ist: Rotation läuft nur für die Familie, für
+   die dieser Lauf etwas Gültiges erzeugt hat — und die jüngste Datei bleibt
+   IMMER liegen (`app-*.db` und `app-*.db.gz` sind EINE Familie).
+3. Eine Sicherung gilt erst als gut, wenn sie DA ist (`-s`) und der
+   `integrity_check` sie liest.
+4. Ein gescheitertes `gzip` kostet die geprüfte Sicherung nicht.
+
+Mitgenommen, weil es dieselbe Klasse ist: Die Konfigurations-Rangfolge ist jetzt
+die von `rollback.sh` (Aufrufer > `.env` > Standard). Vorher überschrieb ein
+blindes `set -a; source` die Angabe des Aufrufers — wer `DATA_DIR=… backup.sh`
+rief, sicherte stillschweigend etwas anderes.
+
+**Belegt in `tests/backup-lauf.test.ts` (11 Fälle), am AUSGEFÜHRTEN Skript**
+gegen ein aufzeichnendes podman/gzip/tar. Gegenprobe gegen den vorigen Stand:
+zehn der elf fallen um. Der elfte prüft, dass überhaupt rotiert wird, und muss
+auf beiden Ständen grün sein; die neue Zusage „die jüngste Datei überlebt jedes
+Alter" ist über einen normalen Lauf nicht erreichbar (wer rotiert, hat gerade
+eine frische Datei erzeugt) und wird deshalb an der aus dem Skript
+GESCHNITTENEN Funktion `rotieren()` einzeln geprüft — entfernt man die
+Schutzregel, fällt genau dieser Fall.
+
+---
+
+## B17 — Der Restore-Drill übte einen Weg, den die Produktion nie geht — ERLEDIGT 08/2026
+
+**Befund (B14/9, vorbestehend).** `scripts/regime/restore-drill.sh` stellte mit
+`cp` in ein LEERES Verzeichnis wieder her. Die Produktion stellt über eine
+LEBENDE Datenbank wieder her, neben der ein gefülltes `-wal` liegt — der
+Container ist gerade hart weggenommen worden. Genau dieser Weg war
+katastrophal kaputt (B3: SQLite spielte das alte WAL über das eingespielte
+Backup, der Restore war ein stiller No-op und meldete Erfolg), und der Drill
+blieb Monat für Monat grün, weil er ihn nie ging.
+
+**Nachgemessen, statt angenommen.** Ein naives `cp` über `app.db` mit
+liegengebliebenem WAL: die nach dem Backup geschriebenen Daten ÜBERLEBEN den
+Restore. Mit der Dreierfolge (Nebendatei → WAL/SHM weg → `mv`): die Datenbank
+trägt exakt den Inhalt des Backups.
+
+**Wurzel behoben.** Nicht „der Drill baut den Ablauf richtiger nach" — der
+Ablauf steht jetzt genau EINMAL, in `deploy/db-restore.sh`, und wird von
+`deploy/rollback.sh` UND vom Drill GEQUELLT. Auseinanderlaufen ist damit keine
+Frage der Disziplin mehr, sondern unmöglich. Der Drill:
+
+* stellt über eine lebende Datenbank mit nachgewiesen gefülltem WAL wieder her
+  (der Schreiber beendet sich mit SIGKILL, weil ein `close()` einen Checkpoint
+  führe und genau die Bedingung beseitigte, um die es geht),
+* fährt `db_einspielen` — denselben Aufruf wie der Ernstfall,
+* führt eine NEGATIVKONTROLLE mit: derselbe Aufbau, naiv mit `cp`. Sie MUSS den
+  Fehler zeigen; tut sie es nicht, kann der Drill die beiden Wege nicht
+  unterscheiden, und er bricht ab statt grün zu melden,
+* benennt im Beleg, was er NICHT abdeckt (podman, Container-Stopp,
+  Image-Rollback, Uploads-Archiv).
+
+**Und das Gate hält es fest.** `scripts/regime/rollback-check.mjs` prüft jetzt
+zusätzlich `deploy/db-restore.sh` (drei Schritte in Reihenfolge, kein direktes
+`cp` auf `app.db`, Fehlschläge münden in `fail`) und den Drill (quellt die
+Produktionsfunktion, fährt sie, lebende DB, Negativkontrolle wird AUSGEWERTET).
+Gegenprobe an den echten Dateien: Restore naiv gemacht → 2 Verstöße; `source`
+im Drill entfernt → Verstoß; Negativkontrolle entfernt → Verstoß; `rollback.sh`
+legt sich wieder ein eigenes `cp` hin → Verstoß.
+
+**Belegt zusätzlich in `tests/rollback-wal.test.ts`:** Die Prüfung des
+Einspielens führt jetzt die ECHTE Funktion aus, statt sie in TypeScript
+nachzubauen — ein Nachbau ließe genau die Lücke, um die es hier geht.
+
+**Beim Schreiben selbst hineingelaufen.** Der erste Aufbau kopierte nur
+`app.db` in das Übungsverzeichnis. Der Seed hinterlässt aber ein 2 MB großes
+`-wal`; die Daten standen also gar nicht in `app.db`, und der Drill arbeitete
+ab da mit einer leeren Tabelle. Aufgefallen ist das ausschließlich, weil die
+Negativkontrolle nicht anschlug — also an der Kontrolle, die eigens dafür da
+ist. Ohne sie wäre ein grüner, wirkungsloser Drill entstanden: dieselbe Klasse
+Fehler, die er beheben sollte.
 
