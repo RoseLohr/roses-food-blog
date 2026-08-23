@@ -55,7 +55,7 @@ export default async function ContactDetailPage(props: {
         .select()
         .from(schema.contactActivity)
         .where(eq(schema.contactActivity.contactId, contactId))
-        .orderBy(desc(schema.contactActivity.createdAt))
+        .orderBy(desc(schema.contactActivity.createdAt), desc(schema.contactActivity.id))
         .limit(50),
     ]);
 

@@ -10,8 +10,55 @@
  * laufen, steht mit den gemessenen Zahlen in playwright.config.ts und als B9
  * in audit/offene-befunde.md.
  */
+import fs from "node:fs";
+import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { bilderFertig } from "./bilder-fertig";
+
+/**
+ * ── DIE AUFNAHME-UMGEBUNG WIRD MITGESCHRIEBEN ──────────────────────────────
+ *
+ * Ein Vergleichsbild ist nur gegenüber DEM Browser gültig, der es aufgenommen
+ * hat. Das war bis 08/2026 nirgends festgehalten, und die Folge war ein
+ * halbes Dutzend rätselhafter CI-Fehlschläge: „datenschutz @ handy-390:
+ * erwartet 390x6102, erhalten 390x6000". Die Erklärung lautete „der Läufer
+ * rastert Schrift anders" — das war zu vage, um daran etwas zu reparieren.
+ *
+ * Nachgemessen ist es schärfer: Es sind ZWEI VERSCHIEDENE CHROMIUM-BUILDS.
+ * Playwright 1.62.1 verlangt Revision 1234; diese Entwicklungsumgebung hat
+ * 1194 vorinstalliert, und playwright.config nimmt die still, wenn sie da ist.
+ * CI installiert 1234. Aufgenommen wurde also mit einem anderen Browser als
+ * dem, gegen den verglichen wird — kein Wunder, dass der Text anders umbricht.
+ *
+ * Deshalb liegt neben jeder Basis eine Datei mit der Browser-Kennung. Stimmt
+ * sie nicht mit dem laufenden Browser überein, wird NICHT verglichen und
+ * NICHT die Toleranz angehoben, sondern mit Begründung übersprungen: Eine
+ * Messung, die auf diesem Build gar nicht gültig ist, darf weder grün noch rot
+ * behauptet werden. Sobald die Basis auf dem gepinnten Build liegt, greift der
+ * Vergleich von selbst — auch in CI, ohne weitere Änderung.
+ */
+const UMGEBUNGS_DATEI = "AUFNAHME-UMGEBUNG.txt";
+
+function stempelLesen(ordner: string): string | null {
+  try {
+    return fs.readFileSync(path.join(ordner, UMGEBUNGS_DATEI), "utf8").trim();
+  } catch {
+    return null;
+  }
+}
+
+function stempelSchreiben(ordner: string, kennung: string) {
+  fs.mkdirSync(ordner, { recursive: true });
+  fs.writeFileSync(
+    path.join(ordner, UMGEBUNGS_DATEI),
+    `${kennung}\n\n` +
+      "Diese Datei nennt den Browser, mit dem die Vergleichsbilder daneben\n" +
+      "aufgenommen wurden. Ein anderer Build bricht Text anders um und macht die\n" +
+      "Seiten unterschiedlich hoch; ein Vergleich wäre dann sinnlos.\n" +
+      "Neu aufnehmen:  npx playwright test <spec> --update-snapshots\n",
+    "utf8",
+  );
+}
 
 /** Die Breiten, an denen das Layout tatsächlich umschaltet (siehe globals.css). */
 export const BREITEN = [
@@ -57,14 +104,6 @@ export async function ersterLink(page: Page, von: string, muster: RegExp) {
   return href;
 }
 
-/** Erste Adresse aus der Sitemap, die `muster` trifft — als Pfad. */
-export async function ausSitemap(page: Page, muster: RegExp) {
-  const xml = await (await page.request.get("/sitemap.xml")).text();
-  const treffer = muster.exec(xml);
-  if (!treffer) throw new Error(`Keine Adresse ${muster} in der Sitemap`);
-  return new URL(treffer[0], "http://x").pathname;
-}
-
 /**
  * Bereiche, die vom LAUF abhängen statt von den Daten.
  *
@@ -100,9 +139,47 @@ export function referenzaufnahmen(
   seiten: Seitentyp[],
   vorlauf?: (page: Page) => Promise<void>,
 ) {
+  // Einmal je Spec: Browser-Kennung gegen den Stempel der Basis halten.
+  let passtZurBasis = true;
+  let stempelGrund = "";
+  test.beforeAll(async ({ browser }, testInfo) => {
+    const kennung = `${browser.browserType().name()} ${browser.version()}`;
+    // `testInfo.snapshotDir` und NICHT `testInfo.file`: Die Tests werden hier
+    // in referenz.ts erzeugt, die Vergleichsbilder liegen aber bei der
+    // laufenden SPEC. `file` zeigte auf diese Datei und legte den Stempel
+    // neben ein Verzeichnis, das es gar nicht gibt.
+    const ordner = testInfo.snapshotDir;
+    const stand = stempelLesen(ordner);
+
+    // NUR bei einem echten Aufnahmelauf neu stempeln. Der erste Anlauf prüfte
+    // `!== "none"` — und `updateSnapshots` steht standardmäßig auf "missing",
+    // nicht auf "none". Die Bedingung war also IMMER wahr: Der Stempel wurde
+    // bei jedem Lauf überschrieben und hat nie etwas bewacht. Nachgestellt:
+    // Stempel von Hand auf "chromium 999.0.0.0" gesetzt, normaler Lauf — 33
+    // grün, und der Stempel stand danach wieder auf dem laufenden Browser.
+    const aufnahmelauf =
+      testInfo.config.updateSnapshots === "all" ||
+      testInfo.config.updateSnapshots === "changed";
+    if (aufnahmelauf || stand === null) {
+      stempelSchreiben(ordner, kennung);
+      return;
+    }
+    const erwartet = stand.split("\n")[0].trim();
+    if (erwartet !== kennung) {
+      passtZurBasis = false;
+      stempelGrund =
+        `Vergleichsbilder stammen von "${erwartet}", hier läuft "${kennung}". ` +
+        `Ein anderer Browser-Build bricht Text anders um — der Vergleich wäre ` +
+        `nicht aussagekräftig, und eine höhere Toleranz würde die Kontrolle ` +
+        `wertlos machen statt sie zu heilen. Basis auf diesem Build neu ` +
+        `aufnehmen (--update-snapshots) oder den gepinnten Build benutzen.`;
+    }
+  });
+
   for (const seite of seiten) {
     for (const bp of BREITEN) {
       test(`Referenz: ${seite.name} @ ${bp.name}`, async ({ page }) => {
+        test.skip(!passtZurBasis, stempelGrund);
         await page.setViewportSize({ width: bp.width, height: bp.height });
         if (vorlauf) await vorlauf(page);
         const ziel = await seite.ziel(page);

@@ -200,7 +200,7 @@ async function loadDietBoxItems(
         eq(schema.recipe.status, "veroeffentlicht"),
       ),
     )
-    .orderBy(desc(schema.recipe.publishedAt))
+    .orderBy(desc(schema.recipe.publishedAt), desc(schema.recipe.id))
     .limit(limit);
   return boxItemsForRecipes(recRows);
 }
@@ -228,7 +228,7 @@ async function loadSeasonalBoxItems(count: number): Promise<DietBoxItem[]> {
         eq(schema.recipe.isSeasonal, true),
       ),
     )
-    .orderBy(desc(schema.recipe.publishedAt));
+    .orderBy(desc(schema.recipe.publishedAt), desc(schema.recipe.id));
   const week = currentIsoWeek();
   const inSeason = rows
     .filter((r) => isWeekInSeason(week, r.seasonStartWeek, r.seasonEndWeek))
@@ -340,7 +340,16 @@ export default async function HomePage() {
     {
       key: "kategorie",
       heading: d.filterCategory,
-      links: categories.map((c) => ({ label: c.name, href: `/suche?kategorie=${c.slug}` })),
+      // Kategorien zeigen auf IHRE Seite, nicht auf die Suche: /rezepte/kategorie/
+      // ist die kanonische Adresse (eigener canonical, eigene Brotkrume, in der
+      // Sitemap). Bis 08/2026 war sie nur über das Aufklappmenü der Kopfzeile
+      // erreichbar — und das steht erst nach Hover im DOM, ein Crawler sieht es
+      // also nie. Zwei Wege zu demselben Inhalt, und der verlinkte war der
+      // nicht-kanonische (B1).
+      links: categories.map((c) => ({
+        label: c.name,
+        href: `/rezepte/kategorie/${encodeURIComponent(c.slug)}`,
+      })),
     },
     {
       key: "ernaehrung",

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { asc, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { db, schema } from "@/db";
 import { requireAdmin } from "@/lib/auth";

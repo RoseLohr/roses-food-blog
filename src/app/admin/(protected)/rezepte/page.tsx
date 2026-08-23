@@ -22,7 +22,7 @@ export default async function RecipesAdminPage(props: {
   const recipes = await db
     .select()
     .from(schema.recipe)
-    .orderBy(desc(schema.recipe.updatedAt));
+    .orderBy(desc(schema.recipe.updatedAt), desc(schema.recipe.id));
 
   return (
     <>

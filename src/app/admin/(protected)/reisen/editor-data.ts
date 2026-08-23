@@ -19,7 +19,7 @@ export async function buildTravelEditorProps(
       height: schema.mediaImage.height,
     })
     .from(schema.mediaImage)
-    .orderBy(asc(schema.mediaImage.originalName));
+    .orderBy(asc(schema.mediaImage.originalName), asc(schema.mediaImage.id));
   const widthsById = await variantWidthsByImage(imageRows.map((i) => i.id));
   const images = imageRows.map((i) => ({
     id: i.id,

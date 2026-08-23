@@ -308,10 +308,22 @@ describe("rollback.sh: gleiche Konfigurationsquelle wie deploy.sh", () => {
     expect(rollback).toMatch(/-n "\$AUFRUFER_COMPOSE"/);
   });
 
-  it("bricht ab, wenn :previous und :latest dasselbe Image sind", () => {
-    // Sonst meldet ein Rollback, der nichts zurückrollt, „erfolgreich".
-    expect(rollback).toMatch(/previous.*latest|latest.*previous/s);
-    expect(rollback).toMatch(/identisch/i);
+  it("vergleicht die Image-IDs überhaupt — im CODE, nicht im Kommentar", () => {
+    // Hier standen zwei Regexe auf dem GANZEN Skript:
+    //   /previous.*latest|latest.*previous/s  und  /identisch/i
+    // Beide trafen den Kommentar über der Prüfung. Man hätte die Prüfung
+    // ersatzlos streichen können, und dieser Test wäre grün geblieben
+    // (Befund gpt-5.6-sol, PR #110, Runde 4).
+    //
+    // Geprüft wird jetzt der Quelltext OHNE Kommentare — und dass der Rollback
+    // bei gleichen Images wirklich abbricht, misst
+    // tests/rollback-ablauf.test.ts am laufenden Skript.
+    const ohneKommentar = rollback
+      .split("\n")
+      .filter((l) => !/^\s*#/.test(l))
+      .join("\n");
+    expect(ohneKommentar).toMatch(/\[\[ "\$VORIG_ID" != "\$AKTUELL_ID" \]\]/);
+    expect(ohneKommentar).toMatch(/fail ":previous und :latest sind identisch/);
   });
 
   it("entwertet deploy-state, damit der Rollback für deploy.sh sichtbar ist", () => {
@@ -640,5 +652,124 @@ describe("Deploy-Protokoll: der GRUND des Fehlschlags steht drin", () => {
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }
+  });
+});
+
+/**
+ * Befund 4 der Gegenprüfung: Ein zweiter Deploy überschrieb das Rollback-Ziel.
+ *
+ *   Deploy A (gut)  → :previous = ?,  :latest = A
+ *   Deploy B (rot)  → :previous = A,  :latest = B     ← A ist noch da
+ *   Deploy C        → :previous = B,  :latest = C     ← A ist WEG, B ist kaputt
+ *
+ * Nach zwei Fehlschlägen hintereinander gab es keinen bekannt guten Stand mehr,
+ * und ein Rollback hätte auf das kaputte B geführt.
+ */
+describe("Rollback-Ziel überlebt zwei Fehlschläge", () => {
+  it("schreibt den Gut-Zeugen erst NACH dem bestandenen Health-Gate", () => {
+    const zeuge = deploySh.indexOf('> "$DATA_DIR/deploy-image-ok"');
+    const healthGate = deploySh.indexOf("Healthcheck fehlgeschlagen");
+    expect(zeuge).toBeGreaterThan(-1);
+    // Der Zeuge steht im Erfolgspfad ganz am Ende — also hinter dem Gate, das
+    // bei Misserfolg abbricht.
+    expect(zeuge).toBeGreaterThan(healthGate);
+  });
+
+  it("taggt :previous nur, wenn das laufende :latest bezeugt gut ist", () => {
+    const stelle = deploySh.indexOf(
+      "podman tag localhost/roses-blog:latest localhost/roses-blog:previous",
+    );
+    expect(stelle).toBeGreaterThan(-1);
+    const umfeld = deploySh.slice(Math.max(0, stelle - 900), stelle);
+    expect(umfeld).toMatch(/deploy-image-ok/);
+    expect(umfeld).toMatch(/LATEST_ID.*==.*BEKANNT_GUT|"\$LATEST_ID" == "\$BEKANNT_GUT"/s);
+  });
+
+  it("behält lieber ein altes :previous als ein ungeprüftes neues", () => {
+    expect(deploySh).toMatch(/Behalte bisheriges :previous/);
+  });
+});
+
+/**
+ * Befund 2: Startet der Container nach dem Deploy gar nicht, erfuhr es
+ * niemand — der Selbst-Monitor läuft IN der Anwendung.
+ */
+describe("Alarm auch dann, wenn die Anwendung nicht läuft", () => {
+  it("fail() setzt einen Alarm ab", () => {
+    const failBlock = deploySh.slice(
+      deploySh.indexOf("fail() {"),
+      deploySh.indexOf("fail() {") + 900,
+    );
+    expect(failBlock).toMatch(/alarm_absetzen/);
+  });
+
+  it("fragt zuerst :previous, dann :latest — in dieser Reihenfolge", () => {
+    // Nur noch die REIHENFOLGE der Kandidaten, und die ist eine Aussage über
+    // den Text. Dass wirklich das Image mit dem Alarmskript gewählt wird und
+    // :previous bevorzugt wird, prüft tests/deploy-betriebsabsicherung.test.ts
+    // an der ausgeführten Funktion — hier stand vorher nur
+    // `bild=localhost/roses-blog:previous`, und das belegte nichts davon.
+    const fn = deploySh.slice(
+      deploySh.indexOf("alarm_bild_waehlen() {"),
+      deploySh.indexOf("alarm_absetzen() {"),
+    );
+    expect(fn).toMatch(
+      /for kandidat in localhost\/roses-blog:previous localhost\/roses-blog:latest/,
+    );
+  });
+
+  it("blockiert den Fehlschlagpfad nicht, wenn kein Alarmweg da ist", () => {
+    // Bis zur SCHLIESSENDEN KLAMMER, nicht „die nächsten 700 Zeichen": Das
+    // feste Fenster ist mitgewandert, als die Funktion wuchs, und schnitt die
+    // geprüfte Zeile einfach ab. Ein Wächter, der von der Länge seines
+    // Prüflings abhängt, hört irgendwann unbemerkt auf zu wachen.
+    const start = deploySh.indexOf("alarm_absetzen() {");
+    const fn = deploySh.slice(start, deploySh.indexOf("\n}", start));
+    // Zeitgrenze UND ein Rückfallpfad — ein stummer SMTP-Server darf ein
+    // Deployment nicht zusätzlich aufhängen.
+    expect(fn).toMatch(/timeout \d+ podman run/);
+    expect(fn).toMatch(/\|\| deploy_log/);
+  });
+
+  it("das Alarmskript liegt im Laufzeit-Image", () => {
+    expect(containerfile).toMatch(/scripts\/betriebsalarm\.mjs/);
+  });
+});
+
+/**
+ * Befund 5: Ein Container, der beim Start stirbt, wurde ohne Obergrenze neu
+ * gestartet.
+ */
+describe("Neustartschleife hat eine Grenze", () => {
+  it("behält restart: always — sonst startet der Container nach einem Reboot nicht", () => {
+    // podman-restart.service startet NUR Container mit genau dieser Regel.
+    // Ein Tausch auf on-failure:N wäre der naheliegende Griff und würde eine
+    // Störung gegen den Ausfall vom 2026-08-10 eintauschen.
+    expect(compose).toMatch(/^\s*restart: always\s*$/m);
+  });
+
+  it("richtet stattdessen einen Wachhund-Timer ein", () => {
+    expect(deploySh).toMatch(/roses-blog-wachhund\.timer/);
+    expect(deploySh).toMatch(/OnUnitActiveSec=5min/);
+  });
+
+  it("der Wachhund-Dienst koppelt die Container-Lebensdauer ab (KillMode=process)", () => {
+    const start = deploySh.indexOf("wach_dienst=$(cat <<'EOF'");
+    const ende = deploySh.indexOf("\nEOF", start);
+    expect(start).toBeGreaterThan(-1);
+    expect(deploySh.slice(start, ende)).toMatch(/^KillMode=process$/m);
+  });
+
+  it("bietet KEINEN Cron-Ersatzweg an, wenn der Timer nicht aktivierbar ist", () => {
+    // Diese Zusicherung stand hier mit UMGEKEHRTEM Vorzeichen: Sie verlangte
+    // die fertige crontab-Zeile. Ein Test, der einen Workaround erzwingt,
+    // während CLAUDE.md schon dessen VORSCHLAG verbietet — und daneben lief
+    // der Deploy grün weiter, obwohl die einzige Obergrenze für
+    // `restart: always` fehlte (Befund gpt-5.6-sol, PR #110, Runde 3).
+    expect(deploySh).not.toMatch(/\*\/5 \* \* \* \*/);
+    // Stattdessen: nachsehen, ob der Timer LÄUFT, und sonst den Lauf nicht
+    // als erfolgreich quittieren.
+    expect(deploySh).toMatch(/is-active roses-blog-wachhund\.timer/);
+    expect(deploySh).toMatch(/WACHHUND_FEHLT=1/);
   });
 });

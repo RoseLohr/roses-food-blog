@@ -37,7 +37,7 @@ export default async function HomepageAdminPage(props: {
   const recipes = await db
     .select({ id: schema.recipe.id, title: schema.recipe.title })
     .from(schema.recipe)
-    .orderBy(asc(schema.recipe.title));
+    .orderBy(asc(schema.recipe.title), asc(schema.recipe.id));
   const dietTypes = await taxonomiesOfType("ernaehrungsform");
 
   const activeFilterGroups = (

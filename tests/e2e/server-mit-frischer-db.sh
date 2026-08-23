@@ -19,5 +19,24 @@ node scripts/migrate.mjs
 npx tsx scripts/seed.ts
 npx tsx scripts/e2e-admin.ts
 
+# Fingerabdruck des UNBERÜHRTEN gemeinsamen Zustands (B8).
+#
+# Alle Specs teilen sich diese eine Datenbank. `cms-paket.spec.ts` änderte über
+# den Admin den Einleitungstext der Reisen-Seite und räumte nicht auf — alles,
+# was danach lief, sah den geänderten Stand. Die Referenzaufnahmen waren allein
+# grün und im Verbund rot, und die Ursache war von der Wirkung durch mehrere
+# Testdateien getrennt.
+#
+# Hier, unmittelbar nach dem Seeden, ist der Zustand nachweislich unberührt.
+# `tests/e2e/zustand-ende.spec.ts` läuft als LETZTES und vergleicht.
+node -e "
+  const D = require('better-sqlite3');
+  const db = new D('.pw-data/app.db', { readonly: true });
+  const zeilen = db.prepare('SELECT key, value FROM setting ORDER BY key').all();
+  db.close();
+  require('fs').writeFileSync('.pw-data/zustand-saat.json', JSON.stringify(zeilen, null, 2));
+  console.log('[e2e] Zustands-Fingerabdruck: ' + zeilen.length + ' Einstellungen');
+"
+
 npm run build
 exec npx next start -p "$PORT"

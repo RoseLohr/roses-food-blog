@@ -39,7 +39,7 @@ export default async function MediaPage(props: {
   const images = await db
     .select()
     .from(schema.mediaImage)
-    .orderBy(desc(schema.mediaImage.createdAt));
+    .orderBy(desc(schema.mediaImage.createdAt), desc(schema.mediaImage.id));
   const widthsById = await variantWidthsByImage(images.map((i) => i.id));
 
   const thumb = (img: (typeof images)[number]) =>

@@ -146,7 +146,7 @@ export async function publishedTravelCards(filter?: {
       eq(schema.travelPost.heroImageId, schema.mediaImage.id),
     )
     .where(eq(schema.travelPost.status, "veroeffentlicht"))
-    .orderBy(desc(schema.travelPost.publishedAt));
+    .orderBy(desc(schema.travelPost.publishedAt), desc(schema.travelPost.id));
   // Filterung komma-token-genau in JS (nicht in SQL): so matcht „Queensland"
   // auch einen kommagetrennten Region-/Stadt-Wert, nicht nur die exakte Kette.
   const rows = filter

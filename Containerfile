@@ -112,6 +112,13 @@ COPY --from=build /app/scripts/entry.sh ./scripts/entry.sh
 # Healthcheck als Datei (compose.yml ruft /app/scripts/healthcheck.mjs auf) —
 # Inline-JavaScript scheiterte an der /bin/sh-Auswertung von podman.
 COPY --from=build /app/scripts/healthcheck.mjs ./scripts/healthcheck.mjs
+# Betriebsalarm und Wachhund gehören INS IMAGE: Beide laufen genau dann, wenn
+# die Anwendung NICHT läuft (Container kommt nicht hoch, Neustartschleife). Sie
+# als Host-Skripte abzulegen hieße, sie ohne better-sqlite3 und nodemailer zu
+# betreiben — die stehen nur hier. deploy.sh ruft sie über das bekannt gute
+# :previous-Image auf.
+COPY --from=build /app/scripts/betriebsalarm.mjs ./scripts/betriebsalarm.mjs
+COPY --from=build /app/scripts/wachhund.mjs ./scripts/wachhund.mjs
 RUN chmod +x ./scripts/entry.sh && mkdir -p /data
 # sharp im LAUFZEIT-Image benutzen, nicht nur laden: Die deps-Stufe ist nicht
 # das Laufzeit-Image — hierher kommen die nativen Pakete über den @img-Spiegel

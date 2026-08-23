@@ -16,20 +16,37 @@ import path from "node:path";
 const PORT = Number(process.env.PW_PORT ?? 3333);
 const DATA_DIR = path.resolve(process.cwd(), ".pw-data");
 
-// In dieser Umgebung ist Chromium vorinstalliert (andere Build-Nummer als das
-// npm-Paket). Existiert es, direkt nutzen; sonst Playwrights eigenen Browser.
+// Vorinstalliertes Chromium dieser Sandbox — NUR Rückfallweg, siehe
+// `chromiumPfad()` unten.
 const PREINSTALLED = "/opt/pw-browsers/chromium";
 const launchOptions = {
   args: ["--no-sandbox"],
-  ...(fs.existsSync(PREINSTALLED) ? { executablePath: PREINSTALLED } : {}),
 };
 
 /**
- * Laufen die Referenzaufnahmen mit? Örtlich ja, in CI nein (Begründung bei
- * `projects`). `REFERENZ=1` erzwingt sie — z. B. wenn jemand die Rasterung
- * seiner Maschine mit der Basis abgleichen will.
+ * Chromium: Playwrights EIGENEN Build bevorzugen — der ist an die Paketversion
+ * gebunden und damit derselbe wie in CI. Ein vorinstalliertes Chromium wird nur
+ * genommen, wenn Playwrights Build fehlt; das ist in dieser Sandbox der Fall
+ * (Revision 1194 statt der verlangten 1234) und war die eigentliche Ursache der
+ * „nicht reproduzierbaren" Referenzaufnahmen: aufgenommen mit dem einen Build,
+ * verglichen mit dem anderen.
+ *
+ * Welcher Build eine Basis erzeugt hat, steht seit 08/2026 als Stempel neben
+ * ihr (tests/e2e/referenz.ts). Passt er nicht, wird nicht verglichen — und
+ * schon gar nicht die Toleranz angehoben.
  */
-const REFERENZ_LAEUFT = !process.env.CI || process.env.REFERENZ === "1";
+function chromiumPfad(): string | undefined {
+  try {
+    // playwright-core kennt den Pfad seines gepinnten Builds. Liegt er da,
+    // findet Playwright ihn von selbst — dann KEIN executablePath setzen.
+    // Kein `import.meta`: Playwright lädt diese Datei als CommonJS.
+    const eigener = require("playwright-core").chromium.executablePath();
+    if (fs.existsSync(eigener)) return undefined;
+  } catch {
+    // Kein playwright-core auflösbar — dann bleibt nur der vorinstallierte.
+  }
+  return fs.existsSync(PREINSTALLED) ? PREINSTALLED : undefined;
+}
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -40,48 +57,52 @@ export default defineConfig({
   retries: 0,
   reporter: [["list"]],
   /**
-   * DIE REFERENZAUFNAHMEN SIND EIN ÖRTLICHES WERKZEUG, KEIN CI-GATE.
+   * DIE REFERENZAUFNAHMEN LAUFEN ÜBERALL MIT — ÜBER IHRE GÜLTIGKEIT
+   * ENTSCHEIDET DER BROWSER, NICHT DIE UMGEBUNGSVARIABLE.
    *
-   * Sie halten fest, wie die Seiten AUSSEHEN, damit ein Umbau beweisen kann,
-   * dass er nur das ändert, was er ändern soll. Dafür laufen sie vor dem Push
-   * auf EINER Maschine — und genau dort taugen sie: Beim Bildgruppen-Umbau
-   * waren 30 von 33 Aufnahmen pixelgleich, und die drei anderen waren die
-   * Seite, die sich ändern sollte.
+   * Bis 08/2026 stand hier `!process.env.CI`: örtlich ja, in CI nein. Der
+   * Grund war richtig beobachtet (die Aufnahmen reproduzierten dort nicht),
+   * aber falsch benannt — „der Läufer rastert Schrift anders" ist keine
+   * Ursache, an der sich etwas reparieren lässt.
    *
-   * In CI laufen sie NICHT, und das ist gemessen begründet, nicht bequem:
-   * Der Läufer rastert Schrift anders als diese Umgebung. Nicht ein bisschen —
-   * der Text bricht anders um, und die Seiten werden unterschiedlich HOCH:
+   * Nachgemessen sind es ZWEI CHROMIUM-BUILDS: Playwright 1.62.1 verlangt
+   * Revision 1234, diese Sandbox hat 1194 vorinstalliert, CI installiert 1234.
+   * Aufgenommen wurde mit dem einen, verglichen mit dem anderen.
    *
-   *     datenschutz @ handy-390:  erwartet 390x6102, erhalten 390x6000
-   *     datenschutz @ ipad-834:   erwartet 834x3822, erhalten 834x3849
+   * Jetzt trägt jede Basis einen Stempel mit ihrem Browser. Stimmt er, wird
+   * verglichen — auch in CI. Stimmt er nicht, wird mit Begründung
+   * übersprungen: Eine Messung, die auf diesem Build nicht gültig ist, darf
+   * weder grün noch rot behauptet werden. Die Toleranz bleibt bei 0,002; sie
+   * anzuheben würde die Kontrolle wertlos machen, nicht heilen.
    *
-   * Eine höhere Toleranz würde das nicht heilen, sondern die Kontrolle
-   * wertlos machen: Bei 0,20 Abweichung müsste die Schwelle so weit hoch, dass
-   * eine verrutschte Bildzeile darunter verschwindet. Die Wurzel ist die nicht
-   * festgelegte Rasterungsumgebung; sie zu fixieren (e2e im selben
-   * Container-Abbild wie die Anwendung) ist eigene Arbeit und steht als B9 in
-   * audit/offene-befunde.md.
-   *
-   * Läuft die Referenz mit, dann ZUERST — zugesagt statt gehofft. Mehrere
-   * Specs schreiben in die gemeinsame Datenbank (cms-paket ändert den
+   * Die Referenz läuft ZUERST — zugesagt statt gehofft. Mehrere Specs
+   * schreiben in die gemeinsame Datenbank (cms-paket ändert den
    * Einleitungstext der Reisen-Seite über den Admin); ohne diese Reihenfolge
    * hing die Kontrolle an der alphabetischen Sortierung: allein grün, im
    * Verbund rot.
    */
-  projects: REFERENZ_LAEUFT
-    ? [
-        { name: "referenz", testMatch: /-referenz\.spec\.ts/ },
-        {
-          name: "alles-weitere",
-          testIgnore: /-referenz\.spec\.ts/,
-          dependencies: ["referenz"],
-        },
-      ]
-    : [{ name: "alles-weitere", testIgnore: /-referenz\.spec\.ts/ }],
+  projects: [
+    { name: "referenz", testMatch: /-referenz\.spec\.ts/ },
+    {
+      name: "alles-weitere",
+      testIgnore: /(-referenz|zustand-ende)\.spec\.ts/,
+      dependencies: ["referenz"],
+    },
+    // Ganz zum Schluss: Hat ein Spec gemeinsamen Zustand hinterlassen? (B8)
+    // Braucht `dependencies`, damit es wirklich das letzte Wort hat.
+    {
+      name: "zustand-ende",
+      testMatch: /zustand-ende\.spec\.ts/,
+      dependencies: ["alles-weitere"],
+    },
+  ],
   use: {
     baseURL: `http://localhost:${PORT}`,
     viewport: { width: 1280, height: 900 },
-    launchOptions,
+    launchOptions: {
+      ...launchOptions,
+      ...(chromiumPfad() ? { executablePath: chromiumPfad() } : {}),
+    },
     trace: "retain-on-failure",
   },
   webServer: {

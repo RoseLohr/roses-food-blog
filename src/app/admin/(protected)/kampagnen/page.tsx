@@ -32,7 +32,7 @@ export default async function CampaignsPage(props: {
     })
     .from(schema.campaign)
     .leftJoin(schema.segment, eq(schema.campaign.segmentId, schema.segment.id))
-    .orderBy(desc(schema.campaign.createdAt));
+    .orderBy(desc(schema.campaign.createdAt), desc(schema.campaign.id));
 
   return (
     <>

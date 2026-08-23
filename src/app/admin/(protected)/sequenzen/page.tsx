@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { asc, eq } from "drizzle-orm";
+import { asc } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { requireAdmin } from "@/lib/auth";
 import { t } from "@/i18n/de";
@@ -28,7 +28,7 @@ export default async function SequencesPage(props: {
   const sequences = await db
     .select()
     .from(schema.sequence)
-    .orderBy(asc(schema.sequence.name));
+    .orderBy(asc(schema.sequence.name), asc(schema.sequence.id));
   const allSteps = await db
     .select()
     .from(schema.sequenceStep)

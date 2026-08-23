@@ -22,7 +22,7 @@ export async function buildEditorProps(
         fileKey: schema.mediaImage.fileKey,
       })
       .from(schema.mediaImage)
-      .orderBy(asc(schema.mediaImage.originalName)),
+      .orderBy(asc(schema.mediaImage.originalName), asc(schema.mediaImage.id)),
     db
       .select({ name: schema.ingredient.name })
       .from(schema.ingredient)

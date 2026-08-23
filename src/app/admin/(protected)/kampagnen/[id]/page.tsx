@@ -61,7 +61,7 @@ export default async function CampaignDetailPage(props: {
         .from(schema.campaignLog)
         .innerJoin(schema.contact, eq(schema.campaignLog.contactId, schema.contact.id))
         .where(eq(schema.campaignLog.campaignId, campaign.id))
-        .orderBy(desc(schema.campaignLog.sentAt))
+        .orderBy(desc(schema.campaignLog.sentAt), desc(schema.campaignLog.id))
     : [];
 
   const editable = !campaign || campaign.status === "entwurf";
