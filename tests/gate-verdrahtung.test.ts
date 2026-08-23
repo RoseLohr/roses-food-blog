@@ -33,14 +33,29 @@ const ROOT = process.cwd();
 const REGIME = path.join(ROOT, "scripts/regime");
 const WORKFLOWS = path.join(ROOT, ".github/workflows");
 
-/** Genau das Muster, mit dem die Skripte den Schalter auswerten. */
+/** Genau das Muster, mit dem die .mjs-Skripte den Schalter auswerten. */
 const BIETET_SELBSTTEST = 'process.argv.includes("--selftest")';
+/**
+ * Und das Muster der Shell-Skripte.
+ *
+ * OHNE DIESE ZWEITE HÄLFTE WAR DIE ENTDECKUNG UNVOLLSTÄNDIG: Die Prüfung las
+ * nur `.mjs`. Ein Shell-Skript mit `--selftest` — `scripts/regime/erhebung.sh`
+ * ist das erste — hätte seinen Selbsttest anbieten und nirgends aufrufen
+ * können, ohne dass hier etwas rot wird. Genau die Lücke, gegen die diese
+ * Datei geschrieben ist, nur eine Dateiendung weiter.
+ */
+const BIETET_SELBSTTEST_SH = "--selftest)";
 
 function skripteMitSelbsttest(): string[] {
   return fs
     .readdirSync(REGIME)
-    .filter((datei) => datei.endsWith(".mjs"))
-    .filter((datei) => fs.readFileSync(path.join(REGIME, datei), "utf8").includes(BIETET_SELBSTTEST))
+    .filter((datei) => datei.endsWith(".mjs") || datei.endsWith(".sh"))
+    .filter((datei) => {
+      const text = fs.readFileSync(path.join(REGIME, datei), "utf8");
+      return datei.endsWith(".mjs")
+        ? text.includes(BIETET_SELBSTTEST)
+        : text.includes(BIETET_SELBSTTEST_SH);
+    })
     .sort();
 }
 
@@ -82,9 +97,15 @@ describe("Jeder Selbsttest wird auch aufgerufen", () => {
       "findings-gate.mjs": "liest den Findings-Report; sein Selbsttest wäre eine Kopie des Reports",
       "gate-selftest.mjs": "IST der Selbsttest der übrigen Gate-Bedingungen",
       "mandate-hash.mjs": "wie constitution-hash",
-      "kompression-pruefen.sh": "Shell, kein .mjs — abgedeckt von tests/kompression-pruefung.test.ts",
+      "kompression-pruefen.sh": "prüft einen echten Server über HTTP — abgedeckt von tests/kompression-pruefung.test.ts",
+      "npm-container-finden.sh": "identifiziert einen laufenden Container; synthetisch nicht nachstellbar",
+      "npm-snippet-einspielen.sh": "schreibt in einen laufenden Container; ein Selbsttest wäre ein Eingriff",
+      "restore-drill.sh": "IST eine Übung am echten Stand; sein Lauf ist der Nachweis",
+      "url-teile.sh": "Bibliothek ohne eigenen Einstiegspunkt",
     };
-    const alle = fs.readdirSync(REGIME).filter((d) => d.endsWith(".mjs"));
+    const alle = fs
+      .readdirSync(REGIME)
+      .filter((d) => d.endsWith(".mjs") || d.endsWith(".sh"));
     const mit = new Set(skripteMitSelbsttest());
     const unbekannt = alle.filter((d) => !mit.has(d) && !(d in ohne));
     expect(

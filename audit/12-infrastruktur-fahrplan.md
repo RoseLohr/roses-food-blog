@@ -409,6 +409,63 @@ erst nach einer Nachmessung. F1 zurückstellen, bis der Meldepfad entschieden
 ist — wenn es auf dem Host keinen Kanal außerhalb der Anwendung gibt, ist das
 der ehrliche Befund, und F1 bleibt offen.
 
+### A1 erledigt (2026-08-23)
+
+`scripts/regime/erhebung.sh` gibt es jetzt. Es stellt immer dieselben Fragen —
+das ist die Voraussetzung dafür, dass eine Antwort von heute mit einer von
+nächstem Monat vergleichbar ist — und beantwortet M1 bis M6 aus dem, was auf
+dem Host wirklich läuft. **Keine Schwelle, kein roter Rückgabewert für einen
+Messwert:** Genau die Begründung oben gilt weiter, und die Messreihe, die eine
+Schwelle bräuchte, liefert erst dieses Skript.
+
+**Der Port kommt aus der `.env`, nicht aus `podman ps`** — der ursprüngliche
+Vorschlag (A1) zeigte in die falsche Richtung, und dieser Fahrplan hatte das
+bereits festgestellt. Das Skript liest die `.env` und VERGLEICHT sie mit dem,
+was der Container veröffentlicht; ein Unterschied ist dann ein Befund und kein
+Ableitungsproblem.
+
+**M7 und M8 werden nicht beantwortet, sondern benannt.** M7 ist keine Frage an
+den Host, sondern an die Anwendung (ohne Zeitmessung um Datenbank, Render und
+Serialisierung lässt sich der Median nicht aufteilen). M8 steht in den
+Repository-Einstellungen. Ein Skript, das hier etwas schätzte, würde eine Zahl
+erfinden.
+
+**Die Maskierung ist der Grund, warum man die Ausgabe weitergeben darf.** Das
+Repository ist öffentlich; die Adresse des Ursprungs darf darin nicht
+auftauchen — sie ist der einzige Weg, an Cloudflare vorbei direkt auf den
+Server zu zielen. Jede Zeile läuft durch einen Filter, und zwar am Ende EINER
+Pipe statt je Befehl: Eine Maskierung, die man von Hand anwenden muss, wird
+beim nächsten hinzugefügten Befehl vergessen.
+
+Belegt statt behauptet: 16 Selbsttestfälle (blockierend in CI) und
+`tests/erhebung-maskierung.test.ts`, das einen vollständigen, realistisch
+geformten Bericht durchschickt und beide Richtungen prüft — keine Adresse und
+kein Geheimnis überlebt, und Zeitstempel, `127.0.0.1:3000`, `0.0.0.0:443`,
+`docker.io/jc21/npm:2.11.1`, `client_max_body_size 20m`, `Netz host` und
+`Neustarts 2` bleiben lesbar. Ein Maskierer, der alles unkenntlich macht,
+bestünde die erste Hälfte trivial.
+
+Zwei Fehler hat der Selbsttest sofort gefunden: `Authorization: Bearer eyJ…`
+maskierte brav das Wort „Bearer" und ließ den Schlüssel dahinter stehen (jetzt
+fällt der Rest der Zeile weg), und der IPv6-Ausdruck traf die verkürzte
+Schreibweise `2001:db8::…` nicht — ein Ausdruck, der beide Formen fängt, frisst
+allerdings auch Uhrzeiten, deshalb sind es jetzt zwei.
+
+**Benannte Grenze:** Maskiert werden Namen mit mindestens ZWEI Punkten.
+`beispiel.de` und `docker.io` bleiben lesbar, sonst wäre die Frage „welches
+Proxy-Image läuft da eigentlich" nicht mehr zu beantworten. Die Domain eines
+öffentlichen Blogs ist kein Geheimnis; die Adresse des Ursprungs ist es.
+
+**Nicht gelesen wird `/data/database.sqlite` im Proxy-Container** — auch nicht
+„nur die Tabellenliste". Sie trägt Zugangsdaten im Klartext, und alles hier
+Gefragte steht in den erzeugten nginx-Dateien.
+
+**Mitgefunden:** `tests/gate-verdrahtung.test.ts` entdeckte bis dahin nur
+`.mjs`. Ein Shell-Skript mit `--selftest` hätte seinen Selbsttest anbieten und
+nirgends aufrufen können — genau die Lücke, gegen die diese Datei geschrieben
+ist, nur eine Dateiendung weiter. Sie liest jetzt beide, und die fünf
+Shell-Skripte ohne Selbsttest sind namentlich begründet.
+
 ## Spur C2/C3/C4 — Proxy-Konfiguration
 
 **Trägt:** Die Grundrichtung. Die eigentliche Schwachstelle ist die Anwendung

@@ -104,6 +104,10 @@ neu (B6, 08/2026):
   SMTP-Settings (`src/lib/observability.ts`, `audit/slo.md`).
 - Backups: Pre-Deploy-DB-Backup + `deploy/backup.sh`; Restore-Drill:
   `scripts/regime/restore-drill.sh`.
+- Erhebung: `scripts/regime/erhebung.sh [--basis <url>]` auf dem Server —
+  beantwortet immer dieselben Fragen (M1–M6) und maskiert JEDE Zeile, damit die
+  Ausgabe in dieses ÖFFENTLICHE Repository darf. Misst und weist aus, deckelt
+  nicht.
 
 ## Takeover (Mensch, Break-Glass)
 Ein kompetenter Engineer ohne Vorwissen: (1) README §Setup folgen,
