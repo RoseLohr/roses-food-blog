@@ -465,22 +465,25 @@ describe("Das Einspielen hinterlaesst keinen gefaehrlichen Zwischenstand", () =>
     // Die Reihenfolge ist der ganze Punkt: Nach dem Entfernen des WAL darf
     // app.db noch den alten Stand tragen (stimmig, nur veraltet) — aber es
     // darf nie das NEUE app.db neben dem ALTEN WAL geben.
+    // Der Ablauf steht seit B14/9 in deploy/db-restore.sh — dort, weil der
+    // Restore-Drill dieselbe Funktion ausführt und nicht einen Nachbau.
+    // rollback.sh ruft sie nur noch auf.
     const skript = fs.readFileSync(
-      path.resolve(process.cwd(), "deploy/rollback.sh"),
+      path.resolve(process.cwd(), "deploy/db-restore.sh"),
       "utf8",
     );
     const ohneKommentar = skript
       .split("\n")
       .filter((l) => !/^\s*#/.test(l))
       .join("\n");
-    const kopieren = ohneKommentar.indexOf('cp "$BACKUP" "$DATA_DIR/app.db.neu"');
-    const walWeg = ohneKommentar.indexOf('rm -f "$DATA_DIR/app.db-wal"');
-    const umbenennen = ohneKommentar.indexOf('mv -f "$DATA_DIR/app.db.neu"');
+    const kopieren = ohneKommentar.indexOf('cp "$backup" "$daten/app.db.neu"');
+    const walWeg = ohneKommentar.indexOf('rm -f "$daten/app.db-wal"');
+    const umbenennen = ohneKommentar.indexOf('mv -f "$daten/app.db.neu"');
     expect(kopieren).toBeGreaterThan(-1);
     expect(walWeg).toBeGreaterThan(kopieren);
     expect(umbenennen).toBeGreaterThan(walWeg);
     // Und app.db wird nirgends mehr direkt beschrieben.
-    expect(ohneKommentar).not.toMatch(/cp "\$BACKUP" "\$DATA_DIR\/app\.db"/);
+    expect(ohneKommentar).not.toMatch(/cp "\$backup" "\$daten\/app\.db"/);
   });
 });
 

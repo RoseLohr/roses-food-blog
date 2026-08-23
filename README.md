@@ -314,18 +314,34 @@ Das Deployment ist auf Geschwindigkeit optimiert:
 
 `deploy/backup.sh` erzeugt in `$DATA_DIR/backups/`:
 
-- `app-<Zeitstempel>.db.gz` — konsistentes SQLite-Backup (Online-Backup-API)
+- `app-<Zeitstempel>.db.gz` — konsistentes SQLite-Backup (Online-Backup-API),
+  vor dem Komprimieren mit `integrity_check` gelesen
 - `uploads-<Zeitstempel>.tar.gz` — Medien
 - Rotation nach 14 Tagen (`BACKUP_KEEP_DAYS` in `.env` übersteuert das)
+
+Zwei Zusagen, auf die man sich verlassen kann (B16):
+
+- **Ein Lauf ohne gültiges DB-Backup endet mit Exit ≠ 0.** Cron meldet ihn also.
+  Früher stand nur eine Warnung im Protokoll, und der Lauf galt als erfolgreich.
+- **Rotiert wird nur, was ersetzt ist.** Ein Fehllauf löscht nichts, und die
+  jüngste Sicherung bleibt in jedem Fall liegen — es gibt immer mindestens eine.
+
+Scheitert nur das Komprimieren, bleibt die geprüfte Sicherung unkomprimiert
+liegen (`app-<Zeitstempel>.db`) und zählt als gültig.
 
 **Restore** (App kurz stoppen):
 
 ```bash
 cd ~/roses-food-blog
 podman compose down
+# Die Reihenfolge ist wichtig: erst in eine Nebendatei, dann das WAL des alten
+# Standes entfernen, dann atomar umbenennen. Wer app.db direkt überschreibt und
+# das WAL danach löscht, hinterlässt bei einem Abbruch neues app.db neben altem
+# WAL — SQLite spielt das WAL darüber, und der Restore war ein stiller No-op.
 gunzip -c /srv/roses-blog/data/backups/app-JJJJMMTT-HHMMSS.db.gz \
-  > /srv/roses-blog/data/app.db
+  > /srv/roses-blog/data/app.db.neu
 rm -f /srv/roses-blog/data/app.db-wal /srv/roses-blog/data/app.db-shm
+mv -f /srv/roses-blog/data/app.db.neu /srv/roses-blog/data/app.db
 tar -xzf /srv/roses-blog/data/backups/uploads-JJJJMMTT-HHMMSS.tar.gz \
   -C /srv/roses-blog/data
 podman compose up -d app
@@ -384,8 +400,9 @@ scripts/regime/ Gates und Betriebsprüfungen — darunter die drei Proxy-Skripte
                 (npm-container-finden.sh, npm-snippet-einspielen.sh,
                 kompression-pruefen.sh)
 deploy/npm/     http_top.conf — die WIRKSAME Kompression am Ursprung
-deploy/         rollback.sh, systemd-Unit, backup.sh, nginx.conf.example
-                (letztere historisch, siehe ihren Kopf)
+deploy/         rollback.sh, db-restore.sh (der atomare Restore, den auch der
+                Restore-Drill fährt), systemd-Unit, backup.sh,
+                nginx.conf.example (letztere historisch, siehe ihren Kopf)
 docs/           PLAN.md, ASSUMPTIONS.md, ABNAHME.md
 governance/     Verfassung, ADRs, Ownership
 audit/          Befunde, Fahrplan, Ausnahmen-Ledger

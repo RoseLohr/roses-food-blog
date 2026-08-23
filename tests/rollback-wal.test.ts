@@ -49,6 +49,27 @@ function befuellen(datei: string, n: number, praefix: string) {
   return db;
 }
 
+/**
+ * Führt die ECHTE Produktionsfunktion aus — dieselbe, die deploy/rollback.sh
+ * quellt und die der Restore-Drill fährt. Ein Nachbau in TypeScript würde
+ * genau die Lücke lassen, die B14/9 aufgedeckt hat: Der Test bliebe grün,
+ * während das Skript daneben etwas anderes tut.
+ */
+function dbEinspielen(backup: string, daten: string) {
+  execFileSync(
+    "bash",
+    [
+      "-c",
+      'set -euo pipefail; source "$1"; db_einspielen "$2" "$3"',
+      "--",
+      path.resolve(process.cwd(), "deploy/db-restore.sh"),
+      backup,
+      daten,
+    ],
+    { stdio: "pipe" },
+  );
+}
+
 function zeilen(datei: string): number {
   const db = new Database(datei, { readonly: true });
   try {
@@ -127,11 +148,50 @@ describe("Rollback und das WAL", () => {
     // zurück kommen die 3000 alten. Der Restore hat nichts getan.
     expect(zeilen(app)).toBe(3000);
 
-    // MIT dem Schritt, den rollback.sh jetzt tut: die alten WAL-Dateien weg.
-    fs.copyFileSync(sicherung, app);
-    fs.rmSync(`${app}-wal`, { force: true });
-    fs.rmSync(`${app}-shm`, { force: true });
+    // MIT der Produktionsfunktion — hier wirklich AUSGEFÜHRT, nicht in
+    // TypeScript nachgebaut. Das WAL des vorigen Standes ist weg, und die
+    // Datenbank trägt genau den gesicherten Inhalt.
+    // (Der Zustand von oben wird bewusst nicht aufgeräumt: app.db trägt das
+    // Backup, das alte WAL liegt daneben — genau, was der Ernstfall vorfindet.)
+    expect(fs.existsSync(`${app}-wal`)).toBe(true);
+    dbEinspielen(sicherung, dir);
+    expect(fs.existsSync(`${app}-wal`)).toBe(false);
+    expect(fs.existsSync(`${app}-shm`)).toBe(false);
+    expect(fs.existsSync(`${app}.neu`)).toBe(false);
     expect(zeilen(app)).toBe(7);
+  });
+
+  it("db_einspielen weist ein fehlendes Backup zurück, bevor es irgendetwas anfasst", () => {
+    const dir = frischesVerzeichnis();
+    const app = path.join(dir, "app.db");
+    befuellen(app, 5, "alt").close();
+    const vorher = fs.readFileSync(app);
+
+    expect(() => dbEinspielen(path.join(dir, "gibtsnicht.db"), dir)).toThrow();
+    expect(fs.readFileSync(app).equals(vorher)).toBe(true);
+  });
+
+  it("db_einspielen lässt app.db unangetastet, wenn die Nebendatei nicht schreibbar ist", () => {
+    const dir = frischesVerzeichnis();
+    const app = path.join(dir, "app.db");
+    befuellen(app, 5, "alt").close();
+    const vorher = fs.readFileSync(app);
+
+    // Ein gültiges Backup — der Fehlschlag darf NICHT schon an der
+    // Vorbedingung hängen, sonst prüft dieser Test etwas anderes, als sein
+    // Name sagt.
+    const sicherung = path.join(dir, "sicherung.db");
+    befuellen(sicherung, 7, "neu").close();
+
+    // Ein VERZEICHNIS an der Stelle der Nebendatei blockiert das Schreiben.
+    // (Ein `chmod` würde root nicht aufhalten.)
+    fs.mkdirSync(`${app}.neu`);
+
+    expect(() => dbEinspielen(sicherung, dir)).toThrow();
+    // app.db ist UNVERÄNDERT — nicht halb überschrieben — und das WAL des
+    // alten Standes wurde nicht vorzeitig entfernt.
+    expect(fs.readFileSync(app).equals(vorher)).toBe(true);
+    expect(zeilen(app)).toBe(5);
   });
 });
 
@@ -141,6 +201,12 @@ describe("deploy/rollback.sh trägt die Konsequenz", () => {
     "utf8",
   );
   const ohneKommentar = skript
+    .split("\n")
+    .filter((l) => !/^\s*#/.test(l))
+    .join("\n");
+  // Der Einspiel-Ablauf selbst liegt in der gemeinsamen Datei.
+  const restoreOhneKommentar = fs
+    .readFileSync(path.resolve(process.cwd(), "deploy/db-restore.sh"), "utf8")
     .split("\n")
     .filter((l) => !/^\s*#/.test(l))
     .join("\n");
@@ -154,8 +220,10 @@ describe("deploy/rollback.sh trägt die Konsequenz", () => {
   });
 
   it("entfernt die alten WAL-Dateien beim Einspielen", () => {
-    expect(ohneKommentar).toMatch(
-      /rm -f "\$DATA_DIR\/app\.db-wal" "\$DATA_DIR\/app\.db-shm"/,
+    // Seit B14/9 in der gemeinsamen Funktion, die rollback.sh quellt und der
+    // Restore-Drill ausführt.
+    expect(restoreOhneKommentar).toMatch(
+      /rm -f "\$daten\/app\.db-wal" "\$daten\/app\.db-shm"/,
     );
   });
 
@@ -165,7 +233,7 @@ describe("deploy/rollback.sh trägt die Konsequenz", () => {
     // benennt danach um — der erste Zugriff auf die Datenbank ist also diese
     // Kopie. Die Aussage des Tests bleibt dieselbe: Erst stoppen, dann
     // anfassen.
-    const restore = ohneKommentar.indexOf('cp "$BACKUP" "$DATA_DIR/app.db.neu"');
+    const restore = ohneKommentar.indexOf('db_einspielen "$BACKUP" "$DATA_DIR"');
     expect(stopp).toBeGreaterThan(-1);
     expect(restore).toBeGreaterThan(-1);
     expect(stopp).toBeLessThan(restore);
