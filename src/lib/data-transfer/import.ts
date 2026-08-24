@@ -424,16 +424,54 @@ export async function importBundle(
             type: "bild",
             imageId: imgId,
             // Mit übernehmen, sonst sieht der zurückgespielte Bericht anders
-            // aus als der gesicherte (Befund B4). Ältere Archive kennen die
-            // Felder nicht — dort steht `null`, und das ist genau richtig:
-            // ein Einzelbild ohne Vorgabe.
-            gruppe: b.gruppe,
-            groesse: b.gruppe === null ? b.groesse : null,
-            ausrichtung: b.gruppe === null ? b.ausrichtung : null,
+            // aus als der gesicherte (Befund B4). Fehlen die Felder ganz, ist
+            // es ein Alt-Archiv — dann werden die Gruppen unten aus der
+            // Reihenfolge nachgebildet, nicht auf null gesetzt.
+            gruppe: b.gruppe ?? null,
+            groesse: b.gruppe == null ? (b.groesse ?? null) : null,
+            ausrichtung: b.gruppe == null ? (b.ausrichtung ?? null) : null,
           });
       } else if (b.index < tv.restaurants.length) {
         blocks.push({ type: "restaurant", index: b.index });
       }
+    }
+
+    // ── ALT-ARCHIV: die Gruppen stehen dort nur in der REIHENFOLGE ─────────
+    //
+    // Vor diesem Umbau gab es kein `gruppe`-Feld. Ein ununterbrochener Lauf
+    // von Bildblöcken WAR eine Gruppe — nicht weil es irgendwo stand, sondern
+    // weil er aufeinanderfolgte. Ein Archiv von damals trägt die Angabe also
+    // nicht, und ohne diesen Schritt käme jedes dieser Bilder als EINZELBILD
+    // zurück, freigestellt mit Größe und Seite statt in seiner Reihe. Der
+    // zurückgespielte Bericht sähe anders aus als der gesicherte — dieselbe
+    // Zusage, die B4 schon einmal gebrochen hat.
+    //
+    // Die Datenbank-Migration 0013 tut für ihren Bestand genau dasselbe; der
+    // Import war die zweite Tür für alte Daten, und dort fehlte es. Gefunden
+    // hat das erst das Fremd-Vendor-Panel („Alte Backups verlieren
+    // Gruppensemantik").
+    //
+    // Erkannt am FEHLENDEN Feld, nicht an der Format-Version: EXPORT_VERSION
+    // ist für diese Änderung nicht gestiegen, ein Alt-Archiv trägt also
+    // dieselbe 2 wie ein neues. Nur `undefined` unterscheidet die beiden —
+    // deshalb ist das Feld im Schema `.optional()` und nicht `.default(null)`.
+    //
+    // Gerechnet wird auf der FERTIGEN Blockfolge, also auf der, die gleich
+    // gespeichert wird: Genau auf ihr galt die implizite Regel, und
+    // unsichtbare Textblöcke sind hier bereits entfallen.
+    const altArchiv =
+      tv.contentBlocks.some((b) => b.type === "bild") &&
+      tv.contentBlocks.every((b) => b.type !== "bild" || b.gruppe === undefined);
+    if (altArchiv) {
+      let marke = 0;
+      blocks.forEach((b, i) => {
+        if (b.type !== "bild") return;
+        // Neue Marke nur am ANFANG eines Laufs; alle Folgebilder erben sie.
+        if (i === 0 || blocks[i - 1].type !== "bild") marke += 1;
+        b.gruppe = marke;
+        b.groesse = null;
+        b.ausrichtung = null;
+      });
     }
     const searchText = blocksToMarkdown(
       blocks.filter((b): b is Extract<TravelBlock, { type: "text" }> => b.type === "text"),
@@ -585,6 +623,17 @@ export async function importBundle(
           sortOrder: i,
           type: "bild",
           imageId: b.imageId,
+          // Diese drei fehlten hier — und damit war die Übernahme weiter oben
+          // toter Code: Der Block wurde sorgfältig mit Gruppe, Größe und Seite
+          // gefüllt, und beim INSERT blieb davon nur die Bild-ID übrig. Jedes
+          // Archiv verlor die Anordnung, nicht nur ein altes; der Bericht kam
+          // als Reihe freigestellter Einzelbilder zurück. Gefunden beim
+          // Nachgehen des Panel-Befunds „Alte Backups verlieren
+          // Gruppensemantik" — der Befund stimmte, die Ursache lag eine
+          // Ebene tiefer.
+          gruppe: b.gruppe,
+          groesse: b.groesse,
+          ausrichtung: b.ausrichtung,
         });
       } else {
         const restaurantId = restaurantIdByIndex[b.index];
