@@ -5,7 +5,7 @@
  * Gerichten (inkl. Bilder- und Zutaten-Referenzen) als React-State,
  * serialisiert als JSON in ein Hidden-Field.
  */
-import { useActionState, useState } from "react";
+import { useActionState, useMemo, useState } from "react";
 import { saveTravelAction, type TravelFormState } from "./actions";
 import { ImagePicker, type ImageChoice } from "@/components/admin/image-picker";
 import {
@@ -13,18 +13,12 @@ import {
   type Option as TaxonomyOption,
 } from "@/components/admin/quick-add-checkboxes";
 import { RichTextEditor } from "@/components/admin/rich-text-editor";
+import { RESTAURANT_FOTOS_MAX } from "@/lib/restaurant-fotos";
 import {
-  BILD_GROESSEN,
-  BILD_PLAETZE,
-  bildBreitenGross,
-  fliesstText,
-  passtInZeile,
-  seitenverhaeltnis,
-  zeilenBreite,
-  zeilenIndizes,
-  type BildGroesse,
-  type BildPlatz,
-} from "@/lib/bildreihen";
+  bildWirdGespeichert,
+  restaurantWirdGespeichert,
+} from "@/lib/travel-wirksam";
+import { zeigtVoraussichtlichEtwas } from "@/lib/sichtbar-vorschau";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -46,7 +40,7 @@ interface EditorRestaurant {
   name: string;
   city: string;
   description: string;
-  imageId: number | null;
+  imageIds: number[];
   /** Koordinaten-Override als Eingabe-Strings ("" = keine Angabe) */
   lat: string;
   lng: string;
@@ -56,13 +50,7 @@ interface EditorRestaurant {
 /** Inhalts-Block (siehe lib/travel-blocks.ts); imageId 0 = noch kein Bild. */
 export type EditorBlockData =
   | { type: "text"; markdown: string }
-  | {
-      type: "bild";
-      imageId: number;
-      groesse: BildGroesse;
-      platz: BildPlatz;
-      mitVorherigem: boolean;
-    }
+  | { type: "bild"; imageId: number }
   | { type: "restaurant"; index: number };
 type EditorBlock = EditorBlockData & { key: string };
 
@@ -105,158 +93,62 @@ const btnSecondary =
   "rounded-lg border border-ink/20 px-3 py-1.5 text-sm hover:bg-cream";
 
 /**
- * Was der Editor über die Zeilen wissen muss — abgeleitet aus DERSELBEN
- * Gruppierung, die auch der Renderer benutzt (`zeilenIndizes`). Die Regel wird
- * hier also nicht ein zweites Mal formuliert, sondern nur angezeigt.
+ * Wo steht jedes Bild in seiner Gruppe? — abgeleitet aus DERSELBEN Regel, die
+ * der Renderer anwendet (`zuRenderBloecken`): Aufeinander folgende Bildblöcke
+ * bilden eine Gruppe, das erste steht über die ganze Breite, alle weiteren
+ * teilen sich die Reihe darunter.
+ *
+ * Gerechnet wird auf der WIRKSAMEN Folge — also der, die nach dem Speichern
+ * übrig bleibt —, und das Ergebnis danach auf die Editor-Indizes zurück
+ * übersetzt. Sonst zeigte der Editor eine Lage an, die es gar nicht gibt.
  */
-interface Zeilenwissen {
-  /** Blockindizes der Zeile, zu der dieser Block gehört. */
-  zeile: number[];
-  /** Greift das Häkchen bei diesem Block wirklich (er ist nicht der erste)? */
-  angehaengt: boolean;
-  /** Darf das Häkchen überhaupt angeboten werden — passt das Bild daneben? */
-  anbietbar: boolean;
-}
-
-function zeilenwissen(blocks: EditorBlock[]): Map<number, Zeilenwissen> {
-  const zeilen = zeilenIndizes(blocks);
-  const zeileVon = new Map<number, number[]>();
-  for (const z of zeilen) for (const i of z) zeileVon.set(i, z);
-
-  const wissen = new Map<number, Zeilenwissen>();
-  for (const [i, zeile] of zeileVon) {
-    const block = blocks[i];
-    if (block.type !== "bild") continue;
-    // Anbietbar ist das Häkchen, wenn direkt darüber ein Bild steht und dieses
-    // Bild noch in dessen Zeile passt — also die Summe der Anteile die Spalte
-    // nicht überschreitet. Steht der Block schon in einer Zeile mit anderen,
-    // ist die Frage schon beantwortet.
-    const davor = zeileVon.get(i - 1);
-    const davorGroessen = (davor ?? [])
-      .filter((k) => k !== i)
-      .map((k) => blocks[k])
-      .filter((b) => b.type === "bild")
-      .map((b) => b.groesse);
-    wissen.set(i, {
-      zeile,
-      angehaengt: zeile[0] !== i,
-      anbietbar:
-        davor !== undefined &&
-        davorGroessen.length > 0 &&
-        passtInZeile(davorGroessen, block.groesse),
-    });
-  }
-  return wissen;
+function gruppenlage(
+  blocks: EditorBlock[],
+  wirksam: number[],
+): Map<number, { pos: number; anzahl: number }> {
+  const folge = wirksam.map((i) => blocks[i]);
+  const lage = new Map<number, { pos: number; anzahl: number }>();
+  let gruppe: number[] = [];
+  const schliessen = () => {
+    for (const [pos, k] of gruppe.entries()) {
+      lage.set(wirksam[k], { pos, anzahl: gruppe.length });
+    }
+    gruppe = [];
+  };
+  folge.forEach((b, k) => {
+    if (b.type === "bild") gruppe.push(k);
+    else schliessen();
+  });
+  schliessen();
+  return lage;
 }
 
 /**
- * Fertige Anzeigegröße eines Bildes in Pixeln — die Antwort auf die Frage,
- * die der alte Höhen-Schalter offenließ. Spalte 816 px ab 929 px Fenster.
+ * Die Indizes der Blöcke, die beim Speichern erhalten bleiben.
  *
- * Steht das Bild in einer Zeile mit anderen, hängt seine Breite von DEREN
- * Formaten ab (die Zeile wird nach Seitenverhältnis verteilt). Gerechnet wird
- * deshalb mit derselben Funktion wie im Frontend, nicht mit einer Näherung.
+ * Dieselben Prädikate wie im Speicherweg (src/lib/travel-wirksam.ts). Was hier
+ * fehlt, steht später nicht im Bericht — und darf deshalb weder eine Bildzeile
+ * brechen noch beim Absenden mitgeschickt werden.
  */
-function fertigeGroesse(
+function wirksameIndizes(
   blocks: EditorBlock[],
-  zeile: number[],
-  i: number,
-  bildZu: (id: number) => { width?: number; height?: number } | undefined,
-): { breite: number; hoehe: number } | null {
-  const bilder = zeile
-    .map((k) => blocks[k])
-    .filter((b) => b.type === "bild")
-    .map((b) => ({ block: b, bild: bildZu(b.imageId) }));
-  if (bilder.some((x) => !x.bild?.width || !x.bild.height)) return null;
-
-  const breiten = bildBreitenGross(
-    zeilenBreite(bilder.map((x) => x.block.groesse)),
-    bilder.map((x) => seitenverhaeltnis(x.bild!.width!, x.bild!.height!)),
-  );
-  const pos = zeile.indexOf(i);
-  const eigen = bilder[pos];
-  const breite = breiten[pos];
-  if (breite === undefined || eigen === undefined) return null;
-  return {
-    breite,
-    hoehe: Math.round((breite * eigen.bild!.height!) / eigen.bild!.width!),
-  };
-}
-
-function GroessenSchalter({
-  wert,
-  gesperrt,
-  onChange,
-}: {
-  wert: BildGroesse;
-  gesperrt: boolean;
-  onChange: (g: BildGroesse) => void;
-}) {
-  return (
-    <div
-      role="group"
-      aria-label={d.blockSize}
-      className="inline-flex overflow-hidden rounded-lg border border-ink/20"
-    >
-      {BILD_GROESSEN.map((g) => {
-        const aktiv = g === wert;
-        return (
-          <button
-            key={g}
-            type="button"
-            aria-pressed={aktiv}
-            disabled={gesperrt}
-            title={d.blockSizeOptions[g].title}
-            onClick={() => onChange(g)}
-            className={`border-r border-ink/15 px-4 py-1.5 text-sm font-semibold last:border-r-0 ${
-              aktiv ? "bg-leaf text-white" : "hover:bg-cream"
-            } ${gesperrt ? "opacity-40" : ""}`}
-          >
-            {d.blockSizeOptions[g].label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-/** Links oder rechts. Bei `l` gibt es keine Seite, bei einem angehängten Bild
- *  kommt sie vom Partner — in beiden Fällen steht der Schalter still. */
-function PlatzSchalter({
-  wert,
-  gesperrt,
-  onChange,
-}: {
-  wert: BildPlatz;
-  gesperrt: boolean;
-  onChange: (p: BildPlatz) => void;
-}) {
-  return (
-    <div
-      role="group"
-      aria-label={d.blockPlace}
-      className="inline-flex overflow-hidden rounded-lg border border-ink/20"
-    >
-      {BILD_PLAETZE.map((p) => {
-        const aktiv = p === wert;
-        return (
-          <button
-            key={p}
-            type="button"
-            aria-pressed={aktiv}
-            disabled={gesperrt}
-            title={d.blockPlaceOptions[p].title}
-            onClick={() => onChange(p)}
-            className={`border-r border-ink/15 px-4 py-1.5 text-sm font-semibold last:border-r-0 ${
-              aktiv ? "bg-leaf text-white" : "hover:bg-cream"
-            } ${gesperrt ? "opacity-40" : ""}`}
-          >
-            {d.blockPlaceOptions[p].label}
-          </button>
-        );
-      })}
-    </div>
-  );
+  restaurants: EditorRestaurant[],
+): number[] {
+  const out: number[] = [];
+  blocks.forEach((b, i) => {
+    const bleibt =
+      b.type === "bild"
+        ? bildWirdGespeichert(b.imageId)
+        : b.type === "restaurant"
+          ? restaurantWirdGespeichert(restaurants[b.index]?.name ?? "")
+          : // Derselbe Weg wie beim Server — Bericht bauen und nachsehen —,
+            // nur ohne die Entitäten-Tabelle: Die passt nicht mehr ins
+            // JS-Budget dieser Route, und der Unterschied betrifft allein die
+            // ANZEIGE. Die Begründung steht in src/lib/sichtbar-vorschau.ts.
+            zeigtVoraussichtlichEtwas(b.markdown);
+    if (bleibt) out.push(i);
+  });
+  return out;
 }
 
 function emptyDish(): EditorDish {
@@ -276,7 +168,7 @@ function emptyRestaurant(): EditorRestaurant {
     name: "",
     city: "",
     description: "",
-    imageId: null,
+    imageIds: [],
     lat: "",
     lng: "",
     dishes: [emptyDish()],
@@ -297,6 +189,11 @@ export function TravelEditor({
     initial.restaurants.length ? initial.restaurants : [],
   );
   const [blocks, setBlocks] = useState<EditorBlock[]>(() =>
+    // Schon beim Laden normalisieren: Der Bestand kann Flaggen enthalten, die
+    // nicht mehr wirken — etwa weil ein Bild dazwischen gelöscht wurde oder
+    // sein Foto fehlt und der Block deshalb übersprungen wird. Ungeräumt
+    // stünden sie im Editor unsichtbar da und würden beim Speichern
+    // zurückgeschrieben.
     (initial.blocks.length
       ? initial.blocks
       : [{ type: "text", markdown: "" } as EditorBlockData]
@@ -305,8 +202,16 @@ export function TravelEditor({
 
   // Zeilen einmal je Rendervorgang bestimmen — aus derselben Gruppierung, die
   // beim Speichern das Frontend baut.
-  const wissen = zeilenwissen(blocks);
-
+  // Einmal je Änderung, nicht je Rendervorgang: Das Prädikat rendert Markdown.
+  const wirksam = useMemo(
+    () => wirksameIndizes(blocks, restaurants),
+    [blocks, restaurants],
+  );
+  const wirksamSet = new Set(wirksam);
+  // Wo landet welches Bild? Abgeleitet aus DERSELBEN Gruppierung, die auch der
+  // Renderer benutzt, und auf der Folge, die das Speichern übrig lässt — sonst
+  // zeigte der Editor eine Lage an, die es nach dem Speichern nicht gibt.
+  const lage = gruppenlage(blocks, wirksam);
   const updateBlock = (i: number, patch: Partial<EditorBlockData>) =>
     setBlocks((prev) =>
       prev.map((b, idx) => (idx === i ? ({ ...b, ...patch } as EditorBlock) : b)),
@@ -339,16 +244,15 @@ export function TravelEditor({
     );
   };
 
-  // Unvollständige Blöcke (Bild ohne Auswahl, Restaurant ohne Ziel) beim
-  // Absenden weglassen; leere Textblöcke filtert der Server.
+  // Abgesendet wird GENAU die Folge, auf der auch die Zeilen gerechnet wurden.
+  // Vorher waren das zwei verschiedene Mengen: Der Absende-Filter fragte bei
+  // einem Restaurant-Block „gibt es diesen Index?", der Server „hat dieses
+  // Restaurant einen Namen?" — und dazwischen ging eine Bildzeile verloren.
   const serializedBlocks = JSON.stringify(
-    blocks
-      .filter(
-        (b) =>
-          (b.type !== "bild" || b.imageId > 0) &&
-          (b.type !== "restaurant" || (b.index >= 0 && b.index < restaurants.length)),
-      )
-      .map(({ key: _key, ...b }) => b),
+    wirksam.map((i) => {
+      const { key: _key, ...b } = blocks[i];
+      return b;
+    }),
   );
 
   // "48,2" / "48.2" / "" → number | null (Koordinaten-Override)
@@ -364,7 +268,7 @@ export function TravelEditor({
       name: r.name,
       city: r.city,
       description: r.description,
-      imageId: r.imageId,
+      imageIds: r.imageIds,
       lat: parseCoord(r.lat),
       lng: parseCoord(r.lng),
       dishes: r.dishes.map((dish) => ({
@@ -387,18 +291,27 @@ export function TravelEditor({
     setRestaurants((prev) =>
       prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)),
     );
-  const updateDish = (ri: number, di: number, patch: Partial<EditorDish>) =>
+  /**
+   * Die Gerichte EINES Restaurants ändern.
+   *
+   * Wichtig ist das `prev`: Die Liste, auf der gerechnet wird, kommt aus dem
+   * Zustands-Aktualisierer, nicht aus dem Renderdurchlauf. Sechs Stellen
+   * bauten bis 08/2026 ihre neue Liste aus dem gerenderten `r.dishes`. Fallen
+   * zwei Änderungen in dieselbe Stapelverarbeitung, rechnet die zweite auf dem
+   * Stand VOR der ersten und macht sie zunichte.
+   */
+  const updateDishes = (
+    ri: number,
+    aendern: (dishes: EditorDish[]) => EditorDish[],
+  ) =>
     setRestaurants((prev) =>
       prev.map((r, idx) =>
-        idx === ri
-          ? {
-              ...r,
-              dishes: r.dishes.map((x, dIdx) =>
-                dIdx === di ? { ...x, ...patch } : x,
-              ),
-            }
-          : r,
+        idx === ri ? { ...r, dishes: aendern(r.dishes) } : r,
       ),
+    );
+  const updateDish = (ri: number, di: number, patch: Partial<EditorDish>) =>
+    updateDishes(ri, (dishes) =>
+      dishes.map((x, dIdx) => (dIdx === di ? { ...x, ...patch } : x)),
     );
 
   return (
@@ -514,7 +427,12 @@ export function TravelEditor({
             <p className="mb-2 text-xs text-ink-soft">{d.blocksHint}</p>
             <div className="flex flex-col gap-3">
               {blocks.map((b, i) => (
-                <div key={b.key} className="border border-ink/10 p-3">
+                <div
+                  key={b.key}
+                  className={`border border-ink/10 p-3 ${
+                    wirksamSet.has(i) ? "" : "border-dashed bg-cream/40"
+                  }`}
+                >
                   <div className="mb-2 flex items-center gap-1.5">
                     <span className="text-xs font-semibold uppercase tracking-wide text-ink-soft">
                       {b.type === "text"
@@ -523,6 +441,11 @@ export function TravelEditor({
                           ? d.blockImage
                           : d.blockRestaurant}
                     </span>
+                    {!wirksamSet.has(i) && (
+                      <span className="text-xs font-normal normal-case text-ink-soft">
+                        {d.blockNichtGespeichertKurz}
+                      </span>
+                    )}
                     <div className="ml-auto flex gap-1">
                       <button
                         type="button"
@@ -562,101 +485,35 @@ export function TravelEditor({
                       onChange={(md) => updateBlock(i, { markdown: md })}
                     />
                   )}
-                  {b.type === "bild" &&
-                    (() => {
-                      const w = wissen.get(i);
-                      const gepaart = w?.angehaengt ?? false;
-                      const anbietbar = w?.anbietbar ?? false;
-                      const zeile = w?.zeile ?? [i];
-                      const zeilenGroessen = zeile
-                        .map((k) => blocks[k])
-                        .filter((x) => x.type === "bild")
-                        .map((x) => x.groesse);
-                      // Seite und Umfluss gelten für die ganze Zeile und kommen
-                      // vom ersten Bild — dieselbe Regel wie im Frontend.
-                      const erstes = blocks[zeile[0]];
-                      const zeilenPlatz =
-                        erstes?.type === "bild" && fliesstText(zeilenGroessen)
-                          ? erstes.platz
-                          : null;
-                      const fertig = fertigeGroesse(
-                        blocks,
-                        zeile,
-                        i,
-                        (id) => images.find((x) => x.id === id),
-                      );
-                      return (
-                        <>
-                          <ImagePicker
-                            legend={d.blockImage}
-                            options={images}
-                            multiple={false}
-                            value={b.imageId > 0 ? [b.imageId] : []}
-                            onChange={(ids) =>
-                              updateBlock(i, { imageId: ids[0] ?? 0 })
-                            }
-                          />
-                          <div className="mt-3 flex flex-wrap items-end gap-x-6 gap-y-3">
-                            <div>
-                              <span className={labelCls}>{d.blockSize}</span>
-                              {/* Auch in einer Zeile behält jedes Bild seine
-                                  eigene Größe — sie ist sein Anteil an der
-                                  Zeile. Nur die SEITE kommt vom ersten Bild. */}
-                              <GroessenSchalter
-                                wert={b.groesse}
-                                gesperrt={false}
-                                onChange={(g) => updateBlock(i, { groesse: g })}
-                              />
-                            </div>
-                            <div>
-                              <span className={labelCls}>{d.blockPlace}</span>
-                              <PlatzSchalter
-                                wert={b.platz}
-                                gesperrt={gepaart || b.groesse === "l"}
-                                onChange={(p) => updateBlock(i, { platz: p })}
-                              />
-                            </div>
-                          </div>
-                          <label
-                            className={`mt-3 flex items-start gap-2 text-sm ${
-                              anbietbar ? "" : "opacity-50"
-                            }`}
-                            title={anbietbar ? undefined : d.blockWithPreviousOff}
-                          >
-                            <input
-                              type="checkbox"
-                              className="mt-1 h-4 w-4 accent-leaf"
-                              checked={gepaart}
-                              disabled={!anbietbar}
-                              onChange={(e) =>
-                                updateBlock(i, { mitVorherigem: e.target.checked })
-                              }
-                            />
-                            <span>{d.blockWithPrevious}</span>
-                          </label>
-                          <p className="mt-2 border-l-2 border-leaf bg-leaf/[0.06] px-3 py-1.5 text-xs text-ink-soft">
-                            {zeilenPlatz === null
-                              ? zeilenBreite(zeilenGroessen).n === 1
-                                ? d.blockFullWidth
-                                : d.blockNoFlow
-                              : zeilenPlatz === "rechts"
-                                ? d.blockFloatRight
-                                : d.blockFloatLeft}
-                            {zeilenGroessen.length > 1 && (
-                              <> {d.blockInRow(zeilenGroessen.length)}</>
-                            )}
-                            {fertig && (
-                              <>
-                                {" "}
-                                <b className="font-semibold text-ink">
-                                  {d.blockRendered(fertig.breite, fertig.hoehe)}
-                                </b>
-                              </>
-                            )}
-                          </p>
-                        </>
-                      );
-                    })()}
+                  {b.type === "bild" && (
+                    <>
+                      <ImagePicker
+                        legend={d.blockImage}
+                        options={images}
+                        multiple={false}
+                        value={b.imageId > 0 ? [b.imageId] : []}
+                        onChange={(ids) => updateBlock(i, { imageId: ids[0] ?? 0 })}
+                      />
+                      {/* Kein Regler mehr — nur die Auskunft, WO dieses Bild
+                          landet. Die Anordnung folgt allein aus der Position:
+                          das erste Bild einer Gruppe über die ganze Breite,
+                          alle weiteren in der Reihe darunter. */}
+                      <p className="mt-2 border-l-2 border-leaf bg-leaf/[0.06] px-3 py-1.5 text-xs text-ink-soft">
+                        {(() => {
+                          const g = lage.get(i);
+                          if (!g) return d.blockGruppeAllein;
+                          return g.pos === 0
+                            ? d.blockGruppeErstes(g.anzahl)
+                            : d.blockGruppeWeiteres(g.pos + 1, g.anzahl);
+                        })()}
+                      </p>
+                    </>
+                  )}
+                  {!wirksamSet.has(i) && (
+                    <p className="mb-2 border-l-2 border-ink/25 bg-ink/[0.04] px-3 py-1.5 text-xs text-ink-soft">
+                      {d.blockNichtGespeichert[b.type]}
+                    </p>
+                  )}
                   {b.type === "restaurant" &&
                     (restaurants.length === 0 ? (
                       <p className="text-sm text-ink-soft">{d.blockNoRestaurants}</p>
@@ -688,13 +545,7 @@ export function TravelEditor({
                 </button>
                 <button
                   type="button"
-                  onClick={() => addBlock({
-                      type: "bild",
-                      imageId: 0,
-                      groesse: "m",
-                      platz: "rechts",
-                      mitVorherigem: false,
-                    })}
+                  onClick={() => addBlock({ type: "bild", imageId: 0 })}
                   className={btnSecondary}
                 >
                   + {d.blockImage}
@@ -797,12 +648,14 @@ export function TravelEditor({
                   <ImagePicker
                     legend={d.restaurantImage}
                     options={images}
-                    multiple={false}
-                    value={r.imageId ? [r.imageId] : []}
-                    onChange={(ids) =>
-                      updateRestaurant(ri, { imageId: ids[0] ?? null })
-                    }
+                    multiple
+                    max={RESTAURANT_FOTOS_MAX}
+                    value={r.imageIds}
+                    onChange={(ids) => updateRestaurant(ri, { imageIds: ids })}
                   />
+                  <p className="mt-1 text-xs text-ink-soft">
+                    {d.restaurantImageHint}
+                  </p>
                 </div>
               </div>
 
@@ -816,11 +669,7 @@ export function TravelEditor({
                         placeholder={d.dishName}
                         value={dish.name}
                         onChange={(e) =>
-                          updateRestaurant(ri, {
-                            dishes: r.dishes.map((x, idx) =>
-                              idx === di ? { ...x, name: e.target.value } : x,
-                            ),
-                          })
+                          updateDish(ri, di, { name: e.target.value })
                         }
                         className={inputCls}
                       />
@@ -829,13 +678,7 @@ export function TravelEditor({
                         placeholder={d.dishIngredients}
                         value={dish.ingredientsText}
                         onChange={(e) =>
-                          updateRestaurant(ri, {
-                            dishes: r.dishes.map((x, idx) =>
-                              idx === di
-                                ? { ...x, ingredientsText: e.target.value }
-                                : x,
-                            ),
-                          })
+                          updateDish(ri, di, { ingredientsText: e.target.value })
                         }
                         className={inputCls}
                       />
@@ -845,11 +688,7 @@ export function TravelEditor({
                           initialMarkdown={dish.description}
                           minHeightClass="min-h-20"
                           onChange={(md) =>
-                            updateRestaurant(ri, {
-                              dishes: r.dishes.map((x, idx) =>
-                                idx === di ? { ...x, description: md } : x,
-                              ),
-                            })
+                            updateDish(ri, di, { description: md })
                           }
                         />
                       </div>
@@ -858,11 +697,7 @@ export function TravelEditor({
                         options={images}
                         value={dish.imageIds}
                         onChange={(ids) =>
-                          updateRestaurant(ri, {
-                            dishes: r.dishes.map((x, idx) =>
-                              idx === di ? { ...x, imageIds: ids } : x,
-                            ),
-                          })
+                          updateDish(ri, di, { imageIds: ids })
                         }
                         multiple
                       />
@@ -926,9 +761,9 @@ export function TravelEditor({
                     <button
                       type="button"
                       onClick={() =>
-                        updateRestaurant(ri, {
-                          dishes: r.dishes.filter((_, idx) => idx !== di),
-                        })
+                        updateDishes(ri, (dishes) =>
+                          dishes.filter((_, idx) => idx !== di),
+                        )
                       }
                       className={`${btnSecondary} mt-2`}
                     >
@@ -939,7 +774,7 @@ export function TravelEditor({
                 <button
                   type="button"
                   onClick={() =>
-                    updateRestaurant(ri, { dishes: [...r.dishes, emptyDish()] })
+                    updateDishes(ri, (dishes) => [...dishes, emptyDish()])
                   }
                   className={`${btnSecondary} self-start`}
                 >

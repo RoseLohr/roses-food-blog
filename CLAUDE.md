@@ -38,6 +38,51 @@ diesem Repository arbeitet. Sie ist Teil des Governance-Regimes (A-32/A-33/A-37)
 - Deploy-Freigabe liest `audit/engagement-status.json` → `production_eligible`
   (aktuell `false`, bis Part 2/Track C schließt). **Fail-closed.**
 
+## Layout-Regeln, die nicht verhandelbar sind
+- **Bilder im Reisebericht:** Das ERSTE Bild einer Gruppe steht über die ganze
+  Breite, ALLE weiteren darunter in EINER Reihe, gleich hoch. Eine Gruppe ist
+  ein ununterbrochener Lauf von Bildblöcken. Der Block trägt **kein** Feld über
+  sein Aussehen — die Anordnung folgt allein aus der Position. Wer hier wieder
+  einen Regler einführt, führt die Fehlerklasse mit ein, die 0012 beseitigt hat.
+- **`src/app/globals.css` benutzt kein `@layer`.** Tailwind v4 legt seine
+  Utilities in `@layer utilities`; eine blanke Projektklasse schlägt deshalb
+  JEDE Utility (`class="bildgruppe mb-8"` bliebe wirkungslos). Wer einen Wert
+  von außen überschreibbar machen will, braucht `@utility`. Siehe
+  `audit/offene-befunde.md` B7.
+- **Vor und nach jedem Layout- oder Struktur-Umbau die Referenzaufnahmen
+  fahren:** `npx playwright test seiten-referenz admin-referenz` (114
+  Aufnahmen: elf öffentliche Seitentypen und 27 Admin-Seiten × drei Breiten).
+  Was sich ändern DARF, wird vorher benannt und danach gezielt neu aufgenommen —
+  nie pauschal mit `--update-snapshots`.
+  **Ändert ein Umbau eine Seite, die noch keine Aufnahme hat, wird sie ZUERST
+  aufgenommen** — sonst gibt es hinterher nichts zu vergleichen. Ein Zustand,
+  den keine Adresse zeigt (z. B. die Statusmeldung), braucht eine eigene
+  Aufnahme mit dem passenden Suchparameter.
+  **Was vom LAUF abhängt statt von den Daten** (Tagesdatum, Aufrufzähler)
+  bekommt `data-referenz-maske="true"` im Markup und die Seite `maskiert: true`
+  in ihrer Liste. Die Mechanik prüft beides gegeneinander: eine angemeldete
+  Maske, die nichts trifft, ist ein Fehler — genau so war sie ein halbes Jahr
+  wirkungslos.
+  **Das ist ein ÖRTLICHES Werkzeug und läuft in CI nicht:** Der Läufer rastert
+  Schrift anders, die Seiten werden dort unterschiedlich hoch (Zahlen in
+  `playwright.config.ts` und `audit/offene-befunde.md` B9). Wer es zum Gate
+  machen will, legt zuerst die Rasterungsumgebung fest — die Toleranz wird
+  NICHT angehoben.
+
+## Gemeinsame Bausteine — benutzen statt abschreiben
+Wer im Admin eine Seite anlegt oder ändert, nimmt diese und schreibt sie nicht
+neu (B6, 08/2026):
+- `<Meldung text={…} />` + `meldungAus(searchParams)` — die Statusmeldung über
+  der Seite. Trägt `role="status"`; von Hand vergisst man das.
+- `<Statuschip ton="gruen|gelb|blau|grau">` — die farbige Statusplakette.
+- `<LoeschForm action={…} id={…} />` — das Löschen-Formular. Vorbelegt auf den
+  Regelfall; `gestalt` und `beschriftung` nur für die Ausnahmen. **Eine
+  Rückfrage vor dem Löschen gehört, wenn sie kommt, HIERHIN — einmal.**
+- In Tests: `frischeDb("kurzname")` am MODULANFANG (nicht in `beforeAll` —
+  `DATA_DIR` muss stehen, bevor etwas `@/db` auswertet) und `adminAnlegen()`.
+  Die Helfer dürfen `@/db` nicht statisch importieren; `tests/frische-db-helfer.test.ts`
+  hält das fest.
+
 ## Arbeitsweise
 - Deutsch in Kommentaren, Commits, UI-Texten. Kleine, atomare Commits.
 - Committer: `Claude <noreply@anthropic.com>`; Push auf den Arbeits-Branch.

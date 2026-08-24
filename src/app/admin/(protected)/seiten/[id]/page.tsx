@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { asc, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { db, schema } from "@/db";
 import { requireAdmin } from "@/lib/auth";
@@ -8,6 +8,7 @@ import { ImagePicker } from "@/components/admin/image-picker";
 import { RichTextEditor } from "@/components/admin/rich-text-editor";
 import { t } from "@/i18n/de";
 import { savePageAction } from "../actions";
+import { Meldung, meldungAus } from "@/components/admin/meldung";
 
 const dict = t();
 const d = dict.admin.pages;
@@ -35,19 +36,14 @@ export default async function EditPagePage(props: {
 
   const imageChoices = await listImageChoices();
 
-  const message =
-    typeof searchParams.meldung === "string" ? searchParams.meldung : null;
+  const message = meldungAus(searchParams);
 
   return (
     <>
       <h1 className="mb-6 text-2xl font-bold">
         {isNew ? d.newPage : `${d.editPage}: ${page!.title}`}
       </h1>
-      {message && (
-        <p role="status" className="mb-4 bg-amber-50 p-3 text-sm text-amber-900">
-          {message}
-        </p>
-      )}
+      <Meldung text={message} />
       <form
         action={savePageAction}
         className="flex max-w-3xl flex-col gap-4 bg-white p-5 shadow-sm"

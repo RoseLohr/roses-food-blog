@@ -7,6 +7,8 @@
 import { eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db, schema } from "@/db";
+import { hatSichtbarenInhalt } from "@/lib/sichtbarer-inhalt";
+import { restaurantWirdGespeichert } from "@/lib/travel-wirksam";
 import { slugify, uniqueSlug } from "@/lib/slug";
 import type { TaxonomyType } from "@/lib/taxonomies";
 import {
@@ -14,6 +16,7 @@ import {
   travelBlocksSchema,
   type TravelBlock,
 } from "@/lib/travel-blocks";
+import { RESTAURANT_FOTOS_MAX } from "@/lib/restaurant-fotos";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -23,7 +26,20 @@ const restaurantsSchema = z.array(
     name: z.string().trim().max(200),
     city: z.string().trim().max(120).default(""),
     description: z.string().trim().max(4000).default(""),
-    imageId: z.number().int().positive().nullable().default(null),
+    /**
+     * Fotos des Restaurants (höchstens RESTAURANT_FOTOS_MAX).
+     *
+     * `imageId` (Einzahl) wird weiterhin angenommen: Ein Editor-Tab, der über
+     * ein Deployment hinweg offen bleibt, schickt noch das alte Feld. Ohne
+     * diese Annahme parste sein Formular klaglos durch, `imageIds` fiele auf
+     * `[]` zurück — und weil beim Speichern ALLE Restaurants neu geschrieben
+     * werden, wären die Fotos des ganzen Berichts still weg.
+     */
+    imageId: z.number().int().positive().nullable().optional(),
+    imageIds: z
+      .array(z.number().int().positive())
+      .max(RESTAURANT_FOTOS_MAX)
+      .optional(),
     /** Manueller Koordinaten-Override (Vorrang vor EXIF der Fotos) */
     lat: z.number().min(-90).max(90).nullable().default(null),
     lng: z.number().min(-180).max(180).nullable().default(null),
@@ -45,6 +61,15 @@ const restaurantsSchema = z.array(
       .default([]),
   }),
 );
+
+/**
+ * Die Fotos eines Restaurants aus dem Formular — Liste bevorzugt, Einzelfeld
+ * als Rückfallebene, ohne Doppelte und auf die Höchstzahl begrenzt.
+ */
+function fotos(r: z.infer<typeof restaurantsSchema>[number]): number[] {
+  const roh = r.imageIds ?? (r.imageId != null ? [r.imageId] : []);
+  return [...new Set(roh)].slice(0, RESTAURANT_FOTOS_MAX);
+}
 
 /** Editor-Feld → Taxonomie-Art der Gericht-Zuordnung (kein „geraet"). */
 const DISH_TAXONOMY_FIELDS: ReadonlyArray<
@@ -124,8 +149,11 @@ export async function saveTravelFromForm(
   const keptIndexByOld = new Map<number, number>();
   {
     let next = 0;
+    // Dasselbe Prädikat wie im Editor (src/lib/travel-wirksam.ts). Vorher
+    // entschied hier der Name und dort der Index — und eine Bildzeile ging
+    // zwischen beiden verloren.
     restaurants.forEach((r, oldIdx) => {
-      if (r.name !== "") keptIndexByOld.set(oldIdx, next++);
+      if (restaurantWirdGespeichert(r.name)) keptIndexByOld.set(oldIdx, next++);
     });
   }
   restaurants = restaurants
@@ -133,7 +161,7 @@ export async function saveTravelFromForm(
       ...r,
       dishes: r.dishes.filter((d) => d.name !== ""),
     }))
-    .filter((r) => r.name !== "");
+    .filter((r) => restaurantWirdGespeichert(r.name));
 
   // Inhalts-Blöcke (Block-Editor). Ohne Feld: Altverhalten (Feld "inhalt"
   // als ein Textblock) — hält API und Tests stabil.
@@ -149,7 +177,20 @@ export async function saveTravelFromForm(
     blocks = [];
     for (const b of parsed) {
       if (b.type === "text") {
-        if (b.markdown.trim()) blocks.push({ type: "text", markdown: b.markdown.trim() });
+        // Nicht `.trim()`, sondern „zeigt das im Bericht überhaupt etwas?".
+        // Ein leerer Block aus dem Editor kam früher als „##" oder „>" hier an
+        // — nicht leer, also gespeichert, im Bericht unsichtbar, aber ein
+        // BLOCK: er brach die Bildzeile darüber und hinterließ eine weiße
+        // Fläche. Der Browser ist nicht der einzige Schreiber, deshalb prüft
+        // der Server dasselbe wie der Editor, mit derselben Funktion.
+        // OHNE .trim(): Führender Leerraum ist in Markdown BEDEUTUNG — vier
+        // Leerzeichen am Zeilenanfang machen einen Codeblock. Das .trim() stand
+        // hier schon vorher und hat denselben Schaden angerichtet wie das, das
+        // die Prüfung im Importeur gefunden hat; es hier stehen zu lassen,
+        // hieße einen bekannten Fehler zu übersehen.
+        if (hatSichtbarenInhalt(b.markdown)) {
+          blocks.push({ type: "text", markdown: b.markdown });
+        }
       } else if (b.type === "bild") {
         blocks.push(b);
       } else {
@@ -294,7 +335,11 @@ export async function saveTravelFromForm(
           name: r.name,
           city: r.city,
           description: r.description,
-          imageId: r.imageId ?? null,
+          // Ein Formular schickt entweder die Liste (neu) oder das Einzelfeld
+          // (Tab von vor dem Deployment). Doppelte fallen heraus — dasselbe
+          // Foto zweimal lehnt die Datenbank ab (restaurant_image_2_check).
+          imageId: fotos(r)[0] ?? null,
+          imageId2: fotos(r)[1] ?? null,
           lat: r.lat,
           lng: r.lng,
           sortOrder: ri,
@@ -353,40 +398,53 @@ export async function saveTravelFromForm(
       }
     }
 
-    // Inhalts-Blöcke einfügen (Restaurant-Index → restaurant_id)
-    const blockValues: (typeof schema.travelBlock.$inferInsert)[] = [];
-    blocks.forEach((b, i) => {
-      if (b.type === "text") {
-        blockValues.push({
+    // Inhalts-Blöcke einfügen (Restaurant-Index → restaurant_id).
+    //
+    // ERST aussortieren, DANN normalisieren: Ein Bild ohne gültiges Foto und
+    // ein Restaurant-Block ohne Ziel fallen hier weg — und damit ändert sich
+    // die Nachbarschaft. Eine `mitVorherigem`-Flagge darunter zeigte sonst auf
+    // ein anderes Bild als das, neben dem der Redakteur sie gesetzt hat, oder
+    // ins Leere. Was gespeichert wird, muss auch wirken.
+    //
+    // OHNE Normalisieren: Die Zeilenzugehörigkeit ist eine ABSICHT und wird
+    // hier nicht angetastet. Wo sie wirkt, entscheidet `gruppiere()` beim
+    // Rendern — auf genau dieser Folge. Eine Flagge, die im Moment nichts
+    // bewirkt, ist kein Müll: Fällt der Block dazwischen später weg, greift
+    // sie wieder. Wer sie beim Speichern streicht, macht aus einem
+    // vorübergehenden Zustand einen dauerhaften Verlust.
+    const behalten = blocks.filter((b) =>
+      b.type === "bild"
+        ? validBlockImageIds.has(b.imageId)
+        : b.type === "restaurant"
+          ? restaurantIdByIndex[b.index] !== undefined
+          : true,
+    );
+    const blockValues: (typeof schema.travelBlock.$inferInsert)[] = behalten.map(
+      (b, i) => {
+        if (b.type === "text") {
+          return {
+            travelPostId: tid,
+            sortOrder: i,
+            type: "text" as const,
+            markdown: b.markdown,
+          };
+        }
+        if (b.type === "bild") {
+          return {
+            travelPostId: tid,
+            sortOrder: i,
+            type: "bild" as const,
+            imageId: b.imageId,
+          };
+        }
+        return {
           travelPostId: tid,
           sortOrder: i,
-          type: "text",
-          markdown: b.markdown,
-        });
-      } else if (b.type === "bild") {
-        if (validBlockImageIds.has(b.imageId)) {
-          blockValues.push({
-            travelPostId: tid,
-            sortOrder: i,
-            type: "bild",
-            imageId: b.imageId,
-            groesse: b.groesse,
-            platz: b.platz,
-            mitVorherigem: b.mitVorherigem,
-          });
-        }
-      } else {
-        const restaurantId = restaurantIdByIndex[b.index];
-        if (restaurantId !== undefined) {
-          blockValues.push({
-            travelPostId: tid,
-            sortOrder: i,
-            type: "restaurant",
-            restaurantId,
-          });
-        }
-      }
-    });
+          type: "restaurant" as const,
+          restaurantId: restaurantIdByIndex[b.index],
+        };
+      },
+    );
     if (blockValues.length) {
       tx.insert(schema.travelBlock).values(blockValues).run();
     }

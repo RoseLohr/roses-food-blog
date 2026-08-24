@@ -5,6 +5,9 @@ import { db, schema } from "@/db";
 import { requireAdmin } from "@/lib/auth";
 import { t } from "@/i18n/de";
 import { deletePageAction } from "./actions";
+import { Meldung, meldungAus } from "@/components/admin/meldung";
+import { Statuschip } from "@/components/admin/statuschip";
+import { LoeschForm } from "@/components/admin/loesch-form";
 
 const dict = t();
 const d = dict.admin.pages;
@@ -16,9 +19,8 @@ export default async function PagesAdminPage(props: {
 }) {
   await requireAdmin();
   const searchParams = await props.searchParams;
-  const message =
-    typeof searchParams.meldung === "string" ? searchParams.meldung : null;
-  const pages = await db.select().from(schema.page).orderBy(asc(schema.page.title));
+  const message = meldungAus(searchParams);
+  const pages = await db.select().from(schema.page).orderBy(asc(schema.page.title), asc(schema.page.id));
 
   return (
     <>
@@ -31,11 +33,7 @@ export default async function PagesAdminPage(props: {
           {d.newPage}
         </Link>
       </div>
-      {message && (
-        <p role="status" className="mb-4 bg-amber-50 p-3 text-sm text-amber-900">
-          {message}
-        </p>
-      )}
+      <Meldung text={message} />
       <div className="overflow-x-auto bg-white shadow-sm">
         <table className="w-full text-left text-sm">
           <thead>
@@ -56,28 +54,16 @@ export default async function PagesAdminPage(props: {
                 </td>
                 <td className="px-4 py-3">/{p.slug}</td>
                 <td className="px-4 py-3">
-                  <span
-                    className={
-                      p.status === "veroeffentlicht"
-                        ? "bg-green-100 px-2 py-0.5 text-xs text-green-900"
-                        : "bg-amber-100 px-2 py-0.5 text-xs text-amber-900"
-                    }
+                  <Statuschip
+                    ton={p.status === "veroeffentlicht" ? "gruen" : "gelb"}
                   >
                     {p.status === "veroeffentlicht"
                       ? dict.admin.recipes.statusPublished
                       : dict.admin.recipes.statusDraft}
-                  </span>
+                  </Statuschip>
                 </td>
                 <td className="px-4 py-3">
-                  <form action={deletePageAction}>
-                    <input type="hidden" name="id" value={p.id} />
-                    <button
-                      type="submit"
-                      className="text-red-700 underline-offset-2 hover:underline"
-                    >
-                      {dict.common.delete}
-                    </button>
-                  </form>
+                  <LoeschForm action={deletePageAction} id={p.id} />
                 </td>
               </tr>
             ))}

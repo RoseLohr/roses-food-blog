@@ -1,294 +1,158 @@
+/**
+ * Die Bildanordnung — eine Regel, drei Aussagen.
+ *
+ *   Das ERSTE Bild einer Gruppe steht über die ganze Breite.
+ *   ALLE weiteren stehen darunter in EINER Reihe und teilen sich die Breite.
+ *   Eine Gruppe ist ein ununterbrochener Lauf von Bildblöcken.
+ *
+ * Vorher standen hier 294 Zeilen für fünf Regler (Größe s/m/l, Platz
+ * links/rechts, „mit vorherigem", Sechstel-Summe, Umfluss-Grenze) samt ihrer
+ * Wechselwirkungen. Die Wechselwirkungen gibt es nicht mehr — deshalb gibt es
+ * auch nichts mehr über sie zu prüfen.
+ *
+ * Was BLEIBT zu prüfen: dass die Gruppierung wirklich nur an der Reihenfolge
+ * hängt, und dass die `sizes`-Angabe die Rechnung des CSS trifft. Das Zweite
+ * ist keine Kosmetik: `sizes` entscheidet, welche Bilddatei der Browser lädt.
+ * Die Geometrie selbst — gleiche Höhe, Breitensumme, kein Überlauf — wird an
+ * einem echten Browser gemessen (tests/e2e/bildgruppe-mock.spec.ts und
+ * tests/e2e/bildreihen.spec.ts), nicht hier nachgerechnet.
+ */
 import { describe, expect, it } from "vitest";
 import {
-  bildBreitenGross,
-  bildSizes,
+  bildgruppeSizes,
   galerieSizes,
-  passtInZeile,
+  restaurantPaarSizes,
   seitenverhaeltnis,
   vollbildSizes,
-  zeilenBreite,
   zuRenderBloecken,
 } from "@/lib/bildreihen";
 import type { TravelBlock } from "@/lib/travel-blocks";
 
-const text = (markdown: string): TravelBlock => ({ type: "text", markdown });
-const bild = (
-  imageId: number,
-  groesse: "s" | "m" | "l" = "m",
-  platz: "links" | "rechts" = "rechts",
-  mitVorherigem = false,
-): TravelBlock => ({ type: "bild", imageId, groesse, platz, mitVorherigem });
+const bild = (imageId: number): TravelBlock => ({ type: "bild", imageId });
+const text = (markdown = "Text."): TravelBlock => ({ type: "text", markdown });
+const restaurant = (index = 0): TravelBlock => ({ type: "restaurant", index });
 
-/** Nur die Bildplätze — Text und Restaurants interessieren hier nicht. */
-const plaetze = (blocks: TravelBlock[]) =>
-  zuRenderBloecken(blocks).filter((b) => b.art === "bild");
+/** Die Bildgruppen einer Blockfolge als Listen von Bild-IDs. */
+function gruppen(blocks: TravelBlock[]): number[][] {
+  return zuRenderBloecken(blocks)
+    .filter((b) => b.art === "bild")
+    .map((b) => b.imageIds);
+}
 
-describe("zeilenBreite — die Zeile ist die SUMME der Anteile", () => {
-  it("gibt einem einzelnen Bild seinen Anteil", () => {
-    expect(zeilenBreite(["s"])).toEqual({ z: 1, n: 3 });
-    expect(zeilenBreite(["m"])).toEqual({ z: 1, n: 2 });
-    expect(zeilenBreite(["l"])).toEqual({ z: 1, n: 1 });
+describe("zuRenderBloecken — die Reihenfolge ist die ganze Regel", () => {
+  it("fasst aufeinander folgende Bilder zu EINER Gruppe zusammen", () => {
+    expect(gruppen([bild(1), bild(2), bild(3)])).toEqual([[1, 2, 3]]);
   });
 
-  it("addiert die Anteile einer Gruppe und kürzt", () => {
-    expect(zeilenBreite(["s", "s"])).toEqual({ z: 2, n: 3 });
-    expect(zeilenBreite(["s", "s", "s"])).toEqual({ z: 1, n: 1 });
-    expect(zeilenBreite(["m", "m"])).toEqual({ z: 1, n: 1 });
-    expect(zeilenBreite(["m", "s"])).toEqual({ z: 5, n: 6 });
-  });
-});
-
-describe("passtInZeile", () => {
-  it("lässt zu, was zusammen die Spalte nicht überschreitet", () => {
-    expect(passtInZeile(["s"], "s")).toBe(true);
-    expect(passtInZeile(["s", "s"], "s")).toBe(true);
-    expect(passtInZeile(["m"], "s")).toBe(true);
-    expect(passtInZeile(["m"], "m")).toBe(true);
+  it("lässt ein einzelnes Bild eine Gruppe für sich sein", () => {
+    expect(gruppen([bild(1)])).toEqual([[1]]);
   });
 
-  it("weist ab, was nicht mehr hineinpasst", () => {
-    expect(passtInZeile(["s", "s", "s"], "s")).toBe(false);
-    expect(passtInZeile(["m", "m"], "s")).toBe(false);
-    expect(passtInZeile(["m", "s"], "s")).toBe(false);
-    expect(passtInZeile(["l"], "s")).toBe(false);
-    expect(passtInZeile(["s"], "l")).toBe(false);
-  });
-});
-
-describe("zuRenderBloecken — die Gruppe füllt die Zeile", () => {
-  it("stellt drei S nebeneinander in EINE volle Zeile", () => {
-    expect(
-      plaetze([
-        bild(1, "s", "links"),
-        bild(2, "s", "rechts", true),
-        bild(3, "s", "rechts", true),
-      ]),
-    ).toEqual([
-      {
-        art: "bild",
-        imageIds: [1, 2, 3],
-        groessen: ["s", "s", "s"],
-        breite: { z: 1, n: 1 },
-        // Die volle Spalte hat keine Seite — daneben ist kein Platz für Text.
-        platz: null,
-      },
-    ]);
+  it("trennt an einem Textblock", () => {
+    expect(gruppen([bild(1), bild(2), text(), bild(3)])).toEqual([[1, 2], [3]]);
   });
 
-  it("mischt Größen, solange die Zeile trägt", () => {
-    expect(plaetze([bild(1, "m", "links"), bild(2, "s", "rechts", true)])).toEqual([
-      {
-        art: "bild",
-        imageIds: [1, 2],
-        groessen: ["m", "s"],
-        breite: { z: 5, n: 6 },
-        // Fünf Sechstel lassen kein Textfeld übrig — kein Umfluss.
-        platz: null,
-      },
-    ]);
+  it("trennt an einem Restaurant-Block", () => {
+    expect(gruppen([bild(1), restaurant(), bild(2)])).toEqual([[1], [2]]);
   });
 
-  it("beginnt eine neue Zeile, sobald es nicht mehr passt", () => {
-    expect(
-      plaetze([
-        bild(1, "s", "links"),
-        bild(2, "s", "links", true),
-        bild(3, "s", "links", true),
-        bild(4, "s", "rechts", true),
-      ]),
-    ).toEqual([
-      {
-        art: "bild",
-        imageIds: [1, 2, 3],
-        groessen: ["s", "s", "s"],
-        breite: { z: 1, n: 1 },
-        platz: null,
-      },
-      {
-        art: "bild",
-        imageIds: [4],
-        groessen: ["s"],
-        breite: { z: 1, n: 3 },
-        platz: "rechts",
-      },
-    ]);
+  it("kennt keine Obergrenze — auch sieben Bilder sind EINE Gruppe", () => {
+    // Der alte Aufbau brach hier: Ab einer Sechstel-Summe über 6 begann eine
+    // neue Zeile, und ob das passierte, hing an drei Reglern gleichzeitig.
+    const ids = [1, 2, 3, 4, 5, 6, 7];
+    expect(gruppen(ids.map(bild))).toEqual([ids]);
   });
 
-  it("lässt Text bis zwei Drittel danebenfließen", () => {
-    // Ein Drittel und zwei Drittel lassen eine lesbare Spalte übrig.
-    expect(plaetze([bild(1, "s", "links")])[0]).toMatchObject({
-      breite: { z: 1, n: 3 },
-      platz: "links",
-    });
-    expect(
-      plaetze([bild(1, "s", "links"), bild(2, "s", "rechts", true)])[0],
-    ).toMatchObject({ breite: { z: 2, n: 3 }, platz: "links" });
-    // Die Hälfte auch.
-    expect(plaetze([bild(1, "m", "rechts")])[0]).toMatchObject({
-      breite: { z: 1, n: 2 },
-      platz: "rechts",
-    });
-  });
-
-  it("nimmt Platz und Reihenfolge vom ERSTEN Bild der Gruppe", () => {
-    expect(
-      plaetze([bild(1, "s", "links"), bild(2, "s", "rechts", true)])[0],
-    ).toMatchObject({ imageIds: [1, 2], platz: "links" });
-  });
-
-  it("ignoriert das Häkchen, wenn darüber kein Bild steht", () => {
-    expect(plaetze([text("a"), bild(1, "s", "links", true)])).toEqual([
-      {
-        art: "bild",
-        imageIds: [1],
-        groessen: ["s"],
-        breite: { z: 1, n: 3 },
-        platz: "links",
-      },
-    ]);
-    expect(
-      plaetze([bild(1, "s"), text("dazwischen"), bild(2, "s", "rechts", true)]),
-    ).toHaveLength(2);
-  });
-
-  it("lässt Text und Restaurants in der Reihenfolge stehen", () => {
-    expect(
-      zuRenderBloecken([text("a"), bild(1, "m"), { type: "restaurant", index: 2 }]),
-    ).toEqual([
-      { art: "text", markdown: "a" },
-      {
-        art: "bild",
-        imageIds: [1],
-        groessen: ["m"],
-        breite: { z: 1, n: 2 },
-        platz: "rechts",
-      },
+  it("gibt Text und Restaurants unverändert in der Reihenfolge zurück", () => {
+    expect(zuRenderBloecken([text("A"), bild(1), restaurant(2), text("B")])).toEqual([
+      { art: "text", markdown: "A" },
+      { art: "bild", imageIds: [1] },
       { art: "restaurant", index: 2 },
+      { art: "text", markdown: "B" },
     ]);
   });
 
-  it("liefert für eine leere Blockfolge nichts", () => {
+  it("ist auf einer leeren Folge leer", () => {
     expect(zuRenderBloecken([])).toEqual([]);
   });
 });
 
-describe("bildBreitenGross — was am Ende an Pixeln herauskommt", () => {
-  it("gibt einem Einzelbild seinen Anteil der 816er-Spalte", () => {
-    expect(bildBreitenGross({ z: 1, n: 3 }, [1.5])).toEqual([272]);
-    expect(bildBreitenGross({ z: 1, n: 2 }, [1.5])).toEqual([408]);
-    expect(bildBreitenGross({ z: 1, n: 1 }, [1.5])).toEqual([816]);
+describe("bildgruppeSizes — die Deklaration trifft die Rechnung des CSS", () => {
+  it("gibt für ein einzelnes Bild die volle Spalte", () => {
+    expect(bildgruppeSizes([1.5])).toEqual([vollbildSizes()]);
   });
 
-  it("teilt eine Gruppe nach Seitenverhältnis, Abstände herausgerechnet", () => {
-    // Drei S = ganze Spalte 816, minus 2 × 12 px Abstand = 792 freier Raum.
-    const breiten = bildBreitenGross({ z: 1, n: 1 }, [1.5, 1.5, 3]);
-    expect(breiten).toEqual([198, 198, 396]);
-    expect(breiten.reduce((a, b) => a + b, 0) + 24).toBe(816);
+  it("gibt dem ersten Bild die volle Spalte, auch in einer Gruppe", () => {
+    expect(bildgruppeSizes([1.5, 1, 0.75])[0]).toBe(vollbildSizes());
   });
 
-  it("macht gleiche Formate gleich breit", () => {
-    expect(bildBreitenGross({ z: 1, n: 1 }, [1.5, 1.5, 1.5])).toEqual([264, 264, 264]);
-  });
-});
-
-describe("bildSizes — die Breite ist eine Zahl, keine Vorhersage", () => {
-  it("deklariert für ein Einzelbild den Anteil der Spalte", () => {
-    expect(bildSizes({ z: 1, n: 3 }, [1.5])).toEqual([
-      "(max-width: 767px) calc(100vw - 5rem), " +
-        "(max-width: 928px) calc((100vw - 7rem) / 3), " +
-        "272px",
-    ]);
+  it("verteilt die Reihe darunter im Verhältnis der Seitenverhältnisse", () => {
+    // Zwei weitere Bilder, Formate 3:2 und 1:2 — also 1,5 gegen 0,5.
+    // Die Reihe ist 816 px minus EIN Abstand von 12 px = 804 px.
+    // 804 × 1,5/2 = 603, 804 × 0,5/2 = 201. Zusammen wieder 804.
+    const [, a, b] = bildgruppeSizes([1, 1.5, 0.5]);
+    expect(a.endsWith("603px")).toBe(true);
+    expect(b.endsWith("201px")).toBe(true);
   });
 
-  it("deklariert einen gekürzten Bruch als Zähler mal Nenner", () => {
-    expect(bildSizes({ z: 2, n: 3 }, [1.5])).toEqual([
-      "(max-width: 767px) calc(100vw - 5rem), " +
-        "(max-width: 928px) calc((100vw - 7rem) * 2 / 3), " +
-        "544px",
-    ]);
+  it("rechnet die Abstände heraus, nicht bloß ungefähr", () => {
+    // Vier weitere Bilder = drei Abstände = 36 px. 816 − 36 = 780,
+    // gleichmäßig auf vier = 195 je Bild.
+    const px = bildgruppeSizes([1, 1, 1, 1, 1])
+      .slice(1)
+      .map((s) => Number(/(\d+)px$/.exec(s)![1]));
+    expect(px).toEqual([195, 195, 195, 195]);
+    expect(px.reduce((a, b) => a + b, 0) + 3 * 12).toBe(816);
   });
 
-  it("nennt bei voller Breite die Spalte selbst, ohne Teiler", () => {
-    expect(bildSizes({ z: 1, n: 1 }, [1.5])).toEqual([
-      "(max-width: 767px) calc(100vw - 5rem), " +
-        "(max-width: 928px) calc(100vw - 7rem), " +
-        "816px",
-    ]);
+  it("nennt für jedes Bild auch die beiden schmalen Breakpoints", () => {
+    for (const s of bildgruppeSizes([1, 1, 1])) {
+      expect(s).toContain("(max-width: 767px)");
+      expect(s).toContain("(max-width: 928px)");
+    }
   });
 
-  it("schreibt für jedes Bild einer Zeile ALLE Breakpoints aus", () => {
-    // Der Kern der Angabe steht in den Breakpoints, nicht in der Pixelzahl:
-    // Genau hier entstünde eine gelogene Breite, wenn Rechnung und Deklaration
-    // auseinanderliefen. Zeile = zwei Drittel, ein Abstand von 12 px.
-    const [a, b] = bildSizes({ z: 2, n: 3 }, [1.5, 0.5]);
-    expect(a).toBe(
-      "(max-width: 767px) calc((100vw - 5rem - 12px) * 0.75), " +
-        "(max-width: 928px) calc(((100vw - 7rem) * 2 / 3 - 12px) * 0.75), " +
-        "399px",
-    );
-    expect(b).toBe(
-      "(max-width: 767px) calc((100vw - 5rem - 12px) * 0.25), " +
-        "(max-width: 928px) calc(((100vw - 7rem) * 2 / 3 - 12px) * 0.25), " +
-        "133px",
-    );
-  });
-
-  it("zieht je Zwischenraum 12 px ab, nicht pauschal einen", () => {
-    // Drei Bilder haben ZWEI Abstände. Ein pauschaler Abzug wäre in der
-    // Deklaration um 12 px daneben — und damit in der Variantenwahl.
-    const [erstes] = bildSizes({ z: 1, n: 1 }, [1, 1, 1]);
-    expect(erstes).toContain("calc((100vw - 5rem - 24px) * 0.3333)");
-    expect(erstes).toContain("calc((100vw - 7rem - 24px) * 0.3333)");
-  });
-
-  it("hängt NICHT vom Seitenverhältnis ab, solange ein Bild allein steht", () => {
-    const [quer] = bildSizes({ z: 1, n: 2 }, [16 / 9]);
-    const [hoch] = bildSizes({ z: 1, n: 2 }, [2 / 3]);
-    expect(quer).toBe(hoch);
-  });
-
-  it("stimmt mit den gerechneten Pixelbreiten überein", () => {
-    const ars = [1.5, 1.5, 3];
-    const breiten = bildBreitenGross({ z: 1, n: 1 }, ars);
-    bildSizes({ z: 1, n: 1 }, ars).forEach((s, i) => {
-      expect(s.endsWith(`${breiten[i]}px`)).toBe(true);
-    });
-  });
-
-  it("liefert für einen leeren Platz nichts", () => {
-    expect(bildSizes({ z: 1, n: 2 }, [])).toEqual([]);
+  it("ist auf einer leeren Liste leer", () => {
+    expect(bildgruppeSizes([])).toEqual([]);
   });
 });
 
-describe("seitenverhaeltnis", () => {
+describe("seitenverhaeltnis — unbrauchbare Maße reißen nichts ein", () => {
   it("rechnet Breite durch Höhe", () => {
-    expect(seitenverhaeltnis(1600, 900)).toBeCloseTo(1.7778, 4);
+    expect(seitenverhaeltnis(1200, 800)).toBeCloseTo(1.5);
   });
 
-  it("fällt bei unbrauchbaren Maßen auf quadratisch zurück", () => {
-    expect(seitenverhaeltnis(0, 900)).toBe(1);
-    expect(seitenverhaeltnis(1600, 0)).toBe(1);
-    expect(seitenverhaeltnis(-4, 3)).toBe(1);
+  it.each([
+    ["Null-Breite", 0, 800],
+    ["Null-Höhe", 1200, 0],
+    ["negative Breite", -100, 800],
+    ["NaN", Number.NaN, 800],
+  ])("fällt bei %s auf quadratisch zurück", (_n, b, h) => {
+    // Ein Bild ohne verwertbare Maße darf das Layout nicht in eine Division
+    // durch Null oder eine negative Breite ziehen.
+    expect(seitenverhaeltnis(b, h)).toBe(1);
   });
 });
 
-describe("vollbildSizes und galerieSizes", () => {
-  it("Vollbild deklariert die ganze Spalte", () => {
+describe("die übrigen Breitenangaben", () => {
+  it("Vollbild: die ganze Spalte, gedeckelt", () => {
     expect(vollbildSizes()).toBe(
       "(max-width: 767px) calc(100vw - 5rem), (max-width: 928px) calc(100vw - 7rem), 816px",
     );
   });
 
-  it("Galeriebild deklariert Format × feste Zeilenhöhe", () => {
-    expect(galerieSizes(2 / 3)).toBe(
-      "(max-width: 227px) calc(100vw - 5rem), (max-width: 767px) 147px, 147px",
+  it("Restaurant-Paar: die halbe Karte, Abstand herausgerechnet", () => {
+    expect(restaurantPaarSizes()).toBe(
+      "(max-width: 767px) calc((100vw - 5rem - 8px) / 2), " +
+        "(max-width: 928px) calc((100vw - 7rem - 8px) / 2), " +
+        "404px",
     );
-    expect(galerieSizes(16 / 9)).toBe(
-      "(max-width: 471px) calc(100vw - 5rem), (max-width: 767px) 391px, 391px",
-    );
-    expect(galerieSizes(4)).toBe(
-      "(max-width: 767px) calc(100vw - 5rem), " +
-        "(max-width: 928px) calc(100vw - 7rem), 816px",
-    );
+  });
+
+  it("Galerie: Format × feste Zeilenhöhe, nie über die Spalte", () => {
+    // 220 px Zeilenhöhe × 1,5 = 330 px.
+    expect(galerieSizes(1.5)).toContain("330px");
+    // Ein extrem breites Panorama wird auf die Spalte gedeckelt.
+    expect(galerieSizes(10)).toContain("816px");
   });
 });

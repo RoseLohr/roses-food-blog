@@ -45,7 +45,12 @@ function walk(dir, out = []) {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
     const p = path.join(dir, e.name);
     if (e.isDirectory()) walk(p, out);
-    else if (/\.(ts|tsx)$/.test(e.name)) out.push(path.relative(ROOT, p).replaceAll("\\", "/"));
+    // Auch .mjs/.js: Quelltext unter src/ ist Quelltext, gleich in welcher
+    // Endung. Als hier die erste .mjs entstand (eine Regel, die auch ein
+    // Skript ohne TypeScript braucht), fiel sie still aus der Kette — die
+    // Abdeckung hing an der Dateiendung statt am Ort.
+    else if (/\.(ts|tsx|mjs|cjs|js|jsx)$/.test(e.name))
+      out.push(path.relative(ROOT, p).replaceAll("\\", "/"));
   }
   return out;
 }

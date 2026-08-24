@@ -6,6 +6,7 @@ import { requireAdmin } from "@/lib/auth";
 import { QuickAddCheckboxes } from "@/components/admin/quick-add-checkboxes";
 import { t } from "@/i18n/de";
 import { anonymizeContactAction, updateContactAction } from "./actions";
+import { Meldung, meldungAus } from "@/components/admin/meldung";
 
 const dict = t();
 const d = dict.admin.contacts;
@@ -31,8 +32,7 @@ export default async function ContactDetailPage(props: {
     .where(eq(schema.contact.id, contactId));
   if (!contact) notFound();
 
-  const message =
-    typeof searchParams.meldung === "string" ? searchParams.meldung : null;
+  const message = meldungAus(searchParams);
 
   const [interests, tags, segments, myInterests, myTags, mySegments, activity] =
     await Promise.all([
@@ -55,7 +55,7 @@ export default async function ContactDetailPage(props: {
         .select()
         .from(schema.contactActivity)
         .where(eq(schema.contactActivity.contactId, contactId))
-        .orderBy(desc(schema.contactActivity.createdAt))
+        .orderBy(desc(schema.contactActivity.createdAt), desc(schema.contactActivity.id))
         .limit(50),
     ]);
 
@@ -79,11 +79,7 @@ export default async function ContactDetailPage(props: {
       <h1 className="mb-6 text-2xl font-bold">
         {d.detailTitle}: {`${contact.firstName} ${contact.lastName}`.trim() || contact.email}
       </h1>
-      {message && (
-        <p role="status" className="mb-4 bg-amber-50 p-3 text-sm text-amber-900">
-          {message}
-        </p>
-      )}
+      <Meldung text={message} />
 
       <div className="grid max-w-5xl gap-6 lg:grid-cols-2">
         <section className="bg-white p-5 shadow-sm">

@@ -3,10 +3,13 @@
  * (reine Konstanten/Logik, keine Node- oder Server-Abhängigkeiten), damit
  * Editor-UI und API-Route DIESELBEN Grenzen prüfen (ein Ort, keine Drift).
  *
- * Die Grenzen sind bewusst konservativ: Der Reverse-Proxy erlaubt in den
- * normalen Locations 20 MB pro Request (deploy/nginx.conf.example) — das
- * Gesamtlimit bleibt darunter, damit der Upload nie am Proxy statt an einer
- * verständlichen Meldung scheitert. Serverseitig werden die Fotos zusätzlich
+ * Die Grenzen sind bewusst konservativ: Die Vorlage deploy/nginx.conf.example
+ * erlaubt in den normalen Locations 20 MB pro Request — das Gesamtlimit bleibt
+ * darunter, damit der Upload nie am Proxy statt an einer verständlichen
+ * Meldung scheitert. ACHTUNG: Jene Vorlage beschreibt einen historischen
+ * Host-nginx-Betrieb; welche Grenze der tatsächliche Proxy setzt, ist NICHT
+ * erhoben (Messfrage M2, audit/12-infrastruktur-fahrplan.md). Sie ist derzeit
+ * die einzige Niederschrift dieses Werts. Serverseitig werden die Fotos zusätzlich
  * verkleinert (lib/media.ts, prepareAiImage), bevor sie ans Modell gehen —
  * die Caps hier deckeln die EINGABE (unbounded_consumption, C-05).
  */

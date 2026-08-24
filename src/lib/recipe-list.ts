@@ -36,10 +36,16 @@ export async function publishedRecipeCards(options?: {
     .from(schema.recipe)
     .leftJoin(schema.mediaImage, eq(schema.recipe.heroImageId, schema.mediaImage.id))
     .where(and(...conditions))
+    // Zweitschlüssel `id`: Beide Hauptkriterien wiederholen sich reichlich —
+    // `like_count` steht im Saatzustand überall auf 0, und `published_at`
+    // bekommt von der Saat EINEN gemeinsamen Zeitstempel. SQLite gibt bei
+    // Gleichstand keine definierte Reihenfolge zurück; mit `limit` entschied
+    // das sogar, WELCHE Rezepte überhaupt erscheinen.
     .orderBy(
       options?.orderByLikes
         ? desc(schema.recipe.likeCount)
         : desc(schema.recipe.publishedAt),
+      desc(schema.recipe.id),
     )
     .$dynamic();
 

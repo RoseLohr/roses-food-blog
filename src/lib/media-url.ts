@@ -54,6 +54,20 @@ export function focusPosition(
 }
 
 /**
+ * Derselbe Fokuspunkt, fertig als `style`-Objekt — `undefined` statt `{}` bei
+ * Bildmitte, sonst stünde ein leeres `style=""` im Markup. Der Bildwähler
+ * hatte diese Rechnung zweimal als sofort ausgeführte Funktion mitten im JSX;
+ * ein Attributwert, der rechnet, liest sich nicht mit.
+ */
+export function fokusStil(
+  focusX?: number | null,
+  focusY?: number | null,
+): { objectPosition: string } | undefined {
+  const objectPosition = focusPosition(focusX, focusY);
+  return objectPosition ? { objectPosition } : undefined;
+}
+
+/**
  * Optimale Variante für einen Pixel-Bedarf: die KLEINSTE verfügbare Breite,
  * die den Bedarf deckt — sonst die größte (mehr gibt es nicht). Exakt die
  * Auswahlregel des Browsers bei `srcset`/`sizes`; zentral, damit src-Fallbacks

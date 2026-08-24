@@ -4,28 +4,17 @@
  *  - unter Budget: kein Alarm;
  *  - Budget überschritten: genau EIN Alarm (injizierter Mailer), danach Cooldown.
  */
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { execSync } from "node:child_process";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
+import { frischeDb } from "./helfer/frische-db";
 
-let tmp: string;
+// Die Budget-Schwellen müssen stehen, bevor @/lib/observability sie liest.
+process.env.OPS_ERROR_BUDGET = "3";
+process.env.OPS_WINDOW_MIN = "15";
+process.env.OPS_ALERT_COOLDOWN_MIN = "60";
+process.env.ALERT_EMAIL = "ops@example.de";
+process.env.SMTP_HOST = "smtp.example.de"; // smtpConfigured() → true
 
-beforeAll(() => {
-  tmp = fs.mkdtempSync(path.join(os.tmpdir(), "roses-obs-"));
-  process.env.DATA_DIR = tmp;
-  process.env.OPS_ERROR_BUDGET = "3";
-  process.env.OPS_WINDOW_MIN = "15";
-  process.env.OPS_ALERT_COOLDOWN_MIN = "60";
-  process.env.ALERT_EMAIL = "ops@example.de";
-  process.env.SMTP_HOST = "smtp.example.de"; // smtpConfigured() → true
-  execSync("node scripts/migrate.mjs", { env: { ...process.env, DATA_DIR: tmp } });
-});
-
-afterAll(() => {
-  fs.rmSync(tmp, { recursive: true, force: true });
-});
+frischeDb("obs");
 
 describe("Selbst-Monitor (SLO + Alert)", () => {
   it("erfasst Ereignisse und alarmiert erst bei Budget-Überschreitung, dann Cooldown", async () => {

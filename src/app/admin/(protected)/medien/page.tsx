@@ -12,6 +12,8 @@ import {
   updateAltTextAction,
   uploadImageAction,
 } from "./actions";
+import { Meldung, meldungAus } from "@/components/admin/meldung";
+import { LoeschForm } from "@/components/admin/loesch-form";
 
 const dict = t();
 const m = dict.admin.media;
@@ -31,14 +33,13 @@ export default async function MediaPage(props: {
 }) {
   await requireAdmin();
   const searchParams = await props.searchParams;
-  const message =
-    typeof searchParams.meldung === "string" ? searchParams.meldung : null;
+  const message = meldungAus(searchParams);
   const view = searchParams.ansicht === "liste" ? "liste" : "kacheln";
 
   const images = await db
     .select()
     .from(schema.mediaImage)
-    .orderBy(desc(schema.mediaImage.createdAt));
+    .orderBy(desc(schema.mediaImage.createdAt), desc(schema.mediaImage.id));
   const widthsById = await variantWidthsByImage(images.map((i) => i.id));
 
   const thumb = (img: (typeof images)[number]) =>
@@ -51,11 +52,7 @@ export default async function MediaPage(props: {
   return (
     <>
       <h1 className="mb-6 text-2xl font-bold">{m.title}</h1>
-      {message && (
-        <p role="status" className="mb-4 bg-amber-50 p-3 text-sm text-amber-900">
-          {message}
-        </p>
-      )}
+      <Meldung text={message} />
 
       <form
         action={uploadImageAction}
@@ -171,15 +168,7 @@ export default async function MediaPage(props: {
                   initialX={img.focusX}
                   initialY={img.focusY}
                 />
-                <form action={deleteImageAction}>
-                  <input type="hidden" name="id" value={img.id} />
-                  <button
-                    type="submit"
-                    className="text-xs text-red-700 underline-offset-2 hover:underline"
-                  >
-                    {dict.common.delete}
-                  </button>
-                </form>
+                <LoeschForm action={deleteImageAction} id={img.id} gestalt="klein" />
               </div>
             </li>
           ))}
@@ -231,15 +220,7 @@ export default async function MediaPage(props: {
                   initialX={img.focusX}
                   initialY={img.focusY}
                 />
-                <form action={deleteImageAction}>
-                  <input type="hidden" name="id" value={img.id} />
-                  <button
-                    type="submit"
-                    className="text-xs text-red-700 underline-offset-2 hover:underline"
-                  >
-                    {dict.common.delete}
-                  </button>
-                </form>
+                <LoeschForm action={deleteImageAction} id={img.id} gestalt="klein" />
               </div>
             </li>
           ))}

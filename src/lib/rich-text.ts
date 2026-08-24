@@ -10,6 +10,8 @@
  * damit die Logik ohne echtes DOM testbar ist. Ein echtes HTMLElement erfüllt
  * diese Schnittstelle strukturell.
  */
+import { sichtbar } from "@/lib/sichtbarkeit.mjs";
+
 export interface MinimalNode {
   nodeType: number;
   nodeName: string;
@@ -85,6 +87,10 @@ function inline(node: MinimalNode): string {
       return kids.trim() ? "`" + (node.textContent ?? "") + "`" : "";
     case "A": {
       const href = node.getAttribute?.("href") ?? "";
+      // Ohne Beschriftung gibt es nichts zum Anklicken: `[](…)` rendert zu
+      // einem leeren <a> — unsichtbar, aber ein Block, der eine Bildzeile
+      // bricht. Dann bleibt nur der (leere) Kindtext.
+      if (!sichtbar(kids)) return kids;
       return SAFE_HREF.test(href) ? `[${kids}](${href})` : kids;
     }
     default:
@@ -100,42 +106,67 @@ function inlineChildren(el: MinimalNode): string {
     .trim();
 }
 
+/**
+ * Listeneinträge — leere übersprungen. Ein `<li>` ohne sichtbaren Inhalt ist
+ * im Bericht ein leerer Aufzählungspunkt: ein Zeichen ohne Aussage. Die
+ * Nummerierung zählt danach die BEHALTENEN Einträge, sonst entstünden Lücken.
+ */
 function listItems(el: MinimalNode, ordered: boolean): string {
-  const items = toArray(el.childNodes).filter(
-    (n) => n.nodeType === 1 && n.nodeName.toUpperCase() === "LI",
-  );
-  return items
-    .map((li, i) => `${ordered ? `${i + 1}.` : "-"} ${inlineChildren(li)}`)
+  return toArray(el.childNodes)
+    .filter((n) => n.nodeType === 1 && n.nodeName.toUpperCase() === "LI")
+    .map((li) => inlineChildren(li))
+    .filter((inhalt) => sichtbar(inhalt))
+    .map((inhalt, i) => `${ordered ? `${i + 1}.` : "-"} ${inhalt}`)
     .join("\n");
 }
 
+/**
+ * Markdown eines Blocks — oder LEER, wenn der Block nichts Sichtbares enthält.
+ *
+ * Der Grund steht in tests/leere-bloecke.test.ts: Ein leerer Block im Editor
+ * (`<h2><br></h2>`, entstanden durch einen Klick auf „H2" oder durch
+ * tippen–formatieren–löschen) ergab früher die Zeichenkette `##`. Die ist nicht
+ * leer, überlebte also jede `.trim()`-Prüfung und wurde als Textblock
+ * gespeichert. Im Bericht rendert sie zu einem unsichtbaren `<h2>` — das aber
+ * ein BLOCK ist und damit eine Bildzeile bricht. Der Redakteur sah weder im
+ * Editor noch im Bericht, was da steht.
+ *
+ * Deshalb wird hier der INHALT geprüft, nicht das Erzeugnis. Der Trenner (HR)
+ * bleibt: er zeigt auch ohne Text etwas.
+ */
 function block(el: MinimalNode): string {
-  switch (el.nodeName.toUpperCase()) {
+  const name = el.nodeName.toUpperCase();
+  if (name === "HR") return "---";
+
+  // listItems() lässt leere Einträge weg — bleibt nichts, ist die Liste leer.
+  if (name === "UL" || name === "OL") return listItems(el, name === "OL");
+
+  if (name === "PRE") {
+    const inhalt = el.textContent ?? "";
+    return sichtbar(inhalt) ? "```\n" + inhalt + "\n```" : "";
+  }
+
+  const inhalt = inlineChildren(el);
+  if (!sichtbar(inhalt)) return "";
+
+  switch (name) {
     case "H1":
-      return `# ${inlineChildren(el)}`;
+      return `# ${inhalt}`;
     case "H2":
-      return `## ${inlineChildren(el)}`;
+      return `## ${inhalt}`;
     case "H3":
-      return `### ${inlineChildren(el)}`;
+      return `### ${inhalt}`;
     case "H4":
     case "H5":
     case "H6":
-      return `#### ${inlineChildren(el)}`;
+      return `#### ${inhalt}`;
     case "BLOCKQUOTE":
-      return inlineChildren(el)
+      return inhalt
         .split("\n")
         .map((l) => `> ${l}`.trimEnd())
         .join("\n");
-    case "UL":
-      return listItems(el, false);
-    case "OL":
-      return listItems(el, true);
-    case "HR":
-      return "---";
-    case "PRE":
-      return "```\n" + (el.textContent ?? "") + "\n```";
     default:
-      return inlineChildren(el); // P, DIV
+      return inhalt; // P, DIV
   }
 }
 

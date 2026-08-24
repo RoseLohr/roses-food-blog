@@ -4,6 +4,7 @@ import { requireAdmin } from "@/lib/auth";
 import { t } from "@/i18n/de";
 import { buildEditorProps } from "../editor-data";
 import { RecipeEditor } from "../recipe-editor";
+import { meldungAus } from "@/components/admin/meldung";
 
 const dict = t();
 
@@ -22,8 +23,7 @@ export default async function EditRecipePage(props: {
   const editorProps = await buildEditorProps(recipeId);
   if (!editorProps) notFound();
 
-  const message =
-    typeof searchParams.meldung === "string" ? searchParams.meldung : null;
+  const message = meldungAus(searchParams);
 
   return (
     <>

@@ -5,7 +5,7 @@
  * zurückgegeben (idempotent), damit die aufrufende Form ihn einfach auswählt.
  */
 import { NextResponse } from "next/server";
-import { and, eq, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { db, schema } from "@/db";
 import { getCurrentAdmin } from "@/lib/auth";

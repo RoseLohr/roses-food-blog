@@ -17,6 +17,8 @@ import {
   saveSegmentAction,
   toggleInterestPublicAction,
 } from "./actions";
+import { Meldung, meldungAus } from "@/components/admin/meldung";
+import { LoeschForm } from "@/components/admin/loesch-form";
 
 const dict = t();
 const d = dict.admin.segments;
@@ -69,16 +71,15 @@ function SimpleList({
                 </button>
               </form>
             )}
-            <form action={deleteAction} className="inline">
-              <input type="hidden" name="id" value={e.id} />
-              <button
-                type="submit"
-                aria-label={`${e.name} ${dict.common.delete}`}
-                className="ml-1 font-bold text-red-700"
-              >
-                ×
-              </button>
-            </form>
+            <LoeschForm
+              action={deleteAction}
+              id={e.id}
+              gestalt="kreuz"
+              beschriftung={`${e.name} ${dict.common.delete}`}
+              className="inline"
+            >
+              ×
+            </LoeschForm>
           </li>
         ))}
       </ul>
@@ -103,8 +104,7 @@ export default async function SegmentsPage(props: {
 }) {
   await requireAdmin();
   const searchParams = await props.searchParams;
-  const message =
-    typeof searchParams.meldung === "string" ? searchParams.meldung : null;
+  const message = meldungAus(searchParams);
 
   const [segments, interests, tags] = await Promise.all([
     db.select().from(schema.segment).orderBy(asc(schema.segment.name)),
@@ -169,11 +169,7 @@ export default async function SegmentsPage(props: {
   return (
     <>
       <h1 className="mb-6 text-2xl font-bold">{d.title}</h1>
-      {message && (
-        <p role="status" className="mb-4 bg-amber-50 p-3 text-sm text-amber-900">
-          {message}
-        </p>
-      )}
+      <Meldung text={message} />
 
       <div className="grid max-w-5xl gap-6 lg:grid-cols-2">
         <section className="bg-white p-5 shadow-sm">
@@ -182,15 +178,12 @@ export default async function SegmentsPage(props: {
             {segments.map((s) => (
               <div key={s.id}>
                 {segmentForm(s)}
-                <form action={deleteSegmentAction} className="mt-1 text-right">
-                  <input type="hidden" name="id" value={s.id} />
-                  <button
-                    type="submit"
-                    className="text-xs text-red-700 underline-offset-2 hover:underline"
-                  >
-                    {dict.common.delete}
-                  </button>
-                </form>
+                <LoeschForm
+                  action={deleteSegmentAction}
+                  id={s.id}
+                  gestalt="klein"
+                  className="mt-1 text-right"
+                />
               </div>
             ))}
             <h3 className="mt-2 text-sm font-semibold text-ink-soft">
