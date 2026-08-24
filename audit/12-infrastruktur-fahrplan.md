@@ -409,6 +409,394 @@ erst nach einer Nachmessung. F1 zurückstellen, bis der Meldepfad entschieden
 ist — wenn es auf dem Host keinen Kanal außerhalb der Anwendung gibt, ist das
 der ehrliche Befund, und F1 bleibt offen.
 
+### A1 erledigt (2026-08-23)
+
+`scripts/regime/erhebung.sh` gibt es jetzt. Es stellt immer dieselben Fragen —
+das ist die Voraussetzung dafür, dass eine Antwort von heute mit einer von
+nächstem Monat vergleichbar ist — und beantwortet M1 bis M6 aus dem, was auf
+dem Host wirklich läuft. **Keine Schwelle, kein roter Rückgabewert für einen
+Messwert:** Genau die Begründung oben gilt weiter, und die Messreihe, die eine
+Schwelle bräuchte, liefert erst dieses Skript.
+
+**Der Port kommt aus der `.env`, nicht aus `podman ps`** — der ursprüngliche
+Vorschlag (A1) zeigte in die falsche Richtung, und dieser Fahrplan hatte das
+bereits festgestellt. Das Skript liest die `.env` und VERGLEICHT sie mit dem,
+was der Container veröffentlicht; ein Unterschied ist dann ein Befund und kein
+Ableitungsproblem.
+
+**M7 und M8 werden nicht beantwortet, sondern benannt.** M7 ist keine Frage an
+den Host, sondern an die Anwendung (ohne Zeitmessung um Datenbank, Render und
+Serialisierung lässt sich der Median nicht aufteilen). M8 steht in den
+Repository-Einstellungen. Ein Skript, das hier etwas schätzte, würde eine Zahl
+erfinden.
+
+**Die Maskierung ist der Grund, warum man die Ausgabe weitergeben darf.** Das
+Repository ist öffentlich; die Adresse des Ursprungs darf darin nicht
+auftauchen — sie ist der einzige Weg, an Cloudflare vorbei direkt auf den
+Server zu zielen. Jede Zeile läuft durch einen Filter, und zwar am Ende EINER
+Pipe statt je Befehl: Eine Maskierung, die man von Hand anwenden muss, wird
+beim nächsten hinzugefügten Befehl vergessen.
+
+Belegt statt behauptet: 16 Selbsttestfälle (blockierend in CI) und
+`tests/erhebung-maskierung.test.ts`, das einen vollständigen, realistisch
+geformten Bericht durchschickt und beide Richtungen prüft — keine Adresse und
+kein Geheimnis überlebt, und Zeitstempel, `127.0.0.1:3000`, `0.0.0.0:443`,
+`docker.io/jc21/npm:2.11.1`, `client_max_body_size 20m`, `Netz host` und
+`Neustarts 2` bleiben lesbar. Ein Maskierer, der alles unkenntlich macht,
+bestünde die erste Hälfte trivial.
+
+Zwei Fehler hat der Selbsttest sofort gefunden: `Authorization: Bearer eyJ…`
+maskierte brav das Wort „Bearer" und ließ den Schlüssel dahinter stehen (jetzt
+fällt der Rest der Zeile weg), und der IPv6-Ausdruck traf die verkürzte
+Schreibweise `2001:db8::…` nicht — ein Ausdruck, der beide Formen fängt, frisst
+allerdings auch Uhrzeiten, deshalb sind es jetzt zwei.
+
+**Benannte Grenze:** Maskiert werden Namen mit mindestens ZWEI Punkten.
+`beispiel.de` und `docker.io` bleiben lesbar, sonst wäre die Frage „welches
+Proxy-Image läuft da eigentlich" nicht mehr zu beantworten. Die Domain eines
+öffentlichen Blogs ist kein Geheimnis; die Adresse des Ursprungs ist es.
+
+**Nicht gelesen wird `/data/database.sqlite` im Proxy-Container** — auch nicht
+„nur die Tabellenliste". Sie trägt Zugangsdaten im Klartext, und alles hier
+Gefragte steht in den erzeugten nginx-Dateien.
+
+**Mitgefunden:** `tests/gate-verdrahtung.test.ts` entdeckte bis dahin nur
+`.mjs`. Ein Shell-Skript mit `--selftest` hätte seinen Selbsttest anbieten und
+nirgends aufrufen können — genau die Lücke, gegen die diese Datei geschrieben
+ist, nur eine Dateiendung weiter. Sie liest jetzt beide, und die fünf
+Shell-Skripte ohne Selbsttest sind namentlich begründet.
+
+### Nachtrag: acht Befunde des Pflicht-Approvers, sieben davon zutreffend
+
+Das Fremd-Vendor-Panel hat die erste Fassung zerlegt. Jeder Befund wurde
+nachgemessen, nicht geglaubt — in beide Richtungen.
+
+**Der schwerste: die Kern-Invariante fiel fail-open.** Der Loopback-Schutz
+ersetzte die Zeichenfolge `::1` ÜBERALL. Jede komprimierte IPv6, deren Rest mit
+`1` beginnt, verlor damit ihr `::`; danach griff keine der beiden IPv6-Regeln
+mehr, und die Rückersetzung am Ende stellte die volle Adresse wieder her.
+Gemessen an der Vorfassung:
+
+```
+2001:db8:c17:b8f::1   → unverändert durchgelaufen
+2001:db8::10          → unverändert durchgelaufen
+fe80::1               → unverändert durchgelaufen
+```
+
+Also genau die Sorte Adresse, gegen deren Veröffentlichung dieses Skript
+geschrieben ist. Der Selbsttest deckte den Fall nicht ab: Er kannte
+`::dead:beef` und `2001:db8:cf00::/48`, und keine der beiden endet auf `::1…`.
+Geschützt wird jetzt nur ein freistehendes `::1`.
+
+**Der peinlichste: eine Zusage ohne Deckung.** Kopf, Commit und Fahrplan
+sagten „das Skript liest die `.env` und VERGLEICHT sie mit dem, was der
+Container veröffentlicht". Der Code druckte beide Werte untereinander und
+überließ den Vergleich dem Auge. Jetzt gibt es `hafen_abgleich` als eigene
+Funktion — mit echten Argumenten im Selbsttest geprüft statt über den Text
+behauptet. Der Selbsttest hat dabei gleich den nächsten Fehler gefunden: Ein
+Vergleich gegen die ganze Zeile fand die 3000 in `3000/tcp` und nannte
+`3000/tcp -> 0.0.0.0:3001` „stimmt überein" — verglichen wird jetzt die
+HOST-Seite hinter dem Pfeil.
+
+**Die übrigen fünf:**
+
+- Rohe `podman logs` (200 Zeilen) liefen durch den Stichwortfilter und hießen
+  „maskiert". Das kann der Filter nicht halten — Protokolle sind freier Text,
+  und `DATABASE_URL=…:geheim@…` enthält keines der Stichwörter. Gezählt wird
+  jetzt, gezeigt wird nicht.
+- `Mount.Source` war ungefiltert und zeigte Accountnamen im Hostpfad.
+  `/home/…` und `/Users/…` werden jetzt maskiert.
+- `nginx -v` schreibt auf **stderr**, `frage()` verwirft stderr — die Zeile
+  meldete bei installiertem nginx jedes Mal „(nicht ermittelbar)".
+- Das M6-Etikett versprach Neustartzähler und Startzeitpunkte, der Befehl gab
+  nur Namen aus. Jetzt liefert er, was draufsteht.
+- `grep … | cut … || echo '(nicht gesetzt)'` feuerte nie: In einer Pipe zählt
+  der Status des letzten Befehls, und `cut` gelingt auch bei leerer Eingabe.
+
+**Was NICHT zutraf:** Der Verdacht, die Geheimnis-Regex trete auf `proxy_pass`
+an. Nachgemessen kommt `proxy_pass http://127.0.0.1:3000;` unverändert durch —
+das `[Dd]` in `pass(w)(o)(r)d` ist Pflicht. Der Fall steht jetzt trotzdem im
+Selbsttest, damit die Messung bleibt, falls jemand die Regex lockert.
+
+Der Selbsttest wuchs von 16 auf 28 Fälle; jeder zutreffende Befund hat seinen
+eigenen. Gegenprobe: Dieselben vier Zeilen durch die Vorfassung geschickt
+kommen unmaskiert heraus, durch die neue maskiert.
+
+### Runde zwei desselben Prüfers: dieselbe Klasse, eine Schreibweise weiter
+
+Der Pflicht-Approver kam auf die überarbeitete Fassung zurück und fand die
+Lücke, die die Reparatur offen gelassen hatte: **IPv4-eingebettete IPv6 ohne
+`::`.** Beide IPv6-Ausdrücke verlangen entweder sieben Doppelpunkte oder ein
+`::`. `2001:db8:c17:b8f:0:0:198.51.100.9` hat beides nicht — die IPv4-Regel
+schlug den hinteren Teil, und das **routbare 96-Bit-Präfix blieb stehen**:
+
+```
+Vorfassung:  resolver 2001:db8:c17:b8f:0:0:<IPv4> valid=30s;
+neu:         resolver <IPv6> valid=30s;
+```
+
+**Die eigene Gegenprobe hatte den Befund zuerst NICHT reproduziert.** Drei
+Formen probiert — `::ffff:192.0.2.128`, `2001:db8::192.0.2.1`,
+`64:ff9b::203.0.113.7` —, alle drei sauber maskiert, also schien der Befund
+nicht zu tragen. Alle drei enthalten ein `::`. Drei Stichproben, die dieselbe
+Eigenschaft teilen, sind eine Stichprobe; erst die unkomprimierte Schreibweise
+zeigt die Lücke. Das ist die Lehre dieser Runde, nicht die Regex.
+
+Eigene Regel VOR der IPv4-Regel, fünf neue Selbsttestfälle (33 insgesamt) und
+eine Zeile mehr im realistischen Bericht. Die Gegenrichtung ist mitgeprüft:
+`http://192.0.2.1:3000` bleibt eine URL, in der nur die Adresse fällt.
+
+### Runde drei: Zugangsdaten stehen auch in Adressen
+
+Der Pflicht-Approver stimmte danach zu; ein anderes Panel-Modell fand die
+nächste Stelle derselben Klasse. `proxy_pass
+http://benutzer:kennwort@ziel:3000;` trägt sein Geheimnis nicht hinter einem
+Stichwort, sondern zwischen Doppelpunkt und Klammeraffe. Die
+Schlüssel-Wert-Regel sieht dort nichts — und der Hostname wurde brav maskiert,
+während das Kennwort daneben stehen blieb:
+
+```
+Vorfassung:  proxy_pass http://<benutzer>:<kennwort>@<name>:3000;   ← beide lesbar
+neu:         proxy_pass http://<maskiert>@<name>:3000;
+```
+
+(Die Beispielzeile steht hier bewusst schon maskiert. Eine echte
+Zugangsdaten-Adresse im Quelltext wäre ein Treffer für den Secret-Scan — B-06,
+STOP-SHIP —, und die Testfälle setzen sie deshalb zur Laufzeit zusammen.)
+
+Das ist bemerkenswert, weil die M1-Frage genau solche Zeilen abdruckt: Sie
+liest die `proxy_pass`-Ziele aus den erzeugten nginx-Dateien. Die Regel greift
+mit und ohne Schema. Gegenrichtung mitgeprüft: Eine Mailadresse hat keinen
+Doppelpunkt vor dem Klammeraffen und bleibt stehen.
+
+### Runde vier: ein Nutzerteil braucht weder Nutzer noch Doppelpunkt
+
+Die Regel aus Runde drei verlangte Nutzer UND Kennwort. Beides ist optional:
+`://:kennwort@ziel` (leerer Nutzer) und `://zeichenkette@ziel` (nur ein
+Merkmal, kein Doppelpunkt) sind gültige Adressen — und liefen unverändert
+durch. Diesmal waren sich beide arbeitenden Panel-Stimmen einig.
+
+Jetzt zwei Regeln: Hinter einem Schema fällt der ganze Nutzerteil, EGAL wie er
+aussieht; ohne Schema greift weiterhin nur die Doppelpunkt-Form.
+
+**Benannte Grenze:** Ohne Schema ist `zeichenkette@ziel` von einer Mailadresse
+nicht zu unterscheiden. Wer dort maskierte, fräße jede Kontaktangabe.
+`proxy_pass` trägt immer ein Schema, der Fall um den es geht ist also gedeckt —
+aber die Grenze steht hier, statt zu überraschen.
+
+### Runde fünf: die Klasse ist nicht aufzählbar — also weniger drucken
+
+Der Approver nannte „generische Query-Credentials": ein Merkmal in `?key=…`,
+`?auth=…`, `?sig=…` oder als undurchsichtiger Pfad (`/s/AbCdEf…`). Gemessen
+traf das zu — `?apikey=` fing die Stichwortregel noch, `?key=` und `?auth=`
+liefen durch, ein Pfad-Merkmal hat gar keinen Namen, an dem man es erkennen
+könnte.
+
+**Diese Klasse lässt sich nicht aufzählen**, und das ist die Antwort selbst.
+Jeder Dienst nennt seinen Parameter anders. Eine sechste Ausnahme im
+Stichwortfilter wäre wieder nur bis zur nächsten Runde gut.
+
+Stattdessen: **Von einer Adresse bleiben Schema, Wirt und Hafen — der Pfad und
+alles dahinter fallen.** M1 fragt, wie der Proxy die Anwendung erreicht; darauf
+antworten diese drei vollständig. Pfad und Abfrage tragen zur Antwort nichts
+bei und können beliebige Geheimnisse enthalten.
+
+```
+vorher:  proxy_pass http://ziel:3000/hook?key=… &auth=…
+neu:     proxy_pass http://ziel:3000/<pfad-entfernt>
+```
+
+Das ist die einzige Regel in diesem Filter, die nicht versucht, ein Geheimnis
+zu ERKENNEN — und deshalb die einzige, die eine ganze Klasse schließt statt
+einer Form.
+
+**Runde sechs, derselbe Gedanke eine Schreibweise weiter:** Die erste Fassung
+dieser Kürzung verlangte einen Schrägstrich. Eine Abfrage darf aber direkt
+hinter dem Hafen stehen — `://ziel:3000?merkmal=…` hat keinen Pfad und lief
+unverändert durch. Ausgelöst wird jetzt von `/`, `?` und `#`. Auch die Regel,
+die eine Klasse schließen soll, hatte zuerst nur die naheliegendste Form im
+Blick. Was man nicht abdruckt, muss man nicht maskieren.
+
+### Runde sieben: M1 wird beantwortet, nicht abgedruckt
+
+Der Approver nannte die Kurzschreibweise (`203.0.113`) und das Integer-Literal
+(`3405803783`). Beide adressieren denselben Wirt wie die Vierpunktnotation, und
+keine Vierpunkt-Regel sieht sie. Der Befund trifft zu.
+
+**Diese Liste lässt sich nicht zu Ende schreiben.** Eine Adresse hat zu viele
+gültige Schreibweisen — dezimal, kurz, hexadezimal, oktal, IPv6 in einem
+halben Dutzend Notationen —, und jede Maskierung erkennt nur die, an die jemand
+gedacht hat. Sieben Runden sind der Beleg: jedes Mal dieselbe Klasse, jedes Mal
+eine Stelle weiter.
+
+Was sich dagegen zu Ende bringen lässt: **die Adresse gar nicht erst ausgeben.**
+M1 fragt, WIE der Proxy die Anwendung erreicht. Die Antwort ist eine Klasse —
+Loopback, privates/Container-Netz, extern —, keine Adresse. Klassifiziert wird
+auf dem Host, gedruckt wird die Klasse:
+
+```
+M1 · Wie der Proxy die Anwendung erreicht (Klassen, keine Adressen):
+      3 Loopback
+      1 Containername (Container-Netz)
+```
+
+Gemessen an zehn Eingabeformen, darunter beide vom Approver genannten: Keine
+davon gelangt in die Ausgabe, weil keine davon gedruckt wird. Ein eigener
+Selbsttestfall prüft genau das — er sucht in JEDER Antwort nach Ziffernfolgen
+und schlägt an, wenn eine durchkommt.
+
+Was das kostet: Wer die konkrete Zieladresse braucht, liest sie örtlich. Was es
+bringt: Diese Frage ist nicht mehr angreifbar.
+
+**Dazu, kleiner:** Der `PORT`-Wert aus der `.env` wird als ZAHL geprüft und
+ausgegeben, nicht als Rohtext. Steht dort etwas anderes, wird das gemeldet
+statt abgedruckt.
+
+### Runde acht: dieselbe Antwort, angewandt auf Pfade
+
+Der Approver fand die Pfadmaskierung: Sie kannte `/home` und `/Users`, während
+`Mount.Source` und `GraphRoot` roh ausgegeben wurden — Pfade unter `/srv`,
+`/opt` oder `/var/home` liefen unverändert durch. Zutreffend, und wieder
+dieselbe Klasse: eine Liste von Präfixen, die nie vollständig wird.
+
+Also dieselbe Antwort wie bei M1, konsequent angewandt:
+
+- **M4 nennt Art und Ziel, nicht die Quelle.** Gefragt ist, ob der Zustand in
+  einem Hostverzeichnis, einem benannten Volume oder flüchtig liegt — das sagt
+  `.Type`. Der Quellpfad beantwortet nichts davon.
+- **Die Speicherlage ist `rootless=ja/nein`**, nicht der Pfad zum Speicher.
+- **Auch das Projektverzeichnis entfällt** aus der Meldung „keine `.env`
+  gefunden". Dass sie fehlt, ist die Auskunft; wo gesucht wurde, weiß der, der
+  das Skript aufruft.
+
+Damit druckt der Bericht keinen einzigen Hostpfad mehr. Die
+`/home|/Users`-Regel bleibt als Netz stehen — sie ist jetzt die zweite Schicht,
+nicht die Kontrolle.
+
+**Die Lehre nach fünf Runden am selben Filter:** Eine Maskierung, die Geheimnis
+an einem STICHWORT erkennt, findet nur die Geheimnisse, die sich als solche zu
+erkennen geben. Adressen, Präfixe und Nutzerteile tun das nicht. Jede der ersten vier
+Runden hat dieselbe Klasse an einer neuen Stelle gefunden, und keine davon hat
+der eigene Selbsttest zuerst gesehen. Die Zahl der Fälle steht bewusst nicht
+mehr hier — sie steht in der Ausgabe des Selbsttests, der sie zählt (siehe
+Runde neun). Die ehrliche Aussage bleibt ohnehin: Ein Stichwortfilter ist so gut
+wie die Liste der Formen, an die jemand gedacht hat.
+
+Deshalb ist die Richtung ab Runde fünf eine andere: Es wird nichts mehr
+abgedruckt, was sich nicht abdrucken lassen MUSS. Die rohen Protokolle sind in
+Runde eins gefallen, Pfad und Abfrage jeder Adresse in Runde fünf. Wo eine
+Kontrolle fünfmal hintereinander umgangen wurde, ist nicht die sechste Regel
+die Antwort, sondern eine kleinere Angriffsfläche.
+
+### Runde neun: eine Zahl, die niemand nachgezählt hat
+
+Von drei Stimmen refutierte eine. Ihre lange Begründung enthielt vier
+Vermutungen über die Maskierung, die sie im selben Satz wieder zurücknahm
+(„nein, spätere IPv6-Regel greift", „unberührt ok", „Kein reproduzierbarer Leak
+nachweisbar"). Alle vier wurden trotzdem nachgemessen — eine Rücknahme ist so
+wenig ein Beleg wie eine Behauptung:
+
+| Vermutung | gemessen |
+|---|---|
+| Pfad-Regel läuft vor den Adress-Regeln und lässt den Wirt stehen | nein: `http://[2001:db8::1]:3000/x` → `http://[<IPv6>]:3000/<pfad-entfernt>` |
+| `listen [2001:db8::10]:443` ohne `://` unberührt | nein, wird maskiert (Fall steht seit Runde eins) |
+| Zeitstempel kollidiert mit der `::`-Regel | nein, `Stand: 2026-08-22T23:14:47Z` bleibt |
+| `[::1]:80` fällt der IPv6-Regel zum Opfer | nein, bleibt lesbar (Fall steht seit Runde eins) |
+
+**Der eine zutreffende Befund war der, den sie „kosmetisch" nannte.** Der
+Selbsttest schloss mit `echo "… 51 Fälle …"` — einer von Hand gepflegten
+Konstante. Sie war in zweierlei Hinsicht falsch: sie zählte die vier Prüfungen
+der `adress_art`-Schleife nicht mit, und der Fahrplan behauptete an anderer
+Stelle noch „41 Fälle". Zwei Zahlen über dieselbe Prüfung, beide unbelegt.
+
+Das ist keine Kosmetik, sondern genau die Fehlerklasse, die dieses Repository
+schon einmal ein halbes Jahr gekostet hat: **eine Angabe über eine Prüfung, die
+die Prüfung selbst nicht belegt** — wie die angemeldete Referenz-Maske, die
+nichts traf. Wer die Zahl liest, liest sie als Maß für Abdeckung.
+
+Behoben an der Wurzel, nicht am Text:
+
+- **Die Zahl wird gezählt.** `pruefe`, `pruefen_gleich` und die Schleife
+  erhöhen einen Zähler; die Schlusszeile druckt ihn. Der wahre Wert war 55,
+  nicht 51.
+- **Eine Untergrenze als Stolperdraht.** Eine gezählte Zahl kann nicht mehr
+  falsch sein, aber Fälle könnten still verschwinden. `mindestens` fängt das ab
+  und darf nur steigen. Gegenprobe: zwei Fälle entfernt — die Vorfassung meldete
+  weiter „51 Fälle ✓", die neue Fassung schlägt fehl.
+- **Der Fahrplan nennt keine Zahl mehr.** Ein Dokument kann nicht mitzählen.
+
+Dazu die zweite, selbst unstrittige Beobachtung derselben Stimme: `selbsttest()`
+rief `adress_art` und `hafen_abgleich` auf, obwohl beide erst weiter unten
+definiert sind. Das lief nur, weil der Aufruf am Dateiende steht — eine
+Abhängigkeit, die von der Aufrufstelle abhängt statt von der Datei.
+`selbsttest()` steht jetzt hinter allem, was es benutzt.
+
+Die beiden nachgemessenen Formen aus der Tabelle sind als Fälle festgehalten,
+damit die Messung bleibt und nicht wieder zur Vermutung wird.
+
+### Runde zehn: die Umkehr — der Wert jeder Zuweisung fällt
+
+Drei Stimmen, zwei Vetos, drei Behauptungen. Nachgemessen, jede einzeln:
+
+| Behauptung | gemessen |
+|---|---|
+| „CI-Selbsttest deterministisch rot" (combo/SOTA-C) | **falsch.** Der `gate`-Job zu diesem Kopf lief grün durch, Schritt „Erhebungs-Maskierung-Selbsttest" inklusive, 831 Tests. Das Panel endete 11:43:50, der Gate-Job 11:44:02 — die Stimme kann kein CI-Ergebnis gesehen haben, sie hat eines behauptet. |
+| „`--maskieren` lässt Kurz-/Integer-/Hexliterale einer IPv4 durch" (Pflicht-Approver) | **zutreffend.** `203.0.113`, `3405803783`, `0xCB007107`, `0313.0.0.7` liefen alle unverändert durch. |
+| „Stichwortliste lückenhaft — `AWS_ACCESS_KEY_ID`, `SESSION_COOKIE`" (Pflicht-Approver) | **zutreffend, und schlimmer als gemeldet.** Auch `AWS_SECRET_ACCESS_KEY=…` lief durch, obwohl `SECRET` darin steht: Die Regel verlangte das Stichwort als LETZTES Zeichen vor dem Trenner. `PRIVATE_KEY`, `SMTP_PASS` ebenso. |
+
+**Die Antwort ist nicht die sechste Regel.** Genau das steht seit Runde acht
+hier: „Wo eine Kontrolle fünfmal hintereinander umgangen wurde, ist nicht die
+sechste Regel die Antwort." Vier Stichworte nachzutragen hätte dieses Panel
+grün gemacht und wäre falsch gewesen — das nächste Panel hätte `VAULT_ENTRY`
+gebracht.
+
+Also die Umkehr, von Blockliste auf Fail-closed:
+
+> **Der Wert JEDER Zuweisung `name: wert` / `name=wert` fällt.**
+> Die Regel kennt keinen einzigen Geheimnisnamen.
+
+Damit ist die Klasse geschlossen statt aufgezählt. Gegenprobe an der
+Vorfassung — alle sechs standen dort im Klartext, jetzt fällt jeder, auch der
+erfundene `ZAUBERWORT_2026`:
+
+```
+AWS_ACCESS_KEY_ID=…      VORHER: im Klartext   JETZT: <maskiert>
+AWS_SECRET_ACCESS_KEY=…  VORHER: im Klartext   JETZT: <maskiert>
+SESSION_COOKIE=…         VORHER: im Klartext   JETZT: <maskiert>
+PRIVATE_KEY=…            VORHER: im Klartext   JETZT: <maskiert>
+SMTP_PASS=…              VORHER: im Klartext   JETZT: <maskiert>
+ZAUBERWORT_2026=…        VORHER: im Klartext   JETZT: <maskiert>
+```
+
+**Beim Bau hat die Umkehr selbst ein Leck erzeugt** — festgehalten, weil es die
+Regel erklärt: Zuerst stand sie VOR den Adressregeln. Damit zerlegte sie
+`fe80::1 dev eth0` am ersten Doppelpunkt zu `fe80:<maskiert>` und ließ das
+Präfix stehen; bei `2001:db8::1` wäre es das routbare Präfix gewesen. Eine
+Maskierung, die eine Adresse für eine Zuweisung hält, maskiert die falsche
+Hälfte. Die Regel steht jetzt HINTER den Adressregeln, und zwei Fälle im
+Selbsttest halten das fest.
+
+**Der Bericht musste dafür seine eigenen Beschriftungen ändern.** `Stand:`,
+`Port:`, `Zeilen insgesamt:` sind aus Sicht der Regel Zuweisungen — die eigene
+Antwort wäre dem eigenen Filter zum Opfer gefallen. Sie tragen jetzt einen
+Trenner (`Stand · …`). Eine Ausnahmeliste wäre die Alternative gewesen; sie
+wäre wieder eine Liste, die jemand pflegen muss. `nginx -v` liefert nur noch
+die Nummer, M5 nur noch die ANZAHL der Namen statt der Namen — beides ohnehin
+die richtigere Auskunft.
+
+**Die Adressnotationen sind NICHT geschlossen, sondern benannt.** `203.0.113`
+und `3405803783` sind gültige IPv4-Schreibweisen und lexikalisch nicht von
+`2.11.1` oder einer Kennung zu unterscheiden. Kein Filter erkennt sie, ohne
+Fassungsnummern und Zähler mitzunehmen. Zwei Selbsttestfälle halten fest, dass
+sie durchkommen — als gemessene Grenze, nicht als Versehen. Getragen wird die
+Zusage von woanders: Der Bericht DRUCKT keine Adresse (`adress_art`, Runde
+sieben).
+
+Daraus folgt die ehrliche Umwidmung: **`--maskieren` ist kein allgemeiner
+Sicherheitsfilter.** Wer beliebigen Text hindurchschickt, bekommt keine Zusage.
+Der Kopf des Skripts sagt das jetzt, statt „jede Zeile ist maskiert" zu
+behaupten. Die Kontrolle ist die Fragestellung; das Netz ist das Netz.
+
 ## Spur C2/C3/C4 — Proxy-Konfiguration
 
 **Trägt:** Die Grundrichtung. Die eigentliche Schwachstelle ist die Anwendung
