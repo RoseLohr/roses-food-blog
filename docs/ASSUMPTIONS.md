@@ -145,3 +145,18 @@ Annahmen, die während der Umsetzung getroffen wurden:
   `proxy_read_timeout` am Proxy gelten; **M3** welche Weiterleitungs-Köpfe er
   setzt; **M5** welchen ACME-Weg er für die Zertifikate benutzt. Auch **wo HSTS
   gesetzt wird**, ist offen und von keiner dieser Messfragen abgedeckt.
+
+- **B25 — Verifier-Gateway und Panel-Besetzung:** Das Fremd-Vendor-Panel votet
+  nicht mehr direkt gegen OpenAI, sondern über das Gateway `inference.klee.me`
+  (`VERIFIER_BASE_URL`, Secret im Environment `trusted-verifier`). Dessen
+  `providers.openai` läuft mit `authMode="forward"` und reserviert den
+  `Authorization`-Kopf für die Weiterleitung nach oben — es beantwortet `Bearer`
+  mit 401. Der Kopfname steht deshalb in der Repo-Variable
+  `VERIFIER_AUTH_HEADER` (`X-OpenCodex-API-Key`); ohne ihn liefert JEDE Stimme
+  401 und das Panel blockiert dauerhaft. Die Besetzung selbst steht in
+  `VERIFIER_PANEL_MODELS` (je Stimme EIN anderes Modell), der Pflicht-Approver
+  in `VERIFIER_REQUIRED_APPROVER`. Diese vier Werte sind ausdrücklich
+  **Variables und keine Secrets**: der Runner redigiert Secrets aus dem Log, und
+  das Panel-Protokoll ist die Evidenz dieses Gates — als Secret stünde dort
+  `Panel (3 Stimmen): ***, ***, ***`, und die `1` aus
+  `VERIFIER_MIN_OTHER_APPROVERS` schwärzte jede `1` im gesamten Log.
