@@ -1,0 +1,19 @@
+-- Die „Zusätzliche Bilder"-Galerie des Reiseberichts fällt weg.
+--
+-- WARUM: Seit die Bilder als BLÖCKE im Bericht stehen — mit Gruppe, Größe und
+-- Seite (0013) — gibt es für einen zweiten, separaten Bilderkasten am Ende
+-- keinen Zweck mehr. Er war der Rest aus der Zeit, als Bilder nicht in den
+-- Fließtext konnten. Zwei Wege, dasselbe Bild in einen Bericht zu bekommen,
+-- sind einer zu viel: Der Redakteur muss raten, welcher der richtige ist, und
+-- der Bericht sieht je nach Wahl anders aus.
+--
+-- KEINE DATEN-MIGRATION, WEIL ES KEINE DATEN GIBT: Die Tabelle ist leer
+-- (bestätigt vom Betreiber). Zu retten ist also nichts — es bleibt der reine
+-- Strukturschritt, und genau der MUSS hier stehen: Ohne ihn liefe das Schema
+-- in src/db/schema.ts der Datenbank davon, und die Tabelle bliebe als Waise
+-- mit Fremdschlüsseln auf travel_post und media_image zurück.
+--
+-- Die Fremdschlüssel zeigen NACH travel_post/media_image, nicht umgekehrt —
+-- ein DROP hinterlässt dort also nichts Loses. `PRAGMA foreign_key_check`
+-- nach der Migration (scripts/migrate.mjs) hält das fest.
+DROP TABLE `travel_post_image`;

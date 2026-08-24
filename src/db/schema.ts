@@ -554,21 +554,6 @@ export const travelBlock = sqliteTable(
   ],
 );
 
-/** Bildergalerie des Reiseberichts */
-export const travelPostImage = sqliteTable(
-  "travel_post_image",
-  {
-    travelPostId: integer("travel_post_id")
-      .notNull()
-      .references(() => travelPost.id, { onDelete: "cascade" }),
-    imageId: integer("image_id")
-      .notNull()
-      .references(() => mediaImage.id, { onDelete: "cascade" }),
-    sortOrder: integer("sort_order").notNull().default(0),
-  },
-  (t) => [primaryKey({ columns: [t.travelPostId, t.imageId] })],
-);
-
 export const dish = sqliteTable(
   "dish",
   {

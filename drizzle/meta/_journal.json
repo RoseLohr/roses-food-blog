@@ -99,6 +99,13 @@
       "when": 1787800000000,
       "tag": "0013_bildgruppe_und_einzelbild",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1787900000000,
+      "tag": "0014_reise_galerie_entfernt",
+      "breakpoints": true
     }
   ]
 }

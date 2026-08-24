@@ -49,9 +49,6 @@ const SPALTE_HANDY_ABZUG = 80; // 5rem
 const SPALTE_MITTEL_ABZUG = 112; // 7rem
 const SPALTE_GROSS = 816;
 
-/** Zeilenhöhe der Galerie. Fest, nicht wachsend — siehe `galerieSizes`. */
-const GALERIE_HOEHE = 220;
-
 /** Abstand zwischen zwei Fotos im Restaurant-Band (gap-2 = 8 px). */
 const BAND_ABSTAND = 8;
 
@@ -236,18 +233,3 @@ export function restaurantPaarSizes(): string {
   ].join(", ");
 }
 
-/**
- * `sizes` eines Galeriebildes: Format × feste Zeilenhöhe, gedeckelt auf die
- * Spalte.
- *
- * Die Galerie wächst BEWUSST nicht in die Zeile hinein. Der erste Anlauf ließ
- * sie das (flex-grow proportional zum Format, Zeile füllt die Spalte) — dann
- * hängt die Breite jedes Bildes davon ab, welche Bilder mit ihm in eine Zeile
- * geraten, und das ist an einem einzelnen Bild nicht ausrechenbar. Deklariert
- * werden musste die Obergrenze, gerendert wurde deutlich weniger: ein 241 px
- * breites Bild lud die 480er-Variante statt der 320er. Der Auslieferungs-
- * Guardrail (tests/e2e/bild-auslieferung.spec.ts) hat genau das gefangen.
- */
-export function galerieSizes(seitenverhaeltnisWert: number): string {
-  return gedeckeltSizes(Math.round(GALERIE_HOEHE * seitenverhaeltnisWert));
-}

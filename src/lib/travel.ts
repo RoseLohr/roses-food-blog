@@ -48,7 +48,6 @@ export interface FullRestaurant {
 export interface FullTravelPost {
   post: TravelPost;
   heroImage: MediaImage | null;
-  images: MediaImage[];
   restaurants: FullRestaurant[];
   /** Inhalts-Blockfolge; Restaurant-Blöcke referenzieren den Index in
    *  `restaurants` (Editor-Vertrag). Bild-Blöcke ohne Bild (SET NULL nach
@@ -185,16 +184,6 @@ export async function getFullTravelPost(
         .limit(1))[0] ?? null)
     : null;
 
-  const galleryRows = await db
-    .select({ img: schema.mediaImage })
-    .from(schema.travelPostImage)
-    .innerJoin(
-      schema.mediaImage,
-      eq(schema.travelPostImage.imageId, schema.mediaImage.id),
-    )
-    .where(eq(schema.travelPostImage.travelPostId, post.id))
-    .orderBy(asc(schema.travelPostImage.sortOrder));
-
   const restaurantRows = await db
     .select()
     .from(schema.restaurant)
@@ -296,7 +285,6 @@ export async function getFullTravelPost(
   // Alle geladenen Bilder mit ihren Varianten-Breiten anreichern (1 Abfrage).
   const widthsById = await variantWidthsByImage([
     ...(heroImageRow ? [heroImageRow.id] : []),
-    ...galleryRows.map((r) => r.img.id),
     ...restImages.map((i) => i.id),
     ...dishImageRows.map((r) => r.img.id),
     ...blockImageRows.map((i) => i.id),
@@ -347,7 +335,6 @@ export async function getFullTravelPost(
   return {
     post,
     heroImage: heroImageRow ? withWidths(heroImageRow) : null,
-    images: galleryRows.map((r) => withWidths(r.img)),
     restaurants,
     blocks,
     blockImages: Object.fromEntries(

@@ -54,7 +54,6 @@ const QUELLEN = [
   ["Zutat", schema.ingredient, schema.ingredient.imageId],
   ["Seite (Titelbild)", schema.page, schema.page.heroImageId],
   ["Reisebericht (Titelbild)", schema.travelPost, schema.travelPost.heroImageId],
-  ["Reisebericht (Galerie)", schema.travelPostImage, schema.travelPostImage.imageId],
   ["Reisebericht (Bild im Text)", schema.travelBlock, schema.travelBlock.imageId],
   ["Restaurant (erstes Foto)", schema.restaurant, schema.restaurant.imageId],
   ["Restaurant (zweites Foto)", schema.restaurant, schema.restaurant.imageId2],

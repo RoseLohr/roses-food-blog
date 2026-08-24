@@ -24,14 +24,25 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 let tmp: string;
 let sqlite: Database.Database;
 
-/** Das Journal ohne 0013 — damit lässt sich der Stand DAVOR herstellen. */
-function journalOhne0013(): string {
+/**
+ * Das Journal BIS VOR 0013 — damit lässt sich der Stand davor herstellen.
+ *
+ * Abgeschnitten wird ab 0013, nicht nur 0013 herausgefiltert: Der Migrator
+ * vergleicht die Zahl der Buchungszeilen mit der Zahl der Migrationen unter
+ * dem Wasserstand (dem größten `when` im Journal) und verweigert bei einer
+ * Lücke die Arbeit. Ein Loch in der Mitte ließ die späteren Einträge stehen,
+ * hielt den Wasserstand oben — und ab der ersten Migration NACH 0013 war die
+ * Buchführung damit rechnerisch unvollständig.
+ */
+function journalBisVor0013(): string {
   const j = JSON.parse(
     fs.readFileSync(path.resolve(process.cwd(), "drizzle/meta/_journal.json"), "utf8"),
   );
-  j.entries = j.entries.filter(
-    (e: { tag: string }) => e.tag !== "0013_bildgruppe_und_einzelbild",
+  const ab = j.entries.findIndex(
+    (e: { tag: string }) => e.tag === "0013_bildgruppe_und_einzelbild",
   );
+  if (ab === -1) throw new Error("0013 steht nicht im Journal — Test prüft nichts.");
+  j.entries = j.entries.slice(0, ab);
   return JSON.stringify(j, null, 2);
 }
 
@@ -42,7 +53,7 @@ beforeAll(() => {
 
   try {
     // 1. Auf den Stand VOR 0013 migrieren.
-    fs.writeFileSync(journal, journalOhne0013());
+    fs.writeFileSync(journal, journalBisVor0013());
     execFileSync("node", ["scripts/migrate.mjs"], {
       env: { ...process.env, DATA_DIR: tmp },
       stdio: "pipe",
@@ -77,7 +88,7 @@ beforeAll(() => {
     }
     db.close();
 
-    // 3. 0013 anwenden.
+    // 3. 0013 (und alles danach) anwenden.
     fs.writeFileSync(journal, echt);
     execFileSync("node", ["scripts/migrate.mjs"], {
       env: { ...process.env, DATA_DIR: tmp },
