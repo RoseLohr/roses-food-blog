@@ -608,7 +608,14 @@ neu:     proxy_pass http://ziel:3000/<pfad-entfernt>
 
 Das ist die einzige Regel in diesem Filter, die nicht versucht, ein Geheimnis
 zu ERKENNEN — und deshalb die einzige, die eine ganze Klasse schließt statt
-einer Form. Was man nicht abdruckt, muss man nicht maskieren.
+einer Form.
+
+**Runde sechs, derselbe Gedanke eine Schreibweise weiter:** Die erste Fassung
+dieser Kürzung verlangte einen Schrägstrich. Eine Abfrage darf aber direkt
+hinter dem Hafen stehen — `://ziel:3000?merkmal=…` hat keinen Pfad und lief
+unverändert durch. Ausgelöst wird jetzt von `/`, `?` und `#`. Auch die Regel,
+die eine Klasse schließen soll, hatte zuerst nur die naheliegendste Form im
+Blick. Was man nicht abdruckt, muss man nicht maskieren.
 
 **Die Lehre nach fünf Runden am selben Filter:** Eine Maskierung, die Geheimnis
 an einem STICHWORT erkennt, findet nur die Geheimnisse, die sich als solche zu

@@ -35,6 +35,8 @@ const NUR_MERKMAL = "gehe1mt0kenWert";
 /** Merkmale in Abfrage und Pfad — ohne Namen, den ein Filter kennen könnte. */
 const ABFRAGE_MERKMAL = "Q7bTnZ4pLm2Xr9Kd";
 const PFAD_MERKMAL = "AbCdEf0123456789";
+/** Abfrage direkt hinter dem Hafen, ohne Pfad davor. */
+const ABFRAGE_OHNE_PFAD = "Wz8yQ1nR6vT3sJ0e";
 
 /** Wie die Ausgabe des Skripts auf dem echten Host aussieht. */
 const BERICHT = [
@@ -69,6 +71,8 @@ const BERICHT = [
   // fällt alles hinter dem Wirt, statt es zu erkennen zu versuchen.
   `proxy_pass http://viertziel:3000/hook?key=${ABFRAGE_MERKMAL};`,
   `proxy_pass http://fuenftziel:3000/s/${PFAD_MERKMAL};`,
+  // Runde sechs: eine Abfrage braucht keinen Pfad vor sich.
+  `proxy_pass http://sechstziel:3000?merkmal=${ABFRAGE_OHNE_PFAD};`,
   "/home/beispielnutzer/npm/data -> /data",
   "server_name blog.beispiel-domain.de;",
   "upstream backend { server 203.0.113.42:3000; }",
@@ -99,6 +103,7 @@ describe("A1: die Erhebung ist weitergabesicher", () => {
       NUR_MERKMAL, // Nutzerteil ohne Doppelpunkt
       ABFRAGE_MERKMAL, // Merkmal in der Abfrage
       PFAD_MERKMAL, // Merkmal im Pfad
+      ABFRAGE_OHNE_PFAD, // Merkmal in einer Abfrage ohne Pfad davor
       "/home/beispielnutzer/", // Accountname im Hostpfad
       "sehr-geheim-123",
       "9f3c1a77e2b4d5f60a1c8e93b7d240af5c6e18b0",

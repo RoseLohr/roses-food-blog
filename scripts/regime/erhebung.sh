@@ -167,6 +167,12 @@ set -euo pipefail
 #     Wirt und Hafen vollständig. Pfad und Abfrage tragen zur Antwort nichts
 #     bei und können beliebige Geheimnisse enthalten — also entfallen sie.
 #     Was man nicht abdruckt, muss man nicht maskieren.
+#
+#     NACHTRAG, RUNDE SECHS: Die erste Fassung dieser Regel verlangte einen
+#     Schrägstrich. Eine Abfrage darf aber direkt hinter dem Hafen stehen —
+#     `://ziel:3000?merkmal=…` hat keinen Pfad und lief unverändert durch.
+#     Ausgelöst wird jetzt von `/`, `?` UND `#`. Dieselbe Lehre wie bei den
+#     Adressen: Die zuerst gedachte Form ist nicht die einzige.
 # ---------------------------------------------------------------------------
 maskieren() {
   sed -E \
@@ -175,7 +181,7 @@ maskieren() {
     -e 's/(^|[^0-9a-fA-F:])::1($|[^0-9a-fA-F])/\1@@LOOPBACK6@@\2/g' \
     -e 's/([Pp][Aa][Ss][Ss][Ww]?[Oo]?[Rr]?[Dd]|[Ss][Ee][Cc][Rr][Ee][Tt]|[Tt][Oo][Kk][Ee][Nn]|[Aa][Pp][Ii][_-]?[Kk][Ee][Yy]|[Aa][Uu][Tt][Hh][Oo][Rr][Ii][Zz][Aa][Tt][Ii][Oo][Nn]|[Bb][Ee][Aa][Rr][Ee][Rr])([[:space:]]*[:=][[:space:]]*|[[:space:]]+).*$/\1\2<maskiert>/' \
     -e 's#(://)[^/@"[:space:]]+@#\1<maskiert>@#g' \
-    -e 's#(://[^/"[:space:]]*)/[^"[:space:]]*#\1/<pfad-entfernt>#g' \
+    -e 's%(://[^/?#"[:space:]]*)[/?#][^"[:space:]]*%\1/<pfad-entfernt>%g' \
     -e 's#[^:/@"[:space:]]+:[^:/@"[:space:]]+@#<maskiert>@#g' \
     -e 's/([0-9a-fA-F]{0,4}:){2,7}([0-9]{1,3}\.){3}[0-9]{1,3}/<IPv6>/g' \
     -e 's/\b([0-9]{1,3}\.){3}[0-9]{1,3}\b/<IPv4>/g' \
@@ -259,6 +265,13 @@ selbsttest() {
   pruefe "Adresse ohne Pfad bleibt vollstaendig" \
     "proxy_pass http://ziel:3000;" \
     "proxy_pass http://ziel:3000;"
+  # Runde sechs: eine Abfrage braucht keinen Pfad vor sich.
+  pruefe "Abfrage direkt hinter dem Hafen" \
+    "proxy_pass http://ziel:3000?merkmal=ABC123;" \
+    "proxy_pass http://ziel:3000/<pfad-entfernt>"
+  pruefe "Fragment direkt hinter dem Hafen" \
+    "proxy_pass http://ziel:3000#merkmal=ABC123;" \
+    "proxy_pass http://ziel:3000/<pfad-entfernt>"
   pruefe "Accountname im macOS-Pfad" "/Users/beispielnutzer/x -> /y" "/Users/<benutzer>/x -> /y"
 
   # Das Geschonte: ohne diese Fälle wäre der Bericht unlesbar.
@@ -298,7 +311,7 @@ selbsttest() {
   pruefe "Zahlen bleiben Zahlen" "RestartCount 4" "RestartCount 4"
 
   if [ "$fehler" -eq 0 ]; then
-    echo "[erhebung] Selbsttest: 41 Fälle, Falle gestellt und Harmloses geschont ✓"
+    echo "[erhebung] Selbsttest: 43 Fälle, Falle gestellt und Harmloses geschont ✓"
     return 0
   fi
   echo "[erhebung] Selbsttest FEHLGESCHLAGEN — die Ausgabe dieses Skripts ist NICHT weitergabesicher."
