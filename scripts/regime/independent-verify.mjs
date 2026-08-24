@@ -65,6 +65,7 @@
  */
 import { execSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
+import { appendFileSync } from "node:fs";
 
 const KEY = process.env.SECOND_VENDOR_API_KEY || process.env.OPENAI_API_KEY;
 /**
@@ -577,6 +578,83 @@ if (process.argv.includes("--selftest")) {
   expect(attestProof([PR(`${CH}-7`), PR(`${CH}-8`), PR("nope-1", true)], CH, 3).block === false, "Refutat-Stimme ohne Proof egal, solange Grün-Mehrheit gültige Proofs hat.");
   expect(attestProof([PR(`${CH}-7`)], CH, 1).block === false, "Panel=1 mit gültigem Proof passiert.");
   expect(attestProof([PR(`${CH}-7`), PR(`${CH}-8`), PR(`${CH}-9`)], "", 3).block === true, "leere Challenge → kein Proof gültig → fail-closed.");
+  // mdInline() — fremder Text landet immer im Code-Span, wo GFM nichts deutet.
+  expect(mdInline("harmlos") === "`harmlos`", "normaler Text steht im Code-Span.");
+  expect(mdInline("") === "—", "leer wird zum Gedankenstrich, nicht zum leeren Span.");
+  expect(mdInline(null) === "—", "null wird zum Gedankenstrich, nie zum Text \"null\".");
+  expect(mdInline(undefined) === "—", "undefined ebenso.");
+  expect(mdInline("a\nb\tc") === "`a b c`", "Zeilenumbruch und Tab werden gefaltet (brechen sonst aus der Zeile aus).");
+  // Backtick: ENTFERNEN, nicht escapen — im Span ist ein Backslash gewoehnlicher Text.
+  expect(mdInline("a`b") === "`ab`", "ein Backtick wird entfernt.");
+  expect((mdInline("a`b`c").match(/`/g) || []).length === 2, "der Span bleibt genau zweifach begrenzt.");
+  expect(!mdInline("a`b").includes("\\"), "im Span landet nie ein Backslash-Escape fuer den Backtick.");
+  // Pipe: escapen — trennt die Tabellenzelle auch INNERHALB des Spans.
+  expect(mdInline("a|b") === "`a\\|b`", "ein Pipe wird escaped.");
+  expect(mdInline("a||b") === "`a\\|\\|b`", "jeder Pipe einzeln.");
+  // Backslash-Bewusstsein. Der Selbsttest behauptete "keine zusaetzlichen Spalten",
+  // pruefte das aber nur mit Pipes OHNE Backslash — genau die Luecke, durch die
+  // Runde 3 fiel. Gemessen wird jetzt der LEBENDIGE Trenner: ein Pipe, dem eine
+  // gerade Anzahl Backslashes vorausgeht, trennt die Zelle.
+  const liveSep = (t) => /(?:^|[^\\])(?:\\\\)*\|/.test(t);
+  expect(mdInline("a\\b") === "`a\\\\b`", "ein Backslash wird verdoppelt.");
+  expect(!liveSep(mdInline("a\\|b")), "ein literales \\| bricht die Zelle NICHT auf.");
+  expect(!liveSep(mdInline("![](https://evil.example/p)\\|x")), "der refutierte Fall aus Runde 3 bricht die Zelle nicht auf.");
+  expect(!liveSep(mdInline("\\\\|")), "auch zwei Backslashes vor dem Pipe nicht.");
+  expect(!liveSep(mdInline("regex: \\| oder \\\\|")), "gemischte Backslash-Folgen ebenso wenig.");
+  // Refutat Runde 1: Link-, Bild- und HTML-Syntax. Im Span inert, kein Escape noetig.
+  expect(mdInline("[klick](https://evil.example)").startsWith("`"), "Link-Syntax steht im Span und rendert nicht als Link.");
+  expect(mdInline("![](https://evil.example/beacon.png)").startsWith("`"), "Bild-Syntax rendert nicht als Bild (sonst holt die Run-Seite eine fremde URL).");
+  expect(mdInline("<img src=x onerror=1>") === "`<img src=x onerror=1>`", "rohes HTML bleibt Text.");
+  // Refutat Runde 2: blanke URL. GFM autolinkt sie OHNE escapebares Zeichen —
+  // genau deshalb der Span statt einer laengeren Escape-Liste.
+  expect(mdInline("siehe https://evil.example") === "`siehe https://evil.example`", "eine blanke URL steht im Span und wird nicht autolinkt.");
+  expect(mdInline("www.evil.example") === "`www.evil.example`", "auch die www-Form wird nicht autolinkt.");
+  // Kuerzung VOR dem Escapen: sonst schnitte sie zwischen Backslash und Pipe und
+  // hinterliesse einen baumelnden Backslash direkt vor dem Zellen-Pipe.
+  expect(mdInline("x".repeat(400)).length === 302, "zu langer Text wird auf das Limit gekuerzt (plus zwei Backticks).");
+  expect(mdInline("x".repeat(400)).endsWith("…`"), "die Kuerzung ist als Auslassung sichtbar.");
+  // Das Limit zaehlt VISUELLE Zeichen: 200 Pipes passen unter 300 und duerfen
+  // nicht gekuerzt werden. Wuerde vor der Kuerzung escaped, waeren es 400 und die
+  // Haelfte fiele weg — genau diese Vertauschung faengt die Zeile.
+  expect(!mdInline("|".repeat(200)).includes("…"), "200 Pipes passen unter das Limit (Escapes zaehlen nicht mit).");
+  expect((mdInline("|".repeat(200)).match(/\\\|/g) || []).length === 200, "und alle 200 sind escaped.");
+  expect(mdInline("kurz", 12) === "`kurz`", "ein eigenes Limit laesst kurzen Text unberuehrt.");
+  // renderStepSummary() (das Urteil, wie ein Mensch es liest)
+  const RG = [["Pflicht-Approver-Gate", { block: false, reason: "ok" }]];
+  const RM = ["m-1", "m-2", "m-3"];
+  expect(renderStepSummary([], [], [], false).includes("**Urteil: BESTÄTIGT**"), "gruen steht als BESTÄTIGT im Kopf.");
+  expect(renderStepSummary([], [], [], true).includes("**Urteil: BLOCKIERT**"), "rot steht als BLOCKIERT im Kopf.");
+  const okVote = { ok: true, v: { refuted: false, confidence: "high", reason: "grund lang genug" } };
+  const noVote = { ok: false, reason: "API 500" };
+  const oddVote = { ok: true, v: { refuted: "vielleicht", reason: "grund lang genug" } };
+  expect(renderStepSummary([okVote], RM, RG, false).includes("🟢 stimmt zu"), "eine Zustimmung wird als solche gezeigt.");
+  expect(renderStepSummary([noVote], RM, RG, true).includes("⚠️ keine Stimme"), "eine Fehler-Stimme ist „keine Stimme\", kein Urteil.");
+  expect(renderStepSummary([oddVote], RM, RG, true).includes("⚠️ unlesbar"), "ein Nicht-Boolean ist unlesbar.");
+  expect(!renderStepSummary([oddVote], RM, RG, true).includes("🔴 refutiert"), "ein Nicht-Boolean wird NIE als Refutat beschriftet.");
+  // Die Zellen muessen mdInline TATSAECHLICH benutzen. Die Funktion isoliert zu
+  // pruefen liess eine Mutation („zurueck zum rohen Code-Span") unentdeckt durch:
+  // sie war korrekt, nur rief sie niemand auf.
+  const rowOf = (t) => t.split("\n").find((l) => l.startsWith("| 1 |"));
+  // LEBENDIGE Trenner zaehlen: ein Pipe mit gerader Anzahl Backslashes davor.
+  // Das alte (?<!\\)\| hielt \\\\| faelschlich fuer escaped.
+  const cols = (l) => (l.match(/(?:^|[^\\])(?:\\\\)*\|/g) || []).length;
+  const pipeModelRow = rowOf(renderStepSummary([okVote], ["combo/a|b"], RG, false));
+  expect(cols(pipeModelRow) === 6, "ein Pipe in der Modell-ID verschiebt die Spalten nicht.");
+  const tickModelRow = rowOf(renderStepSummary([okVote], ["combo/a`b"], RG, false));
+  // 3 Spans in dieser Zeile (Modell, Konfidenz, Begruendung) = 6 Backticks.
+  expect((tickModelRow.match(/`/g) || []).length === 6, "ein Backtick in der Modell-ID zerlegt die Spans nicht.");
+  // Enthaelt jetzt auch literale Backslashes vor Pipes — ohne die prueft dieser
+  // Block seine eigene Behauptung nicht (Runde-3-Luecke).
+  const hostile = { ok: true, v: { refuted: false, confidence: "high", reason: "a|b\nc\\|d\n| x | y |\n![](https://e.example/p)\\|z" } };
+  const benign = { ok: true, v: { refuted: false, confidence: "high", reason: "harmlos" } };
+  const hOut = renderStepSummary([hostile], RM, RG, false);
+  const bOut = renderStepSummary([benign], RM, RG, false);
+  expect(hOut.split("\n").length === bOut.split("\n").length, "feindlicher Text erzeugt keine zusaetzlichen Zeilen.");
+  expect(cols(rowOf(hOut)) === cols(rowOf(bOut)), "feindlicher Text erzeugt keine zusaetzlichen Spalten.");
+  // Auch der Gate-Grund ist fremder Text: decide() reicht bei einem Refutat die
+  // Modell-Begruendung unveraendert als Blockgrund durch.
+  const hostileGate = renderStepSummary([], [], [["G", { block: true, reason: "siehe https://evil.example" }]], true);
+  expect(hostileGate.includes("`siehe https://evil.example`"), "der Gate-Grund steht ebenfalls im Span.");
   // validateRangeInputs() (Command-Injection-Schranke + Range-Bestimmtheit)
   expect(validateRangeInputs("", "").ok === true, "beide leer → Default origin/main...HEAD.");
   expect(validateRangeInputs("", "").head === "HEAD", "ohne SHA bleibt HEAD.");
@@ -621,7 +699,7 @@ if (process.argv.includes("--selftest")) {
   expect(requireApprovals([RF, A2, A], SM, "gpt-5.6-sol", 1).block === false
     && strictAnyRefutation([RF, A2, A], SM).block === true,
     "derselbe Stimmensatz: Standard grün, Strikt-Modus block — die Option ist wirksam.");
-  console.log("   ✓ Selbsttest: decide() + modelMatches() + requireApprovals() (Pflicht-Approver Sol + Korroboration) + attestReasons() + attestProof() + validateRangeInputs() + normalizeBase() + authHeader() + strictAnyRefutation() korrekt.");
+  console.log("   ✓ Selbsttest: decide() + modelMatches() + requireApprovals() (Pflicht-Approver Sol + Korroboration) + attestReasons() + attestProof() + validateRangeInputs() + normalizeBase() + authHeader() + strictAnyRefutation() + mdInline() + renderStepSummary() korrekt.");
   process.exit(0);
 }
 
@@ -821,38 +899,141 @@ votes.forEach((x, i) => {
   const reason = raw ? JSON.stringify(raw).slice(0, 1000) : '"(keine Begründung geliefert)"';
   console.log(`  Verifier ${i + 1}/${PANEL} (${MODELS[i]}): refuted=${x.v?.refuted} confidence=${x.v?.confidence} — Begründung: ${reason}`);
 });
+/**
+ * Fremder Inline-Text fuer die Zusammenfassung — IMMER als Code-Span.
+ *
+ * Warum nicht escapen: eine wachsende Liste von Markdown-Metazeichen ist
+ * Whack-a-Mole, und das Panel hat davon zwei Runden refutiert. Erst fehlten
+ * `[ ] < > &` (Link-, Bild- und HTML-Syntax), dann blanke URLs — die
+ * autolinkt GFM ganz ohne escapebares Zeichen, gegen eine Escape-Liste ist
+ * das also gar nicht zu gewinnen.
+ *
+ * In einem Code-Span interpretiert GFM NICHTS: keine Hervorhebung, keine
+ * Links, keine Autolinks, kein HTML. Zwei Dinge zaehlen dort trotzdem, und
+ * beide sind hier behandelt:
+ *
+ *   * Ein Backtick beendet den Span. Er wird ENTFERNT, nicht escaped —
+ *     innerhalb eines Spans ist ein Backslash gewoehnlicher Text, `\`` wuerde
+ *     also trotzdem schliessen.
+ *   * Ein Pipe trennt eine Tabellenzelle auch INNERHALB eines Spans. Er wird
+ *     als `\|` escaped; der Tabellen-Parser macht daraus wieder ein literales
+ *     `|`, bevor der Span rendert.
+ *
+ * Das Escapen passiert NACH der Kuerzung, damit das Limit VISUELLE Zeichen
+ * zaehlt und nicht Escape-Zeichen: andersherum haette eine Begruendung aus lauter
+ * Pipes nur noch die halbe Laenge uebrig. (Nachgemessen: die Zelle braeche
+ * andersherum NICHT auf — die Kuerzung haengt immer „…" an, ein abgeschnittener
+ * Backslash steht also vor der Auslassung und nie vor dem Zellen-Pipe. Der Grund
+ * ist Lesbarkeit, nicht Sicherheit.)
+ */
+export function mdInline(value, limit = 300) {
+  const text = String(value === null || value === undefined ? "" : value)
+    .split(/\s+/).filter(Boolean).join(" ")
+    .replace(/`/g, "");
+  const cut = text.length > limit ? text.slice(0, limit - 1) + "…" : text;
+  // BEIDE Zeichen, die der GFM-TABELLEN-Scanner als Escape kennt — \\ und \| —
+  // und in EINEM Durchlauf. Nur den Pipe zu escapen ist nicht backslash-bewusst:
+  // aus einem literalen \| im Fremdtext wuerde \\|, der Scanner verbraucht \\ als
+  // escapten Backslash, und der Pipe dahinter bleibt LEBENDIGER Zelltrenner. Die
+  // Zelle bricht auf, der oeffnende Backtick bleibt ungepaart, und der Rest der
+  // Begruendung rendert wieder als Markdown. (Refutat Runde 3; ausgeloest schon
+  // von einem harmlosen Regex \| in einer Begruendung.)
+  //
+  // Das ist keine weitere Zeile auf einer wachsenden Liste: die Menge ist genau
+  // das Escape-Alphabet des Tabellen-Scanners und damit abgeschlossen.
+  return cut ? "`" + cut.replace(/[\\|]/g, (m) => "\\" + m) + "`" : "—";
+}
+
+/**
+ * Das Urteil dorthin schreiben, wo ein Mensch es tatsaechlich sieht.
+ *
+ * GITHUB_STEP_SUMMARY rendert als Markdown auf der Run-Seite, einen Klick vom
+ * Check des Pull Requests entfernt. Bewusst statt eines PR-Reviews: kein Token,
+ * keine zusaetzliche Berechtigung, kein API-Aufruf, der selbst fehlschlagen und
+ * aus einem sauberen Urteil einen roten Job machen koennte.
+ *
+ * Wird auf BEIDEN Wegen geschrieben. Ein Panel, das sich nur erklaert, wenn es
+ * blockt, laesst den Leser nicht unterscheiden zwischen „drei Stimmen haben das
+ * geprueft und waren einig" und „das Panel lief nie".
+ *
+ * JEDER fremde Wert geht durch mdInline: Modellname und Begruendung ohnehin,
+ * aber auch die Konfidenz (kommt aus derselben Modellantwort) und der Grund
+ * eines Gates — decide() reicht bei einem Refutat die Modell-Begruendung
+ * unveraendert als Blockgrund durch, und strictAnyRefutation() setzt Modellname
+ * und Konfidenz in seinen Text. Fest sind hier nur unsere eigenen Konstanten:
+ * die Ueberschriften, die Gate-NAMEN und die Marker.
+ */
+export function renderStepSummary(votes, models, gates, blocked) {
+  const lines = [
+    "## Independent-Verify — Fremd-Vendor-Panel",
+    "",
+    `**Urteil: ${blocked ? "BLOCKIERT" : "BESTÄTIGT"}**`,
+    "",
+    "| # | Modell | Urteil | Konfidenz | Begründung |",
+    "|---|---|---|---|---|",
+  ];
+  votes.forEach((vote, i) => {
+    const model = mdInline(models[i], 60);
+    if (!vote?.ok) {
+      lines.push(`| ${i + 1} | ${model} | ⚠️ keine Stimme | — | ${mdInline(vote?.reason)} |`);
+      return;
+    }
+    const v = vote.v || {};
+    // === true / === false, nie Truthiness: decide() ist bei einem Nicht-Boolean
+    // fail-closed, also ist {"refuted":"vielleicht"} eine UNLESBARE Stimme. Sie als
+    // „refutiert" zu beschriften, erzaehlte dem Leser, ein Modell habe widersprochen.
+    const mark = v.refuted === true ? "🔴 refutiert"
+      : v.refuted === false ? "🟢 stimmt zu" : "⚠️ unlesbar";
+    lines.push(`| ${i + 1} | ${model} | ${mark} | ${mdInline(v.confidence, 12)} | ${mdInline(v.reason)} |`);
+  });
+  lines.push("", "### Gates", "");
+  for (const [name, result] of gates) {
+    lines.push(`- **${name}** — ${result.block ? "⛔ blockiert" : "✅ bestanden"}: ${mdInline(result.reason, 400)}`);
+  }
+  return lines.join("\n") + "\n";
+}
+
+/** Anhängen an GITHUB_STEP_SUMMARY. Ausserhalb von Actions ein No-op. */
+function writeSummary(text) {
+  const path = process.env.GITHUB_STEP_SUMMARY;
+  if (!path) return;
+  try {
+    appendFileSync(path, text, "utf8");
+  } catch (err) {
+    // Der BERICHT darf nie das URTEIL kippen.
+    console.log(`[independent-verify] Step-Summary nicht schreibbar: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
 // PFLICHT-APPROVER-GATE: Sol MUSS zustimmen (Veto bei Refutat/Fehlen/Fehler) und
 // mindestens MIN_OTHERS weitere Stimmen müssen zustimmen. Ersetzt die frühere
 // bloße Mehrheits-Aggregation und ist strenger (fail-closed).
-const verdict = requireApprovals(votes, MODELS, REQUIRED_APPROVER, MIN_OTHERS, CHALLENGE);
-if (verdict.block) {
-  console.error(`⛔ Pflicht-Approver-Gate blockiert die Änderung: ${verdict.reason}`);
-  process.exit(1);
-}
+// ALLE Gates werden ausgewertet, BEVOR eines beendet — sonst zeigte die Zusammen-
+// fassung nur bis zum ersten Blocker und der Leser wüsste nicht, ob die übrigen
+// bestanden haben oder nie liefen. Die Gates sind reine Funktionen ohne Seiten-
+// effekte, das Auswerten kostet also nichts. Blockiert wird weiterhin beim ERSTEN
+// Blocker in dieser Reihenfolge, mit derselben Meldung wie zuvor.
+const gates = [];
+gates.push(["Pflicht-Approver-Gate", requireApprovals(votes, MODELS, REQUIRED_APPROVER, MIN_OTHERS, CHALLENGE)]);
 // STRIKT-GATE (opt-in, VERIFIER_STRICT_ANY_REFUTATION): blockt bei einem
-// high/medium-Refutat JEDER Stimme, nicht nur des Pflicht-Approvers. Läuft NACH
+// high/medium-Refutat JEDER Stimme, nicht nur des Pflicht-Approvers. Steht NACH
 // dem Pflicht-Approver-Gate, damit ein Sol-Veto weiterhin die genauere Meldung
 // liefert, und ist bei ausgeschaltetem Modus wirkungslos.
-const strict = STRICT_ANY_REFUTATION
+gates.push(["Strikt-Gate", STRICT_ANY_REFUTATION
   ? strictAnyRefutation(votes, MODELS)
-  : { block: false, reason: "Strikt-Modus: aus" };
-if (strict.block) {
-  console.error(`⛔ Strikt-Gate: ${strict.reason}`);
-  process.exit(1);
-}
+  : { block: false, reason: "Strikt-Modus: aus" }]);
 // SCHEIN-GRÜN-GATE: Grün nur, wenn nachweislich echt gearbeitet wurde — eine
 // Mehrheit der Grün-Stimmen muss eine echte, eigenständige Begründung tragen.
-const attest = attestReasons(votes, PANEL);
-if (attest.block) {
-  console.error(`⛔ Integritäts-Gate (Schein-Grün): ${attest.reason}`);
-  process.exit(1);
-}
+gates.push(["Integritäts-Gate (Schein-Grün)", attestReasons(votes, PANEL)]);
 // PROOF-OF-CHECK-GATE: die Grün-Stimmen müssen die Lauf-Challenge zurückspiegeln —
 // ein hartcodiertes „pass → grün" ohne echten Modell-Roundtrip kommt so nicht durch.
-const proof = attestProof(votes, CHALLENGE, PANEL);
-if (proof.block) {
-  console.error(`⛔ Proof-of-Check-Gate: ${proof.reason}`);
+gates.push(["Proof-of-Check-Gate", attestProof(votes, CHALLENGE, PANEL)]);
+
+const blocker = gates.find(([, result]) => result.block);
+writeSummary(renderStepSummary(votes, MODELS, gates, Boolean(blocker)));
+if (blocker) {
+  console.error(`⛔ ${blocker[0]}: ${blocker[1].reason}`);
   process.exit(1);
 }
-console.log(`[independent-verify] Fremd-Vendor-Panel bestätigt (Pflicht-Approver: ${verdict.reason}; ${strict.reason}; ${attest.reason}; ${proof.reason}). Grün.`);
+console.log(`[independent-verify] Fremd-Vendor-Panel bestätigt (${gates.map(([, r]) => r.reason).join("; ")}). Grün.`);
 process.exit(0);
