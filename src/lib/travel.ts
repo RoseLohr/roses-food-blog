@@ -258,7 +258,7 @@ export async function getFullTravelPost(
     .select()
     .from(schema.travelBlock)
     .where(eq(schema.travelBlock.travelPostId, post.id))
-    .orderBy(asc(schema.travelBlock.sortOrder));
+    .orderBy(asc(schema.travelBlock.sortOrder), asc(schema.travelBlock.id));
   const restaurantIndexById = new Map(restaurantRows.map((r, i) => [r.id, i]));
   const blocks: TravelBlock[] = [];
   for (const b of blockRows) {
@@ -269,6 +269,9 @@ export async function getFullTravelPost(
         blocks.push({
           type: "bild",
           imageId: b.imageId,
+          gruppe: b.gruppe,
+          groesse: b.groesse,
+          ausrichtung: b.ausrichtung,
         });
     } else {
       const idx =

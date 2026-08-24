@@ -55,9 +55,14 @@ async function main() {
     "bloecke",
     JSON.stringify([
       { type: "text", markdown: "Ausgangstext." },
-      { type: "bild", imageId: bilder[0].id },
-      { type: "bild", imageId: bilder[1].id },
-      { type: "bild", imageId: bilder[2].id },
+      // Drei Bilder als EINE Gruppe (Marke 1). Ohne Marke wären es drei
+      // Einzelbilder — seit 08/2026 entsteht eine Gruppe nicht mehr dadurch,
+      // dass Bildblöcke zufällig nebeneinanderstehen, sondern nur, weil
+      // jemand sie ausgewählt hat. Diese Vorlage prüft den Editor an einer
+      // Gruppe, also sagt sie das jetzt auch.
+      { type: "bild", imageId: bilder[0].id, gruppe: 1 },
+      { type: "bild", imageId: bilder[1].id, gruppe: 1 },
+      { type: "bild", imageId: bilder[2].id, gruppe: 1 },
     ]),
   );
   const travelRes = await saveTravelFromForm(tfd, admin.id);

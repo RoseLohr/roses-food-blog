@@ -435,6 +435,16 @@ export async function saveTravelFromForm(
             sortOrder: i,
             type: "bild" as const,
             imageId: b.imageId,
+            gruppe: b.gruppe,
+            // Die Regler gelten NUR am Einzelbild. Der Vertrag weist eine
+            // Gruppe mit Reglern bereits zurück, und die Datenbank ebenfalls
+            // (travel_block_bild_regler_check) — hier steht es ein drittes Mal,
+            // damit ein anderer Schreibweg nicht am Vertrag vorbei etwas
+            // Unwirksames ablegt. Drei Schichten für dieselbe Zusage sind hier
+            // kein Zuviel: Die alte Fassung ist genau an einer stillen
+            // Zweitangabe gescheitert.
+            groesse: b.gruppe === null ? b.groesse : null,
+            ausrichtung: b.gruppe === null ? b.ausrichtung : null,
           };
         }
         return {
