@@ -308,10 +308,31 @@ selbsttest() {
   pruefen_gleich "3000 gilt nicht als in 30000 enthalten" "$(hafen_abgleich 3000 '30000/tcp -> 0.0.0.0:30000')" "ABWEICHUNG"
   pruefen_gleich "kein PORT in der .env wird gesagt" "$(hafen_abgleich '' '3000/tcp -> 0.0.0.0:3000')" "KEIN PORT"
   pruefen_gleich "keine Abbildung ist kein stiller Erfolg" "$(hafen_abgleich 3000 '')" "KEINE Abbildung"
+
+  # RUNDE SIEBEN: M1 wird klassifiziert, nicht abgedruckt. Geprueft wird beides —
+  # dass die Klasse stimmt UND dass in keiner Antwort eine Adresse steht.
+  pruefen_gleich "Loopback erkannt" "$(adress_art 'proxy_pass http://127.0.0.1:3000;')" "Loopback"
+  pruefen_gleich "IPv6-Loopback erkannt" "$(adress_art 'proxy_pass http://[::1]:3000;')" "Loopback"
+  pruefen_gleich "privates Netz erkannt" "$(adress_art 'proxy_pass http://10.0.0.5:3000;')" "privates Netz"
+  pruefen_gleich "Docker-Bereich erkannt" "$(adress_art 'proxy_pass http://172.17.0.2:3000;')" "privates Netz"
+  pruefen_gleich "Containername erkannt" "$(adress_art 'set \$server "einname";')" "Containername"
+  pruefen_gleich "externe Adresse als Klasse" "$(adress_art 'proxy_pass http://203.0.113.7:3000;')" "EXTERN"
+  # Die beiden Formen, die keine Vierpunkt-Regel sieht — und die hier nicht
+  # maskiert, sondern gar nicht erst gedruckt werden.
+  pruefen_gleich "Kurzschreibweise wird nicht abgedruckt" "$(adress_art 'proxy_pass http://203.0.113;')" "nicht aufgeloest"
+  pruefen_gleich "Zahlenliteral wird nicht abgedruckt" "$(adress_art 'proxy_pass http://3405803783;')" "nicht abgedruckt"
+  for zeile in 'proxy_pass http://203.0.113;' 'proxy_pass http://3405803783;' \
+               'proxy_pass http://127.0.0.1:3000;' 'proxy_pass http://[2001:db8::1]:3000;'; do
+    antwort="$(adress_art "$zeile")"
+    case "$antwort" in
+      *[0-9].[0-9]*|*3405803783*|*2001*)
+        echo "FEHLER: adress_art gibt eine Adresse zurueck: $antwort"; fehler=1 ;;
+    esac
+  done
   pruefe "Zahlen bleiben Zahlen" "RestartCount 4" "RestartCount 4"
 
   if [ "$fehler" -eq 0 ]; then
-    echo "[erhebung] Selbsttest: 43 Fälle, Falle gestellt und Harmloses geschont ✓"
+    echo "[erhebung] Selbsttest: 51 Fälle, Falle gestellt und Harmloses geschont ✓"
     return 0
   fi
   echo "[erhebung] Selbsttest FEHLGESCHLAGEN — die Ausgabe dieses Skripts ist NICHT weitergabesicher."
@@ -341,6 +362,62 @@ abschnitt() { printf '\n## %s\n\n' "$1"; }
 # Kein Rückgabewert ungleich 0: Dieses Skript misst und weist aus, es deckelt
 # nicht. Eine Abweichung ist ein BEFUND im Bericht, kein roter Lauf.
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# M1 wird BEANTWORTET, nicht ABGEDRUCKT.
+#
+# Die Frage lautet: Wie erreicht der Proxy die Anwendung? Die Antwort ist eine
+# KLASSE — Loopback, privates/Container-Netz oder extern —, nicht eine Adresse.
+# Genau das ist der Unterschied, der die Sache beendet.
+#
+# WARUM DAS DIE EINZIGE TRAGFAEHIGE ANTWORT IST: Sieben Runden lang hat das
+# Fremd-Vendor-Panel dieselbe Klasse an immer neuen Stellen gefunden — erst
+# `::1` als Teilzeichenkette, dann IPv4-eingebettete IPv6, dann Nutzerteile,
+# dann Abfragen, dann Abfragen ohne Pfad. In der letzten Runde kamen die
+# Kurzschreibweise (`203.0.113`) und das Integer-Literal (`3405803783`) dazu:
+# Beide adressieren denselben Wirt, und keine Vierpunkt-Regel sieht sie.
+#
+# Man kann diese Liste nicht zu Ende schreiben. Eine Adresse hat zu viele
+# gueltige Schreibweisen, und jede Maskierung erkennt nur die, an die jemand
+# gedacht hat. Was man dagegen zu Ende bringen kann: die Adresse gar nicht
+# erst ausgeben. Klassifiziert wird auf dem Host, gedruckt wird die Klasse.
+# Ein Integer-Literal, eine Kurzform, eine IPv6 in beliebiger Notation — keine
+# davon kann austreten, weil keine davon in die Ausgabe gelangt.
+#
+# Was das kostet: Wer die konkrete Zieladresse braucht, liest sie oertlich.
+# Was es bringt: Diese Frage ist nicht mehr angreifbar.
+adress_art() { # adress_art <konfigurationszeile>
+  local roh="$1" wirt
+  # 1. fuehrende Direktive weg (`proxy_pass `, `set $server `), 2. Schema weg,
+  # 3. alles ab / ? # ; weg, 4. Anfuehrungszeichen weg.
+  #
+  # Die erste Fassung schnitt bis zum ERSTEN Doppelpunkt — das traf `http:` in
+  # `proxy_pass http://…` und liess `//…` stehen, was danach vollstaendig
+  # weggeschnitten wurde. Jede Adresse hiess „unlesbar"; aufgefallen ist es
+  # beim Messen, nicht beim Schreiben.
+  wirt="$(printf '%s' "$roh" \
+    | sed -E 's#^[[:space:]]*[^[:space:]]+[[:space:]]+##' \
+    | sed -E 's#^[a-zA-Z][a-zA-Z0-9+.-]*://##' \
+    | sed -E 's#[/?;].*##' \
+    | tr -d '\042\047' \
+    | tr -d '[:space:]')"
+  # Klammern einer IPv6 und den Hafen abtrennen.
+  case "$wirt" in
+    \[*\]*) wirt="${wirt#[}"; wirt="${wirt%%]*}" ;;
+    *:*) wirt="${wirt%:*}" ;;
+  esac
+  [ -n "$wirt" ] || { echo "unlesbar"; return 0; }
+  case "$wirt" in
+    localhost|127.*|::1) echo "Loopback" ;;
+    10.*|192.168.*) echo "privates Netz" ;;
+    172.1[6-9].*|172.2[0-9].*|172.3[01].*) echo "privates Netz" ;;
+    fc*:*|fd*:*) echo "privates Netz (IPv6)" ;;
+    *[!0-9.]*:*) echo "IPv6 — Klasse hier nicht bestimmt" ;;
+    *.*) echo "EXTERN oder Name — hier nicht aufgeloest" ;;
+    *[!0-9]*) echo "Containername (Container-Netz)" ;;
+    *) echo "Zahlenliteral — nicht abgedruckt, Notation unklar" ;;
+  esac
+}
+
 hafen_abgleich() { # hafen_abgleich <port-aus-env> <veroeffentlichte-ports>
   local erwartet="$1" ist="$2"
   if [ -z "$erwartet" ]; then
@@ -402,7 +479,17 @@ bericht() {
   # nicht gibt.
   PORT_ENV=""
   if [ -f "$wurzel/.env" ]; then
-    PORT_ENV="$(grep -E '^PORT=' "$wurzel/.env" | head -1 | cut -d= -f2- || true)"
+    # NUR DIE ZAHL, nicht der Rohwert. Was in der `.env` steht, ist Text; was
+    # M1/M4 beantwortet, ist eine Portnummer. Alles andere wird gemeldet statt
+    # abgedruckt — ein unerwarteter Rohwert koennte alles enthalten (Befund des
+    # Panels: „rohe .env-Werte statt Env-Semantik").
+    PORT_ROH="$(grep -E '^PORT=' "$wurzel/.env" | head -1 | cut -d= -f2- || true)"
+    PORT_ROH="$(printf '%s' "$PORT_ROH" | tr -d '[:space:]\042\047')"
+    case "$PORT_ROH" in
+      "") PORT_ENV="" ;;
+      *[!0-9]*) PORT_ENV=""; printf 'PORT in der .env:\n  (gesetzt, aber keine reine Zahl — Wert wird nicht abgedruckt)\n\n' ;;
+      *) PORT_ENV="$PORT_ROH" ;;
+    esac
   else
     printf 'PORT laut .env (autoritativ):\n  (keine .env unter %s)\n\n' "$wurzel"
   fi
@@ -436,8 +523,17 @@ bericht() {
     frage "nginx-Fassung im Proxy" podman exec "$proxy" sh -c "nginx -v 2>&1"
     # M1: Woher weiß der Proxy, wohin er weiterreicht? Aus den erzeugten
     # proxy_host-Dateien — NICHT aus der Datenbank des Proxy-Managers.
-    frage "M1 · Weiterleitungsziele (proxy_pass)" \
-      podman exec "$proxy" sh -c "grep -rhE '^\s*(proxy_pass|set \\\$server|set \\\$port)' /data/nginx/proxy_host/ | sort -u"
+    # Die Rohzeilen werden GELESEN, aber nie gedruckt — s. adress_art().
+    M1_ROH="$(podman exec "$proxy" sh -c "grep -rhE '^\s*(proxy_pass|set \\\$server)' /data/nginx/proxy_host/ | sort -u" 2>/dev/null || true)"
+    if [ -z "$M1_ROH" ]; then
+      printf 'M1 · Wie der Proxy die Anwendung erreicht:\n  (keine Weiterleitungsziele lesbar)\n\n'
+    else
+      printf 'M1 · Wie der Proxy die Anwendung erreicht (Klassen, keine Adressen):\n'
+      printf '%s\n' "$M1_ROH" | while IFS= read -r zeile; do
+        [ -n "$zeile" ] && adress_art "$zeile"
+      done | sort | uniq -c | sed 's/^/  /'
+      printf '\n'
+    fi
     frage "M2 · client_max_body_size / proxy_read_timeout (wirksam, aus nginx -T)" \
       podman exec "$proxy" sh -c "nginx -T 2>/dev/null | grep -E 'client_max_body_size|proxy_read_timeout' | sort | uniq -c"
     frage "M2 · bindet die Konfiguration http.conf und server_proxy.conf ein?" \

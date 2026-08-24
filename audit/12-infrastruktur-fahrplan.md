@@ -617,6 +617,41 @@ unverändert durch. Ausgelöst wird jetzt von `/`, `?` und `#`. Auch die Regel,
 die eine Klasse schließen soll, hatte zuerst nur die naheliegendste Form im
 Blick. Was man nicht abdruckt, muss man nicht maskieren.
 
+### Runde sieben: M1 wird beantwortet, nicht abgedruckt
+
+Der Approver nannte die Kurzschreibweise (`203.0.113`) und das Integer-Literal
+(`3405803783`). Beide adressieren denselben Wirt wie die Vierpunktnotation, und
+keine Vierpunkt-Regel sieht sie. Der Befund trifft zu.
+
+**Diese Liste lässt sich nicht zu Ende schreiben.** Eine Adresse hat zu viele
+gültige Schreibweisen — dezimal, kurz, hexadezimal, oktal, IPv6 in einem
+halben Dutzend Notationen —, und jede Maskierung erkennt nur die, an die jemand
+gedacht hat. Sieben Runden sind der Beleg: jedes Mal dieselbe Klasse, jedes Mal
+eine Stelle weiter.
+
+Was sich dagegen zu Ende bringen lässt: **die Adresse gar nicht erst ausgeben.**
+M1 fragt, WIE der Proxy die Anwendung erreicht. Die Antwort ist eine Klasse —
+Loopback, privates/Container-Netz, extern —, keine Adresse. Klassifiziert wird
+auf dem Host, gedruckt wird die Klasse:
+
+```
+M1 · Wie der Proxy die Anwendung erreicht (Klassen, keine Adressen):
+      3 Loopback
+      1 Containername (Container-Netz)
+```
+
+Gemessen an zehn Eingabeformen, darunter beide vom Approver genannten: Keine
+davon gelangt in die Ausgabe, weil keine davon gedruckt wird. Ein eigener
+Selbsttestfall prüft genau das — er sucht in JEDER Antwort nach Ziffernfolgen
+und schlägt an, wenn eine durchkommt.
+
+Was das kostet: Wer die konkrete Zieladresse braucht, liest sie örtlich. Was es
+bringt: Diese Frage ist nicht mehr angreifbar.
+
+**Dazu, kleiner:** Der `PORT`-Wert aus der `.env` wird als ZAHL geprüft und
+ausgegeben, nicht als Rohtext. Steht dort etwas anderes, wird das gemeldet
+statt abgedruckt.
+
 **Die Lehre nach fünf Runden am selben Filter:** Eine Maskierung, die Geheimnis
 an einem STICHWORT erkennt, findet nur die Geheimnisse, die sich als solche zu
 erkennen geben. Adressen, Präfixe und Nutzerteile tun das nicht. Jede der ersten vier
