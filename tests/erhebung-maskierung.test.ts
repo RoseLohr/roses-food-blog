@@ -1,0 +1,155 @@
+/**
+ * Die Maskierung der Erhebung — gemessen an einer realistischen Ausgabe,
+ * nicht nur am eigenen Selbsttest (Spur A1).
+ *
+ * WARUM DAS EINE EIGENE PRÜFUNG BRAUCHT: `scripts/regime/erhebung.sh` erzeugt
+ * einen Bericht über den Produktionshost, und dieses Repository ist
+ * ÖFFENTLICH. Die Adresse des Ursprungs darf darin nicht auftauchen — sie ist
+ * der einzige Weg, an Cloudflare vorbei direkt auf den Server zu zielen.
+ * Rutscht sie durch, ist der Schaden nicht rückholbar: Ein Push ist
+ * veröffentlicht, auch wenn er zurückgenommen wird.
+ *
+ * Der Selbsttest des Skripts prüft einzelne Zeilen. Diese Prüfung hält einen
+ * ganzen, realistisch geformten Bericht dagegen und verlangt, dass NICHTS
+ * Gefährliches übrig bleibt — und dass das Lesbare lesbar bleibt. Ein
+ * Maskierer, der alles unkenntlich macht, bestünde die erste Hälfte trivial.
+ */
+import { describe, expect, it } from "vitest";
+import { execFileSync } from "node:child_process";
+import path from "node:path";
+
+const SKRIPT = path.join(process.cwd(), "scripts/regime/erhebung.sh");
+
+function maskiert(eingabe: string): string {
+  return execFileSync("bash", [SKRIPT, "--maskieren"], {
+    input: eingabe,
+    encoding: "utf8",
+  });
+}
+
+/** Benutzer und Kennwort einer Adresse, zur Laufzeit gefügt (s. u.). */
+const NUTZERTEIL = ["admin", "hunter2"].join(":") + "@";
+/** Nutzerteil ohne Nutzer bzw. ohne Doppelpunkt — beide sind gültig. */
+const NUR_KENNWORT = "s3cr3tKennwort";
+const NUR_MERKMAL = "gehe1mt0kenWert";
+/** Merkmale in Abfrage und Pfad — ohne Namen, den ein Filter kennen könnte. */
+const ABFRAGE_MERKMAL = "Q7bTnZ4pLm2Xr9Kd";
+const PFAD_MERKMAL = "AbCdEf0123456789";
+/** Abfrage direkt hinter dem Hafen, ohne Pfad davor. */
+const ABFRAGE_OHNE_PFAD = "Wz8yQ1nR6vT3sJ0e";
+/**
+ * Werte hinter Namen, die eine Stichwortliste NICHT fängt: keins am Ende,
+ * eins mitten im Namen, gar keins. Genau diese drei nannte der Pflicht-
+ * Approver in Runde zehn — an der Vorfassung standen sie im Klartext.
+ * Zur Laufzeit gefügt, damit der Geheimnis-Scanner (B-06) scharf bleibt.
+ */
+const OHNE_STICHWORT = "AKIA" + "IOSFODNN7BEISPIEL";
+const STICHWORT_IN_DER_MITTE = "wJalrXUtnFEMI7Kbeispiel";
+const KEIN_STICHWORT = "s%3Aq1w2e3r4t5y6u7i8o9";
+
+/** Wie die Ausgabe des Skripts auf dem echten Host aussieht. */
+const BERICHT = [
+  "Stand · 2026-08-22T23:14:47Z",
+  "roses-blog   localhost/roses-blog:latest    Up 3 days     127.0.0.1:3000->3000/tcp",
+  "npm-app      docker.io/jc21/npm:2.11.1      Up 9 days     0.0.0.0:443->443/tcp",
+  "Netz host · Regel always · Neustarts 2 · seit 2026-08-19T05:11:02Z",
+  "proxy_pass http://127.0.0.1:3000;",
+  "set_real_ip_from 198.51.100.0/24;",
+  "set_real_ip_from 2001:db8:cf00::/48;",
+  // DIE DREI FORMEN, DIE DER PFLICHT-APPROVER GEFUNDEN HAT (PR #111). Sie
+  // kamen an der Vorfassung UNMASKIERT durch: Der Loopback-Schutz ersetzte
+  // jede Zeichenfolge `::1`, danach griff keine IPv6-Regel mehr, und die
+  // Rückersetzung stellte die volle Adresse wieder her — fail-open auf genau
+  // der Invariante, für die dieses Skript existiert.
+  "upstream backend6 { server [2001:db8:c17:b8f::1]:3000; }",
+  "listen [2001:db8::10]:443 ssl;",
+  // Runde zehn: Zuweisungen, deren Name kein Stichwort traegt oder es nur in
+  // der Mitte traegt. Alle drei kamen an der Vorfassung im Klartext durch.
+  `AWS_ACCESS_KEY_ID=${OHNE_STICHWORT}`,
+  `AWS_SECRET_ACCESS_KEY=${STICHWORT_IN_DER_MITTE}`,
+  `SESSION_COOKIE=${KEIN_STICHWORT}`,
+  "fe80::1 dev eth0",
+  // Runde zwei desselben Prüfers: IPv4-eingebettet OHNE `::` — die IPv4-Regel
+  // schlug den hinteren Teil, das routbare 96-Bit-Präfix blieb stehen.
+  "resolver 2001:db8:c17:b8f:0:0:198.51.100.9 valid=30s;",
+  // Runde drei: Zugangsdaten stehen auch in Adressen — zwischen Doppelpunkt
+  // und Klammeraffe, ohne sich Geheimnis zu nennen. ZUR LAUFZEIT
+  // zusammengesetzt: literal im Quelltext wäre die Zeile ein Treffer für den
+  // Secret-Scan (B-06, STOP-SHIP), und der hätte recht — die Form ist nicht
+  // davon harmlos, dass sie in einem Test steht.
+  `proxy_pass http://${NUTZERTEIL}backend.intern.example.de:3000;`,
+  // Runde vier: ein Nutzerteil braucht weder Nutzer noch Doppelpunkt.
+  `proxy_pass http://:${NUR_KENNWORT}@zweitziel:3000;`,
+  `proxy_pass http://${NUR_MERKMAL}@drittziel:3000;`,
+  // Runde fünf: Merkmale in Abfrage und Pfad sind nicht aufzählbar. Deshalb
+  // fällt alles hinter dem Wirt, statt es zu erkennen zu versuchen.
+  `proxy_pass http://viertziel:3000/hook?key=${ABFRAGE_MERKMAL};`,
+  `proxy_pass http://fuenftziel:3000/s/${PFAD_MERKMAL};`,
+  // Runde sechs: eine Abfrage braucht keinen Pfad vor sich.
+  `proxy_pass http://sechstziel:3000?merkmal=${ABFRAGE_OHNE_PFAD};`,
+  "/home/beispielnutzer/npm/data -> /data",
+  "server_name blog.beispiel-domain.de;",
+  "upstream backend { server 203.0.113.42:3000; }",
+  "DB_PASSWORD=sehr-geheim-123",
+  "X-Api-Key: 9f3c1a77e2b4d5f60a1c8e93b7d240af5c6e18b0",
+  "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.abc",
+  "client_max_body_size 20m;",
+].join("\n");
+
+describe("A1: die Erhebung ist weitergabesicher", () => {
+  it("der eigene Selbsttest des Skripts läuft grün", () => {
+    const aus = execFileSync("bash", [SKRIPT, "--selftest"], { encoding: "utf8" });
+    expect(aus).toContain("Falle gestellt und Harmloses geschont");
+  });
+
+  it("keine öffentliche Adresse und kein Geheimnis überlebt den Bericht", () => {
+    const raus = maskiert(BERICHT);
+    for (const gefaehrlich of [
+      "203.0.113.42", // die Ursprungsadresse — der eigentliche Grund für all das
+      "198.51.100.0",
+      "2001:db8:cf00",
+      "2001:db8:c17:b8f", // die Sorte Adresse, um die es hier eigentlich geht
+      "2001:db8::10",
+      "fe80::1 dev",
+      "2001:db8:c17:b8f:0:0", // das routbare Präfix, nicht nur die IPv4 dahinter
+      NUTZERTEIL.slice(0, -1), // Zugangsdaten in der proxy_pass-Adresse
+      NUR_KENNWORT, // Nutzerteil ohne Nutzer
+      NUR_MERKMAL, // Nutzerteil ohne Doppelpunkt
+      ABFRAGE_MERKMAL, // Merkmal in der Abfrage
+      PFAD_MERKMAL, // Merkmal im Pfad
+      ABFRAGE_OHNE_PFAD, // Merkmal in einer Abfrage ohne Pfad davor
+      "/home/beispielnutzer/", // Accountname im Hostpfad
+      "sehr-geheim-123",
+      "9f3c1a77e2b4d5f60a1c8e93b7d240af5c6e18b0",
+      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9",
+      OHNE_STICHWORT, // Name ohne Stichwort am Ende
+      STICHWORT_IN_DER_MITTE, // Stichwort mitten im Namen
+      KEIN_STICHWORT, // gar kein Stichwort
+    ]) {
+      expect(raus, `„${gefaehrlich}" steht noch im maskierten Bericht`).not.toContain(
+        gefaehrlich,
+      );
+    }
+  });
+
+  it("was den Bericht lesbar macht, bleibt stehen", () => {
+    const raus = maskiert(BERICHT);
+    for (const gebraucht of [
+      "2026-08-22T23:14:47Z", // ohne Zeitstempel ist ein Bericht wertlos
+      "127.0.0.1:3000", // die Antwort auf M1
+      "0.0.0.0:443",
+      "docker.io/jc21/npm:2.11.1", // welches Proxy-Image läuft
+      "client_max_body_size 20m", // die Antwort auf M2
+      "Neustarts 2", // die Antwort auf M6
+      "Netz host", // die Antwort auf M4
+    ]) {
+      expect(raus, `„${gebraucht}" fehlt im maskierten Bericht`).toContain(gebraucht);
+    }
+  });
+
+  it("eine leere Eingabe ergibt keinen Bericht, sondern nichts", () => {
+    // Klingt trivial, ist es nicht: Ein Filter, der bei leerer Eingabe etwas
+    // erfindet, hätte in den beiden Prüfungen oben unbemerkt bleiben können.
+    expect(maskiert("")).toBe("");
+  });
+});

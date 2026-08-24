@@ -141,7 +141,7 @@ test.describe("Reisebericht: Foto-Galerie / Lightbox", () => {
 
     // Eine Gruppe aus DREI Bildern gehört zusammen: Bühne und Reihe sind EINE
     // Galerie, das Pop-up blättert über alle drei und zählt alle drei.
-    const dreier = gruppen.nth(4);
+    const dreier = gruppen.nth(2);
     await expect(dreier.locator("img")).toHaveCount(3);
     await dreier.locator("button:has(img)").first().click();
     await expect(dialog).toBeVisible();

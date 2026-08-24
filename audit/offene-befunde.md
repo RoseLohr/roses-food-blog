@@ -163,10 +163,18 @@ kaschiert.
 
 ## B4 — Export/Import verlor Layout-Angaben des Bildblocks — ERLEDIGT
 
-Der Bildblock trägt keine Layout-Felder mehr; es kann nichts mehr verloren
-gehen. Der Archivvertrag ist additiv geblieben: Ein Archiv von vor dem Umbau
-bringt `groesse` noch mit, das Feld wird nur nicht mehr gelesen und kippt den
-Import nicht (festgehalten in `tests/data-transfer.integration.test.ts`).
+Der Archivvertrag ist additiv geblieben: Ein Archiv von vor dem Umbau bringt
+`groesse` noch mit, ohne den Import zu kippen (festgehalten in
+`tests/data-transfer.integration.test.ts`).
+
+**Nachtrag 08/2026 — dieser Eintrag stand hier falsch.** Er sagte „Der
+Bildblock trägt keine Layout-Felder mehr". Das war der Zustand zwischen 0012
+und dem Bildsteuerungs-Umbau; seither trägt er wieder drei: `gruppe`,
+`groesse`, `ausrichtung`. Export und Import führen alle drei (siehe
+`src/lib/data-transfer/types.ts`). Der Unterschied zur alten, verworfenen
+Fassung ist nicht die Anzahl der Felder, sondern worüber sie sprechen: Jedes
+beschreibt seinen EIGENEN Block. Das verworfene `mitVorherigem` beschrieb
+seinen Nachbarn.
 
 ---
 
@@ -177,7 +185,9 @@ drei Breiten fest. Für `/admin` gab es keine einzige Aufnahme; fünf der zwölf
 Reduktions-Kandidaten lagen dort und waren damit nicht abnehmbar.
 
 **Erledigt** mit `tests/e2e/admin-referenz.spec.ts`: 27 Admin-Seiten × drei
-Breiten = 81 Aufnahmen, 8,1 MB. Die Mechanik (Breiten, Warten, Masken,
+Breiten = 81 Aufnahmen, 8,1 MB (seit der Bildsteuerung 28 Seiten = 84
+Aufnahmen — der Reise-Editor kommt zweimal vor, einmal mit Gruppe und einmal
+mit Einzelbildern, weil sonst die Hälfte der Bedienung unfotografiert bliebe). Die Mechanik (Breiten, Warten, Masken,
 Toleranz) liegt gemeinsam in `tests/e2e/referenz.ts`; die Specs tragen nur noch
 ihre Seitenlisten.
 
@@ -428,6 +438,37 @@ der Flat-Config gewinnt der letzte Eintrag. Der Lauf war grün, die Regel hatte
 keine Wirkung. Gegenprobe gefahren: toter Import in `hero-slider.tsx`,
 `npx eslint src` — erst `warning`, nach dem Verschieben `error`, und in `tests/`
 weiterhin `warning`.
+
+---
+
+## B11 — Ein Prüfstand bewies Regeln, die die Seite nicht auslieferte — ERLEDIGT 08/2026
+
+**Befund.** `tests/e2e/mocks/einzelbild.html` hielt die geprüften CSS-Regeln
+als ABSCHRIFT in einem eigenen `<style>`. Der Prüfstand maß damit nicht die
+ausgelieferte Seite, sondern eine Kopie — und beide durften auseinanderlaufen,
+ohne dass irgendetwas rot wurde.
+
+**Beleg, und zwar sofort.** Beim Umstellen auf die echte Datei fielen auf
+Anhieb fünf Fälle um (`s/m/l × links/rechts @ 360 px`): Die Abschrift kannte
+die Medienabfrage `@media (max-width: 639px)` nicht, mit der ein Einzelbild
+unter 640 px über die volle Breite steht. Der Prüfstand war ein halbes
+Dutzend Fälle lang grün für ein Verhalten, das die Seite nie hatte.
+
+**Wurzel behoben.** Die Regeln liegen jetzt in `src/app/einzelbild.css`.
+`globals.css` bindet sie per `@import "./einzelbild.css" layer(components)`
+ein — mit `layer(...)`, weil ungelayertes CSS sonst jede Tailwind-Utility
+schlüge (B7). Der Prüfstand lädt dieselbe Datei per `<link>`; deshalb steht
+dort reines CSS ohne Tailwind-Syntax, damit eine `file://`-Seite es laden
+kann. Eine Abschrift gibt es nicht mehr.
+
+**Was dabei noch herauskam.** Die Zusage „ein linkes und ein rechtes Bild
+dürfen nebeneinander" war nie gemessen worden. Nachgemessen an echtem
+Chromium (816 px Spalte): `s` links + `m` rechts ließ dem Text ACHT Zeilen à
+rund 49 px — fünf Zeichen je Zeile. Jetzt gilt `clear: both` für jedes
+Einzelbild. Der Prüfstand zählt seither Zeilen unter einem Viertel der Spalte
+statt die schmalste zu messen: Am Übergang von einem Float zum nächsten liegt
+IMMER eine kurze Zeile, und an der war die erste Fassung der Kontrolle
+hängengeblieben (sie hätte den behobenen Zustand weiter als Fehler gemeldet).
 
 ---
 

@@ -39,19 +39,44 @@ diesem Repository arbeitet. Sie ist Teil des Governance-Regimes (A-32/A-33/A-37)
   (aktuell `false`, bis Part 2/Track C schließt). **Fail-closed.**
 
 ## Layout-Regeln, die nicht verhandelbar sind
-- **Bilder im Reisebericht:** Das ERSTE Bild einer Gruppe steht über die ganze
-  Breite, ALLE weiteren darunter in EINER Reihe, gleich hoch. Eine Gruppe ist
-  ein ununterbrochener Lauf von Bildblöcken. Der Block trägt **kein** Feld über
-  sein Aussehen — die Anordnung folgt allein aus der Position. Wer hier wieder
-  einen Regler einführt, führt die Fehlerklasse mit ein, die 0012 beseitigt hat.
+- **Bilder im Reisebericht (Fassung 08/2026, ersetzt die Fassung von 0012):**
+  Jedes Bild trägt eine **Marke** (`gruppe`) — oder keine.
+  - **Mit Marke:** Ein ununterbrochener Lauf von Bildblöcken MIT DERSELBEN
+    Marke ist eine Gruppe. Das ERSTE Bild steht über die ganze Breite, ALLE
+    weiteren darunter in EINER Reihe, gleich hoch. Innerhalb der Gruppe folgt
+    die Anordnung **allein aus der Position** — ein Bild mit Marke trägt
+    weder Größe noch Seite, und das ist erzwungen (Vertrag: `refine` in
+    `travel-blocks.ts`; Datenbank: `travel_block_bild_regler_check`).
+  - **Ohne Marke:** ein Einzelbild mit genau zwei Reglern — Größe
+    (s = 1/3, m = 1/2, l = 2/3 der Inhaltsspalte) und Seite (links/rechts).
+    Der Text läuft darum herum. Unter 640 px steht es über die volle Breite.
+  - **Kein Einzelbild teilt sich seine Zeile** (`clear: both`). Gemessen an
+    echtem Chromium: s links + m rechts ließ dem Text acht Zeilen à ~49 px
+    von 816. Eine Regel „nur s+s darf nebeneinander" wäre eine Aussage über
+    ein PAAR — also wieder eine, die den Nachbarn kennen muss.
+
+  **Warum das nicht der Regler von 0012 zurück ist:** Verboten war ein Feld,
+  das eine Aussage über den NACHBARN macht (`mitVorherigem`) — es wurde still
+  falsch, sobald sich dazwischen etwas änderte. Die Marke ist symmetrisch und
+  handelt nur vom eigenen Block: Zwei Bilder gehören zusammen, weil BEIDE
+  dieselbe Marke tragen. Fällt der Nachbar weg, bleibt die eigene Marke
+  richtig. Größe und Seite beschreiben ebenfalls nur ihr eigenes Bild und
+  gelten nur dort, wo es keine Gruppe gibt, die ihnen widersprechen könnte.
+  Wer hier ein Feld einführt, das über einen ANDEREN Block spricht, führt die
+  Fehlerklasse wieder ein.
+
+  Die Regeln für das Einzelbild stehen in **`src/app/einzelbild.css`** —
+  eigenständig, damit `tests/e2e/mocks/einzelbild.html` sie LÄDT statt sie
+  abzuschreiben. Die Abschrift dort hatte die Handy-Regel nie mitbekommen: ein
+  Prüfstand, der grün war für etwas, das die Seite gar nicht auslieferte.
 - **`src/app/globals.css` benutzt kein `@layer`.** Tailwind v4 legt seine
   Utilities in `@layer utilities`; eine blanke Projektklasse schlägt deshalb
   JEDE Utility (`class="bildgruppe mb-8"` bliebe wirkungslos). Wer einen Wert
   von außen überschreibbar machen will, braucht `@utility`. Siehe
   `audit/offene-befunde.md` B7.
 - **Vor und nach jedem Layout- oder Struktur-Umbau die Referenzaufnahmen
-  fahren:** `npx playwright test seiten-referenz admin-referenz` (114
-  Aufnahmen: elf öffentliche Seitentypen und 27 Admin-Seiten × drei Breiten).
+  fahren:** `npx playwright test seiten-referenz admin-referenz` (117
+  Aufnahmen: elf öffentliche Seitentypen und 28 Admin-Seiten × drei Breiten).
   Was sich ändern DARF, wird vorher benannt und danach gezielt neu aufgenommen —
   nie pauschal mit `--update-snapshots`.
   **Ändert ein Umbau eine Seite, die noch keine Aufnahme hat, wird sie ZUERST
@@ -104,6 +129,10 @@ neu (B6, 08/2026):
   SMTP-Settings (`src/lib/observability.ts`, `audit/slo.md`).
 - Backups: Pre-Deploy-DB-Backup + `deploy/backup.sh`; Restore-Drill:
   `scripts/regime/restore-drill.sh`.
+- Erhebung: `scripts/regime/erhebung.sh [--basis <url>]` auf dem Server —
+  beantwortet immer dieselben Fragen (M1–M6) und maskiert JEDE Zeile, damit die
+  Ausgabe in dieses ÖFFENTLICHE Repository darf. Misst und weist aus, deckelt
+  nicht.
 
 ## Takeover (Mensch, Break-Glass)
 Ein kompetenter Engineer ohne Vorwissen: (1) README §Setup folgen,

@@ -48,6 +48,8 @@ jobs:
         run: node scripts/regime/doku-gate.mjs
       - name: Doku-Gates-Selbsttest (A-36)
         run: node scripts/regime/doku-gate.mjs --selftest
+      - name: Erhebungs-Maskierung-Selbsttest (A1 — die Ausgabe ist weitergabesicher)
+        run: bash scripts/regime/erhebung.sh --selftest
       - name: Migrations-Journal streng aufsteigend (still übersprungene Migration)
         run: node scripts/regime/migrations-order.mjs
       - name: Migrations-Journal-Selbsttest
