@@ -43,20 +43,29 @@ COPY package.json package-lock.json ./
 #
 # Bis Version 12 stand dort `prebuild-install || node-gyp rebuild`, das lud die
 # Binärdatei und übersetzte nur im Notfall. Der Wechsel auf 13.0.1 (PR #46)
-# entfernte dieses Skript — seither greift der npm-Standard. 13.0.2 und 13.0.3
-# sind unverändert, ein Versionssprung behebt es also nicht.
+# entfernte dieses Skript — seither griff der npm-Standard.
+#
+# SEIT 13.0.2 IST DAS OBEN BESCHRIEBENE OBERLAUFSEITIG BEHOBEN: Das Paket führt
+# `"gypfile": false` in seiner package.json, und damit ergänzt npm den Standard
+# nicht mehr, obwohl die binding.gyp weiter mitgeliefert wird. Nachgemessen mit
+# demselben npm, Lockfile je Fassung frisch erzeugt: 13.0.1 true, 13.0.2 und
+# 13.0.3 false; der Unterschied zwischen den Tarballs ist genau dieses Feld.
+# Die Schilderung oben bleibt hier stehen, weil sie erklaert, warum diese Stufe
+# so gebaut ist — nicht als aktueller Zustand.
+#
+# `--ignore-scripts` BLEIBT davon unberuehrt. Es steht hier nicht wegen
+# better-sqlite3, sondern weil beim Installieren kein Fremdcode laufen soll.
 #
 # NICHT der Weg: Python und einen Compiler ins Build-Image legen. Sie würden
 # einen Schritt ermöglichen, der nachweislich nichts erzeugt — Bauzeit und
 # Angriffsfläche für einen Leerlauf. Ohne Install-Skripte wird die
 # mitgelieferte Binärdatei benutzt, so wie vom Paket vorgesehen.
 #
-# Pakete mit Lifecycle-Skripten im Baum sind better-sqlite3, esbuild (dessen
-# postinstall nur die Plattform-Binärdatei prüft; die API arbeitet auch ohne)
-# und fsevents (nur macOS, im Linux-Image gar nicht installiert). Alle drei sind
-# nachgemessen und in tests/build-abhaengigkeiten.test.ts ratifiziert. Kommt ein
-# VIERTES hinzu, schlägt diese Kontrolle an — dann ist zu entscheiden, nicht zu
-# hoffen.
+# Pakete mit Lifecycle-Skripten im Baum sind esbuild (dessen postinstall nur die
+# Plattform-Binärdatei prüft; die API arbeitet auch ohne) und fsevents (nur
+# macOS, im Linux-Image gar nicht installiert). Beide sind nachgemessen und in
+# tests/build-abhaengigkeiten.test.ts ratifiziert. Kommt ein DRITTES hinzu,
+# schlägt diese Kontrolle an — dann ist zu entscheiden, nicht zu hoffen.
 RUN npm ci --no-audit --no-fund --ignore-scripts
 # Schnelltest der nativen Module — schlägt hier gezielt fehl (mit Modulname
 # im Log), statt später anonym im Next-Build. Passworthashing läuft über
