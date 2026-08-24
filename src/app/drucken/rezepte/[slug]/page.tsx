@@ -5,9 +5,7 @@ import { getBaseUrl } from "@/lib/base-url";
 import { RecipeView } from "@/components/recipe-view";
 import { PrintOnLoad } from "./print-on-load";
 import { getSiteName } from "@/lib/settings";
-import { t } from "@/i18n/de";
 
-const dict = t();
 
 export const dynamic = "force-dynamic";
 

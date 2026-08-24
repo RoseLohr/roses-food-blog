@@ -28,6 +28,15 @@
  *                           MUSS zustimmen, sonst BLOCK (Veto). Siehe requireApprovals.
  *   VERIFIER_MIN_OTHER_APPROVERS  Mindestzahl WEITERER Zustimmungen neben dem
  *                           Pflicht-Approver (Default 1).
+ *   VERIFIER_AUTH_HEADER    Name des Auth-Headers, wenn das Gateway NICHT die
+ *                           OpenAI-Konvention „Authorization: Bearer" spricht
+ *                           (z. B. X-OpenCodex-API-Key). Leer/unset → Bearer.
+ *   VERIFIER_STRICT_ANY_REFUTATION  "true" → jedes high/medium-Refutat IRGENDEINER
+ *                           Stimme blockt, nicht nur das des Pflicht-Approvers.
+ *   VERIFIER_BASE_BRANCH / VERIFIER_HEAD_SHA  EXPLIZITE Diff-Range. Pflicht, wenn
+ *                           der Job nicht aus dem PR-Checkout läuft (siehe diff()):
+ *                           ohne sie kollabiert die Range und der Verifier wird
+ *                           fake-grün.
  *
  * ROBUST (2026-07-17, Root-Cause statt Workaround):
  *  - Kontext statt blinder Byte-Kappung: der Prompt bekommt den VOLLEN Datei-
@@ -58,7 +67,39 @@ import { execSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 
 const KEY = process.env.SECOND_VENDOR_API_KEY || process.env.OPENAI_API_KEY;
-const BASE = process.env.VERIFIER_BASE_URL || "https://api.openai.com/v1";
+/**
+ * Trailing Slashes ab. Jede Aufrufstelle baut `${BASE}/models` bzw.
+ * `${BASE}/chat/completions` — eine Basis MIT Schlussschrägstrich erzeugt
+ * "//models", was das Gateway mit 404 beantwortet: eine Konfigurationsrutsche,
+ * die sonst als unerklärter Panel-Ausfall auftaucht. (Verifiziert an
+ * inference.klee.me: ".../v1/models" 200, ".../v1//models" 404.)
+ */
+export function normalizeBase(raw) {
+  return String(raw ?? "").trim().replace(/\/+$/, "");
+}
+
+// `||` NACH der Normalisierung, nicht als Default in der Auswertung: GitHub
+// Actions injiziert für eine NICHT gesetzte Repo-Variable einen LEEREN STRING,
+// kein undefined — ein Default-Parameter würde "" behalten und jeden Request
+// gegen eine ungültige URL schicken.
+const BASE = normalizeBase(process.env.VERIFIER_BASE_URL) || "https://api.openai.com/v1";
+
+/**
+ * Der Auth-Header des konfigurierten Gateways. Default ist die OpenAI-Konvention
+ * `Authorization: Bearer`. VERIFIER_AUTH_HEADER benennt einen ANDEREN Header für
+ * Gateways, die Authorization für die Upstream-Weiterleitung reservieren —
+ * verifiziert an inference.klee.me, dessen providers.openai mit authMode="forward"
+ * läuft und Bearer mit 401 "opencodex API key required" beantwortet, während es
+ * X-OpenCodex-API-Key akzeptiert. Ohne diese Weiche antwortet das Gateway JEDER
+ * Stimme mit 401 — und ein Panel ohne gültige Stimmen blockiert dauerhaft.
+ */
+export function authHeader(name, key) {
+  const h = String(name ?? "").trim();
+  if (h && h.toLowerCase() !== "authorization") return { [h]: key ?? "" };
+  return { Authorization: `Bearer ${key}` };
+}
+
+const AUTH = authHeader(process.env.VERIFIER_AUTH_HEADER, KEY);
 
 // Präferenz-Reihenfolge (NEU → alt). Ohne explizites VERIFIER_MODEL nimmt der
 // Verifier das erste hiervon, das der Account tatsächlich FREIGESCHALTET hat.
@@ -89,7 +130,7 @@ function pickForPref(ids, p) {
 /** Verfügbare Modell-IDs des Accounts (GET /v1/models). null bei Nichtverfügbarkeit. */
 async function fetchModelIds() {
   try {
-    const res = await fetch(`${BASE}/models`, { headers: { Authorization: `Bearer ${KEY}` } });
+    const res = await fetch(`${BASE}/models`, { headers: AUTH });
     if (res.ok) {
       const data = await res.json();
       return (data?.data || []).map((m) => m?.id).filter(Boolean);
@@ -167,6 +208,34 @@ export function decide(v) {
   if (v.refuted && v.confidence !== "low") return { block: true, reason: v.reason ?? "Refutat (confidence ≥ medium)" };
   return { block: false };
 }
+
+/**
+ * OPT-IN-Strikt-Modus (VERIFIER_STRICT_ANY_REFUTATION=true): blockt, sobald IRGENDEINE
+ * gültige Stimme mit high/medium refutiert — nicht nur der Pflicht-Approver.
+ *
+ * STANDARD AUS, damit die dokumentierte Semantik erhalten bleibt: requireApprovals()
+ * gibt grün, wenn Sol + ein Korroborator zustimmen, AUCH wenn eine dritte Stimme
+ * refutiert. Genau diese Eigenschaft hat das Panel selbst angemerkt; sie ist hiermit
+ * betreiberseitig wählbar statt fest verdrahtet.
+ */
+export function strictAnyRefutation(votes, models) {
+  for (let i = 0; i < votes.length; i++) {
+    const x = votes[i];
+    if (x?.ok && decide(x.v).block) {
+      return {
+        block: true,
+        reason: `Strikt-Modus: ${models[i]} refutiert (confidence=${x.v?.confidence ?? "?"}) → fail-closed`,
+      };
+    }
+  }
+  return { block: false, reason: "Strikt-Modus: kein high/medium-Refutat" };
+}
+
+// Nur explizite Wahrheitswerte schalten den Modus. Ein Tippfehler in der Variable
+// darf niemals still einen anderen Modus aktivieren als den angezeigten.
+const STRICT_ANY_REFUTATION = ["1", "true", "yes"].includes(
+  String(process.env.VERIFIER_STRICT_ANY_REFUTATION ?? "").trim().toLowerCase(),
+);
 
 /**
  * Prüft, ob eine (aufgelöste) Modell-ID dem Pflicht-Approver entspricht: exakte
@@ -362,11 +431,48 @@ function sh(cmd) {
   try { return execSync(cmd, DIFF_OPTS); } catch { return ""; }
 }
 
+/**
+ * Prüft die beiden Range-Variablen, BEVOR ihre Werte in eine Shell-Zeile geraten.
+ *
+ * sh() baut seine Kommandos per String-Interpolation für execSync — ein ungeprüfter
+ * Wert ist hier eine Command-Injection, nicht bloß eine kaputte Range. Rein und
+ * testbar gehalten (kein process.exit, kein Zugriff auf process.env), damit der
+ * --selftest beide Ablehnungsgründe wirklich ausführen kann.
+ */
+export function validateRangeInputs(headSha, baseBranch) {
+  const head = String(headSha ?? "").trim();
+  const branch = String(baseBranch ?? "").trim();
+  if (head && !/^[0-9a-f]{40}$/i.test(head))
+    return { ok: false, reason: `VERIFIER_HEAD_SHA ist kein 40-stelliger Hex-SHA: ${JSON.stringify(head)}` };
+  if (branch && !/^[A-Za-z0-9._/-]+$/.test(branch))
+    return { ok: false, reason: `VERIFIER_BASE_BRANCH enthält unerlaubte Zeichen: ${JSON.stringify(branch)}` };
+  return { ok: true, head: head || "HEAD", baseRef: `origin/${branch || "main"}` };
+}
+
 /** Datei-Überblick (voll, inkl. Lockfile-Änderung) + Code-Auszug (ohne Lock-Body). */
 function diff() {
-  const base = sh("git merge-base origin/main HEAD 2>/dev/null || echo HEAD~1").trim() || "HEAD~1";
-  const stat = sh(`git diff --stat ${base}...HEAD${EXCLUDE_STAT}`).slice(0, 8000);
-  const body = sh(`git diff ${base}...HEAD${EXCLUDE_BODY}`).slice(0, 50_000);
+  // EXPLIZITE Range statt merge-base-Raten gegen HEAD.
+  //
+  // Unter pull_request_target läuft der Job aus dem DEFAULT-Branch — dort IST HEAD
+  // gleich main. Ohne die beiden Variablen kollabiert die Range auf main...main, der
+  // Diff kommt LEER zurück, und ein leerer Diff ist oben ausdrücklich „Kein Diff zu
+  // prüfen. Grün." Das Panel wäre dauerhaft fake-grün, ohne je rot zu werden.
+  const range = validateRangeInputs(process.env.VERIFIER_HEAD_SHA, process.env.VERIFIER_BASE_BRANCH);
+  if (!range.ok) {
+    console.error(`⛔ ${range.reason}`);
+    process.exit(1);
+  }
+  const { head, baseRef } = range;
+  // KEIN HEAD~1-Fallback mehr: eine fehlgeschlagene merge-base darf nicht still auf
+  // eine andere, kleinere Range ausweichen — dann prüft das Panel nicht die Änderung,
+  // die tatsächlich gemerged wird. Unbestimmte Range → fail-closed.
+  const base = sh(`git merge-base ${baseRef} ${head}`).trim();
+  if (!base) {
+    console.error(`⛔ Keine merge-base zwischen ${baseRef} und ${head} — Range unbestimmt, fail-closed.`);
+    process.exit(1);
+  }
+  const stat = sh(`git diff --stat ${base}...${head}${EXCLUDE_STAT}`).slice(0, 8000);
+  const body = sh(`git diff ${base}...${head}${EXCLUDE_BODY}`).slice(0, 50_000);
   if (!stat.trim() && !body.trim()) return "";
   return (
     `# Geänderte Dateien (vollständiger Überblick):\n${stat}\n\n` +
@@ -471,11 +577,67 @@ if (process.argv.includes("--selftest")) {
   expect(attestProof([PR(`${CH}-7`), PR(`${CH}-8`), PR("nope-1", true)], CH, 3).block === false, "Refutat-Stimme ohne Proof egal, solange Grün-Mehrheit gültige Proofs hat.");
   expect(attestProof([PR(`${CH}-7`)], CH, 1).block === false, "Panel=1 mit gültigem Proof passiert.");
   expect(attestProof([PR(`${CH}-7`), PR(`${CH}-8`), PR(`${CH}-9`)], "", 3).block === true, "leere Challenge → kein Proof gültig → fail-closed.");
-  console.log("   ✓ Selbsttest: decide() + modelMatches() + requireApprovals() (Pflicht-Approver Sol + Korroboration) + attestReasons() + attestProof() korrekt.");
+  // validateRangeInputs() (Command-Injection-Schranke + Range-Bestimmtheit)
+  expect(validateRangeInputs("", "").ok === true, "beide leer → Default origin/main...HEAD.");
+  expect(validateRangeInputs("", "").head === "HEAD", "ohne SHA bleibt HEAD.");
+  expect(validateRangeInputs("", "").baseRef === "origin/main", "ohne Branch bleibt origin/main.");
+  expect(validateRangeInputs("a".repeat(40), "main").ok === true, "40 Hex + Branch ist gültig.");
+  expect(validateRangeInputs("A".repeat(40), "main").ok === true, "Großbuchstaben-Hex ist gültig.");
+  expect(validateRangeInputs("a".repeat(39), "main").ok === false, "39 Zeichen sind kein SHA.");
+  expect(validateRangeInputs("a".repeat(41), "main").ok === false, "41 Zeichen sind kein SHA.");
+  expect(validateRangeInputs("z".repeat(40), "main").ok === false, "Nicht-Hex ist kein SHA.");
+  expect(validateRangeInputs("not-a-sha; rm -rf /", "main").ok === false, "Shell-Metazeichen im SHA werden abgelehnt (Command-Injection).");
+  expect(validateRangeInputs("", "main; rm -rf /").ok === false, "Shell-Metazeichen im Branch werden abgelehnt.");
+  expect(validateRangeInputs("", "$(id)").ok === false, "Command-Substitution im Branch wird abgelehnt.");
+  expect(validateRangeInputs("", "feat/x-1.2_y").ok === true, "übliche Branch-Zeichen bleiben erlaubt.");
+  expect(validateRangeInputs("", "feat/x").baseRef === "origin/feat/x", "der Branch wird an origin/ gehängt.");
+  // normalizeBase() (Gateway-404 durch doppelten Schrägstrich)
+  expect(normalizeBase("https://h/v1/") === "https://h/v1", "ein Schlussschrägstrich fällt weg.");
+  expect(normalizeBase("https://h/v1///") === "https://h/v1", "mehrere Schlussschrägstriche fallen weg.");
+  expect(normalizeBase("  https://h/v1  ") === "https://h/v1", "umgebender Leerraum fällt weg.");
+  expect(normalizeBase("https://h/v1") === "https://h/v1", "eine saubere Basis bleibt unverändert.");
+  expect(normalizeBase("") === "", "leer bleibt leer (der ||-Default greift danach).");
+  expect(normalizeBase(undefined) === "", "undefined wird zu leer, nicht zu \"undefined\".");
+  expect(normalizeBase("https://h/") === "https://h", "auch ohne Versionssegment wird gekürzt.");
+  // authHeader() (Gateways, die Authorization für den Upstream reservieren)
+  expect(authHeader("", "k").Authorization === "Bearer k", "ohne Variable gilt die OpenAI-Konvention.");
+  expect(authHeader(undefined, "k").Authorization === "Bearer k", "unset (undefined) → Bearer.");
+  expect(authHeader("  ", "k").Authorization === "Bearer k", "reiner Leerraum → Bearer, kein Header namens \" \".");
+  expect(authHeader("Authorization", "k").Authorization === "Bearer k", "explizit Authorization → weiterhin Bearer-Form.");
+  expect(authHeader("authorization", "k").Authorization === "Bearer k", "Groß-/Kleinschreibung ändert das nicht.");
+  expect(authHeader("X-OpenCodex-API-Key", "k")["X-OpenCodex-API-Key"] === "k", "benannter Header trägt den ROHEN Key (kein Bearer-Präfix).");
+  expect(authHeader("X-OpenCodex-API-Key", "k").Authorization === undefined, "benannter Header setzt KEIN Authorization daneben.");
+  expect(authHeader(" X-Key ", "k")["X-Key"] === "k", "Leerraum um den Namen wird getrimmt.");
+  // strictAnyRefutation() (opt-in: jedes high/medium-Refutat blockt)
+  const SM = ["gpt-5.3-codex", "gpt-5.6-sol", "gpt-4.1-mini"];
+  expect(strictAnyRefutation([A, A2, A], SM).block === false, "keine Refutate → grün.");
+  expect(strictAnyRefutation([RF, A2, A], SM).block === true, "ein high/medium-Refutat irgendwo → block (das ist der Unterschied zu requireApprovals).");
+  expect(strictAnyRefutation([RF, A2, A], SM).reason.includes("gpt-5.3-codex"), "die Meldung benennt das refutierende Modell.");
+  expect(strictAnyRefutation([A, A2, RFLOW], SM).block === false, "low-Konfidenz-Refutat blockt auch im Strikt-Modus nicht.");
+  expect(strictAnyRefutation([A, E, A], SM).block === false, "Fehler-Stimmen zählen hier nicht (requireApprovals deckt sie ab).");
+  expect(strictAnyRefutation([], []).block === false, "leeres Panel refutiert nichts (fail-closed liegt bei requireApprovals).");
+  // requireApprovals() lässt genau den Fall durch, den der Strikt-Modus fängt —
+  // ohne diese Zeile bewiese nichts, dass die Option überhaupt etwas ändert.
+  expect(requireApprovals([RF, A2, A], SM, "gpt-5.6-sol", 1).block === false
+    && strictAnyRefutation([RF, A2, A], SM).block === true,
+    "derselbe Stimmensatz: Standard grün, Strikt-Modus block — die Option ist wirksam.");
+  console.log("   ✓ Selbsttest: decide() + modelMatches() + requireApprovals() (Pflicht-Approver Sol + Korroboration) + attestReasons() + attestProof() + validateRangeInputs() + normalizeBase() + authHeader() + strictAnyRefutation() korrekt.");
   process.exit(0);
 }
 
 if (!KEY) {
+  // VERIFIER_REQUIRE_KEY=true: ein FEHLENDER Schlüssel ist dann kein dokumentiertes
+  // Residual mehr, sondern eine Fehlkonfiguration — und darf niemals still grün
+  // durchgehen. Der Workflow setzt das für Same-Repo-PRs, weil `cross-vendor` ein
+  // REQUIRED Check ist: ohne diese Schranke würde ein vertipptes/abgelaufenes Secret
+  // jeden PR grün stempeln, ohne dass je ein Modell den Diff gesehen hat.
+  if (String(process.env.VERIFIER_REQUIRE_KEY ?? "").trim().toLowerCase() === "true") {
+    console.error(
+      "⛔ VERIFIER_REQUIRE_KEY=true, aber weder SECOND_VENDOR_API_KEY noch OPENAI_API_KEY ist gesetzt.\n" +
+      "  Das Panel hat NICHT geprüft. Fail-closed statt stiller Zustimmung auf einem Required Check.",
+    );
+    process.exit(1);
+  }
   console.log(
     "[independent-verify] RESIDUAL A-39: kein Zweit-Vendor-Schlüssel (SECOND_VENDOR_API_KEY oder OPENAI_API_KEY) hinterlegt.\n" +
     "  Der unabhängige Fremd-Vendor-Verifier ist NICHT aktiv. Kompensation: deterministisches\n" +
@@ -562,7 +724,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // (400/403/404) NICHT retryen — das Ergebnis ändert sich nicht.
 const isTransient = (s) => s === 401 || s === 408 || s === 409 || s === 429 || s >= 500;
 
-const H = { "Content-Type": "application/json", Authorization: `Bearer ${KEY}` };
+const H = { "Content-Type": "application/json", ...AUTH };
 
 /** Text aus einer Responses-API-Antwort ziehen: output_text (falls vorhanden) oder
  *  aus output[].content[].text zusammensetzen. */
@@ -667,6 +829,17 @@ if (verdict.block) {
   console.error(`⛔ Pflicht-Approver-Gate blockiert die Änderung: ${verdict.reason}`);
   process.exit(1);
 }
+// STRIKT-GATE (opt-in, VERIFIER_STRICT_ANY_REFUTATION): blockt bei einem
+// high/medium-Refutat JEDER Stimme, nicht nur des Pflicht-Approvers. Läuft NACH
+// dem Pflicht-Approver-Gate, damit ein Sol-Veto weiterhin die genauere Meldung
+// liefert, und ist bei ausgeschaltetem Modus wirkungslos.
+const strict = STRICT_ANY_REFUTATION
+  ? strictAnyRefutation(votes, MODELS)
+  : { block: false, reason: "Strikt-Modus: aus" };
+if (strict.block) {
+  console.error(`⛔ Strikt-Gate: ${strict.reason}`);
+  process.exit(1);
+}
 // SCHEIN-GRÜN-GATE: Grün nur, wenn nachweislich echt gearbeitet wurde — eine
 // Mehrheit der Grün-Stimmen muss eine echte, eigenständige Begründung tragen.
 const attest = attestReasons(votes, PANEL);
@@ -681,5 +854,5 @@ if (proof.block) {
   console.error(`⛔ Proof-of-Check-Gate: ${proof.reason}`);
   process.exit(1);
 }
-console.log(`[independent-verify] Fremd-Vendor-Panel bestätigt (Pflicht-Approver: ${verdict.reason}; ${attest.reason}; ${proof.reason}). Grün.`);
+console.log(`[independent-verify] Fremd-Vendor-Panel bestätigt (Pflicht-Approver: ${verdict.reason}; ${strict.reason}; ${attest.reason}; ${proof.reason}). Grün.`);
 process.exit(0);

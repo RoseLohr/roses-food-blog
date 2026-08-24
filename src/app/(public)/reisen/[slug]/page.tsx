@@ -100,7 +100,6 @@ export default async function TravelPostPage(props: {
       <JsonLd data={articleJsonLd(base, full)} />
       <JsonLd
         data={breadcrumbJsonLd(base, [
-          [getSiteName(), "/"],
           [dict.nav.travel, "/reisen"],
           [full.post.title, `/reisen/${full.post.slug}`],
         ])}

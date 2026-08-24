@@ -4,18 +4,21 @@ import { t } from "../../src/i18n/de";
 /**
  * Bilder im Reisebericht — GEMESSEN, nicht behauptet.
  *
- * Die Regel (src/lib/bildreihen.ts) verspricht Dinge, die man nur am echten
- * Layout prüfen kann: dass die eingestellte Größe wirklich ein Anteil der
- * Spalte ist (und NICHT vom Seitenverhältnis abhängt, wie vorher), dass der
- * Text neben dem Bild weiterläuft statt darunter, dass ein Paar den Platz exakt
- * füllt und gleich hoch ist — und dass auf dem Handy Einzelbilder die Breite
- * nehmen, ein Paar aber nebeneinander bleibt.
+ * Die Regel (src/lib/bildreihen.ts) lautet:
+ *   Das ERSTE Bild einer Gruppe steht über die ganze Breite.
+ *   ALLE weiteren stehen darunter in EINER Reihe und sind gleich hoch.
  *
- * Der geseedete Bericht enthält dafür alle Fälle: ein S links, ein Paar in M
- * rechts aus 3:2 und 16:9, ein L über die ganze Spalte.
+ * Am Mock ist das schon geprüft (tests/e2e/bildgruppe-mock.spec.ts, fünf
+ * Bildzahlen × vier Breiten). Hier wird geprüft, dass es am ECHTEN Bericht
+ * genauso herauskommt — mit echten Fotos, echter Spaltenkette und dem
+ * schwebenden Inhaltsverzeichnis daneben.
+ *
+ * Der geseedete Bericht enthält alle drei Fälle: eine Gruppe aus zwei Bildern,
+ * eine aus einem einzelnen, eine aus dreien. Der Dreierfall ist der, an dem die
+ * alte Anordnung zerbrach: zwei Bilder nebeneinander, das dritte darunter.
  *
  * Ebenfalls festgenagelt: die GRENZE. Die Gerichtsfotos der Restaurant-Karten
- * behalten ihren Streifen (Regel C) — sie sind kein Bildplatz.
+ * behalten ihren Streifen — sie sind keine Bildgruppe.
  */
 const REPORT = "/reisen/streetfood-und-trattorien-in-sizilien";
 
@@ -29,193 +32,145 @@ async function bilderKaesten(wurzel: Locator) {
 }
 
 /**
- * Linke und rechte Kante der Inhaltsspalte. Gemessen am Blockcontainer
- * (`flow-root`), NICHT an einem beliebigen Absatz: Restaurant-Karten haben
- * eigene Innenabstände, ihr Text steht also gar nicht auf der Spaltenkante.
+ * Maße einer Bildgruppe: die Gruppe selbst, ihr erstes Bild, die Reihe darunter.
+ *
+ * Die Gruppe ist der Maßstab für die Spaltenbreite — sie trägt `clear: both`,
+ * steht also immer über die volle Inhaltsspalte. Ein beliebiger Absatz taugt
+ * dafür nicht: Absätze fließen neben dem Inhaltsverzeichnis und sind dort
+ * schmaler.
  */
-async function textkanten(page: import("@playwright/test").Page) {
-  const spalte = page.locator("article .flow-root").first();
-  const box = (await spalte.boundingBox())!;
-  return { links: box.x, rechts: box.x + box.width };
+async function gruppenMasse(page: import("@playwright/test").Page, n: number) {
+  return page.evaluate((index) => {
+    const g = document.querySelectorAll("article .bildgruppe")[index];
+    if (!g) return null;
+    const kasten = (el: Element) => {
+      const r = el.getBoundingClientRect();
+      return { x: r.x, y: r.y, breite: r.width, hoehe: r.height };
+    };
+    const kinder = Array.from(g.children);
+    const reihe = g.querySelector(".bildgruppe-weitere");
+    const erstes = kinder.find((k) => k !== reihe)!;
+    return {
+      gruppe: kasten(g),
+      erstes: kasten(erstes),
+      weitere: reihe
+        ? Array.from(reihe.children).map(kasten)
+        : ([] as ReturnType<typeof kasten>[]),
+    };
+  }, n);
 }
 
-test.describe("Reisebericht: Bilder im Textfluss", () => {
-  test("die Größe ist ein Anteil der Spalte, nicht eine Folge des Formats", async ({
-    page,
-  }) => {
-    await page.setViewportSize({ width: 1280, height: 900 });
+const ABSTAND = 12;
+
+test.describe("Reisebericht: Bildgruppen", () => {
+  /** Die Bildgruppen der Saat, in Dokumentreihenfolge: 1, 1, 2, 1, 3 Bilder. */
+  const GRUPPEN = [1, 1, 2, 1, 3];
+
+  test("die Saat zeigt Gruppen aus 1, 1, 2, 1 und 3 Bildern", async ({ page }) => {
     await page.goto(REPORT);
-    const kanten = await textkanten(page);
-    const spalte = kanten.rechts - kanten.links;
-
-    // S = ein Drittel, links: die linke Kante sitzt auf der Textkante.
-    const klein = page.locator("article .bildplatz.br-1-3").first();
-    const kb = (await klein.boundingBox())!;
-    expect(Math.abs(kb.width - spalte / 3)).toBeLessThan(1.5);
-    expect(Math.abs(kb.x - kanten.links)).toBeLessThan(2);
-    expect(await klein.evaluate((el) => getComputedStyle(el).float)).toBe("left");
-
-    // M = die Hälfte, rechts: die rechte Kante sitzt auf der Textkante.
-    const halb = page.locator("article .bildplatz.br-1-2").first();
-    const hb = (await halb.boundingBox())!;
-    expect(Math.abs(hb.width - spalte / 2)).toBeLessThan(1.5);
-    expect(Math.abs(hb.x + hb.width - kanten.rechts)).toBeLessThan(2);
-    expect(await halb.evaluate((el) => getComputedStyle(el).float)).toBe("right");
-  });
-
-  test("JEDES schwebende Bild hat Text neben sich, auf gleicher Höhe", async ({
-    page,
-  }) => {
-    await page.setViewportSize({ width: 1280, height: 900 });
-    await page.goto(REPORT);
-
-    // Der Befund, der diesen Test erzwungen hat: Standen Bild und Text als
-    // Geschwister im Fluss, schob `clear` das BILD nach unten, während der
-    // Textkasten oben blieb — das Bild hing dann ohne eine Zeile neben sich in
-    // der Luft (gemessen: Bild y=1596, sein Text y=1381, 54 px später zu Ende).
-    // Genau das, was ein Umfluss verhindern soll.
-    const schwebende = await page.locator("article .bildplatz.pl-links, article .bildplatz.pl-rechts").all();
-    expect(schwebende.length).toBeGreaterThan(0);
-
-    for (const bild of schwebende) {
-      const box = (await bild.boundingBox())!;
-      const links = await bild.evaluate((el) => el.classList.contains("pl-links"));
-
-      // 1. Der Text beginnt auf DERSELBEN Höhe wie das Bild, nicht darüber.
-      const textOben = await bild.evaluate((el) => {
-        const text = el.closest(".bildlauf")?.querySelector(".prose-content");
-        return text ? text.getBoundingClientRect().top + window.scrollY : null;
-      });
-      expect(textOben).not.toBeNull();
-      expect(Math.abs(textOben! - box.y)).toBeLessThan(2);
-
-      // 2. Und daneben steht wirklich eine Zeile — auf der richtigen Seite.
-      //    Das ist der Unterschied zwischen „steht im Text" und „unterbricht
-      //    den Text".
-      const daneben = await page.evaluate(
-        ({ oben, unten, kante, istLinks }) =>
-          [...document.querySelectorAll("article .prose-content p")].some((p) => {
-            const r = p.getBoundingClientRect();
-            const o = r.top + window.scrollY;
-            const u = r.bottom + window.scrollY;
-            if (!(o < unten && u > oben)) return false;
-            return istLinks ? r.right > kante : r.left < kante;
-          }),
-        {
-          oben: box.y,
-          unten: box.y + box.height,
-          kante: links ? box.x + box.width : box.x,
-          istLinks: links,
-        },
-      );
-      expect(daneben).toBe(true);
+    await expect(page.locator("article .bildgruppe")).toHaveCount(GRUPPEN.length);
+    const zahlen = [];
+    for (let i = 0; i < GRUPPEN.length; i++) {
+      const m = (await gruppenMasse(page, i))!;
+      zahlen.push(1 + m.weitere.length);
     }
+    expect(zahlen).toEqual(GRUPPEN);
   });
 
-  test("eine Zeile füllt ihre Breite exakt und ist gleich hoch", async ({ page }) => {
-    await page.setViewportSize({ width: 1280, height: 900 });
+  for (const breite of [390, 834, 1024, 1280]) {
+    test(`das erste Bild jeder Gruppe füllt die Spalte @ ${breite}px`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: breite, height: 900 });
+      await page.goto(REPORT);
+      for (let i = 0; i < GRUPPEN.length; i++) {
+        const m = (await gruppenMasse(page, i))!;
+        expect(
+          Math.abs(m.erstes.breite - m.gruppe.breite),
+          `Gruppe ${i}: erstes ${m.erstes.breite} gegen Spalte ${m.gruppe.breite}`,
+        ).toBeLessThan(0.5);
+      }
+    });
+  }
+
+  for (const breite of [390, 834, 1024, 1280]) {
+    test(`die Reihe darunter ist gleich hoch und teilt die Spalte exakt @ ${breite}px`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: breite, height: 900 });
+      await page.goto(REPORT);
+      for (let i = 0; i < GRUPPEN.length; i++) {
+        const m = (await gruppenMasse(page, i))!;
+        if (m.weitere.length === 0) continue;
+
+        // Gleiche Oberkante UND gleiche Höhe — erst beides zusammen heißt
+        // „auf gleicher Höhe" und schließt unten bündig ab.
+        const oben = m.weitere.map((w) => w.y);
+        const hoehen = m.weitere.map((w) => w.hoehe);
+        expect(Math.max(...oben) - Math.min(...oben)).toBeLessThan(1);
+        expect(Math.max(...hoehen) - Math.min(...hoehen)).toBeLessThan(1);
+
+        // Und sie stehen UNTER dem ersten Bild, nicht daneben.
+        expect(Math.min(...oben)).toBeGreaterThan(
+          m.erstes.y + m.erstes.hoehe - 1,
+        );
+
+        // Breiten plus Abstände ergeben die Spalte — kein Rest, kein Überlauf.
+        const summe =
+          m.weitere.reduce((s, w) => s + w.breite, 0) +
+          ABSTAND * (m.weitere.length - 1);
+        expect(
+          Math.abs(summe - m.gruppe.breite),
+          `Gruppe ${i}: Summe ${summe.toFixed(2)} gegen Spalte ${m.gruppe.breite.toFixed(2)}`,
+        ).toBeLessThan(0.5);
+      }
+    });
+  }
+
+  test("die Dreiergruppe steht auch auf dem iPad zusammen — der gemeldete Fall", async ({
+    page,
+  }) => {
+    // Der Befund war: zwei Bilder nebeneinander, das dritte in einer neuen
+    // Reihe darunter, alle linksbündig. Jetzt sind es EIN Bild oben und ZWEI
+    // darunter auf gleicher Höhe — und zwar auf jeder Breite.
+    await page.setViewportSize({ width: 834, height: 1100 });
     await page.goto(REPORT);
-
-    const zeile = page.locator("article .bildplatz.br-2-3 .bildpaar");
-    await expect(zeile.locator("img")).toHaveCount(2);
-    const [a, b] = await bilderKaesten(zeile);
-    const platz = (await zeile.boundingBox())!;
-
-    // Gleich hoch und dieselbe Unterkante — ohne Zuschnitt.
-    expect(Math.abs(a.height - b.height)).toBeLessThan(1.5);
-    expect(Math.abs(a.y + a.height - (b.y + b.height))).toBeLessThan(1.5);
-
-    // Beide Kanten sitzen auf der Zeile: sie füllen sie exakt.
-    expect(Math.abs(a.x - platz.x)).toBeLessThan(1.5);
-    expect(Math.abs(b.x + b.width - (platz.x + platz.width))).toBeLessThan(1.5);
-
-    // Verschieden breit, weil sich die Breite nach dem Format teilt (3:2 vs 16:9).
-    expect(Math.abs(a.width - b.width)).toBeGreaterThan(10);
-  });
-
-  test("drei S stehen nebeneinander und füllen die Spalte", async ({ page }) => {
-    await page.setViewportSize({ width: 1280, height: 900 });
-    await page.goto(REPORT);
-    const kanten = await textkanten(page);
-
-    // Das ist der Kern der Regel: Die Anteile ADDIEREN sich. Vorher teilten
-    // sich zwei Bilder EIN Drittel und ein drittes fiel ganz heraus.
-    const zeile = page.locator("article .bildplatz.br-1-1:has(.bildpaar)");
-    await expect(zeile).toHaveCount(1);
-    const kaesten = await bilderKaesten(zeile);
-    expect(kaesten.length).toBe(3);
-
-    // Von Textkante zu Textkante, lückenlos.
-    expect(Math.abs(kaesten[0].x - kanten.links)).toBeLessThan(1.5);
-    const rechteKante = kaesten[2].x + kaesten[2].width;
-    expect(Math.abs(rechteKante - kanten.rechts)).toBeLessThan(1.5);
-
-    // Alle drei gleich hoch und unten bündig — trotz dreier Formate.
-    const hoehen = kaesten.map((k) => k.height);
-    expect(Math.max(...hoehen) - Math.min(...hoehen)).toBeLessThan(1.5);
-    const unterkanten = kaesten.map((k) => k.y + k.height);
-    expect(Math.max(...unterkanten) - Math.min(...unterkanten)).toBeLessThan(1.5);
-
-    // Verschieden breit: hoch, quadratisch, quer teilen sich nach Format.
-    expect(kaesten[2].width).toBeGreaterThan(kaesten[0].width + 10);
-
-    // Die volle Zeile hat keine Seite — daneben ist kein Text mehr.
-    expect(await zeile.evaluate((el) => getComputedStyle(el).float)).toBe("none");
-  });
-
-  test("ein L-Bild steht allein über die volle Spalte", async ({ page }) => {
-    await page.setViewportSize({ width: 1280, height: 900 });
-    await page.goto(REPORT);
-    const kanten = await textkanten(page);
-    // Volle Breite hat auch eine gefüllte Zeile (S+S+S) — gemeint ist hier das
-    // EINZELNE L-Bild, also der Rahmen ohne Zeilen-Kasten darin.
-    const voll = page.locator("article .bildplatz.br-1-1:not(:has(.bildpaar))");
-    await expect(voll).toHaveCount(1);
-    const box = (await voll.boundingBox())!;
-    expect(Math.round(box.width)).toBe(Math.round(kanten.rechts - kanten.links));
-    // Die ganze Spalte hat keine Seite — kein Float, keine pl-Klasse.
-    expect(await voll.evaluate((el) => getComputedStyle(el).float)).toBe("none");
-    await expect(
-      page.locator("article .bildplatz.br-1-1.pl-links, article .bildplatz.br-1-1.pl-rechts"),
-    ).toHaveCount(0);
+    const m = (await gruppenMasse(page, 4))!;
+    expect(m.weitere).toHaveLength(2);
+    const [a, b] = m.weitere;
+    expect(Math.abs(a.y - b.y)).toBeLessThan(1);
+    expect(Math.abs(a.hoehe - b.hoehe)).toBeLessThan(1);
+    expect(b.x).toBeGreaterThan(a.x + a.breite - 1);
   });
 
   test("kein Bild läuft über die Textspalte hinaus", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto(REPORT);
-    const kanten = await textkanten(page);
-    for (const bild of await page
-      .locator("article .bildplatz, article .bildgalerie img")
-      .all()) {
-      const box = await bild.boundingBox();
-      if (!box) continue;
-      expect(box.x).toBeGreaterThanOrEqual(kanten.links - 1);
-      expect(box.x + box.width).toBeLessThanOrEqual(kanten.rechts + 1);
+    for (let i = 0; i < GRUPPEN.length; i++) {
+      const m = (await gruppenMasse(page, i))!;
+      const links = m.gruppe.x;
+      const rechts = m.gruppe.x + m.gruppe.breite;
+      for (const k of [m.erstes, ...m.weitere]) {
+        expect(k.x).toBeGreaterThanOrEqual(links - 0.5);
+        expect(k.x + k.breite).toBeLessThanOrEqual(rechts + 0.5);
+      }
     }
+    const ueberlauf = await page.evaluate(
+      () =>
+        document.documentElement.scrollWidth >
+        document.documentElement.clientWidth,
+    );
+    expect(ueberlauf).toBe(false);
   });
 
-  test("auf dem Handy nimmt ein Einzelbild die Breite, ein Paar bleibt nebeneinander", async ({
-    page,
-  }) => {
-    await page.setViewportSize({ width: 390, height: 844 });
+  test("die Bildgruppe beginnt unter dem Inhaltsverzeichnis", async ({ page }) => {
+    // `clear: both` an der Gruppe ersetzt den früheren flow-root-Kasten.
+    await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto(REPORT);
-    const kanten = await textkanten(page);
-
-    // Einzelbild: volle Breite, kein Float — ein Drittel wären hier 103 px,
-    // und daneben blieben rund fünfzehn Zeichen je Zeile.
-    const einzel = page.locator("article .bildplatz.br-1-3").first();
-    expect(await einzel.evaluate((el) => getComputedStyle(el).float)).toBe("none");
-    const einzelBox = (await einzel.boundingBox())!;
-    expect(Math.abs(einzelBox.width - (kanten.rechts - kanten.links))).toBeLessThan(2);
-
-    // Zeile: die Bilder stehen weiterhin NEBENEINANDER — es ist der einzige
-    // Fall, in dem das jemand ausdrücklich bestellt hat.
-    const paar = page.locator("article .bildpaar").first();
-    const [a, b] = await bilderKaesten(paar);
-    expect(b.x).toBeGreaterThan(a.x + a.width - 1);
-    expect(Math.abs(a.height - b.height)).toBeLessThan(1.5);
+    const toc = (await page.locator("article nav").first().boundingBox())!;
+    const m = (await gruppenMasse(page, 0))!;
+    expect(m.gruppe.y).toBeGreaterThan(toc.y + toc.height - 1);
   });
-
   test("Galerie: jede Zeile schließt unten bündig ab", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto(REPORT);

@@ -14,7 +14,10 @@ import { readWebhookLast } from "@/lib/deploy";
 import { resetRateLimits } from "@/lib/ratelimit";
 
 const KEY = "test-hook-geheim"; // kurz: kein echtes Geheimnis (B-06)
-const DEPLOY_BRANCH = "claude/roses-food-blog-vxs3vm"; // Default-Branch des Repos
+// Ein beliebiger Branchname, der NICHT `main` ist — die Attrappe belegt gerade,
+// dass der Deploy-Branch aus dem Payload kommt und nicht hartkodiert ist.
+// Früher stand hier „Default-Branch des Repos"; der ist `main`.
+const DEPLOY_BRANCH = "claude/roses-food-blog-vxs3vm";
 let tmp: string;
 
 function sign(secret: string, body: string): string {

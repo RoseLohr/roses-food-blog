@@ -8,6 +8,7 @@
  * - geschützte Kernseiten (Über mich/Datenschutz/Impressum) werden nie gelöscht.
  */
 import { eq, inArray, sql } from "drizzle-orm";
+import { referenzierteBildIds } from "@/lib/media-verwendung";
 import { db, schema } from "@/db";
 import { deleteImageFiles } from "@/lib/media";
 
@@ -22,31 +23,14 @@ export interface DeleteResult {
   imagesRemoved: number;
 }
 
+/**
+ * Die Fundstellen stehen in src/lib/media-verwendung.ts — dieselbe Liste, die
+ * das Löschen in der Mediathek befragt, bevor es ein Foto entfernt. Zwei
+ * Fassungen liefen sonst auseinander: Hier hätte eine fehlende Spalte ein Foto
+ * als Waise gelöscht, dort hätte sie eine Warnung verschluckt.
+ */
 async function referencedMediaIds(): Promise<Set<number>> {
-  const s = new Set<number>();
-  const add = (rows: { id: number | null }[]) => {
-    for (const r of rows) if (r.id != null) s.add(r.id);
-  };
-  add(await db.select({ id: schema.recipe.heroImageId }).from(schema.recipe));
-  add(await db.select({ id: schema.recipeStep.imageId }).from(schema.recipeStep));
-  add(await db.select({ id: schema.ingredient.imageId }).from(schema.ingredient));
-  add(await db.select({ id: schema.page.heroImageId }).from(schema.page));
-  add(await db.select({ id: schema.travelPost.heroImageId }).from(schema.travelPost));
-  add(
-    await db
-      .select({ id: schema.travelPostImage.imageId })
-      .from(schema.travelPostImage),
-  );
-  add(await db.select({ id: schema.restaurant.imageId }).from(schema.restaurant));
-  add(await db.select({ id: schema.travelBlock.imageId }).from(schema.travelBlock));
-  add(await db.select({ id: schema.dishImage.imageId }).from(schema.dishImage));
-  add(
-    await db
-      .select({ id: schema.homepageConfig.aboutTeaserImageId })
-      .from(schema.homepageConfig),
-  );
-  add(await db.select({ id: schema.sliderItem.imageId }).from(schema.sliderItem));
-  return s;
+  return referenzierteBildIds();
 }
 
 async function referencedIngredientIds(): Promise<Set<number>> {

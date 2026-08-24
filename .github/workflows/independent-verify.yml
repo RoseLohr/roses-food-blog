@@ -1,33 +1,207 @@
-# A-01/A-39 — Unabhängiger Fremd-Vendor-Verifier. Aktiv, SOBALD der Betreiber ein
-# Secret SECOND_VENDOR_API_KEY (anderer Anbieter als Anthropic) hinterlegt. Ohne
-# Secret meldet der Job das dokumentierte Residual und blockiert NICHT (kein
-# Fake-Grün); mit Secret greift der Verifier den Diff an und blockiert bei einem
-# hochkonfidenten Refutat.
+# A-01/A-39 — Unabhängiger Fremd-Vendor-Verifier (Regel 6 / Verfassung Artikel IV).
+#
+# DIE INVARIANTE, DIE DIESE DATEI HÄLT:
+#   Der geprüfte Artefakt-Stand darf NIE die Zugangsdaten des Prüfers halten, und
+#   Kandidaten-Code darf seine eigene Prüfung NIE authentifizieren.
+#
+# Der Vorgänger lief `on: pull_request`, checkte damit den PR-Stand aus und führte
+# scripts/regime/independent-verify.mjs AUS DIESEM CHECKOUT aus — mit dem Provider-
+# Schlüssel in der Umgebung. Einen PR zu öffnen, der genau dieses Skript ändert,
+# genügte, um beliebigen Code mit dem Credential auszuführen. Das ist ein echter
+# Defekt, und er wiegt schwerer, seit der Schlüssel nicht mehr auf einen fremden
+# Vendor zeigt, sondern auf das eigene Gateway.
+#
+# Drei Eigenschaften schließen ihn, und diese Datei hat alle drei:
+#
+#   1. `pull_request_target` — die Workflow-DEFINITION wird aus dem Default-Branch
+#      gelesen, nie aus dem Pull Request. Ein PR kann seinen eigenen Prüfer nicht
+#      umschreiben.
+#   2. `checkout` OHNE `ref:` — der ausgeführte Baum ist der des Default-Branch,
+#      also bereits geprüfter Code. DER KANDIDAT WIRD NIE AUSGECHECKT.
+#   3. Der Kandidat kommt als INERTE GIT-OBJEKTE per `git fetch` herein und wird
+#      ausschließlich über `git diff` gelesen. Er ist Daten, nie Ausführungsziel.
+#
+# Weil pull_request_target die Secrets AUCH an Fork-PRs gäbe, und weil der Diff
+# einem Sprachmodell vorgelegt wird, werden Fork-PRs NICHT automatisch geprüft:
+# sie melden Fehlschlag und brauchen eine Maintainer-Freigabe. Ungeprüfter Fremdtext,
+# der ein Modell mit Merge-Verdikt erreicht, ist eine Prompt-Injection-Fläche; keine
+# Prompt-Härtung macht das zu einem sicheren Default.
+#
+# Unter pull_request_target hängt der Check-Run am DEFAULT-BRANCH, nicht am Pull
+# Request. Das Verdikt wird deshalb ausdrücklich als Commit-Status auf den Kandidaten-
+# HEAD gePOSTet — ohne diesen Schritt könnte es nie ein Required Check sein. Der
+# Kontext heißt weiterhin `cross-vendor`, weil das Ruleset `main-protect` genau
+# diesen Namen verlangt; ihn hier umzubenennen würde den Schutz still abschalten.
+#
+# Actions sind auf unveränderliche Commit-SHAs gepinnt, nicht auf wandernde Tags:
+# `@v4` ist das, worauf dieser Tag HEUTE zeigt — eine Lieferketten-Entscheidung,
+# die sonst jemand anderes zu einem Zeitpunkt seiner Wahl trifft. Die Action-
+# VERSIONEN bleiben die des Repos (checkout v4, setup-node v4); neu ist nur das Pinning.
 name: Independent-Verify
 
 on:
-  pull_request:
-  workflow_dispatch: {}
+  pull_request_target:
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: read
+  statuses: write        # nötig: sonst landet der Check auf main (siehe Kopf)
+
+concurrency:
+  group: independent-verify-${{ github.event.number }}
+  cancel-in-progress: true
 
 jobs:
-  cross-vendor:
+  panel:
     runs-on: ubuntu-latest
+    # Hält das Provider-Credential. Die Deployment-Branch-Policy ist `main`, damit
+    # das Secret aus keiner Ref erreichbar ist, die ein Pull Request anlegen kann.
+    environment: trusted-verifier
     steps:
-      - uses: actions/checkout@v4
+      # v4.4.0 — OHNE `ref:`. Checkt bewusst den DEFAULT-BRANCH aus (Kopf, Punkt 2).
+      # Ein `ref: ${{ github.event.pull_request.head.sha }}` hier gäbe dem Kandidaten
+      # das Credential und hebelte diese ganze Datei aus.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v4
+
+      - name: Kandidat als inerte Objekte holen (nie ausgecheckt, nie ausgeführt)
+        env:
+          PR_NUMBER: ${{ github.event.number }}
+        run: |
+          git fetch --no-tags origin "+refs/pull/${PR_NUMBER}/head:refs/candidate"
+          echo "Kandidaten-Objekt vorhanden: $(git rev-parse refs/candidate)"
+
+      # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: "22"
-      - name: Fremd-Vendor-Verifier (Regel 6 / Artikel IV)
+
+      # Die Redaktion deckt die volle Basis-URL ab, aber nie die Teile, die für sich
+      # allein auftauchen: die Authority in einem URL-Echo, der nackte Hostname in
+      # einem Resolver-Fehler, ein IPv6-Literal ohne Klammern in einem Socket-Fehler.
+      # Eine Maske trifft EIN Literal und sonst nichts, also braucht jede Form ihre
+      # eigene. Masken gelten job-weit, aber nur für Zeilen NACH ihrer Registrierung —
+      # dieser Schritt muss deshalb vor dem Panel laufen.
+      #
+      # Ein echter Parser statt Shell-Parameterexpansion, weil Userinfo, ein Port, ein
+      # geklammertes IPv6-Literal und eine Query ohne Pfad jeweils eine handgeschriebene
+      # Zerlegung aushebeln — und ein Fehlgriff veröffentlicht still genau den Endpunkt,
+      # den dieser Schritt als Einziges verbirgt.
+      - name: Verifier-Endpunkt im Log maskieren
         env:
-          # Aktiviert, sobald EINER der beiden Schlüssel gesetzt ist. OPENAI_API_KEY
-          # wird akzeptiert, da OpenAI der Default-Anbieter ist (kein Umbenennen nötig).
-          SECOND_VENDOR_API_KEY: ${{ secrets.SECOND_VENDOR_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          VERIFIER_BASE_URL: ${{ vars.VERIFIER_BASE_URL }}
-          VERIFIER_MODEL: ${{ vars.VERIFIER_MODEL }}
+          VERIFIER_BASE_URL: ${{ secrets.VERIFIER_BASE_URL }}
+        run: |
+          node - <<'NODEEOF'
+          const raw = (process.env.VERIFIER_BASE_URL || "").trim();
+          if (!raw) {
+            // Kein Gateway konfiguriert. Das Skript fällt auf den Vendor-Default
+            // zurück, und es gibt nichts Endpunkt-Förmiges zu verbergen.
+            process.exit(0);
+          }
+          // Die schemenlose Form NUR versuchen, wenn wirklich kein Schema da ist.
+          // Sonst wird ein kaputtes "https://" zu "http://https://" umgedeutet und der
+          // Hostname faellt auf das Literal "https" — eine Maske, die danach jedes
+          // "https" im Log schwaerzt, statt den Fehler zu melden. Kein Leck, aber sie
+          // macht das Log unlesbar und verdeckt genau die Fehler, die man dann sucht.
+          //
+          // BEKANNTE KANTE: "https:///v1" ist nach WHATWG ein gueltiger URL mit dem
+          // Host "v1", wird also als Host maskiert. Das trifft nur eine Basis-URL, die
+          // ohnehin nicht verbindet, und jede "sieht das nach einem Host aus"-Heuristik
+          // wuerde legitime einteilige interne Hostnamen (http://gateway/v1) ablehnen.
+          // Bewusst so belassen — gleiche Eigenschaft wie in der Referenz.
+          const hasScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(raw);
+          let u = null;
+          for (const cand of hasScheme ? [raw] : ["http://" + raw]) {
+            try { u = new URL(cand); break; } catch { /* naechste Form */ }
+          }
+          if (!u || !u.hostname) {
+            // Fail closed. Einen Endpunkt, den wir nicht parsen können, können wir
+            // nicht zu redigieren versprechen — und das Panel druckte ihn Sekunden später.
+            console.log("::error::VERIFIER_BASE_URL ist gesetzt, aber es liess sich kein Host daraus lesen; das Panel laeuft nicht unmaskiert");
+            process.exit(1);
+          }
+          const userinfo = u.username ? u.username + (u.password ? ":" + u.password : "") + "@" : "";
+          const forms = new Set([raw, userinfo + u.host, u.host, u.hostname]);
+          // Was ein Verbindungsfehler druckt — Klammern sind URL-Syntax, kein Hostname.
+          if (u.hostname.startsWith("[") && u.hostname.endsWith("]"))
+            forms.add(u.hostname.slice(1, -1));
+          // Ein Unicode-Host wird unter seiner IDNA-Form aufgeloest, und DIESE Form
+          // nennt ein Resolver- oder Socket-Fehler: derselbe Host, ein anderes Literal,
+          // also eine eigene Maske. new URL() punycodiert bereits — hier kommt die
+          // URSPRUNGSFORM aus dem Rohwert dazu, falls sie sich unterscheidet.
+          const m = /^[a-z][a-z0-9+.-]*:\/\/(?:[^/?#@]*@)?([^/?#]*)/i.exec(raw) || /^([^/?#]*)/.exec(raw);
+          if (m && m[1]) {
+            forms.add(m[1]);
+            forms.add(m[1].replace(/:\d+$/, ""));
+          }
+          for (const f of [...forms].sort()) {
+            if (!f) continue;
+            // Auch case-gefaltet: Masken treffen literal, und ein Host kann in anderer
+            // Schreibweise zurueckgegeben werden, als er konfiguriert wurde.
+            for (const v of [...new Set([f, f.toLowerCase()])]) console.log(`::add-mask::${v}`);
+          }
+          NODEEOF
+
+      - name: Fremd-Vendor-Review-Panel (Regel 6 / Artikel IV)
+        id: panel
+        # Fork-PRs werden abgelehnt statt geprüft — siehe Kopf.
+        #
+        # `success()` steht ausdrücklich da, nicht implizit. Ein eigenes `if` trägt es
+        # ohnehin per Default, ein fehlgeschlagener Masken-Schritt überspringt diesen
+        # also bereits — aber dieser Default ist genau dort unsichtbar, wo er zählt,
+        # und was er hier hält, ist die Regel: das Panel läuft nie, und druckt damit
+        # nie den Endpunkt, bevor die Redaktion registriert ist.
+        if: success() && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          SECOND_VENDOR_API_KEY: ${{ secrets.TRUSTED_VERIFIER_API_KEY }}
+          # Ein SECRET, keine `vars.`-Eintragung, und der Unterschied ist der ganze
+          # Punkt: der Runner echot jeden env-Block ins Log, redigiert dort Secrets
+          # und NIE Variablen. Als Variable veröffentlicht das den Gateway-Endpunkt
+          # im Klartext, in einem öffentlichen Log, bei jedem Panel-Lauf. Als Secret
+          # redigiert der Runner ihn zusätzlich aus dem, was das Skript druckt — und
+          # genau dort taucht die URL sonst auf, nämlich bei einem fehlgeschlagenen Call.
+          VERIFIER_BASE_URL: ${{ secrets.VERIFIER_BASE_URL }}
+          # Gateways, die Authorization für die Upstream-Weiterleitung reservieren,
+          # brauchen einen anderen Header; inference.klee.me beantwortet Bearer mit 401.
+          VERIFIER_AUTH_HEADER: ${{ vars.VERIFIER_AUTH_HEADER }}
+          VERIFIER_PANEL_MODELS: ${{ vars.VERIFIER_PANEL_MODELS }}
+          VERIFIER_REQUIRED_APPROVER: ${{ vars.VERIFIER_REQUIRED_APPROVER }}
+          VERIFIER_MIN_OTHER_APPROVERS: ${{ vars.VERIFIER_MIN_OTHER_APPROVERS }}
+          VERIFIER_STRICT_ANY_REFUTATION: "true"
+          # EXPLIZITE Range. Der Job läuft aus dem Default-Branch, wo HEAD gleich main
+          # IST — ohne diese beiden kollabiert der Diff auf main...main, kommt leer
+          # zurück, und das Panel wird dauerhaft fake-grün.
+          VERIFIER_BASE_BRANCH: ${{ github.event.pull_request.base.ref }}
+          VERIFIER_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          # Ein fehlender Schlüssel ist auf einem Same-Repo-PR eine Fehlkonfiguration,
+          # nie ein Residual — und `cross-vendor` ist ein Required Check. Ohne diese
+          # Zeile stempelt ein vertipptes Secret jeden PR grün. Fork-PRs erreichen
+          # diesen Schritt gar nicht erst (siehe `if:` oben).
+          VERIFIER_REQUIRE_KEY: "true"
         run: node scripts/regime/independent-verify.mjs
+
+      - name: Verdikt auf den Kandidaten-HEAD veröffentlichen
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          OUTCOME: ${{ steps.panel.outcome }}
+          IS_FORK: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
+        run: |
+          if [ "$IS_FORK" = "true" ]; then
+            state=failure
+            desc="Fork-PR: Panel nicht gelaufen — Maintainer-Review nötig"
+          elif [ "$OUTCOME" = "success" ]; then
+            state=success
+            desc="Fremd-Vendor-Panel bestätigt"
+          else
+            state=failure
+            desc="Fremd-Vendor-Panel verweigert — siehe Job-Log"
+          fi
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/statuses/${HEAD_SHA}" \
+            -f state="$state" \
+            -f context="cross-vendor" \
+            -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            -f description="$desc"
+          [ "$state" = "success" ] || exit 1

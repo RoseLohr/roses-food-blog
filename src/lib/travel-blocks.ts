@@ -9,22 +9,22 @@
  * travel_post.search_text die FTS-Quelle bildet.
  */
 import { z } from "zod";
-import { BILD_GROESSEN, BILD_PLAETZE } from "@/lib/bildreihen";
 
 const blockSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("text"), markdown: z.string().max(20000) }),
   z.object({
     type: z.literal("bild"),
     imageId: z.number().int().positive(),
-    /** Breite als Anteil der Spalte: s = Drittel, m = Hälfte, l = ganze
-     *  Spalte (siehe lib/bildreihen.ts). Alle drei Felder mit Default, damit
-     *  gespeicherte Blockfolgen ohne sie weiterhin parsebar bleiben. */
-    groesse: z.enum(BILD_GROESSEN).default("m"),
-    /** Seite, an der das Bild steht; bei `l` bedeutungslos. */
-    platz: z.enum(BILD_PLAETZE).default("rechts"),
-    /** „neben dem Bild darüber" — die einzige Beziehung zwischen zwei
-     *  Blöcken, und sie wird gesagt statt aus Nachbarschaft erraten. */
-    mitVorherigem: z.boolean().default(false),
+    /* Der Bildblock trägt NICHTS über sein Aussehen. Die Anordnung folgt
+       allein aus der Position: Das erste Bild einer Gruppe steht über die
+       ganze Breite, alle weiteren teilen sich die Reihe darunter (siehe
+       lib/bildreihen.ts).
+
+       Hier standen früher `groesse`, `platz` und `mitVorherigem`. Alle drei
+       waren Felder AM BLOCK, die eine Aussage über seine NACHBARN machten —
+       und genau daran brach die Anordnung reihenweise, weil ein Block
+       dazwischen, ein Umsortieren oder ein Größenwechsel die Aussage
+       unbemerkt falsch machte. */
   }),
   z.object({
     type: z.literal("restaurant"),

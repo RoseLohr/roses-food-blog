@@ -9,24 +9,12 @@
  * Regression, die die Härtung schließt: der alte Pfad löschte nur per contactId
  * und ließ diese Zeile stehen — rot vorher, grün nachher.
  */
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { execSync } from "node:child_process";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
+import { frischeDb } from "./helfer/frische-db";
 
-let tmp: string;
+frischeDb("erasure");
+
 const CANARY = "kanarie-loeschtest@example.invalid";
-
-beforeAll(() => {
-  tmp = fs.mkdtempSync(path.join(os.tmpdir(), "roses-erasure-"));
-  process.env.DATA_DIR = tmp;
-  execSync("node scripts/migrate.mjs", { env: { ...process.env, DATA_DIR: tmp } });
-});
-
-afterAll(() => {
-  fs.rmSync(tmp, { recursive: true, force: true });
-});
 
 describe("Erasure (anonymizeContact) — kein PII-Rest über alle Stores", () => {
   it("entfernt die Kanarien-Adresse aus jedem abgeleiteten Store", async () => {

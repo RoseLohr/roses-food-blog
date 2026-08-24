@@ -76,4 +76,28 @@ export default tseslint.config(
       "no-empty": ["error", { allowEmptyCatch: false }],
     },
   },
+
+  // Unbenutzte Variablen sind in `src/` ein FEHLER, nicht bloß eine Warnung.
+  //
+  // Befund B10 (08/2026): Beim Umbau der Brotkrume blieben VIER Importe stehen,
+  // die niemand mehr brauchte. `tsc --noEmit` sieht das nicht, und ESLint
+  // meldete es als Warnung — `npm run lint` blieb grün, das Gate liest nur
+  // Fehler. Ein toter Import ist keine Kosmetik: Er verfälscht das
+  // Abhängigkeitsbild, das boundary-check.mjs und deps-existence.mjs lesen, und
+  // kann beim Bündeln Gewicht kosten, wenn das Modul Nebenwirkungen hat.
+  //
+  // Voraussetzung war das Aufräumen der acht Bestandsfälle — erst putzen, dann
+  // schärfen, sonst ist der erste Lauf rot und die Regel wird wieder gelockert.
+  //
+  // NUR für `src/`: In Tests darf aus guten Gründen unscharf typisiert und mal
+  // eine Hilfsvariable stehen gelassen werden; dort bleibt es eine Warnung.
+  {
+    files: ["src/**/*.{ts,tsx}"],
+    rules: {
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrorsIgnorePattern: "^_" },
+      ],
+    },
+  },
 );

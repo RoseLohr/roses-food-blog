@@ -2,23 +2,16 @@
  * Integrationstest der Einstellungen: DB-Werte haben Vorrang vor .env, leere
  * Werte fallen auf .env zurück, und der Mailer übernimmt geänderten SMTP-Zugang.
  */
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { execSync } from "node:child_process";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
+import { frischeDb } from "./helfer/frische-db";
 
-let tmp: string;
+process.env.BASE_URL = "https://blog.example.de";
 
-beforeAll(() => {
-  tmp = fs.mkdtempSync(path.join(os.tmpdir(), "roses-settings-"));
-  process.env.DATA_DIR = tmp;
-  process.env.BASE_URL = "https://blog.example.de";
-  execSync("node scripts/migrate.mjs", { env: { ...process.env, DATA_DIR: tmp } });
-});
+frischeDb("settings");
 
+// Die Tests setzen .env-Werte, um den Rückfall zu zeigen — die dürfen nicht
+// in andere Testdateien durchschlagen.
 afterAll(() => {
-  fs.rmSync(tmp, { recursive: true, force: true });
   delete process.env.SMTP_HOST;
   delete process.env.EMAIL_RATE_PER_MINUTE;
 });

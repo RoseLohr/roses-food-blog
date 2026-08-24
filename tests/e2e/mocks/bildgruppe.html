@@ -1,0 +1,108 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Mock: Bildgruppe</title>
+<!--
+  SCHRITT 1 — Der Entwurf der neuen Bildanordnung, isoliert.
+
+  REGEL (vorgegeben): Das ERSTE Bild einer Gruppe steht über die ganze Breite.
+  ALLE weiteren — ob zwei, drei oder vier — stehen darunter in EINEM Behälter,
+  teilen sich die Breite und sind gleich hoch.
+
+  Das ersetzt fünf Regler (Größe s/m/l, Platz links/rechts, „mit vorherigem",
+  Sechstel-Summe, Umfluss-Grenze) durch eine Regel ohne Einstellung. Nichts am
+  Block entscheidet mehr über die Anordnung — nur noch die POSITION in der
+  Gruppe.
+
+  Die Mechanik der unteren Reihe ist die einzige Stelle mit Rechnung, und sie
+  ist bereits im Haus erprobt: `flex: var(--ar) 1 0`. `flex-basis: 0` heißt,
+  die gesamte Breite ist freier Platz; verteilt wird er im Verhältnis der
+  Seitenverhältnisse. Damit ist Breite_i / Format_i für alle gleich — also
+  sind alle exakt gleich hoch und schließen unten bündig ab, ohne Zuschnitt
+  und ohne eine Zeile JavaScript.
+
+  Diese Datei ist der Prüfstand: sie enthält NUR die Kandidaten-Regeln, damit
+  ein Fehlschlag nicht in fremdem CSS versickert. Was hier trägt, wandert
+  unverändert nach src/app/globals.css.
+-->
+<style>
+  /* --- Kandidat: die einzigen neuen Regeln ------------------------------- */
+  .bildgruppe {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin: 0 0 14px;
+  }
+  .bildgruppe > * {
+    margin: 0;
+  }
+  .bildgruppe img {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+  /* Die weiteren Bilder: eine Reihe, die NICHT umbricht. Ein Umbruch wäre
+     genau der Fehler, den diese Umstellung beseitigt. */
+  .bildgruppe-weitere {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+  }
+  .bildgruppe-weitere > * {
+    flex: var(--ar) 1 0;
+    min-width: 0;
+  }
+
+  /* --- Nur Prüfstand: Spalte und Sichtbarkeit ---------------------------- */
+  body { margin: 0; font: 14px system-ui, sans-serif; background: #fff; }
+  .spalte { max-width: 816px; margin: 0 auto; padding: 16px; }
+  .platzhalter { background: #cfd8dc; }
+  h2 { font-size: 14px; margin: 24px 0 8px; color: #37474f; }
+</style>
+
+<div class="spalte">
+  <!-- Jede Gruppe trägt ihre Bildzahl im data-Attribut, damit der Test sie
+       ansprechen kann, ohne Reihenfolgen zu zählen. -->
+
+  <h2>1 Bild</h2>
+  <figure class="bildgruppe" data-gruppe="1">
+    <a data-rolle="erstes"><img class="platzhalter" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1200' height='800'%3E%3C/svg%3E" alt=""></a>
+  </figure>
+
+  <h2>2 Bilder</h2>
+  <figure class="bildgruppe" data-gruppe="2">
+    <a data-rolle="erstes"><img class="platzhalter" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1200' height='800'%3E%3C/svg%3E" alt=""></a>
+    <div class="bildgruppe-weitere">
+      <a style="--ar:1.5"><img class="platzhalter" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1200' height='800'%3E%3C/svg%3E" alt=""></a>
+    </div>
+  </figure>
+
+  <h2>3 Bilder (der gemeldete Fall)</h2>
+  <figure class="bildgruppe" data-gruppe="3">
+    <a data-rolle="erstes"><img class="platzhalter" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1200' height='800'%3E%3C/svg%3E" alt=""></a>
+    <div class="bildgruppe-weitere">
+      <a style="--ar:1.5"><img class="platzhalter" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1200' height='800'%3E%3C/svg%3E" alt=""></a>
+      <a style="--ar:0.75"><img class="platzhalter" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='800'%3E%3C/svg%3E" alt=""></a>
+    </div>
+  </figure>
+
+  <h2>4 Bilder</h2>
+  <figure class="bildgruppe" data-gruppe="4">
+    <a data-rolle="erstes"><img class="platzhalter" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1200' height='800'%3E%3C/svg%3E" alt=""></a>
+    <div class="bildgruppe-weitere">
+      <a style="--ar:1.5"><img class="platzhalter" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1200' height='800'%3E%3C/svg%3E" alt=""></a>
+      <a style="--ar:0.75"><img class="platzhalter" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='800'%3E%3C/svg%3E" alt=""></a>
+      <a style="--ar:1"><img class="platzhalter" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='800' height='800'%3E%3C/svg%3E" alt=""></a>
+    </div>
+  </figure>
+
+  <h2>5 Bilder (mehr, als je bestellt wurde — muss trotzdem tragen)</h2>
+  <figure class="bildgruppe" data-gruppe="5">
+    <a data-rolle="erstes"><img class="platzhalter" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1200' height='800'%3E%3C/svg%3E" alt=""></a>
+    <div class="bildgruppe-weitere">
+      <a style="--ar:1.5"><img class="platzhalter" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1200' height='800'%3E%3C/svg%3E" alt=""></a>
+      <a style="--ar:0.75"><img class="platzhalter" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='800'%3E%3C/svg%3E" alt=""></a>
+      <a style="--ar:1"><img class="platzhalter" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='800' height='800'%3E%3C/svg%3E" alt=""></a>
+      <a style="--ar:2.4"><img class="platzhalter" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1920' height='800'%3E%3C/svg%3E" alt=""></a>
+    </div>
+  </figure>
+</div>

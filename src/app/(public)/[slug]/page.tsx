@@ -11,10 +11,7 @@ import { getPublicBaseUrl } from "@/lib/base-url";
 import { JsonLd, breadcrumbJsonLd } from "@/lib/jsonld";
 import { PageTracker } from "@/components/page-tracker";
 import { ResponsiveImg } from "@/components/responsive-img";
-import { getSiteName } from "@/lib/settings";
-import { t } from "@/i18n/de";
 
-const dict = t();
 
 export const dynamic = "force-dynamic";
 
@@ -55,7 +52,6 @@ export default async function CmsPage(props: {
       <PageTracker contentType="seite" contentId={page.id} path={`/${page.slug}`} />
       <JsonLd
         data={breadcrumbJsonLd(base, [
-          [getSiteName(), "/"],
           [page.title, `/${page.slug}`],
         ])}
       />

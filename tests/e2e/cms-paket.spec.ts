@@ -1,6 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import fs from "node:fs";
 import path from "node:path";
+import Database from "better-sqlite3";
 import { t } from "../../src/i18n/de";
 
 const dict = t();
@@ -217,4 +218,23 @@ test("Rezept-Desktop: Artikel schmaler (max-w-4xl) und zentriert", async ({ page
   // max-w-4xl = 896 px; Viewport 1280 → schmaler als das Layout und mittig.
   expect(box!.width).toBeLessThanOrEqual(897);
   expect(box!.x).toBeGreaterThan(100);
+});
+
+/**
+ * Aufräumen (B8): Dieser Spec schreibt über den Admin `reisen_text_unten` —
+ * und alle E2E-Specs teilen sich EINE Datenbank. Bleibt der Testtext stehen,
+ * sieht ihn jeder spätere Lauf; genau daran waren die Referenzaufnahmen
+ * gescheitert (allein grün, im Verbund rot).
+ *
+ * Die Saat setzt den Schlüssel gar nicht, „zurücksetzen" heißt hier also
+ * ENTFERNEN — ein leerer Wert wäre ein anderer Zustand als keiner. Geschrieben
+ * wird direkt in die Datei statt über die Oberfläche: Über das Formular käme
+ * `""` heraus, nicht die Abwesenheit.
+ */
+test.afterAll(() => {
+  const db = new Database(
+    path.resolve(process.cwd(), ".pw-data/app.db"),
+  );
+  db.prepare("DELETE FROM setting WHERE key = ?").run("reisen_text_unten");
+  db.close();
 });

@@ -15,7 +15,6 @@ import { taxonomyBySlug } from "@/lib/taxonomies";
 import { PageTracker } from "@/components/page-tracker";
 import { getPublicBaseUrl } from "@/lib/base-url";
 import { JsonLd, breadcrumbJsonLd } from "@/lib/jsonld";
-import { getSiteName } from "@/lib/settings";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -75,7 +74,6 @@ export default async function CategoryPage(props: {
       />
       <JsonLd
         data={breadcrumbJsonLd(base, [
-          [getSiteName(), "/"],
           [dict.recipeList.title, "/rezepte"],
           [cat.name, `/rezepte/kategorie/${cat.slug}`],
         ])}

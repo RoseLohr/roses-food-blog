@@ -1,9 +1,25 @@
-# ZAP-Baseline-Regeln (A-08). Header-Regeln, die in Produktion von nginx gesetzt
-# werden (in CI aber fehlen), auf WARN statt FAIL — keine Falsch-Positiven.
-# Format: <ruleId>\t<WARN|IGNORE|FAIL>\t<comment>
-10035	WARN	Strict-Transport-Security (nginx in Prod)
-10038	WARN	Content-Security-Policy (nginx in Prod)
-10020	WARN	X-Frame-Options (nginx in Prod)
-10021	WARN	X-Content-Type-Options (nginx in Prod)
-10063	WARN	Permissions-Policy (nginx in Prod)
+# ZAP-Baseline-Regeln (A-08).
+#
+# Bis 08/2026 standen fuenf Header-Regeln auf WARN, begruendet mit „in
+# Produktion vom Reverse Proxy gesetzt (in CI aber fehlen)". Fuer vier davon war
+# das nachweislich falsch: Content-Security-Policy, X-Content-Type-Options,
+# X-Frame-Options und Permissions-Policy setzt die ANWENDUNG selbst, fuer JEDE
+# Route (next.config.ts, source: "/:path*"). Nachgemessen an der gebauten App in
+# genau der Konfiguration, die dast.yml faehrt — die Kopfzeilen stehen auf der
+# Startseite UND auf /health. Sie fehlten in CI also nie; vier Kontrollen waren
+# ohne Grund entschaerft. Sie stehen jetzt wieder auf FAIL.
+#
+# HSTS (10035) bleibt WARN: Das gehoert zur TLS-Terminierung, die Anwendung
+# setzt es bewusst nicht. WO es gesetzt wird, ist NICHT erhoben — deshalb steht
+# hier keine Begruendung, sondern eine offene Frage.
+#
+# tests/zap-regeln.test.ts haelt beides fest und verbietet, dass eine Regel
+# wieder fuer eine Kopfzeile herabgestuft wird, die die Anwendung selbst setzt.
+#
+# Format: <ruleId>	<WARN|IGNORE|FAIL>	<comment>
+10035	WARN	Strict-Transport-Security — wo es gesetzt wird, ist nicht erhoben (offene Messfrage)
+10038	FAIL	Content-Security-Policy — setzt next.config.ts fuer /:path*
+10020	FAIL	X-Frame-Options — setzt next.config.ts fuer /:path*
+10021	FAIL	X-Content-Type-Options — setzt next.config.ts fuer /:path*
+10063	FAIL	Permissions-Policy — setzt next.config.ts fuer /:path*
 10096	WARN	Timestamp Disclosure (rauscharm)

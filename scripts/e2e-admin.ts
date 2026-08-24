@@ -55,9 +55,9 @@ async function main() {
     "bloecke",
     JSON.stringify([
       { type: "text", markdown: "Ausgangstext." },
-      { type: "bild", imageId: bilder[0].id, groesse: "m" },
-      { type: "bild", imageId: bilder[1].id, groesse: "m" },
-      { type: "bild", imageId: bilder[2].id, groesse: "l" },
+      { type: "bild", imageId: bilder[0].id },
+      { type: "bild", imageId: bilder[1].id },
+      { type: "bild", imageId: bilder[2].id },
     ]),
   );
   const travelRes = await saveTravelFromForm(tfd, admin.id);
