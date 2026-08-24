@@ -466,6 +466,62 @@ nirgends aufrufen können — genau die Lücke, gegen die diese Datei geschriebe
 ist, nur eine Dateiendung weiter. Sie liest jetzt beide, und die fünf
 Shell-Skripte ohne Selbsttest sind namentlich begründet.
 
+### Nachtrag: acht Befunde des Pflicht-Approvers, sieben davon zutreffend
+
+Das Fremd-Vendor-Panel hat die erste Fassung zerlegt. Jeder Befund wurde
+nachgemessen, nicht geglaubt — in beide Richtungen.
+
+**Der schwerste: die Kern-Invariante fiel fail-open.** Der Loopback-Schutz
+ersetzte die Zeichenfolge `::1` ÜBERALL. Jede komprimierte IPv6, deren Rest mit
+`1` beginnt, verlor damit ihr `::`; danach griff keine der beiden IPv6-Regeln
+mehr, und die Rückersetzung am Ende stellte die volle Adresse wieder her.
+Gemessen an der Vorfassung:
+
+```
+2a01:4f8:c17:b8f::1   → unverändert durchgelaufen
+2001:db8::10          → unverändert durchgelaufen
+fe80::1               → unverändert durchgelaufen
+```
+
+Also genau die Sorte Adresse, gegen deren Veröffentlichung dieses Skript
+geschrieben ist. Der Selbsttest deckte den Fall nicht ab: Er kannte
+`::dead:beef` und `2400:cb00::/32`, und keine der beiden endet auf `::1…`.
+Geschützt wird jetzt nur ein freistehendes `::1`.
+
+**Der peinlichste: eine Zusage ohne Deckung.** Kopf, Commit und Fahrplan
+sagten „das Skript liest die `.env` und VERGLEICHT sie mit dem, was der
+Container veröffentlicht". Der Code druckte beide Werte untereinander und
+überließ den Vergleich dem Auge. Jetzt gibt es `hafen_abgleich` als eigene
+Funktion — mit echten Argumenten im Selbsttest geprüft statt über den Text
+behauptet. Der Selbsttest hat dabei gleich den nächsten Fehler gefunden: Ein
+Vergleich gegen die ganze Zeile fand die 3000 in `3000/tcp` und nannte
+`3000/tcp -> 0.0.0.0:3001` „stimmt überein" — verglichen wird jetzt die
+HOST-Seite hinter dem Pfeil.
+
+**Die übrigen fünf:**
+
+- Rohe `podman logs` (200 Zeilen) liefen durch den Stichwortfilter und hießen
+  „maskiert". Das kann der Filter nicht halten — Protokolle sind freier Text,
+  und `DATABASE_URL=…:geheim@…` enthält keines der Stichwörter. Gezählt wird
+  jetzt, gezeigt wird nicht.
+- `Mount.Source` war ungefiltert und zeigte Accountnamen im Hostpfad.
+  `/home/…` und `/Users/…` werden jetzt maskiert.
+- `nginx -v` schreibt auf **stderr**, `frage()` verwirft stderr — die Zeile
+  meldete bei installiertem nginx jedes Mal „(nicht ermittelbar)".
+- Das M6-Etikett versprach Neustartzähler und Startzeitpunkte, der Befehl gab
+  nur Namen aus. Jetzt liefert er, was draufsteht.
+- `grep … | cut … || echo '(nicht gesetzt)'` feuerte nie: In einer Pipe zählt
+  der Status des letzten Befehls, und `cut` gelingt auch bei leerer Eingabe.
+
+**Was NICHT zutraf:** Der Verdacht, die Geheimnis-Regex trete auf `proxy_pass`
+an. Nachgemessen kommt `proxy_pass http://127.0.0.1:3000;` unverändert durch —
+das `[Dd]` in `pass(w)(o)(r)d` ist Pflicht. Der Fall steht jetzt trotzdem im
+Selbsttest, damit die Messung bleibt, falls jemand die Regex lockert.
+
+Der Selbsttest wuchs von 16 auf 28 Fälle; jeder zutreffende Befund hat seinen
+eigenen. Gegenprobe: Dieselben vier Zeilen durch die Vorfassung geschickt
+kommen unmaskiert heraus, durch die neue maskiert.
+
 ## Spur C2/C3/C4 — Proxy-Konfiguration
 
 **Trägt:** Die Grundrichtung. Die eigentliche Schwachstelle ist die Anwendung

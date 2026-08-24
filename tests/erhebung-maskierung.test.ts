@@ -36,6 +36,15 @@ const BERICHT = [
   "proxy_pass http://127.0.0.1:3000;",
   "set_real_ip_from 173.245.48.0/20;",
   "set_real_ip_from 2400:cb00::/32;",
+  // DIE DREI FORMEN, DIE DER PFLICHT-APPROVER GEFUNDEN HAT (PR #111). Sie
+  // kamen an der Vorfassung UNMASKIERT durch: Der Loopback-Schutz ersetzte
+  // jede Zeichenfolge `::1`, danach griff keine IPv6-Regel mehr, und die
+  // Rückersetzung stellte die volle Adresse wieder her — fail-open auf genau
+  // der Invariante, für die dieses Skript existiert.
+  "upstream backend6 { server [2a01:4f8:c17:b8f::1]:3000; }",
+  "listen [2001:db8::10]:443 ssl;",
+  "fe80::1 dev eth0",
+  "/home/rose/npm/data -> /data",
   "server_name blog.beispiel-domain.de;",
   "upstream backend { server 203.0.113.42:3000; }",
   "DB_PASSWORD=sehr-geheim-123",
@@ -56,6 +65,10 @@ describe("A1: die Erhebung ist weitergabesicher", () => {
       "203.0.113.42", // die Ursprungsadresse — der eigentliche Grund für all das
       "173.245.48.0",
       "2400:cb00",
+      "2a01:4f8:c17:b8f", // die Sorte Adresse, um die es hier eigentlich geht
+      "2001:db8::10",
+      "fe80::1 dev",
+      "/home/rose/", // Accountname im Hostpfad
       "sehr-geheim-123",
       "9f3c1a77e2b4d5f60a1c8e93b7d240af5c6e18b0",
       "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9",
