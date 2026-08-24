@@ -113,6 +113,14 @@ neu (B6, 08/2026):
 - `<LoeschForm action={…} id={…} />` — das Löschen-Formular. Vorbelegt auf den
   Regelfall; `gestalt` und `beschriftung` nur für die Ausnahmen. **Eine
   Rückfrage vor dem Löschen gehört, wenn sie kommt, HIERHIN — einmal.**
+- `listImageChoices()` (`src/lib/media.ts`) — die Auswahlliste für JEDEN
+  `<ImagePicker>`. Sie führt neben Vorschau und Originalmaßen die große
+  Variante (`fullUrl`) und den Fokuspunkt mit. **Daran hängt der Knopf
+  „Ausschnitt" unter dem gewählten Bild**: Ohne `fullUrl` lässt der Picker ihn
+  weg. Reise-Editor, Rezept-Editor und Zutaten-Seite bauten die Liste einmal
+  selbst und ließen genau diese Felder weg — mit dem Ergebnis, dass sich der
+  Bildausschnitt dort ein halbes Jahr lang nicht einstellen ließ, obwohl der
+  Picker es konnte. Wer eine zweite Liste anlegt, holt diesen Ausfall zurück.
 - In Tests: `frischeDb("kurzname")` am MODULANFANG (nicht in `beforeAll` —
   `DATA_DIR` muss stehen, bevor etwas `@/db` auswertet) und `adminAnlegen()`.
   Die Helfer dürfen `@/db` nicht statisch importieren; `tests/frische-db-helfer.test.ts`

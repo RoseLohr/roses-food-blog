@@ -2,7 +2,11 @@ import type { Metadata } from "next";
 import { asc, eq, sql } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { requireAdmin } from "@/lib/auth";
-import { imageUrl, thumbUrl, variantWidthsByImage } from "@/lib/media";
+import {
+  imageUrl,
+  listImageChoices,
+  variantWidthsByImage,
+} from "@/lib/media";
 import { ImagePicker } from "@/components/admin/image-picker";
 import { t } from "@/i18n/de";
 import {
@@ -38,24 +42,16 @@ export default async function IngredientsPage(props: {
     .leftJoin(schema.mediaImage, eq(schema.ingredient.imageId, schema.mediaImage.id))
     .orderBy(asc(schema.ingredient.name));
 
-  const imageRows = await db
-    .select({
-      id: schema.mediaImage.id,
-      name: schema.mediaImage.originalName,
-      alt: schema.mediaImage.altText,
-      fileKey: schema.mediaImage.fileKey,
-    })
-    .from(schema.mediaImage)
-    .orderBy(asc(schema.mediaImage.originalName), asc(schema.mediaImage.id));
-  const widthsById = await variantWidthsByImage([
-    ...imageRows.map((i) => i.id),
-    ...ingredients.flatMap((i) => (i.imageId ? [i.imageId] : [])),
-  ]);
-  const imageChoices = imageRows.map((i) => ({
-    id: i.id,
-    label: i.alt || i.name,
-    thumbUrl: thumbUrl(i.fileKey, widthsById.get(i.id) ?? []),
-  }));
+  // Die gemeinsame Auswahlliste — mit großer Variante und Fokuspunkt, und
+  // damit mit dem Knopf „Ausschnitt" unter dem gewählten Zutatenbild. Die
+  // frühere Eigenbau-Liste hier ließ beides weg.
+  const imageChoices = await listImageChoices();
+  // Die Varianten-Breiten werden weiter gebraucht — für die Vorschau der
+  // BEREITS zugeordneten Zutatenbilder weiter unten, die nicht über die
+  // Auswahlliste läuft.
+  const widthsById = await variantWidthsByImage(
+    ingredients.flatMap((i) => (i.imageId ? [i.imageId] : [])),
+  );
 
   return (
     <>
