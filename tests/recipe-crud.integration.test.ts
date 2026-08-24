@@ -2,34 +2,16 @@
  * Integrationstest Rezept-CRUD: Anlegen, Bearbeiten und Löschen über die
  * Formular-Kernlogik (saveRecipeFromForm) gegen eine echte SQLite-DB.
  */
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { execSync } from "node:child_process";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
+import { frischeDb } from "./helfer/frische-db";
+import { adminAnlegen } from "./helfer/saat";
 
-let tmp: string;
+frischeDb("crud");
+
 let adminId: number;
 
 beforeAll(async () => {
-  tmp = fs.mkdtempSync(path.join(os.tmpdir(), "roses-crud-"));
-  process.env.DATA_DIR = tmp;
-  execSync("node scripts/migrate.mjs", { env: { ...process.env, DATA_DIR: tmp } });
-  const { db, schema } = await import("@/db");
-  const [admin] = await db
-    .insert(schema.adminUser)
-    .values({
-      email: "rose@example.de",
-      passwordHash: "x",
-      name: "Rose",
-      createdAt: new Date(),
-    })
-    .returning();
-  adminId = admin.id;
-});
-
-afterAll(() => {
-  fs.rmSync(tmp, { recursive: true, force: true });
+  adminId = (await adminAnlegen()).id;
 });
 
 function recipeForm(overrides: Record<string, string> = {}): FormData {

@@ -2,13 +2,13 @@
  * Integrationstest CRM: Segmentregeln, Kampagnenversand mit Protokoll,
  * CSV-Export und Anonymisierung.
  */
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { execSync } from "node:child_process";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
+import { frischeDb } from "./helfer/frische-db";
 
-let tmp: string;
+// BASE_URL steht vor dem Migrieren, damit Abmeldelinks die Testdomain tragen.
+process.env.BASE_URL = "https://blog.example.de";
+frischeDb("crm");
+
 const sentMails: Array<{ to: string; subject: string; html: string }> = [];
 
 async function makeContact(email: string, status: string, interestIds: number[]) {
@@ -36,11 +36,6 @@ async function makeContact(email: string, status: string, interestIds: number[])
 }
 
 beforeAll(async () => {
-  tmp = fs.mkdtempSync(path.join(os.tmpdir(), "roses-crm-"));
-  process.env.DATA_DIR = tmp;
-  process.env.BASE_URL = "https://blog.example.de";
-  execSync("node scripts/migrate.mjs", { env: { ...process.env, DATA_DIR: tmp } });
-
   const { setTransporterForTesting } = await import("@/lib/mailer");
   setTransporterForTesting({
     sendMail: async (opts: any) => {
@@ -51,10 +46,6 @@ beforeAll(async () => {
 
   const { db, schema } = await import("@/db");
   await db.insert(schema.interest).values([{ name: "Rezepte" }, { name: "Reisen" }]);
-});
-
-afterAll(() => {
-  fs.rmSync(tmp, { recursive: true, force: true });
 });
 
 describe("Segmente", () => {

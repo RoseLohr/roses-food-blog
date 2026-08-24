@@ -2,7 +2,11 @@ import type { NextConfig } from "next";
 
 // Strikte CSP ohne externe Quellen (Auftrag Abschnitt 10). 'unsafe-inline'
 // bei script-src ist für die Inline-Bootstrap-Skripte von Next.js nötig —
-// externe Hosts bleiben dennoch vollständig blockiert. HSTS setzt nginx.
+// externe Hosts bleiben dennoch vollständig blockiert.
+// HSTS setzt diese Anwendung NICHT — wo es gesetzt wird, ist nicht erhoben
+// (offene Messfrage, audit/12-infrastruktur-fahrplan.md). Gegenindiz:
+// deploy/nginx.conf.example hat die Zeile auskommentiert, und
+// deploy/npm/http_top.conf setzt sie nicht.
 const CSP = [
   "default-src 'self'",
   "script-src 'self' 'unsafe-inline'",
@@ -25,19 +29,20 @@ const nextConfig: NextConfig = {
   // Komprimiert wird VOM REVERSE PROXY, nicht hier.
   //
   // Warum das nötig ist: Mit `compress: true` (Next-Default) verlässt jede
-  // Antwort den Server bereits als gzip. nginx komprimiert eine Antwort, die
-  // schon ein Content-Encoding trägt, NICHT noch einmal — es reicht sie durch.
-  // Ein `brotli on;` im nginx wäre damit wirkungslos, egal wie es konfiguriert
-  // ist. Erst wenn Next unkomprimiert ausliefert, kann nginx brotli anwenden
-  // (gemessen am geteilten Sockel: 166,1 KiB gzip gegenüber 143,7 KiB brotli,
-  // siehe scripts/regime/bundle-budget.mjs).
+  // Antwort den Server bereits als gzip. Ein Proxy komprimiert eine Antwort,
+  // die schon ein Content-Encoding trägt, NICHT noch einmal — er reicht sie
+  // durch. Seine Kompressionseinstellungen wären damit wirkungslos, egal wie
+  // sie aussehen. Erst wenn Next unkomprimiert ausliefert, kann der Proxy
+  // überhaupt komprimieren.
   //
   // VORAUSSETZUNG, ehrlich benannt: Vor der App MUSS ein komprimierender Proxy
-  // stehen. Das ist der dokumentierte Betrieb (README §4, bootstrap.sh richtet
-  // nginx samt TLS ein) und die Vorlage deploy/nginx.conf.example bringt gzip
-  // UND brotli mit. Wer die App OHNE Proxy direkt auf Port 3000 exponiert,
-  // liefert nach dieser Änderung unkomprimiert aus — bootstrap.sh weist beim
-  // Überspringen der nginx-Einrichtung ausdrücklich darauf hin.
+  // stehen. Auf diesem Server ist das der Nginx Proxy Manager im Container;
+  // was er komprimiert, steht in deploy/npm/http_top.conf und wird von
+  // deploy.sh (Abschnitt 9c) bei jedem vollen Lauf eingespielt und nachgemessen.
+  // Brotli gibt es dort NICHT — OpenResty hat kein solches Modul, brotli kommt
+  // von Cloudflare am Rand. Der Abschnitt 5 von bootstrap.sh richtet dagegen
+  // einen HISTORISCHEN Host-nginx ein (siehe README §4).
+  // Wer die App OHNE Proxy direkt exponiert, liefert unkomprimiert aus.
   compress: false,
   // Der eingebaute /_next/image-Optimizer lädt zur Laufzeit natives sharp.
   // Die App nutzt ihn nicht (eigene WebP-Varianten via <img srcSet> aus der

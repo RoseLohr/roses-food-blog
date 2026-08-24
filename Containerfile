@@ -99,12 +99,26 @@ COPY --from=build /app/.next/static ./.next/static
 COPY --from=build /app/public ./public
 COPY --from=build /app/drizzle ./drizzle
 COPY --from=build /app/scripts/migrate.mjs ./scripts/migrate.mjs
+# migrate.mjs räumt unsichtbare Textblöcke weg und benutzt dafür DIESELBE
+# Sichtbarkeits-Regel wie Editor und Speicherweg — als echte Datei, weil im
+# Standalone-Image weder TypeScript läuft noch die Anwendungsmodule auflösbar
+# sind. Beide Dateien gehören deshalb ins Laufzeit-Image; fehlt eine, bricht
+# der Start mit klarer Meldung ab (fail-closed), statt still nicht aufzuräumen.
+COPY --from=build /app/scripts/leere-bloecke-raeumen.mjs ./scripts/leere-bloecke-raeumen.mjs
+COPY --from=build /app/src/lib/sichtbarkeit.mjs ./src/lib/sichtbarkeit.mjs
 COPY --from=build /app/scripts/regenerate-variants.mjs ./scripts/regenerate-variants.mjs
 COPY --from=build /app/config ./config
 COPY --from=build /app/scripts/entry.sh ./scripts/entry.sh
 # Healthcheck als Datei (compose.yml ruft /app/scripts/healthcheck.mjs auf) —
 # Inline-JavaScript scheiterte an der /bin/sh-Auswertung von podman.
 COPY --from=build /app/scripts/healthcheck.mjs ./scripts/healthcheck.mjs
+# Betriebsalarm und Wachhund gehören INS IMAGE: Beide laufen genau dann, wenn
+# die Anwendung NICHT läuft (Container kommt nicht hoch, Neustartschleife). Sie
+# als Host-Skripte abzulegen hieße, sie ohne better-sqlite3 und nodemailer zu
+# betreiben — die stehen nur hier. deploy.sh ruft sie über das bekannt gute
+# :previous-Image auf.
+COPY --from=build /app/scripts/betriebsalarm.mjs ./scripts/betriebsalarm.mjs
+COPY --from=build /app/scripts/wachhund.mjs ./scripts/wachhund.mjs
 RUN chmod +x ./scripts/entry.sh && mkdir -p /data
 # sharp im LAUFZEIT-Image benutzen, nicht nur laden: Die deps-Stufe ist nicht
 # das Laufzeit-Image — hierher kommen die nativen Pakete über den @img-Spiegel

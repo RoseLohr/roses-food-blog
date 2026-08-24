@@ -3,11 +3,8 @@
  * referenzierte Entitäten direkt aus einem Formular an und liefert bei bereits
  * existierendem Namen (case-insensitiv) idempotent den vorhandenen Eintrag.
  */
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { execSync } from "node:child_process";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { frischeDb } from "./helfer/frische-db";
 
 // Auth + Same-Origin für den Route-Handler stubben.
 vi.mock("@/lib/auth", () => ({
@@ -17,7 +14,10 @@ vi.mock("@/lib/csrf", () => ({
   isSameOriginRequest: () => true,
 }));
 
-let tmp: string;
+// BASE_URL steht vor dem Migrieren, damit der Route-Handler dieselbe
+// Absender-Adresse sieht wie im Betrieb.
+process.env.BASE_URL = "https://blog.example.de";
+frischeDb("quickadd");
 
 function call(body: unknown): Promise<Response> {
   return import("@/app/api/admin/quick-add/route").then(({ POST }) =>
@@ -30,17 +30,6 @@ function call(body: unknown): Promise<Response> {
     ),
   );
 }
-
-beforeAll(() => {
-  tmp = fs.mkdtempSync(path.join(os.tmpdir(), "roses-quickadd-"));
-  process.env.DATA_DIR = tmp;
-  process.env.BASE_URL = "https://blog.example.de";
-  execSync("node scripts/migrate.mjs", { env: { ...process.env, DATA_DIR: tmp } });
-});
-
-afterAll(() => {
-  fs.rmSync(tmp, { recursive: true, force: true });
-});
 
 describe("Sofort-Anlage", () => {
   it("legt eine Taxonomie an und ist idempotent (case-insensitiv)", async () => {

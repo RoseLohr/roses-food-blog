@@ -8,6 +8,7 @@ import { ImagePicker } from "@/components/admin/image-picker";
 import { t } from "@/i18n/de";
 import { saveHomepageAction } from "./actions";
 import { SliderEditor, type SlideRow } from "./slider-editor";
+import { Meldung, meldungAus } from "@/components/admin/meldung";
 
 const dict = t();
 const d = dict.admin.homepage;
@@ -22,8 +23,7 @@ export default async function HomepageAdminPage(props: {
 }) {
   await requireAdmin();
   const searchParams = await props.searchParams;
-  const message =
-    typeof searchParams.meldung === "string" ? searchParams.meldung : null;
+  const message = meldungAus(searchParams);
 
   const [config] = await db
     .select()
@@ -37,7 +37,7 @@ export default async function HomepageAdminPage(props: {
   const recipes = await db
     .select({ id: schema.recipe.id, title: schema.recipe.title })
     .from(schema.recipe)
-    .orderBy(asc(schema.recipe.title));
+    .orderBy(asc(schema.recipe.title), asc(schema.recipe.id));
   const dietTypes = await taxonomiesOfType("ernaehrungsform");
 
   const activeFilterGroups = (
@@ -61,11 +61,7 @@ export default async function HomepageAdminPage(props: {
   return (
     <>
       <h1 className="mb-6 text-2xl font-bold">{d.title}</h1>
-      {message && (
-        <p role="status" className="mb-4 bg-amber-50 p-3 text-sm text-amber-900">
-          {message}
-        </p>
-      )}
+      <Meldung text={message} />
 
       <form action={saveHomepageAction} className="flex max-w-3xl flex-col gap-6">
         {/* Alle Slider-Einstellungen zusammen, ganz oben */}

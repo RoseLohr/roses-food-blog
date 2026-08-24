@@ -11,6 +11,7 @@
 import { asc, eq, inArray } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { imageUrl, optimalVariant, variantWidthsByImage } from "@/lib/media";
+import { restaurantFotoIds } from "@/lib/restaurant-fotos";
 
 export interface TravelMapDish {
   dishId: number;
@@ -41,6 +42,7 @@ export async function getTravelMapPins(): Promise<TravelMapPin[]> {
       lat: schema.restaurant.lat,
       lng: schema.restaurant.lng,
       imageId: schema.restaurant.imageId,
+      imageId2: schema.restaurant.imageId2,
       travelSlug: schema.travelPost.slug,
     })
     .from(schema.restaurant)
@@ -83,10 +85,8 @@ export async function getTravelMapPins(): Promise<TravelMapPin[]> {
         .orderBy(asc(schema.dishImage.dishId), asc(schema.dishImage.sortOrder))
     : [];
 
-  // Restaurant-Fotos als letzte Stufe der Koordinaten-Kette.
-  const restImageIds = restaurants
-    .map((r) => r.imageId)
-    .filter((x): x is number => x != null);
+  // Restaurant-Fotos als letzte Stufe der Koordinaten-Kette (bis zu zwei).
+  const restImageIds = restaurants.flatMap(restaurantFotoIds);
   const restImages = restImageIds.length
     ? await db
         .select({
@@ -117,11 +117,16 @@ export async function getTravelMapPins(): Promise<TravelMapPin[]> {
       if (geo) {
         lat = geo.lat;
         lng = geo.lng;
-      } else if (r.imageId != null) {
-        const restImg = restImageById.get(r.imageId);
-        if (restImg && restImg.lat != null && restImg.lng != null) {
-          lat = restImg.lat;
-          lng = restImg.lng;
+      } else {
+        // Wie bei den Gericht-Fotos: das ERSTE Foto, das Koordinaten trägt —
+        // nicht zwingend das erste Foto. Trägt das vordere keine, wäre die
+        // Station sonst grundlos ohne Pin.
+        const restGeo = restaurantFotoIds(r)
+          .map((id) => restImageById.get(id))
+          .find((i) => i?.lat != null && i?.lng != null);
+        if (restGeo) {
+          lat = restGeo.lat;
+          lng = restGeo.lng;
         }
       }
     }

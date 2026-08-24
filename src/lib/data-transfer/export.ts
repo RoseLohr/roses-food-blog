@@ -9,6 +9,7 @@
 import { asc, desc, eq, inArray } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { type TaxonomyType } from "@/lib/taxonomies";
+import { restaurantFotoIds } from "@/lib/restaurant-fotos";
 import {
   CONTENT_FILENAME,
   EXPORT_FORMAT,
@@ -347,7 +348,7 @@ async function collectTravel(
         contentBlocks.push({ type: "text", markdown: b.markdown });
       } else if (b.type === "bild") {
         const ref = images.ref(b.imageId);
-        if (ref) contentBlocks.push({ type: "bild", image: ref, groesse: b.groesse });
+        if (ref) contentBlocks.push({ type: "bild", image: ref });
       } else if (b.restaurantId != null) {
         const idx = restaurantIndexById.get(b.restaurantId);
         if (idx !== undefined) contentBlocks.push({ type: "restaurant", index: idx });
@@ -379,7 +380,11 @@ async function collectTravel(
         name: r.name,
         city: r.city,
         description: r.description,
-        image: images.ref(r.imageId),
+        // Verdichtet wie beim Lesen: Fehlt das erste Foto (Medium gelöscht),
+        // rückt das zweite auf Platz eins — sonst wäre ein Export-Import-
+        // Rundlauf nicht stabil.
+        image: images.ref(restaurantFotoIds(r)[0] ?? null),
+        image2: images.ref(restaurantFotoIds(r)[1] ?? null),
         lat: r.lat,
         lng: r.lng,
         dishes: dishes

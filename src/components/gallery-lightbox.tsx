@@ -27,20 +27,21 @@ import {
   optimalVariant,
   srcset,
 } from "@/lib/media-url";
+import type { MediaImageLike } from "./responsive-img";
 import { t } from "@/i18n/de";
 
 const dict = t();
 
-export interface GalleryImage {
-  fileKey: string;
-  altText: string;
-  width: number;
-  height: number;
-  /** Verfügbare Varianten-Breiten, aufsteigend (aus media_variant). */
-  variantWidths: number[];
-  /** Fokuspunkt in Prozent (0–100) für beschnittene Thumbnails. */
-  focusX?: number | null;
-  focusY?: number | null;
+/**
+ * Ein Bild der Galerie.
+ *
+ * Die Bildfelder selbst (`fileKey`, Maße, Varianten, Fokuspunkt) sind
+ * `MediaImageLike` — dieselbe Form, die `ResponsiveImg` verlangt, und die
+ * Galerie reicht ihre Bilder genau dorthin weiter. Sie standen hier bis 08/2026
+ * ein zweites Mal ausgeschrieben; zwei Beschreibungen derselben Sache laufen
+ * auseinander, sobald eine von beiden ein Feld bekommt.
+ */
+export interface GalleryImage extends MediaImageLike {
   /**
    * Darstellung DIESES Thumbnails, wenn die Gruppe nicht einheitlich ist.
    *

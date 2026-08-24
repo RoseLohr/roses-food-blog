@@ -21,7 +21,6 @@ import { getPublicBaseUrl } from "@/lib/base-url";
 import { JsonLd, breadcrumbJsonLd } from "@/lib/jsonld";
 import { PageTracker } from "@/components/page-tracker";
 import { ResponsiveImg } from "@/components/responsive-img";
-import { getSiteName } from "@/lib/settings";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -72,7 +71,6 @@ export default async function PrivacyPage() {
       <PageTracker contentType="seite" path="/datenschutz" />
       <JsonLd
         data={breadcrumbJsonLd(base, [
-          [getSiteName(), "/"],
           [d.title, "/datenschutz"],
         ])}
       />

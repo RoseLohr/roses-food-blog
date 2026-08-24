@@ -158,7 +158,7 @@ export async function getFullRecipe(
     .select()
     .from(schema.recipeNote)
     .where(eq(schema.recipeNote.recipeId, recipe.id))
-    .orderBy(asc(schema.recipeNote.createdAt));
+    .orderBy(asc(schema.recipeNote.createdAt), asc(schema.recipeNote.id));
 
   return {
     recipe,

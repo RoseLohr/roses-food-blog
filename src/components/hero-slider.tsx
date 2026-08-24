@@ -11,7 +11,7 @@
  * der pausierbar ist und bei prefers-reduced-motion automatisch stoppt.
  */
 import Link from "next/link";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useState } from "react";
 import { CompactLike } from "@/components/compact-like";
 import { t } from "@/i18n/de";
 

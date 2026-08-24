@@ -14,7 +14,7 @@
 import { useEffect, useId, useState } from "react";
 import { createPortal } from "react-dom";
 import { FocusPointEditor } from "@/components/admin/focus-point-editor";
-import { focusPosition } from "@/lib/media-url";
+import { fokusStil } from "@/lib/media-url";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -44,6 +44,7 @@ export function ImagePicker({
   onChange,
   multiple,
   clearable = true,
+  max,
 }: {
   name?: string;
   legend: string;
@@ -54,6 +55,13 @@ export function ImagePicker({
   multiple: boolean;
   /** Nur Einzelauswahl: erlaubt das Abwählen ("Kein Bild"). Default true. */
   clearable?: boolean;
+  /**
+   * Nur Mehrfachauswahl: Höchstzahl. Ist sie erreicht, lassen sich nur noch
+   * bereits gewählte Bilder abwählen — die übrigen Kacheln stehen sichtbar
+   * still. Bewusst SICHTBAR statt still verschluckt: Ein Klick, der nichts
+   * tut und nichts sagt, ist schlimmer als ein gesperrter Knopf.
+   */
+  max?: number;
 }) {
   const controlled = onChange !== undefined;
   const [options, setOptions] = useState<ImageChoice[]>(initialOptions);
@@ -66,13 +74,17 @@ export function ImagePicker({
     else setInternalSel(next);
   }
 
+  /** Voll: Weitere Bilder lassen sich nicht mehr dazunehmen. */
+  const voll = multiple && max !== undefined && selected.length >= max;
+
   function pick(id: number) {
     if (multiple) {
-      setSelection(
-        selected.includes(id)
-          ? selected.filter((x) => x !== id)
-          : [...selected, id],
-      );
+      if (selected.includes(id)) {
+        setSelection(selected.filter((x) => x !== id));
+        return;
+      }
+      if (voll) return;
+      setSelection([...selected, id]);
     } else {
       setSelection([id]);
       setOpen(false);
@@ -108,10 +120,7 @@ export function ImagePicker({
                   loading="lazy"
                   decoding="async"
                   className="h-full w-full object-cover"
-                  style={(() => {
-                    const objectPosition = focusPosition(c.focusX, c.focusY);
-                    return objectPosition ? { objectPosition } : undefined;
-                  })()}
+                  style={fokusStil(c.focusX, c.focusY)}
                 />
                 <button
                   type="button"
@@ -168,6 +177,7 @@ export function ImagePicker({
           selected={selected}
           multiple={multiple}
           clearable={clearable}
+          voll={voll}
           onPick={pick}
           onClear={() => setSelection([])}
           onClose={() => setOpen(false)}
@@ -176,7 +186,10 @@ export function ImagePicker({
               prev.some((o) => o.id === img.id) ? prev : [img, ...prev],
             );
             if (multiple) {
-              if (!selected.includes(img.id))
+              // Bei erreichter Höchstzahl landet das frisch hochgeladene Bild
+              // in der BIBLIOTHEK (oben), aber nicht in der Auswahl — sonst
+              // fiele ein anderes still heraus.
+              if (!selected.includes(img.id) && !voll)
                 setSelection([...selected, img.id]);
             } else {
               setSelection([img.id]);
@@ -195,6 +208,7 @@ function LibraryModal({
   selected,
   multiple,
   clearable,
+  voll,
   onPick,
   onClear,
   onClose,
@@ -205,6 +219,8 @@ function LibraryModal({
   selected: number[];
   multiple: boolean;
   clearable: boolean;
+  /** Höchstzahl erreicht — nicht gewählte Kacheln stehen still. */
+  voll: boolean;
   onPick: (id: number) => void;
   onClear: () => void;
   onClose: () => void;
@@ -343,18 +359,20 @@ function LibraryModal({
             <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5">
               {options.map((o) => {
                 const active = selected.includes(o.id);
+                const gesperrt = voll && !active;
                 return (
                   <button
                     key={o.id}
                     type="button"
                     onClick={() => onPick(o.id)}
                     aria-pressed={active}
-                    title={o.label}
+                    disabled={gesperrt}
+                    title={gesperrt ? ip.full : o.label}
                     className={`group relative aspect-square overflow-hidden border-2 transition ${
                       active
                         ? "border-leaf ring-2 ring-leaf/30"
                         : "border-transparent hover:border-ink-soft/40"
-                    }`}
+                    } ${gesperrt ? "cursor-not-allowed opacity-40" : ""}`}
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
@@ -363,10 +381,7 @@ function LibraryModal({
                       loading="lazy"
                       decoding="async"
                       className="h-full w-full object-cover"
-                      style={(() => {
-                        const objectPosition = focusPosition(o.focusX, o.focusY);
-                        return objectPosition ? { objectPosition } : undefined;
-                      })()}
+                      style={fokusStil(o.focusX, o.focusY)}
                     />
                     {active && (
                       <span className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-leaf text-xs font-bold text-white">

@@ -7,19 +7,17 @@
  * ausgelieferte Sitemap kannte weder Kategorie- noch Reisefilter-Seiten, die
  * llms.txt keine CMS-Seiten.
  */
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { execSync } from "node:child_process";
 import { eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { buildLlmsTxt, buildSitemapUrls, buildSitemapXml } from "@/lib/seo/artifacts";
+import { frischeDb } from "./helfer/frische-db";
+
+frischeDb("seo");
 
 const BASE = "https://gourmetcompass.de";
 /** Fester Zeitstempel — die Spalten sind Pflicht (kein JS-Default im Schema). */
 const STAND = new Date("2026-08-15T09:53:57.386Z");
 
-let tmp: string;
 let db: typeof import("@/db").db;
 let schema: typeof import("@/db").schema;
 let loadSeoContent: typeof import("@/lib/seo/content").loadSeoContent;
@@ -42,16 +40,11 @@ async function llms(): Promise<string> {
   });
 }
 
+// Erst holen, wenn `frischeDb()` DATA_DIR gesetzt hat — `@/db` legt die
+// Verbindung beim Auswerten des Moduls an.
 beforeAll(async () => {
-  tmp = fs.mkdtempSync(path.join(os.tmpdir(), "roses-seo-"));
-  process.env.DATA_DIR = tmp;
-  execSync("node scripts/migrate.mjs", { env: { ...process.env, DATA_DIR: tmp } });
   ({ db, schema } = await import("@/db"));
   ({ loadSeoContent } = await import("@/lib/seo/content"));
-});
-
-afterAll(() => {
-  fs.rmSync(tmp, { recursive: true, force: true });
 });
 
 describe("Veröffentlichen und Zurückziehen", () => {
