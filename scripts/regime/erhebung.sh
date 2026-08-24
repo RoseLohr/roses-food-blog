@@ -195,149 +195,6 @@ maskieren() {
     -e 's/@@LOOPBACK6@@/::1/g'
 }
 
-# ---------------------------------------------------------------------------
-# Selbsttest (A-36): Fängt die Maskierung, was sie fangen muss — und lässt sie
-# stehen, was stehen bleiben soll? Beide Richtungen, sonst ist es kein Beleg.
-# ---------------------------------------------------------------------------
-selbsttest() {
-  local fehler=0
-  pruefe() { # pruefe <Beschreibung> <Eingabe> <erwartete Ausgabe>
-    local got
-    got="$(printf '%s\n' "$2" | maskieren)"
-    if [ "$got" != "$3" ]; then
-      echo "FEHLER: $1"
-      echo "  Eingabe:   $2"
-      echo "  Erwartet:  $3"
-      echo "  Bekommen:  $got"
-      fehler=1
-    fi
-  }
-
-  # Die Falle: eine öffentliche Adresse darf NICHT durchkommen.
-  pruefe "IPv4 wird maskiert" "upstream 203.0.113.7:3000" "upstream <IPv4>:3000"
-  pruefe "IPv4 in einer nginx-Zeile" "set_real_ip_from 198.51.100.0/22;" "set_real_ip_from <IPv4>/22;"
-  pruefe "IPv6 wird maskiert" "listen [2001:db8::dead:beef]:443" "listen [<IPv6>]:443"
-  pruefe "Kennwort wird maskiert" "DB_PASSWORD=hunter2" "DB_PASSWORD=<maskiert>"
-  pruefe "Token mit Doppelpunkt" "api_key: abc123XYZ" "api_key: <maskiert>"
-  pruefe "Authorization-Kopf" "Authorization: Bearer eyJhbGciOi" "Authorization: <maskiert>"
-  pruefe "langer Wert" "wert=$(printf 'A%.0s' $(seq 1 44))" "wert=<langer-wert>"
-  pruefe "Hostname wird maskiert" "server_name blog.example.de;" "server_name <name>;"
-
-  # DIE FÄLLE, DIE DER PFLICHT-APPROVER GEFUNDEN HAT (PR #111) — jeder einzeln,
-  # damit dieselbe Lücke nicht zweimal aufgeht. Die drei IPv6-Adressen kamen an
-  # der Vorfassung UNMASKIERT durch, weil der Loopback-Schutz jede Zeichenfolge
-  # `::1` fraß und die Rückersetzung sie danach wiederherstellte.
-  pruefe "komprimierte IPv6, die auf ::1 endet" "upstream 2001:db8:c17:b8f::1 hoch" "upstream <IPv6> hoch"
-  pruefe "komprimierte IPv6 mit ::10" "listen [2001:db8::10]:443" "listen [<IPv6>]:443"
-  pruefe "link-local mit ::1" "fe80::1 dev eth0" "<IPv6> dev eth0"
-  pruefe "Accountname im Pfad" "/home/beispielnutzer/npm/data -> /data" "/home/<benutzer>/npm/data -> /data"
-  # RUNDE ZWEI desselben Prüfers: IPv4-eingebettete IPv6 OHNE `::`. Die
-  # IPv4-Regel schlug den hinteren Teil, das routbare Präfix blieb stehen.
-  pruefe "IPv4-eingebettete IPv6, unkomprimiert" "2001:db8:c17:b8f:0:0:198.51.100.9 host" "<IPv6> host"
-  pruefe "IPv4-gemappt, lange Schreibweise" "0:0:0:0:0:ffff:203.0.113.7" "<IPv6>"
-  pruefe "IPv4-gemappt, kurze Schreibweise" "::ffff:192.0.2.128" "<IPv6>"
-  pruefe "IPv4-eingebettet mit ::" "2001:db8::192.0.2.1" "<IPv6>"
-  # RUNDE DREI: Zugangsdaten stehen auch in Adressen — zwischen Doppelpunkt und
-  # Klammeraffe, ohne sich Geheimnis zu nennen.
-  # Zur Laufzeit zusammengesetzt, s. Punkt 5 im Kopf der Maskierung.
-  local dp=":" at="@"
-  pruefe "Userinfo in proxy_pass" \
-    "proxy_pass http://admin${dp}hunter2${at}ziel:3000;" \
-    "proxy_pass http://<maskiert>@ziel:3000;"
-  pruefe "Userinfo ohne Schema" \
-    "set \$server dienst${dp}kennwort${at}upstream;" \
-    "set \$server <maskiert>@upstream;"
-  # Runde vier: ein Nutzerteil braucht weder Nutzer noch Doppelpunkt.
-  pruefe "Userinfo ohne Nutzer" \
-    "proxy_pass http://${dp}kennwort${at}ziel:3000;" \
-    "proxy_pass http://<maskiert>@ziel:3000;"
-  pruefe "Userinfo ohne Doppelpunkt" \
-    "proxy_pass http://gehe1mt0ken${at}ziel:3000;" \
-    "proxy_pass http://<maskiert>@ziel:3000;"
-  # Runde fuenf: Merkmale in Abfrage und Pfad sind nicht aufzaehlbar — also
-  # faellt alles hinter dem Wirt, statt es zu erkennen zu versuchen.
-  pruefe "Abfrage mit unbenanntem Merkmal" \
-    "proxy_pass http://ziel:3000/hook?key=ABC123&auth=XYZ;" \
-    "proxy_pass http://ziel:3000/<pfad-entfernt>"
-  pruefe "undurchsichtiges Merkmal im Pfad" \
-    "proxy_pass http://ziel:3000/s/AbCdEf0123456789;" \
-    "proxy_pass http://ziel:3000/<pfad-entfernt>"
-  pruefe "Adresse ohne Pfad bleibt vollstaendig" \
-    "proxy_pass http://ziel:3000;" \
-    "proxy_pass http://ziel:3000;"
-  # Runde sechs: eine Abfrage braucht keinen Pfad vor sich.
-  pruefe "Abfrage direkt hinter dem Hafen" \
-    "proxy_pass http://ziel:3000?merkmal=ABC123;" \
-    "proxy_pass http://ziel:3000/<pfad-entfernt>"
-  pruefe "Fragment direkt hinter dem Hafen" \
-    "proxy_pass http://ziel:3000#merkmal=ABC123;" \
-    "proxy_pass http://ziel:3000/<pfad-entfernt>"
-  pruefe "Accountname im macOS-Pfad" "/Users/beispielnutzer/x -> /y" "/Users/<benutzer>/x -> /y"
-
-  # Das Geschonte: ohne diese Fälle wäre der Bericht unlesbar.
-  pruefe "Loopback bleibt lesbar" "proxy_pass http://127.0.0.1:3000;" "proxy_pass http://127.0.0.1:3000;"
-  pruefe "0.0.0.0 bleibt lesbar" "0.0.0.0:443->443/tcp" "0.0.0.0:443->443/tcp"
-  pruefe "IPv6-Loopback bleibt lesbar" "listen [::1]:80" "listen [::1]:80"
-  pruefe "gewöhnlicher Text bleibt" "client_max_body_size 20m;" "client_max_body_size 20m;"
-  pruefe "Containername ohne Punkt bleibt" "roses-blog Up 3 days" "roses-blog Up 3 days"
-  # Die benannte Grenze, hier festgehalten statt nur behauptet:
-  pruefe "zweiteiliger Name bleibt lesbar (Grenze)" "docker.io/jc21/npm:2.11.1" "docker.io/jc21/npm:2.11.1"
-  pruefe "Zeitstempel bleibt unversehrt" "Stand: 2026-08-22T23:14:47Z" "Stand: 2026-08-22T23:14:47Z"
-  # Der Approver vermutete zusaetzlich, die Geheimnis-Regex trete auf
-  # `proxy_pass` an. Nachgemessen trifft sie NICHT — das `[Dd]` in
-  # `pass(w)(o)(r)d` ist Pflicht. Der Fall steht hier, damit die Messung
-  # bleibt, falls jemand die Regex lockert.
-  pruefe "proxy_pass ist kein Geheimnis" "proxy_pass http://127.0.0.1:3000;" "proxy_pass http://127.0.0.1:3000;"
-  pruefe "Loopback-Adresse eines Proxys bleibt lesbar" "server 127.0.0.1:3000;" "server 127.0.0.1:3000;"
-  # Die neue IPv6-Regel darf keine gewoehnliche URL mit IPv4 verschlucken:
-  # dort ist genau die IPv4 das Geheimnis, und mehr soll nicht wegfallen.
-  pruefe "URL mit oeffentlicher IPv4 bleibt eine URL" "http://192.0.2.1:3000 extern" "http://<IPv4>:3000 extern"
-  # Eine Mailadresse hat keinen Doppelpunkt vor dem Klammeraffen und bleibt
-  # deshalb stehen — die Userinfo-Regel darf nicht alles mit @ verschlucken.
-  pruefe "Mailadresse bleibt lesbar" "Kontakt: name@beispiel.de" "Kontakt: name@beispiel.de"
-
-  # DER PORTVERGLEICH — mit echten Argumenten, nicht ueber den Text geprueft.
-  pruefen_gleich() { # pruefen_gleich <Beschreibung> <Ist> <Muster>
-    case "$2" in
-      *"$3"*) ;;
-      *) echo "FEHLER: $1"; echo "  Bekommen:  $2"; echo "  Erwartet enthaelt: $3"; fehler=1 ;;
-    esac
-  }
-  pruefen_gleich "Port stimmt ueberein" "$(hafen_abgleich 3000 '3000/tcp -> 0.0.0.0:3000')" "stimmt ueberein"
-  pruefen_gleich "Portabweichung wird BENANNT" "$(hafen_abgleich 3000 '3000/tcp -> 0.0.0.0:3001')" "ABWEICHUNG"
-  pruefen_gleich "3000 gilt nicht als in 30000 enthalten" "$(hafen_abgleich 3000 '30000/tcp -> 0.0.0.0:30000')" "ABWEICHUNG"
-  pruefen_gleich "kein PORT in der .env wird gesagt" "$(hafen_abgleich '' '3000/tcp -> 0.0.0.0:3000')" "KEIN PORT"
-  pruefen_gleich "keine Abbildung ist kein stiller Erfolg" "$(hafen_abgleich 3000 '')" "KEINE Abbildung"
-
-  # RUNDE SIEBEN: M1 wird klassifiziert, nicht abgedruckt. Geprueft wird beides —
-  # dass die Klasse stimmt UND dass in keiner Antwort eine Adresse steht.
-  pruefen_gleich "Loopback erkannt" "$(adress_art 'proxy_pass http://127.0.0.1:3000;')" "Loopback"
-  pruefen_gleich "IPv6-Loopback erkannt" "$(adress_art 'proxy_pass http://[::1]:3000;')" "Loopback"
-  pruefen_gleich "privates Netz erkannt" "$(adress_art 'proxy_pass http://10.0.0.5:3000;')" "privates Netz"
-  pruefen_gleich "Docker-Bereich erkannt" "$(adress_art 'proxy_pass http://172.17.0.2:3000;')" "privates Netz"
-  pruefen_gleich "Containername erkannt" "$(adress_art 'set \$server "einname";')" "Containername"
-  pruefen_gleich "externe Adresse als Klasse" "$(adress_art 'proxy_pass http://203.0.113.7:3000;')" "EXTERN"
-  # Die beiden Formen, die keine Vierpunkt-Regel sieht — und die hier nicht
-  # maskiert, sondern gar nicht erst gedruckt werden.
-  pruefen_gleich "Kurzschreibweise wird nicht abgedruckt" "$(adress_art 'proxy_pass http://203.0.113;')" "nicht aufgeloest"
-  pruefen_gleich "Zahlenliteral wird nicht abgedruckt" "$(adress_art 'proxy_pass http://3405803783;')" "nicht abgedruckt"
-  for zeile in 'proxy_pass http://203.0.113;' 'proxy_pass http://3405803783;' \
-               'proxy_pass http://127.0.0.1:3000;' 'proxy_pass http://[2001:db8::1]:3000;'; do
-    antwort="$(adress_art "$zeile")"
-    case "$antwort" in
-      *[0-9].[0-9]*|*3405803783*|*2001*)
-        echo "FEHLER: adress_art gibt eine Adresse zurueck: $antwort"; fehler=1 ;;
-    esac
-  done
-  pruefe "Zahlen bleiben Zahlen" "RestartCount 4" "RestartCount 4"
-
-  if [ "$fehler" -eq 0 ]; then
-    echo "[erhebung] Selbsttest: 51 Fälle, Falle gestellt und Harmloses geschont ✓"
-    return 0
-  fi
-  echo "[erhebung] Selbsttest FEHLGESCHLAGEN — die Ausgabe dieses Skripts ist NICHT weitergabesicher."
-  return 1
-}
 
 # ---------------------------------------------------------------------------
 # Kleine Helfer für den Bericht. `frage` beantwortet eine Zeile und sagt
@@ -446,6 +303,177 @@ hafen_abgleich() { # hafen_abgleich <port-aus-env> <veroeffentlichte-ports>
     *)
       echo "ABWEICHUNG · .env sagt $erwartet · veroeffentlicht auf Host-Port(en): $host_ports· autoritative Quelle und laufender Container sagen Verschiedenes." ;;
   esac
+}
+
+# ---------------------------------------------------------------------------
+# Selbsttest (A-36): Fängt die Maskierung, was sie fangen muss — und lässt sie
+# stehen, was stehen bleiben soll? Beide Richtungen, sonst ist es kein Beleg.
+# ---------------------------------------------------------------------------
+selbsttest() {
+  local fehler=0 faelle=0
+  pruefe() { # pruefe <Beschreibung> <Eingabe> <erwartete Ausgabe>
+    local got
+    faelle=$((faelle + 1))
+    got="$(printf '%s\n' "$2" | maskieren)"
+    if [ "$got" != "$3" ]; then
+      echo "FEHLER: $1"
+      echo "  Eingabe:   $2"
+      echo "  Erwartet:  $3"
+      echo "  Bekommen:  $got"
+      fehler=1
+    fi
+  }
+
+  # Die Falle: eine öffentliche Adresse darf NICHT durchkommen.
+  pruefe "IPv4 wird maskiert" "upstream 203.0.113.7:3000" "upstream <IPv4>:3000"
+  pruefe "IPv4 in einer nginx-Zeile" "set_real_ip_from 198.51.100.0/22;" "set_real_ip_from <IPv4>/22;"
+  pruefe "IPv6 wird maskiert" "listen [2001:db8::dead:beef]:443" "listen [<IPv6>]:443"
+  pruefe "Kennwort wird maskiert" "DB_PASSWORD=hunter2" "DB_PASSWORD=<maskiert>"
+  pruefe "Token mit Doppelpunkt" "api_key: abc123XYZ" "api_key: <maskiert>"
+  pruefe "Authorization-Kopf" "Authorization: Bearer eyJhbGciOi" "Authorization: <maskiert>"
+  pruefe "langer Wert" "wert=$(printf 'A%.0s' $(seq 1 44))" "wert=<langer-wert>"
+  pruefe "Hostname wird maskiert" "server_name blog.example.de;" "server_name <name>;"
+
+  # DIE FÄLLE, DIE DER PFLICHT-APPROVER GEFUNDEN HAT (PR #111) — jeder einzeln,
+  # damit dieselbe Lücke nicht zweimal aufgeht. Die drei IPv6-Adressen kamen an
+  # der Vorfassung UNMASKIERT durch, weil der Loopback-Schutz jede Zeichenfolge
+  # `::1` fraß und die Rückersetzung sie danach wiederherstellte.
+  pruefe "komprimierte IPv6, die auf ::1 endet" "upstream 2001:db8:c17:b8f::1 hoch" "upstream <IPv6> hoch"
+  pruefe "komprimierte IPv6 mit ::10" "listen [2001:db8::10]:443" "listen [<IPv6>]:443"
+  pruefe "link-local mit ::1" "fe80::1 dev eth0" "<IPv6> dev eth0"
+  pruefe "Accountname im Pfad" "/home/beispielnutzer/npm/data -> /data" "/home/<benutzer>/npm/data -> /data"
+  # RUNDE ZWEI desselben Prüfers: IPv4-eingebettete IPv6 OHNE `::`. Die
+  # IPv4-Regel schlug den hinteren Teil, das routbare Präfix blieb stehen.
+  pruefe "IPv4-eingebettete IPv6, unkomprimiert" "2001:db8:c17:b8f:0:0:198.51.100.9 host" "<IPv6> host"
+  pruefe "IPv4-gemappt, lange Schreibweise" "0:0:0:0:0:ffff:203.0.113.7" "<IPv6>"
+  pruefe "IPv4-gemappt, kurze Schreibweise" "::ffff:192.0.2.128" "<IPv6>"
+  pruefe "IPv4-eingebettet mit ::" "2001:db8::192.0.2.1" "<IPv6>"
+  # RUNDE DREI: Zugangsdaten stehen auch in Adressen — zwischen Doppelpunkt und
+  # Klammeraffe, ohne sich Geheimnis zu nennen.
+  # Zur Laufzeit zusammengesetzt, s. Punkt 5 im Kopf der Maskierung.
+  local dp=":" at="@"
+  pruefe "Userinfo in proxy_pass" \
+    "proxy_pass http://admin${dp}hunter2${at}ziel:3000;" \
+    "proxy_pass http://<maskiert>@ziel:3000;"
+  pruefe "Userinfo ohne Schema" \
+    "set \$server dienst${dp}kennwort${at}upstream;" \
+    "set \$server <maskiert>@upstream;"
+  # Runde vier: ein Nutzerteil braucht weder Nutzer noch Doppelpunkt.
+  pruefe "Userinfo ohne Nutzer" \
+    "proxy_pass http://${dp}kennwort${at}ziel:3000;" \
+    "proxy_pass http://<maskiert>@ziel:3000;"
+  pruefe "Userinfo ohne Doppelpunkt" \
+    "proxy_pass http://gehe1mt0ken${at}ziel:3000;" \
+    "proxy_pass http://<maskiert>@ziel:3000;"
+  # Runde fuenf: Merkmale in Abfrage und Pfad sind nicht aufzaehlbar — also
+  # faellt alles hinter dem Wirt, statt es zu erkennen zu versuchen.
+  pruefe "Abfrage mit unbenanntem Merkmal" \
+    "proxy_pass http://ziel:3000/hook?key=ABC123&auth=XYZ;" \
+    "proxy_pass http://ziel:3000/<pfad-entfernt>"
+  pruefe "undurchsichtiges Merkmal im Pfad" \
+    "proxy_pass http://ziel:3000/s/AbCdEf0123456789;" \
+    "proxy_pass http://ziel:3000/<pfad-entfernt>"
+  pruefe "Adresse ohne Pfad bleibt vollstaendig" \
+    "proxy_pass http://ziel:3000;" \
+    "proxy_pass http://ziel:3000;"
+  # Runde sechs: eine Abfrage braucht keinen Pfad vor sich.
+  pruefe "Abfrage direkt hinter dem Hafen" \
+    "proxy_pass http://ziel:3000?merkmal=ABC123;" \
+    "proxy_pass http://ziel:3000/<pfad-entfernt>"
+  pruefe "Fragment direkt hinter dem Hafen" \
+    "proxy_pass http://ziel:3000#merkmal=ABC123;" \
+    "proxy_pass http://ziel:3000/<pfad-entfernt>"
+  pruefe "Accountname im macOS-Pfad" "/Users/beispielnutzer/x -> /y" "/Users/<benutzer>/x -> /y"
+  # Runde neun: der Prüfer fragte, ob die Pfad-Regel den Wirt stehen lässt,
+  # wenn sie VOR den Adress-Regeln läuft. Nachgemessen: nein — die Pfad-Regel
+  # schneidet nur hinter dem Wirt, die Adress-Regeln greifen danach in \1.
+  # Die Messung steht hier, damit sie nicht wieder nur eine Vermutung ist.
+  pruefe "IPv6-Wirt MIT Pfad — beides faellt" \
+    "proxy_pass http://[2001:db8::1]:3000/x;" \
+    "proxy_pass http://[<IPv6>]:3000/<pfad-entfernt>"
+  pruefe "IPv4-gemappte IPv6 mit Pfad" \
+    "http://[::ffff:203.0.113.7]:443/x" \
+    "http://[<IPv6>]:443/<pfad-entfernt>"
+
+  # Das Geschonte: ohne diese Fälle wäre der Bericht unlesbar.
+  pruefe "Loopback bleibt lesbar" "proxy_pass http://127.0.0.1:3000;" "proxy_pass http://127.0.0.1:3000;"
+  pruefe "0.0.0.0 bleibt lesbar" "0.0.0.0:443->443/tcp" "0.0.0.0:443->443/tcp"
+  pruefe "IPv6-Loopback bleibt lesbar" "listen [::1]:80" "listen [::1]:80"
+  pruefe "gewöhnlicher Text bleibt" "client_max_body_size 20m;" "client_max_body_size 20m;"
+  pruefe "Containername ohne Punkt bleibt" "roses-blog Up 3 days" "roses-blog Up 3 days"
+  # Die benannte Grenze, hier festgehalten statt nur behauptet:
+  pruefe "zweiteiliger Name bleibt lesbar (Grenze)" "docker.io/jc21/npm:2.11.1" "docker.io/jc21/npm:2.11.1"
+  pruefe "Zeitstempel bleibt unversehrt" "Stand: 2026-08-22T23:14:47Z" "Stand: 2026-08-22T23:14:47Z"
+  # Der Approver vermutete zusaetzlich, die Geheimnis-Regex trete auf
+  # `proxy_pass` an. Nachgemessen trifft sie NICHT — das `[Dd]` in
+  # `pass(w)(o)(r)d` ist Pflicht. Der Fall steht hier, damit die Messung
+  # bleibt, falls jemand die Regex lockert.
+  pruefe "proxy_pass ist kein Geheimnis" "proxy_pass http://127.0.0.1:3000;" "proxy_pass http://127.0.0.1:3000;"
+  pruefe "Loopback-Adresse eines Proxys bleibt lesbar" "server 127.0.0.1:3000;" "server 127.0.0.1:3000;"
+  # Die neue IPv6-Regel darf keine gewoehnliche URL mit IPv4 verschlucken:
+  # dort ist genau die IPv4 das Geheimnis, und mehr soll nicht wegfallen.
+  pruefe "URL mit oeffentlicher IPv4 bleibt eine URL" "http://192.0.2.1:3000 extern" "http://<IPv4>:3000 extern"
+  # Eine Mailadresse hat keinen Doppelpunkt vor dem Klammeraffen und bleibt
+  # deshalb stehen — die Userinfo-Regel darf nicht alles mit @ verschlucken.
+  pruefe "Mailadresse bleibt lesbar" "Kontakt: name@beispiel.de" "Kontakt: name@beispiel.de"
+
+  # DER PORTVERGLEICH — mit echten Argumenten, nicht ueber den Text geprueft.
+  pruefen_gleich() { # pruefen_gleich <Beschreibung> <Ist> <Muster>
+    faelle=$((faelle + 1))
+    case "$2" in
+      *"$3"*) ;;
+      *) echo "FEHLER: $1"; echo "  Bekommen:  $2"; echo "  Erwartet enthaelt: $3"; fehler=1 ;;
+    esac
+  }
+  pruefen_gleich "Port stimmt ueberein" "$(hafen_abgleich 3000 '3000/tcp -> 0.0.0.0:3000')" "stimmt ueberein"
+  pruefen_gleich "Portabweichung wird BENANNT" "$(hafen_abgleich 3000 '3000/tcp -> 0.0.0.0:3001')" "ABWEICHUNG"
+  pruefen_gleich "3000 gilt nicht als in 30000 enthalten" "$(hafen_abgleich 3000 '30000/tcp -> 0.0.0.0:30000')" "ABWEICHUNG"
+  pruefen_gleich "kein PORT in der .env wird gesagt" "$(hafen_abgleich '' '3000/tcp -> 0.0.0.0:3000')" "KEIN PORT"
+  pruefen_gleich "keine Abbildung ist kein stiller Erfolg" "$(hafen_abgleich 3000 '')" "KEINE Abbildung"
+
+  # RUNDE SIEBEN: M1 wird klassifiziert, nicht abgedruckt. Geprueft wird beides —
+  # dass die Klasse stimmt UND dass in keiner Antwort eine Adresse steht.
+  pruefen_gleich "Loopback erkannt" "$(adress_art 'proxy_pass http://127.0.0.1:3000;')" "Loopback"
+  pruefen_gleich "IPv6-Loopback erkannt" "$(adress_art 'proxy_pass http://[::1]:3000;')" "Loopback"
+  pruefen_gleich "privates Netz erkannt" "$(adress_art 'proxy_pass http://10.0.0.5:3000;')" "privates Netz"
+  pruefen_gleich "Docker-Bereich erkannt" "$(adress_art 'proxy_pass http://172.17.0.2:3000;')" "privates Netz"
+  pruefen_gleich "Containername erkannt" "$(adress_art 'set \$server "einname";')" "Containername"
+  pruefen_gleich "externe Adresse als Klasse" "$(adress_art 'proxy_pass http://203.0.113.7:3000;')" "EXTERN"
+  # Die beiden Formen, die keine Vierpunkt-Regel sieht — und die hier nicht
+  # maskiert, sondern gar nicht erst gedruckt werden.
+  pruefen_gleich "Kurzschreibweise wird nicht abgedruckt" "$(adress_art 'proxy_pass http://203.0.113;')" "nicht aufgeloest"
+  pruefen_gleich "Zahlenliteral wird nicht abgedruckt" "$(adress_art 'proxy_pass http://3405803783;')" "nicht abgedruckt"
+  for zeile in 'proxy_pass http://203.0.113;' 'proxy_pass http://3405803783;' \
+               'proxy_pass http://127.0.0.1:3000;' 'proxy_pass http://[2001:db8::1]:3000;'; do
+    faelle=$((faelle + 1))
+    antwort="$(adress_art "$zeile")"
+    case "$antwort" in
+      *[0-9].[0-9]*|*3405803783*|*2001*)
+        echo "FEHLER: adress_art gibt eine Adresse zurueck: $antwort"; fehler=1 ;;
+    esac
+  done
+  pruefe "Zahlen bleiben Zahlen" "RestartCount 4" "RestartCount 4"
+
+  # Die Zahl wird GEZÄHLT, nicht behauptet. Bis Runde neun stand hier eine
+  # Konstante: sie war nur richtig, solange jemand sie von Hand nachführte, und
+  # sie unterschlug die vier Prüfungen der Schleife. Dieselbe Fehlerklasse wie
+  # eine angemeldete Referenz-Maske, die nichts trifft — eine Angabe über die
+  # Prüfung, die die Prüfung selbst nicht belegt.
+  #
+  # MINDESTZAHL als Stolperdraht: eine gezählte Zahl kann nicht mehr falsch
+  # sein, aber Fälle könnten still verschwinden. Die Untergrenze fängt das ab
+  # und darf nur steigen.
+  local mindestens=57
+  if [ "$faelle" -lt "$mindestens" ]; then
+    echo "[erhebung] Selbsttest: nur $faelle Fälle gelaufen, erwartet mindestens $mindestens — es sind Prüfungen verschwunden."
+    fehler=1
+  fi
+  if [ "$fehler" -eq 0 ]; then
+    echo "[erhebung] Selbsttest: $faelle Fälle, Falle gestellt und Harmloses geschont ✓"
+    return 0
+  fi
+  echo "[erhebung] Selbsttest FEHLGESCHLAGEN — die Ausgabe dieses Skripts ist NICHT weitergabesicher."
+  return 1
 }
 frage() { # frage <Beschriftung> <Befehl…>
   local titel="$1"; shift

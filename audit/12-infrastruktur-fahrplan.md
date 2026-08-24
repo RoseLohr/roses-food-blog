@@ -677,15 +677,62 @@ nicht die Kontrolle.
 an einem STICHWORT erkennt, findet nur die Geheimnisse, die sich als solche zu
 erkennen geben. Adressen, Präfixe und Nutzerteile tun das nicht. Jede der ersten vier
 Runden hat dieselbe Klasse an einer neuen Stelle gefunden, und keine davon hat
-der eigene Selbsttest zuerst gesehen. Jetzt stehen 41 Fälle darin — aber die
-ehrliche Aussage bleibt: Ein Stichwortfilter ist so gut wie die Liste der
-Formen, an die jemand gedacht hat.
+der eigene Selbsttest zuerst gesehen. Die Zahl der Fälle steht bewusst nicht
+mehr hier — sie steht in der Ausgabe des Selbsttests, der sie zählt (siehe
+Runde neun). Die ehrliche Aussage bleibt ohnehin: Ein Stichwortfilter ist so gut
+wie die Liste der Formen, an die jemand gedacht hat.
 
 Deshalb ist die Richtung ab Runde fünf eine andere: Es wird nichts mehr
 abgedruckt, was sich nicht abdrucken lassen MUSS. Die rohen Protokolle sind in
 Runde eins gefallen, Pfad und Abfrage jeder Adresse in Runde fünf. Wo eine
 Kontrolle fünfmal hintereinander umgangen wurde, ist nicht die sechste Regel
 die Antwort, sondern eine kleinere Angriffsfläche.
+
+### Runde neun: eine Zahl, die niemand nachgezählt hat
+
+Von drei Stimmen refutierte eine. Ihre lange Begründung enthielt vier
+Vermutungen über die Maskierung, die sie im selben Satz wieder zurücknahm
+(„nein, spätere IPv6-Regel greift", „unberührt ok", „Kein reproduzierbarer Leak
+nachweisbar"). Alle vier wurden trotzdem nachgemessen — eine Rücknahme ist so
+wenig ein Beleg wie eine Behauptung:
+
+| Vermutung | gemessen |
+|---|---|
+| Pfad-Regel läuft vor den Adress-Regeln und lässt den Wirt stehen | nein: `http://[2001:db8::1]:3000/x` → `http://[<IPv6>]:3000/<pfad-entfernt>` |
+| `listen [2001:db8::10]:443` ohne `://` unberührt | nein, wird maskiert (Fall steht seit Runde eins) |
+| Zeitstempel kollidiert mit der `::`-Regel | nein, `Stand: 2026-08-22T23:14:47Z` bleibt |
+| `[::1]:80` fällt der IPv6-Regel zum Opfer | nein, bleibt lesbar (Fall steht seit Runde eins) |
+
+**Der eine zutreffende Befund war der, den sie „kosmetisch" nannte.** Der
+Selbsttest schloss mit `echo "… 51 Fälle …"` — einer von Hand gepflegten
+Konstante. Sie war in zweierlei Hinsicht falsch: sie zählte die vier Prüfungen
+der `adress_art`-Schleife nicht mit, und der Fahrplan behauptete an anderer
+Stelle noch „41 Fälle". Zwei Zahlen über dieselbe Prüfung, beide unbelegt.
+
+Das ist keine Kosmetik, sondern genau die Fehlerklasse, die dieses Repository
+schon einmal ein halbes Jahr gekostet hat: **eine Angabe über eine Prüfung, die
+die Prüfung selbst nicht belegt** — wie die angemeldete Referenz-Maske, die
+nichts traf. Wer die Zahl liest, liest sie als Maß für Abdeckung.
+
+Behoben an der Wurzel, nicht am Text:
+
+- **Die Zahl wird gezählt.** `pruefe`, `pruefen_gleich` und die Schleife
+  erhöhen einen Zähler; die Schlusszeile druckt ihn. Der wahre Wert war 55,
+  nicht 51.
+- **Eine Untergrenze als Stolperdraht.** Eine gezählte Zahl kann nicht mehr
+  falsch sein, aber Fälle könnten still verschwinden. `mindestens` fängt das ab
+  und darf nur steigen. Gegenprobe: zwei Fälle entfernt — die Vorfassung meldete
+  weiter „51 Fälle ✓", die neue Fassung schlägt fehl.
+- **Der Fahrplan nennt keine Zahl mehr.** Ein Dokument kann nicht mitzählen.
+
+Dazu die zweite, selbst unstrittige Beobachtung derselben Stimme: `selbsttest()`
+rief `adress_art` und `hafen_abgleich` auf, obwohl beide erst weiter unten
+definiert sind. Das lief nur, weil der Aufruf am Dateiende steht — eine
+Abhängigkeit, die von der Aufrufstelle abhängt statt von der Datei.
+`selbsttest()` steht jetzt hinter allem, was es benutzt.
+
+Die beiden nachgemessenen Formen aus der Tabelle sind als Fälle festgehalten,
+damit die Messung bleibt und nicht wieder zur Vermutung wird.
 
 ## Spur C2/C3/C4 — Proxy-Konfiguration
 
