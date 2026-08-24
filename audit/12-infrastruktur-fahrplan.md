@@ -546,6 +546,39 @@ Eigene Regel VOR der IPv4-Regel, fünf neue Selbsttestfälle (33 insgesamt) und
 eine Zeile mehr im realistischen Bericht. Die Gegenrichtung ist mitgeprüft:
 `http://192.0.2.1:3000` bleibt eine URL, in der nur die Adresse fällt.
 
+### Runde drei: Zugangsdaten stehen auch in Adressen
+
+Der Pflicht-Approver stimmte danach zu; ein anderes Panel-Modell fand die
+nächste Stelle derselben Klasse. `proxy_pass
+http://benutzer:kennwort@ziel:3000;` trägt sein Geheimnis nicht hinter einem
+Stichwort, sondern zwischen Doppelpunkt und Klammeraffe. Die
+Schlüssel-Wert-Regel sieht dort nichts — und der Hostname wurde brav maskiert,
+während das Kennwort daneben stehen blieb:
+
+```
+Vorfassung:  proxy_pass http://<benutzer>:<kennwort>@<name>:3000;   ← beide lesbar
+neu:         proxy_pass http://<maskiert>@<name>:3000;
+```
+
+(Die Beispielzeile steht hier bewusst schon maskiert. Eine echte
+Zugangsdaten-Adresse im Quelltext wäre ein Treffer für den Secret-Scan — B-06,
+STOP-SHIP —, und die Testfälle setzen sie deshalb zur Laufzeit zusammen.)
+
+Das ist bemerkenswert, weil die M1-Frage genau solche Zeilen abdruckt: Sie
+liest die `proxy_pass`-Ziele aus den erzeugten nginx-Dateien. Die Regel greift
+mit und ohne Schema. Gegenrichtung mitgeprüft: Eine Mailadresse hat keinen
+Doppelpunkt vor dem Klammeraffen und bleibt stehen.
+
+**Die Lehre nach drei Runden am selben Filter:** Eine Maskierung, die Geheimnis
+an einem STICHWORT erkennt, findet nur die Geheimnisse, die sich als solche zu
+erkennen geben. Adressen, Präfixe und Nutzerteile tun das nicht. Jede der drei
+Runden hat dieselbe Klasse an einer neuen Stelle gefunden, und keine davon hat
+der eigene Selbsttest zuerst gesehen. Jetzt stehen 36 Fälle darin — aber die
+ehrliche Aussage bleibt: Der Filter ist so gut wie die Liste der Formen, an die
+jemand gedacht hat. Deshalb wird in diesem Bericht auch nichts mehr abgedruckt,
+was sich nicht abdrucken lassen MUSS (die rohen Protokolle sind schon
+gefallen).
+
 ## Spur C2/C3/C4 — Proxy-Konfiguration
 
 **Trägt:** Die Grundrichtung. Die eigentliche Schwachstelle ist die Anwendung

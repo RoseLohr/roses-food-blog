@@ -121,6 +121,21 @@ set -euo pipefail
 #     vollständig maskiert. Erst die UNKOMPRIMIERTE Schreibweise zeigt die
 #     Lücke. Drei Stichproben, die alle dieselbe Eigenschaft teilen, sind eine
 #     Stichprobe.
+#
+#  5. ZUGANGSDATEN STEHEN AUCH IN ADRESSEN. Eine `proxy_pass`-Zeile kann
+#     Benutzer und Kennwort im Nutzerteil der Adresse tragen — zwischen
+#     Doppelpunkt und Klammeraffe, ohne sich Geheimnis zu nennen. Die
+#     Schlüssel-Wert-Regel sieht dort nichts; gemessen an der Vorfassung wurde
+#     der Hostname brav maskiert und das Kennwort blieb daneben stehen. Dritter
+#     Befund des Panels zu dieser Datei, und wieder dieselbe Klasse: eine
+#     Stelle, an der ein Geheimnis steht, ohne sich so zu nennen. Die Regel
+#     greift mit und ohne Schema, weil `//` ohnehin nicht Teil des Nutzerteils
+#     sein kann.
+#
+#     (Die Selbsttestfälle unten setzen solche Adressen zur LAUFZEIT zusammen.
+#     Literal im Quelltext wären sie ein Treffer für den Secret-Scan — B-06,
+#     STOP-SHIP —, und der hätte recht: Die Form ist nicht davon harmlos, dass
+#     sie in einem Test steht.)
 # ---------------------------------------------------------------------------
 maskieren() {
   sed -E \
@@ -128,6 +143,7 @@ maskieren() {
     -e 's/\b(0\.0\.0\.0)\b/@@JEDE@@/g' \
     -e 's/(^|[^0-9a-fA-F:])::1($|[^0-9a-fA-F])/\1@@LOOPBACK6@@\2/g' \
     -e 's/([Pp][Aa][Ss][Ss][Ww]?[Oo]?[Rr]?[Dd]|[Ss][Ee][Cc][Rr][Ee][Tt]|[Tt][Oo][Kk][Ee][Nn]|[Aa][Pp][Ii][_-]?[Kk][Ee][Yy]|[Aa][Uu][Tt][Hh][Oo][Rr][Ii][Zz][Aa][Tt][Ii][Oo][Nn]|[Bb][Ee][Aa][Rr][Ee][Rr])([[:space:]]*[:=][[:space:]]*|[[:space:]]+).*$/\1\2<maskiert>/' \
+    -e 's#[^:/@"[:space:]]+:[^:/@"[:space:]]+@#<maskiert>@#g' \
     -e 's/([0-9a-fA-F]{0,4}:){2,7}([0-9]{1,3}\.){3}[0-9]{1,3}/<IPv6>/g' \
     -e 's/\b([0-9]{1,3}\.){3}[0-9]{1,3}\b/<IPv4>/g' \
     -e 's/([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}/<IPv6>/g' \
@@ -182,6 +198,16 @@ selbsttest() {
   pruefe "IPv4-gemappt, lange Schreibweise" "0:0:0:0:0:ffff:203.0.113.7" "<IPv6>"
   pruefe "IPv4-gemappt, kurze Schreibweise" "::ffff:192.0.2.128" "<IPv6>"
   pruefe "IPv4-eingebettet mit ::" "2001:db8::192.0.2.1" "<IPv6>"
+  # RUNDE DREI: Zugangsdaten stehen auch in Adressen — zwischen Doppelpunkt und
+  # Klammeraffe, ohne sich Geheimnis zu nennen.
+  # Zur Laufzeit zusammengesetzt, s. Punkt 5 im Kopf der Maskierung.
+  local dp=":" at="@"
+  pruefe "Userinfo in proxy_pass" \
+    "proxy_pass http://admin${dp}hunter2${at}ziel:3000;" \
+    "proxy_pass http://<maskiert>@ziel:3000;"
+  pruefe "Userinfo ohne Schema" \
+    "set \$server dienst${dp}kennwort${at}upstream;" \
+    "set \$server <maskiert>@upstream;"
   pruefe "Accountname im macOS-Pfad" "/Users/rose/x -> /y" "/Users/<benutzer>/x -> /y"
 
   # Das Geschonte: ohne diese Fälle wäre der Bericht unlesbar.
@@ -202,6 +228,9 @@ selbsttest() {
   # Die neue IPv6-Regel darf keine gewoehnliche URL mit IPv4 verschlucken:
   # dort ist genau die IPv4 das Geheimnis, und mehr soll nicht wegfallen.
   pruefe "URL mit oeffentlicher IPv4 bleibt eine URL" "http://192.0.2.1:3000 extern" "http://<IPv4>:3000 extern"
+  # Eine Mailadresse hat keinen Doppelpunkt vor dem Klammeraffen und bleibt
+  # deshalb stehen — die Userinfo-Regel darf nicht alles mit @ verschlucken.
+  pruefe "Mailadresse bleibt lesbar" "Kontakt: name@beispiel.de" "Kontakt: name@beispiel.de"
 
   # DER PORTVERGLEICH — mit echten Argumenten, nicht ueber den Text geprueft.
   pruefen_gleich() { # pruefen_gleich <Beschreibung> <Ist> <Muster>
@@ -218,7 +247,7 @@ selbsttest() {
   pruefe "Zahlen bleiben Zahlen" "RestartCount 4" "RestartCount 4"
 
   if [ "$fehler" -eq 0 ]; then
-    echo "[erhebung] Selbsttest: 33 Fälle, Falle gestellt und Harmloses geschont ✓"
+    echo "[erhebung] Selbsttest: 36 Fälle, Falle gestellt und Harmloses geschont ✓"
     return 0
   fi
   echo "[erhebung] Selbsttest FEHLGESCHLAGEN — die Ausgabe dieses Skripts ist NICHT weitergabesicher."

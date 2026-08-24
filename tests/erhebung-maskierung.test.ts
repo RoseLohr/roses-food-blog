@@ -27,6 +27,9 @@ function maskiert(eingabe: string): string {
   });
 }
 
+/** Benutzer und Kennwort einer Adresse, zur Laufzeit gefügt (s. u.). */
+const NUTZERTEIL = ["admin", "hunter2"].join(":") + "@";
+
 /** Wie die Ausgabe des Skripts auf dem echten Host aussieht. */
 const BERICHT = [
   "Stand: 2026-08-22T23:14:47Z",
@@ -47,6 +50,12 @@ const BERICHT = [
   // Runde zwei desselben Prüfers: IPv4-eingebettet OHNE `::` — die IPv4-Regel
   // schlug den hinteren Teil, das routbare 96-Bit-Präfix blieb stehen.
   "resolver 2a01:4f8:c17:b8f:0:0:198.51.100.9 valid=30s;",
+  // Runde drei: Zugangsdaten stehen auch in Adressen — zwischen Doppelpunkt
+  // und Klammeraffe, ohne sich Geheimnis zu nennen. ZUR LAUFZEIT
+  // zusammengesetzt: literal im Quelltext wäre die Zeile ein Treffer für den
+  // Secret-Scan (B-06, STOP-SHIP), und der hätte recht — die Form ist nicht
+  // davon harmlos, dass sie in einem Test steht.
+  `proxy_pass http://${NUTZERTEIL}backend.intern.example.de:3000;`,
   "/home/rose/npm/data -> /data",
   "server_name blog.beispiel-domain.de;",
   "upstream backend { server 203.0.113.42:3000; }",
@@ -72,6 +81,7 @@ describe("A1: die Erhebung ist weitergabesicher", () => {
       "2001:db8::10",
       "fe80::1 dev",
       "2a01:4f8:c17:b8f:0:0", // das routbare Präfix, nicht nur die IPv4 dahinter
+      NUTZERTEIL.slice(0, -1), // Zugangsdaten in der proxy_pass-Adresse
       "/home/rose/", // Accountname im Hostpfad
       "sehr-geheim-123",
       "9f3c1a77e2b4d5f60a1c8e93b7d240af5c6e18b0",
