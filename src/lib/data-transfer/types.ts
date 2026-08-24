@@ -139,7 +139,25 @@ const contentBlockSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("bild"),
     image: z.string().nullable().default(null),
-    /** Höhenstufe (siehe lib/bildreihen.ts); ältere Archive ohne Feld → 'm'. */
+    /**
+     * Die Anordnung MUSS mit ins Archiv.
+     *
+     * Sie tat es schon einmal nicht — Befund B4: Export/Import verlor die
+     * Layout-Angaben des Bildblocks, und ein zurückgespielter Bericht sah
+     * anders aus als der gesicherte.
+     *
+     * `.optional()` statt `.default(null)`, und das ist der ganze Unterschied
+     * zwischen „ausdrücklich ein Einzelbild" und „das Archiv kennt die Frage
+     * nicht": Ein Default macht aus einem FEHLENDEN Feld ein `null` und
+     * löscht damit genau die Auskunft, die der Import braucht. `undefined`
+     * heißt „Alt-Archiv — die Gruppen stehen dort nur in der Reihenfolge";
+     * der Import bildet sie daraus nach (siehe importBundle). Ohne diese
+     * Unterscheidung käme jedes Bild eines Alt-Archivs als freigestelltes
+     * Einzelbild zurück — Befund des Fremd-Vendor-Panels zu PR #112.
+     */
+    gruppe: z.number().int().positive().nullable().optional(),
+    groesse: z.enum(["s", "m", "l"]).nullable().optional(),
+    ausrichtung: z.enum(["links", "rechts"]).nullable().optional(),
   }),
   z.object({ type: z.literal("restaurant"), index: z.number().int().nonnegative() }),
 ]);

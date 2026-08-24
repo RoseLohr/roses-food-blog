@@ -1,4 +1,7 @@
 @import "tailwindcss";
+/* Die Einzelbild-Regeln liegen eigenstaendig, damit der Prüfstand sie
+   selbst laden kann statt sie abzuschreiben — siehe Kopf jener Datei. */
+@import "./einzelbild.css" layer(components);
 
 /* Selbst gehostete Webfonts: Raleway (serifenlos) für Überschriften,
    Nunito Sans für den Fließtext. Variable Fonts, latin-Subset (deckt deutsche
@@ -178,6 +181,7 @@ html {
   gap: 12px;
   align-items: flex-start;
 }
+
 .bildgruppe-weitere > * {
   flex: var(--ar) 1 0;
   min-width: 0;
