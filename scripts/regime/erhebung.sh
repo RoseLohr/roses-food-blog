@@ -468,7 +468,11 @@ bericht() {
   abschnitt "0 · Umgebung"
   frage "Kernel" uname -sr
   frage "podman" podman --version
-  frage "Speicherlage (rootless?)" podman info --format '{{.Host.Security.Rootless}} · GraphRoot {{.Store.GraphRoot}}'
+  # KEIN GraphRoot-PFAD. Gefragt ist die Speicherlage, und die beantwortet
+  # „rootless ja/nein" vollstaendig. Der Pfad dorthin traegt Konto- und
+  # Projektnamen und beantwortet nichts, was hier gefragt waere (Befund des
+  # Panels, Runde acht — dieselbe Klasse wie bei M1).
+  frage "Speicherlage (rootless?)" podman info --format 'rootless={{.Host.Security.Rootless}}'
 
   abschnitt "1 · Anwendung"
   # `|| echo '(nicht gesetzt)'` stand hier einmal und feuerte NIE: In einer
@@ -491,7 +495,10 @@ bericht() {
       *) PORT_ENV="$PORT_ROH" ;;
     esac
   else
-    printf 'PORT laut .env (autoritativ):\n  (keine .env unter %s)\n\n' "$wurzel"
+    # Auch hier KEIN Pfad: `$wurzel` ist ein Hostpfad und traegt Konto- und
+    # Projektnamen. Dass die Datei fehlt, ist die Auskunft; wo gesucht wurde,
+    # weiss der, der das Skript aufruft.
+    printf 'PORT laut .env (autoritativ):\n  (keine .env im Projektverzeichnis)\n\n'
   fi
   printf 'M1/M4 · Port: .env GEGEN laufenden Container\n  %s\n\n' \
     "$(hafen_abgleich "$PORT_ENV" "$(podman port roses-blog 2>/dev/null | tr '\n' ' ' || true)")"
@@ -513,8 +520,13 @@ bericht() {
     printf 'Proxy-Container:\n  %s\n\n' "$proxy"
     frage "M4 · Netzlage und Portveröffentlichung" \
       podman inspect -f 'Netz {{.HostConfig.NetworkMode}} · Ports {{.NetworkSettings.Ports}}' "$proxy"
-    frage "M4 · eingehängte Verzeichnisse" \
-      podman inspect -f '{{range .Mounts}}{{.Source}} -> {{.Destination}}{{"\n"}}{{end}}' "$proxy"
+    # ART UND ZIEL, NICHT DIE QUELLE. Wonach M4 fragt, ist: Liegt der Zustand in
+    # einem Hostverzeichnis, in einem benannten Volume oder fluechtig? Das sagt
+    # `.Type`. Der Quellpfad traegt Konto- und Projektnamen und beantwortet
+    # nichts davon — er entfaellt (Runde acht; die Pfadmaskierung kannte nur
+    # /home und /Users, waehrend /srv, /opt und /var/home roh durchliefen).
+    frage "M4 · eingehängte Verzeichnisse (Art → Ziel im Container)" \
+      podman inspect -f '{{range .Mounts}}{{.Type}} -> {{.Destination}}{{"\n"}}{{end}}' "$proxy"
     # `nginx -v` schreibt seine Fassung auf STDERR. `frage` verwirft stderr,
     # also meldete diese Zeile „(nicht ermittelbar)" — bei installiertem nginx,
     # jedes Mal. Eine Auskunft, die immer dasselbe sagt, ist keine (Befund des

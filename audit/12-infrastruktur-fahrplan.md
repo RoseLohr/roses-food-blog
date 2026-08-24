@@ -652,6 +652,27 @@ bringt: Diese Frage ist nicht mehr angreifbar.
 ausgegeben, nicht als Rohtext. Steht dort etwas anderes, wird das gemeldet
 statt abgedruckt.
 
+### Runde acht: dieselbe Antwort, angewandt auf Pfade
+
+Der Approver fand die Pfadmaskierung: Sie kannte `/home` und `/Users`, während
+`Mount.Source` und `GraphRoot` roh ausgegeben wurden — Pfade unter `/srv`,
+`/opt` oder `/var/home` liefen unverändert durch. Zutreffend, und wieder
+dieselbe Klasse: eine Liste von Präfixen, die nie vollständig wird.
+
+Also dieselbe Antwort wie bei M1, konsequent angewandt:
+
+- **M4 nennt Art und Ziel, nicht die Quelle.** Gefragt ist, ob der Zustand in
+  einem Hostverzeichnis, einem benannten Volume oder flüchtig liegt — das sagt
+  `.Type`. Der Quellpfad beantwortet nichts davon.
+- **Die Speicherlage ist `rootless=ja/nein`**, nicht der Pfad zum Speicher.
+- **Auch das Projektverzeichnis entfällt** aus der Meldung „keine `.env`
+  gefunden". Dass sie fehlt, ist die Auskunft; wo gesucht wurde, weiß der, der
+  das Skript aufruft.
+
+Damit druckt der Bericht keinen einzigen Hostpfad mehr. Die
+`/home|/Users`-Regel bleibt als Netz stehen — sie ist jetzt die zweite Schicht,
+nicht die Kontrolle.
+
 **Die Lehre nach fünf Runden am selben Filter:** Eine Maskierung, die Geheimnis
 an einem STICHWORT erkennt, findet nur die Geheimnisse, die sich als solche zu
 erkennen geben. Adressen, Präfixe und Nutzerteile tun das nicht. Jede der ersten vier
