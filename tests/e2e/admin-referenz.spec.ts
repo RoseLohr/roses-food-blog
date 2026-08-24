@@ -73,6 +73,26 @@ async function ersteSeitenId(page: Page) {
   return href;
 }
 
+/**
+ * Der Editor des GESEEDETEN Reiseberichts.
+ *
+ * `admin-reise-bearbeiten` zeigt die E2E-Vorlage, und deren Bilder tragen
+ * alle dieselbe Marke — dort sind Größe und Seite ausgeblendet, weil sie in
+ * einer Gruppe nichts bedeuten. Der Zustand MIT diesen beiden Reglern hatte
+ * damit gar keine Aufnahme: Die Saat ist der einzige Bestand, in dem
+ * Einzelbilder vorkommen. Deshalb hier eine zweite Adresse.
+ */
+async function saatReiseId(page: Page) {
+  await page.goto("/admin/reisen");
+  const zeile = page
+    .locator("a[href^='/admin/reisen/']")
+    .filter({ hasText: "Sizilien" })
+    .first();
+  const href = await zeile.getAttribute("href");
+  if (!href) throw new Error("Der geseedete Reisebericht steht nicht in /admin/reisen");
+  return href;
+}
+
 const SEITEN: Seitentyp[] = [
   {
     // Ohne Sitzung: Die Anmeldemaske ist der einzige Admin-Zustand, den ein
@@ -110,6 +130,10 @@ const SEITEN: Seitentyp[] = [
     name: "admin-reise-vorschau",
     ziel: async () => `/admin/reisen/${session.travelId}/vorschau`,
   },
+  // Derselbe Editor, anderer Bestand: hier stehen Einzelbilder, also auch
+  // die Regler „Größe" und „Seite". Ohne diese Aufnahme wäre die Hälfte der
+  // neuen Bedienung unfotografiert.
+  { name: "admin-reise-bearbeiten-einzelbilder", ziel: saatReiseId },
 
   { name: "admin-seiten", ziel: async () => "/admin/seiten" },
   { name: "admin-seite-bearbeiten", ziel: ersteSeitenId },

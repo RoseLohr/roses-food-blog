@@ -848,17 +848,30 @@ export const de = {
       blockText: "Text",
       blockImage: "Bild",
       /**
-       * Der Bildblock hat KEINE Regler mehr. Die Anordnung folgt allein aus der
-       * Position in der Gruppe: erstes Bild über die ganze Breite, alle
-       * weiteren teilen sich die Reihe darunter. Hier standen vorher Größe
-       * (S/M/L), Platz (links/rechts), „neben dem Bild darüber", eine
-       * Sechstel-Rechnung und vier Umfluss-Meldungen — 40 Zeilen für etwas,
-       * das jetzt nicht mehr einzustellen ist.
+       * Der Bildblock hat wieder Regler — aber NUR das Einzelbild.
        *
-       * Übrig bleibt die AUSKUNFT, wo das Bild landet. Sie ist keine
-       * Einstellung, sondern das Ergebnis, und sie steht als sichtbarer Satz
-       * da — nicht als `title`, weil es auf dem iPad kein Hover gibt.
+       * Was ein Bild ist, entscheidet seine ZUGEHÖRIGKEIT: Gehört es zu einer
+       * Gruppe, bestimmt die Position darin die Anordnung (erstes Bild über
+       * die ganze Breite, alle weiteren in der Reihe darunter) — dann gibt es
+       * nichts einzustellen, nur eine Auskunft. Gehört es zu keiner, bekommt
+       * es Größe und Seite, und der Text läuft darum herum.
+       *
+       * Hier standen bis 0012 fünf Regler, von denen vier eine Aussage über
+       * die NACHBARN machten („neben dem Bild darüber", Sechstel-Summe,
+       * Umfluss-Grenze). Diese Klasse kommt nicht zurück: Die Zugehörigkeit
+       * ist eine Marke über das Bild SELBST, und Größe wie Seite beschreiben
+       * ebenfalls nur dieses eine Bild.
        */
+      blockZugehoerigkeit: "Zugehörigkeit",
+      blockEinzelbild: "Einzelbild (Text läuft darum herum)",
+      blockGruppeName: (buchstabe: string) => `Gruppe ${buchstabe}`,
+      blockNeueGruppe: "Neue Gruppe",
+      blockGroesse: "Größe",
+      blockGroessen: { s: "Klein (⅓)", m: "Mittel (½)", l: "Groß (⅔)" },
+      blockAusrichtung: "Seite",
+      blockAusrichtungen: { links: "Links", rechts: "Rechts" },
+      blockEinzelbildLage: (groesse: string, seite: string) =>
+        `Steht ${seite === "links" ? "links" : "rechts"} und ist ${groesse} breit — der Text läuft daneben. Auf dem Handy steht es über die volle Breite.`,
       blockGruppeAllein:
         "Steht über die ganze Breite des Inhalts.",
       blockGruppeErstes: (anzahl: number) =>

@@ -43,7 +43,10 @@
  *
  *    Für `audit/` gilt eine engere Regel — und der Grund ist inhaltlich: Ein
  *    Befund- oder Fahrplandokument nennt planmäßig Dinge, die es noch nicht
- *    gibt (`scripts/regime/erhebung.sh` aus Spur A1) oder nicht mehr. Ein
+ *    gibt oder nicht mehr. (Das Beispiel dieser Zeile war lange
+ *    `scripts/regime/erhebung.sh` aus Spur A1 — inzwischen gibt es die Datei,
+ *    und das ändert an der Regel nichts: Der nächste Fahrplan nennt das
+ *    nächste noch nicht Gebaute.) Ein
  *    Verweis MIT Zeilennummer kann das aber nie sein: Man zitiert keine Zeile
  *    einer Datei, die nicht existiert. Dort wird deshalb genau das geprüft.
  *

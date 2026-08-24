@@ -17,6 +17,13 @@ import { t } from "../../src/i18n/de";
  * eine aus einem einzelnen, eine aus dreien. Der Dreierfall ist der, an dem die
  * alte Anordnung zerbrach: zwei Bilder nebeneinander, das dritte darunter.
  *
+ * Seit 08/2026 sind es DREI Gruppen statt fünf. Vorher zählte hier jeder
+ * einzeln stehende Bildblock als Gruppe aus einem Bild, weil eine Gruppe
+ * dasselbe war wie „steht neben keinem anderen Bild". Jetzt ist eine Gruppe
+ * das, was jemand ausgewählt hat; die beiden übrigen Bilder der Saat sind
+ * Einzelbilder mit Größe und Seite und werden in tests/e2e/einzelbild.spec.ts
+ * gemessen. Was hier steht, gilt unverändert für die Gruppen.
+ *
  * Ebenfalls festgenagelt: die GRENZE. Die Gerichtsfotos der Restaurant-Karten
  * behalten ihren Streifen — sie sind keine Bildgruppe.
  */
@@ -63,10 +70,10 @@ async function gruppenMasse(page: import("@playwright/test").Page, n: number) {
 const ABSTAND = 12;
 
 test.describe("Reisebericht: Bildgruppen", () => {
-  /** Die Bildgruppen der Saat, in Dokumentreihenfolge: 1, 1, 2, 1, 3 Bilder. */
-  const GRUPPEN = [1, 1, 2, 1, 3];
+  /** Die Bildgruppen der Saat, in Dokumentreihenfolge: 2, 1, 3 Bilder. */
+  const GRUPPEN = [2, 1, 3];
 
-  test("die Saat zeigt Gruppen aus 1, 1, 2, 1 und 3 Bildern", async ({ page }) => {
+  test("die Saat zeigt Gruppen aus 2, 1 und 3 Bildern", async ({ page }) => {
     await page.goto(REPORT);
     await expect(page.locator("article .bildgruppe")).toHaveCount(GRUPPEN.length);
     const zahlen = [];
@@ -135,7 +142,9 @@ test.describe("Reisebericht: Bildgruppen", () => {
     // darunter auf gleicher Höhe — und zwar auf jeder Breite.
     await page.setViewportSize({ width: 834, height: 1100 });
     await page.goto(REPORT);
-    const m = (await gruppenMasse(page, 4))!;
+    // Die Dreiergruppe ist jetzt die DRITTE (vorher die fünfte): Die beiden
+    // Einzelbilder davor zählen nicht mehr als Gruppen aus einem Bild.
+    const m = (await gruppenMasse(page, 2))!;
     expect(m.weitere).toHaveLength(2);
     const [a, b] = m.weitere;
     expect(Math.abs(a.y - b.y)).toBeLessThan(1);

@@ -10,6 +10,9 @@ import type { FullDish, FullRestaurant, FullTravelPost } from "@/lib/travel";
 import type { MediaImage } from "@/lib/recipes";
 import {
   bildgruppeSizes,
+  einzelbildSizes,
+  type Ausrichtung,
+  type Bildgroesse,
   galerieSizes,
   restaurantPaarSizes,
   seitenverhaeltnis,
@@ -123,6 +126,34 @@ function Bildgruppe({ images }: { images: MediaImage[] }) {
         lead={{ className: "", sizes: sizes[0] }}
         groupClassName="bildgruppe-weitere"
       />
+    </div>
+  );
+}
+
+/**
+ * Ein EINZELBILD: eigene Breite (s/m/l), eigene Seite (links/rechts), der Text
+ * läuft darum herum.
+ *
+ * Die Anordnung steckt vollständig im CSS (.einzelbild + .eb-*); hier steht
+ * nur, welche Klassen gelten und welches `sizes` dazu gehört. Dass beides
+ * zusammen gesetzt wird, ist Absicht: Eine Breite ohne passendes `sizes` wäre
+ * eine gelogene Angabe, und der Browser lüde die falsche Variante.
+ *
+ * `GalleryLightbox` ohne `lead` und ohne `groupClassName` — ein Bild, eine
+ * Galerie. Das Pop-up zeigt genau dieses eine Foto.
+ */
+function Einzelbild({
+  bild,
+  groesse,
+  ausrichtung,
+}: {
+  bild: MediaImage;
+  groesse: Bildgroesse;
+  ausrichtung: Ausrichtung;
+}) {
+  return (
+    <div className={`einzelbild eb-${groesse} eb-${ausrichtung}`}>
+      <GalleryLightbox images={[bild]} thumbSizes={einzelbildSizes(groesse)} />
     </div>
   );
 }
@@ -849,6 +880,17 @@ export async function TravelView({
                         .filter((img) => img !== undefined)}
                     />
                   );
+                }
+                if (b.art === "einzelbild") {
+                  const bild = full.blockImages[b.imageId];
+                  return bild ? (
+                    <Einzelbild
+                      key={i}
+                      bild={bild}
+                      groesse={b.groesse}
+                      ausrichtung={b.ausrichtung}
+                    />
+                  ) : null;
                 }
                 const r = full.restaurants[b.index];
                 return r ? (

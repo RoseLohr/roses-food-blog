@@ -188,9 +188,11 @@ describe("Reise-CRUD", () => {
       "bloecke",
       JSON.stringify([
         { type: "text", markdown: "## Ankunft\n\nErster Abend." },
-        { type: "bild", imageId: img.id }, // ohne Angaben → 'm', rechts, allein
+        // Ohne `gruppe` im JSON gilt die Vorgabe des Vertrags: `null`, also
+        // EINZELBILD. Das ist Absicht — wer eine Gruppe will, sagt es.
         { type: "bild", imageId: img.id },
-        { type: "bild", imageId: img.id },
+        { type: "bild", imageId: img.id, gruppe: 1 },
+        { type: "bild", imageId: img.id, gruppe: 1 },
         { type: "restaurant", index: 1 }, // zeigt aufs 2. (nach Filterung 1.)
         { type: "text", markdown: "   " }, // leer → entfällt
       ]),
@@ -201,14 +203,14 @@ describe("Reise-CRUD", () => {
     const full = await getFullTravelPost({ id });
     // search_text = zusammengefügte Textblöcke (FTS-Quelle)
     expect(full!.post.searchText).toBe("## Ankunft\n\nErster Abend.");
-    // Blockfolge: Text, Bild, Bild, Bild, Restaurant (Index nach Filterung auf
-    // 0 gemappt). Der Bildblock trägt nichts über sein Aussehen; fehlen Felder
-    // im Editor-JSON (Bestandsdaten), gelten 'm', 'rechts' und „allein".
+    // Blockfolge: Text, Einzelbild, Gruppe(2), Restaurant (Index nach
+    // Filterung auf 0 gemappt). Fehlt `gruppe` im JSON, ist das Bild ein
+    // EINZELBILD — die Zugehörigkeit wird gesagt, nicht erraten.
     expect(full!.blocks).toEqual([
       { type: "text", markdown: "## Ankunft\n\nErster Abend." },
-      { type: "bild", imageId: img.id },
-      { type: "bild", imageId: img.id },
-      { type: "bild", imageId: img.id },
+      { type: "bild", imageId: img.id, gruppe: null, groesse: null, ausrichtung: null },
+      { type: "bild", imageId: img.id, gruppe: 1, groesse: null, ausrichtung: null },
+      { type: "bild", imageId: img.id, gruppe: 1, groesse: null, ausrichtung: null },
       { type: "restaurant", index: 0 },
     ]);
     expect(full!.blockImages[img.id]?.fileKey).toBe("blocktest");
@@ -268,10 +270,10 @@ describe("Reise-CRUD", () => {
     fd.set(
       "bloecke",
       JSON.stringify([
-        { type: "bild", imageId: bilder[0].id },
+        { type: "bild", imageId: bilder[0].id, gruppe: 4 },
         // Dieses Bild gibt es nicht — der Block fällt beim Speichern weg.
-        { type: "bild", imageId: 999999 },
-        { type: "bild", imageId: bilder[1].id },
+        { type: "bild", imageId: 999999, gruppe: 4 },
+        { type: "bild", imageId: bilder[1].id, gruppe: 4 },
       ]),
     );
     const result = await saveTravelFromForm(fd, adminId);
@@ -279,10 +281,13 @@ describe("Reise-CRUD", () => {
       id: (result as { travelId: number }).travelId,
     });
     expect(full!.blocks).toEqual([
-      { type: "bild", imageId: bilder[0].id },
-      { type: "bild", imageId: bilder[1].id },
+      { type: "bild", imageId: bilder[0].id, gruppe: 4, groesse: null, ausrichtung: null },
+      { type: "bild", imageId: bilder[1].id, gruppe: 4, groesse: null, ausrichtung: null },
     ]);
-    // Und beim Rendern sind es EINE Gruppe, nicht zwei.
+    // Und beim Rendern sind es EINE Gruppe, nicht zwei. Genau dafür ist die
+    // Marke da: Der weggefallene Block reißt nichts auseinander, weil die
+    // beiden verbliebenen weiter DIESELBE Marke tragen und nach der Filterung
+    // wieder nebeneinanderstehen.
     expect(
       zuRenderBloecken(full!.blocks).filter((b) => b.art === "bild"),
     ).toEqual([{ art: "bild", imageIds: [bilder[0].id, bilder[1].id] }]);

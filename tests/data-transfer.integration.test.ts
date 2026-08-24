@@ -330,7 +330,7 @@ describe("Export", () => {
       { type: "text", markdown: "Langer Reisetext." },
       // Der Bildblock trägt nichts über sein Aussehen mehr — nur die
       // Datei-Referenz. Die Anordnung folgt aus der Reihenfolge.
-      { type: "bild", image: "aaaa1111" },
+      { type: "bild", image: "aaaa1111", gruppe: null, groesse: null, ausrichtung: null },
       { type: "restaurant", index: 0 },
     ]);
 
@@ -589,6 +589,91 @@ describe("Robustheit", () => {
       "---",
       "Zweiter Absatz.",
     ]);
+  });
+
+  it("stellt die Gruppen eines Alt-Archivs aus der Reihenfolge wieder her", async () => {
+    // DER BEFUND (Fremd-Vendor-Panel zu PR #112: „Alte Backups verlieren
+    // Gruppensemantik"): Vor dem Umbau gab es kein `gruppe`-Feld. Ein
+    // ununterbrochener Lauf von Bildblöcken WAR eine Gruppe, weil er
+    // aufeinanderfolgte. Ein Archiv von damals trägt die Angabe nicht — und
+    // ohne Nachbildung käme jedes Bild als freigestelltes EINZELBILD zurück.
+    // Der zurückgespielte Bericht sähe anders aus als der gesicherte.
+    //
+    // Die Datenbank-Migration 0013 backfillt genau das; der Import tat es
+    // nicht. Hier wird ein echtes Alt-Archiv gebaut: ein frischer Export, aus
+    // dem die drei Felder ENTFERNT werden — genau die Form, die ein Export von
+    // vor dem Umbau hat (die Format-Version ist dieselbe geblieben).
+    // Eigene Daten statt der aus dem Vorlauf: Die Löschen-Tests weiter oben
+    // räumen die Bilddateien weg, und ohne Datei fällt ein Bildblock beim
+    // Import heraus. Ein Test, der davon abhängt, misst die Reihenfolge der
+    // Tests statt die Sache.
+    const imgNeu = await media("dddd4444", [320], new Date("2024-05-05T00:00:00.000Z"));
+    const [quelle] = await db
+      .insert(schema.travelPost)
+      .values({
+        title: "Alt-Archiv mit Gruppen",
+        slug: "alt-archiv-quelle",
+        status: "veroeffentlicht",
+        authorId: adminId,
+        createdAt: new Date("2024-05-05T00:00:00.000Z"),
+        updatedAt: new Date("2024-05-05T00:00:00.000Z"),
+      })
+      .returning({ id: schema.travelPost.id });
+    // Zwei Bilder in Folge (eine Gruppe), ein Textblock, dann ein drittes
+    // Bild (eigene Gruppe).
+    await db.insert(schema.travelBlock).values([
+      { travelPostId: quelle.id, sortOrder: 0, type: "text", markdown: "Vor den Bildern." },
+      { travelPostId: quelle.id, sortOrder: 1, type: "bild", imageId: imgNeu, gruppe: 7 },
+      { travelPostId: quelle.id, sortOrder: 2, type: "bild", imageId: imgNeu, gruppe: 7 },
+      { travelPostId: quelle.id, sortOrder: 3, type: "text", markdown: "Zwischen den Bildern." },
+      { travelPostId: quelle.id, sortOrder: 4, type: "bild", imageId: imgNeu, gruppe: 8 },
+    ]);
+
+    const bundle = await collectExport({ recipes: false, travel: true, pages: false });
+    const tvExport = bundle.travel.find((t) => t.slug === "alt-archiv-quelle")!;
+    tvExport.slug = "alt-archiv-gruppen";
+    bundle.travel = [tvExport];
+
+    const { unzipSync, zipSync, strToU8, strFromU8 } = await import("fflate");
+    const roh = unzipSync(buildExportZip(bundle));
+    // Die drei Felder aus JEDEM Bildblock entfernen — so sieht ein Alt-Archiv aus.
+    const inhalt = JSON.parse(strFromU8(roh["content.json"]));
+    for (const t of inhalt.travel)
+      for (const b of t.contentBlocks)
+        if (b.type === "bild") {
+          delete b.gruppe;
+          delete b.groesse;
+          delete b.ausrichtung;
+        }
+    roh["content.json"] = strToU8(JSON.stringify(inhalt));
+
+    const res = await importBundle(
+      zipSync(roh),
+      { recipes: false, travel: true, pages: false },
+      adminId,
+    );
+    expect(res.travel).toBe(1);
+
+    const [post] = await db
+      .select()
+      .from(schema.travelPost)
+      .where(eq(schema.travelPost.slug, "alt-archiv-gruppen"));
+    const bloecke = await db
+      .select()
+      .from(schema.travelBlock)
+      .where(eq(schema.travelBlock.travelPostId, post.id))
+      .orderBy(asc(schema.travelBlock.sortOrder));
+    const bilder = bloecke.filter((b) => b.type === "bild");
+    expect(bilder).toHaveLength(3);
+
+    // KEIN Bild kommt als Einzelbild zurück — das war der Defekt.
+    expect(bilder.map((b) => b.gruppe).every((g) => g !== null)).toBe(true);
+    // Die beiden aufeinanderfolgenden teilen eine Marke, das dritte nicht.
+    expect(bilder[0].gruppe).toBe(bilder[1].gruppe);
+    expect(bilder[2].gruppe).not.toBe(bilder[0].gruppe);
+    // Und die Regler bleiben leer — in einer Gruppe wären sie unwirksam, und
+    // der CHECK travel_block_bild_regler_check verbietet sie dort ohnehin.
+    expect(bilder.every((b) => b.groesse === null && b.ausrichtung === null)).toBe(true);
   });
 
   it("übernimmt eingerückten Code unverändert", async () => {

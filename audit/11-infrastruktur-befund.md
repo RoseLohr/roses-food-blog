@@ -244,7 +244,7 @@ umgesetzt wird — Maßarbeit nur dort, wo es keines gibt.
 
 | | Schritt | Werkzeug |
 |---|---|---|
-| A1 | Erhebungsskript nach `scripts/regime/erhebung.sh` übernehmen, Port aus `podman ps` ableiten statt raten (§0) | vorhandenes Regime-Skriptverzeichnis |
+| A1 | **erledigt 08/2026** — `scripts/regime/erhebung.sh`. Der Port kommt allerdings aus der `.env` (autoritativ, wie in `deploy.sh`) und wird GEGEN `podman ps` gehalten; die Portspalte abzuleiten war die falsche Richtung, s. `audit/12-infrastruktur-fahrplan.md` | vorhandenes Regime-Skriptverzeichnis |
 | A2 | README §4, `docs/ABNAHME.md` und `deploy/nginx.conf.example` auf den tatsächlichen Betrieb umschreiben (NPM statt Host-nginx+certbot) | — |
 | A3 | Brotli-Sonde und Brotli-Block aus `bootstrap.sh` / `nginx.conf.example` entfernen oder als „nur für Host-nginx-Betrieb" kennzeichnen (B3) | — |
 
