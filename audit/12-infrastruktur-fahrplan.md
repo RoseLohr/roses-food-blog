@@ -522,6 +522,30 @@ Der Selbsttest wuchs von 16 auf 28 Fälle; jeder zutreffende Befund hat seinen
 eigenen. Gegenprobe: Dieselben vier Zeilen durch die Vorfassung geschickt
 kommen unmaskiert heraus, durch die neue maskiert.
 
+### Runde zwei desselben Prüfers: dieselbe Klasse, eine Schreibweise weiter
+
+Der Pflicht-Approver kam auf die überarbeitete Fassung zurück und fand die
+Lücke, die die Reparatur offen gelassen hatte: **IPv4-eingebettete IPv6 ohne
+`::`.** Beide IPv6-Ausdrücke verlangen entweder sieben Doppelpunkte oder ein
+`::`. `2a01:4f8:c17:b8f:0:0:198.51.100.9` hat beides nicht — die IPv4-Regel
+schlug den hinteren Teil, und das **routbare 96-Bit-Präfix blieb stehen**:
+
+```
+Vorfassung:  resolver 2a01:4f8:c17:b8f:0:0:<IPv4> valid=30s;
+neu:         resolver <IPv6> valid=30s;
+```
+
+**Die eigene Gegenprobe hatte den Befund zuerst NICHT reproduziert.** Drei
+Formen probiert — `::ffff:192.0.2.128`, `2001:db8::192.0.2.1`,
+`64:ff9b::203.0.113.7` —, alle drei sauber maskiert, also schien der Befund
+nicht zu tragen. Alle drei enthalten ein `::`. Drei Stichproben, die dieselbe
+Eigenschaft teilen, sind eine Stichprobe; erst die unkomprimierte Schreibweise
+zeigt die Lücke. Das ist die Lehre dieser Runde, nicht die Regex.
+
+Eigene Regel VOR der IPv4-Regel, fünf neue Selbsttestfälle (33 insgesamt) und
+eine Zeile mehr im realistischen Bericht. Die Gegenrichtung ist mitgeprüft:
+`http://192.0.2.1:3000` bleibt eine URL, in der nur die Adresse fällt.
+
 ## Spur C2/C3/C4 — Proxy-Konfiguration
 
 **Trägt:** Die Grundrichtung. Die eigentliche Schwachstelle ist die Anwendung

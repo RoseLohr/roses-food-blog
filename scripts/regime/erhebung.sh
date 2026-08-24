@@ -106,6 +106,21 @@ set -euo pipefail
 #     Pflicht-Approver (PR #111) — nicht die eigene Prüfung.
 #     Geschützt wird jetzt nur ein FREISTEHENDES `::1`: davor kein Hexzeichen
 #     und kein Doppelpunkt, danach kein Hexzeichen.
+#
+#  4. IPv4-EINGEBETTETE IPv6 BRAUCHT EINE EIGENE REGEL — und zwar VOR der
+#     IPv4-Regel. Die beiden IPv6-Ausdrücke verlangen entweder sieben
+#     Doppelpunkte oder ein `::`. Eine Adresse wie
+#     `2a01:4f8:c17:b8f:0:0:198.51.100.9` hat beides nicht: sechs Doppelpunkte,
+#     kein `::`. Die IPv4-Regel schlug den hinteren Teil zu `<IPv4>`, und das
+#     ROUTBARE 96-Bit-Präfix davor blieb stehen —
+#     `2a01:4f8:c17:b8f:0:0:<IPv4>` sagt immer noch, in welchem Netz dieser
+#     Server steht. Der zweite Befund des Pflicht-Approvers zu dieser Datei
+#     (PR #111), und die eigene Gegenprobe hatte ihn zunächst nicht
+#     reproduziert: Alle drei zuerst probierten Formen (`::ffff:…`,
+#     `2001:db8::…`, `64:ff9b::…`) enthalten ein `::` und wurden deshalb
+#     vollständig maskiert. Erst die UNKOMPRIMIERTE Schreibweise zeigt die
+#     Lücke. Drei Stichproben, die alle dieselbe Eigenschaft teilen, sind eine
+#     Stichprobe.
 # ---------------------------------------------------------------------------
 maskieren() {
   sed -E \
@@ -113,6 +128,7 @@ maskieren() {
     -e 's/\b(0\.0\.0\.0)\b/@@JEDE@@/g' \
     -e 's/(^|[^0-9a-fA-F:])::1($|[^0-9a-fA-F])/\1@@LOOPBACK6@@\2/g' \
     -e 's/([Pp][Aa][Ss][Ss][Ww]?[Oo]?[Rr]?[Dd]|[Ss][Ee][Cc][Rr][Ee][Tt]|[Tt][Oo][Kk][Ee][Nn]|[Aa][Pp][Ii][_-]?[Kk][Ee][Yy]|[Aa][Uu][Tt][Hh][Oo][Rr][Ii][Zz][Aa][Tt][Ii][Oo][Nn]|[Bb][Ee][Aa][Rr][Ee][Rr])([[:space:]]*[:=][[:space:]]*|[[:space:]]+).*$/\1\2<maskiert>/' \
+    -e 's/([0-9a-fA-F]{0,4}:){2,7}([0-9]{1,3}\.){3}[0-9]{1,3}/<IPv6>/g' \
     -e 's/\b([0-9]{1,3}\.){3}[0-9]{1,3}\b/<IPv4>/g' \
     -e 's/([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}/<IPv6>/g' \
     -e 's/[0-9a-fA-F]{0,4}(:[0-9a-fA-F]{1,4}){0,6}::([0-9a-fA-F]{1,4}(:[0-9a-fA-F]{1,4}){0,6})?/<IPv6>/g' \
@@ -160,6 +176,12 @@ selbsttest() {
   pruefe "komprimierte IPv6 mit ::10" "listen [2001:db8::10]:443" "listen [<IPv6>]:443"
   pruefe "link-local mit ::1" "fe80::1 dev eth0" "<IPv6> dev eth0"
   pruefe "Accountname im Pfad" "/home/rose/npm/data -> /data" "/home/<benutzer>/npm/data -> /data"
+  # RUNDE ZWEI desselben Prüfers: IPv4-eingebettete IPv6 OHNE `::`. Die
+  # IPv4-Regel schlug den hinteren Teil, das routbare Präfix blieb stehen.
+  pruefe "IPv4-eingebettete IPv6, unkomprimiert" "2a01:4f8:c17:b8f:0:0:198.51.100.9 host" "<IPv6> host"
+  pruefe "IPv4-gemappt, lange Schreibweise" "0:0:0:0:0:ffff:203.0.113.7" "<IPv6>"
+  pruefe "IPv4-gemappt, kurze Schreibweise" "::ffff:192.0.2.128" "<IPv6>"
+  pruefe "IPv4-eingebettet mit ::" "2001:db8::192.0.2.1" "<IPv6>"
   pruefe "Accountname im macOS-Pfad" "/Users/rose/x -> /y" "/Users/<benutzer>/x -> /y"
 
   # Das Geschonte: ohne diese Fälle wäre der Bericht unlesbar.
@@ -177,6 +199,9 @@ selbsttest() {
   # bleibt, falls jemand die Regex lockert.
   pruefe "proxy_pass ist kein Geheimnis" "proxy_pass http://127.0.0.1:3000;" "proxy_pass http://127.0.0.1:3000;"
   pruefe "Loopback-Adresse eines Proxys bleibt lesbar" "server 127.0.0.1:3000;" "server 127.0.0.1:3000;"
+  # Die neue IPv6-Regel darf keine gewoehnliche URL mit IPv4 verschlucken:
+  # dort ist genau die IPv4 das Geheimnis, und mehr soll nicht wegfallen.
+  pruefe "URL mit oeffentlicher IPv4 bleibt eine URL" "http://192.0.2.1:3000 extern" "http://<IPv4>:3000 extern"
 
   # DER PORTVERGLEICH — mit echten Argumenten, nicht ueber den Text geprueft.
   pruefen_gleich() { # pruefen_gleich <Beschreibung> <Ist> <Muster>
@@ -193,7 +218,7 @@ selbsttest() {
   pruefe "Zahlen bleiben Zahlen" "RestartCount 4" "RestartCount 4"
 
   if [ "$fehler" -eq 0 ]; then
-    echo "[erhebung] Selbsttest: 28 Fälle, Falle gestellt und Harmloses geschont ✓"
+    echo "[erhebung] Selbsttest: 33 Fälle, Falle gestellt und Harmloses geschont ✓"
     return 0
   fi
   echo "[erhebung] Selbsttest FEHLGESCHLAGEN — die Ausgabe dieses Skripts ist NICHT weitergabesicher."

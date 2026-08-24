@@ -44,6 +44,9 @@ const BERICHT = [
   "upstream backend6 { server [2a01:4f8:c17:b8f::1]:3000; }",
   "listen [2001:db8::10]:443 ssl;",
   "fe80::1 dev eth0",
+  // Runde zwei desselben Prüfers: IPv4-eingebettet OHNE `::` — die IPv4-Regel
+  // schlug den hinteren Teil, das routbare 96-Bit-Präfix blieb stehen.
+  "resolver 2a01:4f8:c17:b8f:0:0:198.51.100.9 valid=30s;",
   "/home/rose/npm/data -> /data",
   "server_name blog.beispiel-domain.de;",
   "upstream backend { server 203.0.113.42:3000; }",
@@ -68,6 +71,7 @@ describe("A1: die Erhebung ist weitergabesicher", () => {
       "2a01:4f8:c17:b8f", // die Sorte Adresse, um die es hier eigentlich geht
       "2001:db8::10",
       "fe80::1 dev",
+      "2a01:4f8:c17:b8f:0:0", // das routbare Präfix, nicht nur die IPv4 dahinter
       "/home/rose/", // Accountname im Hostpfad
       "sehr-geheim-123",
       "9f3c1a77e2b4d5f60a1c8e93b7d240af5c6e18b0",
