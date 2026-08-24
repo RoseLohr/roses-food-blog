@@ -63,35 +63,90 @@ export function seitenverhaeltnis(breite: number, hoehe: number): number {
   return breite / hoehe;
 }
 
-/** Blockfolge, wie sie gerendert wird. Eine „bild"-Gruppe ist ein
- *  ununterbrochener Lauf von Bildblöcken. */
+/** Blockfolge, wie sie gerendert wird. */
 export type RenderBlock =
   | { art: "text"; markdown: string }
   | { art: "restaurant"; index: number }
-  | { art: "bild"; imageIds: number[] };
+  /** Eine Gruppe: erstes Bild über die ganze Breite, alle weiteren in einer
+   *  Reihe darunter. Ein ununterbrochener Lauf gleicher Marke. */
+  | { art: "bild"; imageIds: number[] }
+  /** Ein Bild ohne Gruppe: eigene Breite, eigene Seite, Text läuft darum. */
+  | {
+      art: "einzelbild";
+      imageId: number;
+      groesse: Bildgroesse;
+      ausrichtung: Ausrichtung;
+    };
+
+/** Breite eines Einzelbildes als Anteil der Inhaltsspalte. */
+export const EINZELBILD_ANTEIL = { s: 1 / 3, m: 1 / 2, l: 2 / 3 } as const;
+export type Bildgroesse = keyof typeof EINZELBILD_ANTEIL;
+export type Ausrichtung = "links" | "rechts";
+
+/** Vorgaben, wenn ein Einzelbild (noch) keine Angabe trägt. */
+export const EINZELBILD_VORGABE = { groesse: "m", ausrichtung: "links" } as const;
 
 /**
- * Fasst die Blockfolge des Editors zu Renderblöcken zusammen: aufeinander
- * folgende Bildblöcke werden EINE Gruppe.
+ * Fasst die Blockfolge des Editors zu Renderblöcken zusammen.
  *
- * Das ist der ganze Algorithmus. Es gibt keine Bedingung, unter der zwei
- * benachbarte Bilder NICHT zusammengehören — deshalb kann hier auch nichts
- * mehr auseinanderfallen.
+ * ZWEI ARTEN VON BILD, und der Unterschied steht am Block selbst:
+ *
+ *  - `gruppe` gesetzt → Teil einer Gruppe. Ein ununterbrochener Lauf mit
+ *    DERSELBEN Marke wird EIN Renderblock: erstes Bild volle Breite, alle
+ *    weiteren in einer Reihe darunter.
+ *  - `gruppe` null → Einzelbild mit eigener Größe und Seite; der Text läuft
+ *    darum herum.
+ *
+ * Warum der Lauf zusätzlich zur Marke zählt: Die Marke sagt „diese Bilder
+ * gehören zusammen", nicht „sie stehen zusammen". Zieht jemand ein Bild aus
+ * der Mitte heraus, tragen beide Teile weiter dieselbe Marke — gerendert
+ * werden dann ZWEI Gruppen, weil zwei Läufe da sind. Das ist kein Bruch,
+ * sondern die einzige Lesart, die nicht lügt: Was auseinandersteht, kann nicht
+ * gemeinsam in einer Reihe stehen.
+ *
+ * Genau hier lag der alte Fehler: `mitVorherigem` behauptete eine Beziehung
+ * zum Nachbarn und wurde still falsch, sobald sich die Nachbarschaft änderte.
+ * Eine Marke kann nicht falsch werden — sie beschreibt nur sich selbst.
  */
 export function zuRenderBloecken(blocks: TravelBlock[]): RenderBlock[] {
   const out: RenderBlock[] = [];
+  let offeneMarke: number | null = null;
   for (const b of blocks) {
     if (b.type === "text") {
       out.push({ art: "text", markdown: b.markdown });
+      offeneMarke = null;
     } else if (b.type === "restaurant") {
       out.push({ art: "restaurant", index: b.index });
+      offeneMarke = null;
+    } else if (b.gruppe === null) {
+      out.push({
+        art: "einzelbild",
+        imageId: b.imageId,
+        groesse: b.groesse ?? EINZELBILD_VORGABE.groesse,
+        ausrichtung: b.ausrichtung ?? EINZELBILD_VORGABE.ausrichtung,
+      });
+      // Ein Einzelbild unterbricht den Lauf: Zwei gleich markierte Bilder mit
+      // einem Einzelbild dazwischen stehen NICHT zusammen.
+      offeneMarke = null;
     } else {
       const letzte = out[out.length - 1];
-      if (letzte?.art === "bild") letzte.imageIds.push(b.imageId);
-      else out.push({ art: "bild", imageIds: [b.imageId] });
+      if (letzte?.art === "bild" && offeneMarke === b.gruppe) {
+        letzte.imageIds.push(b.imageId);
+      } else {
+        out.push({ art: "bild", imageIds: [b.imageId] });
+        offeneMarke = b.gruppe;
+      }
     }
   }
   return out;
+}
+
+/**
+ * `sizes` eines Einzelbildes. Die Breite ist ein Anteil der Inhaltsspalte —
+ * dieselbe Kette wie überall, nur mit dem Faktor der Stufe.
+ */
+export function einzelbildSizes(groesse: Bildgroesse): string {
+  return gedeckeltSizes(Math.round(SPALTE_GROSS * EINZELBILD_ANTEIL[groesse]));
 }
 
 /** Anteil als kürzest mögliche Zahl (0.5 statt 0.5000) für den CSS-Faktor. */

@@ -419,12 +419,15 @@ async function main() {
       type: "text",
       markdown: travelText,
     },
-    // S links: ein Drittel der Spalte, der Text fließt rechts daneben.
+    // Einzelbild (keine Gruppe): ein Drittel der Spalte, links, der Text
+    // fließt rechts daneben.
     {
       travelPostId: travel.id,
       sortOrder: 1,
       type: "bild",
       imageId: bildGasse,
+      groesse: "s",
+      ausrichtung: "links",
     },
     {
       travelPostId: travel.id,
@@ -448,12 +451,14 @@ async function main() {
         "waren. Man setzt sich dazu, ohne zu fragen, und bekommt, was gerade " +
         "fertig ist.",
     },
-    // M allein: die halbe Spalte, der Text fließt links daneben.
+    // Einzelbild: die halbe Spalte, rechts, der Text fließt links daneben.
     {
       travelPostId: travel.id,
       sortOrder: 3,
       type: "bild",
       imageId: bildMarkt,
+      groesse: "m",
+      ausrichtung: "rechts",
     },
     {
       travelPostId: travel.id,
@@ -464,19 +469,22 @@ async function main() {
         "später kommt, findet leere Kisten und nasses Kopfsteinpflaster — und " +
         "die Cafés ringsum voll mit Leuten, die schon fertig sind.",
     },
-    // Eine Gruppe aus ZWEI Bildern: das erste über die ganze Breite, das
-    // zweite darunter. Die Anordnung folgt allein aus der Nachbarschaft.
+    // Eine Gruppe aus ZWEI Bildern (Marke 1): das erste über die ganze
+    // Breite, das zweite darunter. Die Anordnung folgt aus der Position in
+    // der Gruppe — deshalb trägt hier kein Bild eine Größe oder eine Seite.
     {
       travelPostId: travel.id,
       sortOrder: 5,
       type: "bild",
       imageId: bildHafen,
+      gruppe: 1,
     },
     {
       travelPostId: travel.id,
       sortOrder: 6,
       type: "bild",
       imageId: bildZeile[3],
+      gruppe: 1,
     },
     {
       travelPostId: travel.id,
@@ -486,12 +494,15 @@ async function main() {
         "Nachmittags wird es an der Küste windig. Dann lohnt der Weg ins " +
         "Landesinnere, wo die Salinen liegen und es plötzlich ganz still ist.",
     },
-    // L → über die ganze Spalte, kein Text daneben, keine Seite.
+    // Eine Gruppe aus EINEM Bild (Marke 2): volle Breite, kein Text daneben.
+    // Das ist kein Sonderfall, sondern dieselbe Regel — das erste Bild einer
+    // Gruppe steht immer über die ganze Breite, auch wenn es das einzige ist.
     {
       travelPostId: travel.id,
       sortOrder: 8,
       type: "bild",
       imageId: bildSalz,
+      gruppe: 2,
     },
     {
       travelPostId: travel.id,
@@ -501,26 +512,30 @@ async function main() {
         "Zwischen den Salinen und der Stadt liegt eine Straße, an der alle " +
         "zwanzig Kilometer ein Stand mit Zitronen steht.",
     },
-    // Eine Gruppe aus DREI Bildern — der Fall, an dem die alte Anordnung
-    // zerbrach: erstes über die ganze Breite, die beiden anderen darunter in
-    // einer Reihe, nach Seitenverhältnis verteilt (gleich hoch, unten bündig).
+    // Eine Gruppe aus DREI Bildern (Marke 3) — der Fall, an dem die alte
+    // Anordnung zerbrach: erstes über die ganze Breite, die beiden anderen
+    // darunter in einer Reihe, nach Seitenverhältnis verteilt (gleich hoch,
+    // unten bündig).
     {
       travelPostId: travel.id,
       sortOrder: 10,
       type: "bild",
       imageId: bildZeile[0],
+      gruppe: 3,
     },
     {
       travelPostId: travel.id,
       sortOrder: 11,
       type: "bild",
       imageId: bildZeile[1],
+      gruppe: 3,
     },
     {
       travelPostId: travel.id,
       sortOrder: 12,
       type: "bild",
       imageId: bildZeile[2],
+      gruppe: 3,
     },
     {
       travelPostId: travel.id,
