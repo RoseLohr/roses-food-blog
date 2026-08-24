@@ -734,6 +734,69 @@ Abhängigkeit, die von der Aufrufstelle abhängt statt von der Datei.
 Die beiden nachgemessenen Formen aus der Tabelle sind als Fälle festgehalten,
 damit die Messung bleibt und nicht wieder zur Vermutung wird.
 
+### Runde zehn: die Umkehr — der Wert jeder Zuweisung fällt
+
+Drei Stimmen, zwei Vetos, drei Behauptungen. Nachgemessen, jede einzeln:
+
+| Behauptung | gemessen |
+|---|---|
+| „CI-Selbsttest deterministisch rot" (combo/SOTA-C) | **falsch.** Der `gate`-Job zu diesem Kopf lief grün durch, Schritt „Erhebungs-Maskierung-Selbsttest" inklusive, 831 Tests. Das Panel endete 11:43:50, der Gate-Job 11:44:02 — die Stimme kann kein CI-Ergebnis gesehen haben, sie hat eines behauptet. |
+| „`--maskieren` lässt Kurz-/Integer-/Hexliterale einer IPv4 durch" (Pflicht-Approver) | **zutreffend.** `203.0.113`, `3405803783`, `0xCB007107`, `0313.0.0.7` liefen alle unverändert durch. |
+| „Stichwortliste lückenhaft — `AWS_ACCESS_KEY_ID`, `SESSION_COOKIE`" (Pflicht-Approver) | **zutreffend, und schlimmer als gemeldet.** Auch `AWS_SECRET_ACCESS_KEY=…` lief durch, obwohl `SECRET` darin steht: Die Regel verlangte das Stichwort als LETZTES Zeichen vor dem Trenner. `PRIVATE_KEY`, `SMTP_PASS` ebenso. |
+
+**Die Antwort ist nicht die sechste Regel.** Genau das steht seit Runde acht
+hier: „Wo eine Kontrolle fünfmal hintereinander umgangen wurde, ist nicht die
+sechste Regel die Antwort." Vier Stichworte nachzutragen hätte dieses Panel
+grün gemacht und wäre falsch gewesen — das nächste Panel hätte `VAULT_ENTRY`
+gebracht.
+
+Also die Umkehr, von Blockliste auf Fail-closed:
+
+> **Der Wert JEDER Zuweisung `name: wert` / `name=wert` fällt.**
+> Die Regel kennt keinen einzigen Geheimnisnamen.
+
+Damit ist die Klasse geschlossen statt aufgezählt. Gegenprobe an der
+Vorfassung — alle sechs standen dort im Klartext, jetzt fällt jeder, auch der
+erfundene `ZAUBERWORT_2026`:
+
+```
+AWS_ACCESS_KEY_ID=…      VORHER: im Klartext   JETZT: <maskiert>
+AWS_SECRET_ACCESS_KEY=…  VORHER: im Klartext   JETZT: <maskiert>
+SESSION_COOKIE=…         VORHER: im Klartext   JETZT: <maskiert>
+PRIVATE_KEY=…            VORHER: im Klartext   JETZT: <maskiert>
+SMTP_PASS=…              VORHER: im Klartext   JETZT: <maskiert>
+ZAUBERWORT_2026=…        VORHER: im Klartext   JETZT: <maskiert>
+```
+
+**Beim Bau hat die Umkehr selbst ein Leck erzeugt** — festgehalten, weil es die
+Regel erklärt: Zuerst stand sie VOR den Adressregeln. Damit zerlegte sie
+`fe80::1 dev eth0` am ersten Doppelpunkt zu `fe80:<maskiert>` und ließ das
+Präfix stehen; bei `2001:db8::1` wäre es das routbare Präfix gewesen. Eine
+Maskierung, die eine Adresse für eine Zuweisung hält, maskiert die falsche
+Hälfte. Die Regel steht jetzt HINTER den Adressregeln, und zwei Fälle im
+Selbsttest halten das fest.
+
+**Der Bericht musste dafür seine eigenen Beschriftungen ändern.** `Stand:`,
+`Port:`, `Zeilen insgesamt:` sind aus Sicht der Regel Zuweisungen — die eigene
+Antwort wäre dem eigenen Filter zum Opfer gefallen. Sie tragen jetzt einen
+Trenner (`Stand · …`). Eine Ausnahmeliste wäre die Alternative gewesen; sie
+wäre wieder eine Liste, die jemand pflegen muss. `nginx -v` liefert nur noch
+die Nummer, M5 nur noch die ANZAHL der Namen statt der Namen — beides ohnehin
+die richtigere Auskunft.
+
+**Die Adressnotationen sind NICHT geschlossen, sondern benannt.** `203.0.113`
+und `3405803783` sind gültige IPv4-Schreibweisen und lexikalisch nicht von
+`2.11.1` oder einer Kennung zu unterscheiden. Kein Filter erkennt sie, ohne
+Fassungsnummern und Zähler mitzunehmen. Zwei Selbsttestfälle halten fest, dass
+sie durchkommen — als gemessene Grenze, nicht als Versehen. Getragen wird die
+Zusage von woanders: Der Bericht DRUCKT keine Adresse (`adress_art`, Runde
+sieben).
+
+Daraus folgt die ehrliche Umwidmung: **`--maskieren` ist kein allgemeiner
+Sicherheitsfilter.** Wer beliebigen Text hindurchschickt, bekommt keine Zusage.
+Der Kopf des Skripts sagt das jetzt, statt „jede Zeile ist maskiert" zu
+behaupten. Die Kontrolle ist die Fragestellung; das Netz ist das Netz.
+
 ## Spur C2/C3/C4 — Proxy-Konfiguration
 
 **Trägt:** Die Grundrichtung. Die eigentliche Schwachstelle ist die Anwendung

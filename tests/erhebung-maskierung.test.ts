@@ -37,10 +37,19 @@ const ABFRAGE_MERKMAL = "Q7bTnZ4pLm2Xr9Kd";
 const PFAD_MERKMAL = "AbCdEf0123456789";
 /** Abfrage direkt hinter dem Hafen, ohne Pfad davor. */
 const ABFRAGE_OHNE_PFAD = "Wz8yQ1nR6vT3sJ0e";
+/**
+ * Werte hinter Namen, die eine Stichwortliste NICHT fängt: keins am Ende,
+ * eins mitten im Namen, gar keins. Genau diese drei nannte der Pflicht-
+ * Approver in Runde zehn — an der Vorfassung standen sie im Klartext.
+ * Zur Laufzeit gefügt, damit der Geheimnis-Scanner (B-06) scharf bleibt.
+ */
+const OHNE_STICHWORT = "AKIA" + "IOSFODNN7BEISPIEL";
+const STICHWORT_IN_DER_MITTE = "wJalrXUtnFEMI7Kbeispiel";
+const KEIN_STICHWORT = "s%3Aq1w2e3r4t5y6u7i8o9";
 
 /** Wie die Ausgabe des Skripts auf dem echten Host aussieht. */
 const BERICHT = [
-  "Stand: 2026-08-22T23:14:47Z",
+  "Stand · 2026-08-22T23:14:47Z",
   "roses-blog   localhost/roses-blog:latest    Up 3 days     127.0.0.1:3000->3000/tcp",
   "npm-app      docker.io/jc21/npm:2.11.1      Up 9 days     0.0.0.0:443->443/tcp",
   "Netz host · Regel always · Neustarts 2 · seit 2026-08-19T05:11:02Z",
@@ -54,6 +63,11 @@ const BERICHT = [
   // der Invariante, für die dieses Skript existiert.
   "upstream backend6 { server [2001:db8:c17:b8f::1]:3000; }",
   "listen [2001:db8::10]:443 ssl;",
+  // Runde zehn: Zuweisungen, deren Name kein Stichwort traegt oder es nur in
+  // der Mitte traegt. Alle drei kamen an der Vorfassung im Klartext durch.
+  `AWS_ACCESS_KEY_ID=${OHNE_STICHWORT}`,
+  `AWS_SECRET_ACCESS_KEY=${STICHWORT_IN_DER_MITTE}`,
+  `SESSION_COOKIE=${KEIN_STICHWORT}`,
   "fe80::1 dev eth0",
   // Runde zwei desselben Prüfers: IPv4-eingebettet OHNE `::` — die IPv4-Regel
   // schlug den hinteren Teil, das routbare 96-Bit-Präfix blieb stehen.
@@ -108,6 +122,9 @@ describe("A1: die Erhebung ist weitergabesicher", () => {
       "sehr-geheim-123",
       "9f3c1a77e2b4d5f60a1c8e93b7d240af5c6e18b0",
       "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9",
+      OHNE_STICHWORT, // Name ohne Stichwort am Ende
+      STICHWORT_IN_DER_MITTE, // Stichwort mitten im Namen
+      KEIN_STICHWORT, // gar kein Stichwort
     ]) {
       expect(raus, `„${gefaehrlich}" steht noch im maskierten Bericht`).not.toContain(
         gefaehrlich,

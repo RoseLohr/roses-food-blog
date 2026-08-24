@@ -4,7 +4,8 @@
 # gefahrlos in ein öffentliches Repository kleben kann. (Spur A1)
 #
 #   erhebung.sh [--basis <url>]        Bericht auf stdout
-#   erhebung.sh --maskieren            liest stdin, schreibt maskiert nach stdout
+#   erhebung.sh --maskieren            das Netz allein, auf stdin angewandt
+#                                      (KEIN allgemeiner Sicherheitsfilter — s. u.)
 #   erhebung.sh --selftest             prüft die Maskierung an bekannten Fällen
 #
 # WARUM ES DIESES SKRIPT GIBT
@@ -50,14 +51,35 @@
 # Gezählt wird jetzt, gezeigt wird nicht — wer den Inhalt braucht, liest ihn
 # auf dem Host.
 #
-# DIE MASKIERUNG IST DER GRUND, WARUM MAN DIE AUSGABE WEITERGEBEN DARF
+# WARUM MAN DIE AUSGABE WEITERGEBEN DARF — UND WORAUF DAS BERUHT
 # ---------------------------------------------------------------------------
 # Dieses Repository ist ÖFFENTLICH. Die Adresse des Ursprungs darf darin nicht
 # auftauchen — sie ist der einzige Weg, an Cloudflare vorbei direkt auf den
-# Server zu zielen. Deshalb läuft JEDE Zeile dieses Berichts durch
-# `maskieren()`, und zwar am Ende einer Pipe, nicht an jeder Fundstelle: Eine
+# Server zu zielen.
+#
+# DIE KONTROLLE IST NICHT DER FILTER, SONDERN DIE FRAGESTELLUNG. Der Bericht
+# druckt Klassen, Zahlen und Zählungen: eine Portnummer, „Loopback" statt einer
+# Adresse, „268 Zeilen" statt der Zeilen, „3 Name(n)" statt der Namen. Was gar
+# nicht erst gedruckt wird, muss auch nicht maskiert werden.
+#
+# Das Netz dahinter läuft am Ende EINER Pipe, nicht an jeder Fundstelle: Eine
 # Maskierung, die man je Befehl von Hand anwenden muss, wird beim nächsten
-# hinzugefügten Befehl vergessen.
+# hinzugefügten Befehl vergessen. Es arbeitet FAIL-CLOSED, wo es das kann:
+# Der Wert jeder Zuweisung `name: wert` / `name=wert` fällt, ohne dass die
+# Regel einen einzigen Geheimnisnamen kennt. Neun Runden Fremd-Vendor-Panel
+# haben gezeigt, dass eine Liste von Stichworten nie fertig wird — nach
+# `password|secret|token` kamen `AWS_ACCESS_KEY_ID`, `SESSION_COOKIE`,
+# `AWS_SECRET_ACCESS_KEY` (Stichwort MITTEN im Namen, die alte Regel sah es
+# nicht). Eine Umkehr braucht die Liste nicht mehr.
+#
+# WAS DAS NETZ NICHT KANN, ausdrücklich benannt statt stillschweigend
+# vorausgesetzt: `203.0.113` (Kurzform), `3405803783` (Zahlenliteral) und
+# `0xCB007107` sind gültige Schreibweisen einer IPv4 und lexikalisch nicht von
+# einer Fassungsnummer oder einer Kennung zu unterscheiden. Kein Filter
+# erkennt sie, ohne `2.11.1` und `RestartCount 4` mitzunehmen. Deshalb ist
+# `--maskieren` KEIN allgemeiner Sicherheitsfilter: Wer beliebigen Text
+# hindurchschickt, bekommt keine Zusage. Die Zusage gilt dem Bericht, und sie
+# beruht darauf, dass er Adressen klassifiziert statt sie zu drucken.
 #
 # Ausdrücklich NICHT maskiert werden `127.0.0.1`, `::1` und `0.0.0.0`. Das ist
 # eine benannte Ausnahme mit Grund: Ob der Proxy die Anwendung über den
@@ -187,6 +209,7 @@ maskieren() {
     -e 's/\b([0-9]{1,3}\.){3}[0-9]{1,3}\b/<IPv4>/g' \
     -e 's/([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}/<IPv6>/g' \
     -e 's/[0-9a-fA-F]{0,4}(:[0-9a-fA-F]{1,4}){0,6}::([0-9a-fA-F]{1,4}(:[0-9a-fA-F]{1,4}){0,6})?/<IPv6>/g' \
+    -e 's%(^|[[:space:]])([A-Za-z_][A-Za-z0-9_-]*)([[:space:]]*[:=][[:space:]]*)(/?[^/[:space:]]).*$%\1\2\3<maskiert>%' \
     -e 's/\b[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)+\.[A-Za-z]{2,}\b/<name>/g' \
     -e 's/\b[A-Za-z0-9+\/]{40,}={0,2}\b/<langer-wert>/g' \
     -e 's#/(home|Users)/[^/[:space:]]+#/\1/<benutzer>#g' \
@@ -294,7 +317,7 @@ hafen_abgleich() { # hafen_abgleich <port-aus-env> <veroeffentlichte-ports>
   local host_ports
   host_ports="$(printf '%s' "$ist" | tr ' ' '\n' | sed -n 's/.*:\([0-9][0-9]*\)$/\1/p' | tr '\n' ' ')"
   if [ -z "$host_ports" ]; then
-    echo "UNKLAR · .env sagt $erwartet · veroeffentlicht: $ist · daraus laesst sich keine Host-Portnummer lesen."
+    echo "UNKLAR · .env sagt $erwartet · veroeffentlicht $ist · daraus laesst sich keine Host-Portnummer lesen."
     return 0
   fi
   case " $host_ports " in
@@ -331,7 +354,10 @@ selbsttest() {
   pruefe "Kennwort wird maskiert" "DB_PASSWORD=hunter2" "DB_PASSWORD=<maskiert>"
   pruefe "Token mit Doppelpunkt" "api_key: abc123XYZ" "api_key: <maskiert>"
   pruefe "Authorization-Kopf" "Authorization: Bearer eyJhbGciOi" "Authorization: <maskiert>"
-  pruefe "langer Wert" "wert=$(printf 'A%.0s' $(seq 1 44))" "wert=<langer-wert>"
+  pruefe "langer Wert in einer Zuweisung faellt als Wert" \
+    "wert=$(printf 'A%.0s' $(seq 1 44))" "wert=<maskiert>"
+  pruefe "langer Wert OHNE Zuweisung" \
+    "hash $(printf 'A%.0s' $(seq 1 44)) ende" "hash <langer-wert> ende"
   pruefe "Hostname wird maskiert" "server_name blog.example.de;" "server_name <name>;"
 
   # DIE FÄLLE, DIE DER PFLICHT-APPROVER GEFUNDEN HAT (PR #111) — jeder einzeln,
@@ -403,7 +429,8 @@ selbsttest() {
   pruefe "Containername ohne Punkt bleibt" "roses-blog Up 3 days" "roses-blog Up 3 days"
   # Die benannte Grenze, hier festgehalten statt nur behauptet:
   pruefe "zweiteiliger Name bleibt lesbar (Grenze)" "docker.io/jc21/npm:2.11.1" "docker.io/jc21/npm:2.11.1"
-  pruefe "Zeitstempel bleibt unversehrt" "Stand: 2026-08-22T23:14:47Z" "Stand: 2026-08-22T23:14:47Z"
+  pruefe "Zeitstempel des Berichts bleibt unversehrt" \
+    "Stand · 2026-08-22T23:14:47Z" "Stand · 2026-08-22T23:14:47Z"
   # Der Approver vermutete zusaetzlich, die Geheimnis-Regex trete auf
   # `proxy_pass` an. Nachgemessen trifft sie NICHT — das `[Dd]` in
   # `pass(w)(o)(r)d` ist Pflicht. Der Fall steht hier, damit die Messung
@@ -413,9 +440,13 @@ selbsttest() {
   # Die neue IPv6-Regel darf keine gewoehnliche URL mit IPv4 verschlucken:
   # dort ist genau die IPv4 das Geheimnis, und mehr soll nicht wegfallen.
   pruefe "URL mit oeffentlicher IPv4 bleibt eine URL" "http://192.0.2.1:3000 extern" "http://<IPv4>:3000 extern"
-  # Eine Mailadresse hat keinen Doppelpunkt vor dem Klammeraffen und bleibt
-  # deshalb stehen — die Userinfo-Regel darf nicht alles mit @ verschlucken.
-  pruefe "Mailadresse bleibt lesbar" "Kontakt: name@beispiel.de" "Kontakt: name@beispiel.de"
+  # Eine Mailadresse hat keinen Doppelpunkt vor dem Klammeraffen, die
+  # Userinfo-Regel laesst sie also stehen. Hinter einer Beschriftung mit
+  # Doppelpunkt faellt sie trotzdem — als Wert einer Zuweisung (Runde zehn).
+  pruefe "Mailadresse ohne Zuweisung bleibt lesbar" \
+    "Kontakt name@beispiel.de" "Kontakt name@beispiel.de"
+  pruefe "Mailadresse als Wert faellt" \
+    "Kontakt: name@beispiel.de" "Kontakt: <maskiert>"
 
   # DER PORTVERGLEICH — mit echten Argumenten, nicht ueber den Text geprueft.
   pruefen_gleich() { # pruefen_gleich <Beschreibung> <Ist> <Muster>
@@ -454,6 +485,54 @@ selbsttest() {
   done
   pruefe "Zahlen bleiben Zahlen" "RestartCount 4" "RestartCount 4"
 
+  # RUNDE ZEHN: Der Wert JEDER Zuweisung faellt — ohne dass die Regel einen
+  # einzigen Geheimnisnamen kennt. Die folgenden Namen stehen NICHT in der
+  # Regel; sie stehen hier, weil der Pflicht-Approver sie genannt hat und die
+  # Messung bleiben soll. Wer einen weiteren Namen erfindet, ist ebenfalls
+  # abgedeckt — das ist der ganze Punkt der Umkehr.
+  # Der Wert zur Laufzeit zusammengesetzt: als Literal traegt er die Form eines
+  # echten Zugangsschluessels, und der Geheimnis-Scanner (B-06) faengt ihn im
+  # Quelltext — zu Recht. Auf den Wert kommt es hier ohnehin nicht an.
+  local schluesselform="AKIA${dp#:}IOSFODNN7BEISPIEL"
+  pruefe "Zugangsschluessel ohne Stichwort am Ende" \
+    "AWS_ACCESS_KEY_ID=$schluesselform" "AWS_ACCESS_KEY_ID=<maskiert>"
+  pruefe "Stichwort mitten im Namen (die alte Regel sah es nicht)" \
+    "AWS_SECRET_ACCESS_KEY=xyz" "AWS_SECRET_ACCESS_KEY=<maskiert>"
+  pruefe "Sitzungsmerkmal, das sich nicht Geheimnis nennt" \
+    "SESSION_COOKIE=abc123" "SESSION_COOKIE=<maskiert>"
+  pruefe "erfundener Name, den keine Liste kennen kann" \
+    "ZAUBERWORT_2026=abc" "ZAUBERWORT_2026=<maskiert>"
+
+  # Die Umkehr darf die Adressregeln nicht ueberholen: sonst zerlegt sie eine
+  # IPv6 am ersten Doppelpunkt und LAESST DAS PRAEFIX STEHEN. Genau das ist
+  # beim Bau passiert; „fe80::1 dev eth0" wurde zu „fe80:<maskiert>".
+  pruefe "IPv6 wird nicht als Zuweisung zerlegt" \
+    "fe80::1 dev eth0" "<IPv6> dev eth0"
+  pruefe "routbares Praefix bleibt nicht stehen" \
+    "2001:db8::1 hoch" "<IPv6> hoch"
+  pruefe "Adresse als Wert faellt ganz" "TOKEN=2001:db8::1" "TOKEN=<maskiert>"
+
+  # Die Beschriftungen des Berichts tragen deshalb einen Trenner statt eines
+  # Doppelpunkts — sonst faellt die eigene Antwort dem eigenen Filter zum
+  # Opfer. Gemessen, damit es beim naechsten Umbau auffaellt.
+  pruefe "Beschriftung des Berichts bleibt" \
+    "M1/M4 · Port — .env GEGEN laufenden Container" \
+    "M1/M4 · Port — .env GEGEN laufenden Container"
+  pruefe "gezaehlte Auskunft bleibt" "Zeilen insgesamt — 268" "Zeilen insgesamt — 268"
+
+  # DIE BENANNTE GRENZE, gemessen statt behauptet (Befund des Pflicht-
+  # Approvers, Runde zehn — zutreffend und hier NICHT geschlossen):
+  # `203.0.113` und `3405803783` sind gueltige Schreibweisen einer IPv4 und
+  # lexikalisch nicht von einer Fassungsnummer oder einer Kennung zu
+  # unterscheiden. Ein Filter kann sie nicht erkennen, ohne `2.11.1` und
+  # `RestartCount 4` mitzunehmen. Deshalb DRUCKT der Bericht keine Adresse
+  # (adress_art, Runde sieben) — und deshalb ist `--maskieren` kein
+  # allgemeiner Sicherheitsfilter mehr, sondern das Netz dahinter.
+  pruefe "Kurzschreibweise kommt durch — benannte Grenze" \
+    "upstream 203.0.113;" "upstream 203.0.113;"
+  pruefe "Zahlenliteral kommt durch — benannte Grenze" \
+    "upstream 3405803783;" "upstream 3405803783;"
+
   # Die Zahl wird GEZÄHLT, nicht behauptet. Bis Runde neun stand hier eine
   # Konstante: sie war nur richtig, solange jemand sie von Hand nachführte, und
   # sie unterschlug die vier Prüfungen der Schleife. Dieselbe Fehlerklasse wie
@@ -463,7 +542,7 @@ selbsttest() {
   # MINDESTZAHL als Stolperdraht: eine gezählte Zahl kann nicht mehr falsch
   # sein, aber Fälle könnten still verschwinden. Die Untergrenze fängt das ab
   # und darf nur steigen.
-  local mindestens=57
+  local mindestens=70
   if [ "$faelle" -lt "$mindestens" ]; then
     echo "[erhebung] Selbsttest: nur $faelle Fälle gelaufen, erwartet mindestens $mindestens — es sind Prüfungen verschwunden."
     fehler=1
@@ -490,8 +569,9 @@ bericht() {
   local wurzel
   wurzel="$(cd "$(dirname "$0")/../.." && pwd)"
 
-  printf '# Erhebung\n\nStand: %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
-  printf 'Erzeugt von scripts/regime/erhebung.sh — jede Zeile ist maskiert.\n'
+  printf '# Erhebung\n\nStand · %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+  printf 'Erzeugt von scripts/regime/erhebung.sh — der Bericht druckt Klassen,\n'
+  printf 'Zahlen und Zaehlungen; jede Zeile laeuft zusaetzlich durch das Netz.\n'
 
   abschnitt "0 · Umgebung"
   frage "Kernel" uname -sr
@@ -528,7 +608,7 @@ bericht() {
     # weiss der, der das Skript aufruft.
     printf 'PORT laut .env (autoritativ):\n  (keine .env im Projektverzeichnis)\n\n'
   fi
-  printf 'M1/M4 · Port: .env GEGEN laufenden Container\n  %s\n\n' \
+  printf 'M1/M4 · Port — .env GEGEN laufenden Container\n  %s\n\n' \
     "$(hafen_abgleich "$PORT_ENV" "$(podman port roses-blog 2>/dev/null | tr '\n' ' ' || true)")"
   frage "Container" podman ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}'
   frage "roses-blog: Netz, Neustartregel, Neustartzähler, Start" \
@@ -560,7 +640,7 @@ bericht() {
     # jedes Mal. Eine Auskunft, die immer dasselbe sagt, ist keine (Befund des
     # Pflicht-Approvers, PR #111). Zusammengeführt wird IM Container, damit
     # `frage` weiterhin nur echte Fehler schluckt.
-    frage "nginx-Fassung im Proxy" podman exec "$proxy" sh -c "nginx -v 2>&1"
+    frage "nginx-Fassung im Proxy" podman exec "$proxy" sh -c "nginx -v 2>&1 | sed 's|.*/||'"
     # M1: Woher weiß der Proxy, wohin er weiterreicht? Aus den erzeugten
     # proxy_host-Dateien — NICHT aus der Datenbank des Proxy-Managers.
     # Die Rohzeilen werden GELESEN, aber nie gedruckt — s. adress_art().
@@ -581,7 +661,7 @@ bericht() {
     frage "M3 · gesetzte Weiterleitungsköpfe" \
       podman exec "$proxy" sh -c "nginx -T 2>/dev/null | grep -E 'proxy_set_header +X-(Real-IP|Forwarded-For|Forwarded-Host|Forwarded-Proto)' | sort | uniq -c"
     frage "M3 · set_real_ip_from: Anzahl und Kontext" \
-      podman exec "$proxy" sh -c "nginx -T 2>/dev/null | grep -c 'set_real_ip_from' | sed 's/^/Zeilen insgesamt: /'; nginx -T 2>/dev/null | grep -B2 'set_real_ip_from' | grep -E '# configuration file' | sort -u"
+      podman exec "$proxy" sh -c "nginx -T 2>/dev/null | grep -c 'set_real_ip_from' | sed 's/^/Zeilen insgesamt — /'; nginx -T 2>/dev/null | grep -B2 'set_real_ip_from' | grep -E '# configuration file' | sort -u"
     frage "M3 · real_ip_header" \
       podman exec "$proxy" sh -c "nginx -T 2>/dev/null | grep -E 'real_ip_header|real_ip_recursive' | sort | uniq -c || echo 'nicht gesetzt'"
 
@@ -595,8 +675,8 @@ bericht() {
           [ -f "$f" ] || continue
           ende=$(openssl x509 -in "$f" -noout -enddate | cut -d= -f2)
           tage=$(( ( $(date -d "$ende" +%s) - $(date +%s) ) / 86400 ))
-          namen=$(openssl x509 -in "$f" -noout -ext subjectAltName | tail -1 | tr -d " ")
-          echo "$namen | laeuft $ende | noch $tage Tage"
+          anzahl=$(openssl x509 -in "$f" -noout -ext subjectAltName | tail -1 | tr -d " " | tr "," "\n" | grep -c .)
+          echo "$anzahl Name(n) | laeuft $ende | noch $tage Tage"
         done'
   fi
 
