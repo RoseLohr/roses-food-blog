@@ -4,6 +4,7 @@ import { requireAdmin } from "@/lib/auth";
 import { t } from "@/i18n/de";
 import { buildTravelEditorProps } from "../editor-data";
 import { TravelEditor } from "../travel-editor";
+import { meldungAus } from "@/components/admin/meldung";
 
 const dict = t();
 
@@ -22,8 +23,7 @@ export default async function EditTravelPage(props: {
   const editorProps = await buildTravelEditorProps(travelId);
   if (!editorProps) notFound();
 
-  const message =
-    typeof searchParams.meldung === "string" ? searchParams.meldung : null;
+  const message = meldungAus(searchParams);
 
   return (
     <>

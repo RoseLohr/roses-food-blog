@@ -1,6 +1,11 @@
 # Abnahme — Akzeptanzkriterien und Prüfschritte
 
-Stand: Abschluss E12. Alle automatisierten Tests: `npm test` (51+ Tests).
+Stand: Abschluss E12 (Zahlen von damals). Heute umfasst `npm test` deutlich
+mehr; maßgeblich ist der jeweilige Lauf, nicht diese Zahl.
+
+> **Freigabe zum Deployen** hängt an `audit/engagement-status.json` →
+> `production_eligible`. Der Wert steht derzeit auf `false`; das CI-Gate
+> `scripts/regime/findings-gate.mjs` verweigert die Admission fail-closed.
 
 | # | Kriterium | Umsetzung | Prüfung |
 |---|-----------|-----------|---------|
@@ -13,7 +18,7 @@ Stand: Abschluss E12. Alle automatisierten Tests: `npm test` (51+ Tests).
 | 7 | Kampagne an Segment; Testversand; Protokoll; „letzter Kontakt“; Willkommenssequenz zeitversetzt | `src/lib/campaigns.ts`, `campaign_log`, `recordContactActivity`, `src/lib/sequences.ts` | Integrationstests `crm` + `newsletter` |
 | 8 | Tracking-Dashboard: Aufrufe, Häufigkeit, Ø-Dauer, Land, Browser, Aufrufart; keine IP/PII | `/admin/statistik`; Test verifiziert, dass die IP nirgends gespeichert wird | Integrationstest `tracking` + manuell |
 | 9 | Druckansicht sauber, ohne Navigation/Sidebar | `/drucken/rezepte/[slug]` (eigenes Layout, Auto-Druckdialog) | Manuell: „Drucken“-Button |
-| 10 | `./deploy.sh` genügt für jedes Update; Autostart nach Reboot | `deploy.sh` (pull→build→DB-Backup→Migration im Entrypoint→Neustart→Healthcheck→Status), `podman-restart.service` + Linger | Auf dem Server: `./deploy.sh`, danach `sudo reboot` und `curl 127.0.0.1:3000/health` |
+| 10 | `./deploy.sh` genügt für jedes Update; Autostart nach Reboot | `deploy.sh` (pull→build→DB-Backup→Migration im Entrypoint→Neustart→Healthcheck→Status), `podman-restart.service` + Linger | Auf dem Server: `./deploy.sh`, danach `sudo reboot` und `curl 127.0.0.1:$PORT/health` (Port aus der `.env`; auf `*:3000` lauscht auf dem Server ein fremder Dienst) |
 | 11 | Backup wiederherstellbar, Restore dokumentiert und getestet | `deploy/backup.sh` (Online-Backup-API + tar, 14-Tage-Rotation), README „Backup & Restore“ | **Restore-Test durchgeführt** (E12): Backup→gunzip→tar→Server startet auf wiederhergestellten Daten, Health ok, Rezeptseite 200 |
 | 12 | Lighthouse mobil ≥ 90 auf Startseite und Rezeptseite | SSR, WebP+srcset+lazy, minimales JS, Caching-Header, A11y-Grundlagen | **Gemessen (E12, mobil, Production-Build):** Startseite 97/96/96/100, Rezeptseite 100/100/96/100 (Perf/A11y/BP/SEO) — auf dem Produktivserver wiederholen |
 | 13 | Alle Newsletter-Mails enthalten Abmeldelink + Absenderangaben | Fester Footer in `renderEmail()` (Absender, URL, Abmeldelink), zusätzlich `List-Unsubscribe(-Post)`-Header | Integrationstest prüft Abmeldelink in HTML und Text |
@@ -21,7 +26,11 @@ Stand: Abschluss E12. Alle automatisierten Tests: `npm test` (51+ Tests).
 
 ## Manuelle Restprüfungen auf dem Produktivserver
 
-1. Ersteinrichtung nach README (Klonen, `.env`, `./deploy.sh`, nginx+certbot).
+1. Ersteinrichtung nach README (Klonen, `.env`, Proxy-Host im Nginx Proxy
+   Manager, dann `./deploy.sh`). **Reihenfolge beachten:** Ohne
+   komprimierenden Proxy bricht `deploy.sh` in Abschnitt 9c ab — der Proxy-Host
+   gehört davor. Wie er einzurichten ist, ist offen (M1,
+   `audit/12-infrastruktur-fahrplan.md`).
 2. Reboot-Test: `sudo reboot`, danach ist die Website ohne manuelles Zutun erreichbar.
 3. SMTP-Echtversand: Newsletter-Anmeldung mit echter Adresse, Bestätigungslink,
    Willkommensserie (Sequenz aktivieren!), Kampagnen-Testversand.
@@ -29,11 +38,21 @@ Stand: Abschluss E12. Alle automatisierten Tests: `npm test` (51+ Tests).
    `ls /srv/roses-blog/data/backups/`.
 5. GeoIP-Datenbank laden (`scripts/update-geoip.sh`), danach erscheinen Länder
    in der Statistik.
-6. Lighthouse (mobil) gegen die echte Domain laufen lassen — TLS/HTTP2 via
-   nginx verbessern die Werte gegenüber dem lokalen Lauf.
+6. Lighthouse (mobil) gegen die echte Domain laufen lassen — TLS/HTTP2 (und
+   HTTP/3) kommen von Cloudflare am Rand und vom Proxy am Ursprung und
+   verbessern die Werte gegenüber dem lokalen Lauf. **Achtung:** Eine Messung
+   gegen die Domain misst den RAND, nicht den eigenen Server. Genau diese
+   Verwechslung hat monatelang verdeckt, dass der Ursprung CSS unkomprimiert
+   auslieferte (Befund B2). Den Ursprung misst
+   `scripts/regime/kompression-pruefen.sh --ebene ursprung`.
 
 ## Bekannte bewusste Vereinfachungen
 
-Siehe `docs/ASSUMPTIONS.md` (B1–B20), insbesondere: In-Memory-Rate-Limits (B5),
-WebP statt AVIF (B10), System-Schrift-Stacks (B19), CSP mit `unsafe-inline`
-für Next-Bootstrap (B20).
+Siehe `docs/ASSUMPTIONS.md` (B1–B24), insbesondere: In-Memory-Rate-Limits (B5),
+WebP statt AVIF (B10), CSP mit `unsafe-inline` für Next-Bootstrap (B20).
+
+Und die drei, die man leicht für einen Fehler hält und „repariert" — womit man
+den Betrieb zerstört: **B21** (der Container läuft als root, abgesichert durch
+rootless-Betrieb), **B22**, **B23** (argon2id über `hash-wasm`, nicht
+`@node-rs/argon2`). Dazu **B24**: die Auslieferungskette. B19
+(System-Schrift-Stacks) gilt nicht mehr — der Eintrag sagt das selbst.

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { asc, eq } from "drizzle-orm";
+import { asc } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { requireAdmin } from "@/lib/auth";
 import { t } from "@/i18n/de";
@@ -9,6 +9,9 @@ import {
   toggleSequenceAction,
 } from "./actions";
 import { SequenceEditor } from "./sequence-editor";
+import { Meldung, meldungAus } from "@/components/admin/meldung";
+import { Statuschip } from "@/components/admin/statuschip";
+import { LoeschForm } from "@/components/admin/loesch-form";
 
 const dict = t();
 const d = dict.admin.sequences;
@@ -20,13 +23,12 @@ export default async function SequencesPage(props: {
 }) {
   await requireAdmin();
   const searchParams = await props.searchParams;
-  const message =
-    typeof searchParams.meldung === "string" ? searchParams.meldung : null;
+  const message = meldungAus(searchParams);
 
   const sequences = await db
     .select()
     .from(schema.sequence)
-    .orderBy(asc(schema.sequence.name));
+    .orderBy(asc(schema.sequence.name), asc(schema.sequence.id));
   const allSteps = await db
     .select()
     .from(schema.sequenceStep)
@@ -36,25 +38,15 @@ export default async function SequencesPage(props: {
     <>
       <h1 className="mb-2 text-2xl font-bold">{d.title}</h1>
       <p className="mb-6 max-w-2xl text-sm text-ink-soft">{d.hint}</p>
-      {message && (
-        <p role="status" className="mb-4 bg-amber-50 p-3 text-sm text-amber-900">
-          {message}
-        </p>
-      )}
+      <Meldung text={message} />
 
       <div className="flex max-w-3xl flex-col gap-8">
         {sequences.map((seq) => (
           <section key={seq.id} className="bg-white p-5 shadow-sm">
             <div className="mb-3 flex items-center justify-between gap-3">
-              <span
-                className={
-                  seq.active
-                    ? "bg-green-100 px-3 py-1 text-sm text-green-900"
-                    : "bg-gray-200 px-3 py-1 text-sm text-gray-700"
-                }
-              >
+              <Statuschip ton={seq.active ? "gruen" : "grau"} gross>
                 {seq.active ? d.active : d.paused}
-              </span>
+              </Statuschip>
               <div className="flex gap-2">
                 <form action={toggleSequenceAction}>
                   <input type="hidden" name="id" value={seq.id} />
@@ -65,15 +57,7 @@ export default async function SequencesPage(props: {
                     {seq.active ? d.pause : d.activate}
                   </button>
                 </form>
-                <form action={deleteSequenceAction}>
-                  <input type="hidden" name="id" value={seq.id} />
-                  <button
-                    type="submit"
-                    className="rounded-lg border border-red-300 px-3 py-1.5 text-sm text-red-700 hover:bg-red-50"
-                  >
-                    {dict.common.delete}
-                  </button>
-                </form>
+                <LoeschForm action={deleteSequenceAction} id={seq.id} gestalt="knopf" />
               </div>
             </div>
             <form action={saveSequenceAction} className="flex flex-col gap-2">

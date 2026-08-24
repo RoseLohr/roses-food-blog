@@ -11,7 +11,6 @@ import { TravelPostCard } from "./travel-post-card";
 import { publishedTravelCards } from "@/lib/travel";
 import { getPublicBaseUrl } from "@/lib/base-url";
 import { JsonLd, breadcrumbJsonLd } from "@/lib/jsonld";
-import { getSiteName } from "@/lib/settings";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -50,7 +49,6 @@ export async function TravelFilterList({
       <PageTracker contentType="reise" path={path} />
       <JsonLd
         data={breadcrumbJsonLd(base, [
-          [getSiteName(), "/"],
           [d.title, "/reisen"],
           [value, path],
         ])}

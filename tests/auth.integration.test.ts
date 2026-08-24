@@ -2,25 +2,11 @@
  * Integrationstest Auth: Passwort-Hashing und Session-Lebenszyklus
  * gegen eine echte SQLite-Datei in einem Temp-Verzeichnis.
  */
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { execSync } from "node:child_process";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
+import { frischeDb } from "./helfer/frische-db";
+import { adminAnlegen } from "./helfer/saat";
 
-let tmp: string;
-
-beforeAll(() => {
-  tmp = fs.mkdtempSync(path.join(os.tmpdir(), "roses-auth-"));
-  process.env.DATA_DIR = tmp;
-  execSync("node scripts/migrate.mjs", {
-    env: { ...process.env, DATA_DIR: tmp },
-  });
-});
-
-afterAll(() => {
-  fs.rmSync(tmp, { recursive: true, force: true });
-});
+frischeDb("auth");
 
 describe("Auth", () => {
   it("hasht und verifiziert Passwörter mit argon2id", async () => {
@@ -37,15 +23,9 @@ describe("Auth", () => {
       await import("@/lib/auth-core");
     const { db, schema } = await import("@/db");
 
-    const [user] = await db
-      .insert(schema.adminUser)
-      .values({
-        email: "rose@example.de",
-        passwordHash: await hashPassword("streng-geheim-123"),
-        name: "Rose",
-        createdAt: new Date(),
-      })
-      .returning();
+    const user = await adminAnlegen({
+      passwordHash: await hashPassword("streng-geheim-123"),
+    });
 
     const token = await createSession(user.id);
     expect(token).toHaveLength(64);

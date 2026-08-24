@@ -4,6 +4,23 @@ import { t } from "../../src/i18n/de";
 const dict = t();
 
 test.describe("Öffentliche Startseite — Tiny-Salt-Optik", () => {
+  test("trägt die strukturelle Kennung, an der die Auslieferungsprüfungen sie erkennen", async ({
+    page,
+  }) => {
+    // scripts/regime/kompression-pruefen.sh (Ursprung, bei jedem Deploy) und
+    // .github/workflows/perf-uptime.yml (Rand, täglich) erkennen die Startseite
+    // an `data-seite="start"`. Trüge die ausgelieferte Seite die Kennung nicht,
+    // wären beide Prüfungen dauerhaft rot — und zwar mit der Meldung, hier
+    // stehe nicht die Startseite.
+    //
+    // Vorher hing beides an `section.featured-slider`. Die rendert
+    // src/app/(public)/page.tsx nur bei `slides.length > 0`: Ein geleerter
+    // Slider hätte jeden Deploy scheitern lassen.
+    await page.goto("/");
+    await expect(page.locator('main[data-seite="start"]')).toHaveCount(1);
+  });
+
+
   test("Header zeigt das Marken-Lockup (Kompass + Jost) und die Suchpille", async ({
     page,
   }) => {

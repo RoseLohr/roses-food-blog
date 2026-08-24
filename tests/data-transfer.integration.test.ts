@@ -14,13 +14,14 @@
  *   fehlende Bilder im Archiv, Path-Traversal-Schutz.
  */
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
-import { execSync } from "node:child_process";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { asc, eq } from "drizzle-orm";
+import { frischeDb } from "./helfer/frische-db";
+import { adminAnlegen } from "./helfer/saat";
 
-let tmp: string;
+frischeDb("data");
+
 let adminId: number;
 
 // Lazily nach Migration importiert
@@ -99,10 +100,6 @@ let imgB: number;
 let imgC: number; // vorab verwaist (unattached)
 
 beforeAll(async () => {
-  tmp = fs.mkdtempSync(path.join(os.tmpdir(), "roses-data-"));
-  process.env.DATA_DIR = tmp;
-  execSync("node scripts/migrate.mjs", { env: { ...process.env, DATA_DIR: tmp } });
-
   ({ db, schema } = await import("@/db"));
   ({ collectExport } = await import("@/lib/data-transfer/export"));
   ({ buildExportZip } = await import("@/lib/data-transfer/zip"));
@@ -110,10 +107,7 @@ beforeAll(async () => {
   ({ importBundle } = await import("@/lib/data-transfer/import"));
   ({ uploadsDir } = await import("@/lib/media"));
 
-  const [admin] = await db
-    .insert(schema.adminUser)
-    .values({ email: "rose@example.de", passwordHash: "x", name: "Rose", createdAt: new Date() })
-    .returning();
+  const admin = await adminAnlegen();
   adminId = admin.id;
 
   // --- Bilder --- (A mit gesetztem Fokuspunkt → Round-Trip-Beleg)
@@ -256,7 +250,7 @@ beforeAll(async () => {
     { travelPostId: travelId, sortOrder: 0, type: "text", markdown: "Langer Reisetext." },
     // Höhenstufe bewusst NICHT der Default: nur so beweist der Rundlauf, dass
     // sie wirklich mitgeschrieben und wieder eingelesen wird.
-    { travelPostId: travelId, sortOrder: 1, type: "bild", imageId: imgA, groesse: "l" },
+    { travelPostId: travelId, sortOrder: 1, type: "bild", imageId: imgA },
     { travelPostId: travelId, sortOrder: 2, type: "restaurant", restaurantId: rest.id },
   ]);
 
@@ -289,10 +283,6 @@ beforeAll(async () => {
   // Referenzen für spätere Prüfungen frisch halten
   void iBasilikum;
   void iOel;
-});
-
-afterAll(() => {
-  fs.rmSync(tmp, { recursive: true, force: true });
 });
 
 // Modul-Zustand über die (geordneten) Tests hinweg
@@ -338,7 +328,9 @@ describe("Export", () => {
     // Blöcke: Text + Bild (als Datei-Referenz) + Restaurant (als Index)
     expect(tv.contentBlocks).toEqual([
       { type: "text", markdown: "Langer Reisetext." },
-      { type: "bild", image: "aaaa1111", groesse: "l" },
+      // Der Bildblock trägt nichts über sein Aussehen mehr — nur die
+      // Datei-Referenz. Die Anordnung folgt aus der Reihenfolge.
+      { type: "bild", image: "aaaa1111" },
       { type: "restaurant", index: 0 },
     ]);
 
@@ -503,7 +495,7 @@ describe("Import (Round-Trip)", () => {
       .where(eq(schema.travelBlock.travelPostId, tv.id))
       .orderBy(asc(schema.travelBlock.sortOrder));
     expect(blocks.map((b) => b.type)).toEqual(["text", "bild", "restaurant"]);
-    expect(blocks[1].groesse).toBe("l"); // Höhenstufe überlebt den Rundlauf
+    expect(blocks[1].imageId).not.toBeNull(); // das Foto überlebt den Rundlauf
     expect(blocks[2].restaurantId).toBe(rests[0].id);
     const dishes = await db.select().from(schema.dish).where(eq(schema.dish.restaurantId, rests[0].id));
     expect(dishes).toHaveLength(1);
@@ -555,6 +547,79 @@ describe("Robustheit", () => {
     await expect(
       importBundle(zip, { recipes: true, travel: false, pages: false }, adminId),
     ).rejects.toThrow(/Version 1/);
+  });
+
+  it("übernimmt keine unsichtbaren Textblöcke aus einem Alt-Export", async () => {
+    // Ein Export von vor dem Umbau kann Textblöcke enthalten, die im Editor
+    // leer aussahen und trotzdem `##` lauten. Beim Import dürfen sie nicht
+    // wieder entstehen — sonst bricht dieser unsichtbare BLOCK erneut die
+    // Bildzeile, und der Redakteur sieht wieder nur den weißen Zwischenraum.
+    const alt = {
+      format: "roses-food-blog",
+      version: 2,
+      travel: [
+        {
+          title: "Alt-Export",
+          slug: "alt-export",
+          contentBlocks: [
+            { type: "text", markdown: "Erster Absatz." },
+            { type: "text", markdown: "##" },
+            { type: "text", markdown: "\u200b" },
+            { type: "text", markdown: "---" },
+            { type: "text", markdown: "Zweiter Absatz." },
+          ],
+        },
+      ],
+    };
+    const { zipSync, strToU8 } = await import("fflate");
+    const zip = zipSync({ "content.json": strToU8(JSON.stringify(alt)) });
+    const res = await importBundle(zip, { recipes: false, travel: true, pages: false }, adminId);
+    expect(res.travel).toBe(1);
+    const [post] = await db
+      .select()
+      .from(schema.travelPost)
+      .where(eq(schema.travelPost.slug, "alt-export"));
+    const bloecke = await db
+      .select()
+      .from(schema.travelBlock)
+      .where(eq(schema.travelBlock.travelPostId, post.id))
+      .orderBy(asc(schema.travelBlock.sortOrder));
+    expect(bloecke.map((b) => b.markdown)).toEqual([
+      "Erster Absatz.",
+      "---",
+      "Zweiter Absatz.",
+    ]);
+  });
+
+  it("übernimmt eingerückten Code unverändert", async () => {
+    // Führender Leerraum ist in Markdown BEDEUTUNG: Vier Leerzeichen machen
+    // einen Codeblock. Ein `.trim()` beim Import macht daraus einen Absatz —
+    // der Export käme nicht mehr so herein, wie er hinausging (Befund des
+    // Prüfpanels).
+    const code = "    const a = 1;\n    const b = 2;";
+    const bundle = {
+      format: "roses-food-blog",
+      version: 2,
+      travel: [
+        {
+          title: "Eingerückt",
+          slug: "eingerueckt",
+          contentBlocks: [{ type: "text", markdown: code }],
+        },
+      ],
+    };
+    const { zipSync, strToU8 } = await import("fflate");
+    const zip = zipSync({ "content.json": strToU8(JSON.stringify(bundle)) });
+    await importBundle(zip, { recipes: false, travel: true, pages: false }, adminId);
+    const [post] = await db
+      .select()
+      .from(schema.travelPost)
+      .where(eq(schema.travelPost.slug, "eingerueckt"));
+    const [block] = await db
+      .select()
+      .from(schema.travelBlock)
+      .where(eq(schema.travelBlock.travelPostId, post.id));
+    expect(block.markdown).toBe(code);
   });
 
   it("liest minimalen Export tolerant ein (Defaults)", async () => {

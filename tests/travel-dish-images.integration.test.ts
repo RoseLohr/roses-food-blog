@@ -4,37 +4,17 @@
  * hart `dish.images[0]`, sodass zusätzlich hochgeladene/ausgewählte Fotos im
  * Frontend verschwanden, obwohl sie im Admin sichtbar waren.)
  */
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { execSync } from "node:child_process";
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
+import { frischeDb } from "./helfer/frische-db";
+import { adminAnlegen } from "./helfer/saat";
 
-let tmp: string;
+frischeDb("dishimg");
+
 let adminId: number;
 
 beforeAll(async () => {
-  tmp = fs.mkdtempSync(path.join(os.tmpdir(), "roses-dishimg-"));
-  process.env.DATA_DIR = tmp;
-  execSync("node scripts/migrate.mjs", {
-    env: { ...process.env, DATA_DIR: tmp },
-  });
-  const { db, schema } = await import("@/db");
-  const [admin] = await db
-    .insert(schema.adminUser)
-    .values({
-      email: "rose@example.de",
-      passwordHash: "x",
-      name: "Rose",
-      createdAt: new Date(),
-    })
-    .returning();
-  adminId = admin.id;
-});
-
-afterAll(() => {
-  fs.rmSync(tmp, { recursive: true, force: true });
+  adminId = (await adminAnlegen()).id;
 });
 
 /** Legt ein Medienbild mit einer 320er-Variante an und gibt die ID zurück. */
@@ -56,6 +36,43 @@ async function seedImage(fileKey: string): Promise<number> {
   return img.id;
 }
 
+/**
+ * Baut das Formular für einen veröffentlichten Bericht mit EINEM Restaurant
+ * und EINEM Gericht. Gleich in allen vier Fällen: Status, leere
+ * Beschreibungen, leere Zutatenliste. Alles, was sich zwischen den Fällen
+ * unterscheidet, steht am Aufruf.
+ */
+function berichtFormular(felder: {
+  titel: string;
+  restaurant: string;
+  stadt: string;
+  gericht: string;
+  imageIds: number[];
+}): FormData {
+  const fd = new FormData();
+  fd.set("titel", felder.titel);
+  fd.set("status", "veroeffentlicht");
+  fd.set(
+    "restaurants",
+    JSON.stringify([
+      {
+        name: felder.restaurant,
+        city: felder.stadt,
+        description: "",
+        dishes: [
+          {
+            name: felder.gericht,
+            description: "",
+            imageIds: felder.imageIds,
+            ingredients: [],
+          },
+        ],
+      },
+    ]),
+  );
+  return fd;
+}
+
 describe("Reisebericht-Frontend: Gericht-Fotos", () => {
   it("rendert ALLE ausgewählten Gericht-Fotos, nicht nur das erste", async () => {
     const { saveTravelFromForm } = await import("@/lib/travel-save");
@@ -66,27 +83,13 @@ describe("Reisebericht-Frontend: Gericht-Fotos", () => {
     const imgB = await seedImage("dishfoto-b");
     const imgC = await seedImage("dishfoto-c");
 
-    const fd = new FormData();
-    fd.set("titel", "Drei Fotos pro Gericht");
-    fd.set("status", "veroeffentlicht");
-    fd.set(
-      "restaurants",
-      JSON.stringify([
-        {
-          name: "Trattoria Tre",
-          city: "Palermo",
-          description: "",
-          dishes: [
-            {
-              name: "Arancini",
-              description: "",
-              imageIds: [imgA, imgB, imgC],
-              ingredients: [],
-            },
-          ],
-        },
-      ]),
-    );
+    const fd = berichtFormular({
+      titel: "Drei Fotos pro Gericht",
+      restaurant: "Trattoria Tre",
+      stadt: "Palermo",
+      gericht: "Arancini",
+      imageIds: [imgA, imgB, imgC],
+    });
     const result = await saveTravelFromForm(fd, adminId);
     const id = (result as { travelId: number }).travelId;
 
@@ -124,27 +127,13 @@ describe("Reisebericht-Frontend: Gericht-Fotos", () => {
     // behaupten würde — beide bekommen dasselbe Format. Ab DREI Fotos trägt
     // die Bühne wieder (zweiter Teil dieses Tests).
     const zwei = [await seedImage("regelc-a"), await seedImage("regelc-b")];
-    const fd = new FormData();
-    fd.set("titel", "Zwei Fotos, keine Bühne");
-    fd.set("status", "veroeffentlicht");
-    fd.set(
-      "restaurants",
-      JSON.stringify([
-        {
-          name: "Bar Dos",
-          city: "Sevilla",
-          description: "",
-          dishes: [
-            {
-              name: "Salmorejo",
-              description: "",
-              imageIds: zwei,
-              ingredients: [],
-            },
-          ],
-        },
-      ]),
-    );
+    const fd = berichtFormular({
+      titel: "Zwei Fotos, keine Bühne",
+      restaurant: "Bar Dos",
+      stadt: "Sevilla",
+      gericht: "Salmorejo",
+      imageIds: zwei,
+    });
     const id = ((await saveTravelFromForm(fd, adminId)) as { travelId: number })
       .travelId;
     const full = await getFullTravelPost({ id });
@@ -169,27 +158,13 @@ describe("Reisebericht-Frontend: Gericht-Fotos", () => {
       await seedImage("regelc-d"),
       await seedImage("regelc-e"),
     ];
-    const fd = new FormData();
-    fd.set("titel", "Drei Fotos, mit Bühne");
-    fd.set("status", "veroeffentlicht");
-    fd.set(
-      "restaurants",
-      JSON.stringify([
-        {
-          name: "Bar Tres",
-          city: "Sevilla",
-          description: "",
-          dishes: [
-            {
-              name: "Espinacas",
-              description: "",
-              imageIds: drei,
-              ingredients: [],
-            },
-          ],
-        },
-      ]),
-    );
+    const fd = berichtFormular({
+      titel: "Drei Fotos, mit Bühne",
+      restaurant: "Bar Tres",
+      stadt: "Sevilla",
+      gericht: "Espinacas",
+      imageIds: drei,
+    });
     const id = ((await saveTravelFromForm(fd, adminId)) as { travelId: number })
       .travelId;
     const full = await getFullTravelPost({ id });
@@ -211,27 +186,13 @@ describe("Reisebericht-Frontend: Gericht-Fotos", () => {
     const { TravelView } = await import("@/components/travel-view");
 
     const only = await seedImage("dishfoto-solo");
-    const fd = new FormData();
-    fd.set("titel", "Ein Foto pro Gericht");
-    fd.set("status", "veroeffentlicht");
-    fd.set(
-      "restaurants",
-      JSON.stringify([
-        {
-          name: "Osteria Uno",
-          city: "Catania",
-          description: "",
-          dishes: [
-            {
-              name: "Pasta alla Norma",
-              description: "",
-              imageIds: [only],
-              ingredients: [],
-            },
-          ],
-        },
-      ]),
-    );
+    const fd = berichtFormular({
+      titel: "Ein Foto pro Gericht",
+      restaurant: "Osteria Uno",
+      stadt: "Catania",
+      gericht: "Pasta alla Norma",
+      imageIds: [only],
+    });
     const id = ((await saveTravelFromForm(fd, adminId)) as { travelId: number })
       .travelId;
     const full = await getFullTravelPost({ id });

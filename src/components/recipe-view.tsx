@@ -89,7 +89,14 @@ export function RecipeView({
           label,
           items: items.map((it) => ({
             name: it.name,
-            href: `/suche?${param}=${encodeURIComponent(it.slug)}`,
+            // Kategorien haben eine EIGENE, kanonische Seite; die übrigen
+            // Taxonomien nicht — für sie bleibt die Suche der richtige Weg.
+            // Vorher zeigten alle vier auf /suche, und die Kategorieseite war
+            // damit von keiner Inhaltsseite aus verlinkt (B1).
+            href:
+              param === "kategorie"
+                ? `/rezepte/kategorie/${encodeURIComponent(it.slug)}`
+                : `/suche?${param}=${encodeURIComponent(it.slug)}`,
           })),
         }
       : null;

@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { db, schema } from "@/db";
 import { requireAdmin } from "@/lib/auth";
 import { deleteImageFiles, storeImage } from "@/lib/media";
+import { verwendungenVonBild } from "@/lib/media-verwendung";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -84,6 +85,15 @@ export async function deleteImageAction(formData: FormData): Promise<void> {
     .where(eq(schema.mediaImage.id, id))
     .limit(1);
   if (rows[0]) {
+    // Vor dem Löschen fragen, wo das Foto steckt. Vorher wurde es einfach
+    // entfernt: `travel_block.image_id` fiel per ON DELETE SET NULL auf NULL,
+    // der Bildblock blieb als leere Hülle stehen und wurde beim Lesen
+    // übersprungen — und die Bildzeile, in der er stand, zerfiel, ohne dass auf
+    // der Seite etwas davon zu sehen gewesen wäre.
+    const verwendungen = await verwendungenVonBild(id);
+    if (verwendungen.length > 0) {
+      back(dict.admin.media.stillUsed(verwendungen), view);
+    }
     await db.delete(schema.mediaImage).where(eq(schema.mediaImage.id, id));
     deleteImageFiles(rows[0].fileKey);
   }

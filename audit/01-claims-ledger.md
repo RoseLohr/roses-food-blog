@@ -18,7 +18,7 @@ verankert; hier stehen nur die sicherheits-, datenschutz- und assurance-nahen.
 | CL-9 | „Secrets im Vault/nicht im Quelltext" (B-06 PASS) | secret-scan (Muster+Selbsttest) in CI; API-Key aus Settings/Env | C-01, C-24 | belegt |
 | CL-10 | „SBOM in CI" (A-38/B-09) | CycloneDX-Job im security-Gate | C-26 | belegt — AI-BOM + Verify-on-Deploy fehlen (→ C-26) |
 | CL-11 | „Server-seitige Authz, HttpOnly-Session" (`auth.ts`) | argon2id, DB-Session, SHA-256-Token, `requireAdmin`-Guard; 14/16 Action-Dateien + alle api/admin-Routen geguardet | C-01 | belegt — **kein** Authz-Coverage-Gate/Test (→ C-01) |
-| CL-12 | „Kein Directory-Traversal" (`uploads/[...pfad]/route.ts:4`) | strikte Regex `^[a-f0-9]{20}$` + `^w\d{3,4}\.webp$`, genau 2 Segmente | C-01 | belegt |
+| CL-12 | „Kein Directory-Traversal" (`src/app/uploads/[...pfad]/route.ts:4`) | strikte Regex `^[a-f0-9]{20}$` + `^w\d{3,4}\.webp$`, genau 2 Segmente | C-01 | belegt |
 | CL-13 | „KI-Ausgaben menschlich geprüft vor Publikation" (B-10/B-24) | Entwurf im Editor; Taxonomien deferred bis Speichern; in-command-Autorschaft | C-07, C-10, C-29, C-36, C-38 | belegt — als Kompensation gültig, nicht als alleinige Kontrolle (Regime: braucht Mechanismus) |
 
 **Delta gegenüber Part-1-Abschluss:** keine neue Produktaussage seit `ad3ff31`
