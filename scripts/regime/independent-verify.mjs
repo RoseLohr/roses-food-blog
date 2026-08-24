@@ -10,7 +10,8 @@
  * an und blockiert bei einem bestätigten Refutat. Fehlt der Schlüssel, bleibt das
  * dokumentierte Residual (A-39) — es wird NICHT grün gefälscht.
  *
- * Provider-agnostisch (OpenAI-kompatibles Chat-API):
+ * Provider-agnostisch (OpenAI-kompatible API; /responses als SSE-Stream primär,
+ * Chat Completions als Fallback — siehe DRAHT-REIHENFOLGE unten):
  *   SECOND_VENDOR_API_KEY   Aktiviert den Verifier (anderer Anbieter als Anthropic).
  *   OPENAI_API_KEY          Fallback — wird akzeptiert, da OpenAI der Default-Anbieter
  *                           ist; so greift ein bereits hinterlegter OpenAI-Schlüssel
@@ -47,6 +48,40 @@
  *  - Panel statt Einzelurteil: N unabhängige Stimmen (je 1 Modell), ein einzelnes
  *    Fehlurteil kippt nichts mehr. Fail-CLOSED: zu wenige gültige Stimmen → block.
  *
+ * DRAHT-REIHENFOLGE (2026-08-24, Root-Cause statt Workaround): PRIMÄR /responses
+ * als SSE-STREAM (stream:true, input als Message-Liste), /chat/completions nur
+ * noch als Fallback (vorher umgekehrt). Der Chat-Draht sendet non-streaming NULL
+ * Bytes, solange das Modell denkt (Heartbeats werden verschluckt) — ein
+ * Edge-Proxy mit Lese-Timeout (Nginx Proxy Manager, Stock proxy_read_timeout
+ * 90 s) kappt damit jede Stimme, deren erstes Byte ≥ 90 s braucht, als
+ * openresty-504-HTML-Seite; und der bisherige SOFORT-Failover auf /responses
+ * lief anschließend in die frisch gesetzte Upstream-Sperre
+ * (max_fails/fail_timeout) und bekam ein Instant-504 obendrauf.
+ *
+ * WARUM STREAMEND (Live-Validierung am Edge): die NON-streamende Responses-Form
+ * ist an den Providern hinter den Combo-Modellen durchgefallen — (a) ein String
+ * als `input` wird mit 400 „Input must be a list" abgelehnt (input muss die
+ * Message-Listen-Form [{role,content}] haben), (b) der Provider hinter
+ * combo/SOTA-C verweigert non-streamende /responses-Aufrufe komplett (400
+ * „Stream must be set to true"). Ein deterministischer 400 löst den
+ * Chat-Fallback bewusst NICHT aus — non-streaming hätte diese Stimme also
+ * DAUERHAFT verloren. Der STREAMENDE Responses-Draht ist dagegen für alle drei
+ * Panel-Stimmen live verifiziert (SOTA-C: 38,9 s, 1121 Events, max.
+ * Event-Lücke 9,3 s, terminales response.completed empfangen): er trägt ~2-s-
+ * Herzschlag-/Delta-Bytes auf der Leitung und läuft durch dieselbe Edge
+ * nachweislich frei (Betreiber-Telemetrie: 380-s- und 458-s-Läufe → HTTP 200)
+ * — kontinuierliche Bytes schlagen den 90-s-Idle-Timer, ganz gleich wie lange
+ * das Modell denkt.
+ *
+ * FOLD-DETAIL (live an diesem Gateway beobachtet): das terminale
+ * response.completed kann ein LEERES output-Array tragen, obwohl Text erzeugt
+ * wurde — der Text kommt über response.output_text.delta-Events. Der Fold
+ * akkumuliert deshalb die Delta-Strings als PRIMÄRE Textquelle und greift nur
+ * dann auf das completed-Objekt zurück, wenn es tatsächlich output trägt.
+ * Endet der Strom OHNE response.completed oder mit einem error-Event, gilt das
+ * als TRANSIENTER Fehler (wie Netzfehler) und läuft durch die Retry-Weiche.
+ * Panel-Semantik (fail-closed-Gates, Retry-Politik, Vote-Parsing) unverändert.
+ *
  * PFLICHT-APPROVER (2026-07-19, auf Anordnung): Grün verlangt jetzt, dass ein
  * BENANNTER Panelist (Default `gpt-5.6-sol` = „Sol") ausdrücklich ZUSTIMMT UND
  * mindestens EIN weiterer Panelist zustimmt (`requireApprovals`). Sol hat damit
@@ -69,8 +104,8 @@ import { appendFileSync } from "node:fs";
 
 const KEY = process.env.SECOND_VENDOR_API_KEY || process.env.OPENAI_API_KEY;
 /**
- * Trailing Slashes ab. Jede Aufrufstelle baut `${BASE}/models` bzw.
- * `${BASE}/chat/completions` — eine Basis MIT Schlussschrägstrich erzeugt
+ * Trailing Slashes ab. Jede Aufrufstelle baut `${BASE}/models`, `${BASE}/responses`
+ * bzw. `${BASE}/chat/completions` — eine Basis MIT Schlussschrägstrich erzeugt
  * "//models", was das Gateway mit 404 beantwortet: eine Konfigurationsrutsche,
  * die sonst als unerklärter Panel-Ausfall auftaucht. (Verifiziert an
  * inference.klee.me: ".../v1/models" 200, ".../v1//models" 404.)
@@ -804,8 +839,10 @@ const isTransient = (s) => s === 401 || s === 408 || s === 409 || s === 429 || s
 
 const H = { "Content-Type": "application/json", ...AUTH };
 
-/** Text aus einer Responses-API-Antwort ziehen: output_text (falls vorhanden) oder
- *  aus output[].content[].text zusammensetzen. */
+/** Text aus einem Responses-API-Response-OBJEKT ziehen: output_text (falls
+ *  vorhanden) oder aus output[].content[].text zusammensetzen. Im Streaming-Draht
+ *  nur noch RÜCKFALL-Quelle: das terminale response.completed kann (live
+ *  beobachtet) ein leeres output-Array tragen — primär zählt der Delta-Fold. */
 function extractResponsesText(data) {
   if (typeof data?.output_text === "string" && data.output_text) return data.output_text;
   const parts = [];
@@ -817,11 +854,141 @@ function extractResponsesText(data) {
   return parts.join("");
 }
 
+/**
+ * Faltet den SSE-Strom der Responses-API (stream:true) zu { text, completed }.
+ *
+ * PROGRESSIV gelesen (for await über res.body-Chunks), nie als blockierender
+ * Voll-Body-Read: genau die kontinuierlich fließenden Herzschlag-/Delta-Bytes
+ * (Event-Kadenz live gemessen ~2–9 s) halten den Edge-Idle-Timer (90 s) offen.
+ *
+ * SSE-Mechanik (am Gateway beobachtet): Events kommen als „event: <name>"- und
+ * „data: {json}"-Zeilen, Blöcke sind durch Leerzeilen getrennt; jede
+ * data-Payload trägt ein „type"-Feld (response.created, response.in_progress,
+ * response.output_item.added, response.output_text.delta, response.completed).
+ * Mehrzeilige data sind in SSE generell möglich — der Parser sammelt daher alle
+ * „data:"-Zeilen eines Blocks und parst die verbundene Payload.
+ *
+ * Fold-Regeln (siehe DRAHT-REIHENFOLGE im Kopf):
+ *  - response.output_text.delta → Delta-String akkumulieren (PRIMÄRE Textquelle).
+ *  - response.completed → Response-Objekt festhalten (usage/id; Rückfall-Text,
+ *    falls die Deltas leer blieben und das Objekt doch output trägt).
+ *  - error-Event / response.failed → WIRFT (transient, wie Netzfehler): die
+ *    Retry-Weiche in verifyOnce darf es erneut versuchen.
+ *  - Strom endet OHNE response.completed → WIRFT ebenfalls (transienter Abriss).
+ */
+async function foldResponsesStream(body) {
+  const decoder = new TextDecoder();
+  let buf = "";
+  let text = "";
+  let completed = null;
+  const handleBlock = (block) => {
+    const dataLines = [];
+    for (const line of block.split(/\r?\n/)) {
+      if (line.startsWith("data:")) dataLines.push(line.slice(5).replace(/^ /, ""));
+    }
+    if (!dataLines.length) return;
+    let ev;
+    try { ev = JSON.parse(dataLines.join("\n")); } catch { return; } // kein JSON (z. B. [DONE]) → überspringen
+    const type = ev?.type;
+    if (type === "response.output_text.delta" && typeof ev.delta === "string") {
+      text += ev.delta;
+    } else if (type === "response.completed") {
+      completed = ev.response ?? {};
+    } else if (type === "error" || type === "response.failed") {
+      const detail = JSON.stringify(ev).replace(/\s+/g, " ").slice(0, 300);
+      throw new Error(`Responses-Stream error-Event: ${detail}`);
+    }
+  };
+  for await (const chunk of body) {
+    buf += decoder.decode(chunk, { stream: true });
+    // Event-Blöcke sind leerzeilen-getrennt; der letzte (evtl. unvollständige)
+    // Block bleibt im Puffer, bis der nächste Chunk ihn abschließt.
+    const blocks = buf.split(/\r?\n\r?\n/);
+    buf = blocks.pop() ?? "";
+    for (const b of blocks) handleBlock(b);
+  }
+  buf += decoder.decode();
+  if (buf.trim()) handleBlock(buf);
+  if (!completed) {
+    // Abriss ohne terminales Event: der Strom ist tot, nicht die Anfrage falsch.
+    throw new Error("Responses-Stream endete ohne response.completed → transient");
+  }
+  return { text, completed };
+}
+
 async function attemptOnce(i) {
   const sys = system + (LENSES[i % LENSES.length] || "");
   const finish = (content) => { const v = parseVerdict(content ?? ""); return { ok: true, v, decision: decide(v) }; };
-  // Bevorzugt Chat Completions. MINIMALE, breit kompatible Anfrage: kein
-  // temperature/seed/response_format — neuere Modelle lehnen die teils mit 400 ab.
+  // PRIMÄR die Responses-API als SSE-STREAM (DRAHT-REIHENFOLGE, siehe Kopf):
+  // stream:true hält während des Denkens ~2-s-Herzschlag-/Delta-Bytes auf der
+  // Leitung und überlebt damit Edge-Lese-Timeouts, an denen der byte-stille
+  // Chat-Draht bei langen Antworten als 504 stirbt. `input` MUSS die
+  // Message-Listen-Form haben — einen bloßen String lehnen die Provider mit
+  // 400 „Input must be a list" ab, und der Provider hinter combo/SOTA-C
+  // verweigert non-streamende /responses-Aufrufe generell (400 „Stream must be
+  // set to true"). Gleiche Semantik wie Chat, andere Form: system→instructions,
+  // user→input-Message; Text aus dem Delta-Fold (foldResponsesStream).
+  // MINIMALE, breit kompatible Anfrage: kein temperature/seed/response_format —
+  // neuere Modelle lehnen die teils mit 400 ab.
+  let res;
+  try {
+    res = await fetch(`${BASE}/responses`, {
+      method: "POST",
+      headers: H,
+      body: JSON.stringify({
+        model: MODELS[i],
+        instructions: sys,
+        input: [{ role: "user", content: user }],
+        stream: true,
+      }),
+    });
+  } catch (err) {
+    // Netzfehler am Primär-Draht → im SELBEN Versuch auf den Chat-Draht ausweichen.
+    // (Wirft auch DER, greift wie bisher die Transient-Retry-Weiche in verifyOnce.)
+    const why = String(err instanceof Error ? err.message : err).replace(/\s+/g, " ").slice(0, 300);
+    return chatFallback(i, sys, finish, `Netzfehler Responses-API: ${why}`);
+  }
+  if (res.ok) {
+    // 200 → Strom progressiv falten. BEWUSST außerhalb des try um fetch():
+    // reißt der Strom ab (Netzfehler mittendrin, Ende ohne response.completed,
+    // error-Event), wirft der Fold zu verifyOnce durch → transient, Retry des
+    // Primär-Drahts. KEIN Chat-Fallback dafür: der Endpoint existiert und
+    // streamt — der byte-stille Chat-Draht wäre hier der schlechtere Draht.
+    const { text, completed } = await foldResponsesStream(res.body);
+    return finish(text || extractResponsesText(completed));
+  }
+  // Fehler-BODY mitschreiben (nicht nur den Status) — und daran die Endpoint-Weiche.
+  let body = "";
+  try { body = await res.text(); } catch { body = ""; }
+  const primary = `Responses-API ${res.status}: ${body.replace(/\s+/g, " ").slice(0, 300) || "(kein Body)"}`;
+  // Nicht jedes Gateway/Modell spricht die Responses-API: 404/405 = Endpoint nicht
+  // vorhanden. Dazu 5xx = Upstream-/Gateway-Fehler dieses Drahts. In BEIDEN Fällen
+  // im selben Versuch auf Chat Completions ausweichen. Deterministische Client-
+  // Fehler (400/403) und der Rest (401/408/409/429) bleiben beim Primär-Draht:
+  // sie träfen den Fallback genauso (gleicher Key, gleiches Modell) und laufen
+  // unverändert durch die Retry-Weiche in verifyOnce.
+  if (res.status === 404 || res.status === 405 || res.status >= 500) {
+    return chatFallback(i, sys, finish, primary, res.status);
+  }
+  return { ok: false, status: res.status, reason: primary };
+}
+
+/**
+ * FALLBACK-Draht: Chat Completions — nur wenn /responses nicht verfügbar ist
+ * (404/405) oder im Versuch mit 5xx/Netzfehler scheitert. `why` benennt den
+ * Primär-Fehler (bereits Whitespace-kollabiert und gekappt) für Log und reason;
+ * `primaryStatus` ist dessen HTTP-Status (undefined bei Netzfehler).
+ *
+ * Scheitert auch der Fallback, zählt für die Retry-Weiche der Status des
+ * TRANSIENTEN Primär-Fehlers (5xx bzw. Netzfehler=kein Status) weiter — sonst
+ * würde ein deterministischer Chat-Fehler (400/404) nach einem bloßen
+ * /responses-Schluckauf die Stimme endgültig aufgeben, obwohl ein Retry den
+ * Primär-Draht wieder erreichen kann. Nur wenn der Primär-Fehler selbst
+ * deterministisch war (404/405 = Endpoint fehlt), klassifiziert der
+ * Chat-Status. Der reason benennt IMMER beide Status.
+ */
+async function chatFallback(i, sys, finish, why, primaryStatus) {
+  console.log(`[independent-verify] Stimme ${i + 1}: /responses nicht nutzbar (${why}) → Fallback /chat/completions.`);
   const res = await fetch(`${BASE}/chat/completions`, {
     method: "POST",
     headers: H,
@@ -834,27 +1001,16 @@ async function attemptOnce(i) {
     const data = await res.json();
     return finish(data.choices?.[0]?.message?.content ?? "");
   }
-  // Fehler-BODY mitschreiben (nicht nur den Status) — und daran die Endpoint-Weiche.
   let body = "";
   try { body = await res.text(); } catch { body = ""; }
-  // Manche Modelle (z. B. *-codex/Reasoning) unterstützen NUR die Responses-API —
-  // der 404 nennt genau das. Dann dorthin ausweichen (gleiche Semantik, andere Form:
-  // system→instructions, user→input; Antworttext aus output[]).
-  if (res.status === 404 && /v1\/responses|responses endpoint/i.test(body)) {
-    const r2 = await fetch(`${BASE}/responses`, {
-      method: "POST",
-      headers: H,
-      body: JSON.stringify({ model: MODELS[i], instructions: sys, input: user }),
-    });
-    if (r2.ok) {
-      const data = await r2.json();
-      return finish(extractResponsesText(data));
-    }
-    let b2 = ""; try { b2 = (await r2.text()).replace(/\s+/g, " ").slice(0, 300); } catch { b2 = "(kein Body)"; }
-    return { ok: false, status: r2.status, reason: `Responses-API ${r2.status}: ${b2}` };
-  }
   const detail = body.replace(/\s+/g, " ").slice(0, 300) || "(kein Body)";
-  return { ok: false, status: res.status, reason: `API ${res.status}: ${detail}` };
+  // Netzfehler-Primär: primaryStatus undefined → status undefined → transient
+  // (verifyOnce retryt statuslose Fehler). 5xx-Primär: 5xx → transient.
+  // 404/405-Primär: der Chat-Status entscheidet (wie bisher).
+  const status = primaryStatus === undefined || isTransient(primaryStatus)
+    ? primaryStatus
+    : res.status;
+  return { ok: false, status, reason: `Chat-Fallback ${res.status}: ${detail} (Primär: ${why})` };
 }
 
 async function verifyOnce(i) {
