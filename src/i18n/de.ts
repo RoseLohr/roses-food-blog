@@ -396,6 +396,15 @@ export const de = {
     selectedCount: (n: number) => `${n} ausgewählt`,
     /** Höchstzahl erreicht: erst abwählen, dann neu wählen. */
     full: "Höchstzahl erreicht — zuerst ein Bild abwählen.",
+    /**
+     * Nur wo die REIHENFOLGE etwas bedeutet (Bildgruppe im Reisebericht):
+     * eine Ziffer am Bild und zwei Pfeile zum Umstellen. Ohne sie wäre die
+     * Reihenfolge zwar da, aber weder ablesbar noch änderbar — und beim
+     * ersten Bild der Gruppe hängt die ganze Anordnung daran.
+     */
+    moveEarlier: "Nach vorn",
+    moveLater: "Nach hinten",
+    position: (n: number, gesamt: number) => `Bild ${n} von ${gesamt}`,
   },
   richtext: {
     bold: "Fett",
@@ -844,9 +853,10 @@ export const de = {
       fieldTeaser: "Kurzbeschreibung",
       fieldContent: "Inhalt",
       blocksHint:
-        "Der Inhalt besteht aus Blöcken (Text, Bild, Restaurant), die sich mit ↑/↓ anordnen lassen — die Reihenfolge bestimmt die Anzeige im Beitrag. Restaurants ohne eigenen Block erscheinen wie bisher gesammelt unter dem Inhalt.",
+        "Der Inhalt besteht aus Blöcken (Text, Bild, Bildgruppe, Restaurant), die sich mit ↑/↓ anordnen lassen — die Reihenfolge bestimmt die Anzeige im Beitrag. Eine Bildgruppe fasst mehrere Fotos in EINEM Block zusammen: Das erste steht über die ganze Breite, die weiteren teilen sich die Reihe darunter. Restaurants ohne eigenen Block erscheinen wie bisher gesammelt unter dem Inhalt.",
       blockText: "Text",
       blockImage: "Bild",
+      blockBildgruppe: "Bildgruppe",
       /**
        * Der Bildblock hat wieder Regler — aber NUR das Einzelbild.
        *
@@ -862,24 +872,27 @@ export const de = {
        * ist eine Marke über das Bild SELBST, und Größe wie Seite beschreiben
        * ebenfalls nur dieses eine Bild.
        */
-      blockZugehoerigkeit: "Zugehörigkeit",
-      blockEinzelbild: "Einzelbild (Text läuft darum herum)",
-      blockGruppeName: (buchstabe: string) => `Gruppe ${buchstabe}`,
-      blockNeueGruppe: "Neue Gruppe",
       blockGroesse: "Größe",
       blockGroessen: { s: "Klein (⅓)", m: "Mittel (½)", l: "Groß (⅔)" },
       blockAusrichtung: "Seite",
       blockAusrichtungen: { links: "Links", rechts: "Rechts" },
       blockEinzelbildLage: (groesse: string, seite: string) =>
         `Steht ${seite === "links" ? "links" : "rechts"} und ist ${groesse} breit — der Text läuft daneben. Auf dem Handy steht es über die volle Breite.`,
-      blockGruppeAllein:
-        "Steht über die ganze Breite des Inhalts.",
-      blockGruppeErstes: (anzahl: number) =>
+      /**
+       * Die AUSKUNFT über eine Bildgruppe — eine Karte, ein Satz.
+       *
+       * Vorher stand dieser Satz an JEDEM Bild einzeln („3. von 5"), weil
+       * jedes Bild eine eigene Karte war und seine Zugehörigkeit selbst
+       * einstellte. Fünf Karten für eine Aussage, die einmal gilt: Genau das
+       * war der gemeldete Missstand. Jetzt gibt es eine Karte je Gruppe, und
+       * die Reihenfolge der Fotos darin ist die ganze Einstellung.
+       */
+      blockGruppeLeer:
+        "Noch kein Foto gewählt — such die Bilder dieser Gruppe aus der Bibliothek aus.",
+      blockGruppeLage: (anzahl: number) =>
         anzahl === 1
-          ? "Steht über die ganze Breite des Inhalts."
-          : `Steht über die ganze Breite — darunter teilen sich ${anzahl - 1} weitere Bild${anzahl === 2 ? "" : "er"} eine Reihe.`,
-      blockGruppeWeiteres: (pos: number, anzahl: number) =>
-        `${pos}. von ${anzahl} — steht in der Reihe unter dem ersten Bild, alle gleich hoch und unten bündig.`,
+          ? "Das Bild steht über die ganze Breite des Inhalts."
+          : `Das erste Bild steht über die ganze Breite — darunter teilen sich ${anzahl - 1} weitere Bild${anzahl === 2 ? "" : "er"} eine Reihe, alle gleich hoch und unten bündig.`,
       /**
        * Ein Block, den das Speichern verwirft, darf das nicht verschweigen:
        * Vorher verschwand er stillschweigend — und riss dabei die Bildgruppe
@@ -887,10 +900,11 @@ export const de = {
        */
       blockNichtGespeichertKurz: "wird nicht gespeichert",
       blockNichtGespeichert: {
-        bild: "Ohne Foto wird dieser Block nicht gespeichert — er zählt auch nicht für die Bildgruppe.",
+        einzelbild: "Ohne Foto wird dieser Block nicht gespeichert.",
+        bildgruppe: "Ohne Foto wird diese Gruppe nicht gespeichert.",
         restaurant:
           "Das gewählte Restaurant hat keinen Namen und wird nicht gespeichert — dieser Block deshalb auch nicht.",
-        text: "Ohne Inhalt wird dieser Block nicht gespeichert — er zählt auch nicht für die Bildgruppe.",
+        text: "Ohne Inhalt wird dieser Block nicht gespeichert.",
       },
       blockRestaurant: "Restaurant",
       blockUp: "Nach oben",
