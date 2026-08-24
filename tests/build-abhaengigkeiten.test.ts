@@ -99,12 +99,17 @@ const ANWEISUNGEN = instruktionen(containerfile);
  * als ratifiziert — ein Paket dieses Namens käme lautlos durch.
  */
 const RATIFIZIERT: Record<string, string> = Object.assign(Object.create(null), {
-  "better-sqlite3":
-    "Kein eigenes install-Skript; die binding.gyp löst nur den npm-Standard " +
-    "`node-gyp rebuild` aus und wäre bei vorhandener Binärdatei ohnehin ein " +
-    "Leerlauf. Das Paket liefert prebuilds/linux-x64.node mit. Nachgemessen " +
-    "ohne Skripte: Tabelle anlegen, schreiben, lesen — und der Schnelltest im " +
-    "Containerfile wiederholt das bei jedem Bau der deps-Stufe.",
+  // better-sqlite3 STAND HIER, bis 13.0.2. Es ist nicht verschwunden — sein
+  // abgeleitetes Install-Skript ist es. Das Paket führt jetzt `"gypfile": false`
+  // in seiner package.json; damit ergänzt npm den Standard `node-gyp rebuild`
+  // NICHT mehr, obwohl die binding.gyp weiter mitgeliefert wird. Nachgemessen
+  // mit demselben npm (10.9.7), Lockfile je Fassung frisch erzeugt:
+  // 13.0.1 hasInstallScript=true, 13.0.2 und 13.0.3 false. Der Unterschied
+  // zwischen den Tarballs ist genau dieses eine Feld.
+  //
+  // Damit hat der Oberlauf behoben, was das Containerfile umgeht — die dortige
+  // Begründung für `--ignore-scripts` bleibt trotzdem gültig, denn sie gilt
+  // nicht better-sqlite3, sondern jedem Fremdcode beim Installieren.
   esbuild:
     "postinstall (install.js) prüft/verlinkt nur die Plattform-Binärdatei aus " +
     "@esbuild/*. Nachgemessen ohne postinstall: transformSync, tsx und " +
