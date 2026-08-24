@@ -591,6 +591,16 @@ if (process.argv.includes("--selftest")) {
   // Pipe: escapen — trennt die Tabellenzelle auch INNERHALB des Spans.
   expect(mdInline("a|b") === "`a\\|b`", "ein Pipe wird escaped.");
   expect(mdInline("a||b") === "`a\\|\\|b`", "jeder Pipe einzeln.");
+  // Backslash-Bewusstsein. Der Selbsttest behauptete "keine zusaetzlichen Spalten",
+  // pruefte das aber nur mit Pipes OHNE Backslash — genau die Luecke, durch die
+  // Runde 3 fiel. Gemessen wird jetzt der LEBENDIGE Trenner: ein Pipe, dem eine
+  // gerade Anzahl Backslashes vorausgeht, trennt die Zelle.
+  const liveSep = (t) => /(?:^|[^\\])(?:\\\\)*\|/.test(t);
+  expect(mdInline("a\\b") === "`a\\\\b`", "ein Backslash wird verdoppelt.");
+  expect(!liveSep(mdInline("a\\|b")), "ein literales \\| bricht die Zelle NICHT auf.");
+  expect(!liveSep(mdInline("![](https://evil.example/p)\\|x")), "der refutierte Fall aus Runde 3 bricht die Zelle nicht auf.");
+  expect(!liveSep(mdInline("\\\\|")), "auch zwei Backslashes vor dem Pipe nicht.");
+  expect(!liveSep(mdInline("regex: \\| oder \\\\|")), "gemischte Backslash-Folgen ebenso wenig.");
   // Refutat Runde 1: Link-, Bild- und HTML-Syntax. Im Span inert, kein Escape noetig.
   expect(mdInline("[klick](https://evil.example)").startsWith("`"), "Link-Syntax steht im Span und rendert nicht als Link.");
   expect(mdInline("![](https://evil.example/beacon.png)").startsWith("`"), "Bild-Syntax rendert nicht als Bild (sonst holt die Run-Seite eine fremde URL).");
@@ -625,13 +635,17 @@ if (process.argv.includes("--selftest")) {
   // pruefen liess eine Mutation („zurueck zum rohen Code-Span") unentdeckt durch:
   // sie war korrekt, nur rief sie niemand auf.
   const rowOf = (t) => t.split("\n").find((l) => l.startsWith("| 1 |"));
-  const cols = (l) => (l.match(/(?<!\\)\|/g) || []).length;
+  // LEBENDIGE Trenner zaehlen: ein Pipe mit gerader Anzahl Backslashes davor.
+  // Das alte (?<!\\)\| hielt \\\\| faelschlich fuer escaped.
+  const cols = (l) => (l.match(/(?:^|[^\\])(?:\\\\)*\|/g) || []).length;
   const pipeModelRow = rowOf(renderStepSummary([okVote], ["combo/a|b"], RG, false));
   expect(cols(pipeModelRow) === 6, "ein Pipe in der Modell-ID verschiebt die Spalten nicht.");
   const tickModelRow = rowOf(renderStepSummary([okVote], ["combo/a`b"], RG, false));
   // 3 Spans in dieser Zeile (Modell, Konfidenz, Begruendung) = 6 Backticks.
   expect((tickModelRow.match(/`/g) || []).length === 6, "ein Backtick in der Modell-ID zerlegt die Spans nicht.");
-  const hostile = { ok: true, v: { refuted: false, confidence: "high", reason: "a|b\nc|d\n| x | y |" } };
+  // Enthaelt jetzt auch literale Backslashes vor Pipes — ohne die prueft dieser
+  // Block seine eigene Behauptung nicht (Runde-3-Luecke).
+  const hostile = { ok: true, v: { refuted: false, confidence: "high", reason: "a|b\nc\\|d\n| x | y |\n![](https://e.example/p)\\|z" } };
   const benign = { ok: true, v: { refuted: false, confidence: "high", reason: "harmlos" } };
   const hOut = renderStepSummary([hostile], RM, RG, false);
   const bOut = renderStepSummary([benign], RM, RG, false);
@@ -917,7 +931,17 @@ export function mdInline(value, limit = 300) {
     .split(/\s+/).filter(Boolean).join(" ")
     .replace(/`/g, "");
   const cut = text.length > limit ? text.slice(0, limit - 1) + "…" : text;
-  return cut ? "`" + cut.replace(/\|/g, "\\|") + "`" : "—";
+  // BEIDE Zeichen, die der GFM-TABELLEN-Scanner als Escape kennt — \\ und \| —
+  // und in EINEM Durchlauf. Nur den Pipe zu escapen ist nicht backslash-bewusst:
+  // aus einem literalen \| im Fremdtext wuerde \\|, der Scanner verbraucht \\ als
+  // escapten Backslash, und der Pipe dahinter bleibt LEBENDIGER Zelltrenner. Die
+  // Zelle bricht auf, der oeffnende Backtick bleibt ungepaart, und der Rest der
+  // Begruendung rendert wieder als Markdown. (Refutat Runde 3; ausgeloest schon
+  // von einem harmlosen Regex \| in einer Begruendung.)
+  //
+  // Das ist keine weitere Zeile auf einer wachsenden Liste: die Menge ist genau
+  // das Escape-Alphabet des Tabellen-Scanners und damit abgeschlossen.
+  return cut ? "`" + cut.replace(/[\\|]/g, (m) => "\\" + m) + "`" : "—";
 }
 
 /**
