@@ -580,6 +580,28 @@ if (process.argv.includes("--selftest")) {
   expect(attestProof([PR(`${CH}-7`), PR(`${CH}-8`), PR(`${CH}-9`)], "", 3).block === true, "leere Challenge → kein Proof gültig → fail-closed.");
   // mdCell() (Modell-Text als feindliche Eingabe für den Markdown-Renderer)
   expect(mdCell("a|b") === "a\\|b", "ein Pipe wird escaped (bricht sonst aus der Zelle aus).");
+  // Refutat des Pflicht-Approvers, Runde 1 dieses PRs: mit nur \ | ` bleibt das
+  // uebrige GFM aktiv. Eine Begruendung ist Modell-Text ueber einen ungeprueften
+  // Diff — sie darf niemals als Link, Bild oder HTML rendern.
+  // Gemessen wird die UNESCAPTE Klammer: \[klick\](url) ist in GFM kein Link mehr,
+  // ein naives Link-Regex trifft die escapte Form aber trotzdem und meldete die
+  // Escape-Arbeit als Fehler.
+  const unescapedBracket = (t) => /(?<!\\)[[\]]/.test(t);
+  expect(!unescapedBracket(mdCell("[klick](https://evil.example)")), "Link-Syntax rendert nicht als Link.");
+  expect(!unescapedBracket(mdCell("![](https://evil.example/beacon.png)")), "Bild-Syntax rendert nicht als Bild (sonst holt die Run-Seite eine fremde URL).");
+  expect(mdCell("[x]") === "\\[x\\]", "eckige Klammern werden beidseitig escaped.");
+  expect(mdCell("<img src=x>").startsWith("\\<"), "rohes HTML wird escaped.");
+  expect(mdCell("a&amp;b").includes("\\&"), "Entities werden escaped.");
+  expect(mdCell("*fett*") === "\\*fett\\*", "Hervorhebung wird escaped.");
+  expect(mdCell("a\\|b") === "a\\\\\\|b", "ein bereits escapter Pipe wird nicht doppelt verarbeitet (ein Durchlauf).");
+  // mdCode(): im Code-Span ist ein Backslash gewoehnlicher Text, ein escapter
+  // Backtick beendet den Span trotzdem. Also entfernen statt escapen.
+  expect(mdCode("combo/a") === "`combo/a`", "eine normale Modell-ID wird in einen Code-Span gesetzt.");
+  expect(mdCode("combo/a`b") === "`combo/ab`", "ein Backtick in der ID wird ENTFERNT, nicht escaped.");
+  expect(!mdCode("combo/a`b").includes("\\"), "im Code-Span landet nie ein Backslash-Escape.");
+  expect((mdCode("combo/a`b").match(/`/g) || []).length === 2, "der Code-Span bleibt genau zweifach begrenzt.");
+  expect(mdCode("") === "—", "leer wird zum Gedankenstrich, nicht zum leeren Code-Span.");
+  expect(mdCode("x".repeat(80), 60).length === 62, "zu lange IDs werden im Span gekuerzt.");
   expect(mdCell("a\nb") === "a b", "ein Zeilenumbruch wird gefaltet (bricht sonst aus der Zeile aus).");
   expect(mdCell("a\r\nb\tc") === "a b c", "CRLF und Tab werden ebenfalls gefaltet.");
   expect(mdCell("a`b") === "a\\`b", "ein Backtick wird escaped (bricht sonst aus dem Code-Span aus).");
@@ -599,6 +621,13 @@ if (process.argv.includes("--selftest")) {
   const noVote = { ok: false, reason: "API 500" };
   const oddVote = { ok: true, v: { refuted: "vielleicht", reason: "grund lang genug" } };
   expect(renderStepSummary([okVote], RM, RG, false).includes("🟢 stimmt zu"), "eine Zustimmung wird als solche gezeigt.");
+  // Die Modellzelle muss mdCode() TATSAECHLICH benutzen. mdCode allein zu pruefen
+  // liesse offen, ob renderStepSummary sie auch aufruft — genau diese Luecke liess
+  // eine Mutation ("zurueck zum rohen Code-Span") unentdeckt durch.
+  const tickRow = renderStepSummary([okVote], ["combo/a`b"], RG, false)
+    .split("\n").find((l) => l.startsWith("| 1 |"));
+  expect((tickRow.match(/`/g) || []).length === 2, "die Modellzelle bleibt ein sauber begrenzter Code-Span, auch bei einem Backtick in der ID.");
+  expect(!tickRow.includes("\\`"), "in der Modellzelle steht nie ein escapter Backtick (im Code-Span wirkungslos).");
   expect(renderStepSummary([noVote], RM, RG, true).includes("⚠️ keine Stimme"), "eine Fehler-Stimme ist „keine Stimme\", kein Urteil.");
   // Der Kern: ein Nicht-Boolean ist UNLESBAR, nicht „refutiert" — sonst erzählt die
   // Tabelle, ein Modell habe widersprochen, wo in Wahrheit nichts lesbar war.
@@ -873,9 +902,39 @@ votes.forEach((x, i) => {
 export function mdCell(value, limit = 300) {
   const text = String(value === null || value === undefined ? "" : value)
     .split(/\s+/).filter(Boolean).join(" ")
-    .replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/`/g, "\\`");
+    // EIN Durchlauf, nicht mehrere .replace() hintereinander: sequentielles
+    // Escapen escapte die Backslashes des vorigen Schrittes gleich wieder mit.
+    //
+    // Der Satz ist bewusst breiter als „die drei Metazeichen der Tabelle". Das
+    // Panel (Pflicht-Approver, Runde 1 dieses PRs) hat genau das refutiert: mit
+    // nur \ | ` bleibt das uebrige GFM aktiv, und eine Begruendung ist Text, den
+    // ein Modell nach dem Lesen eines UNGEPRUEFTEN Diffs schreibt. `[x](url)`
+    // rendert dann als Link und `![](url)` als Bild — die Run-Seite holt eine
+    // fremde URL ab (Beacon) und ein Reviewer sieht einen klickbaren Text, der
+    // nicht von uns stammt. Deshalb zusaetzlich:
+    //   [ ]   Link- und Bild-Syntax
+    //   < > & rohes HTML und Entities
+    //   * _ ~ Hervorhebung/Durchstreichung (kosmetisch, aber billig)
+    .replace(/[\\`|[\]<>&*_~]/g, (m) => "\\" + m);
   if (text.length > limit) return text.slice(0, limit - 1) + "…";
   return text || "—";
+}
+
+/**
+ * Wert fuer einen Code-Span (Modellname).
+ *
+ * Backticks werden ENTFERNT, nicht escaped: innerhalb eines Code-Spans ist ein
+ * Backslash ein gewoehnliches Zeichen, `\`` beendet den Span also trotzdem und
+ * alles danach rendert als Markdown. Auch das hat der Pflicht-Approver refutiert.
+ * Eine legitime Modell-ID enthaelt keinen Backtick; die IDs stammen ausserdem aus
+ * der /v1/models-Antwort des Gateways, also aus Fremddaten.
+ */
+export function mdCode(value, limit = 60) {
+  const text = String(value === null || value === undefined ? "" : value)
+    .split(/\s+/).filter(Boolean).join(" ")
+    .replace(/`/g, "");
+  const cut = text.length > limit ? text.slice(0, limit - 1) + "…" : text;
+  return cut ? "`" + cut + "`" : "—";
 }
 
 /**
@@ -900,7 +959,7 @@ export function renderStepSummary(votes, models, gates, blocked) {
     "|---|---|---|---|---|",
   ];
   votes.forEach((vote, i) => {
-    const model = "`" + mdCell(models[i], 60) + "`";
+    const model = mdCode(models[i], 60);
     if (!vote?.ok) {
       lines.push(`| ${i + 1} | ${model} | ⚠️ keine Stimme | — | ${mdCell(vote?.reason)} |`);
       return;
