@@ -2,7 +2,7 @@
  * Reisebericht im Tiny-Salt-Stil: weiße Karte mit Hero-Bild und
  * Teilen-Button, Serifen-Titel, Icon-Meta-Zeile (Land/Region/Stadt),
  * Inhaltsverzeichnis, Inhalt als Blockfolge (Text/Bild/Restaurant),
- * Bildergalerie und die restlichen Restaurants gesammelt am Ende.
+ * und die restlichen Restaurants gesammelt am Ende.
  * Zu jedem Gericht erscheinen bis zu 3 „Ähnliche Rezepte selbst machen".
  */
 import Link from "next/link";
@@ -13,7 +13,6 @@ import {
   einzelbildSizes,
   type Ausrichtung,
   type Bildgroesse,
-  galerieSizes,
   restaurantPaarSizes,
   seitenverhaeltnis,
   vollbildSizes,
@@ -734,10 +733,7 @@ export async function TravelView({
 
   // Gibt es überhaupt etwas unter dem Kopf? Sonst stünde dort eine einsame
   // Trennlinie über einem leeren Raster.
-  const hatInhalt =
-    full.blocks.length > 0 ||
-    full.images.length > 0 ||
-    remainingRestaurants.length > 0;
+  const hatInhalt = full.blocks.length > 0 || remainingRestaurants.length > 0;
 
   return (
     // Gleiche Breite wie die Rezeptseite (recipe-view.tsx: mx-auto max-w-4xl):
@@ -900,25 +896,6 @@ export async function TravelView({
                 ) : null;
               })}
             </div>
-          )}
-
-          {/* Die Galerie ist keine eigene Erfindung mehr, sondern dieselbe
-              Reihe mit Umbruch. Das starre 2er-Raster ließ neben einem Hochbild
-              eine Lücke stehen, weil die Zeilenhöhe aus dem Raster kam statt
-              aus den Bildern; hier bezieht jede Zeile ihre Höhe aus ihrem
-              Inhalt und ist deshalb immer voll. */}
-          {full.images.length > 0 && (
-            <GalleryLightbox
-              images={full.images.map((img) => ({
-                ...img,
-                thumb: {
-                  sizes: galerieSizes(seitenverhaeltnis(img.width, img.height)),
-                  frameStyle: arStil(img),
-                },
-              }))}
-              thumbSizes={vollbildSizes()}
-              groupClassName="bildgalerie md:clear-both"
-            />
           )}
 
           {remainingRestaurants.length > 0 && (

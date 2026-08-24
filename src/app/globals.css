@@ -187,30 +187,6 @@ html {
   min-width: 0;
 }
 
-/* ------------------------------------------------------------------------
-   GALERIE — gleich hohe Kacheln mit Umbruch.
-
-   Bewusst OHNE flex-grow: Wüchsen die Bilder in die Zeile hinein, hinge die
-   Breite jedes Bildes davon ab, welche Bilder mit ihm in eine Zeile geraten —
-   und wäre damit im `sizes`-Attribut nicht mehr ausrechenbar. Genau das hat
-   der Auslieferungs-Guardrail gefangen: 241 px gerendert, 480er-Variante
-   geladen. Feste Zeilenhöhe heißt: eine Zahl je Bild, alle Kacheln gleich
-   hoch, jede Zeile beginnt auf der linken Textkante. */
-.bildgalerie {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-}
-.bildgalerie > * {
-  flex: 0 1 calc(var(--ar) * 220px);
-  min-width: 0;
-  max-width: 100%;
-}
-.bildgalerie img {
-  width: 100%;
-  height: auto;
-}
-
 /* Zutatenzeile im Rezept-Editor: auf schmalen Bildschirmen (Handy hochkant)
    gestapelt, damit ALLE Felder sichtbar und gut bedienbar sind; ab 640px in
    einer Zeile (Menge · Einheit · Name · Zusatz · Entfernen). Bewusst als eigene

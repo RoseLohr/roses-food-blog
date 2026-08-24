@@ -23,7 +23,6 @@ import {
   EINZELBILD_VORGABE,
   bildgruppeSizes,
   einzelbildSizes,
-  galerieSizes,
   restaurantPaarSizes,
   seitenverhaeltnis,
   vollbildSizes,
@@ -166,13 +165,6 @@ describe("die übrigen Breitenangaben", () => {
         "(max-width: 928px) calc((100vw - 7rem - 8px) / 2), " +
         "404px",
     );
-  });
-
-  it("Galerie: Format × feste Zeilenhöhe, nie über die Spalte", () => {
-    // 220 px Zeilenhöhe × 1,5 = 330 px.
-    expect(galerieSizes(1.5)).toContain("330px");
-    // Ein extrem breites Panorama wird auf die Spalte gedeckelt.
-    expect(galerieSizes(10)).toContain("816px");
   });
 });
 

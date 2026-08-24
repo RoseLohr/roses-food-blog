@@ -918,7 +918,6 @@ export const de = {
       fieldTravelMonth: "Reisemonat",
       travelMonthNone: "— (kein Monat) —",
       fieldHeroImage: "Titelbild",
-      fieldImages: "Zusätzliche Bilder",
       restaurants: "Restaurants",
       restaurantName: "Name des Restaurants",
       restaurantCity: "Ort",

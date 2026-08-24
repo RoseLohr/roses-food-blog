@@ -103,13 +103,6 @@ async function resolveIngredientIds(names: string[]): Promise<Map<string, number
   return result;
 }
 
-function idList(formData: FormData, field: string): number[] {
-  return formData
-    .getAll(field)
-    .map((v) => Number(v))
-    .filter((n) => Number.isInteger(n) && n > 0);
-}
-
 /** Reisejahr aus dem Formular: ganze Zahl 1900–2100, sonst null (leer/ungültig). */
 function parseTravelYear(v: FormDataEntryValue | null): number | null {
   const raw = String(v ?? "").trim();
@@ -211,7 +204,6 @@ export async function saveTravelFromForm(
   const heroImageId = formData.get("titelbild")
     ? Number(formData.get("titelbild"))
     : null;
-  const galleryImageIds = idList(formData, "bilder");
 
   const slugInput = String(formData.get("slug") ?? "").trim();
   const existing = await db
@@ -459,22 +451,6 @@ export async function saveTravelFromForm(
       tx.insert(schema.travelBlock).values(blockValues).run();
     }
 
-    // Bildergalerie ersetzen
-    tx.delete(schema.travelPostImage)
-      .where(eq(schema.travelPostImage.travelPostId, tid))
-      .run();
-    if (galleryImageIds.length) {
-      tx.insert(schema.travelPostImage)
-        .values(
-          [...new Set(galleryImageIds)].map((imgId, i) => ({
-            travelPostId: tid,
-            imageId: imgId,
-            sortOrder: i,
-          })),
-        )
-        .run();
-    }
-
     return tid;
   });
 
@@ -483,7 +459,7 @@ export async function saveTravelFromForm(
 }
 
 export async function deleteTravelById(id: number): Promise<void> {
-  // Restaurants, Gerichte, Blöcke und Galerie hängen per FK-Cascade am
+  // Restaurants, Gerichte und Blöcke hängen per FK-Cascade am
   // Bericht; der FTS-Trigger räumt den Suchindex auf.
   await db.delete(schema.travelPost).where(eq(schema.travelPost.id, id));
 }

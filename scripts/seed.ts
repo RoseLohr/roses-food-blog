@@ -548,21 +548,6 @@ async function main() {
     },
   ]);
 
-  // Galerie: dieselbe Reihe mit Umbruch, Stufe S — gemischte Formate zeigen,
-  // dass keine Lücke bleibt (das alte 2er-Raster ließ neben einem Hochbild eine).
-  const galerie = [
-    await placeholder("Arancini", "#e67e22", 1000, 1000), // quadratisch
-    await placeholder("Granita", "#8e44ad", 1280, 850), // quer 3:2
-    await placeholder("Dom", "#2c7873", 900, 1200), // hoch 3:4
-  ];
-  await db.insert(schema.travelPostImage).values(
-    galerie.map((imageId, i) => ({
-      travelPostId: travel.id,
-      imageId,
-      sortOrder: i,
-    })),
-  );
-
   const restaurants = [
     {
       name: "Trattoria da Nino",

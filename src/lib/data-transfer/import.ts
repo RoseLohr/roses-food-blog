@@ -501,26 +501,6 @@ export async function importBundle(
       .returning({ id: schema.travelPost.id });
     const travelId = post.id;
 
-    // Galerie
-    const galleryIds: number[] = [];
-    const seenGallery = new Set<number>();
-    for (const key of tv.gallery) {
-      const id = await importImage(key);
-      if (id != null && !seenGallery.has(id)) {
-        seenGallery.add(id);
-        galleryIds.push(id);
-      }
-    }
-    if (galleryIds.length) {
-      await db.insert(schema.travelPostImage).values(
-        galleryIds.map((imageId, i) => ({
-          travelPostId: travelId,
-          imageId,
-          sortOrder: i,
-        })),
-      );
-    }
-
     const restaurantIdByIndex: number[] = [];
     for (const [ri, rest] of tv.restaurants.entries()) {
       const restImageId = await importImage(rest.image);

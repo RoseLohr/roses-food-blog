@@ -152,17 +152,6 @@ test.describe("Reisebericht: Foto-Galerie / Lightbox", () => {
     await expect(page.getByText(G.counter(3, 3))).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(dialog).toBeHidden();
-
-    // Die Bildergalerie des Berichts ebenso — alle Bilder EINER Reihe.
-    const galerie = page.locator("article .bildgalerie");
-    const kacheln = galerie.locator("button:has(img)");
-    const anzahl = await kacheln.count();
-    expect(anzahl).toBeGreaterThan(1);
-    await kacheln.first().click();
-    await expect(dialog).toBeVisible();
-    await expect(page.getByText(G.counter(1, anzahl))).toBeVisible();
-    await page.getByRole("button", { name: G.close }).click();
-    await expect(dialog).toBeHidden();
   });
 
   test("Restaurant mit zwei Fotos: nebeneinander, gleich hoch, beide vergrößerbar", async ({

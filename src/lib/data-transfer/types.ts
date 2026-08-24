@@ -180,7 +180,12 @@ export const travelSchema = z.object({
   publishedAt: z.number().nullable().default(null),
   createdAt: z.number().nullable().default(null),
   updatedAt: z.number().nullable().default(null),
-  gallery: z.array(z.string()).default([]),
+  /* `gallery` gab es bis 0014: eine zweite Bilderstrecke am Ende des Berichts,
+     neben den Bild-BLÖCKEN im Text. Das Feld ist ersatzlos weg. Ein Archiv von
+     davor bringt es noch mit; zod verwirft unbekannte Schlüssel, die Bilder
+     landen also nicht mehr im Bericht. Das ist gewollt und keine stille
+     Einbuße: Die Strecke gibt es nirgends mehr, und ein Bild, das man behalten
+     will, gehört als Block in den Text. */
   restaurants: z.array(restaurantSchema).default([]),
 });
 export type ExportTravel = z.infer<typeof travelSchema>;

@@ -29,15 +29,6 @@ import { t } from "../../src/i18n/de";
  */
 const REPORT = "/reisen/streetfood-und-trattorien-in-sizilien";
 
-/** Kästen aller Bilder eines Containers, in DOM-Reihenfolge. */
-async function bilderKaesten(wurzel: Locator) {
-  const bilder = wurzel.locator("img");
-  const anzahl = await bilder.count();
-  const kaesten = [];
-  for (let i = 0; i < anzahl; i++) kaesten.push((await bilder.nth(i).boundingBox())!);
-  return kaesten;
-}
-
 /**
  * Maße einer Bildgruppe: die Gruppe selbst, ihr erstes Bild, die Reihe darunter.
  *
@@ -180,26 +171,6 @@ test.describe("Reisebericht: Bildgruppen", () => {
     const m = (await gruppenMasse(page, 0))!;
     expect(m.gruppe.y).toBeGreaterThan(toc.y + toc.height - 1);
   });
-  test("Galerie: jede Zeile schließt unten bündig ab", async ({ page }) => {
-    await page.setViewportSize({ width: 1280, height: 900 });
-    await page.goto(REPORT);
-
-    const galerie = page.locator("article .bildgalerie");
-    await expect(galerie).toHaveCount(1);
-    const kaesten = await bilderKaesten(galerie);
-    expect(kaesten.length).toBe(3);
-
-    const zeilen = new Map<number, typeof kaesten>();
-    for (const k of kaesten) {
-      const schluessel = Math.round(k.y / 5);
-      zeilen.set(schluessel, [...(zeilen.get(schluessel) ?? []), k]);
-    }
-    for (const zeile of zeilen.values()) {
-      const unterkanten = zeile.map((k) => k.y + k.height);
-      expect(Math.max(...unterkanten) - Math.min(...unterkanten)).toBeLessThan(1.5);
-    }
-  });
-
   test("„Ähnliche Rezepte“ füllen auf dem Handy die Breite und schneiden nichts ab", async ({
     page,
   }) => {
@@ -318,7 +289,7 @@ test.describe("Reisebericht: Bildgruppen", () => {
     await page.goto(REPORT);
     const karten = page.locator('div[id^="restaurant-"]');
     await expect(karten.first()).toBeVisible();
-    await expect(karten.locator(".bildplatz, .bildpaar, .bildgalerie")).toHaveCount(0);
+    await expect(karten.locator(".bildplatz, .bildpaar")).toHaveCount(0);
 
     // Nur die Gerichtsfotos zählen: sie sind die klickbaren Streifen-Kacheln.
     // Im selben Listenpunkt steht inzwischen auch „Ähnliche Rezepte" mit

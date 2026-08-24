@@ -215,7 +215,6 @@ beforeAll(async () => {
     })
     .returning({ id: schema.travelPost.id });
   const travelId = post.id;
-  await db.insert(schema.travelPostImage).values({ travelPostId: travelId, imageId: imgA, sortOrder: 0 });
   const [rest] = await db
     .insert(schema.restaurant)
     .values({

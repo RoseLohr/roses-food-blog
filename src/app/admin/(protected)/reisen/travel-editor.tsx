@@ -83,7 +83,6 @@ export interface TravelEditorProps {
     travelYear: number | null;
     travelMonth: number | null;
     heroImageId: number | null;
-    imageIds: number[];
     seoTitle: string;
     seoDescription: string;
     status: string;
@@ -616,15 +615,6 @@ export function TravelEditor({
                 </button>
               </div>
             </div>
-          </div>
-          <div className="md:col-span-2">
-            <ImagePicker
-              name="bilder"
-              legend={d.fieldImages}
-              options={images}
-              selectedIds={initial.imageIds}
-              multiple
-            />
           </div>
         </div>
       </section>

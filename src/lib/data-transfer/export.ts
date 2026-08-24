@@ -287,11 +287,6 @@ async function collectTravel(
   if (posts.length === 0) return [];
   const ids = posts.map((p) => p.id);
 
-  const gallery = await db
-    .select()
-    .from(schema.travelPostImage)
-    .where(inArray(schema.travelPostImage.travelPostId, ids))
-    .orderBy(asc(schema.travelPostImage.sortOrder));
   const restaurants = await db
     .select()
     .from(schema.restaurant)
@@ -381,10 +376,6 @@ async function collectTravel(
       publishedAt: toMs(p.publishedAt),
       createdAt: toMs(p.createdAt),
       updatedAt: toMs(p.updatedAt),
-      gallery: gallery
-        .filter((g) => g.travelPostId === p.id)
-        .map((g) => images.ref(g.imageId))
-        .filter((x): x is string => x !== null),
       restaurants: postRestaurants.map((r) => ({
         name: r.name,
         city: r.city,
