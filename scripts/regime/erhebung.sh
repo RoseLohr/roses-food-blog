@@ -136,6 +136,20 @@ set -euo pipefail
 #     Literal im Quelltext wären sie ein Treffer für den Secret-Scan — B-06,
 #     STOP-SHIP —, und der hätte recht: Die Form ist nicht davon harmlos, dass
 #     sie in einem Test steht.)
+#
+#     NACHTRAG, RUNDE VIER: Die erste Fassung dieser Regel verlangte Nutzer UND
+#     Kennwort. Ein Nutzerteil braucht aber weder das eine noch beides:
+#     `://:kennwort@ziel` (leerer Nutzer) und `://zeichenkette@ziel` (nur ein
+#     Merkmal, kein Doppelpunkt) sind gültig — und liefen unverändert durch.
+#     Deshalb gibt es jetzt ZWEI Regeln: Hinter einem Schema fällt der ganze
+#     Nutzerteil, EGAL wie er aussieht; ohne Schema greift weiterhin nur die
+#     Doppelpunkt-Form.
+#
+#     BENANNTE GRENZE: Ohne Schema ist `zeichenkette@ziel` von einer
+#     Mailadresse nicht zu unterscheiden. Wer dort maskierte, fräße jede
+#     Kontaktangabe. `proxy_pass` trägt immer ein Schema, also ist der Fall,
+#     um den es geht, gedeckt — aber die Grenze steht hier, statt zu
+#     überraschen.
 # ---------------------------------------------------------------------------
 maskieren() {
   sed -E \
@@ -143,6 +157,7 @@ maskieren() {
     -e 's/\b(0\.0\.0\.0)\b/@@JEDE@@/g' \
     -e 's/(^|[^0-9a-fA-F:])::1($|[^0-9a-fA-F])/\1@@LOOPBACK6@@\2/g' \
     -e 's/([Pp][Aa][Ss][Ss][Ww]?[Oo]?[Rr]?[Dd]|[Ss][Ee][Cc][Rr][Ee][Tt]|[Tt][Oo][Kk][Ee][Nn]|[Aa][Pp][Ii][_-]?[Kk][Ee][Yy]|[Aa][Uu][Tt][Hh][Oo][Rr][Ii][Zz][Aa][Tt][Ii][Oo][Nn]|[Bb][Ee][Aa][Rr][Ee][Rr])([[:space:]]*[:=][[:space:]]*|[[:space:]]+).*$/\1\2<maskiert>/' \
+    -e 's#(://)[^/@"[:space:]]+@#\1<maskiert>@#g' \
     -e 's#[^:/@"[:space:]]+:[^:/@"[:space:]]+@#<maskiert>@#g' \
     -e 's/([0-9a-fA-F]{0,4}:){2,7}([0-9]{1,3}\.){3}[0-9]{1,3}/<IPv6>/g' \
     -e 's/\b([0-9]{1,3}\.){3}[0-9]{1,3}\b/<IPv4>/g' \
@@ -208,6 +223,13 @@ selbsttest() {
   pruefe "Userinfo ohne Schema" \
     "set \$server dienst${dp}kennwort${at}upstream;" \
     "set \$server <maskiert>@upstream;"
+  # Runde vier: ein Nutzerteil braucht weder Nutzer noch Doppelpunkt.
+  pruefe "Userinfo ohne Nutzer" \
+    "proxy_pass http://${dp}kennwort${at}ziel:3000;" \
+    "proxy_pass http://<maskiert>@ziel:3000;"
+  pruefe "Userinfo ohne Doppelpunkt" \
+    "proxy_pass http://gehe1mt0ken${at}ziel:3000;" \
+    "proxy_pass http://<maskiert>@ziel:3000;"
   pruefe "Accountname im macOS-Pfad" "/Users/rose/x -> /y" "/Users/<benutzer>/x -> /y"
 
   # Das Geschonte: ohne diese Fälle wäre der Bericht unlesbar.
@@ -247,7 +269,7 @@ selbsttest() {
   pruefe "Zahlen bleiben Zahlen" "RestartCount 4" "RestartCount 4"
 
   if [ "$fehler" -eq 0 ]; then
-    echo "[erhebung] Selbsttest: 36 Fälle, Falle gestellt und Harmloses geschont ✓"
+    echo "[erhebung] Selbsttest: 38 Fälle, Falle gestellt und Harmloses geschont ✓"
     return 0
   fi
   echo "[erhebung] Selbsttest FEHLGESCHLAGEN — die Ausgabe dieses Skripts ist NICHT weitergabesicher."

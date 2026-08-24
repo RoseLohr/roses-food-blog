@@ -569,11 +569,26 @@ liest die `proxy_pass`-Ziele aus den erzeugten nginx-Dateien. Die Regel greift
 mit und ohne Schema. Gegenrichtung mitgeprüft: Eine Mailadresse hat keinen
 Doppelpunkt vor dem Klammeraffen und bleibt stehen.
 
-**Die Lehre nach drei Runden am selben Filter:** Eine Maskierung, die Geheimnis
+### Runde vier: ein Nutzerteil braucht weder Nutzer noch Doppelpunkt
+
+Die Regel aus Runde drei verlangte Nutzer UND Kennwort. Beides ist optional:
+`://:kennwort@ziel` (leerer Nutzer) und `://zeichenkette@ziel` (nur ein
+Merkmal, kein Doppelpunkt) sind gültige Adressen — und liefen unverändert
+durch. Diesmal waren sich beide arbeitenden Panel-Stimmen einig.
+
+Jetzt zwei Regeln: Hinter einem Schema fällt der ganze Nutzerteil, EGAL wie er
+aussieht; ohne Schema greift weiterhin nur die Doppelpunkt-Form.
+
+**Benannte Grenze:** Ohne Schema ist `zeichenkette@ziel` von einer Mailadresse
+nicht zu unterscheiden. Wer dort maskierte, fräße jede Kontaktangabe.
+`proxy_pass` trägt immer ein Schema, der Fall um den es geht ist also gedeckt —
+aber die Grenze steht hier, statt zu überraschen.
+
+**Die Lehre nach vier Runden am selben Filter:** Eine Maskierung, die Geheimnis
 an einem STICHWORT erkennt, findet nur die Geheimnisse, die sich als solche zu
-erkennen geben. Adressen, Präfixe und Nutzerteile tun das nicht. Jede der drei
+erkennen geben. Adressen, Präfixe und Nutzerteile tun das nicht. Jede der vier
 Runden hat dieselbe Klasse an einer neuen Stelle gefunden, und keine davon hat
-der eigene Selbsttest zuerst gesehen. Jetzt stehen 36 Fälle darin — aber die
+der eigene Selbsttest zuerst gesehen. Jetzt stehen 38 Fälle darin — aber die
 ehrliche Aussage bleibt: Der Filter ist so gut wie die Liste der Formen, an die
 jemand gedacht hat. Deshalb wird in diesem Bericht auch nichts mehr abgedruckt,
 was sich nicht abdrucken lassen MUSS (die rohen Protokolle sind schon

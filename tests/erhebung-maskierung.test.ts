@@ -29,6 +29,9 @@ function maskiert(eingabe: string): string {
 
 /** Benutzer und Kennwort einer Adresse, zur Laufzeit gefügt (s. u.). */
 const NUTZERTEIL = ["admin", "hunter2"].join(":") + "@";
+/** Nutzerteil ohne Nutzer bzw. ohne Doppelpunkt — beide sind gültig. */
+const NUR_KENNWORT = "s3cr3tKennwort";
+const NUR_MERKMAL = "gehe1mt0kenWert";
 
 /** Wie die Ausgabe des Skripts auf dem echten Host aussieht. */
 const BERICHT = [
@@ -56,6 +59,9 @@ const BERICHT = [
   // Secret-Scan (B-06, STOP-SHIP), und der hätte recht — die Form ist nicht
   // davon harmlos, dass sie in einem Test steht.
   `proxy_pass http://${NUTZERTEIL}backend.intern.example.de:3000;`,
+  // Runde vier: ein Nutzerteil braucht weder Nutzer noch Doppelpunkt.
+  `proxy_pass http://:${NUR_KENNWORT}@zweitziel:3000;`,
+  `proxy_pass http://${NUR_MERKMAL}@drittziel:3000;`,
   "/home/rose/npm/data -> /data",
   "server_name blog.beispiel-domain.de;",
   "upstream backend { server 203.0.113.42:3000; }",
@@ -82,6 +88,8 @@ describe("A1: die Erhebung ist weitergabesicher", () => {
       "fe80::1 dev",
       "2a01:4f8:c17:b8f:0:0", // das routbare Präfix, nicht nur die IPv4 dahinter
       NUTZERTEIL.slice(0, -1), // Zugangsdaten in der proxy_pass-Adresse
+      NUR_KENNWORT, // Nutzerteil ohne Nutzer
+      NUR_MERKMAL, // Nutzerteil ohne Doppelpunkt
       "/home/rose/", // Accountname im Hostpfad
       "sehr-geheim-123",
       "9f3c1a77e2b4d5f60a1c8e93b7d240af5c6e18b0",
