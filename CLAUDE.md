@@ -65,6 +65,16 @@ diesem Repository arbeitet. Sie ist Teil des Governance-Regimes (A-32/A-33/A-37)
   Wer hier ein Feld einführt, das über einen ANDEREN Block spricht, führt die
   Fehlerklasse wieder ein.
 
+  **Im Admin ist eine Gruppe EIN Block** (`src/lib/travel-editor-items.ts`):
+  ein Knopf „+ Bildgruppe", eine Karte, darin die Fotos in einem Zug aus der
+  Bibliothek gewählt und mit ←/→ geordnet. Die Marke vergibt der Editor beim
+  Absenden; sie ist kein Bedienelement mehr. Vorher stand je Foto eine Karte
+  mit einem Auswahlfeld „Zugehörigkeit" — fünf Handgriffe für eine Aussage,
+  die einmal gilt. Diese Bedienung kommt nicht zurück. Dass die Umrechnung
+  Karten ⇄ Blockfolge den ausgelieferten Bericht NICHT verändert, ist als
+  Gleichung festgenagelt (`tests/travel-editor-items.test.ts`); der Weg durch
+  die Oberfläche in `tests/e2e/reise-bildgruppe-editor.spec.ts`.
+
   Die Regeln für das Einzelbild stehen in **`src/app/einzelbild.css`** —
   eigenständig, damit `tests/e2e/mocks/einzelbild.html` sie LÄDT statt sie
   abzuschreiben. Die Abschrift dort hatte die Handy-Regel nie mitbekommen: ein

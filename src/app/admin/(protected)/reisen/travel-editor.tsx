@@ -14,11 +14,15 @@ import {
 } from "@/components/admin/quick-add-checkboxes";
 import { RichTextEditor } from "@/components/admin/rich-text-editor";
 import { RESTAURANT_FOTOS_MAX } from "@/lib/restaurant-fotos";
+import type { Ausrichtung, Bildgroesse } from "@/lib/bildreihen";
+import type { TravelBlock } from "@/lib/travel-blocks";
 import {
-  EINZELBILD_VORGABE,
-  type Ausrichtung,
-  type Bildgroesse,
-} from "@/lib/bildreihen";
+  neueBildgruppe,
+  neuesEinzelbild,
+  zuBloecken,
+  zuItems,
+  type EditorItem,
+} from "@/lib/travel-editor-items";
 import {
   bildWirdGespeichert,
   restaurantWirdGespeichert,
@@ -52,19 +56,19 @@ interface EditorRestaurant {
   dishes: EditorDish[];
 }
 
-/** Inhalts-Block (siehe lib/travel-blocks.ts); imageId 0 = noch kein Bild. */
-export type EditorBlockData =
-  | { type: "text"; markdown: string }
-  | {
-      type: "bild";
-      imageId: number;
-      /** Marke der Gruppe; `null` = Einzelbild. Siehe lib/travel-blocks.ts. */
-      gruppe: number | null;
-      groesse: Bildgroesse | null;
-      ausrichtung: Ausrichtung | null;
-    }
-  | { type: "restaurant"; index: number };
-type EditorBlock = EditorBlockData & { key: string };
+/**
+ * Ein Editor-Eintrag mit stabilem React-Schlüssel.
+ *
+ * WAS der Editor zeigt, steht in src/lib/travel-editor-items.ts — dort auch,
+ * warum es nicht mehr dasselbe ist wie die gespeicherte Blockfolge: Eine
+ * Bildgruppe ist hier EIN Eintrag mit mehreren Fotos, in der Datenbank
+ * mehrere Zeilen mit derselben Marke.
+ *
+ * Der Schlüssel gehört NICHT zum Eintrag selbst: Er lebt nur, solange die
+ * Karte auf dem Bildschirm steht, und darf deshalb weder gespeichert noch
+ * abgesendet werden.
+ */
+type Eintrag = EditorItem & { key: string };
 
 export interface TravelEditorProps {
   initial: {
@@ -72,7 +76,7 @@ export interface TravelEditorProps {
     title: string;
     slug: string;
     teaser: string;
-    blocks: EditorBlockData[];
+    blocks: TravelBlock[];
     country: string;
     region: string;
     city: string;
@@ -96,8 +100,8 @@ export interface TravelEditorProps {
   message?: string | null;
 }
 
-let blockUid = 0;
-const nextBlockKey = () => `block-${++blockUid}`;
+let eintragUid = 0;
+const naechsterSchluessel = () => `eintrag-${++eintragUid}`;
 
 const inputCls = "w-full border border-ink-soft/30 px-3 py-2 text-sm";
 const labelCls = "mb-1 block text-sm font-medium";
@@ -105,93 +109,44 @@ const btnSecondary =
   "rounded-lg border border-ink/20 px-3 py-1.5 text-sm hover:bg-cream";
 
 /**
- * Wo steht jedes Bild in seiner Gruppe? — abgeleitet aus DERSELBEN Regel, die
- * der Renderer anwendet (`zuRenderBloecken`): ein ununterbrochener Lauf mit
- * derselben Marke ist eine Gruppe; das erste Bild steht über die ganze Breite,
- * alle weiteren teilen sich die Reihe darunter.
- *
- * Gerechnet wird auf der WIRKSAMEN Folge — also der, die nach dem Speichern
- * übrig bleibt —, und das Ergebnis danach auf die Editor-Indizes zurück
- * übersetzt. Sonst zeigte der Editor eine Lage an, die es gar nicht gibt.
- *
- * Einzelbilder (`gruppe === null`) tauchen hier NICHT auf: Sie stehen in
- * keiner Reihe, für sie gibt es nichts zu positionieren.
+ * Die Überschrift einer Karte. Vier Arten, vier Wörter — und „Bildgruppe" ist
+ * jetzt eine eigene davon statt einer Einstellung an mehreren Bild-Karten.
  */
-function gruppenlage(
-  blocks: EditorBlock[],
-  wirksam: number[],
-): Map<number, { pos: number; anzahl: number }> {
-  const folge = wirksam.map((i) => blocks[i]);
-  const lage = new Map<number, { pos: number; anzahl: number }>();
-  let gruppe: number[] = [];
-  let offeneMarke: number | null = null;
-  const schliessen = () => {
-    for (const [pos, k] of gruppe.entries()) {
-      lage.set(wirksam[k], { pos, anzahl: gruppe.length });
-    }
-    gruppe = [];
-    offeneMarke = null;
-  };
-  folge.forEach((b, k) => {
-    if (b.type !== "bild" || b.gruppe === null) {
-      schliessen();
-      return;
-    }
-    if (offeneMarke !== b.gruppe) schliessen();
-    offeneMarke = b.gruppe;
-    gruppe.push(k);
-  });
-  schliessen();
-  return lage;
-}
+const KARTENNAME: Record<EditorItem["art"], string> = {
+  text: d.blockText,
+  einzelbild: d.blockImage,
+  bildgruppe: d.blockBildgruppe,
+  restaurant: d.blockRestaurant,
+};
 
 /**
- * Die Marken in der Reihenfolge ihres ersten Auftretens — als A, B, C …
- *
- * Zahlen wären ehrlicher, aber unlesbar: „Gruppe 17" sagt einem Redakteur
- * nichts, „Gruppe B" schon. Die Zuordnung wird bei jedem Rendern neu
- * berechnet, hängt also nie an einer gespeicherten Beschriftung.
- */
-function gruppenbuchstaben(blocks: EditorBlock[]): Map<number, string> {
-  const namen = new Map<number, string>();
-  for (const b of blocks) {
-    if (b.type !== "bild" || b.gruppe === null || namen.has(b.gruppe)) continue;
-    namen.set(b.gruppe, String.fromCharCode(65 + (namen.size % 26)));
-  }
-  return namen;
-}
-
-/** Eine Marke, die es noch nicht gibt. */
-function naechsteMarke(blocks: EditorBlock[]): number {
-  const belegt = blocks
-    .filter((b): b is EditorBlock & { type: "bild" } => b.type === "bild")
-    .map((b) => b.gruppe ?? 0);
-  return Math.max(0, ...belegt) + 1;
-}
-
-/**
- * Die Indizes der Blöcke, die beim Speichern erhalten bleiben.
+ * Die Indizes der Einträge, die beim Speichern erhalten bleiben.
  *
  * Dieselben Prädikate wie im Speicherweg (src/lib/travel-wirksam.ts). Was hier
- * fehlt, steht später nicht im Bericht — und darf deshalb weder eine Bildzeile
- * brechen noch beim Absenden mitgeschickt werden.
+ * fehlt, steht später nicht im Bericht — und darf deshalb weder als
+ * gespeichert angezeigt noch beim Absenden mitgeschickt werden.
+ *
+ * Eine Bildgruppe zählt, sobald sie MINDESTENS EIN Foto hat. Eine leere Gruppe
+ * ist eine Karte, an der noch gearbeitet wird — kein Inhalt.
  */
 function wirksameIndizes(
-  blocks: EditorBlock[],
+  eintraege: Eintrag[],
   restaurants: EditorRestaurant[],
 ): number[] {
   const out: number[] = [];
-  blocks.forEach((b, i) => {
+  eintraege.forEach((e, i) => {
     const bleibt =
-      b.type === "bild"
-        ? bildWirdGespeichert(b.imageId)
-        : b.type === "restaurant"
-          ? restaurantWirdGespeichert(restaurants[b.index]?.name ?? "")
-          : // Derselbe Weg wie beim Server — Bericht bauen und nachsehen —,
-            // nur ohne die Entitäten-Tabelle: Die passt nicht mehr ins
-            // JS-Budget dieser Route, und der Unterschied betrifft allein die
-            // ANZEIGE. Die Begründung steht in src/lib/sichtbar-vorschau.ts.
-            zeigtVoraussichtlichEtwas(b.markdown);
+      e.art === "einzelbild"
+        ? bildWirdGespeichert(e.imageId)
+        : e.art === "bildgruppe"
+          ? e.imageIds.some((id) => bildWirdGespeichert(id))
+          : e.art === "restaurant"
+            ? restaurantWirdGespeichert(restaurants[e.index]?.name ?? "")
+            : // Derselbe Weg wie beim Server — Bericht bauen und nachsehen —,
+              // nur ohne die Entitäten-Tabelle: Die passt nicht mehr ins
+              // JS-Budget dieser Route, und der Unterschied betrifft allein die
+              // ANZEIGE. Die Begründung steht in src/lib/sichtbar-vorschau.ts.
+              zeigtVoraussichtlichEtwas(e.markdown);
     if (bleibt) out.push(i);
   });
   return out;
@@ -234,72 +189,64 @@ export function TravelEditor({
   const [restaurants, setRestaurants] = useState<EditorRestaurant[]>(
     initial.restaurants.length ? initial.restaurants : [],
   );
-  const [blocks, setBlocks] = useState<EditorBlock[]>(() =>
-    // Schon beim Laden normalisieren: Der Bestand kann Flaggen enthalten, die
-    // nicht mehr wirken — etwa weil ein Bild dazwischen gelöscht wurde oder
-    // sein Foto fehlt und der Block deshalb übersprungen wird. Ungeräumt
-    // stünden sie im Editor unsichtbar da und würden beim Speichern
-    // zurückgeschrieben.
+  const [eintraege, setEintraege] = useState<Eintrag[]>(() =>
+    // Aus der gespeicherten Blockfolge werden hier die KARTEN, die der
+    // Redakteur bedient: Ein Lauf gleich markierter Bilder ist EINE
+    // Bildgruppe. Gerechnet wird das mit derselben Regel, die der Renderer
+    // anwendet (src/lib/travel-editor-items.ts) — der Editor zeigt damit
+    // genau die Gruppen, die der Bericht auch rendert, und nicht eine zweite
+    // Lesart derselben Daten.
     (initial.blocks.length
-      ? initial.blocks
-      : [{ type: "text", markdown: "" } as EditorBlockData]
-    ).map((b) => ({ ...b, key: nextBlockKey() })),
+      ? zuItems(initial.blocks)
+      : [{ art: "text", markdown: "" } as EditorItem]
+    ).map((e) => ({ ...e, key: naechsterSchluessel() })),
   );
 
-  // Zeilen einmal je Rendervorgang bestimmen — aus derselben Gruppierung, die
-  // beim Speichern das Frontend baut.
   // Einmal je Änderung, nicht je Rendervorgang: Das Prädikat rendert Markdown.
   const wirksam = useMemo(
-    () => wirksameIndizes(blocks, restaurants),
-    [blocks, restaurants],
+    () => wirksameIndizes(eintraege, restaurants),
+    [eintraege, restaurants],
   );
   const wirksamSet = new Set(wirksam);
-  // Wo landet welches Bild? Abgeleitet aus DERSELBEN Gruppierung, die auch der
-  // Renderer benutzt, und auf der Folge, die das Speichern übrig lässt — sonst
-  // zeigte der Editor eine Lage an, die es nach dem Speichern nicht gibt.
-  const lage = gruppenlage(blocks, wirksam);
-  const buchstaben = gruppenbuchstaben(blocks);
-  const updateBlock = (i: number, patch: Partial<EditorBlockData>) =>
-    setBlocks((prev) =>
-      prev.map((b, idx) => (idx === i ? ({ ...b, ...patch } as EditorBlock) : b)),
+
+  const aendere = (i: number, patch: Partial<EditorItem>) =>
+    setEintraege((prev) =>
+      prev.map((e, idx) => (idx === i ? ({ ...e, ...patch } as Eintrag) : e)),
     );
-  const moveBlock = (i: number, dir: -1 | 1) =>
-    setBlocks((prev) => {
-      const j = i + dir;
+  const verschiebe = (i: number, richtung: -1 | 1) =>
+    setEintraege((prev) => {
+      const j = i + richtung;
       if (j < 0 || j >= prev.length) return prev;
       const next = [...prev];
       [next[i], next[j]] = [next[j], next[i]];
       return next;
     });
-  const removeBlock = (i: number) =>
-    setBlocks((prev) => prev.filter((_, idx) => idx !== i));
-  const addBlock = (b: EditorBlockData) =>
-    setBlocks((prev) => [...prev, { ...b, key: nextBlockKey() }]);
+  const entferne = (i: number) =>
+    setEintraege((prev) => prev.filter((_, idx) => idx !== i));
+  const fuegeAn = (e: EditorItem) =>
+    setEintraege((prev) => [...prev, { ...e, key: naechsterSchluessel() }]);
 
-  // Restaurant entfernen: Blöcke auf spätere Restaurants nachziehen,
-  // Blöcke auf das entfernte Restaurant mit entfernen.
+  // Restaurant entfernen: Einträge auf spätere Restaurants nachziehen,
+  // Einträge auf das entfernte Restaurant mit entfernen.
   const removeRestaurant = (ri: number) => {
     setRestaurants((prev) => prev.filter((_, idx) => idx !== ri));
-    setBlocks((prev) =>
+    setEintraege((prev) =>
       prev
-        .filter((b) => b.type !== "restaurant" || b.index !== ri)
-        .map((b) =>
-          b.type === "restaurant" && b.index > ri
-            ? { ...b, index: b.index - 1 }
-            : b,
+        .filter((e) => e.art !== "restaurant" || e.index !== ri)
+        .map((e) =>
+          e.art === "restaurant" && e.index > ri
+            ? { ...e, index: e.index - 1 }
+            : e,
         ),
     );
   };
 
-  // Abgesendet wird GENAU die Folge, auf der auch die Zeilen gerechnet wurden.
+  // Abgesendet wird GENAU die Folge, auf der auch die Anzeige gerechnet wurde.
   // Vorher waren das zwei verschiedene Mengen: Der Absende-Filter fragte bei
   // einem Restaurant-Block „gibt es diesen Index?", der Server „hat dieses
   // Restaurant einen Namen?" — und dazwischen ging eine Bildzeile verloren.
   const serializedBlocks = JSON.stringify(
-    wirksam.map((i) => {
-      const { key: _key, ...b } = blocks[i];
-      return b;
-    }),
+    zuBloecken(wirksam.map((i) => eintraege[i])),
   );
 
   // "48,2" / "48.2" / "" → number | null (Koordinaten-Override)
@@ -473,20 +420,16 @@ export function TravelEditor({
             <span className={labelCls}>{d.fieldContent}</span>
             <p className="mb-2 text-xs text-ink-soft">{d.blocksHint}</p>
             <div className="flex flex-col gap-3">
-              {blocks.map((b, i) => (
+              {eintraege.map((e, i) => (
                 <div
-                  key={b.key}
+                  key={e.key}
                   className={`border border-ink/10 p-3 ${
                     wirksamSet.has(i) ? "" : "border-dashed bg-cream/40"
                   }`}
                 >
                   <div className="mb-2 flex items-center gap-1.5">
                     <span className="text-xs font-semibold uppercase tracking-wide text-ink-soft">
-                      {b.type === "text"
-                        ? d.blockText
-                        : b.type === "bild"
-                          ? d.blockImage
-                          : d.blockRestaurant}
+                      {KARTENNAME[e.art]}
                     </span>
                     {!wirksamSet.has(i) && (
                       <span className="text-xs font-normal normal-case text-ink-soft">
@@ -496,7 +439,7 @@ export function TravelEditor({
                     <div className="ml-auto flex gap-1">
                       <button
                         type="button"
-                        onClick={() => moveBlock(i, -1)}
+                        onClick={() => verschiebe(i, -1)}
                         disabled={i === 0}
                         aria-label={d.blockUp}
                         title={d.blockUp}
@@ -506,8 +449,8 @@ export function TravelEditor({
                       </button>
                       <button
                         type="button"
-                        onClick={() => moveBlock(i, 1)}
-                        disabled={i === blocks.length - 1}
+                        onClick={() => verschiebe(i, 1)}
+                        disabled={i === eintraege.length - 1}
                         aria-label={d.blockDown}
                         title={d.blockDown}
                         className={`${btnSecondary} px-2 py-0.5 disabled:opacity-40`}
@@ -516,7 +459,7 @@ export function TravelEditor({
                       </button>
                       <button
                         type="button"
-                        onClick={() => removeBlock(i)}
+                        onClick={() => entferne(i)}
                         aria-label={dict.admin.recipes.remove}
                         title={dict.admin.recipes.remove}
                         className={`${btnSecondary} px-2 py-0.5`}
@@ -525,141 +468,109 @@ export function TravelEditor({
                       </button>
                     </div>
                   </div>
-                  {b.type === "text" && (
+                  {e.art === "text" && (
                     <RichTextEditor
-                      initialMarkdown={b.markdown}
+                      initialMarkdown={e.markdown}
                       minHeightClass="min-h-32"
-                      onChange={(md) => updateBlock(i, { markdown: md })}
+                      onChange={(md) => aendere(i, { markdown: md })}
                     />
                   )}
-                  {b.type === "bild" && (
+
+                  {/* EINE Karte, EINE Gruppe. Es gibt hier nichts
+                      einzustellen — die Anordnung folgt allein aus der
+                      Reihenfolge der Fotos, und die stellt man in der Vorschau
+                      mit den Pfeilen um. */}
+                  {e.art === "bildgruppe" && (
+                    <>
+                      <ImagePicker
+                        legend={d.blockBildgruppe}
+                        options={images}
+                        multiple
+                        sortierbar
+                        value={e.imageIds}
+                        onChange={(ids) => aendere(i, { imageIds: ids })}
+                      />
+                      <p className="mt-2 border-l-2 border-leaf bg-leaf/[0.06] px-3 py-1.5 text-xs text-ink-soft">
+                        {e.imageIds.length === 0
+                          ? d.blockGruppeLeer
+                          : d.blockGruppeLage(e.imageIds.length)}
+                      </p>
+                    </>
+                  )}
+
+                  {e.art === "einzelbild" && (
                     <>
                       <ImagePicker
                         legend={d.blockImage}
                         options={images}
                         multiple={false}
-                        value={b.imageId > 0 ? [b.imageId] : []}
-                        onChange={(ids) => updateBlock(i, { imageId: ids[0] ?? 0 })}
+                        value={e.imageId > 0 ? [e.imageId] : []}
+                        onChange={(ids) => aendere(i, { imageId: ids[0] ?? 0 })}
                       />
-                      {/* ZUGEHÖRIGKEIT: die eine Entscheidung, aus der alles
-                          Weitere folgt. Gehört das Bild zu einer Gruppe,
-                          bestimmt die Position darin die Anordnung — dann gibt
-                          es nichts einzustellen. Gehört es zu keiner, bekommt
-                          es Größe und Seite.
-
-                          Angeboten werden nur die Marken, die im Bericht
-                          schon vorkommen, plus „Neue Gruppe". Eine freie
-                          Zahleneingabe wäre eine Einladung, Marken zu
-                          vergeben, die nirgends ankommen. */}
-                      <label className="mt-2 block">
-                        <span className={labelCls}>{d.blockZugehoerigkeit}</span>
-                        <select
-                          value={b.gruppe === null ? "einzel" : String(b.gruppe)}
-                          onChange={(e) => {
-                            const w = e.target.value;
-                            if (w === "einzel")
-                              updateBlock(i, {
-                                gruppe: null,
-                                groesse: EINZELBILD_VORGABE.groesse,
-                                ausrichtung: EINZELBILD_VORGABE.ausrichtung,
-                              });
-                            else
-                              updateBlock(i, {
-                                gruppe: w === "neu" ? naechsteMarke(blocks) : Number(w),
-                                // In der Gruppe sind die Regler unwirksam —
-                                // also dürfen sie auch nicht stehen bleiben.
-                                // Der Vertrag und die Datenbank weisen so
-                                // einen Block ohnehin zurück.
-                                groesse: null,
-                                ausrichtung: null,
-                              });
-                          }}
-                          className={inputCls}
-                        >
-                          <option value="einzel">{d.blockEinzelbild}</option>
-                          {[...buchstaben].map(([marke, name]) => (
-                            <option key={marke} value={marke}>
-                              {d.blockGruppeName(name)}
-                            </option>
-                          ))}
-                          <option value="neu">{d.blockNeueGruppe}</option>
-                        </select>
-                      </label>
-
-                      {b.gruppe === null && (
-                        <div className="mt-2 grid grid-cols-2 gap-2">
-                          <label>
-                            <span className={labelCls}>{d.blockGroesse}</span>
-                            <select
-                              value={b.groesse ?? EINZELBILD_VORGABE.groesse}
-                              onChange={(e) =>
-                                updateBlock(i, {
-                                  groesse: e.target.value as Bildgroesse,
-                                })
-                              }
-                              className={inputCls}
-                            >
-                              {(["s", "m", "l"] as const).map((g) => (
-                                <option key={g} value={g}>
-                                  {d.blockGroessen[g]}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                          <label>
-                            <span className={labelCls}>{d.blockAusrichtung}</span>
-                            <select
-                              value={b.ausrichtung ?? EINZELBILD_VORGABE.ausrichtung}
-                              onChange={(e) =>
-                                updateBlock(i, {
-                                  ausrichtung: e.target.value as Ausrichtung,
-                                })
-                              }
-                              className={inputCls}
-                            >
-                              {(["links", "rechts"] as const).map((a) => (
-                                <option key={a} value={a}>
-                                  {d.blockAusrichtungen[a]}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                        </div>
-                      )}
+                      <div className="mt-2 grid grid-cols-2 gap-2">
+                        <label>
+                          <span className={labelCls}>{d.blockGroesse}</span>
+                          <select
+                            value={e.groesse}
+                            onChange={(ev) =>
+                              aendere(i, {
+                                groesse: ev.target.value as Bildgroesse,
+                              })
+                            }
+                            className={inputCls}
+                          >
+                            {(["s", "m", "l"] as const).map((g) => (
+                              <option key={g} value={g}>
+                                {d.blockGroessen[g]}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label>
+                          <span className={labelCls}>{d.blockAusrichtung}</span>
+                          <select
+                            value={e.ausrichtung}
+                            onChange={(ev) =>
+                              aendere(i, {
+                                ausrichtung: ev.target.value as Ausrichtung,
+                              })
+                            }
+                            className={inputCls}
+                          >
+                            {(["links", "rechts"] as const).map((a) => (
+                              <option key={a} value={a}>
+                                {d.blockAusrichtungen[a]}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      </div>
 
                       {/* Die AUSKUNFT, wo das Bild landet. Keine Einstellung,
                           sondern das Ergebnis — und als sichtbarer Satz, nicht
                           als `title`: Auf dem iPad gibt es kein Hover. */}
                       <p className="mt-2 border-l-2 border-leaf bg-leaf/[0.06] px-3 py-1.5 text-xs text-ink-soft">
-                        {(() => {
-                          if (b.gruppe === null)
-                            return d.blockEinzelbildLage(
-                              d.blockGroessen[b.groesse ?? EINZELBILD_VORGABE.groesse],
-                              b.ausrichtung ?? EINZELBILD_VORGABE.ausrichtung,
-                            );
-                          const g = lage.get(i);
-                          if (!g) return d.blockGruppeAllein;
-                          return g.pos === 0
-                            ? d.blockGruppeErstes(g.anzahl)
-                            : d.blockGruppeWeiteres(g.pos + 1, g.anzahl);
-                        })()}
+                        {d.blockEinzelbildLage(
+                          d.blockGroessen[e.groesse],
+                          e.ausrichtung,
+                        )}
                       </p>
                     </>
                   )}
                   {!wirksamSet.has(i) && (
                     <p className="mb-2 border-l-2 border-ink/25 bg-ink/[0.04] px-3 py-1.5 text-xs text-ink-soft">
-                      {d.blockNichtGespeichert[b.type]}
+                      {d.blockNichtGespeichert[e.art]}
                     </p>
                   )}
-                  {b.type === "restaurant" &&
+                  {e.art === "restaurant" &&
                     (restaurants.length === 0 ? (
                       <p className="text-sm text-ink-soft">{d.blockNoRestaurants}</p>
                     ) : (
                       <select
                         aria-label={d.blockRestaurant}
-                        value={b.index}
-                        onChange={(e) =>
-                          updateBlock(i, { index: Number(e.target.value) })
+                        value={e.index}
+                        onChange={(ev) =>
+                          aendere(i, { index: Number(ev.target.value) })
                         }
                         className={inputCls}
                       >
@@ -675,31 +586,28 @@ export function TravelEditor({
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
-                  onClick={() => addBlock({ type: "text", markdown: "" })}
+                  onClick={() => fuegeAn({ art: "text", markdown: "" })}
                   className={btnSecondary}
                 >
                   + {d.blockText}
                 </button>
                 <button
                   type="button"
-                  onClick={() => addBlock({
-                      type: "bild",
-                      imageId: 0,
-                      // Ein neues Bild ist zunächst ein Einzelbild mit den
-                      // Vorgaben. Gruppieren ist der zweite Schritt und
-                      // ausdrücklich — nicht etwas, das durch bloßes
-                      // Danebenlegen passiert.
-                      gruppe: null,
-                      groesse: EINZELBILD_VORGABE.groesse,
-                      ausrichtung: EINZELBILD_VORGABE.ausrichtung,
-                    })}
+                  onClick={() => fuegeAn(neuesEinzelbild())}
                   className={btnSecondary}
                 >
                   + {d.blockImage}
                 </button>
                 <button
                   type="button"
-                  onClick={() => addBlock({ type: "restaurant", index: 0 })}
+                  onClick={() => fuegeAn(neueBildgruppe())}
+                  className={btnSecondary}
+                >
+                  + {d.blockBildgruppe}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => fuegeAn({ art: "restaurant", index: 0 })}
                   disabled={restaurants.length === 0}
                   title={restaurants.length === 0 ? d.blockNoRestaurants : undefined}
                   className={`${btnSecondary} disabled:opacity-40`}
