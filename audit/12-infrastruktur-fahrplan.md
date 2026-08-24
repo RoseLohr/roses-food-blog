@@ -478,14 +478,14 @@ mehr, und die Rückersetzung am Ende stellte die volle Adresse wieder her.
 Gemessen an der Vorfassung:
 
 ```
-2a01:4f8:c17:b8f::1   → unverändert durchgelaufen
+2001:db8:c17:b8f::1   → unverändert durchgelaufen
 2001:db8::10          → unverändert durchgelaufen
 fe80::1               → unverändert durchgelaufen
 ```
 
 Also genau die Sorte Adresse, gegen deren Veröffentlichung dieses Skript
 geschrieben ist. Der Selbsttest deckte den Fall nicht ab: Er kannte
-`::dead:beef` und `2400:cb00::/32`, und keine der beiden endet auf `::1…`.
+`::dead:beef` und `2001:db8:cf00::/48`, und keine der beiden endet auf `::1…`.
 Geschützt wird jetzt nur ein freistehendes `::1`.
 
 **Der peinlichste: eine Zusage ohne Deckung.** Kopf, Commit und Fahrplan
@@ -527,11 +527,11 @@ kommen unmaskiert heraus, durch die neue maskiert.
 Der Pflicht-Approver kam auf die überarbeitete Fassung zurück und fand die
 Lücke, die die Reparatur offen gelassen hatte: **IPv4-eingebettete IPv6 ohne
 `::`.** Beide IPv6-Ausdrücke verlangen entweder sieben Doppelpunkte oder ein
-`::`. `2a01:4f8:c17:b8f:0:0:198.51.100.9` hat beides nicht — die IPv4-Regel
+`::`. `2001:db8:c17:b8f:0:0:198.51.100.9` hat beides nicht — die IPv4-Regel
 schlug den hinteren Teil, und das **routbare 96-Bit-Präfix blieb stehen**:
 
 ```
-Vorfassung:  resolver 2a01:4f8:c17:b8f:0:0:<IPv4> valid=30s;
+Vorfassung:  resolver 2001:db8:c17:b8f:0:0:<IPv4> valid=30s;
 neu:         resolver <IPv6> valid=30s;
 ```
 
@@ -584,15 +584,45 @@ nicht zu unterscheiden. Wer dort maskierte, fräße jede Kontaktangabe.
 `proxy_pass` trägt immer ein Schema, der Fall um den es geht ist also gedeckt —
 aber die Grenze steht hier, statt zu überraschen.
 
-**Die Lehre nach vier Runden am selben Filter:** Eine Maskierung, die Geheimnis
+### Runde fünf: die Klasse ist nicht aufzählbar — also weniger drucken
+
+Der Approver nannte „generische Query-Credentials": ein Merkmal in `?key=…`,
+`?auth=…`, `?sig=…` oder als undurchsichtiger Pfad (`/s/AbCdEf…`). Gemessen
+traf das zu — `?apikey=` fing die Stichwortregel noch, `?key=` und `?auth=`
+liefen durch, ein Pfad-Merkmal hat gar keinen Namen, an dem man es erkennen
+könnte.
+
+**Diese Klasse lässt sich nicht aufzählen**, und das ist die Antwort selbst.
+Jeder Dienst nennt seinen Parameter anders. Eine sechste Ausnahme im
+Stichwortfilter wäre wieder nur bis zur nächsten Runde gut.
+
+Stattdessen: **Von einer Adresse bleiben Schema, Wirt und Hafen — der Pfad und
+alles dahinter fallen.** M1 fragt, wie der Proxy die Anwendung erreicht; darauf
+antworten diese drei vollständig. Pfad und Abfrage tragen zur Antwort nichts
+bei und können beliebige Geheimnisse enthalten.
+
+```
+vorher:  proxy_pass http://ziel:3000/hook?key=… &auth=…
+neu:     proxy_pass http://ziel:3000/<pfad-entfernt>
+```
+
+Das ist die einzige Regel in diesem Filter, die nicht versucht, ein Geheimnis
+zu ERKENNEN — und deshalb die einzige, die eine ganze Klasse schließt statt
+einer Form. Was man nicht abdruckt, muss man nicht maskieren.
+
+**Die Lehre nach fünf Runden am selben Filter:** Eine Maskierung, die Geheimnis
 an einem STICHWORT erkennt, findet nur die Geheimnisse, die sich als solche zu
-erkennen geben. Adressen, Präfixe und Nutzerteile tun das nicht. Jede der vier
+erkennen geben. Adressen, Präfixe und Nutzerteile tun das nicht. Jede der ersten vier
 Runden hat dieselbe Klasse an einer neuen Stelle gefunden, und keine davon hat
-der eigene Selbsttest zuerst gesehen. Jetzt stehen 38 Fälle darin — aber die
-ehrliche Aussage bleibt: Der Filter ist so gut wie die Liste der Formen, an die
-jemand gedacht hat. Deshalb wird in diesem Bericht auch nichts mehr abgedruckt,
-was sich nicht abdrucken lassen MUSS (die rohen Protokolle sind schon
-gefallen).
+der eigene Selbsttest zuerst gesehen. Jetzt stehen 41 Fälle darin — aber die
+ehrliche Aussage bleibt: Ein Stichwortfilter ist so gut wie die Liste der
+Formen, an die jemand gedacht hat.
+
+Deshalb ist die Richtung ab Runde fünf eine andere: Es wird nichts mehr
+abgedruckt, was sich nicht abdrucken lassen MUSS. Die rohen Protokolle sind in
+Runde eins gefallen, Pfad und Abfrage jeder Adresse in Runde fünf. Wo eine
+Kontrolle fünfmal hintereinander umgangen wurde, ist nicht die sechste Regel
+die Antwort, sondern eine kleinere Angriffsfläche.
 
 ## Spur C2/C3/C4 — Proxy-Konfiguration
 

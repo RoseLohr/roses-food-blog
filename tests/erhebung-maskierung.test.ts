@@ -32,6 +32,9 @@ const NUTZERTEIL = ["admin", "hunter2"].join(":") + "@";
 /** Nutzerteil ohne Nutzer bzw. ohne Doppelpunkt — beide sind gültig. */
 const NUR_KENNWORT = "s3cr3tKennwort";
 const NUR_MERKMAL = "gehe1mt0kenWert";
+/** Merkmale in Abfrage und Pfad — ohne Namen, den ein Filter kennen könnte. */
+const ABFRAGE_MERKMAL = "Q7bTnZ4pLm2Xr9Kd";
+const PFAD_MERKMAL = "AbCdEf0123456789";
 
 /** Wie die Ausgabe des Skripts auf dem echten Host aussieht. */
 const BERICHT = [
@@ -40,19 +43,19 @@ const BERICHT = [
   "npm-app      docker.io/jc21/npm:2.11.1      Up 9 days     0.0.0.0:443->443/tcp",
   "Netz host · Regel always · Neustarts 2 · seit 2026-08-19T05:11:02Z",
   "proxy_pass http://127.0.0.1:3000;",
-  "set_real_ip_from 173.245.48.0/20;",
-  "set_real_ip_from 2400:cb00::/32;",
+  "set_real_ip_from 198.51.100.0/24;",
+  "set_real_ip_from 2001:db8:cf00::/48;",
   // DIE DREI FORMEN, DIE DER PFLICHT-APPROVER GEFUNDEN HAT (PR #111). Sie
   // kamen an der Vorfassung UNMASKIERT durch: Der Loopback-Schutz ersetzte
   // jede Zeichenfolge `::1`, danach griff keine IPv6-Regel mehr, und die
   // Rückersetzung stellte die volle Adresse wieder her — fail-open auf genau
   // der Invariante, für die dieses Skript existiert.
-  "upstream backend6 { server [2a01:4f8:c17:b8f::1]:3000; }",
+  "upstream backend6 { server [2001:db8:c17:b8f::1]:3000; }",
   "listen [2001:db8::10]:443 ssl;",
   "fe80::1 dev eth0",
   // Runde zwei desselben Prüfers: IPv4-eingebettet OHNE `::` — die IPv4-Regel
   // schlug den hinteren Teil, das routbare 96-Bit-Präfix blieb stehen.
-  "resolver 2a01:4f8:c17:b8f:0:0:198.51.100.9 valid=30s;",
+  "resolver 2001:db8:c17:b8f:0:0:198.51.100.9 valid=30s;",
   // Runde drei: Zugangsdaten stehen auch in Adressen — zwischen Doppelpunkt
   // und Klammeraffe, ohne sich Geheimnis zu nennen. ZUR LAUFZEIT
   // zusammengesetzt: literal im Quelltext wäre die Zeile ein Treffer für den
@@ -62,7 +65,11 @@ const BERICHT = [
   // Runde vier: ein Nutzerteil braucht weder Nutzer noch Doppelpunkt.
   `proxy_pass http://:${NUR_KENNWORT}@zweitziel:3000;`,
   `proxy_pass http://${NUR_MERKMAL}@drittziel:3000;`,
-  "/home/rose/npm/data -> /data",
+  // Runde fünf: Merkmale in Abfrage und Pfad sind nicht aufzählbar. Deshalb
+  // fällt alles hinter dem Wirt, statt es zu erkennen zu versuchen.
+  `proxy_pass http://viertziel:3000/hook?key=${ABFRAGE_MERKMAL};`,
+  `proxy_pass http://fuenftziel:3000/s/${PFAD_MERKMAL};`,
+  "/home/beispielnutzer/npm/data -> /data",
   "server_name blog.beispiel-domain.de;",
   "upstream backend { server 203.0.113.42:3000; }",
   "DB_PASSWORD=sehr-geheim-123",
@@ -81,16 +88,18 @@ describe("A1: die Erhebung ist weitergabesicher", () => {
     const raus = maskiert(BERICHT);
     for (const gefaehrlich of [
       "203.0.113.42", // die Ursprungsadresse — der eigentliche Grund für all das
-      "173.245.48.0",
-      "2400:cb00",
-      "2a01:4f8:c17:b8f", // die Sorte Adresse, um die es hier eigentlich geht
+      "198.51.100.0",
+      "2001:db8:cf00",
+      "2001:db8:c17:b8f", // die Sorte Adresse, um die es hier eigentlich geht
       "2001:db8::10",
       "fe80::1 dev",
-      "2a01:4f8:c17:b8f:0:0", // das routbare Präfix, nicht nur die IPv4 dahinter
+      "2001:db8:c17:b8f:0:0", // das routbare Präfix, nicht nur die IPv4 dahinter
       NUTZERTEIL.slice(0, -1), // Zugangsdaten in der proxy_pass-Adresse
       NUR_KENNWORT, // Nutzerteil ohne Nutzer
       NUR_MERKMAL, // Nutzerteil ohne Doppelpunkt
-      "/home/rose/", // Accountname im Hostpfad
+      ABFRAGE_MERKMAL, // Merkmal in der Abfrage
+      PFAD_MERKMAL, // Merkmal im Pfad
+      "/home/beispielnutzer/", // Accountname im Hostpfad
       "sehr-geheim-123",
       "9f3c1a77e2b4d5f60a1c8e93b7d240af5c6e18b0",
       "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9",
