@@ -227,8 +227,11 @@ export function RecipeEditor({
   // der KI-Assistent sie befüllen kann. Die unkontrollierten Felder lesen ihren
   // defaultValue neu, wenn das Formular via formKey neu gemountet wird.
   const [form, setForm] = useState(initial);
-  const [taxonomyOptions, setTaxonomyOptions] =
-    useState<Record<string, TaxonomyOption[]>>(taxonomies);
+  // Kein useState: Der Setzer wurde nie gerufen, der Wert also nie geändert.
+  // Als Zustand gehalten hätte er die Prop beim ersten Rendern EINGEFROREN —
+  // eine spätere Änderung von `taxonomies` wäre nie angekommen. Als
+  // abgeleiteter Wert stimmt er immer.
+  const taxonomyOptions: Record<string, TaxonomyOption[]> = taxonomies;
   // Vom KI-Vorschlag übernommene, aber noch NICHT angelegte Taxonomie-Namen
   // je Feld. Sie werden erst beim Speichern des Rezepts wirklich angelegt
   // (Hidden-Feld `${field}__neu`), damit die Kategorienliste nicht mit

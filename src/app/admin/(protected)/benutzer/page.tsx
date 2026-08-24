@@ -3,6 +3,8 @@ import { db, schema } from "@/db";
 import { t } from "@/i18n/de";
 import { createUserAction, deleteUserAction } from "./actions";
 import { requireAdmin } from "@/lib/auth";
+import { Meldung, meldungAus } from "@/components/admin/meldung";
+import { LoeschForm } from "@/components/admin/loesch-form";
 
 const dict = t();
 
@@ -14,17 +16,12 @@ export default async function UsersPage(props: {
   await requireAdmin();
   const searchParams = await props.searchParams;
   const users = await db.select().from(schema.adminUser);
-  const message =
-    typeof searchParams.meldung === "string" ? searchParams.meldung : null;
+  const message = meldungAus(searchParams);
 
   return (
     <>
       <h1 className="mb-6 text-2xl font-bold">{dict.admin.users.title}</h1>
-      {message && (
-        <p role="status" className="mb-4 bg-amber-50 p-3 text-sm text-amber-900">
-          {message}
-        </p>
-      )}
+      <Meldung text={message} />
       <div className="overflow-x-auto bg-white shadow-sm">
         <table className="w-full text-left text-sm">
           <thead>
@@ -41,18 +38,12 @@ export default async function UsersPage(props: {
                 <td className="px-4 py-3 font-medium">{u.name}</td>
                 <td className="px-4 py-3">{u.email}</td>
                 <td className="px-4 py-3">
-                  {u.createdAt.toLocaleDateString("de-DE")}
+                  <span data-referenz-maske="true">
+                    {u.createdAt.toLocaleDateString("de-DE")}
+                  </span>
                 </td>
                 <td className="px-4 py-3">
-                  <form action={deleteUserAction}>
-                    <input type="hidden" name="id" value={u.id} />
-                    <button
-                      type="submit"
-                      className="text-red-700 underline-offset-2 hover:underline"
-                    >
-                      {dict.common.delete}
-                    </button>
-                  </form>
+                  <LoeschForm action={deleteUserAction} id={u.id} />
                 </td>
               </tr>
             ))}

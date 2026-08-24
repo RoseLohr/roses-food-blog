@@ -425,8 +425,6 @@ async function main() {
       sortOrder: 1,
       type: "bild",
       imageId: bildGasse,
-      groesse: "s",
-      platz: "links",
     },
     {
       travelPostId: travel.id,
@@ -456,8 +454,6 @@ async function main() {
       sortOrder: 3,
       type: "bild",
       imageId: bildMarkt,
-      groesse: "m",
-      platz: "rechts",
     },
     {
       travelPostId: travel.id,
@@ -468,25 +464,19 @@ async function main() {
         "später kommt, findet leere Kisten und nasses Kopfsteinpflaster — und " +
         "die Cafés ringsum voll mit Leuten, die schon fertig sind.",
     },
-    // Eine ZEILE aus zwei S: die Anteile addieren sich zu zwei Dritteln, der
-    // Text fließt weiter daneben. Nachbarschaft allein reicht dafür nicht —
-    // das Häkchen am zweiten Bild ist die Ansage.
+    // Eine Gruppe aus ZWEI Bildern: das erste über die ganze Breite, das
+    // zweite darunter. Die Anordnung folgt allein aus der Nachbarschaft.
     {
       travelPostId: travel.id,
       sortOrder: 5,
       type: "bild",
       imageId: bildHafen,
-      groesse: "s",
-      platz: "links",
     },
     {
       travelPostId: travel.id,
       sortOrder: 6,
       type: "bild",
       imageId: bildZeile[3],
-      groesse: "s",
-      platz: "links",
-      mitVorherigem: true,
     },
     {
       travelPostId: travel.id,
@@ -502,44 +492,44 @@ async function main() {
       sortOrder: 8,
       type: "bild",
       imageId: bildSalz,
-      groesse: "l",
     },
-    // Drei S nebeneinander: Die Anteile addieren sich zur ganzen Spalte, die
-    // Zeile wird nach Seitenverhältnis verteilt (gleich hoch, unten bündig).
     {
       travelPostId: travel.id,
       sortOrder: 9,
-      type: "bild",
-      imageId: bildZeile[0],
-      groesse: "s",
-      platz: "links",
+      type: "text",
+      markdown:
+        "Zwischen den Salinen und der Stadt liegt eine Straße, an der alle " +
+        "zwanzig Kilometer ein Stand mit Zitronen steht.",
     },
+    // Eine Gruppe aus DREI Bildern — der Fall, an dem die alte Anordnung
+    // zerbrach: erstes über die ganze Breite, die beiden anderen darunter in
+    // einer Reihe, nach Seitenverhältnis verteilt (gleich hoch, unten bündig).
     {
       travelPostId: travel.id,
       sortOrder: 10,
       type: "bild",
-      imageId: bildZeile[1],
-      groesse: "s",
-      platz: "links",
-      mitVorherigem: true,
+      imageId: bildZeile[0],
     },
     {
       travelPostId: travel.id,
       sortOrder: 11,
       type: "bild",
-      imageId: bildZeile[2],
-      groesse: "s",
-      platz: "links",
-      mitVorherigem: true,
+      imageId: bildZeile[1],
     },
     {
       travelPostId: travel.id,
       sortOrder: 12,
+      type: "bild",
+      imageId: bildZeile[2],
+    },
+    {
+      travelPostId: travel.id,
+      sortOrder: 13,
       type: "text",
       markdown:
-        "Drei Bilder nebeneinander: Jedes bringt sein Drittel mit, zusammen " +
-        "füllen sie die Zeile. Die Breite verteilt sich nach Format, deshalb " +
-        "sind alle drei exakt gleich hoch.",
+        "Drei Bilder als eine Gruppe: das erste über die ganze Breite, die " +
+        "beiden anderen darunter in einer Reihe. Ihre Breite verteilt sich " +
+        "nach Format, deshalb sind sie exakt gleich hoch.",
     },
   ]);
 
@@ -564,8 +554,9 @@ async function main() {
       city: "Palermo",
       lat: 38.1157,
       lng: 13.3615,
-      // Restaurant-Foto (klickbar → groß im Pop-up).
+      // EIN Foto → Band über die ganze Kartenbreite (klickbar → Pop-up).
       imageColor: "#1e5631",
+      imageColor2: null,
       description:
         "Familiengeführte Trattoria nahe dem Ballarò-Markt, drei Tische, keine Speisekarte.",
       dishes: [
@@ -600,7 +591,10 @@ async function main() {
       city: "Catania",
       lat: 37.5079,
       lng: 15.083,
-      imageColor: null,
+      // ZWEI Fotos → kleiner nebeneinander, beide klickbar, das Pop-up
+      // blättert zwischen ihnen.
+      imageColor: "#7d5a3c",
+      imageColor2: "#3c6e7d",
       description:
         "Direkt am Fischmarkt — was morgens ankommt, liegt mittags auf dem Teller.",
       dishes: [
@@ -621,6 +615,9 @@ async function main() {
     const restImageId = r.imageColor
       ? await placeholder(r.name.split(" ")[0], r.imageColor, 960, 640)
       : null;
+    const restImageId2 = r.imageColor2
+      ? await placeholder(`${r.name.split(" ")[0]} 2`, r.imageColor2, 900, 1200)
+      : null;
     const [rest] = await db
       .insert(schema.restaurant)
       .values({
@@ -629,6 +626,7 @@ async function main() {
         city: r.city,
         description: r.description,
         imageId: restImageId,
+        imageId2: restImageId2,
         // Koordinaten-Override — die Platzhalterbilder tragen kein EXIF-GPS
         lat: r.lat,
         lng: r.lng,

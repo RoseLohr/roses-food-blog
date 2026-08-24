@@ -14,13 +14,14 @@
  *   fehlende Bilder im Archiv, Path-Traversal-Schutz.
  */
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
-import { execSync } from "node:child_process";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { asc, eq } from "drizzle-orm";
+import { frischeDb } from "./helfer/frische-db";
+import { adminAnlegen } from "./helfer/saat";
 
-let tmp: string;
+frischeDb("data");
+
 let adminId: number;
 
 // Lazily nach Migration importiert
@@ -99,10 +100,6 @@ let imgB: number;
 let imgC: number; // vorab verwaist (unattached)
 
 beforeAll(async () => {
-  tmp = fs.mkdtempSync(path.join(os.tmpdir(), "roses-data-"));
-  process.env.DATA_DIR = tmp;
-  execSync("node scripts/migrate.mjs", { env: { ...process.env, DATA_DIR: tmp } });
-
   ({ db, schema } = await import("@/db"));
   ({ collectExport } = await import("@/lib/data-transfer/export"));
   ({ buildExportZip } = await import("@/lib/data-transfer/zip"));
@@ -110,10 +107,7 @@ beforeAll(async () => {
   ({ importBundle } = await import("@/lib/data-transfer/import"));
   ({ uploadsDir } = await import("@/lib/media"));
 
-  const [admin] = await db
-    .insert(schema.adminUser)
-    .values({ email: "rose@example.de", passwordHash: "x", name: "Rose", createdAt: new Date() })
-    .returning();
+  const admin = await adminAnlegen();
   adminId = admin.id;
 
   // --- Bilder --- (A mit gesetztem Fokuspunkt → Round-Trip-Beleg)
@@ -256,7 +250,7 @@ beforeAll(async () => {
     { travelPostId: travelId, sortOrder: 0, type: "text", markdown: "Langer Reisetext." },
     // Höhenstufe bewusst NICHT der Default: nur so beweist der Rundlauf, dass
     // sie wirklich mitgeschrieben und wieder eingelesen wird.
-    { travelPostId: travelId, sortOrder: 1, type: "bild", imageId: imgA, groesse: "l" },
+    { travelPostId: travelId, sortOrder: 1, type: "bild", imageId: imgA },
     { travelPostId: travelId, sortOrder: 2, type: "restaurant", restaurantId: rest.id },
   ]);
 
@@ -289,10 +283,6 @@ beforeAll(async () => {
   // Referenzen für spätere Prüfungen frisch halten
   void iBasilikum;
   void iOel;
-});
-
-afterAll(() => {
-  fs.rmSync(tmp, { recursive: true, force: true });
 });
 
 // Modul-Zustand über die (geordneten) Tests hinweg
@@ -338,7 +328,9 @@ describe("Export", () => {
     // Blöcke: Text + Bild (als Datei-Referenz) + Restaurant (als Index)
     expect(tv.contentBlocks).toEqual([
       { type: "text", markdown: "Langer Reisetext." },
-      { type: "bild", image: "aaaa1111", groesse: "l" },
+      // Der Bildblock trägt nichts über sein Aussehen mehr — nur die
+      // Datei-Referenz. Die Anordnung folgt aus der Reihenfolge.
+      { type: "bild", image: "aaaa1111" },
       { type: "restaurant", index: 0 },
     ]);
 
@@ -503,7 +495,7 @@ describe("Import (Round-Trip)", () => {
       .where(eq(schema.travelBlock.travelPostId, tv.id))
       .orderBy(asc(schema.travelBlock.sortOrder));
     expect(blocks.map((b) => b.type)).toEqual(["text", "bild", "restaurant"]);
-    expect(blocks[1].groesse).toBe("l"); // Höhenstufe überlebt den Rundlauf
+    expect(blocks[1].imageId).not.toBeNull(); // das Foto überlebt den Rundlauf
     expect(blocks[2].restaurantId).toBe(rests[0].id);
     const dishes = await db.select().from(schema.dish).where(eq(schema.dish.restaurantId, rests[0].id));
     expect(dishes).toHaveLength(1);

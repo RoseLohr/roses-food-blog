@@ -4,20 +4,14 @@
  * ergänzt Name & Interessen eines aktiven Kontakts über seinen Abmelde-Token
  * (nicht angebotene Interessen wie „Backen" werden verworfen).
  */
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { execSync } from "node:child_process";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
+import { frischeDb } from "./helfer/frische-db";
 
-let tmp: string;
+frischeDb("profile");
+
 let tokenAktiv: string;
 
 beforeAll(async () => {
-  tmp = fs.mkdtempSync(path.join(os.tmpdir(), "roses-profile-"));
-  process.env.DATA_DIR = tmp;
-  execSync("node scripts/migrate.mjs", { env: { ...process.env, DATA_DIR: tmp } });
-
   const { db, schema } = await import("@/db");
   await db.insert(schema.interest).values([
     { name: "Reisen", isPublic: true },
@@ -34,10 +28,6 @@ beforeAll(async () => {
     unsubscribeToken: tokenAktiv,
     createdAt: new Date(),
   });
-});
-
-afterAll(() => {
-  fs.rmSync(tmp, { recursive: true, force: true });
 });
 
 describe("Willkommensschritt / Profil-Ergänzung", () => {

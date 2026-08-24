@@ -36,10 +36,10 @@ export async function GET(
   //    die neue Inode. Umgekehrt (erst öffnen) könnte der Nachzug zwischen
   //    open und Marker-Lesen fertig werden: alte Inode im fd, „aktueller"
   //    Marker → alte Bytes ein Jahr immutable unter aktuellem ?v (R4).
-  // 2. EIN Datei-Handle für Größe UND Inhalt: fstat + Stream vom selben fd —
+  // 2. EIN Datei-Handle für Größe UND Inhalt: beides aus demselben fd —
   //    ein paralleles Rename ersetzt nur den Verzeichniseintrag, nie die
-  //    offene Inode; getrenntes stat/createReadStream lieferte sonst die
-  //    Content-Length der alten zu den Bytes der neuen Datei (R3).
+  //    offene Inode; getrenntes stat/Lesen lieferte sonst die Content-Length
+  //    der alten zu den Bytes der neuen Datei (R3).
   let marker: string | null = null;
   try {
     marker = fs.readFileSync(path.join(dir, ".encoder-rev"), "utf8");
@@ -52,20 +52,47 @@ export async function GET(
   } catch {
     return new Response("Nicht gefunden", { status: 404 });
   }
-  const stat = fs.fstatSync(fd);
   const angefragteRev = new URL(req.url).searchParams.get("v");
-  // autoClose schließt den fd am Stream-Ende/-Abbruch.
-  const stream = fs.createReadStream("", { fd, autoClose: true });
-  return new Response(stream as unknown as ReadableStream, {
+  // 3. KEIN Node-Lesestrom als Antwortkörper (Befund E2, audit/11).
+  //    `fs.createReadStream` als Körper zurückzugeben hatte zwei Fehler, die
+  //    beide nachgestellt sind (tests/upload-auslieferung.test.ts):
+  //      a) Bricht der Leser ab, während das abschließende `pull()` noch
+  //         läuft, wirft der Adapter „Invalid state: ReadableStream is already
+  //         closed" — unbehandelt, also als uncaughtException im Journal.
+  //      b) Wird der Körper NIE gelesen — genau das tut Next bei HEAD, das es
+  //         als GET ausführt —, feuert `autoClose` nie. Gemessen: 50 solche
+  //         Antworten hinterließen 50 offene Deskriptoren.
+  //    Die ausgelieferten Varianten sind klein (größte im Bestand rund 8 KB,
+  //    Breiten aus config/bild-encoder.json, höchstens 1920 px). Streamen hat
+  //    hier keinen Zweck; vollständig lesen behebt a) und b) in einem Zug.
+  let bytes: Uint8Array<ArrayBuffer>;
+  try {
+    // `readFileSync` liefert einen Buffer, dessen Speicher laut Typ auch ein
+    // SharedArrayBuffer sein darf — als Antwortkörper ist aber nur eine Sicht
+    // auf einen gewöhnlichen ArrayBuffer zulässig. Die Kopie macht das
+    // eindeutig und kostet bei rund 8 KB nichts; ein Cast wäre eine Behauptung
+    // über fremden Speicher, die hier niemand belegen kann.
+    bytes = new Uint8Array(fs.readFileSync(fd));
+  } finally {
+    // Der Deskriptor gehört in JEDEM Fall zurück. `closeSync` kann hier nur
+    // EBADF werfen (Deskriptor bereits geschlossen), und das kann nicht
+    // eintreten: `openSync` hat ihn gerade geliefert und niemand sonst fasst
+    // ihn an. Ein Lesefehler wird also nicht von einem Schließfehler verdeckt.
+    fs.closeSync(fd);
+  }
+  // Länge UND Bytes stammen jetzt buchstäblich aus demselben Lesevorgang —
+  // die Zusage aus R3 ist damit nicht mehr nur durch die fd-Führung gedeckt,
+  // sondern durch dieselbe Zahl. `fstat` wird dafür nicht mehr gebraucht.
+  return new Response(bytes, {
     headers: {
       "Content-Type": "image/webp",
-      "Content-Length": String(stat.size),
+      "Content-Length": String(bytes.byteLength),
       // immutable nur, wenn Manifest-Revision, angefragtes ?v UND die
       // Byte-Größe des offenen fd zusammenpassen (Verifikation statt Lock).
       "Cache-Control": uploadCacheControl(
         marker,
         pfad[1],
-        stat.size,
+        bytes.byteLength,
         angefragteRev,
       ),
     },

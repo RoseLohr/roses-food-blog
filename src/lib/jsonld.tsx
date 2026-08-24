@@ -52,11 +52,24 @@ export function websiteJsonLd(base: string) {
   };
 }
 
+/**
+ * Brotkrumen als JSON-LD. Die WURZEL setzt diese Funktion selbst.
+ *
+ * Bis 08/2026 schrieb jede der sechs Aufrufstellen dieselbe erste Zeile
+ * `[getSiteName(), "/"]` hin. Das war nicht bloß Wiederholung: Wer sie
+ * vergessen hätte, hätte eine Krume ausgeliefert, die mitten im Pfad beginnt —
+ * strukturell gültig, für eine Suchmaschine aber falsch, und an keiner Stelle
+ * sichtbar. Die Wurzel ist keine Angabe der Seite, sie ist eine Eigenschaft
+ * der Brotkrume.
+ *
+ * `items` sind daher nur noch die Stufen UNTER der Startseite.
+ */
 export function breadcrumbJsonLd(base: string, items: Array<[string, string]>) {
+  const stufen: Array<[string, string]> = [[getSiteName(), "/"], ...items];
   return {
     "@context": "https://schema.org",
     "@type": "BreadcrumbList",
-    itemListElement: items.map(([name, path], i) => ({
+    itemListElement: stufen.map(([name, path], i) => ({
       "@type": "ListItem",
       position: i + 1,
       name,

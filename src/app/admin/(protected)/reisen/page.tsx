@@ -7,6 +7,9 @@ import { getReisenTextUnten } from "@/lib/settings";
 import { t } from "@/i18n/de";
 import { deleteTravelAction, saveReisenTexteAction } from "./actions";
 import { RichTextEditor } from "@/components/admin/rich-text-editor";
+import { Meldung, meldungAus } from "@/components/admin/meldung";
+import { Statuschip } from "@/components/admin/statuschip";
+import { LoeschForm } from "@/components/admin/loesch-form";
 
 const dict = t();
 
@@ -17,12 +20,11 @@ export default async function TravelAdminPage(props: {
 }) {
   await requireAdmin();
   const searchParams = await props.searchParams;
-  const message =
-    typeof searchParams.meldung === "string" ? searchParams.meldung : null;
+  const message = meldungAus(searchParams);
   const posts = await db
     .select()
     .from(schema.travelPost)
-    .orderBy(desc(schema.travelPost.updatedAt));
+    .orderBy(desc(schema.travelPost.updatedAt), desc(schema.travelPost.id));
   const textUnten = getReisenTextUnten();
 
   return (
@@ -36,11 +38,7 @@ export default async function TravelAdminPage(props: {
           {dict.admin.travel.newPost}
         </Link>
       </div>
-      {message && (
-        <p role="status" className="mb-4 bg-amber-50 p-3 text-sm text-amber-900">
-          {message}
-        </p>
-      )}
+      <Meldung text={message} />
 
       {/* Text der öffentlichen Reisen-Seite (nach der Weltkarte) */}
       <form
@@ -87,19 +85,19 @@ export default async function TravelAdminPage(props: {
                 </td>
                 <td className="px-4 py-3">{p.country || dict.common.none}</td>
                 <td className="px-4 py-3">
-                  <span
-                    className={
-                      p.status === "veroeffentlicht"
-                        ? "bg-green-100 px-2 py-0.5 text-xs text-green-900"
-                        : "bg-amber-100 px-2 py-0.5 text-xs text-amber-900"
-                    }
+                  <Statuschip
+                    ton={p.status === "veroeffentlicht" ? "gruen" : "gelb"}
                   >
                     {p.status === "veroeffentlicht"
                       ? dict.admin.recipes.statusPublished
                       : dict.admin.recipes.statusDraft}
+                  </Statuschip>
+                </td>
+                <td className="px-4 py-3">
+                  <span data-referenz-maske="true">
+                    {p.updatedAt.toLocaleDateString("de-DE")}
                   </span>
                 </td>
-                <td className="px-4 py-3">{p.updatedAt.toLocaleDateString("de-DE")}</td>
                 <td className="px-4 py-3">
                   <div className="flex gap-3">
                     <Link
@@ -108,15 +106,7 @@ export default async function TravelAdminPage(props: {
                     >
                       {dict.admin.recipes.preview}
                     </Link>
-                    <form action={deleteTravelAction}>
-                      <input type="hidden" name="id" value={p.id} />
-                      <button
-                        type="submit"
-                        className="text-red-700 underline-offset-2 hover:underline"
-                      >
-                        {dict.common.delete}
-                      </button>
-                    </form>
+                    <LoeschForm action={deleteTravelAction} id={p.id} />
                   </div>
                 </td>
               </tr>

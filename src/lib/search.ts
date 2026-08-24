@@ -373,7 +373,7 @@ export async function searchDishes(filters: SearchFilters): Promise<DishHit[]> {
         eq(schema.travelPost.status, "veroeffentlicht"),
       ),
     )
-    .orderBy(asc(schema.travelPost.title), asc(schema.dish.sortOrder));
+    .orderBy(asc(schema.travelPost.title), asc(schema.dish.sortOrder), asc(schema.dish.id));
 
   const hitIds = rows.map((r) => r.dishId);
   const [thumbs, taxByDish] = await Promise.all([

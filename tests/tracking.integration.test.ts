@@ -1,23 +1,10 @@
 /**
  * Integrationstest Tracking: Erfassung, Beacon-Dauer, Tagesaggregation.
  */
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { execSync } from "node:child_process";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
+import { frischeDb } from "./helfer/frische-db";
 
-let tmp: string;
-
-beforeAll(() => {
-  tmp = fs.mkdtempSync(path.join(os.tmpdir(), "roses-track-"));
-  process.env.DATA_DIR = tmp;
-  execSync("node scripts/migrate.mjs", { env: { ...process.env, DATA_DIR: tmp } });
-});
-
-afterAll(() => {
-  fs.rmSync(tmp, { recursive: true, force: true });
-});
+frischeDb("track");
 
 const CHROME_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126.0.0.0 Safari/537.36";

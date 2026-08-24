@@ -2,11 +2,14 @@
  * A-34 (getesteter, selbst-feuernder Kill-Switch) + B-28 (Auto-Halt) +
  * B-07 (Token-Logging ohne Inhalt) — gegen echtes SQLite.
  */
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { execSync } from "node:child_process";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { frischeDb } from "./helfer/frische-db";
+
+// Muss stehen, bevor irgendetwas @/db auswertet — deshalb am Modulanfang.
+process.env.AI_ERROR_HALT = "5";
+process.env.AI_ERROR_WINDOW_MIN = "10";
+delete process.env.AI_DISABLED;
+frischeDb("ai");
 
 // GEHÄRTET (wf_ac30593b): der B-07-Content-Check band sich früher an das Literal
 // „egal", das nur auf dem ABGESCHALTETEN Pfad (sofortiger Abbruch) durchläuft und
@@ -29,21 +32,6 @@ vi.mock("@anthropic-ai/sdk", () => ({
     messages = { parse: parseMock };
   },
 }));
-
-let tmp: string;
-
-beforeAll(() => {
-  tmp = fs.mkdtempSync(path.join(os.tmpdir(), "roses-ai-"));
-  process.env.DATA_DIR = tmp;
-  process.env.AI_ERROR_HALT = "5";
-  process.env.AI_ERROR_WINDOW_MIN = "10";
-  delete process.env.AI_DISABLED;
-  execSync("node scripts/migrate.mjs", { env: { ...process.env, DATA_DIR: tmp } });
-});
-
-afterAll(() => {
-  fs.rmSync(tmp, { recursive: true, force: true });
-});
 
 describe("A-34 KI-Kill-Switch", () => {
   it("abgeschaltet: generateRecipeDraft bricht sofort ab (vor jedem Netzzugriff)", async () => {

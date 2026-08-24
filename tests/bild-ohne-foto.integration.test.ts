@@ -18,22 +18,18 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { execSync } from "node:child_process";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { frischeDb } from "./helfer/frische-db";
 
-let tmp: string;
+const tmp = frischeDb("bild");
+
 let db: typeof import("@/db").db;
 let schema: typeof import("@/db").schema;
 let sqlite: import("better-sqlite3").Database;
 
 beforeAll(async () => {
-  tmp = fs.mkdtempSync(path.join(os.tmpdir(), "roses-bild-"));
-  process.env.DATA_DIR = tmp;
-  execSync("node scripts/migrate.mjs", {
-    cwd: process.cwd(),
-    env: { ...process.env, DATA_DIR: tmp },
-    stdio: "pipe",
-  });
+  // `@/db` erst jetzt holen: die Verbindung entsteht beim Auswerten des
+  // Moduls, also muss `frischeDb()` oben schon gelaufen sein.
   ({ db, schema } = await import("@/db"));
   const { default: Database } = await import("better-sqlite3");
   sqlite = new Database(path.join(tmp, "app.db"));
@@ -41,7 +37,6 @@ beforeAll(async () => {
 
 afterAll(() => {
   sqlite?.close();
-  fs.rmSync(tmp, { recursive: true, force: true });
 });
 
 async function bildAnlegen(fileKey: string) {
@@ -124,7 +119,14 @@ describe("Bildblock ohne Foto", () => {
   it("erfasst jede Spalte, die auf media_image zeigt", async () => {
     // Fangregel: Kommt eine Referenz hinzu und wird hier nicht eingetragen,
     // gilt das Foto als unbenutzt — und das Aufräumen löscht es.
-    const { VERWENDUNGS_BEREICHE } = await import("@/lib/media-verwendung");
+    //
+    // Verglichen werden die PAARE tabelle.spalte, nicht nur ihre Anzahl. Eine
+    // Zählung hebt zwei Fehler gegeneinander auf: eine Spalte vergessen und
+    // eine andere doppelt eingetragen ergibt dieselbe Zahl — und das Foto in
+    // der vergessenen Spalte wird trotzdem gelöscht.
+    const { VERWENDUNGS_BEREICHE, VERWENDUNGS_SPALTEN } = await import(
+      "@/lib/media-verwendung"
+    );
     const spalten = sqlite
       .prepare(
         "SELECT m.name AS tabelle, p.\"from\" AS spalte FROM sqlite_master m " +
@@ -135,14 +137,17 @@ describe("Bildblock ohne Foto", () => {
     // `media_variant` ist die EINZIGE bewusste Ausnahme: Das sind die
     // abgeleiteten Dateien des Bildes selbst (w320, w640 …), keine Verwendung.
     // Sie hängen am Bild und verschwinden mit ihm.
-    const verwendungen = spalten.filter((s) => s.tabelle !== "media_variant");
-    expect(verwendungen.length).toBeGreaterThan(5);
-    expect(
-      VERWENDUNGS_BEREICHE.length,
-      `Fremdschlüssel auf media_image (ohne media_variant): ${verwendungen
-        .map((s) => `${s.tabelle}.${s.spalte}`)
-        .join(", ")}`,
-    ).toBe(verwendungen.length);
+    const imSchema = spalten
+      .filter((s) => s.tabelle !== "media_variant")
+      .map((s) => `${s.tabelle}.${s.spalte}`)
+      .sort();
+    expect(imSchema.length).toBeGreaterThan(5);
+    expect([...VERWENDUNGS_SPALTEN].sort()).toEqual(imSchema);
+    // Jede Fundstelle trägt außerdem einen eigenen, lesbaren Namen — sonst
+    // erführe der Redakteur beim verweigerten Löschen nicht, WELCHE Stelle im
+    // Weg steht.
+    expect(new Set(VERWENDUNGS_BEREICHE).size).toBe(VERWENDUNGS_BEREICHE.length);
+    expect(VERWENDUNGS_BEREICHE.length).toBe(VERWENDUNGS_SPALTEN.length);
   });
 
   it("kann den Zustand auch nach dem Neubau der Tabelle nicht mehr geben", () => {

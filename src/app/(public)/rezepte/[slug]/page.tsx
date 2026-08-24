@@ -74,7 +74,6 @@ export default async function RecipePage(props: {
       <JsonLd data={recipeJsonLd(base, full)} />
       <JsonLd
         data={breadcrumbJsonLd(base, [
-          [getSiteName(), "/"],
           [dict.nav.recipes, "/rezepte"],
           [full.recipe.title, `/rezepte/${full.recipe.slug}`],
         ])}

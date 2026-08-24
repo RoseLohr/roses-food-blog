@@ -4,6 +4,8 @@ import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { requireAdmin } from "@/lib/auth";
 import { t } from "@/i18n/de";
+import { Meldung, meldungAus } from "@/components/admin/meldung";
+import { Statuschip } from "@/components/admin/statuschip";
 
 const dict = t();
 const d = dict.admin.contacts;
@@ -15,8 +17,7 @@ export default async function ContactsPage(props: {
 }) {
   await requireAdmin();
   const searchParams = await props.searchParams;
-  const message =
-    typeof searchParams.meldung === "string" ? searchParams.meldung : null;
+  const message = meldungAus(searchParams);
   const statusFilter =
     typeof searchParams.status === "string" &&
     ["unbestaetigt", "aktiv", "abgemeldet"].includes(searchParams.status)
@@ -68,8 +69,11 @@ export default async function ContactsPage(props: {
         .select()
         .from(schema.contact)
         .where(and(...conditions))
-        .orderBy(desc(schema.contact.signupAt))
-    : db.select().from(schema.contact).orderBy(desc(schema.contact.signupAt)));
+        .orderBy(desc(schema.contact.signupAt), desc(schema.contact.id))
+    : db
+        .select()
+        .from(schema.contact)
+        .orderBy(desc(schema.contact.signupAt), desc(schema.contact.id)));
 
   const interestRows = contacts.length
     ? await db
@@ -106,11 +110,7 @@ export default async function ContactsPage(props: {
           {d.exportCsv}
         </a>
       </div>
-      {message && (
-        <p role="status" className="mb-4 bg-amber-50 p-3 text-sm text-amber-900">
-          {message}
-        </p>
-      )}
+      <Meldung text={message} />
 
       <form method="get" className="mb-4 flex flex-wrap items-end gap-2">
         <div>
@@ -213,17 +213,17 @@ export default async function ContactsPage(props: {
                   </td>
                   <td className="px-4 py-3">{c.email}</td>
                   <td className="px-4 py-3">
-                    <span
-                      className={
+                    <Statuschip
+                      ton={
                         c.status === "aktiv"
-                          ? "bg-green-100 px-2 py-0.5 text-xs text-green-900"
+                          ? "gruen"
                           : c.status === "unbestaetigt"
-                            ? "bg-amber-100 px-2 py-0.5 text-xs text-amber-900"
-                            : "bg-gray-200 px-2 py-0.5 text-xs text-gray-700"
+                            ? "gelb"
+                            : "grau"
                       }
                     >
                       {d.statusLabels[c.status]}
-                    </span>
+                    </Statuschip>
                   </td>
                   <td className="px-4 py-3">
                     {interestRows

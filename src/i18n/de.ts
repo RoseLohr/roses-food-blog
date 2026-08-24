@@ -1,7 +1,8 @@
 /**
  * Zentrales deutsches Wörterbuch. Alle UI-Texte kommen aus diesem Modul,
- * damit eine spätere englische Version (A3) nur ein zweites Wörterbuch
- * plus Sprachauswahl braucht — keine hartkodierten Strings in Komponenten.
+ * damit eine spätere englische Version nur ein zweites Wörterbuch plus
+ * Sprachauswahl braucht — keine hartkodierten Strings in Komponenten.
+ * Niedergeschrieben ist das als B15 in `docs/ASSUMPTIONS.md`.
  */
 export const de = {
   site: {
@@ -393,6 +394,8 @@ export const de = {
     chooseFile: "Datei wählen …",
     useSuggestion: "Vorschlag übernehmen",
     selectedCount: (n: number) => `${n} ausgewählt`,
+    /** Höchstzahl erreicht: erst abwählen, dann neu wählen. */
+    full: "Höchstzahl erreicht — zuerst ein Bild abwählen.",
   },
   richtext: {
     bold: "Fett",
@@ -844,47 +847,38 @@ export const de = {
         "Der Inhalt besteht aus Blöcken (Text, Bild, Restaurant), die sich mit ↑/↓ anordnen lassen — die Reihenfolge bestimmt die Anzeige im Beitrag. Restaurants ohne eigenen Block erscheinen wie bisher gesammelt unter dem Inhalt.",
       blockText: "Text",
       blockImage: "Bild",
-      blockSize: "Größe",
-      /** Breite als Anteil der Inhaltsspalte (siehe lib/bildreihen.ts). */
-      blockSizeOptions: {
-        s: {
-          label: "S · Drittel",
-          title: "Ein Drittel der Spalte — 272 px, daneben bleiben rund 78 Zeichen Text je Zeile",
-        },
-        m: {
-          label: "M · Hälfte",
-          title: "Die halbe Spalte — 408 px, daneben bleiben rund 57 Zeichen Text je Zeile",
-        },
-        l: {
-          label: "L · ganze Spalte",
-          title: "Die ganze Spalte — 816 px, kein Text daneben",
-        },
+      /**
+       * Der Bildblock hat KEINE Regler mehr. Die Anordnung folgt allein aus der
+       * Position in der Gruppe: erstes Bild über die ganze Breite, alle
+       * weiteren teilen sich die Reihe darunter. Hier standen vorher Größe
+       * (S/M/L), Platz (links/rechts), „neben dem Bild darüber", eine
+       * Sechstel-Rechnung und vier Umfluss-Meldungen — 40 Zeilen für etwas,
+       * das jetzt nicht mehr einzustellen ist.
+       *
+       * Übrig bleibt die AUSKUNFT, wo das Bild landet. Sie ist keine
+       * Einstellung, sondern das Ergebnis, und sie steht als sichtbarer Satz
+       * da — nicht als `title`, weil es auf dem iPad kein Hover gibt.
+       */
+      blockGruppeAllein:
+        "Steht über die ganze Breite des Inhalts.",
+      blockGruppeErstes: (anzahl: number) =>
+        anzahl === 1
+          ? "Steht über die ganze Breite des Inhalts."
+          : `Steht über die ganze Breite — darunter teilen sich ${anzahl - 1} weitere Bild${anzahl === 2 ? "" : "er"} eine Reihe.`,
+      blockGruppeWeiteres: (pos: number, anzahl: number) =>
+        `${pos}. von ${anzahl} — steht in der Reihe unter dem ersten Bild, alle gleich hoch und unten bündig.`,
+      /**
+       * Ein Block, den das Speichern verwirft, darf das nicht verschweigen:
+       * Vorher verschwand er stillschweigend — und riss dabei die Bildgruppe
+       * auseinander, in der er stand.
+       */
+      blockNichtGespeichertKurz: "wird nicht gespeichert",
+      blockNichtGespeichert: {
+        bild: "Ohne Foto wird dieser Block nicht gespeichert — er zählt auch nicht für die Bildgruppe.",
+        restaurant:
+          "Das gewählte Restaurant hat keinen Namen und wird nicht gespeichert — dieser Block deshalb auch nicht.",
+        text: "Ohne Inhalt wird dieser Block nicht gespeichert — er zählt auch nicht für die Bildgruppe.",
       },
-      /** Die Anteile addieren sich: S+S+S oder M+M füllen eine Zeile. */
-      blockSizeSumHint:
-        "Mehrere Bilder nebeneinander addieren ihre Anteile: S+S+S oder M+M füllen die Zeile, M+S kommt auf fünf Sechstel.",
-      blockPlace: "Platz",
-      blockPlaceOptions: {
-        links: { label: "links", title: "Bild links, der Text fließt rechts daneben" },
-        rechts: { label: "rechts", title: "Bild rechts, der Text fließt links daneben" },
-      },
-      blockWithPrevious: "neben dem Bild darüber",
-      blockWithPreviousOff:
-        "Nur möglich, wenn direkt darüber ein Bild steht und beide zusammen noch in eine Zeile passen — drei Drittel füllen sie bereits.",
-      /** Zusatz im Hinweis, sobald mehrere Bilder eine Zeile teilen. */
-      blockInRow: (anzahl: number) =>
-        `Teilt sich die Zeile mit ${anzahl - 1} weiteren Bild${anzahl === 2 ? "" : "ern"} — alle gleich hoch, unten bündig. Die Seite kommt vom ersten Bild der Zeile.`,
-      blockFloatRight:
-        "Steht rechts im Text, der Text fließt links daneben. Auf dem Handy über die volle Breite.",
-      blockFloatLeft:
-        "Steht links im Text, der Text fließt rechts daneben. Auf dem Handy über die volle Breite.",
-      blockFullWidth:
-        "Steht über die ganze Breite des Inhalts — kein Text daneben, keine Seite.",
-      /** Ab fünf Sechsteln bliebe daneben nur noch ein Rand statt einer Spalte. */
-      blockNoFlow:
-        "Zu breit für Text daneben — die Zeile steht für sich, ohne Umfluss.",
-      /** „272 × 181 px“ — die fertige Größe, die der alte Höhen-Schalter offenließ. */
-      blockRendered: (breite: number, hoehe: number) => `${breite} × ${hoehe} px`,
       blockRestaurant: "Restaurant",
       blockUp: "Nach oben",
       blockDown: "Nach unten",
@@ -902,7 +896,10 @@ export const de = {
       restaurantName: "Name des Restaurants",
       restaurantCity: "Ort",
       restaurantDescription: "Beschreibung (Markdown)",
-      restaurantImage: "Foto des Restaurants (optional)",
+      restaurantImage: "Fotos des Restaurants (optional, höchstens zwei)",
+      /** Erklärt, was die Anzahl bewirkt — die Wahl steckt in der Zahl. */
+      restaurantImageHint:
+        "Ein Foto steht über die ganze Breite der Karte, zwei stehen kleiner nebeneinander. Beide lassen sich anklicken und groß öffnen.",
       restaurantLat: "Breitengrad (optional)",
       restaurantLng: "Längengrad (optional)",
       restaurantCoordsHint:

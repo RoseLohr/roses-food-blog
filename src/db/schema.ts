@@ -442,8 +442,16 @@ export const restaurant = sqliteTable(
     city: text("city").notNull().default(""),
     /** Markdown */
     description: text("description").notNull().default(""),
-    /** Optionales Foto des Restaurants */
+    /** Erstes Foto des Restaurants (optional). Allein steht es über die ganze
+     *  Kartenbreite. */
     imageId: integer("image_id").references(() => mediaImage.id, {
+      onDelete: "set null",
+    }),
+    /** Zweites Foto (optional). Zu zweit stehen sie kleiner nebeneinander.
+     *  Bewusst eine zweite SPALTE statt einer Verknüpfungstabelle: Die Regel
+     *  nennt eine Obergrenze („eines oder zwei"), keine offene Liste, und eine
+     *  Tabelle bräuchte für dieselbe Grenze einen Trigger. */
+    imageId2: integer("image_id_2").references(() => mediaImage.id, {
       onDelete: "set null",
     }),
     /** Manueller Koordinaten-Override; Fallback-Kette: diese Werte →
@@ -452,7 +460,16 @@ export const restaurant = sqliteTable(
     lng: real("lng"),
     sortOrder: integer("sort_order").notNull().default(0),
   },
-  (t) => [index("restaurant_travel_idx").on(t.travelPostId)],
+  (t) => [
+    index("restaurant_travel_idx").on(t.travelPostId),
+    /* Zweimal dasselbe Foto wäre kein Paar, sondern ein Fehler: Der Renderer
+       gäbe zwei Kacheln mit demselben Schlüssel aus, und im Pop-up stünde
+       dasselbe Bild zweimal. Die Datenbank lässt es gar nicht erst zu. */
+    check(
+      "restaurant_image_2_check",
+      sql`${t.imageId2} IS NULL OR ${t.imageId2} <> ${t.imageId}`,
+    ),
+  ],
 );
 
 /** Inhalts-Blockfolge des Reiseberichts (ersetzt das contentBlocks-JSON).
@@ -480,23 +497,11 @@ export const travelBlock = sqliteTable(
     imageId: integer("image_id").references(() => mediaImage.id, {
       onDelete: "restrict",
     }),
-    /** Breite eines Bild-Blocks als Anteil der Spalte (siehe
-     *  lib/bildreihen.ts): s = Drittel, m = Hälfte, l = ganze Spalte. Für Text-
-     *  und Restaurant-Blöcke bedeutungslos; 'm' ist der Normalfall. */
-    groesse: text("groesse", { enum: ["s", "m", "l"] })
-      .notNull()
-      .default("m"),
-    /** Seite, an der das Bild steht und der Text daneben weiterläuft. Bei
-     *  groesse = 'l' bedeutungslos, wird aber mitgeführt, damit ein Wechsel
-     *  zurück auf 's'/'m' die vorher gewählte Seite nicht verliert. */
-    platz: text("platz", { enum: ["links", "rechts"] })
-      .notNull()
-      .default("rechts"),
-    /** „neben dem Bild darüber": stellt dieses Bild in denselben Bildplatz
-     *  wie das unmittelbar vorangehende. */
-    mitVorherigem: integer("mit_vorherigem", { mode: "boolean" })
-      .notNull()
-      .default(false),
+    /* Hier standen `groesse`, `platz` und `mit_vorherigem`. Alle drei waren
+       Aussagen eines Blocks über seine NACHBARN — und genau daran zerfiel die
+       Anordnung, sobald sich die Nachbarschaft änderte. Die Anordnung folgt
+       jetzt allein aus der Reihenfolge (siehe lib/bildreihen.ts), also gibt es
+       nichts mehr zu speichern. Entfernt in 0012_bildgruppe.sql. */
     restaurantId: integer("restaurant_id").references(() => restaurant.id, {
       onDelete: "cascade",
     }),
@@ -507,8 +512,6 @@ export const travelBlock = sqliteTable(
       "travel_block_type_check",
       sql`${t.type} IN ('text','bild','restaurant')`,
     ),
-    check("travel_block_groesse_check", sql`${t.groesse} IN ('s','m','l')`),
-    check("travel_block_platz_check", sql`${t.platz} IN ('links','rechts')`),
     check(
       "travel_block_restaurant_check",
       sql`(${t.type} = 'restaurant') = (${t.restaurantId} IS NOT NULL)`,

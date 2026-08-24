@@ -155,6 +155,15 @@
       "aktiv": true,
       "kontrolle": "SEO-Gate (scripts/regime/seo-gate.mjs) + tests/seo.test.ts",
       "control_cmd": "node scripts/regime/seo-gate.mjs --selftest"
+    },
+    {
+      "id": "S19-migration-silent-skip",
+      "klasse": "Migration wird beim Deploy still übersprungen (zwei Zweige mit derselben Nummer: der später gemergte trägt einen älteren `when`-Wert und rutscht unter drizzles Wasserstand — keine Fehlermeldung, die Änderung entsteht nie, die Anwendung läuft gegen ein Schema, das es nicht gibt)",
+      "aktiv": true,
+      "kontrolle": "Migrations-Journal-Gate (scripts/regime/migrations-order.mjs, prüft gegen den ausgelieferten Stand auf origin/main) + Fail-closed-Abbruch im Migrator (scripts/migrate.mjs) + tests/migrationen-reihenfolge.test.ts",
+      "control_cmd": "node scripts/regime/migrations-order.mjs --selftest",
+      "beispiel": "PR A merged 0010_bild_ohne_foto (when=1787520000000); PR B bringt 0010_restaurant_zweites_foto (when=1787500100000) mit und wird danach gemergt → das Journal bleibt für sich streng aufsteigend, wenn der Konflikt chronologisch aufgelöst wird, aber der Eintrag liegt unter dem bereits ausgelieferten Wasserstand",
+      "hinweis": "Die Kontrolle prüft NICHT bloß den Anstieg innerhalb des Journals — das ließe genau den chronologisch aufgelösten Merge-Konflikt durch. Bezugspunkt ist das höchste `when` auf origin/main; ist dieser Stand nicht lesbar, ist das ein Befund und kein Durchwinken. Der Migrator prüft zusätzlich zur Laufzeit die IDENTITÄT der angewendeten Zeitstempel (nicht ihre Anzahl) und die Form von `created_at`, weil `Number(null)` still 0 und `Number(\"x\")` still NaN ergibt."
     }
   ]
 }
