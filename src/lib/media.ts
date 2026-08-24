@@ -124,8 +124,22 @@ export async function variantWidthsByImage(
   return map;
 }
 
-/** Auswahlliste für den ImagePicker (Label + Thumbnail + Fokus-Editor-Daten),
- *  alphabetisch. fullUrl = größte Variante (fürs Fokuspunkt-Modal). */
+/**
+ * Auswahlliste für den ImagePicker, alphabetisch — die EINZIGE.
+ *
+ * `fullUrl` ist die größte Variante und zugleich die Bedingung dafür, dass der
+ * Picker unter dem gewählten Bild den Knopf „Ausschnitt" zeigt: Das Modal
+ * braucht eine große Klickfläche. `focusX`/`focusY` lassen schon die kleine
+ * Vorschau den eingestellten Ausschnitt zeigen statt stur die Bildmitte.
+ *
+ * Reise-Editor, Rezept-Editor und Zutaten-Seite bauten diese Liste einmal
+ * selbst — und ließen dabei genau diese drei Felder weg. Dadurch fehlte in
+ * Reisen und Rezepten der Ausschnitt-Knopf, obwohl der Picker ihn kann. Wer
+ * hier eine zweite Liste anlegt, holt sich diesen Ausfall zurück.
+ *
+ * `width`/`height` sind die Maße des ORIGINALS (nicht der Variante). Der
+ * Reise-Editor rechnet daraus die Pixelzeile am Bildblock aus.
+ */
 export async function listImageChoices(): Promise<
   Array<{
     id: number;
@@ -134,6 +148,8 @@ export async function listImageChoices(): Promise<
     fullUrl: string;
     focusX: number;
     focusY: number;
+    width: number;
+    height: number;
   }>
 > {
   const rows = await db
@@ -144,9 +160,13 @@ export async function listImageChoices(): Promise<
       fileKey: schema.mediaImage.fileKey,
       focusX: schema.mediaImage.focusX,
       focusY: schema.mediaImage.focusY,
+      width: schema.mediaImage.width,
+      height: schema.mediaImage.height,
     })
     .from(schema.mediaImage)
-    .orderBy(asc(schema.mediaImage.originalName));
+    // Die ID bricht den Gleichstand: Zwei Bilder desselben Namens hätten sonst
+    // keine zugesagte Reihenfolge und könnten im Modal die Plätze tauschen.
+    .orderBy(asc(schema.mediaImage.originalName), asc(schema.mediaImage.id));
   const widthsById = await variantWidthsByImage(rows.map((r) => r.id));
   return rows.map((r) => {
     const widths = widthsById.get(r.id) ?? [];
@@ -157,6 +177,8 @@ export async function listImageChoices(): Promise<
       fullUrl: imageUrl(r.fileKey, widths.at(-1) ?? 320),
       focusX: r.focusX,
       focusY: r.focusY,
+      width: r.width,
+      height: r.height,
     };
   });
 }

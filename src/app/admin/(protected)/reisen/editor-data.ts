@@ -1,7 +1,5 @@
 /** Editor-Daten für Reiseberichte laden. */
-import { asc } from "drizzle-orm";
-import { db, schema } from "@/db";
-import { thumbUrl, variantWidthsByImage } from "@/lib/media";
+import { listImageChoices } from "@/lib/media";
 import { taxonomiesByType } from "@/lib/taxonomies";
 import { getFullTravelPost } from "@/lib/travel";
 import type { TravelEditorProps } from "./travel-editor";
@@ -9,26 +7,11 @@ import type { TravelEditorProps } from "./travel-editor";
 export async function buildTravelEditorProps(
   travelId: number | null,
 ): Promise<TravelEditorProps | null> {
-  const imageRows = await db
-    .select({
-      id: schema.mediaImage.id,
-      originalName: schema.mediaImage.originalName,
-      altText: schema.mediaImage.altText,
-      fileKey: schema.mediaImage.fileKey,
-      width: schema.mediaImage.width,
-      height: schema.mediaImage.height,
-    })
-    .from(schema.mediaImage)
-    .orderBy(asc(schema.mediaImage.originalName), asc(schema.mediaImage.id));
-  const widthsById = await variantWidthsByImage(imageRows.map((i) => i.id));
-  const images = imageRows.map((i) => ({
-    id: i.id,
-    label: i.altText || i.originalName,
-    thumbUrl: thumbUrl(i.fileKey, widthsById.get(i.id) ?? []),
-    // Für die Pixelzeile am Bildblock: Breite × daraus errechnete Höhe.
-    width: i.width,
-    height: i.height,
-  }));
+  // Die gemeinsame Auswahlliste — sie führt neben Vorschau und Maßen auch die
+  // große Variante und den Fokuspunkt mit. Genau daran hängt der Knopf
+  // „Ausschnitt" unter jedem gewählten Bild; die frühere Eigenbau-Liste hier
+  // ließ die drei Felder weg, und deshalb gab es ihn in Reisen nicht.
+  const images = await listImageChoices();
 
   // Taxonomie-Optionen für die Gericht-Zuordnung (gemeinsamer Stamm mit
   // Rezepten; „geraet" ist an Gerichten nicht vorgesehen).

@@ -4,7 +4,7 @@
  */
 import { asc } from "drizzle-orm";
 import { db, schema } from "@/db";
-import { thumbUrl, variantWidthsByImage } from "@/lib/media";
+import { listImageChoices } from "@/lib/media";
 import { taxonomiesByType } from "@/lib/taxonomies";
 import { getFullRecipe } from "@/lib/recipes";
 import type { RecipeEditorProps } from "./recipe-editor";
@@ -12,23 +12,18 @@ import type { RecipeEditorProps } from "./recipe-editor";
 export async function buildEditorProps(
   recipeId: number | null,
 ): Promise<RecipeEditorProps | null> {
+  // `images` kommt aus der gemeinsamen Auswahlliste. Sie führt die große
+  // Variante und den Fokuspunkt mit — daran hängt der Knopf „Ausschnitt" unter
+  // jedem gewählten Bild. Die frühere Eigenbau-Abfrage hier holte beides nicht,
+  // und deshalb war der Ausschnitt in Rezepten nicht einstellbar.
   const [grouped, images, ingredients] = await Promise.all([
     taxonomiesByType(),
-    db
-      .select({
-        id: schema.mediaImage.id,
-        originalName: schema.mediaImage.originalName,
-        altText: schema.mediaImage.altText,
-        fileKey: schema.mediaImage.fileKey,
-      })
-      .from(schema.mediaImage)
-      .orderBy(asc(schema.mediaImage.originalName), asc(schema.mediaImage.id)),
+    listImageChoices(),
     db
       .select({ name: schema.ingredient.name })
       .from(schema.ingredient)
       .orderBy(asc(schema.ingredient.name)),
   ]);
-  const widthsById = await variantWidthsByImage(images.map((i) => i.id));
 
   const taxonomies = {
     kategorien: grouped.kategorie,
@@ -62,11 +57,7 @@ export async function buildEditorProps(
       taxonomySelections: {},
     },
     taxonomies,
-    images: images.map((i) => ({
-      id: i.id,
-      label: i.altText || i.originalName,
-      thumbUrl: thumbUrl(i.fileKey, widthsById.get(i.id) ?? []),
-    })),
+    images,
     ingredientNames: ingredients.map((i) => i.name),
   };
 
