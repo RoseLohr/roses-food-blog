@@ -65,6 +65,7 @@
  */
 import { execSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
+import { appendFileSync } from "node:fs";
 
 const KEY = process.env.SECOND_VENDOR_API_KEY || process.env.OPENAI_API_KEY;
 /**
@@ -577,6 +578,45 @@ if (process.argv.includes("--selftest")) {
   expect(attestProof([PR(`${CH}-7`), PR(`${CH}-8`), PR("nope-1", true)], CH, 3).block === false, "Refutat-Stimme ohne Proof egal, solange Grün-Mehrheit gültige Proofs hat.");
   expect(attestProof([PR(`${CH}-7`)], CH, 1).block === false, "Panel=1 mit gültigem Proof passiert.");
   expect(attestProof([PR(`${CH}-7`), PR(`${CH}-8`), PR(`${CH}-9`)], "", 3).block === true, "leere Challenge → kein Proof gültig → fail-closed.");
+  // mdCell() (Modell-Text als feindliche Eingabe für den Markdown-Renderer)
+  expect(mdCell("a|b") === "a\\|b", "ein Pipe wird escaped (bricht sonst aus der Zelle aus).");
+  expect(mdCell("a\nb") === "a b", "ein Zeilenumbruch wird gefaltet (bricht sonst aus der Zeile aus).");
+  expect(mdCell("a\r\nb\tc") === "a b c", "CRLF und Tab werden ebenfalls gefaltet.");
+  expect(mdCell("a`b") === "a\\`b", "ein Backtick wird escaped (bricht sonst aus dem Code-Span aus).");
+  expect(mdCell("a\\b") === "a\\\\b", "ein Backslash wird escaped (sonst frisst er das nächste Escape).");
+  expect(mdCell("") === "—", "leer wird zum Gedankenstrich, nicht zur leeren Zelle.");
+  expect(mdCell(null) === "—", "null wird zum Gedankenstrich, nie zum Text \"null\".");
+  expect(mdCell(undefined) === "—", "undefined ebenso.");
+  expect(mdCell("x".repeat(400)).length === 300, "zu langer Text wird auf das Limit gekürzt.");
+  expect(mdCell("x".repeat(400)).endsWith("…"), "die Kürzung ist als Auslassung sichtbar.");
+  expect(mdCell("kurz", 12) === "kurz", "ein eigenes Limit lässt kurzen Text unberührt.");
+  // renderStepSummary() (das Urteil, wie ein Mensch es liest)
+  const RG = [["Pflicht-Approver-Gate", { block: false, reason: "ok" }]];
+  const RM = ["m-1", "m-2", "m-3"];
+  expect(renderStepSummary([], [], [], false).includes("**Urteil: BESTÄTIGT**"), "grün steht als BESTÄTIGT im Kopf.");
+  expect(renderStepSummary([], [], [], true).includes("**Urteil: BLOCKIERT**"), "rot steht als BLOCKIERT im Kopf.");
+  const okVote = { ok: true, v: { refuted: false, confidence: "high", reason: "grund lang genug" } };
+  const noVote = { ok: false, reason: "API 500" };
+  const oddVote = { ok: true, v: { refuted: "vielleicht", reason: "grund lang genug" } };
+  expect(renderStepSummary([okVote], RM, RG, false).includes("🟢 stimmt zu"), "eine Zustimmung wird als solche gezeigt.");
+  expect(renderStepSummary([noVote], RM, RG, true).includes("⚠️ keine Stimme"), "eine Fehler-Stimme ist „keine Stimme\", kein Urteil.");
+  // Der Kern: ein Nicht-Boolean ist UNLESBAR, nicht „refutiert" — sonst erzählt die
+  // Tabelle, ein Modell habe widersprochen, wo in Wahrheit nichts lesbar war.
+  expect(renderStepSummary([oddVote], RM, RG, true).includes("⚠️ unlesbar"), "ein Nicht-Boolean ist unlesbar.");
+  expect(!renderStepSummary([oddVote], RM, RG, true).includes("🔴 refutiert"), "ein Nicht-Boolean wird NIE als Refutat beschriftet.");
+  // Feindliche Begründung darf die Tabelle nicht aufbrechen: gleiche Zeilenzahl,
+  // gleiche Spaltenzahl wie bei harmlosem Text.
+  const hostile = { ok: true, v: { refuted: false, confidence: "high", reason: "a|b\nc|d\n| x | y |" } };
+  const benign = { ok: true, v: { refuted: false, confidence: "high", reason: "harmlos" } };
+  const hLines = renderStepSummary([hostile], RM, RG, false).split("\n");
+  const bLines = renderStepSummary([benign], RM, RG, false).split("\n");
+  expect(hLines.length === bLines.length, "feindlicher Text erzeugt keine zusätzlichen Zeilen.");
+  const rowOf = (ls) => ls.find((l) => l.startsWith("| 1 |"));
+  // NUR UNESCAPTE Pipes trennen Spalten. Ein naives split("|") zaehlt auch die
+  // escapten mit und misst damit die Escape-Arbeit als Fehler.
+  const cols = (l) => (l.match(/(?<!\\)\|/g) || []).length;
+  expect(cols(rowOf(hLines)) === cols(rowOf(bLines)), "feindlicher Text erzeugt keine zusätzlichen Spalten.");
+  expect(rowOf(hLines).includes("\\|"), "die Pipes des feindlichen Textes stehen escaped in der Zelle.");
   // validateRangeInputs() (Command-Injection-Schranke + Range-Bestimmtheit)
   expect(validateRangeInputs("", "").ok === true, "beide leer → Default origin/main...HEAD.");
   expect(validateRangeInputs("", "").head === "HEAD", "ohne SHA bleibt HEAD.");
@@ -621,7 +661,7 @@ if (process.argv.includes("--selftest")) {
   expect(requireApprovals([RF, A2, A], SM, "gpt-5.6-sol", 1).block === false
     && strictAnyRefutation([RF, A2, A], SM).block === true,
     "derselbe Stimmensatz: Standard grün, Strikt-Modus block — die Option ist wirksam.");
-  console.log("   ✓ Selbsttest: decide() + modelMatches() + requireApprovals() (Pflicht-Approver Sol + Korroboration) + attestReasons() + attestProof() + validateRangeInputs() + normalizeBase() + authHeader() + strictAnyRefutation() korrekt.");
+  console.log("   ✓ Selbsttest: decide() + modelMatches() + requireApprovals() (Pflicht-Approver Sol + Korroboration) + attestReasons() + attestProof() + validateRangeInputs() + normalizeBase() + authHeader() + strictAnyRefutation() + mdCell() + renderStepSummary() korrekt.");
   process.exit(0);
 }
 
@@ -821,38 +861,106 @@ votes.forEach((x, i) => {
   const reason = raw ? JSON.stringify(raw).slice(0, 1000) : '"(keine Begründung geliefert)"';
   console.log(`  Verifier ${i + 1}/${PANEL} (${MODELS[i]}): refuted=${x.v?.refuted} confidence=${x.v?.confidence} — Begründung: ${reason}`);
 });
+/**
+ * Modell-Text, sicher für eine Markdown-Tabellenzelle.
+ *
+ * Die Begründung stammt von einem Sprachmodell, das einen UNGEPRÜFTEN Diff gelesen
+ * hat — sie wird deshalb als feindliche Eingabe für den RENDERER behandelt: ein
+ * Pipe bricht aus der Zelle aus, ein Zeilenumbruch aus der Zeile, ein Backtick aus
+ * dem Code-Span. Whitespace zusammenfalten und diese drei Metazeichen escapen
+ * genügt — der Wert wird nie als etwas anderes als Tabellentext interpretiert.
+ */
+export function mdCell(value, limit = 300) {
+  const text = String(value === null || value === undefined ? "" : value)
+    .split(/\s+/).filter(Boolean).join(" ")
+    .replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/`/g, "\\`");
+  if (text.length > limit) return text.slice(0, limit - 1) + "…";
+  return text || "—";
+}
+
+/**
+ * Das Urteil dorthin schreiben, wo ein Mensch es tatsächlich sieht.
+ *
+ * GITHUB_STEP_SUMMARY rendert als Markdown auf der Run-Seite, einen Klick vom Check
+ * des Pull Requests entfernt. Bewusst statt eines PR-Reviews: kein Token, keine
+ * zusätzliche Berechtigung, kein API-Aufruf, der selbst fehlschlagen und aus einem
+ * sauberen Urteil einen roten Job machen könnte.
+ *
+ * Wird auf BEIDEN Wegen geschrieben. Ein Panel, das sich nur erklärt, wenn es
+ * blockt, lässt den Leser nicht unterscheiden zwischen „drei Stimmen haben das
+ * geprüft und waren einig" und „das Panel lief nie".
+ */
+export function renderStepSummary(votes, models, gates, blocked) {
+  const lines = [
+    "## Independent-Verify — Fremd-Vendor-Panel",
+    "",
+    `**Urteil: ${blocked ? "BLOCKIERT" : "BESTÄTIGT"}**`,
+    "",
+    "| # | Modell | Urteil | Konfidenz | Begründung |",
+    "|---|---|---|---|---|",
+  ];
+  votes.forEach((vote, i) => {
+    const model = "`" + mdCell(models[i], 60) + "`";
+    if (!vote?.ok) {
+      lines.push(`| ${i + 1} | ${model} | ⚠️ keine Stimme | — | ${mdCell(vote?.reason)} |`);
+      return;
+    }
+    const v = vote.v || {};
+    // === true / === false, nie Truthiness: decide() ist bei einem Nicht-Boolean
+    // fail-closed, also ist {"refuted":"vielleicht"} eine UNLESBARE Stimme. Sie als
+    // „refutiert" zu beschriften, erzählte dem Leser, ein Modell habe widersprochen.
+    const mark = v.refuted === true ? "🔴 refutiert"
+      : v.refuted === false ? "🟢 stimmt zu" : "⚠️ unlesbar";
+    lines.push(`| ${i + 1} | ${model} | ${mark} | ${mdCell(v.confidence, 12)} | ${mdCell(v.reason)} |`);
+  });
+  lines.push("", "### Gates", "");
+  for (const [name, result] of gates) {
+    lines.push(`- **${name}** — ${result.block ? "⛔ blockiert" : "✅ bestanden"}: ${mdCell(result.reason, 400)}`);
+  }
+  return lines.join("\n") + "\n";
+}
+
+/** Anhängen an GITHUB_STEP_SUMMARY. Ausserhalb von Actions ein No-op. */
+function writeSummary(text) {
+  const path = process.env.GITHUB_STEP_SUMMARY;
+  if (!path) return;
+  try {
+    appendFileSync(path, text, "utf8");
+  } catch (err) {
+    // Der BERICHT darf nie das URTEIL kippen.
+    console.log(`[independent-verify] Step-Summary nicht schreibbar: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
 // PFLICHT-APPROVER-GATE: Sol MUSS zustimmen (Veto bei Refutat/Fehlen/Fehler) und
 // mindestens MIN_OTHERS weitere Stimmen müssen zustimmen. Ersetzt die frühere
 // bloße Mehrheits-Aggregation und ist strenger (fail-closed).
-const verdict = requireApprovals(votes, MODELS, REQUIRED_APPROVER, MIN_OTHERS, CHALLENGE);
-if (verdict.block) {
-  console.error(`⛔ Pflicht-Approver-Gate blockiert die Änderung: ${verdict.reason}`);
-  process.exit(1);
-}
+// ALLE Gates werden ausgewertet, BEVOR eines beendet — sonst zeigte die Zusammen-
+// fassung nur bis zum ersten Blocker und der Leser wüsste nicht, ob die übrigen
+// bestanden haben oder nie liefen. Die Gates sind reine Funktionen ohne Seiten-
+// effekte, das Auswerten kostet also nichts. Blockiert wird weiterhin beim ERSTEN
+// Blocker in dieser Reihenfolge, mit derselben Meldung wie zuvor.
+const gates = [];
+gates.push(["Pflicht-Approver-Gate", requireApprovals(votes, MODELS, REQUIRED_APPROVER, MIN_OTHERS, CHALLENGE)]);
 // STRIKT-GATE (opt-in, VERIFIER_STRICT_ANY_REFUTATION): blockt bei einem
-// high/medium-Refutat JEDER Stimme, nicht nur des Pflicht-Approvers. Läuft NACH
+// high/medium-Refutat JEDER Stimme, nicht nur des Pflicht-Approvers. Steht NACH
 // dem Pflicht-Approver-Gate, damit ein Sol-Veto weiterhin die genauere Meldung
 // liefert, und ist bei ausgeschaltetem Modus wirkungslos.
-const strict = STRICT_ANY_REFUTATION
+gates.push(["Strikt-Gate", STRICT_ANY_REFUTATION
   ? strictAnyRefutation(votes, MODELS)
-  : { block: false, reason: "Strikt-Modus: aus" };
-if (strict.block) {
-  console.error(`⛔ Strikt-Gate: ${strict.reason}`);
-  process.exit(1);
-}
+  : { block: false, reason: "Strikt-Modus: aus" }]);
 // SCHEIN-GRÜN-GATE: Grün nur, wenn nachweislich echt gearbeitet wurde — eine
 // Mehrheit der Grün-Stimmen muss eine echte, eigenständige Begründung tragen.
-const attest = attestReasons(votes, PANEL);
-if (attest.block) {
-  console.error(`⛔ Integritäts-Gate (Schein-Grün): ${attest.reason}`);
-  process.exit(1);
-}
+gates.push(["Integritäts-Gate (Schein-Grün)", attestReasons(votes, PANEL)]);
 // PROOF-OF-CHECK-GATE: die Grün-Stimmen müssen die Lauf-Challenge zurückspiegeln —
 // ein hartcodiertes „pass → grün" ohne echten Modell-Roundtrip kommt so nicht durch.
-const proof = attestProof(votes, CHALLENGE, PANEL);
-if (proof.block) {
-  console.error(`⛔ Proof-of-Check-Gate: ${proof.reason}`);
+gates.push(["Proof-of-Check-Gate", attestProof(votes, CHALLENGE, PANEL)]);
+
+const blocker = gates.find(([, result]) => result.block);
+writeSummary(renderStepSummary(votes, MODELS, gates, Boolean(blocker)));
+if (blocker) {
+  console.error(`⛔ ${blocker[0]}: ${blocker[1].reason}`);
   process.exit(1);
 }
-console.log(`[independent-verify] Fremd-Vendor-Panel bestätigt (Pflicht-Approver: ${verdict.reason}; ${strict.reason}; ${attest.reason}; ${proof.reason}). Grün.`);
+console.log(`[independent-verify] Fremd-Vendor-Panel bestätigt (${gates.map(([, r]) => r.reason).join("; ")}). Grün.`);
 process.exit(0);
