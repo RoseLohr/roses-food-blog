@@ -45,6 +45,7 @@ export function ImagePicker({
   multiple,
   clearable = true,
   max,
+  sortierbar = false,
 }: {
   name?: string;
   legend: string;
@@ -53,6 +54,17 @@ export function ImagePicker({
   value?: number[];
   onChange?: (ids: number[]) => void;
   multiple: boolean;
+  /**
+   * Nur Mehrfachauswahl: Die Reihenfolge BEDEUTET etwas — dann bekommt jedes
+   * gewählte Bild eine Ziffer und zwei Pfeile zum Umstellen.
+   *
+   * Standardmäßig aus, denn an den meisten Stellen ist die Auswahl eine Menge
+   * und keine Folge; dort wären Ziffern und Pfeile eine Bedienung, die nichts
+   * bewirkt. In der Bildgruppe des Reiseberichts ist es umgekehrt: Das erste
+   * Bild steht über die ganze Breite, alle weiteren teilen sich die Reihe
+   * darunter — die Reihenfolge ist dort die ganze Einstellung.
+   */
+  sortierbar?: boolean;
   /** Nur Einzelauswahl: erlaubt das Abwählen ("Kein Bild"). Default true. */
   clearable?: boolean;
   /**
@@ -91,6 +103,15 @@ export function ImagePicker({
     }
   }
 
+  /** Ein Bild um einen Platz verschieben. Am Rand passiert nichts. */
+  function verschiebe(von: number, richtung: -1 | 1) {
+    const nach = von + richtung;
+    if (nach < 0 || nach >= selected.length) return;
+    const next = [...selected];
+    [next[von], next[nach]] = [next[nach], next[von]];
+    setSelection(next);
+  }
+
   const byId = new Map(options.map((o) => [o.id, o]));
   const selectedChoices = selected
     .map((id) => byId.get(id))
@@ -108,9 +129,20 @@ export function ImagePicker({
       {/* Vorschau der aktuellen Auswahl */}
       {selectedChoices.length > 0 ? (
         <div className="mb-2 flex flex-wrap gap-2">
-          {selectedChoices.map((c) => (
+          {selectedChoices.map((c, pos) => (
             <div key={c.id} className="flex flex-col gap-1">
               <div className="group relative h-24 w-32 overflow-hidden border border-ink-soft/20 bg-cream">
+                {sortierbar && (
+                  // Die Ziffer steht IMMER da, nicht erst beim Überfahren:
+                  // Auf dem iPad gibt es kein Hover, und ohne sie wäre nicht
+                  // abzulesen, welches Bild das erste ist.
+                  <span
+                    aria-hidden
+                    className="absolute left-1 top-1 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-leaf text-xs font-semibold tabular-nums text-white"
+                  >
+                    {pos + 1}
+                  </span>
+                )}
                 {/* Fokuspunkt auch in der beschnittenen Vorschau anwenden —
                     sonst zeigt sie stets die Bildmitte (Sol-Befund R3). */}
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -134,6 +166,29 @@ export function ImagePicker({
                   ×
                 </button>
               </div>
+              {sortierbar && (
+                <div className="flex gap-1">
+                  {([-1, 1] as const).map((richtung) => (
+                    <button
+                      key={richtung}
+                      type="button"
+                      onClick={() => verschiebe(pos, richtung)}
+                      disabled={
+                        richtung === -1
+                          ? pos === 0
+                          : pos === selectedChoices.length - 1
+                      }
+                      aria-label={`${
+                        richtung === -1 ? ip.moveEarlier : ip.moveLater
+                      } — ${ip.position(pos + 1, selectedChoices.length)}`}
+                      title={richtung === -1 ? ip.moveEarlier : ip.moveLater}
+                      className="flex-1 rounded border border-ink/20 py-0.5 text-xs hover:bg-cream disabled:opacity-40"
+                    >
+                      {richtung === -1 ? "←" : "→"}
+                    </button>
+                  ))}
+                </div>
+              )}
               {/* Bildausschnitt (Fokuspunkt) direkt am gewählten Bild anpassbar */}
               {c.fullUrl && (
                 <FocusPointEditor
