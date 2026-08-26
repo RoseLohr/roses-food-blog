@@ -187,6 +187,42 @@ html {
   min-width: 0;
 }
 
+/* ── BILDUNTERSCHRIFT ──────────────────────────────────────────────────────
+
+   Der Alt-Text unter dem Foto, wenn er dafuer freigegeben ist. Klein und
+   zurueckgenommen: Er soll das Bild erlaeutern, nicht mit dem Fliesstext
+   konkurrieren.
+
+   DIE FIGUR IST DER BILDPLATZ, NICHT DAS BILD. Traegt ein Foto eine
+   Unterschrift, wickelt GalleryLightbox Knopf und Text in eine <figure> und
+   haengt die Rahmen-Angaben DORT hin (Float-Anteil beim Einzelbild, `--ar`
+   beim Bild einer Reihe). Ohne diese Verschiebung stuende die Unterschrift
+   ausserhalb des Bildplatzes: beim Einzelbild neben dem Float statt darunter,
+   in der Reihe ausserhalb der Verteilung.
+
+   DIE REIHE BLEIBT BUENDIG. `.bildgruppe-weitere` richtet ihre Kinder oben aus
+   (`align-items: flex-start`), und die Breite verteilt `flex: var(--ar) 1 0`
+   allein nach dem Seitenverhaeltnis — eine Unterschrift aendert daran nichts.
+   Die BILDER bleiben also exakt gleich hoch; nur die Texte darunter sind
+   unterschiedlich lang, und das duerfen sie sein.
+
+   Die Vorgabe des Browsers fuer <figure> (margin: 1em 40px) muss weg, sonst
+   sitzt in der Reihe zwischen den Fotos ploetzlich ein 40-Punkte-Rand und die
+   Rechnung der Breiten stimmt nicht mehr mit `bildgruppeSizes()` ueberein. */
+.bildgruppe figure,
+.einzelbild figure {
+  margin: 0;
+}
+.bildunterschrift {
+  margin-top: 6px;
+  font-size: 0.8125rem;
+  line-height: 1.35;
+  color: var(--color-ink-soft);
+  /* Ein langes Wort darf die Spalte nicht sprengen — in der Reihe sind die
+     Kacheln auf dem Handy nur wenige Dutzend Punkte breit. */
+  overflow-wrap: break-word;
+}
+
 /* Zutatenzeile im Rezept-Editor: auf schmalen Bildschirmen (Handy hochkant)
    gestapelt, damit ALLE Felder sichtbar und gut bedienbar sind; ab 640px in
    einer Zeile (Menge · Einheit · Name · Zusatz · Entfernen). Bewusst als eigene

@@ -43,7 +43,7 @@
  * Browser-Bündel des Reise-Editors mit, und dessen Routenbudget ist der
  * knappste Posten der Anwendung (scripts/regime/bundle-budget.mjs).
  */
-import type { Ausrichtung, Bildgroesse } from "@/lib/bildreihen";
+import type { Ausrichtung, Bildgroesse, GruppenBild } from "@/lib/bildreihen";
 import { EINZELBILD_VORGABE } from "@/lib/bildreihen";
 import type { TravelBlock } from "@/lib/travel-blocks";
 
@@ -62,13 +62,15 @@ export type EditorItem =
       imageId: number;
       groesse: Bildgroesse;
       ausrichtung: Ausrichtung;
+      /** Alt-Text als sichtbare Unterschrift darunter? Standard nein. */
+      bildunterschrift: boolean;
     }
   /**
    * Eine Bildgruppe: das erste Bild über die ganze Breite, alle weiteren in
    * einer Reihe darunter. Die REIHENFOLGE ist die ganze Einstellung — mehr
    * gibt es an einer Gruppe nicht zu entscheiden.
    */
-  | { art: "bildgruppe"; imageIds: number[] }
+  | { art: "bildgruppe"; bilder: GruppenBild[] }
   | { art: "restaurant"; index: number };
 
 /** Die Karte einer Bildgruppe — die einzige Art mit mehreren Fotos. */
@@ -76,7 +78,7 @@ export type Bildgruppe = Extract<EditorItem, { art: "bildgruppe" }>;
 
 /** Eine leere Gruppe, wie sie der Knopf „+ Bildgruppe" anlegt. */
 export function neueBildgruppe(): EditorItem {
-  return { art: "bildgruppe", imageIds: [] };
+  return { art: "bildgruppe", bilder: [] };
 }
 
 /** Ein neues Einzelbild mit den Vorgaben. */
@@ -86,6 +88,35 @@ export function neuesEinzelbild(): EditorItem {
     imageId: 0,
     groesse: EINZELBILD_VORGABE.groesse,
     ausrichtung: EINZELBILD_VORGABE.ausrichtung,
+    bildunterschrift: false,
+  };
+}
+
+/**
+ * Die Fotos einer Gruppe als reine ID-Liste — das, womit der Bilderwähler
+ * arbeitet. Die Unterschrift-Angabe bleibt dabei am Foto und wird von
+ * `mitBildern` wieder zusammengeführt.
+ */
+export function bildIds(gruppe: Bildgruppe): number[] {
+  return gruppe.bilder.map((b) => b.imageId);
+}
+
+/**
+ * Neue Foto-Auswahl in eine Gruppe übernehmen und dabei die Unterschrift-
+ * Angaben der Fotos BEHALTEN, die schon drin waren.
+ *
+ * Ohne das verlöre ein Umsortieren im Wähler jede gesetzte Unterschrift — die
+ * Auswahl kommt als bloße ID-Liste zurück, und wer sie einfach übernimmt,
+ * ersetzt gesetzte Häkchen still durch die Vorgabe. Neue Fotos starten ohne.
+ */
+export function mitBildern(gruppe: Bildgruppe, ids: number[]): Bildgruppe {
+  const bekannt = new Map(gruppe.bilder.map((b) => [b.imageId, b.bildunterschrift]));
+  return {
+    ...gruppe,
+    bilder: ids.map((imageId) => ({
+      imageId,
+      bildunterschrift: bekannt.get(imageId) ?? false,
+    })),
   };
 }
 
@@ -122,12 +153,19 @@ export function zuItems(blocks: TravelBlock[]): EditorItem[] {
         imageId: b.imageId,
         groesse: b.groesse ?? EINZELBILD_VORGABE.groesse,
         ausrichtung: b.ausrichtung ?? EINZELBILD_VORGABE.ausrichtung,
+        bildunterschrift: b.bildunterschrift,
       });
       offen = null;
     } else if (offen !== null && offen.marke === b.gruppe) {
-      offen.karte.imageIds.push(b.imageId);
+      offen.karte.bilder.push({
+        imageId: b.imageId,
+        bildunterschrift: b.bildunterschrift,
+      });
     } else {
-      const karte: Bildgruppe = { art: "bildgruppe", imageIds: [b.imageId] };
+      const karte: Bildgruppe = {
+        art: "bildgruppe",
+        bilder: [{ imageId: b.imageId, bildunterschrift: b.bildunterschrift }],
+      };
       items.push(karte);
       offen = { marke: b.gruppe, karte };
     }
@@ -163,21 +201,25 @@ export function zuBloecken(items: EditorItem[]): TravelBlock[] {
         gruppe: null,
         groesse: item.groesse,
         ausrichtung: item.ausrichtung,
+        bildunterschrift: item.bildunterschrift,
       });
     } else {
-      const bilder = item.imageIds.filter((id) => id > 0);
+      const bilder = item.bilder.filter((b) => b.imageId > 0);
       if (bilder.length === 0) continue;
       marke += 1;
-      for (const imageId of bilder) {
+      for (const bild of bilder) {
         blocks.push({
           type: "bild",
-          imageId,
+          imageId: bild.imageId,
           gruppe: marke,
           // In einer Gruppe bestimmt die Position die Anordnung. Eine Größe
           // daneben wäre eine zweite, unwirksame Wahrheit — Vertrag und
           // Datenbank weisen sie zurück (travel_block_bild_regler_check).
           groesse: null,
           ausrichtung: null,
+          // Die Unterschrift dagegen sagt nichts über die Position und gilt
+          // deshalb auch in einer Gruppe — je Foto.
+          bildunterschrift: bild.bildunterschrift,
         });
       }
     }

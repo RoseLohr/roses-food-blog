@@ -63,6 +63,24 @@ export interface GalleryImage extends MediaImageLike {
     /** Inline-Stile des Rahmens — z. B. `--ar` für die Verteilung im Paar. */
     frameStyle?: React.CSSProperties;
   };
+  /**
+   * Den Alt-Text sichtbar unter das Thumbnail setzen.
+   *
+   * Ist er gesetzt, wird das Thumbnail in eine `<figure>` gepackt und bekommt
+   * eine `<figcaption>`. Die Rahmen-Angaben (`frameClassName`/`frameStyle`)
+   * wandern dann an die FIGUR — sie ist es, die am Layout teilnimmt (schwebt
+   * als Bildplatz im Text oder ist Flex-Kind der Reihe). Blieben sie am
+   * Knopf, stünde die Unterschrift außerhalb des Bildplatzes und die
+   * Verteilung der Reihe ginge daneben.
+   *
+   * Ohne Alt-Text passiert nichts: Eine leere Unterschrift wäre ein leerer
+   * Kasten unter dem Bild, der das Layout verschiebt und nichts sagt.
+   *
+   * Im Pop-up steht der Alt-Text ohnehin schon immer unter dem großen Bild —
+   * dort ist er die Beschreibung dessen, was man gerade ansieht, und nicht
+   * eine Gestaltungsfrage.
+   */
+  bildunterschrift?: boolean;
 }
 
 export function GalleryLightbox({
@@ -179,18 +197,23 @@ export function GalleryLightbox({
     const widths = im.variantWidths;
     const objectPosition = focusPosition(im.focusX, im.focusY);
     const istBuehne = lead !== undefined && i === 0;
-    return (
+    // Eine Unterschrift braucht Text. Ohne Alt-Text bleibt es beim nackten
+    // Knopf — sonst stünde ein leerer Kasten unter dem Bild.
+    const mitUnterschrift = Boolean(im.bildunterschrift && im.altText);
+    const rahmenKlasse = im.thumb?.frameClassName ?? "w-full";
+    const knopf = (
       <button
-        key={im.fileKey}
+        key={mitUnterschrift ? undefined : im.fileKey}
         type="button"
         onClick={(e) => {
           openerRef.current = e.currentTarget;
           setOpenIndex(i);
         }}
         // Bringt das Bild eigene Rahmen-Klassen mit, bestimmen SIE die Breite —
-        // `w-full` würde ihnen sonst ins Layout reden.
-        className={`block cursor-zoom-in ${im.thumb?.frameClassName ?? "w-full"}`}
-        style={im.thumb?.frameStyle}
+        // `w-full` würde ihnen sonst ins Layout reden. Mit Unterschrift trägt
+        // die Figur den Rahmen, und der Knopf füllt sie nur noch aus.
+        className={`block cursor-zoom-in ${mitUnterschrift ? "w-full" : rahmenKlasse}`}
+        style={mitUnterschrift ? undefined : im.thumb?.frameStyle}
         aria-label={`${label ? `${label}: ` : ""}${im.altText || ""} – ${dict.gallery.zoom}`
           .replace(/\s+–/, " –")
           .trim()}
@@ -212,6 +235,17 @@ export function GalleryLightbox({
           style={objectPosition ? { objectPosition } : undefined}
         />
       </button>
+    );
+    if (!mitUnterschrift) return knopf;
+    return (
+      <figure
+        key={im.fileKey}
+        className={rahmenKlasse}
+        style={im.thumb?.frameStyle}
+      >
+        {knopf}
+        <figcaption className="bildunterschrift">{im.altText}</figcaption>
+      </figure>
     );
   });
 

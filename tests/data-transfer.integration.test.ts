@@ -329,7 +329,14 @@ describe("Export", () => {
       { type: "text", markdown: "Langer Reisetext." },
       // Der Bildblock trägt nichts über sein Aussehen mehr — nur die
       // Datei-Referenz. Die Anordnung folgt aus der Reihenfolge.
-      { type: "bild", image: "aaaa1111", gruppe: null, groesse: null, ausrichtung: null },
+      {
+        type: "bild",
+        image: "aaaa1111",
+        gruppe: null,
+        groesse: null,
+        ausrichtung: null,
+        bildunterschrift: false,
+      },
       { type: "restaurant", index: 0 },
     ]);
 
@@ -588,6 +595,77 @@ describe("Robustheit", () => {
       "---",
       "Zweiter Absatz.",
     ]);
+  });
+
+  it("nimmt die Bildunterschrift ins Archiv mit — und bringt sie zurück", async () => {
+    // Dieselbe Fehlerklasse wie B4: Eine Layout-Angabe, die der Export nicht
+    // mitnimmt, fehlt beim Zurückspielen, und der wiederhergestellte Bericht
+    // sieht anders aus als der gesicherte. Geprüft wird hier BEIDES — dass sie
+    // im Archiv steht und dass sie beim Import wieder ankommt —, denn ein
+    // Export-Feld, das der Import verwirft, wäre genauso stumm verloren.
+    const imgU = await media("eeee5555", [320], new Date("2024-06-06T00:00:00.000Z"));
+    const [quelle] = await db
+      .insert(schema.travelPost)
+      .values({
+        title: "Bericht mit Unterschriften",
+        slug: "unterschrift-quelle",
+        status: "veroeffentlicht",
+        authorId: adminId,
+        createdAt: new Date("2024-06-06T00:00:00.000Z"),
+        updatedAt: new Date("2024-06-06T00:00:00.000Z"),
+      })
+      .returning({ id: schema.travelPost.id });
+    // Zwei Fotos EINER Gruppe: eines mit Unterschrift, eines ohne. Der Fall,
+    // an dem sich ein „gilt für die ganze Gruppe" verraten würde.
+    await db.insert(schema.travelBlock).values([
+      {
+        travelPostId: quelle.id,
+        sortOrder: 0,
+        type: "bild",
+        imageId: imgU,
+        gruppe: 3,
+        bildunterschrift: true,
+      },
+      {
+        travelPostId: quelle.id,
+        sortOrder: 1,
+        type: "bild",
+        imageId: imgU,
+        gruppe: 3,
+        bildunterschrift: false,
+      },
+    ]);
+
+    const bundle = await collectExport({ recipes: false, travel: true, pages: false });
+    const tvExport = bundle.travel.find((t) => t.slug === "unterschrift-quelle")!;
+    // Im Archiv steht sie je Bild.
+    expect(
+      tvExport.contentBlocks
+        .filter((b) => b.type === "bild")
+        .map((b) => (b.type === "bild" ? b.bildunterschrift : null)),
+    ).toEqual([true, false]);
+
+    // Über buildExportZip, damit die BILDDATEIEN mitkommen — ohne sie fällt
+    // beim Import jeder Bildblock heraus, und der Test prüfte nichts.
+    tvExport.slug = "unterschrift-zurueck";
+    bundle.travel = [tvExport];
+    const res = await importBundle(
+      buildExportZip(bundle),
+      { recipes: false, travel: true, pages: false },
+      adminId,
+    );
+    expect(res.travel).toBe(1);
+
+    const [ziel] = await db
+      .select({ id: schema.travelPost.id })
+      .from(schema.travelPost)
+      .where(eq(schema.travelPost.slug, "unterschrift-zurueck"));
+    const zurueck = await db
+      .select({ bildunterschrift: schema.travelBlock.bildunterschrift })
+      .from(schema.travelBlock)
+      .where(eq(schema.travelBlock.travelPostId, ziel.id))
+      .orderBy(asc(schema.travelBlock.sortOrder));
+    expect(zurueck.map((b) => b.bildunterschrift)).toEqual([true, false]);
   });
 
   it("stellt die Gruppen eines Alt-Archivs aus der Reihenfolge wieder her", async () => {

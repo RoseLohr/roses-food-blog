@@ -18,6 +18,8 @@ import { RESTAURANT_FOTOS_MAX } from "@/lib/restaurant-fotos";
 import type { Ausrichtung, Bildgroesse } from "@/lib/bildreihen";
 import type { TravelBlock } from "@/lib/travel-blocks";
 import {
+  bildIds,
+  mitBildern,
   neueBildgruppe,
   neuesEinzelbild,
   zuBloecken,
@@ -139,7 +141,7 @@ function wirksameIndizes(
       e.art === "einzelbild"
         ? bildWirdGespeichert(e.imageId)
         : e.art === "bildgruppe"
-          ? e.imageIds.some((id) => bildWirdGespeichert(id))
+          ? e.bilder.some((b) => bildWirdGespeichert(b.imageId))
           : e.art === "restaurant"
             ? restaurantWirdGespeichert(restaurants[e.index]?.name ?? "")
             : // Derselbe Weg wie beim Server — Bericht bauen und nachsehen —,
@@ -200,6 +202,12 @@ export function TravelEditor({
       ? zuItems(initial.blocks)
       : [{ art: "text", markdown: "" } as EditorItem]
     ).map((e) => ({ ...e, key: naechsterSchluessel() })),
+  );
+
+  /** Bild nach ID — gebraucht, um zu einem Foto den Alt-Text zu finden. */
+  const bildById = useMemo(
+    () => new Map(images.map((b) => [b.id, b])),
+    [images],
   );
 
   // Einmal je Änderung, nicht je Rendervorgang: Das Prädikat rendert Markdown.
@@ -481,13 +489,35 @@ export function TravelEditor({
                         options={images}
                         multiple
                         sortierbar
-                        value={e.imageIds}
-                        onChange={(ids) => aendere(i, { imageIds: ids })}
+                        value={bildIds(e)}
+                        // `mitBildern` statt einfach die IDs zu übernehmen:
+                        // Der Wähler gibt nur eine ID-Liste zurück; wer die
+                        // roh übernimmt, wirft die gesetzten Unterschriften
+                        // bei jedem Umsortieren still weg.
+                        onChange={(ids) => aendere(i, mitBildern(e, ids))}
+                        proBild={(id) => (
+                          <UnterschriftHaken
+                            an={
+                              e.bilder.find((b) => b.imageId === id)
+                                ?.bildunterschrift ?? false
+                            }
+                            altText={bildById.get(id)?.altText ?? ""}
+                            onChange={(an) =>
+                              aendere(i, {
+                                bilder: e.bilder.map((b) =>
+                                  b.imageId === id
+                                    ? { ...b, bildunterschrift: an }
+                                    : b,
+                                ),
+                              })
+                            }
+                          />
+                        )}
                       />
                       <p className="mt-2 border-l-2 border-leaf bg-leaf/[0.06] px-3 py-1.5 text-xs text-ink-soft">
-                        {e.imageIds.length === 0
+                        {e.bilder.length === 0
                           ? d.blockGruppeLeer
-                          : d.blockGruppeLage(e.imageIds.length)}
+                          : d.blockGruppeLage(e.bilder.length)}
                       </p>
                     </>
                   )}
@@ -500,6 +530,13 @@ export function TravelEditor({
                         multiple={false}
                         value={e.imageId > 0 ? [e.imageId] : []}
                         onChange={(ids) => aendere(i, { imageId: ids[0] ?? 0 })}
+                        proBild={(id) => (
+                          <UnterschriftHaken
+                            an={e.bildunterschrift}
+                            altText={bildById.get(id)?.altText ?? ""}
+                            onChange={(an) => aendere(i, { bildunterschrift: an })}
+                          />
+                        )}
                       />
                       <div className="mt-2 grid grid-cols-2 gap-2">
                         <label>
@@ -913,5 +950,47 @@ export function TravelEditor({
         )}
       </div>
     </form>
+  );
+}
+
+
+/**
+ * Das Häkchen „Alt-Text als Bildunterschrift anzeigen" — an EINEM Foto.
+ *
+ * Steht sowohl unter dem Einzelbild als auch unter jedem Foto einer Gruppe
+ * (der Bilderwähler stellt dafür einen Platz je Bild bereit). Die Angabe
+ * gehört zum FOTO, nicht zur Karte: In einer Gruppe kann ein Bild eine
+ * Unterschrift verdienen und das nächste nicht.
+ *
+ * Ohne Alt-Text ist das Häkchen gesperrt und sagt, warum. Ein anklickbares
+ * Häkchen, das nichts bewirkt, wäre die Sorte stille Wirkungslosigkeit, die
+ * dieser Editor an anderer Stelle schon einmal hatte.
+ */
+function UnterschriftHaken({
+  an,
+  altText,
+  onChange,
+}: {
+  an: boolean;
+  altText: string;
+  onChange: (an: boolean) => void;
+}) {
+  const ohneText = altText.trim() === "";
+  return (
+    <label
+      className={`mt-1 flex max-w-32 items-start gap-1 text-xs ${
+        ohneText ? "text-ink-soft/60" : "text-ink-soft"
+      }`}
+      title={ohneText ? d.blockBildunterschriftOhneText : d.blockBildunterschriftHinweis}
+    >
+      <input
+        type="checkbox"
+        checked={an && !ohneText}
+        disabled={ohneText}
+        onChange={(e) => onChange(e.target.checked)}
+        className="mt-0.5"
+      />
+      <span>{d.blockBildunterschrift}</span>
+    </label>
   );
 }

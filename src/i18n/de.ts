@@ -880,6 +880,17 @@ export const de = {
        * ist eine Marke über das Bild SELBST, und Größe wie Seite beschreiben
        * ebenfalls nur dieses eine Bild.
        */
+      /**
+       * Der Alt-Text als sichtbare Unterschrift unter dem Foto — je Foto zu
+       * entscheiden, standardmäßig aus. Der Hinweis sagt WARUM es eine eigene
+       * Entscheidung ist; ohne ihn setzt man das Häkchen und wundert sich über
+       * eine Zeile, die für Screenreader geschrieben war.
+       */
+      blockBildunterschrift: "Alt-Text als Bildunterschrift anzeigen",
+      blockBildunterschriftHinweis:
+        "Der Alt-Text beschreibt das Foto für alle, die es nicht sehen können. Als sichtbare Unterschrift eignet er sich nur, wenn er dafür geschrieben ist.",
+      blockBildunterschriftOhneText:
+        "Dieses Foto hat keinen Alt-Text — es gibt nichts anzuzeigen. Der Text steht in der Medienverwaltung.",
       blockGroesse: "Größe",
       blockGroessen: { s: "Klein (⅓)", m: "Mittel (½)", l: "Groß (⅔)" },
       blockAusrichtung: "Seite",

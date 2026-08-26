@@ -430,6 +430,9 @@ export async function importBundle(
             gruppe: b.gruppe ?? null,
             groesse: b.gruppe == null ? (b.groesse ?? null) : null,
             ausrichtung: b.gruppe == null ? (b.ausrichtung ?? null) : null,
+            // Ohne Fallunterscheidung nach Gruppe: Die Unterschrift sagt
+            // nichts über die Position und gilt deshalb auch in einer Gruppe.
+            bildunterschrift: b.bildunterschrift,
           });
       } else if (b.index < tv.restaurants.length) {
         blocks.push({ type: "restaurant", index: b.index });
@@ -614,6 +617,11 @@ export async function importBundle(
           gruppe: b.gruppe,
           groesse: b.groesse,
           ausrichtung: b.ausrichtung,
+          // Und aus demselben Grund die Bildunterschrift: Weiter oben wird sie
+          // sorgfältig aus dem Archiv übernommen — bliebe sie hier weg, wäre
+          // auch das wieder toter Code und jede Sicherung verlöre sie still.
+          // Genau dieselbe Falle, nur ein Feld später.
+          bildunterschrift: b.bildunterschrift,
         });
       } else {
         const restaurantId = restaurantIdByIndex[b.index];

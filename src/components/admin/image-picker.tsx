@@ -34,6 +34,8 @@ export interface ImageChoice {
    *  Reise-Editor rechnet daraus die fertige Anzeigehöhe eines Bildes aus. */
   width?: number;
   height?: number;
+  /** Der Alt-Text selbst (nicht `label`, das ersatzweise den Dateinamen nimmt). */
+  altText?: string;
 }
 
 export function ImagePicker({
@@ -47,6 +49,7 @@ export function ImagePicker({
   clearable = true,
   max,
   sortierbar = false,
+  proBild,
 }: {
   name?: string;
   legend: string;
@@ -66,6 +69,15 @@ export function ImagePicker({
    * darunter — die Reihenfolge ist dort die ganze Einstellung.
    */
   sortierbar?: boolean;
+  /**
+   * Zusätzliche Bedienung UNTER jedem gewählten Bild — z. B. ein Häkchen, das
+   * nur den Aufrufer etwas angeht.
+   *
+   * Als Render-Funktion statt fester Felder: Der Picker weiß nicht, was ein
+   * Reisebericht ist, und soll es auch nicht erfahren. Er sagt nur, WO das
+   * Bedienelement hingehört; WAS dort steht, entscheidet der Aufrufer.
+   */
+  proBild?: (imageId: number, position: number) => React.ReactNode;
   /** Nur Einzelauswahl: erlaubt das Abwählen ("Kein Bild"). Default true. */
   clearable?: boolean;
   /**
@@ -187,6 +199,7 @@ export function ImagePicker({
                   ))}
                 </div>
               )}
+              {proBild?.(c.id, pos)}
               {/* Bildausschnitt (Fokuspunkt) direkt am gewählten Bild anpassbar */}
               {c.fullUrl && (
                 <FocusPointEditor

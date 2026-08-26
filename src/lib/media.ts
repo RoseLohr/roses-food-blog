@@ -150,6 +150,10 @@ export async function listImageChoices(): Promise<
     focusY: number;
     width: number;
     height: number;
+    /** Der Alt-Text SELBST — nicht das Anzeige-Label, das ersatzweise den
+     *  Dateinamen nimmt. Wer fragen will „hat dieses Foto überhaupt einen
+     *  Alt-Text?", bekommt aus `label` eine falsche Antwort. */
+    altText: string;
   }>
 > {
   const rows = await db
@@ -179,6 +183,7 @@ export async function listImageChoices(): Promise<
       focusY: r.focusY,
       width: r.width,
       height: r.height,
+      altText: r.altText,
     };
   });
 }
