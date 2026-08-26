@@ -494,10 +494,14 @@ export function TravelEditor({
                         sortierbar
                         value={bildIds(e)}
                         // `mitBildern` statt einfach die IDs zu übernehmen:
-                        // Der Wähler gibt nur eine ID-Liste zurück; wer die
-                        // roh übernimmt, wirft die gesetzten Unterschriften
-                        // bei jedem Umsortieren still weg.
-                        onChange={(ids) => aendere(i, mitBildern(e, ids))}
+                        // Wer die roh übernimmt, wirft die gesetzten
+                        // Unterschriften bei jedem Umsortieren still weg. Die
+                        // HERKUNFT sagt dabei, welche Angabe zu welcher
+                        // Stelle gehört — die ID allein kann das nicht,
+                        // sobald ein Foto zweimal vorkommt.
+                        onChange={(ids, herkunft) =>
+                          aendere(i, mitBildern(e, ids, herkunft))
+                        }
                         // Angesprochen wird die STELLE, nicht die Bild-ID:
                         // Dasselbe Foto darf zweimal in einer Gruppe stehen,
                         // und dann sind es zwei Zeilen mit eigenen Angaben.

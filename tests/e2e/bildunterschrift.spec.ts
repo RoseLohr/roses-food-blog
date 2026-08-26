@@ -209,6 +209,67 @@ test("ein Fotowechsel nimmt dem Einzelbild die Unterschrift", async ({ page }) =
   ).not.toBeChecked();
 });
 
+test("dasselbe Foto zweimal in einer Gruppe: das Entfernen trifft die STELLE", async ({
+  page,
+}) => {
+  // DER BEFUND (Gegenprüfung, zweite Runde): Über den Archiv-Import kann
+  // dasselbe Foto zweimal in EINER Gruppe stehen. Der Bilderwähler meldete
+  // seine Änderung als reine ID-Liste — und aus [7, 7] wird beim Entfernen der
+  // ERSTEN Kachel dieselbe Liste [7] wie beim Entfernen der zweiten. Die
+  // Unterschrift des GELÖSCHTEN Fotos landete damit am überlebenden: eine
+  // sichtbare Bildunterschrift ohne eigenes Opt-in.
+  //
+  // Der Zustand ist über die Oberfläche nicht herzustellen (die Bibliothek
+  // schaltet je Foto um), also wird er hier so angelegt, wie ein Import ihn
+  // anlegen würde: direkt in der Datenbank.
+  const db = new Database(path.resolve(process.cwd(), ".pw-data/app.db"));
+  const bloecke = db
+    .prepare(
+      "SELECT id, image_id FROM travel_block WHERE travel_post_id = ? AND gruppe IS NOT NULL ORDER BY sort_order",
+    )
+    .all(travelId) as Array<{ id: number; image_id: number }>;
+  expect(bloecke.length).toBeGreaterThanOrEqual(2);
+  // Zweites Bild auf DASSELBE Foto wie das erste — beide in derselben Gruppe.
+  // Das erste trägt eine Unterschrift, das zweite nicht.
+  db.prepare("UPDATE travel_block SET image_id = ?, bildunterschrift = 0 WHERE id = ?")
+    .run(bloecke[0].image_id, bloecke[1].id);
+  db.prepare("UPDATE travel_block SET bildunterschrift = 1 WHERE id = ?").run(bloecke[0].id);
+  // Alles Weitere aus der Gruppe heraus, damit die Stellen eindeutig sind.
+  for (const b of bloecke.slice(2)) {
+    db.prepare("DELETE FROM travel_block WHERE id = ?").run(b.id);
+  }
+  db.close();
+
+  await page.goto(`/admin/reisen/${travelId}`);
+  const haken = page.locator(GRUPPE).getByRole("checkbox", {
+    name: d.blockBildunterschrift,
+  });
+  await expect(haken).toHaveCount(2);
+  await expect(haken.nth(0)).toBeChecked();
+  await expect(haken.nth(1)).not.toBeChecked();
+
+  // Die ERSTE Kachel entfernen — die mit der Unterschrift.
+  await page.locator(GRUPPE).getByRole("button", { name: ip.remove }).first().click();
+
+  const uebrig = page.locator(GRUPPE).getByRole("checkbox", {
+    name: d.blockBildunterschrift,
+  });
+  await expect(uebrig).toHaveCount(1);
+  // Übrig ist die ZWEITE Stelle — ohne Unterschrift.
+  await expect(uebrig).not.toBeChecked();
+
+  await speichern(page);
+  const nachher = new Database(path.resolve(process.cwd(), ".pw-data/app.db"));
+  const rest = nachher
+    .prepare(
+      "SELECT bildunterschrift FROM travel_block WHERE travel_post_id = ? AND gruppe IS NOT NULL",
+    )
+    .all(travelId) as Array<{ bildunterschrift: number }>;
+  nachher.close();
+  expect(rest).toHaveLength(1);
+  expect(rest[0].bildunterschrift).toBe(0);
+});
+
 /** Aufräumen (B8): Der angelegte Bericht verschwindet wieder. */
 test.afterAll(() => {
   if (travelId === null) return;

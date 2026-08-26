@@ -106,30 +106,52 @@ export function bildIds(gruppe: Bildgruppe): number[] {
  * Angaben der Fotos BEHALTEN, die schon drin waren.
  *
  * Ohne das verlöre ein Umsortieren im Wähler jede gesetzte Unterschrift — die
- * Auswahl kommt als bloße ID-Liste zurück, und wer sie einfach übernimmt,
- * ersetzt gesetzte Häkchen still durch die Vorgabe. Neue Fotos starten ohne.
+ * Auswahl kommt als neue Liste zurück, und wer sie einfach übernimmt, ersetzt
+ * gesetzte Häkchen still durch die Vorgabe.
  *
- * Je Bild-ID steht dabei eine SCHLANGE der bekannten Angaben, nicht ein
- * einzelner Wert: Ein Foto darf zweimal in derselben Gruppe stehen (über den
- * Archiv-Import erreichbar), und dann sind es zwei Zeilen mit womöglich
- * verschiedenen Angaben. Ein einzelner Wert je ID könnte nur eine davon
- * kennen — aus [aus, an] würde beim ersten Pfeilklick [an, an]. Das erste
- * Vorkommen erbt deshalb die erste Angabe, das zweite die zweite; ein
- * weiteres Vorkommen ist neu und startet ohne.
+ * Zugeordnet wird über die HERKUNFT, die der Wähler mitliefert: `herkunft[i]`
+ * ist die Stelle, an der der Eintrag vorher stand, oder `null` für ein neu
+ * hinzugekommenes Foto.
+ *
+ * ── WARUM NICHT ÜBER DIE BILD-ID ────────────────────────────────────────────
+ *
+ * Weil die ID nicht eindeutig ist: Dasselbe Foto darf zweimal in einer Gruppe
+ * stehen (über den Archiv-Import erreichbar). Eine Zuordnung nach ID kennt
+ * dann nur eine der beiden Angaben. Und eine Zuordnung nach REIHENFOLGE der
+ * gleichen IDs rät ebenfalls: Steht dort [7 mit, 7 ohne] und der Benutzer
+ * entfernt die ERSTE Kachel, kommt [7] heraus — genau dieselbe Liste wie beim
+ * Entfernen der zweiten. Das Foto, das übrig bleibt, bekäme die Unterschrift
+ * des gelöschten. Ein Tausch zweier gleicher IDs wäre in der Liste sogar gar
+ * nicht zu sehen.
+ *
+ * Die Herkunft sagt es ohne Raten. Zeigt sie ins Leere oder auf ein ANDERES
+ * Foto, gilt die Angabe nicht: Eine Unterschrift ist die Freigabe für den
+ * Alt-Text EINES bestimmten Bildes.
  */
-export function mitBildern(gruppe: Bildgruppe, ids: number[]): Bildgruppe {
-  const bekannt = new Map<number, boolean[]>();
-  for (const b of gruppe.bilder) {
-    const schlange = bekannt.get(b.imageId);
-    if (schlange) schlange.push(b.bildunterschrift);
-    else bekannt.set(b.imageId, [b.bildunterschrift]);
-  }
+export function mitBildern(
+  gruppe: Bildgruppe,
+  ids: number[],
+  herkunft: (number | null)[],
+): Bildgruppe {
+  // Nachschlagen über eine Karte statt über den Index: Eine `null`-Herkunft
+  // (neu hinzugekommen) und eine Stelle außerhalb der Liste treffen dann
+  // beide ins Leere, ohne dass davor eine eigene Abfrage stehen muss. Genau
+  // die stand hier zuerst — und war ein Zweig, den kein Verhalten
+  // unterscheidet: `bilder[null]` ist in JavaScript ebenfalls `undefined`.
+  // Ein Zweig, den kein Test halten kann, gehört nicht in den Quelltext.
+  const anStelle = new Map<number | null, GruppenBild>(
+    gruppe.bilder.map((b, i) => [i, b]),
+  );
   return {
     ...gruppe,
-    bilder: ids.map((imageId) => ({
-      imageId,
-      bildunterschrift: bekannt.get(imageId)?.shift() ?? false,
-    })),
+    bilder: ids.map((imageId, i) => {
+      const vorher = anStelle.get(herkunft[i]);
+      return {
+        imageId,
+        bildunterschrift:
+          vorher?.imageId === imageId ? vorher.bildunterschrift : false,
+      };
+    }),
   };
 }
 

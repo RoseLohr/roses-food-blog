@@ -251,11 +251,11 @@ describe("Die Fotoauswahl einer Gruppe", () => {
   });
 
   it("behält beim Umsortieren die gesetzten Unterschriften", () => {
-    // DER PUNKT: Der Bilderwähler gibt nur eine ID-Liste zurück. Wer die roh
-    // übernimmt, ersetzt jedes gesetzte Häkchen still durch die Vorgabe — die
-    // Unterschriften wären nach jedem Pfeilklick weg.
+    // DER PUNKT: Der Bilderwähler gibt eine neue Liste zurück. Wer nur die
+    // IDs übernimmt, ersetzt jedes gesetzte Häkchen still durch die Vorgabe —
+    // die Unterschriften wären nach jedem Pfeilklick weg.
     const vorher = gruppe([[7, true], [8, false], [9, true]]);
-    expect(mitBildern(vorher, [9, 7, 8]).bilder).toEqual([
+    expect(mitBildern(vorher, [9, 7, 8], [2, 0, 1]).bilder).toEqual([
       { imageId: 9, bildunterschrift: true },
       { imageId: 7, bildunterschrift: true },
       { imageId: 8, bildunterschrift: false },
@@ -263,50 +263,73 @@ describe("Die Fotoauswahl einer Gruppe", () => {
   });
 
   it("gibt einem NEU hinzugekommenen Foto keine Unterschrift", () => {
-    expect(mitBildern(gruppe([[7, true]]), [7, 42]).bilder).toEqual([
+    expect(mitBildern(gruppe([[7, true]]), [7, 42], [0, null]).bilder).toEqual([
       { imageId: 7, bildunterschrift: true },
       { imageId: 42, bildunterschrift: false },
     ]);
   });
 
   it("vergisst ein entferntes Foto samt seiner Angabe", () => {
-    expect(mitBildern(gruppe([[7, true], [8, true]]), [8]).bilder).toEqual([
+    expect(mitBildern(gruppe([[7, true], [8, true]]), [8], [1]).bilder).toEqual([
       { imageId: 8, bildunterschrift: true },
     ]);
   });
 
   it("kommt mit einer geleerten Auswahl zurecht", () => {
-    expect(mitBildern(gruppe([[7, true]]), []).bilder).toEqual([]);
+    expect(mitBildern(gruppe([[7, true]]), [], []).bilder).toEqual([]);
   });
 
   it("lässt die übergebene Gruppe unangetastet", () => {
     const vorher = gruppe([[7, true]]);
-    mitBildern(vorher, [8]);
+    mitBildern(vorher, [8], [null]);
     expect(vorher.bilder).toEqual([{ imageId: 7, bildunterschrift: true }]);
   });
 
-  it("hält zwei Vorkommen DESSELBEN Fotos auseinander", () => {
-    // DER BEFUND (Gegenprüfung zu PR #121): Die Zuordnung lief über die
-    // BILD-ID. Ein Foto, das zweimal in derselben Gruppe steht — über den
-    // Archiv-Import erreichbar —, hat aber zwei Zeilen mit womöglich
-    // verschiedenen Angaben. Eine Zuordnung nach ID kann davon nur eine
-    // kennen: Aus [aus, an] wurde beim ersten Pfeilklick [an, an], und das
-    // erste Foto bekam eine Unterschrift, die niemand bestellt hat.
-    //
-    // Richtig ist die POSITION: Das erste Vorkommen von 7 erbt die Angabe des
-    // ersten, das zweite die des zweiten.
-    const vorher = gruppe([[7, false], [7, true]]);
-    expect(mitBildern(vorher, [7, 7]).bilder).toEqual([
+  it("behält beim Entfernen die Angabe der ÜBERLEBENDEN Stelle", () => {
+    // DER BEFUND (Gegenprüfung, zweite Runde): Zwei Vorkommen desselben
+    // Fotos, das erste mit Unterschrift. Wer die ERSTE Kachel entfernt, muss
+    // das zweite Foto OHNE Unterschrift übrig behalten. Eine ID-Liste allein
+    // kann das nicht sagen — [7] entsteht auch beim Entfernen des zweiten.
+    // Die Herkunft sagt es: Stelle 1 hat überlebt.
+    const vorher = gruppe([[7, true], [7, false]]);
+    expect(mitBildern(vorher, [7], [1]).bilder).toEqual([
+      { imageId: 7, bildunterschrift: false },
+    ]);
+    // Und andersherum ebenso.
+    expect(mitBildern(vorher, [7], [0]).bilder).toEqual([
+      { imageId: 7, bildunterschrift: true },
+    ]);
+  });
+
+  it("bewegt beim Tauschen zweier GLEICHER Fotos auch die Angaben mit", () => {
+    // Die ID-Liste ist vor und nach dem Tausch dieselbe — die Bewegung wäre
+    // in ihr gar nicht zu sehen, und die Angaben blieben stehen.
+    const vorher = gruppe([[7, true], [7, false]]);
+    expect(mitBildern(vorher, [7, 7], [1, 0]).bilder).toEqual([
       { imageId: 7, bildunterschrift: false },
       { imageId: 7, bildunterschrift: true },
     ]);
   });
 
   it("gibt einem DRITTEN Vorkommen keine Unterschrift", () => {
-    // Es gibt nur zwei bekannte Angaben — die dritte Zeile ist neu.
-    expect(mitBildern(gruppe([[7, true], [7, true]]), [7, 7, 7]).bilder).toEqual([
+    expect(
+      mitBildern(gruppe([[7, true], [7, true]]), [7, 7, 7], [0, 1, null]).bilder,
+    ).toEqual([
       { imageId: 7, bildunterschrift: true },
       { imageId: 7, bildunterschrift: true },
+      { imageId: 7, bildunterschrift: false },
+    ]);
+  });
+
+  it("verwirft die Angabe, wenn an der Herkunftsstelle ein ANDERES Foto stand", () => {
+    // Ein Sicherheitsnetz gegen eine unstimmige Herkunft: Die Unterschrift
+    // gehört zum Alt-Text EINES bestimmten Fotos. Zeigt die Herkunft auf ein
+    // anderes, ist sie für dieses Foto nicht freigegeben.
+    expect(mitBildern(gruppe([[7, true]]), [8], [0]).bilder).toEqual([
+      { imageId: 8, bildunterschrift: false },
+    ]);
+    // Ebenso eine Stelle, die es gar nicht gibt.
+    expect(mitBildern(gruppe([[7, true]]), [7], [5]).bilder).toEqual([
       { imageId: 7, bildunterschrift: false },
     ]);
   });

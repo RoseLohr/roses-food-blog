@@ -56,7 +56,16 @@ export function ImagePicker({
   options: ImageChoice[];
   selectedIds?: number[];
   value?: number[];
-  onChange?: (ids: number[]) => void;
+  /**
+   * Die neue Auswahl. `herkunft[i]` sagt, WOHER der Eintrag an Stelle `i`
+   * kommt: die vorige Stelle, oder `null` für ein neu hinzugekommenes Bild.
+   *
+   * Wer je Bild eigene Angaben führt, ordnet sie damit richtig zu. Die bloße
+   * ID-Liste kann das nicht, sobald dasselbe Bild zweimal in der Auswahl
+   * steht — siehe `setzeAuswahl`. Wer keine solchen Angaben hat, lässt den
+   * zweiten Parameter einfach weg.
+   */
+  onChange?: (ids: number[], herkunft: (number | null)[]) => void;
   multiple: boolean;
   /**
    * Nur Mehrfachauswahl: Die Reihenfolge BEDEUTET etwas — dann bekommt jedes
@@ -94,10 +103,31 @@ export function ImagePicker({
   const selected = controlled ? (value ?? []) : internalSel;
   const [open, setOpen] = useState(false);
 
-  function setSelection(next: number[]) {
-    if (controlled) onChange(next);
-    else setInternalSel(next);
+  /**
+   * Jede Änderung der Auswahl als HERKUNFTSLISTE: je Eintrag entweder die
+   * Stelle, an der das Bild vorher stand, oder ein neu hinzugekommenes Bild.
+   *
+   * ── WARUM NICHT EINFACH DIE NEUE ID-LISTE ────────────────────────────────
+   *
+   * Weil eine ID-Liste eine VERLUSTBEHAFTETE Abbildung einer Stellenoperation
+   * ist, sobald dasselbe Bild zweimal in der Auswahl steht (über den
+   * Archiv-Import erreichbar). Steht dort [A, A] und der Benutzer entfernt die
+   * ERSTE Kachel, kommt [A] heraus — dieselbe Liste, die auch beim Entfernen
+   * der ZWEITEN entstünde. Wer je Bild eigene Angaben führt (im Reise-Editor
+   * die Bildunterschrift), kann die überlebende nicht mehr zuordnen und rät.
+   * Ein Tausch zweier gleicher IDs ist in der ID-Liste sogar gar nicht zu
+   * sehen.
+   *
+   * Deshalb sagt der Wähler jetzt, WOHER jeder Eintrag kommt. Raten entfällt.
+   */
+  type Schritt = { von: number } | { neu: number };
+  function setzeAuswahl(schritte: Schritt[]) {
+    const ids = schritte.map((s) => ("von" in s ? selected[s.von] : s.neu));
+    if (controlled) onChange(ids, schritte.map((s) => ("von" in s ? s.von : null)));
+    else setInternalSel(ids);
   }
+  /** Die jetzige Auswahl als Herkunftsliste — Ausgangspunkt jeder Änderung. */
+  const bisher = (): Schritt[] => selected.map((_, i) => ({ von: i }));
 
   /** Voll: Weitere Bilder lassen sich nicht mehr dazunehmen. */
   const voll = multiple && max !== undefined && selected.length >= max;
@@ -105,21 +135,27 @@ export function ImagePicker({
   function pick(id: number) {
     if (multiple) {
       if (selected.includes(id)) {
-        setSelection(selected.filter((x) => x !== id));
+        // Die Kachel in der Bibliothek zeigt EIN Foto, nicht eine Stelle:
+        // Sie abzuwählen heißt „dieses Foto nicht mehr", also alle Vorkommen.
+        setzeAuswahl(bisher().filter((s) => selected[(s as { von: number }).von] !== id));
         return;
       }
       if (voll) return;
-      setSelection([...selected, id]);
+      setzeAuswahl([...bisher(), { neu: id }]);
     } else {
-      setSelection([id]);
+      setzeAuswahl([{ neu: id }]);
       setOpen(false);
     }
   }
 
   /** Ein Bild um einen Platz verschieben. Am Rand passiert nichts. */
   function verschiebe(von: number, richtung: Richtung) {
-    const next = verschoben(selected, von, richtung);
-    if (next !== selected) setSelection([...next]);
+    // Verschoben wird die HERKUNFTSLISTE, nicht die ID-Liste: Bei zwei
+    // gleichen IDs wäre die vertauschte ID-Liste identisch mit der alten —
+    // die Bewegung wäre unsichtbar und die Angaben blieben an Ort und Stelle.
+    const schritte = bisher();
+    const next = verschoben(schritte, von, richtung);
+    if (next !== schritte) setzeAuswahl([...next]);
   }
 
   const byId = new Map(options.map((o) => [o.id, o]));
@@ -180,9 +216,7 @@ export function ImagePicker({
                   type="button"
                   // Das × meint DIESE Kachel. Nach der Bild-ID zu filtern
                   // nähme bei zwei Vorkommen desselben Fotos beide heraus.
-                  onClick={() =>
-                    setSelection(selected.filter((_, x) => x !== pos))
-                  }
+                  onClick={() => setzeAuswahl(bisher().filter((_, x) => x !== pos))}
                   aria-label={ip.remove}
                   title={ip.remove}
                   className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-sm text-white opacity-0 transition group-hover:opacity-100"
@@ -259,7 +293,7 @@ export function ImagePicker({
           clearable={clearable}
           voll={voll}
           onPick={pick}
-          onClear={() => setSelection([])}
+          onClear={() => setzeAuswahl([])}
           onClose={() => setOpen(false)}
           onUploaded={(img) => {
             setOptions((prev) =>
@@ -270,9 +304,9 @@ export function ImagePicker({
               // in der BIBLIOTHEK (oben), aber nicht in der Auswahl — sonst
               // fiele ein anderes still heraus.
               if (!selected.includes(img.id) && !voll)
-                setSelection([...selected, img.id]);
+                setzeAuswahl([...bisher(), { neu: img.id }]);
             } else {
-              setSelection([img.id]);
+              setzeAuswahl([{ neu: img.id }]);
               setOpen(false);
             }
           }}
