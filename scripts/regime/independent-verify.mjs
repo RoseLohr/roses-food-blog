@@ -234,6 +234,61 @@ const REQUIRED_APPROVER = (process.env.VERIFIER_REQUIRED_APPROVER || "gpt-5.6-so
 const _minOthersEnv = Number(process.env.VERIFIER_MIN_OTHER_APPROVERS);
 const MIN_OTHERS = Number.isFinite(_minOthersEnv) && _minOthersEnv >= 1 ? Math.floor(_minOthersEnv) : 1;
 
+// Rate-Limit/Timeout/Conflict und 5xx. Auch 401 wird als transient behandelt:
+// beobachtet wurde ein flakiges „insufficient permissions" auf EINER von drei
+// identischen, gleichzeitigen Anfragen (Load-Balancer-Knoten) — derselbe Key/Modell
+// lieferte die anderen Stimmen korrekt. Deterministische Client-Fehler
+// (400/403/404) NICHT retryen — das Ergebnis ändert sich nicht.
+// Steht hier oben bei den übrigen reinen Entscheidungen, damit der --selftest
+// sie ausführen kann.
+export const isTransient = (s) => s === 401 || s === 408 || s === 409 || s === 429 || s >= 500;
+
+/**
+ * Ist das eine STIMME — also etwas, worüber sich abstimmen lässt?
+ *
+ * Eine Stimme ist zugestellt (`ok`), geparst (`v`) und trägt ein boolesches
+ * `refuted`. Alles andere ist KEIN Urteil, sondern eine Nicht-Antwort.
+ *
+ * Die Frage stand vorher dreimal wortgleich als lokales `isValid` in
+ * requireApprovals(), attestReasons() und attestProof(). Sie ist der Begriff,
+ * auf dem jedes Gate aufsetzt, und gehört deshalb einmal hierher.
+ */
+/** Was im Protokoll steht, wenn der Endpunkt zwar antwortet, aber nichts Verwertbares. */
+export const NICHTANTWORT = "Antwort ohne verwertbares refuted-Feld (Nicht-Antwort, kein Urteil)";
+
+export function istStimme(x) {
+  return !!(x && x.ok && x.v && typeof x.v.refuted === "boolean");
+}
+
+/**
+ * Was ist mit einer Antwort des Verifier-Endpunkts zu tun?
+ *
+ *   "stimme"     — verwertbar, die Runde ist fertig.
+ *   "erneut"     — nichts Verwertbares, aber ein neuer Versuch kann helfen.
+ *   "endgueltig" — deterministischer Fehler; ein Retry ändert nichts.
+ *
+ * ── DER BEFUND (08/2026) ────────────────────────────────────────────────────
+ *
+ * Der Retry hing allein an der ZUSTELLUNG: Netzfehler und 5xx wurden erneut
+ * versucht, eine HTTP-200-Antwort mit unbrauchbarer Nutzlast dagegen als
+ * abgegebene Stimme gewertet. Genau das trat auf (PR #122, zweimal): Eine
+ * Stimme lieferte `refuted=undefined` ohne Begründung, das Panel verweigerte
+ * fail-closed — und der einzige Weg zurück war, den ganzen Job neu zu starten,
+ * obwohl es keinen Befund gab, auf den man hätte antworten können.
+ *
+ * Eine leere Nutzlast ist kein Urteil. Sie ist derselbe Ausfall wie ein
+ * abgerissenes Netz, nur eine Schicht höher — und wird deshalb genauso
+ * behandelt. Fail-closed bleibt fail-closed: Sind alle Versuche verbraucht,
+ * blockt das Panel weiterhin, nur eben nach drei Anläufen statt nach einem und
+ * mit der richtigen Begründung.
+ */
+export function zustellung(x) {
+  if (istStimme(x)) return "stimme";
+  // Zugestellt, aber nichts Verwertbares darin → Nicht-Antwort, kein Urteil.
+  if (x?.ok) return "erneut";
+  return x?.status !== undefined && !isTransient(x.status) ? "endgueltig" : "erneut";
+}
+
 /**
  * Reine Entscheidungsfunktion PRO Stimme. Fail-CLOSED: eine Antwort ohne
  * boolesches `refuted` (Feld fehlt / unparsbar) blockiert. Ein Refutat mit
@@ -257,10 +312,18 @@ export function decide(v) {
 export function strictAnyRefutation(votes, models) {
   for (let i = 0; i < votes.length; i++) {
     const x = votes[i];
-    if (x?.ok && decide(x.v).block) {
+    const urteil = decide(x?.v);
+    if (x?.ok && urteil.block) {
+      // Eine Stimme OHNE verwertbares Urteil hat nicht refutiert — sie hat
+      // nicht geantwortet. Beides blockt (fail-closed), aber die Meldung muss
+      // sie unterscheiden: „refutiert (confidence=?)" schickt den Leser auf
+      // die Suche nach einem Befund, den es gar nicht gibt (beobachtet an
+      // PR #122, zweimal).
       return {
         block: true,
-        reason: `Strikt-Modus: ${models[i]} refutiert (confidence=${x.v?.confidence ?? "?"}) → fail-closed`,
+        reason: istStimme(x)
+          ? `Strikt-Modus: ${models[i]} refutiert (confidence=${x.v.confidence ?? "?"}) → fail-closed`
+          : `Strikt-Modus: ${models[i]} ohne verwertbares Urteil (${urteil.reason}) → fail-closed`,
       };
     }
   }
@@ -309,7 +372,6 @@ export function modelMatches(modelId, want) {
 export function requireApprovals(votes, models, requiredApprover, minOthers = 1, challenge = null) {
   // NaN/negativ/Unfug → 1 (sonst würde `need = NaN` jeden Vergleich fail-open machen).
   const need = Number.isFinite(minOthers) && minOthers >= 1 ? Math.floor(minOthers) : 1;
-  const isValid = (x) => !!(x && x.ok && x.v && typeof x.v.refuted === "boolean");
   const reqIdx = new Set();
   for (let i = 0; i < votes.length; i++) {
     if (modelMatches(models[i], requiredApprover)) reqIdx.add(i);
@@ -318,7 +380,7 @@ export function requireApprovals(votes, models, requiredApprover, minOthers = 1,
     return { block: true, reason: `Pflicht-Approver „${requiredApprover}" nicht im Panel aufgelöst (nicht freigeschaltet oder durch Fallback ersetzt) → fail-closed` };
   for (const i of reqIdx) {
     const x = votes[i];
-    if (!isValid(x))
+    if (!istStimme(x))
       return { block: true, reason: `Pflicht-Approver „${requiredApprover}" ohne gültige Stimme (Fehler/unparsbar) → fail-closed` };
     if (x.v.refuted !== false)
       return { block: true, reason: `Pflicht-Approver „${requiredApprover}" stimmt NICHT zu (refuted, confidence=${x.v.confidence ?? "?"}) → Veto, fail-closed` };
@@ -334,7 +396,7 @@ export function requireApprovals(votes, models, requiredApprover, minOthers = 1,
   // Unabhängige Korroboration: DISTINCT Nicht-Pflicht-Modelle mit Zustimmung.
   const independent = new Set();
   votes.forEach((x, i) => {
-    if (!reqIdx.has(i) && isValid(x) && x.v.refuted === false && models[i]) independent.add(models[i]);
+    if (!reqIdx.has(i) && istStimme(x) && x.v.refuted === false && models[i]) independent.add(models[i]);
   });
   if (independent.size < need)
     return { block: true, reason: `nur ${independent.size} unabhängige(s) zustimmende(s) Modell(e) neben „${requiredApprover}" (< ${need}) → keine unabhängige Korroboration, fail-closed` };
@@ -388,7 +450,7 @@ export function attestReasons(votes, panelSize) {
   const norm = normReason;
   // Nur GRÜN tragende Stimmen (gültig, geparst, decide()-durchgelassen), Begründung
   // mit echter Substanz nach Normalisierung.
-  const green = votes.filter((x) => x.ok && x.v && typeof x.v.refuted === "boolean" && !decide(x.v).block);
+  const green = votes.filter((x) => istStimme(x) && !decide(x.v).block);
   const normed = green.map((x) => norm(x.v.reason)).filter((s) => s.length >= MIN_REASON_LEN);
   if (normed.length < need)
     return { block: true, reason: `nur ${normed.length}/${panelSize} Grün-Stimmen mit echter Begründung (< Mehrheit ${need}) → Schein-Grün-Verdacht, fail-closed` };
@@ -416,7 +478,7 @@ export function attestReasons(votes, panelSize) {
  */
 export function attestProof(votes, challenge, panelSize) {
   const need = Math.floor(panelSize / 2) + 1; // Mehrheit
-  const green = votes.filter((x) => x.ok && x.v && typeof x.v.refuted === "boolean" && !decide(x.v).block);
+  const green = votes.filter((x) => istStimme(x) && !decide(x.v).block);
   const proven = green.filter((x) => hasValidProof(x.v, challenge));
   if (proven.length < need)
     return { block: true, reason: `nur ${proven.length}/${panelSize} Grün-Stimmen mit gültigem Proof-of-Check (Challenge-Echo) (< Mehrheit ${need}) → Verdacht auf hartcodiertes Grün, fail-closed` };
@@ -734,6 +796,31 @@ if (process.argv.includes("--selftest")) {
   expect(requireApprovals([RF, A2, A], SM, "gpt-5.6-sol", 1).block === false
     && strictAnyRefutation([RF, A2, A], SM).block === true,
     "derselbe Stimmensatz: Standard grün, Strikt-Modus block — die Option ist wirksam.");
+  // istStimme() + zustellung(): eine Nicht-Antwort ist kein Urteil.
+  expect(istStimme({ ok: true, v: { refuted: false } }) === true, "zugestellt + geparst + boolesches refuted = Stimme.");
+  expect(istStimme({ ok: true, v: {} }) === false, "ohne refuted-Feld ist es keine Stimme.");
+  expect(istStimme({ ok: true, v: { refuted: "vielleicht" } }) === false, "refuted muss BOOLESCH sein.");
+  expect(istStimme({ ok: false, v: { refuted: false } }) === false, "nicht zugestellt ist keine Stimme.");
+  expect(istStimme(undefined) === false, "gar nichts ist keine Stimme.");
+  expect(zustellung({ ok: true, v: { refuted: true, confidence: "high" } }) === "stimme", "ein Refutat IST eine Stimme — kein Retry.");
+  // DER BEFUND: Genau dieser Fall galt als abgegebene Stimme und wurde nie
+  // wiederholt — HTTP 200, leere Nutzlast, Panel fail-closed ohne Befund.
+  expect(zustellung({ ok: true, v: {} }) === "erneut", "200 mit unbrauchbarer Nutzlast ist eine Nicht-Antwort → erneut versuchen.");
+  expect(zustellung({ ok: true, v: null }) === "erneut", "gar keine Nutzlast ebenso.");
+  expect(zustellung({ ok: false, status: 500 }) === "erneut", "5xx bleibt transient.");
+  expect(zustellung({ ok: false, status: 401 }) === "erneut", "401 bleibt transient (flakiger LB-Knoten).");
+  expect(zustellung({ ok: false }) === "erneut", "Netzfehler ohne Status bleibt transient.");
+  expect(zustellung({ ok: false, status: 400 }) === "endgueltig", "400 ändert sich nicht — kein Retry.");
+  expect(zustellung({ ok: false, status: 404 }) === "endgueltig", "404 ebenso.");
+  // Und der Modus bleibt FAIL-CLOSED: Nach verbrauchten Versuchen blockt die
+  // Nicht-Antwort weiterhin — nur mit der richtigen Begründung.
+  const ohneUrteil = { ok: true, v: {} };
+  const SM2 = ["a/1", "b/2", "c/3"];
+  expect(strictAnyRefutation([A, A2, ohneUrteil], SM2).block === true, "eine Nicht-Antwort blockt weiterhin (fail-closed).");
+  expect(!strictAnyRefutation([A, A2, ohneUrteil], SM2).reason.includes("refutiert"), "sie darf aber NICHT „refutiert\" heißen — es gibt keinen Befund.");
+  expect(strictAnyRefutation([A, A2, ohneUrteil], SM2).reason.includes("c/3"), "die Meldung benennt die stumme Stimme.");
+  expect(strictAnyRefutation([A, A2, RF], SM2).reason.includes("refutiert"), "ein echtes Refutat heißt weiterhin refutiert.");
+
   console.log("   ✓ Selbsttest: decide() + modelMatches() + requireApprovals() (Pflicht-Approver Sol + Korroboration) + attestReasons() + attestProof() + validateRangeInputs() + normalizeBase() + authHeader() + strictAnyRefutation() + mdInline() + renderStepSummary() korrekt.");
   process.exit(0);
 }
@@ -830,13 +917,6 @@ function parseVerdict(content) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // Transient = vorübergehend, ein Retry kann helfen: Netzfehler (kein Status),
-// Rate-Limit/Timeout/Conflict und 5xx. Auch 401 wird als transient behandelt:
-// beobachtet wurde ein flakiges „insufficient permissions" auf EINER von drei
-// identischen, gleichzeitigen Anfragen (Load-Balancer-Knoten) — derselbe Key/Modell
-// lieferte die anderen Stimmen korrekt. Deterministische Client-Fehler
-// (400/403/404) NICHT retryen — das Ergebnis ändert sich nicht.
-const isTransient = (s) => s === 401 || s === 408 || s === 409 || s === 429 || s >= 500;
-
 const H = { "Content-Type": "application/json", ...AUTH };
 
 /** Text aus einem Responses-API-Response-OBJEKT ziehen: output_text (falls
@@ -1024,8 +1104,11 @@ async function verifyOnce(i) {
   for (let a = 1; a <= ATTEMPTS; a++) {
     try {
       last = await attemptOnce(i);
-      if (last.ok) return last;
-      if (last.status && !isTransient(last.status)) return last; // deterministisch → kein Retry
+      const wie = zustellung(last);
+      if (wie === "stimme" || wie === "endgueltig") return last;
+      // Zugestellt, aber ohne verwertbares Urteil: als Ausfall führen, damit
+      // das Protokoll „Fehler" sagt und nicht „refutiert". Siehe zustellung().
+      if (last.ok) last = { ok: false, reason: NICHTANTWORT };
     } catch (err) {
       last = { ok: false, reason: err instanceof Error ? err.message : String(err) }; // Netzfehler → transient
     }

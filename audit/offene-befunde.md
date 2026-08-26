@@ -738,3 +738,45 @@ Container-Stopp im Rollback ist seit Runde 4 geprüft, die SMTP-Übergabe seit
 Runde 3/4 vorhanden). Nachgesehen und verworfen; der Pflicht-Approver hatte
 recht, die dritte Stimme las einen älteren Stand.
 
+
+## B19 — Eine stumme Prüfstimme galt als Ablehnung — ERLEDIGT 08/2026
+
+**Befund.** Das Fremd-Vendor-Panel (`scripts/regime/independent-verify.mjs`)
+wiederholte einen Versuch nur, wenn die ZUSTELLUNG scheiterte: Netzfehler,
+5xx, 429, 401. Antwortete der Endpunkt dagegen mit HTTP 200 und einer
+Nutzlast ohne verwertbares `refuted`, zählte das als abgegebene Stimme — ohne
+jeden weiteren Versuch.
+
+Beobachtet an PR #122, zweimal hintereinander: `combo/SOTA-C` lieferte
+`refuted=undefined confidence=undefined` und „(keine Begründung geliefert)".
+Der Strikt-Modus blockte daraufhin — mit der Meldung
+
+    ⛔ Strikt-Modus: combo/SOTA-C refutiert (confidence=?) → fail-closed
+
+Zwei Dinge daran waren falsch:
+
+1. **Die Behandlung.** Eine leere Nutzlast ist kein Urteil, sondern derselbe
+   Ausfall wie ein abgerissenes Netz, nur eine Schicht höher. Sie gehört in
+   dieselbe Wiederholung. Ohne sie war der einzige Weg zurück, den ganzen Job
+   neu zu starten — was beim zweiten Mal genauso endete.
+
+2. **Die Meldung.** „refutiert" schickt den Leser auf die Suche nach einem
+   Befund, den es nicht gibt. Genau das ist hier passiert: Der Quelltext wurde
+   nach einem Fehler abgesucht, den keine Stimme je behauptet hatte.
+
+**Wurzel behoben.** Die Frage „ist das eine Stimme?" steht jetzt einmal
+(`istStimme`) statt dreimal wortgleich als lokales `isValid`, und
+`zustellung()` entscheidet in EINER reinen Funktion zwischen „stimme",
+„erneut" und „endgueltig". Eine zugestellte Nicht-Antwort ist „erneut".
+
+**Das Gate wird dadurch NICHT weicher.** Sind alle drei Versuche verbraucht,
+blockt die Nicht-Antwort weiterhin — nur eben nach drei Anläufen statt nach
+einem, und mit der Begründung „ohne verwertbares Urteil" statt „refutiert".
+Der `--selftest` hält beide Hälften fest; die Gegenprobe (alte
+Zustellungs-Logik bzw. alte Meldung) lässt jeweils genau die neue Zeile
+umfallen.
+
+**Reichweite, ehrlich.** Das behebt die stumme Stimme, nicht ihre Ursache beim
+Anbieter. Bleibt eine Stimme über alle drei Versuche stumm, ist der PR
+weiterhin rot — das ist beabsichtigt, denn dann hat nachweislich niemand
+geprüft.
