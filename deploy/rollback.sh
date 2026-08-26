@@ -20,6 +20,11 @@ fail(){ echo "[rollback] FEHLER: $*" >&2; exit 1; }
 # Nach `fail`, damit die dortige Notfassung nicht greift.
 # shellcheck source=deploy/db-restore.sh
 source "$(dirname "$0")/db-restore.sh"
+# Das Health-Gate steht ebenfalls in einer eigenen Datei: Es entscheidet hier
+# und in deploy/restore.sh dieselbe Frage. `curl -sf` war an BEIDEN Stellen
+# falsch (3xx galt als grün, keine Zeitschranke) — die Begründung dort.
+# shellcheck source=deploy/health-gate.sh
+source "$(dirname "$0")/health-gate.sh"
 
 # DIESELBE Konfigurationsquelle wie deploy.sh. Vorher riet das Skript
 # DATA_DIR=/opt/roses/data und PORT=3000 — auf der echten Anlage liegen die
@@ -333,7 +338,7 @@ $COMPOSE up -d || fail "Container-Neustart fehlgeschlagen."
 
 # 6. Healthcheck-Gate: erst grün, dann gilt der Rollback als erfolgreich.
 for i in $(seq 1 30); do
-  if curl -sf "$HEALTH_URL" >/dev/null 2>&1; then
+  if health_gruen "$HEALTH_URL"; then
     dur=$(( $(date +%s) - start ))
     log "Rollback erfolgreich in ${dur}s (Health grün)."
     exit 0

@@ -177,18 +177,7 @@ rotieren(){
     || echo "Rotation $familie: $weg Datei(en) älter als $KEEP_DAYS Tage entfernt."
 }
 
-if [[ $DB_OK -eq 1 ]]; then
-  rotieren "DB" 'app-*.db.gz' 'app-*.db'
-else
-  echo "Rotation DB übersprungen — dieser Lauf hat keine gültige Sicherung erzeugt."
-fi
-if [[ $UPLOADS_OK -eq 1 ]]; then
-  rotieren "Uploads" 'uploads-*.tar.gz'
-else
-  echo "Rotation Uploads übersprungen — dieser Lauf hat kein Archiv erzeugt."
-fi
-
-# ── 4. Ergebnis ────────────────────────────────────────────────────────────
+# ── 4. Ergebnis — und ZUERST, denn davon hängt die Rotation ab ────────────
 # Ein Lauf ohne gültige Sicherung ist kein erfolgreicher Lauf. Cron wertet den
 # Exit-Code aus; eine Warnung im Protokoll tut das niemand.
 #
@@ -202,6 +191,27 @@ fi
 Sicherungen in $BACKUP_DIR wurden NICHT rotiert."
 [[ $UPLOADS_NOETIG -eq 0 || $UPLOADS_OK -eq 1 ]] \
   || fail "Kein Uploads-Archiv in diesem Lauf ($STAMP), obwohl \
-$DATA_DIR/uploads existiert. Die vorhandenen Uploads-Archive in $BACKUP_DIR \
+$DATA_DIR/uploads existiert. Die vorhandenen Sicherungen in $BACKUP_DIR \
 wurden NICHT rotiert."
+
+# ── 5. Rotation — erst jetzt, weil der Lauf ALS GANZES gelungen sein muss ──
+#
+# Sie stand bis zur Gegenprüfung dieses Zweigs VOR dem Endgate und entschied
+# je Familie für sich. Ein Lauf, dessen DB-Sicherung fehlschlug, dessen `tar`
+# aber durchlief, löschte deshalb alte Uploads-Archive — und meldete danach
+# Fehler. Die Zusage in der README lautet aber: „Rotiert wird nur, was ersetzt
+# ist. Ein Fehllauf löscht nichts." Ein Lauf mit Exit != 0 IST ein Fehllauf.
+#
+# Die Bedingung je Familie bleibt trotzdem stehen: Sie ist die zweite Hälfte
+# derselben Zusage (gelöscht wird nur, wofür DIESER Lauf Ersatz erzeugt hat),
+# und ohne sie würde ein Lauf ohne uploads/ die Uploads-Archive wegräumen.
+if [[ $DB_OK -eq 1 ]]; then
+  rotieren "DB" 'app-*.db.gz' 'app-*.db'
+fi
+if [[ $UPLOADS_OK -eq 1 ]]; then
+  rotieren "Uploads" 'uploads-*.tar.gz'
+else
+  echo "Rotation Uploads übersprungen — dieser Lauf hat kein Archiv erzeugt."
+fi
+
 echo "Backup abgeschlossen: $STAMP"

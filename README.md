@@ -339,13 +339,27 @@ cd ~/roses-food-blog
 
 Das Medien-Archiv ist optional; ohne es wird nur die Datenbank eingespielt.
 
-Das Skript prüft ALLES Prüfbare, bevor es das Erste anfasst — es entpackt die
-Sicherung, liest sie mit `integrity_check` und sichert den jetzigen Stand nach
-`backups/pre-restore-*.db`. Scheitert etwas davon, ist nichts eingespielt und
-der Dienst läuft unverändert weiter. Erst danach wird gestoppt, mit derselben
-Funktion eingespielt, die auch der Rollback und der monatliche Drill fahren
-(`deploy/db-restore.sh`), und zum Schluss der Health-Endpunkt auf dem Port aus
-der `.env` abgefragt: erst grün, dann gilt die Wiederherstellung.
+Das Skript prüft ALLES Prüfbare, bevor es das Erste anfasst: Es entpackt die
+Sicherung, liest sie mit `integrity_check`, sieht dem Medien-Archiv ins
+Inhaltsverzeichnis (lesbar, und jedes Mitglied unter `uploads/` — ein Archiv,
+das `app.db` mitbrächte, überschriebe sonst die gerade eingespielte Datenbank)
+und sichert den jetzigen Stand nach `backups/pre-restore-*.db`, geprüft wie
+jede andere Sicherung auch. Scheitert etwas davon, ist nichts eingespielt und
+der Dienst läuft unverändert weiter.
+
+Erst danach wird gestoppt und mit derselben Funktion eingespielt, die auch der
+Rollback und der monatliche Drill fahren (`deploy/db-restore.sh`). Die Medien
+werden dabei **ersetzt, nicht überlagert**: Sie landen zuerst in einer
+Nebenablage, der bisherige Bestand wandert nach `uploads.alt`, dann tritt der
+neue an seine Stelle. Ein Auspacken, das in der Mitte abbricht, lässt den
+bisherigen Bestand damit unberührt, und Dateien, die das Backup nicht kennt,
+bleiben nicht als Mischbestand liegen. `uploads.alt` bleibt stehen — es ist
+das Einzige, wofür dieses Skript kein eigenes Netz spannt; wegräumen darf es,
+wer nachgesehen hat.
+
+Zum Schluss der Health-Endpunkt auf dem Port aus der `.env`: erst grün, dann
+gilt die Wiederherstellung. Grün heißt **HTTP 200** — eine Umleitung auf eine
+Wartungsseite ist keine Antwort der Anwendung.
 
 > **Warum kein Abtippen mehr.** Hier stand die Folge früher als einzelne Zeilen
 > zum Kopieren. In einer interaktiven Shell gilt weder `set -e` noch eine

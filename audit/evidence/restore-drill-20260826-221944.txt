@@ -1,0 +1,13 @@
+Restore-Drill 20260826-221944
+Ergebnis:      ERFOLG
+Rezepte quelle/restauriert:        4 / 4
+Nachher-Tabelle nach Restore:      nein (erwartet: nein)
+Negativkontrolle (naives cp):      3 Rezepte, Nachher-Tabelle ja (erwartet: ja)
+Dauer (s):     19
+Methode:       better-sqlite3 .backup (Online-API) → Restore über eine
+               LEBENDE Datenbank mit gefülltem WAL, gefahren mit der
+               Produktionsfunktion db_einspielen (deploy/db-restore.sh),
+               die auch deploy/rollback.sh quellt.
+Nicht geprüft: podman-Container (Produktion sichert/liest im Image),
+               Container-Stopp und Image-Rollback (dafür:
+               tests/rollback-ablauf.test.ts), Uploads-Archiv.

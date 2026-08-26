@@ -42,6 +42,10 @@ fail(){ echo "[restore] FEHLER: $*" >&2; exit 1; }
 # Nach `fail`, damit die dortige Notfassung nicht greift.
 # shellcheck source=deploy/db-restore.sh
 source "$(dirname "$0")/db-restore.sh"
+# Das Health-Gate ebenso: dieselbe Frage wie im Rollback, also dieselbe
+# Antwort. Warum sie nicht `curl -sf` lautet, steht dort.
+# shellcheck source=deploy/health-gate.sh
+source "$(dirname "$0")/health-gate.sh"
 
 # Rangfolge wie in rollback.sh und backup.sh: Aufrufer > .env > Standard.
 AUFRUFER_DATA_DIR="${DATA_DIR:-}"
@@ -104,6 +108,30 @@ log "Prüfe die eingehende Datenbank (integrity_check)"
   || { rm -f "$EINGEHEND"; fail "$DB_BACKUP ist nicht lesbar (integrity_check) — \
 nichts eingespielt, der Dienst läuft weiter."; }
 
+# Das Medien-Archiv wird HIER geprüft, nicht erst beim Auspacken.
+#
+# `tar -xzf … -C "$DATA_DIR"` packt aus, was drinsteht. Ein Archiv, das
+# `app.db` mitbringt, überschriebe damit die gerade eingespielte Datenbank —
+# NACH allen Prüfungen, an denen sie hängt. Und ein unlesbares Archiv fiele
+# erst auf, wenn der Dienst schon steht: ein Fehlschlag, der zusätzlich den
+# Dienst kostet (dieselbe Klasse wie der Befund aus PR #110).
+#
+# Verlangt wird: lesbar UND jedes Mitglied unter `uploads/`. Absolute Pfade
+# und `..` fallen damit ebenfalls heraus, ohne dass eine Liste verbotener
+# Muster gepflegt werden müsste — erlaubt ist genau eine Form.
+if [[ -n "$UPLOADS_ARCHIV" ]]; then
+  log "Prüfe das Medien-Archiv: $UPLOADS_ARCHIV"
+  MITGLIEDER="$(tar -tzf "$UPLOADS_ARCHIV")" \
+    || { rm -f "$EINGEHEND"; fail "$UPLOADS_ARCHIV ist nicht lesbar — nichts \
+eingespielt, der Dienst läuft weiter."; }
+  while IFS= read -r m; do
+    [[ -z "$m" ]] && continue
+    [[ "$m" == "uploads" || "$m" == "uploads/"* ]] \
+      || { rm -f "$EINGEHEND"; fail "$UPLOADS_ARCHIV enthält '$m' — erlaubt ist \
+nur uploads/. Nichts eingespielt, der Dienst läuft weiter."; }
+  done <<< "$MITGLIEDER"
+fi
+
 # ── 2. Den JETZIGEN Stand sichern, solange er noch steht ──────────────────
 #
 # Über die Online-Backup-API und nicht per `cp`: Die Anwendung fährt SQLite im
@@ -119,6 +147,20 @@ if [[ -f "$DATA_DIR/app.db" ]]; then
     "$VORHER" \
     || { rm -f "$EINGEHEND"; fail "Sicherung des jetzigen Standes fehlgeschlagen \
 — nichts eingespielt. Ohne Netz wird hier nicht weitergemacht."; }
+  # Der Exit-Status sagt nur, dass der Aufruf durchlief. Genau diese Lüge —
+  # podman meldet 0 und schreibt nichts — fängt deploy/backup.sh seit B16 ab;
+  # hier stand die Prüfung nicht, und das Netz wäre leer gewesen, während
+  # gleich darauf die Datenbank ersetzt wird.
+  [[ -s "$DATA_DIR/backups/$VORHER" ]] \
+    || { rm -f "$EINGEHEND" "$DATA_DIR/backups/$VORHER"; fail "Die Sicherung des \
+jetzigen Standes meldete Erfolg, aber backups/$VORHER fehlt oder ist leer — \
+nichts eingespielt."; }
+  "$PODMAN" run --rm --entrypoint node -v "$DATA_DIR:/data" localhost/roses-blog:latest \
+    -e "const db=require('better-sqlite3')('/data/backups/'+process.argv[1],{readonly:true});const r=db.pragma('integrity_check',{simple:true});db.close();if(r!=='ok'){console.error(r);process.exit(1)}" \
+    "$VORHER" \
+    || { rm -f "$EINGEHEND"; fail "Die Sicherung backups/$VORHER ist nicht \
+lesbar — nichts eingespielt. Ein Netz, in das niemand hineingesehen hat, ist \
+keins."; }
 fi
 
 # ── 3. Ab hier wird ersetzt ───────────────────────────────────────────────
@@ -136,9 +178,35 @@ rm -f "$EINGEHEND"
 
 if [[ -n "$UPLOADS_ARCHIV" ]]; then
   log "Spiele die Medien ein: $UPLOADS_ARCHIV"
-  tar -xzf "$UPLOADS_ARCHIV" -C "$DATA_DIR" \
-    || fail "Das Medien-Archiv ließ sich nicht auspacken. Die Datenbank steht \
-bereits auf dem gesicherten Stand; der Dienst ist NICHT gestartet."
+  # In eine NEBENABLAGE auspacken und dann tauschen, nicht über den Bestand
+  # legen. Zwei Gründe, und beide sind Zustände, die es sonst gäbe:
+  #
+  #   * Ein Auspacken, das in der Mitte abbricht, hinterließe einen halb
+  #     ersetzten Medienbestand. Hier bricht es in der Nebenablage ab, und der
+  #     bisherige Stand steht unberührt daneben.
+  #   * Dateien, die das Backup NICHT kennt, blieben liegen. Der Stand danach
+  #     wäre weder der gesicherte noch der vorige, sondern eine Mischung —
+  #     eine Wiederherstellung, die nichts wiederherstellt.
+  #
+  # Der vorige Stand wird beiseitegelegt, nicht gelöscht: Die Medien sind das
+  # Einzige, wofür dieses Skript kein eigenes Netz spannt.
+  rm -rf "$DATA_DIR/uploads.neu"
+  mkdir -p "$DATA_DIR/uploads.neu"
+  tar -xzf "$UPLOADS_ARCHIV" -C "$DATA_DIR/uploads.neu" \
+    || { rm -rf "$DATA_DIR/uploads.neu"; fail "Das Medien-Archiv ließ sich nicht \
+auspacken. Der bisherige Medienbestand ist UNVERÄNDERT; die Datenbank steht \
+bereits auf dem gesicherten Stand, der Dienst ist NICHT gestartet."; }
+  if [[ -d "$DATA_DIR/uploads" ]]; then
+    rm -rf "$DATA_DIR/uploads.alt"
+    mv "$DATA_DIR/uploads" "$DATA_DIR/uploads.alt" \
+      || fail "Der bisherige Medienbestand ließ sich nicht beiseitelegen."
+    log "Der bisherige Medienbestand liegt in $DATA_DIR/uploads.alt."
+  fi
+  mv "$DATA_DIR/uploads.neu/uploads" "$DATA_DIR/uploads" \
+    || fail "Der eingespielte Medienbestand ließ sich nicht an seinen Platz \
+bringen. Er liegt in $DATA_DIR/uploads.neu/uploads, der bisherige in \
+$DATA_DIR/uploads.alt."
+  rmdir "$DATA_DIR/uploads.neu" 2>/dev/null || true
 fi
 
 log "Starte den Dienst"
@@ -148,7 +216,7 @@ $COMPOSE up -d || fail "Container-Start fehlgeschlagen."
 # Der Port kommt aus der .env. Ein festes 3000 träfe auf dem Server einen
 # fremden Dienst und meldete Erfolg, während hier noch gar nichts steht.
 for _ in $(seq 1 30); do
-  if curl -sf "$HEALTH_URL" >/dev/null 2>&1; then
+  if health_gruen "$HEALTH_URL"; then
     log "Wiederherstellung erfolgreich (Health grün)."
     exit 0
   fi

@@ -346,6 +346,41 @@ describe("Ein Lauf ohne Medien-Archiv ist kein erfolgreicher Lauf", () => {
   });
 });
 
+describe("Ein Fehllauf löscht NICHTS — auch nicht in der anderen Familie", () => {
+  it("rotiert die Uploads nicht, wenn der Lauf am DB-Backup scheitert", () => {
+    // DER BEFUND (Gegenprüfung zu diesem PR): Die Rotation lief VOR dem
+    // Endgate und je Familie für sich. Ein Lauf, dessen DB-Sicherung
+    // fehlschlug, dessen `tar` aber durchlief, löschte alte Uploads-Archive —
+    // und meldete danach Fehler. Die README sagt zu: „Rotiert wird nur, was
+    // ersetzt ist. Ein Fehllauf löscht nichts." Ein Lauf mit Exit != 0 IST
+    // ein Fehllauf; die Zusage galt so nicht.
+    const platz = spielwiese();
+    podmanAttrappe(platz, false, true); // DB scheitert, Uploads gelingen
+    const altesArchiv = alteSicherung(platz, "uploads-20200101-000000.tar.gz");
+
+    const lauf = fahre(platz);
+
+    expect(lauf.code).not.toBe(0);
+    expect(fs.existsSync(altesArchiv)).toBe(true);
+  });
+
+  it("rotiert die DB nicht, wenn der Lauf am Uploads-Archiv scheitert", () => {
+    const platz = spielwiese();
+    podmanAttrappe(platz, true, true);
+    fs.writeFileSync(
+      path.join(platz.bin, "tar"),
+      "#!/usr/bin/env bash\nexit 1\n",
+      { mode: 0o755 },
+    );
+    const alteDb = alteSicherung(platz, "app-20200101-000000.db.gz");
+
+    const lauf = fahre(platz);
+
+    expect(lauf.code).not.toBe(0);
+    expect(fs.existsSync(alteDb)).toBe(true);
+  });
+});
+
 describe("BACKUP_DIR gilt auch dann, wenn es NICHT unter DATA_DIR liegt", () => {
   it("sichert in das angegebene Verzeichnis — nicht in DATA_DIR/backups", () => {
     // DER BEFUND: Das Skript reichte dem Container nur DATA_DIR herein und

@@ -31,8 +31,22 @@
 #   1. In eine Nebendatei kopieren — app.db bleibt unangetastet, ein halb
 #      geschriebenes Backup landet nie auf der echten Datenbank.
 #   2. Erst dann WAL und SHM entfernen. Bricht es hier ab, bleibt das ALTE
-#      app.db ohne WAL zurück: der letzte festgeschriebene Stand, in sich
-#      stimmig.
+#      app.db ohne WAL zurück: eine in sich STIMMIGE Datenbank.
+#
+#      Ehrlich gesagt ist das nicht der letzte festgeschriebene Stand — im
+#      WAL-Modus liegen festgeschriebene Transaktionen bis zum nächsten
+#      Checkpoint im `-wal`, und die sind mit ihm weg. (Der Satz stand hier
+#      falsch, bis die Gegenprüfung 08/2026 ihn aufgriff.) Die umgekehrte
+#      Reihenfolge wäre trotzdem SCHLECHTER, nicht besser: Sie hinterließe
+#      neues app.db neben altem WAL, SQLite spielte das WAL darüber, und der
+#      Restore wäre ein stiller No-op — ein falscher Stand, der sich für
+#      richtig ausgibt. Ein in sich stimmiger älterer Stand ist erkennbar.
+#
+#      Das Netz gegen diesen Verlust ist deshalb nicht die Reihenfolge,
+#      sondern die Sicherung DAVOR: deploy/rollback.sh und deploy/restore.sh
+#      ziehen den jetzigen Stand vorher über die Online-Backup-API (die das
+#      WAL mitliest) und prüfen sie mit integrity_check, bevor hier etwas
+#      angefasst wird.
 #   3. Umbenennen. `mv` innerhalb desselben Dateisystems ist atomar; einen
 #      Zwischenstand "neu und alt zugleich" gibt es nicht.
 #

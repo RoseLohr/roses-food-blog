@@ -153,9 +153,12 @@ exit 0
     `#!/usr/bin/env bash\necho "compose $*" >> "$FAKE_PROTOKOLL"\nexit 0\n`,
     { mode: 0o755 },
   );
+  // curl meldet den HTTP-Code auf stdout, wie `-w %{http_code}` es tut. Ein
+  // blankes `exit 0` genügt nicht mehr: Das Health-Gate liest den Code, statt
+  // `-f` zu vertrauen (deploy/health-gate.sh — eine 301 galt `-f` als Erfolg).
   fs.writeFileSync(
     path.join(bin, "curl"),
-    `#!/usr/bin/env bash\necho "curl $*" >> "$FAKE_PROTOKOLL"\nexit 0\n`,
+    `#!/usr/bin/env bash\necho "curl $*" >> "$FAKE_PROTOKOLL"\nprintf 200\nexit 0\n`,
     { mode: 0o755 },
   );
 
@@ -566,6 +569,12 @@ describe("der glückliche Fall bleibt glücklich", () => {
       "backup-inhalt",
     );
     expect(fs.existsSync(path.join(platz.daten, "app.db-wal"))).toBe(false);
+
+    // Der Rollback fragt über das GEMEINSAME Health-Gate, nicht über ein
+    // eigenes `curl -sf`: Die Zeitschranke steht im Aufruf. Ohne sie wartete
+    // jeder der dreißig Versuche unbegrenzt auf einen hängenden Gegenüber —
+    // das Gate käme zu gar keinem Ergebnis, auch nicht zu einem roten.
+    expect(lauf.protokoll.some((z) => /curl .*--max-time/.test(z))).toBe(true);
 
     const reihenfolge = ["integrity_check", "podman rm", "podman tag", "curl"];
     const stellen = reihenfolge.map((m) =>

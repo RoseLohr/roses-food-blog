@@ -36,6 +36,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
 const RB = path.join(ROOT, "deploy/rollback.sh");
 const RESTORE = path.join(ROOT, "deploy/db-restore.sh");
 const DRILL = path.join(ROOT, "scripts/regime/restore-drill.sh");
+const HEALTH = path.join(ROOT, "deploy/health-gate.sh");
 const DEPLOY = path.join(ROOT, "deploy.sh");
 
 /** Volle Kommentarzeilen (`#…`) entfernen, damit Tokens dort nicht zählen. */
@@ -52,12 +53,20 @@ const RB_INVARIANTS = [
     ok: (s) => /podman image exists localhost\/roses-blog:previous[\s\S]{0,120}?\|\|\s*fail\b/.test(s),
   },
   {
-    what: "Healthcheck-Gate: `if curl -sf \"$HEALTH_URL\"` gated den Erfolg",
-    ok: (s) => /\bif\s+curl -sf "\$HEALTH_URL"/.test(s),
+    // Das Gate steht seit 08/2026 in deploy/health-gate.sh, gequellt von
+    // rollback.sh UND restore.sh. Ohne das `source` könnte hier ein eigenes,
+    // schwächeres `health_gruen` stehen und die Prüfung ginge daran vorbei.
+    what: "Health-Gate GEQUELLT (deploy/health-gate.sh), kein eigener Nachbau",
+    ok: (s) => /source\s+"\$\(dirname "\$0"\)\/health-gate\.sh"/.test(s)
+      && !/^\s*health_gruen\(\)\s*\{/m.test(s),
   },
   {
-    what: "Health-Ergebnis NICHT verworfen (kein `curl -sf \"$HEALTH_URL\" … || true`)",
-    ok: (s) => !/curl -sf "\$HEALTH_URL"[^\n]*\|\|\s*true/.test(s),
+    what: "Healthcheck-Gate: `if health_gruen \"$HEALTH_URL\"` gated den Erfolg",
+    ok: (s) => /\bif\s+health_gruen "\$HEALTH_URL"/.test(s),
+  },
+  {
+    what: "Health-Ergebnis NICHT verworfen (kein `health_gruen \"$HEALTH_URL\" … || true`)",
+    ok: (s) => !/health_gruen "\$HEALTH_URL"[^\n]*\|\|\s*true/.test(s),
   },
   {
     // Die erste Alternative war eine literale Meldung („Health nach Rollback
@@ -118,6 +127,27 @@ const RESTORE_INVARIANTS = [
     ok: (s) =>
       /cp "\$backup" "\$daten\/app\.db\.neu"[\s\S]{0,40}?\|\|\s*fail\b/.test(s) &&
       /mv -f "\$daten\/app\.db\.neu" "\$daten\/app\.db"[\s\S]{0,40}?\|\|\s*fail\b/.test(s),
+  },
+];
+
+// ── deploy/health-gate.sh — die eine Health-Frage ─────────────────────────
+/**
+ * Das gemeinsame Health-Gate (deploy/health-gate.sh).
+ *
+ * Beide Eigenschaften sind Befunde der Gegenprüfung 08/2026 und deshalb hier
+ * festgenagelt statt bloß einmal repariert: `curl -sf` galt eine 301 als
+ * Erfolg (ein Reverse-Proxy auf einer Wartungsseite hätte den Lauf für
+ * gelungen erklärt), und ohne Zeitschranke wartete jeder Versuch unbegrenzt —
+ * das Gate käme zu gar keinem Ergebnis, auch nicht zu einem roten.
+ */
+const HEALTH_INVARIANTS = [
+  {
+    what: "Health-Gate mit Zeitschranke (`--max-time`) — ein hängender Peer blockiert nicht",
+    ok: (s) => /curl[^\n]*--max-time\s+\d+/.test(s),
+  },
+  {
+    what: "Health-Gate liest den HTTP-Code und verlangt 200 (kein `-f`, dem eine 3xx als Erfolg gilt)",
+    ok: (s) => /%\{http_code\}/.test(s) && /==\s*"200"/.test(s),
   },
 ];
 
@@ -224,10 +254,26 @@ if (process.argv.includes("--selftest")) {
     process.exit(1);
   }
 
+  // Attacke auf das HEALTH-GATE: der Stand von vor 08/2026 — `curl -sf` ohne
+  // Zeitschranke, dem eine 301 als Erfolg gilt. Beide Invarianten müssen fallen.
+  const healthAttacke = [
+    "#!/usr/bin/env bash",
+    "# curl -s --max-time 5 -w '%{http_code}' … == \"200\"  (nur Doku)",
+    "health_gruen(){",
+    '  curl -sf "$1" >/dev/null 2>&1',
+    "}",
+  ].join("\n");
+  const healthMiss = pruefe(HEALTH_INVARIANTS, healthAttacke);
+  if (healthMiss.length < 2) {
+    console.error(`⛔ Selbsttest: Health-Gate nach altem Muster (curl -sf, keine Zeitschranke, 3xx grün) nicht gefangen (nur ${healthMiss.length} Verstöße).`);
+    process.exit(1);
+  }
+
   // Die realen Dateien MÜSSEN alle Invarianten erfüllen (kein Fehlalarm).
   for (const [datei, liste, name] of [
     [RESTORE, RESTORE_INVARIANTS, "deploy/db-restore.sh"],
     [DRILL, DRILL_INVARIANTS, "scripts/regime/restore-drill.sh"],
+    [HEALTH, HEALTH_INVARIANTS, "deploy/health-gate.sh"],
   ]) {
     if (fs.existsSync(datei) && pruefe(liste, fs.readFileSync(datei, "utf8")).length) {
       console.error(`⛔ Selbsttest: reales ${name} fälschlich als kaputt geflaggt.`);
@@ -235,7 +281,7 @@ if (process.argv.includes("--selftest")) {
     }
   }
 
-  console.log("   ✓ Selbsttest: kommentar-only/entkoppeltes Rollback, nicht-atomarer Restore und Drill nach altem Muster gefangen; reale Skripte grün.");
+  console.log("   ✓ Selbsttest: kommentar-only/entkoppeltes Rollback, nicht-atomarer Restore, Drill nach altem Muster und Health-Gate nach altem Muster gefangen; reale Skripte grün.");
 }
 
 const errors = [];
@@ -253,6 +299,10 @@ else for (const m of pruefe(RESTORE_INVARIANTS, fs.readFileSync(RESTORE, "utf8")
 if (!fs.existsSync(DRILL)) errors.push("scripts/regime/restore-drill.sh fehlt — B-31 hat keine Übung mehr.");
 else for (const m of pruefe(DRILL_INVARIANTS, fs.readFileSync(DRILL, "utf8")))
   errors.push(`restore-drill.sh: Invariante fehlt/entkoppelt — ${m}`);
+
+if (!fs.existsSync(HEALTH)) errors.push("deploy/health-gate.sh fehlt — Rollback und Restore hätten kein gemeinsames Health-Gate mehr.");
+else for (const m of pruefe(HEALTH_INVARIANTS, fs.readFileSync(HEALTH, "utf8")))
+  errors.push(`health-gate.sh: Invariante fehlt/entkoppelt — ${m}`);
 
 const deploy = fs.existsSync(DEPLOY) ? stripComments(fs.readFileSync(DEPLOY, "utf8")) : "";
 if (!/podman tag localhost\/roses-blog:latest localhost\/roses-blog:previous/.test(deploy))
