@@ -271,6 +271,10 @@ export const NICHTANTWORT = "Antwort ohne verwertbares refuted-Feld (Nicht-Antwo
  * Ein Netzfehler und eine stumme Antwort sind eben NICHT dasselbe: Der eine
  * ist Zustellung, die andere ist ein Endpunkt, der antwortet und nichts sagt.
  * Für die Wiederholung zählt beides gleich, für das Urteil nicht.
+ *
+ * Das Merkmal sitzt am TRANSPORT-Umschlag, nicht in `v`. Ein Endpunkt, der
+ * `{"stumm": true}` zurückgäbe, kann es damit nicht fälschen — was er sendet,
+ * landet ausschließlich in `v`.
  */
 export function stummeStimme() {
   return { ok: false, stumm: true, reason: NICHTANTWORT };
@@ -879,6 +883,42 @@ if (process.argv.includes("--selftest")) {
   let m = 0;
   const hart = await stimmeHolen(async () => { m++; return { ok: false, status: 400 }; }, 3, sofort);
   expect(m === 1 && hart.status === 400, "400 wird nicht wiederholt.");
+  expect(hart.stumm === undefined && strictAnyRefutation([A, A2, hart], SM2).block === false,
+    "ein reines 400 ohne vorherige Stille bleibt ein Zustellfehler und blockt nicht.");
+
+  // ── EINMAL STUMM BLEIBT STUMM (zweiter Panel-Befund an B19) ──────────────
+  //
+  // Das Merkmal lag vorher nur in `last` — und `last` wird zu Beginn jedes
+  // Versuchs überschrieben. Späteres Rauschen löschte damit die Beobachtung,
+  // und die Stimme kam als gewöhnlicher Zustellfehler heraus: unsichtbar für
+  // den Strikt-Modus, also wieder fail-open.
+  const folgen = (...antworten) => {
+    let k = 0;
+    return async () => antworten[Math.min(k++, antworten.length - 1)];
+  };
+  const stummDann500 = await stimmeHolen(
+    folgen({ ok: true, v: {} }, { ok: false, status: 500 }, { ok: false, status: 500 }), 3, sofort);
+  expect(stummDann500.stumm === true,
+    "200 mit unbrauchbarer Nutzlast, dann zweimal 5xx → bleibt STUMM.");
+  expect(strictAnyRefutation([A, A2, stummDann500], SM2).block === true,
+    "und blockt damit weiterhin.");
+
+  const stummDann400 = await stimmeHolen(
+    folgen({ ok: true, v: {} }, { ok: false, status: 400 }), 3, sofort);
+  expect(stummDann400.stumm === true,
+    "auch ein deterministisches 400 NACH einer stummen Antwort endet stumm — der Endpunkt KANN antworten, er sagt nur nichts.");
+  expect(strictAnyRefutation([A, A2, stummDann400], SM2).block === true,
+    "und blockt ebenfalls.");
+
+  // Reines Rauschen ohne je eine Antwort bleibt ein Zustellfehler — so war es
+  // vor B19, und daran ändert sich nichts.
+  const nurNetz = await stimmeHolen(folgen({ ok: false, status: 500 }), 3, sofort);
+  expect(nurNetz.stumm === undefined && strictAnyRefutation([A, A2, nurNetz], SM2).block === false,
+    "dreimal 5xx ohne je eine Antwort ist KEINE stumme Stimme.");
+
+  // Und eine echte Stimme nach einer stummen Antwort zählt selbstverständlich.
+  const dochNoch = await stimmeHolen(folgen({ ok: true, v: {} }, A), 3, sofort);
+  expect(dochNoch === A, "wer im zweiten Versuch antwortet, hat abgestimmt.");
 
   console.log("   ✓ Selbsttest: decide() + modelMatches() + requireApprovals() (Pflicht-Approver Sol + Korroboration) + attestReasons() + attestProof() + validateRangeInputs() + normalizeBase() + authHeader() + strictAnyRefutation() + mdInline() + renderStepSummary() korrekt.");
   process.exit(0);
@@ -1169,21 +1209,49 @@ async function chatFallback(i, sys, finish, why, primaryStatus) {
  */
 export async function stimmeHolen(versuch, attempts = 3, warte = sleep) {
   let last = { ok: false, reason: "kein Versuch ausgeführt" };
+  /**
+   * Hat dieser Endpunkt in DIESER Runde schon einmal geantwortet und nichts
+   * gesagt?
+   *
+   * ── WARUM DAS GEMERKT WERDEN MUSS (zweiter Panel-Befund an B19) ──────────
+   *
+   * Der vorige Anlauf führte das Merkmal nur in `last` mit — und `last` wird
+   * am Anfang jedes Versuchs überschrieben. Die Folge, am Modell nachgerechnet:
+   *
+   *     200+ungültig → 500 → 500   endete als {ok:false, status:500}
+   *     200+ungültig → 400         kehrte sofort mit dem 400 zurück
+   *
+   * In beiden Fällen ohne `stumm`, also unsichtbar für den Strikt-Modus — mit
+   * zwei gültigen Grün passierte der Rest der Gates. Wieder ein fail-open,
+   * diesmal eine Schicht tiefer als beim ersten Mal.
+   *
+   * Ein Endpunkt, der EINMAL geantwortet und nichts gesagt hat, ist damit
+   * belegt stumm. Späteres Rauschen — Netzfehler, 5xx, auch ein
+   * deterministisches 400 — löscht diese Beobachtung nicht. Unbekannt bleibt
+   * unsicher.
+   */
+  let warStumm = false;
   for (let a = 1; a <= attempts; a++) {
     try {
-      last = await versuch(a);
-      const wie = zustellung(last);
-      if (wie === "stimme" || wie === "endgueltig") return last;
-      // Zugestellt, aber ohne verwertbares Urteil. Als STUMME Stimme führen,
-      // nicht als Netzfehler: Sie blockt weiterhin (siehe stummeStimme()), und
-      // das Protokoll sagt „ohne verwertbares Urteil" statt „refutiert".
-      if (last.ok) last = stummeStimme();
+      const jetzt = await versuch(a);
+      const wie = zustellung(jetzt);
+      if (wie === "stimme") return jetzt;
+      // Zugestellt, aber ohne verwertbares Urteil: geantwortet und nichts
+      // gesagt. Das wird gemerkt, nicht nur in `last` abgelegt.
+      if (jetzt.ok) warStumm = true;
+      // Deterministisch gescheitert → kein weiterer Versuch. War der Endpunkt
+      // vorher schon stumm, gilt das trotzdem: Er KANN antworten, er sagt nur
+      // nichts.
+      if (wie === "endgueltig") return warStumm ? stummeStimme() : jetzt;
+      last = jetzt;
     } catch (err) {
       last = { ok: false, reason: err instanceof Error ? err.message : String(err) }; // Netzfehler → transient
     }
     if (a < attempts) await warte(500 * a); // 0,5 s, dann 1,0 s
   }
-  return last;
+  // Die stumme Stimme blockt (siehe stummeStimme()), und das Protokoll sagt
+  // „ohne verwertbares Urteil" statt „refutiert".
+  return warStumm ? stummeStimme() : last;
 }
 
 const verifyOnce = (i) => stimmeHolen(() => attemptOnce(i));

@@ -807,6 +807,34 @@ fährt — von der Antwort des Endpunkts bis zum Urteil des Gates, ohne
 Zwischenzustand von Hand. Gegenprobe zu beiden Hälften gefahren; jede lässt
 genau die Zeile umfallen, die sie hält.
 
+### Und der zweite Anlauf hatte dasselbe Loch eine Schicht tiefer
+
+Das `stumm`-Merkmal lag nur in `last` — und `last` wird zu Beginn jedes
+Versuchs überschrieben. Am Modell nachgerechnet:
+
+    200+ungültig → 500 → 500   endete als {ok:false, status:500}
+    200+ungültig → 400         kehrte sofort mit dem 400 zurück
+
+Beide ohne `stumm`, also unsichtbar für den Strikt-Modus; mit zwei gültigen
+Grün passierte der Rest der Gates. **Wieder ein fail-open**, gefunden von
+derselben Stimme, die schon den ersten gefunden hatte.
+
+**Wurzel:** Ein Endpunkt, der EINMAL geantwortet und nichts gesagt hat, ist
+belegt stumm. Späteres Rauschen — Netzfehler, 5xx, auch ein deterministisches
+400 — löscht diese Beobachtung nicht. Die Schleife merkt sie deshalb getrennt
+(`warStumm`), nicht im überschriebenen Zwischenergebnis.
+
+Reines Rauschen ohne je eine Antwort bleibt dagegen ein Zustellfehler und
+blockt den Strikt-Modus nicht — so war es vor B19, und daran ändert sich
+nichts.
+
+**Zweimal hintereinander dieselbe Richtung.** Beide Male habe ich eine
+Blockade in ein Durchlassen verwandelt, während ich das Gegenteil in den Text
+schrieb. Das ist kein Zufall, sondern die Richtung, in die ein Fehler kippt,
+wenn man ein Ärgernis beseitigen will: Wer eine Sperre als lästig empfindet,
+baut versehentlich an ihr vorbei. Deshalb steht jede Zusage dieses Befundes
+jetzt als ausgeführte Gegenprobe da und nicht als Satz.
+
 **Reichweite, ehrlich.** Das behebt die stumme Stimme, nicht ihre Ursache beim
 Anbieter. Bleibt eine Stimme über alle drei Versuche stumm, ist der PR
 weiterhin rot — das ist beabsichtigt, denn dann hat nachweislich niemand
