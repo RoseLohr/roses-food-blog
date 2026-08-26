@@ -118,3 +118,39 @@ describe("Einstellungen", () => {
     expect(getSiteBranding().logoImageId).toBeNull();
   });
 });
+
+describe("removeSettings — leer heißt weg, nicht leer", () => {
+  it("entfernt die Zeile statt sie leer zu schreiben", async () => {
+    const { getSetting, removeSettings, setSettings } = await import("@/lib/settings");
+    const { db, schema } = await import("@/db");
+    const { eq } = await import("drizzle-orm");
+
+    setSettings({ nachtmodus_breite: "52.52" });
+    expect(getSetting("nachtmodus_breite")).toBe("52.52");
+
+    removeSettings(["nachtmodus_breite"]);
+    expect(getSetting("nachtmodus_breite")).toBeNull();
+    // Und zwar wirklich weg — nicht als leere Zeile stehen geblieben. Der
+    // Unterschied ist hier der ganze Punkt: Eine leere Zeile trägt keine
+    // Auskunft, wird aber von jeder Bestandsprüfung als Veränderung gesehen.
+    const zeilen = await db
+      .select()
+      .from(schema.setting)
+      .where(eq(schema.setting.key, "nachtmodus_breite"));
+    expect(zeilen).toHaveLength(0);
+  });
+
+  it("stört sich nicht an einem Schlüssel, den es gar nicht gibt", async () => {
+    const { removeSettings, getSetting } = await import("@/lib/settings");
+    removeSettings(["nachtmodus_laenge"]);
+    removeSettings([]);
+    expect(getSetting("nachtmodus_laenge")).toBeNull();
+  });
+
+  it("lässt die übrigen Einträge in Ruhe", async () => {
+    const { getSetting, removeSettings, setSettings } = await import("@/lib/settings");
+    setSettings({ nachtmodus: "dunkel", nachtmodus_breite: "1.5" });
+    removeSettings(["nachtmodus_breite"]);
+    expect(getSetting("nachtmodus")).toBe("dunkel");
+  });
+});

@@ -7,6 +7,7 @@ import {
 } from "@/lib/settings";
 import { aiFeatureState } from "@/lib/ai-guard";
 import { listImageChoices } from "@/lib/media";
+import { ORT_VORGABE, wahlAus } from "@/lib/daemmerung";
 import { ImagePicker } from "@/components/admin/image-picker";
 import { t } from "@/i18n/de";
 import {
@@ -58,6 +59,59 @@ export default async function SettingsPage(props: {
       <Meldung text={message} />
 
       <form action={saveSettingsAction} className="flex max-w-2xl flex-col gap-6">
+        <section className="bg-white p-5 shadow-sm">
+          <h2 className="text-lg font-semibold">{d.nachtTitle}</h2>
+          <p className="mb-4 text-sm text-ink-soft">{d.nachtIntro}</p>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="sm:col-span-2">
+              <label className={labelCls} htmlFor="nachtmodus">
+                {d.nachtLabel}
+              </label>
+              {/* Die beiden festen Stellungen sind kein Beiwerk: Sie machen die
+                  Darstellung von der Uhr unabhängig — gebraucht zum Ansehen und
+                  von den Referenzaufnahmen, die sonst je nach Tageszeit ein
+                  anderes Bild verglichen. */}
+              <select
+                id="nachtmodus"
+                name="nachtmodus"
+                defaultValue={wahlAus(s.nachtmodus)}
+                className={inputCls}
+              >
+                <option value="auto">{d.nachtAuto}</option>
+                <option value="hell">{d.nachtHell}</option>
+                <option value="dunkel">{d.nachtDunkel}</option>
+              </select>
+            </div>
+            <div>
+              <label className={labelCls} htmlFor="nachtmodus_breite">
+                {d.nachtBreiteLabel}
+              </label>
+              <input
+                id="nachtmodus_breite"
+                name="nachtmodus_breite"
+                inputMode="decimal"
+                defaultValue={s.nachtmodus_breite ?? ""}
+                placeholder={String(ORT_VORGABE.breite)}
+                className={inputCls}
+              />
+            </div>
+            <div>
+              <label className={labelCls} htmlFor="nachtmodus_laenge">
+                {d.nachtLaengeLabel}
+              </label>
+              <input
+                id="nachtmodus_laenge"
+                name="nachtmodus_laenge"
+                inputMode="decimal"
+                defaultValue={s.nachtmodus_laenge ?? ""}
+                placeholder={String(ORT_VORGABE.laenge)}
+                className={inputCls}
+              />
+              <p className="mt-1 text-xs text-ink-soft">{d.nachtOrtHinweis}</p>
+            </div>
+          </div>
+        </section>
+
         <section className="bg-white p-5 shadow-sm">
           <h2 className="text-lg font-semibold">{d.brandTitle}</h2>
           <p className="mb-4 text-sm text-ink-soft">{d.brandIntro}</p>

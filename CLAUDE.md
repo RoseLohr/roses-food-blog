@@ -79,6 +79,22 @@ diesem Repository arbeitet. Sie ist Teil des Governance-Regimes (A-32/A-33/A-37)
   eigenständig, damit `tests/e2e/mocks/einzelbild.html` sie LÄDT statt sie
   abzuschreiben. Die Abschrift dort hatte die Handy-Regel nie mitbekommen: ein
   Prüfstand, der grün war für etwas, das die Seite gar nicht auslieferte.
+- **Nachtmodus (08/2026): ein TOKEN-Tausch unter `[data-theme="dark"]`.** Jede
+  Tailwind-Farb-Utility löst auf eine CSS-Variable auf
+  (`.bg-cream{background-color:var(--color-cream)}`); wer die Variablen unter
+  einem Selektor neu setzt, dreht alle auf einmal um — im Admin über 400
+  Fundstellen. Wer eine Farbe hart in eine Komponente schreibt statt eine
+  Utility zu nehmen, nimmt sie aus dem Nachtmodus heraus.
+  **Zwei Token dürfen NICHT umdefiniert werden**, weil sie zwei Rollen tragen:
+  `--color-white` (Kartenfläche UND Schrift auf farbigen Knöpfen) und
+  `--color-rose-primary` (Linkfarbe UND Knopffläche). Für die gibt es gezielte
+  Flächenregeln.
+  **Diese Regeln stehen in `@layer nachtmodus`, angemeldet NACH `utilities`.**
+  Eine Regel in `components` verliert gegen jede Utility, egal wie spezifisch —
+  Schichtreihenfolge schlägt Spezifität. Genau daran ist der erste Anlauf
+  gescheitert (Karten blieben reinweiß). Ungelayert wäre die Falle aus B7.
+  **Der Seed setzt `nachtmodus` fest auf `hell`.** Sonst hinge jede
+  Admin-Referenzaufnahme an der Tageszeit statt an den Daten.
 - **`src/app/globals.css` benutzt kein `@layer`.** Tailwind v4 legt seine
   Utilities in `@layer utilities`; eine blanke Projektklasse schlägt deshalb
   JEDE Utility (`class="bildgruppe mb-8"` bliebe wirkungslos). Wer einen Wert

@@ -3,6 +3,21 @@
    selbst laden kann statt sie abzuschreiben — siehe Kopf jener Datei. */
 @import "./einzelbild.css" layer(components);
 
+/* Eine eigene Schicht NACH `utilities`.
+   Tailwind legt mit dem Import oben die Reihenfolge theme → base → components
+   → utilities fest. Eine Regel in `components` verliert deshalb gegen JEDE
+   Utility, ganz gleich wie spezifisch sie ist — Schichtreihenfolge schlaegt
+   Spezifitaet. Genau daran ist der erste Anlauf des Nachtmodus gescheitert:
+   `[data-theme="dark"] .bg-white` stand in `components` und blieb wirkungslos,
+   die Karten waren im Dunkelmodus weiterhin reinweiss (gemessen in
+   tests/e2e/nachtmodus.spec.ts).
+
+   Diese Zeile haengt `nachtmodus` HINTER `utilities`; nur was hier drinsteht,
+   darf eine Utility ueberschreiben. Bewusst eine benannte Schicht und kein
+   ungelayertes CSS: Ungelayert schlaegt ALLES und ist genau die Falle aus
+   Befund B7. */
+@layer utilities, nachtmodus;
+
 /* Selbst gehostete Webfonts: Raleway (serifenlos) für Überschriften,
    Nunito Sans für den Fließtext. Variable Fonts, latin-Subset (deckt deutsche
    Umlaute ab), vom eigenen Origin unter /fonts — keine externen CDNs, kein
@@ -116,6 +131,55 @@ html {
 .full-bleed {
   width: 100vw;
   margin-inline: calc(50% - 50vw);
+}
+
+/* ── NACHTMODUS ────────────────────────────────────────────────────────────
+
+   Dunkle Darstellung von Sonnenuntergang bis Sonnenaufgang.
+
+   DIE GANZE UMSTELLUNG IST EIN TOKEN-TAUSCH, und das ist kein Kunstgriff,
+   sondern eine Eigenschaft von Tailwind v4: Jede Farb-Utility loest auf eine
+   CSS-Variable auf (`.bg-cream{background-color:var(--color-cream)}`, nachgesehen
+   im gebauten CSS). Wer die Variablen unter einem Selektor neu setzt, dreht
+   damit JEDE dieser Klassen auf einmal um — im Admin sind das ueber 400
+   Fundstellen, die sonst einzeln haetten angefasst werden muessen.
+
+   Der Selektor ist bewusst `[data-theme="dark"]` und nicht `.admin`: Die
+   Regeln gelten dort, wo das Attribut steht. Heute setzt es nur das
+   Admin-Layout; kommt der Blog dazu, kommt kein CSS dazu.
+
+   ZWEI TOKEN DUERFEN NICHT UMDEFINIERT WERDEN, weil sie zwei Rollen tragen:
+
+   `--color-white` ist die Kartenflaeche (`bg-white`, 76×) UND die Schrift auf
+   farbigen Knoepfen (`text-white`, 44×). Wuerde es dunkel, staende auf jedem
+   Knopf dunkle Schrift. Deshalb bleibt das Token, und nur die FLAECHE wird
+   unter dem dunklen Selektor ersetzt.
+
+   `--color-rose-primary` ist Linkfarbe UND Knopfflaeche. Als Text auf Dunkel
+   muss es hell sein, als Flaeche unter weisser Schrift dunkel. Also: Token
+   hell (fuer Text), Flaeche gesondert dunkel.
+
+   `color-scheme: dark` ist keine Kosmetik. Ohne die Angabe rendern Browser
+   `<select>`, Datumsfelder, Bildlaufleisten und die Autofill-Faerbung weiter
+   hell — und genau die erreicht keine Utility-Klasse. */
+[data-theme="dark"] {
+  color-scheme: dark;
+  /* Die Schriftfarbe MUSS hier stehen, nicht nur das Token.
+     `<body>` traegt `text-ink` und liegt AUSSERHALB dieses Rumpfes — dort gilt
+     das helle Token weiter. Alles im Admin ohne eigene Farbklasse erbt von
+     dort, und das waere dunkle Schrift auf dunklem Grund. Gemessen und
+     gefunden in tests/e2e/nachtmodus.spec.ts, nicht vermutet. */
+  color: var(--color-ink);
+  --color-cream: #0f0f13; /* Seitengrund — der schwarze Hintergrund */
+  --color-cream-deep: #24242c;
+  --color-ink: #f3f3f5; /* Schrift — das Weiss */
+  --color-ink-soft: #a9a9b6;
+  --color-rose-primary: #5ccfc2; /* als TEXT auf Dunkel */
+  --color-rose-primary-dark: #83ded5;
+  --color-accent: #5ccfc2;
+  --color-leaf: #5ccfc2;
+  --color-leaf-soft: #8fe3d9;
+  --color-sage: #9db392;
 }
 
 /* Bilder im Reisebericht — die Layout-Regel aus src/lib/bildreihen.ts.
@@ -1111,3 +1175,29 @@ a.rgc-logo:hover .rgc-logo__rose {
 
 }
 /* Ende @layer components */
+
+/* ── NACHTMODUS: die Flaechen, die eine Utility ueberschreiben muessen ──────
+
+   Warum diese drei Regeln eine eigene Schicht brauchen, steht ganz oben bei
+   `@layer utilities, nachtmodus;`. Alles Uebrige des Nachtmodus kommt ohne
+   aus: Dort werden nur die TOKEN neu gesetzt, und die loest die Utility selbst
+   auf. Hier geht es um die zwei Token, die zwei Rollen tragen und deshalb
+   nicht umdefiniert werden duerfen. */
+@layer nachtmodus {
+  /* Karten, Kopf- und Seitenleiste: im Hellen weiss, hier eine Spur heller als
+     der Seitengrund, damit sie sich abheben. Nur die VOLLE Klasse —
+     `bg-white/15` in der Medienkachel ist ein Schleier ueber einem Foto und
+     bleibt weiss. */
+  [data-theme="dark"] .bg-white {
+    background-color: #1a1a20;
+  }
+  /* Farbige Knopfflaechen bleiben dunkel, damit die weisse Schrift darauf
+     ihren Kontrast behaelt. */
+  [data-theme="dark"] .bg-rose-primary,
+  [data-theme="dark"] .bg-leaf {
+    background-color: #1f6c63;
+  }
+  [data-theme="dark"] .hover\:bg-rose-primary-dark:hover {
+    background-color: #185a52;
+  }
+}

@@ -2,6 +2,7 @@
   "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "_comment": "A-02: Mutation-Testing als Meta-Gate über reine Kernlogik mit starken Unit-Tests. Baseline wird per S11 zum Boden (darf nur steigen). break=60 blockiert; high/low für Reporting.",
   "_comment_bildgruppe": "08/2026: src/lib/travel-editor-items.ts kam hinzu — die Umrechnung zwischen den Karten des Reise-Editors und der gespeicherten Blockfolge. An ihr haengt die Zusage, dass die neue Bedienung im Admin den ausgelieferten Bericht nicht veraendert; sie gehoert damit zur selben Kernlogik wie bildreihen.ts und wird wie diese mutiert.",
+  "_comment_daemmerung": "08/2026: src/lib/daemmerung.ts kam hinzu — Sonnenauf-/-untergang und die Frage, ob gerade Nacht ist. Reine Arithmetik ohne Uhr und ohne Datenbank, also genau die Sorte Kernlogik, die hier mutiert wird. Wichtig sind die AUSNAHMEN: Polartag und Polarnacht (der Kosinus des Stundenwinkels verlaesst [-1,1]) und der Tageswechsel um Mitternacht. Wer die wegkuerzt, bekommt NaN und daraus einen Vergleich, der immer false ist — die Seite bliebe still fuer immer hell.",
   "_comment_seo": "08/2026: src/lib/seo/model.ts kam hinzu (reine Ableitungen der SEO-Inhalte). NICHT aufgenommen sind src/lib/seo/artifacts.ts und src/lib/base-url.ts — beide tragen ihre Kernwerte in Konstanten auf Modulebene (AI_USER_AGENTS, SITE_ORIGIN, Regexe). Stryker stuft die als STATIC mutants ein und fährt für jeden einen kompletten Testlauf: gemessen 229 statische von 885 Mutanten, geschätzte Laufzeit ~2 h 45 min statt Minuten. Ein Gate, das eine CI-Stunde frisst, wird abgeschaltet statt beachtet. Beide Module sind stattdessen über tests/seo.test.ts (Byte-genau am erzeugten Text), tests/seo.integration.test.ts und tests/e2e/seo.spec.ts abgedeckt; die Struktur-Invarianten hält scripts/regime/seo-gate.mjs.",
   "packageManager": "npm",
   "testRunner": "vitest",
@@ -16,6 +17,7 @@
     "src/lib/visitor-class.ts",
     "src/lib/bildreihen.ts",
     "src/lib/travel-editor-items.ts",
+    "src/lib/daemmerung.ts",
     "src/lib/seo/model.ts"
   ],
   "concurrency": 2,
