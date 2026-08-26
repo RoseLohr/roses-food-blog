@@ -772,9 +772,40 @@ Zwei Dinge daran waren falsch:
 **Das Gate wird dadurch NICHT weicher.** Sind alle drei Versuche verbraucht,
 blockt die Nicht-Antwort weiterhin — nur eben nach drei Anläufen statt nach
 einem, und mit der Begründung „ohne verwertbares Urteil" statt „refutiert".
-Der `--selftest` hält beide Hälften fest; die Gegenprobe (alte
-Zustellungs-Logik bzw. alte Meldung) lässt jeweils genau die neue Zeile
-umfallen.
+
+### Der erste Anlauf hielt genau diesen Satz NICHT — und das Panel hat es gesehen
+
+Er etikettierte die erschöpfte Nicht-Antwort einfach auf `{ok:false}` um, wie
+einen Netzfehler. `strictAnyRefutation` sieht aber nur Stimmen mit `ok`; die
+stumme dritte Stimme blockte damit nicht mehr. Am Modell nachgerechnet:
+
+    VORHER (200 + leere Nutzlast als Stimme): BLOCK
+    NACHHER (auf ok:false umetikettiert)   : DURCH
+
+Zwei grüne Stimmen plus eine stumme wurden also aus ROT ein GRÜN — das
+Gegenteil der Zusage, die zwei Absätze weiter oben stand. Ein **fail-open**,
+eingeführt von der Behebung eines fail-closed-Ärgernisses.
+
+Zwei Stimmen des Panels haben es unabhängig benannt, und die zweite auch
+gleich, warum mein Test es nicht fand: Er reichte `strictAnyRefutation` ein
+von Hand gebautes `{ok:true, v:{}}` — einen Zustand, den die geänderte
+Schleife gar nicht mehr liefert. **Grün für etwas, das die Produktion nicht
+tat**: dieselbe Fehlerklasse, die dieses Verzeichnis seit Monaten sammelt, nur
+diesmal in der Prüfung der Prüfung.
+
+**Wurzel:** Ein Netzfehler und eine stumme Antwort sind NICHT dasselbe. Der
+eine ist Zustellung, die andere ein Endpunkt, der antwortet und nichts sagt.
+Für die Wiederholung zählt beides gleich, für das Urteil nicht. Die stumme
+Stimme trägt deshalb ein eigenes Merkmal (`stumm`), und der Strikt-Modus
+blockt sie — vor der `decide()`-Prüfung, weil sie dort mangels `ok` nie
+ankäme. Ein reiner Netzfehler blockt weiterhin nicht; so war es vor B19 und so
+bleibt es.
+
+**Und der Test geht jetzt die ganze Kette.** Die Versuchsschleife steht als
+`stimmeHolen(versuch, attempts, warte)` da, damit der `--selftest` sie WIRKLICH
+fährt — von der Antwort des Endpunkts bis zum Urteil des Gates, ohne
+Zwischenzustand von Hand. Gegenprobe zu beiden Hälften gefahren; jede lässt
+genau die Zeile umfallen, die sie hält.
 
 **Reichweite, ehrlich.** Das behebt die stumme Stimme, nicht ihre Ursache beim
 Anbieter. Bleibt eine Stimme über alle drei Versuche stumm, ist der PR

@@ -256,6 +256,26 @@ export const isTransient = (s) => s === 401 || s === 408 || s === 409 || s === 4
 /** Was im Protokoll steht, wenn der Endpunkt zwar antwortet, aber nichts Verwertbares. */
 export const NICHTANTWORT = "Antwort ohne verwertbares refuted-Feld (Nicht-Antwort, kein Urteil)";
 
+/**
+ * Die Stimme, die nach ALLEN Versuchen stumm geblieben ist.
+ *
+ * ── WARUM SIE EIN EIGENES MERKMAL TRÄGT (Befund des Panels an B19) ─────────
+ *
+ * Der erste Anlauf dieser Behebung etikettierte sie einfach auf `ok:false` um
+ * — wie einen Netzfehler. Das war ein FAIL-OPEN: `strictAnyRefutation` sieht
+ * nur Stimmen mit `ok`, eine stumme dritte Stimme blockte also nicht mehr.
+ * Vorher tat sie es (als `{ok:true, v:{}}` fiel sie durch `decide()`).
+ * Zwei Stimmen grün + eine stumm wurde damit aus ROT ein GRÜN — genau das
+ * Gegenteil dessen, was im Audit versprochen war.
+ *
+ * Ein Netzfehler und eine stumme Antwort sind eben NICHT dasselbe: Der eine
+ * ist Zustellung, die andere ist ein Endpunkt, der antwortet und nichts sagt.
+ * Für die Wiederholung zählt beides gleich, für das Urteil nicht.
+ */
+export function stummeStimme() {
+  return { ok: false, stumm: true, reason: NICHTANTWORT };
+}
+
 export function istStimme(x) {
   return !!(x && x.ok && x.v && typeof x.v.refuted === "boolean");
 }
@@ -312,6 +332,15 @@ export function decide(v) {
 export function strictAnyRefutation(votes, models) {
   for (let i = 0; i < votes.length; i++) {
     const x = votes[i];
+    // Eine stumme Stimme blockt, wie sie es vor der B19-Behebung tat. Sie
+    // steht VOR der decide()-Prüfung, weil sie kein `ok` trägt und dort nie
+    // ankäme — genau daran ist der erste Anlauf gescheitert.
+    if (x?.stumm) {
+      return {
+        block: true,
+        reason: `Strikt-Modus: ${models[i]} ohne verwertbares Urteil nach allen Versuchen → fail-closed`,
+      };
+    }
     const urteil = decide(x?.v);
     if (x?.ok && urteil.block) {
       // Eine Stimme OHNE verwertbares Urteil hat nicht refutiert — sie hat
@@ -812,14 +841,44 @@ if (process.argv.includes("--selftest")) {
   expect(zustellung({ ok: false }) === "erneut", "Netzfehler ohne Status bleibt transient.");
   expect(zustellung({ ok: false, status: 400 }) === "endgueltig", "400 ändert sich nicht — kein Retry.");
   expect(zustellung({ ok: false, status: 404 }) === "endgueltig", "404 ebenso.");
-  // Und der Modus bleibt FAIL-CLOSED: Nach verbrauchten Versuchen blockt die
-  // Nicht-Antwort weiterhin — nur mit der richtigen Begründung.
-  const ohneUrteil = { ok: true, v: {} };
+  // ── Die Schleife WIRKLICH fahren, nicht ihren Ausgang nachbauen ──────────
+  //
+  // DER BEFUND (Panel an der ersten Fassung von B19): Hier stand ein von Hand
+  // gebautes `{ok:true, v:{}}`, das an strictAnyRefutation gereicht wurde —
+  // ein Zustand, den die Schleife nach der Änderung gar nicht mehr liefert.
+  // Der Test war grün, während die Produktion aus einem BLOCK ein DURCH
+  // gemacht hatte. Deshalb geht die Kette jetzt von der Antwort des
+  // Endpunkts bis zum Urteil des Gates.
   const SM2 = ["a/1", "b/2", "c/3"];
-  expect(strictAnyRefutation([A, A2, ohneUrteil], SM2).block === true, "eine Nicht-Antwort blockt weiterhin (fail-closed).");
-  expect(!strictAnyRefutation([A, A2, ohneUrteil], SM2).reason.includes("refutiert"), "sie darf aber NICHT „refutiert\" heißen — es gibt keinen Befund.");
-  expect(strictAnyRefutation([A, A2, ohneUrteil], SM2).reason.includes("c/3"), "die Meldung benennt die stumme Stimme.");
-  expect(strictAnyRefutation([A, A2, RF], SM2).reason.includes("refutiert"), "ein echtes Refutat heißt weiterhin refutiert.");
+  const sofort = async () => {};                       // kein echtes Warten im Test
+  const stumm = await stimmeHolen(async () => ({ ok: true, v: {} }), 3, sofort);
+  expect(stumm.ok === false && stumm.stumm === true,
+    "eine dauerhaft stumme Antwort wird als STUMME Stimme geführt, nicht als Netzfehler.");
+  expect(strictAnyRefutation([A, A2, stumm], SM2).block === true,
+    "und sie blockt weiterhin — genau das ging im ersten Anlauf verloren (fail-open).");
+  expect(!strictAnyRefutation([A, A2, stumm], SM2).reason.includes("refutiert"),
+    "sie darf aber NICHT „refutiert\" heißen — es gibt keinen Befund.");
+  expect(strictAnyRefutation([A, A2, stumm], SM2).reason.includes("c/3"),
+    "die Meldung benennt die stumme Stimme.");
+  expect(strictAnyRefutation([A, A2, RF], SM2).reason.includes("refutiert"),
+    "ein echtes Refutat heißt weiterhin refutiert.");
+
+  // Ein reiner NETZFEHLER ist etwas anderes und blockt hier NICHT — so war es
+  // vor B19 und so bleibt es; requireApprovals deckt ihn ab.
+  const netz = await stimmeHolen(async () => ({ ok: false, status: 500 }), 3, sofort);
+  expect(netz.stumm === undefined, "ein Netzfehler ist keine stumme Stimme.");
+  expect(strictAnyRefutation([A, A2, netz], SM2).block === false,
+    "ein Netzfehler blockt den Strikt-Modus nicht (unverändert gegenüber vorher).");
+
+  // Wiederholt wird wirklich: erst stumm, dann eine Stimme.
+  let n = 0;
+  const spaet = await stimmeHolen(async () => (++n < 3 ? { ok: true, v: {} } : A), 3, sofort);
+  expect(n === 3 && spaet === A, "eine Stimme im dritten Versuch zählt — dafür ist die Wiederholung da.");
+
+  // Ein deterministischer Fehler bricht SOFORT ab (kein Retry-Budget verbrannt).
+  let m = 0;
+  const hart = await stimmeHolen(async () => { m++; return { ok: false, status: 400 }; }, 3, sofort);
+  expect(m === 1 && hart.status === 400, "400 wird nicht wiederholt.");
 
   console.log("   ✓ Selbsttest: decide() + modelMatches() + requireApprovals() (Pflicht-Approver Sol + Korroboration) + attestReasons() + attestProof() + validateRangeInputs() + normalizeBase() + authHeader() + strictAnyRefutation() + mdInline() + renderStepSummary() korrekt.");
   process.exit(0);
@@ -1093,29 +1152,41 @@ async function chatFallback(i, sys, finish, why, primaryStatus) {
   return { ok: false, status, reason: `Chat-Fallback ${res.status}: ${detail} (Primär: ${why})` };
 }
 
-async function verifyOnce(i) {
-  // Pro Stimme mehrere Versuche bei TRANSIENTEN Fehlern (mit kurzem Backoff), damit
-  // ein flakiger API-Fehler nicht die Zahl gültiger Panel-Stimmen senkt und so das
-  // Schein-Grün-Gate fälschlich fail-closed auslöst. KEIN Aufweichen der Sicherheit:
-  // das Modell führt bei jedem Versuch die volle adversariale Analyse aus; nur die
-  // Zustellung wird robuster. Deterministische Fehler brechen sofort ab.
-  const ATTEMPTS = 3;
+/**
+ * Eine Stimme holen — mit Wiederholung bei allem, was keine Stimme ist.
+ *
+ * Pro Stimme mehrere Versuche bei TRANSIENTEN Fehlern (mit kurzem Backoff), damit
+ * ein flakiger API-Fehler nicht die Zahl gültiger Panel-Stimmen senkt und so das
+ * Schein-Grün-Gate fälschlich fail-closed auslöst. KEIN Aufweichen der Sicherheit:
+ * das Modell führt bei jedem Versuch die volle adversariale Analyse aus; nur die
+ * Zustellung wird robuster. Deterministische Fehler brechen sofort ab.
+ *
+ * `versuch` und `warte` sind Argumente, damit der --selftest die Schleife WIRKLICH
+ * fahren kann. Das ist nicht Kosmetik: Der erste Anlauf der B19-Behebung prüfte
+ * `strictAnyRefutation` an einem von Hand gebauten Zustand — und übersah dabei,
+ * dass diese Schleife genau diesen Zustand gar nicht mehr liefert. Der Test war
+ * grün für etwas, das die Produktion nicht tat.
+ */
+export async function stimmeHolen(versuch, attempts = 3, warte = sleep) {
   let last = { ok: false, reason: "kein Versuch ausgeführt" };
-  for (let a = 1; a <= ATTEMPTS; a++) {
+  for (let a = 1; a <= attempts; a++) {
     try {
-      last = await attemptOnce(i);
+      last = await versuch(a);
       const wie = zustellung(last);
       if (wie === "stimme" || wie === "endgueltig") return last;
-      // Zugestellt, aber ohne verwertbares Urteil: als Ausfall führen, damit
-      // das Protokoll „Fehler" sagt und nicht „refutiert". Siehe zustellung().
-      if (last.ok) last = { ok: false, reason: NICHTANTWORT };
+      // Zugestellt, aber ohne verwertbares Urteil. Als STUMME Stimme führen,
+      // nicht als Netzfehler: Sie blockt weiterhin (siehe stummeStimme()), und
+      // das Protokoll sagt „ohne verwertbares Urteil" statt „refutiert".
+      if (last.ok) last = stummeStimme();
     } catch (err) {
       last = { ok: false, reason: err instanceof Error ? err.message : String(err) }; // Netzfehler → transient
     }
-    if (a < ATTEMPTS) await sleep(500 * a); // 0,5 s, dann 1,0 s
+    if (a < attempts) await warte(500 * a); // 0,5 s, dann 1,0 s
   }
   return last;
 }
+
+const verifyOnce = (i) => stimmeHolen(() => attemptOnce(i));
 
 const votes = await Promise.all(Array.from({ length: PANEL }, (_, i) => verifyOnce(i)));
 votes.forEach((x, i) => {
