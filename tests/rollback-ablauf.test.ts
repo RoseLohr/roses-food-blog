@@ -153,12 +153,20 @@ exit 0
     `#!/usr/bin/env bash\necho "compose $*" >> "$FAKE_PROTOKOLL"\nexit 0\n`,
     { mode: 0o755 },
   );
-  // curl meldet den HTTP-Code auf stdout, wie `-w %{http_code}` es tut. Ein
-  // blankes `exit 0` genügt nicht mehr: Das Health-Gate liest den Code, statt
-  // `-f` zu vertrauen (deploy/health-gate.sh — eine 301 galt `-f` als Erfolg).
+  // curl antwortet wie die echte Route: erst der Körper, dann — durch `-w
+  // '\n%{http_code}'` angehängt — der Status. Ein blankes `exit 0` genügt
+  // nicht mehr: Das Health-Gate liest BEIDES, statt `-f` zu vertrauen
+  // (deploy/health-gate.sh — eine 301 galt `-f` als Erfolg, und ein 200 von
+  // einem fremden Dienst auf dem Nachbarport ebenso).
   fs.writeFileSync(
     path.join(bin, "curl"),
-    `#!/usr/bin/env bash\necho "curl $*" >> "$FAKE_PROTOKOLL"\nprintf 200\nexit 0\n`,
+    [
+      "#!/usr/bin/env bash",
+      'echo "curl $*" >> "$FAKE_PROTOKOLL"',
+      `printf '%s' '{"status":"ok","version":"0.1.0","commit":"dev","checks":{}}'`,
+      `printf '\\n%s' 200`,
+      "exit 0",
+    ].join("\n"),
     { mode: 0o755 },
   );
 

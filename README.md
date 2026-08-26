@@ -339,13 +339,28 @@ cd ~/roses-food-blog
 
 Das Medien-Archiv ist optional; ohne es wird nur die Datenbank eingespielt.
 
+Es läuft **ein Restore zur Zeit** (`flock` auf `$DATA_DIR/.restore.lock`).
+Zwei gleichzeitige Läufe teilen sich sonst dieselbe Nebendatei, und einer
+spielt still das Backup des anderen ein.
+
 Das Skript prüft ALLES Prüfbare, bevor es das Erste anfasst: Es entpackt die
-Sicherung, liest sie mit `integrity_check`, sieht dem Medien-Archiv ins
-Inhaltsverzeichnis (lesbar, und jedes Mitglied unter `uploads/` — ein Archiv,
-das `app.db` mitbrächte, überschriebe sonst die gerade eingespielte Datenbank)
-und sichert den jetzigen Stand nach `backups/pre-restore-*.db`, geprüft wie
-jede andere Sicherung auch. Scheitert etwas davon, ist nichts eingespielt und
-der Dienst läuft unverändert weiter.
+Sicherung, liest sie mit `integrity_check`, sichert den jetzigen Stand nach
+`backups/pre-restore-*.db` (geprüft wie jede andere Sicherung auch) — und
+sieht dem Medien-Archiv ins Inhaltsverzeichnis. Dort gilt dreierlei:
+
+- **Namen:** alles unter `uploads/`, kein `..`-Glied, nichts Absolutes. Ein
+  Archiv, das `app.db` mitbrächte, überschriebe sonst die gerade eingespielte
+  Datenbank.
+- **Typen:** nur Verzeichnisse und reguläre Dateien. Ein Symlink trägt einen
+  einwandfreien Namen und ist trotzdem ein Loch — nachgemessen packt `tar`
+  `uploads/…/w100.webp -> ../../app.db` anstandslos aus, und die
+  Auslieferungsroute liest daraufhin die Datenbank über HTTP.
+- **Inhalt:** mindestens eine Mediendatei. Ein Archiv ganz ohne `uploads/`
+  lief sonst durch die Namensprüfung, der bisherige Bestand wanderte beiseite,
+  das Einsetzen fand nichts — und der Dienst blieb aus.
+
+Scheitert etwas davon, ist nichts eingespielt und der Dienst läuft unverändert
+weiter.
 
 Erst danach wird gestoppt und mit derselben Funktion eingespielt, die auch der
 Rollback und der monatliche Drill fahren (`deploy/db-restore.sh`). Die Medien
@@ -358,8 +373,10 @@ das Einzige, wofür dieses Skript kein eigenes Netz spannt; wegräumen darf es,
 wer nachgesehen hat.
 
 Zum Schluss der Health-Endpunkt auf dem Port aus der `.env`: erst grün, dann
-gilt die Wiederherstellung. Grün heißt **HTTP 200** — eine Umleitung auf eine
-Wartungsseite ist keine Antwort der Anwendung.
+gilt die Wiederherstellung. Grün heißt **HTTP 200 und `"status":"ok"` im
+Körper**, gefragt **am Vermittler vorbei** (`--noproxy`). Eine Umleitung auf
+eine Wartungsseite ist keine Antwort der Anwendung, und ein 200 von einem
+fremden Dienst auf dem Nachbarport erst recht nicht.
 
 > **Warum kein Abtippen mehr.** Hier stand die Folge früher als einzelne Zeilen
 > zum Kopieren. In einer interaktiven Shell gilt weder `set -e` noch eine

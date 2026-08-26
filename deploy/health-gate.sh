@@ -26,5 +26,17 @@
 # ---------------------------------------------------------------------------
 
 health_gruen(){
-  [[ "$(curl -s -o /dev/null --max-time 5 -w '%{http_code}' "$1" 2>/dev/null)" == "200" ]]
+  local antwort koerper code
+  # `--noproxy '*'`: Ein in der Umgebung gesetztes http_proxy/https_proxy
+  # schickte die Frage sonst an einen Vermittler — und dessen Antwort sagt
+  # nichts über die Anwendung, die hier gerade hochkommen soll.
+  antwort="$(curl -s --noproxy '*' --max-time 5 -w '\n%{http_code}' "$1" 2>/dev/null)" || return 1
+  code="${antwort##*$'\n'}"
+  koerper="${antwort%$'\n'*}"
+  [[ "$code" == "200" ]] || return 1
+  # UND es muss UNSERE Antwort sein. Ein 200 allein beweist nur, dass
+  # irgendwer geantwortet hat; auf dem Server hören auf benachbarten Ports
+  # andere Dienste. Genau davor warnt die README beim Restore-Port seit
+  # Monaten — die Prüfung selbst tat es nicht.
+  [[ "$koerper" == *'"status":"ok"'* ]]
 }

@@ -45,6 +45,8 @@ type Modus = {
   stoppGelingt?: boolean;
   /** Welchen HTTP-Code meldet der Health-Endpunkt? */
   healthCode?: number;
+  /** Was liefert er als Körper? Standard: die Antwort unserer eigenen Route. */
+  healthKoerper?: string;
 };
 
 type Platz = {
@@ -62,6 +64,7 @@ function spielwiese(modus: Modus = {}): Platz {
     netzSchreibt = true,
     stoppGelingt = true,
     healthCode = 200,
+    healthKoerper = '{"status":"ok","version":"0.1.0","commit":"dev","checks":{}}',
   } = modus;
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), "roses-restore-"));
   const daten = path.join(tmp, "daten");
@@ -113,7 +116,10 @@ function spielwiese(modus: Modus = {}): Platz {
     [
       "#!/usr/bin/env bash",
       `echo "curl $*" >> ${JSON.stringify(protokoll)}`,
-      `printf '%s' ${healthCode}`,
+      `printf '%s' ${JSON.stringify(healthKoerper)}`,
+      // -w '\n%{http_code}' hängt den Code hinter den Körper — die Attrappe
+      // tut dasselbe, sonst prüfte der Test ein anderes Format als die Praxis.
+      `printf '\\n%s' ${healthCode}`,
       `[[ ${healthCode} -lt 400 ]] || exit 22`,
       "exit 0",
     ].join("\n"),
@@ -253,6 +259,81 @@ describe("Das Medien-Archiv wird geprüft, bevor irgendetwas angefasst wird", ()
     expect(lauf.protokoll).not.toMatch(/compose down/);
   });
 
+  it("weist ein Archiv mit einem SYMLINK zurück", () => {
+    // DER BEFUND (Gegenprüfung, zweite Runde): Die Prüfung sah nur NAMEN.
+    // Ein Mitglied `uploads/<key>/w100.webp -> ../../app.db` trägt einen
+    // einwandfreien Namen und ist trotzdem ein Loch: Nachgemessen packt tar
+    // es anstandslos aus (Exit 0), der Link landet im Medienverzeichnis, und
+    // die Auslieferungsroute liest daraufhin die Datenbank über HTTP.
+    //
+    // Der Namens-Traversal (`uploads/../app.db`) wird von GNU tar selbst
+    // abgewiesen — aber eben von tar, nicht von dieser Prüfung. Ein anderer
+    // tar-Bau wäre kein Schutz mehr. Beides fällt jetzt HIER.
+    const platz = spielwiese();
+    const quelle = path.join(tmp, "mit-link");
+    fs.mkdirSync(path.join(quelle, "uploads"), { recursive: true });
+    fs.writeFileSync(path.join(quelle, "uploads", "echt.jpg"), "jpeg");
+    fs.symlinkSync("../app.db", path.join(quelle, "uploads", "leak"));
+    const archiv = path.join(platz.daten, "backups", "uploads-symlink.tar.gz");
+    execFileSync("tar", ["-czf", archiv, "-C", quelle, "uploads"]);
+
+    const lauf = fahre(platz, [backupAnlegen(platz), archiv]);
+
+    expect(lauf.code).not.toBe(0);
+    expect(standUnberuehrt(platz)).toBe(true);
+    expect(lauf.protokoll).not.toMatch(/compose down/);
+    // Und nichts davon ist im Datenverzeichnis gelandet.
+    expect(fs.existsSync(path.join(platz.daten, "uploads.neu"))).toBe(false);
+  });
+
+  it("weist einen Namens-Traversal zurück, ohne sich auf tar zu verlassen", () => {
+    // Ein Archiv, dessen Mitglied `uploads/../app.db` heißt. GNU tar würde es
+    // beim AUSPACKEN ablehnen; diese Prüfung lehnt es schon beim LESEN ab —
+    // der Schutz darf nicht davon abhängen, welches tar auf dem Server liegt.
+    const platz = spielwiese();
+    const quelle = path.join(tmp, "traversal");
+    fs.mkdirSync(quelle, { recursive: true });
+    fs.writeFileSync(path.join(quelle, "app.db"), "boese");
+    const archiv = path.join(platz.daten, "backups", "uploads-traversal.tar.gz");
+    execFileSync("tar", [
+      "-czf", archiv, "-C", quelle,
+      "--transform", "s|^app.db$|uploads/../app.db|",
+      "app.db",
+    ]);
+
+    const lauf = fahre(platz, [backupAnlegen(platz), archiv]);
+
+    expect(lauf.code).not.toBe(0);
+    expect(standUnberuehrt(platz)).toBe(true);
+    expect(lauf.protokoll).not.toMatch(/compose down/);
+  });
+
+  it("weist ein Archiv OHNE Medien zurück — und legt den Bestand nicht beiseite", () => {
+    // DER BEFUND: Ein lesbares Archiv ganz ohne `uploads/`-Mitglied lief durch
+    // die Mitgliederschleife (die prüft ja nur, dass NICHTS Fremdes drin ist).
+    // Danach wanderte der bisherige Bestand nach `uploads.alt`, das `mv` fand
+    // nichts zum Einsetzen — und der Dienst blieb aus.
+    const platz = spielwiese();
+    fs.mkdirSync(path.join(platz.daten, "uploads"), { recursive: true });
+    fs.writeFileSync(path.join(platz.daten, "uploads", "bestand.jpg"), "jpeg");
+    // Ein Archiv mit GENAU EINEM Mitglied: dem Verzeichnis `uploads/`, leer.
+    // Bewusst so und nicht als Archiv aus fremden Dateien — sonst fiele es
+    // schon der Namensprüfung zum Opfer, und diese Zusage bliebe ungeprüft.
+    // (Gegenprobe: Mit entschärfter Inhaltsprüfung fällt genau dieser Test.)
+    const quelle = path.join(tmp, "nur-leeres-uploads");
+    fs.mkdirSync(path.join(quelle, "uploads"), { recursive: true });
+    const archiv = path.join(platz.daten, "backups", "uploads-leer.tar.gz");
+    execFileSync("tar", ["-czf", archiv, "-C", quelle, "uploads"]);
+
+    const lauf = fahre(platz, [backupAnlegen(platz), archiv]);
+
+    expect(lauf.code).not.toBe(0);
+    expect(lauf.protokoll).not.toMatch(/compose down/);
+    // Der Bestand steht noch da, wo er hingehört.
+    expect(fs.existsSync(path.join(platz.daten, "uploads", "bestand.jpg"))).toBe(true);
+    expect(fs.existsSync(path.join(platz.daten, "uploads.alt"))).toBe(false);
+  });
+
   it("weist ein unlesbares Archiv zurück, bevor der Dienst stoppt", () => {
     const platz = spielwiese();
     const kaputt = path.join(platz.daten, "backups", "uploads-kaputt.tar.gz");
@@ -299,8 +380,8 @@ describe("Das Health-Gate", () => {
   const GATE = path.resolve(process.cwd(), "deploy/health-gate.sh");
 
   /** Fährt health_gruen() gegen ein curl, das den angegebenen Code meldet. */
-  function gate(code: number): { gruen: boolean; aufruf: string } {
-    const platz = spielwiese({ healthCode: code });
+  function gate(code: number, koerper?: string): { gruen: boolean; aufruf: string } {
+    const platz = spielwiese({ healthCode: code, ...(koerper ? { healthKoerper: koerper } : {}) });
     const harness = path.join(tmp, "health.sh");
     fs.writeFileSync(
       harness,
@@ -336,6 +417,20 @@ describe("Das Health-Gate", () => {
 
   it("meldet rot bei 503", () => {
     expect(gate(503).gruen).toBe(false);
+  });
+
+  it("glaubt keinem FREMDEN Dienst, der 200 sagt", () => {
+    // DER BEFUND: Ein 200 allein beweist nur, dass IRGENDWER geantwortet hat.
+    // Auf dem Server hört auf benachbarten Ports anderes; und ein gesetztes
+    // http_proxy schickt die Frage überhaupt woandershin. Grün ist erst, wenn
+    // die Antwort unsere eigene ist.
+    expect(gate(200, '{"hallo":"ich bin wer anders"}').gruen).toBe(false);
+  });
+
+  it("fragt am Vermittler vorbei", () => {
+    // Ohne --noproxy beantwortet ein in der Umgebung gesetztes http_proxy die
+    // Frage — und der Zustand der Anwendung bliebe ungeprüft.
+    expect(gate(200).aufruf).toMatch(/--noproxy/);
   });
 
   it("fragt mit einer Zeitschranke — ein hängender Peer blockiert nicht", () => {
@@ -408,6 +503,45 @@ describe("Ein Fehlschlag darf den vorhandenen Stand nicht verschlechtern", () =>
     expect(lauf.code).not.toBe(0);
     expect(standUnberuehrt(platz)).toBe(true);
     expect(lauf.protokoll).not.toMatch(/compose down/);
+  });
+
+  it("lässt keine ZWEITE Wiederherstellung gleichzeitig laufen", () => {
+    // DER BEFUND: `app.db.eingehend` ist ein FESTER Name ohne Sperre. Zwei
+    // Läufe gleichzeitig — im Ernstfall keine Seltenheit, wenn jemand unter
+    // Druck zweimal drückt — und Lauf A prüft Backup A, Lauf B überschreibt
+    // die Nebendatei mit Backup B, Lauf A spielt B ein und meldet Erfolg für
+    // A. Falsche Daten, die sich für richtige ausgeben.
+    const platz = spielwiese();
+    const backup = backupAnlegen(platz);
+    // Die Sperre von außen halten und dabei WIRKLICH sperren.
+    const halter = path.join(tmp, "halter.sh");
+    fs.writeFileSync(
+      halter,
+      [
+        "#!/usr/bin/env bash",
+        `exec 9>${JSON.stringify(path.join(platz.daten, ".restore.lock"))}`,
+        "flock -n 9 || exit 3",
+        // Der Halter hält die Sperre über einen abgelösten Hintergrundlauf.
+        // Dessen Ein-/Ausgabe MUSS abgehängt sein: sonst wartet execFileSync
+        // auf das Schließen von stdout und damit auf den Hintergrundlauf.
+        "sleep 20 >/dev/null 2>&1 </dev/null &",
+        "echo $!",
+      ].join("\n"),
+      { mode: 0o755 },
+    );
+    const pid = execFileSync("bash", [halter], { encoding: "utf8" }).trim();
+    try {
+      const lauf = fahre(platz, [backup]);
+      expect(lauf.code).not.toBe(0);
+      expect(lauf.ausgabe).toMatch(/Wiederherstellung/);
+      expect(standUnberuehrt(platz)).toBe(true);
+    } finally {
+      try {
+        process.kill(Number(pid));
+      } catch {
+        // Der Halter ist schon weg — dann ist auch nichts mehr aufzuräumen.
+      }
+    }
   });
 
   it("weist einen leeren Aufruf und zu viele Argumente zurück", () => {

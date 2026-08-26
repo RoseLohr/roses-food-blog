@@ -149,6 +149,19 @@ const HEALTH_INVARIANTS = [
     what: "Health-Gate liest den HTTP-Code und verlangt 200 (kein `-f`, dem eine 3xx als Erfolg gilt)",
     ok: (s) => /%\{http_code\}/.test(s) && /==\s*"200"/.test(s),
   },
+  {
+    // Beide aus derselben Runde: Ein 200 beweist nur, dass IRGENDWER
+    // geantwortet hat. Ein gesetztes http_proxy schickt die Frage an einen
+    // Vermittler, und auf dem Server hören auf benachbarten Ports andere
+    // Dienste — genau davor warnt die README beim Restore-Port seit Monaten,
+    // während die Prüfung selbst es nicht tat.
+    what: "Health-Gate fragt am Vermittler vorbei (`--noproxy`)",
+    ok: (s) => /--noproxy/.test(s),
+  },
+  {
+    what: "Health-Gate prüft die IDENTITÄT der Antwort (Körper trägt \"status\":\"ok\")",
+    ok: (s) => /"status":"ok"/.test(s),
+  },
 ];
 
 // ── scripts/regime/restore-drill.sh — die Übung ────────────────────────────
@@ -264,8 +277,8 @@ if (process.argv.includes("--selftest")) {
     "}",
   ].join("\n");
   const healthMiss = pruefe(HEALTH_INVARIANTS, healthAttacke);
-  if (healthMiss.length < 2) {
-    console.error(`⛔ Selbsttest: Health-Gate nach altem Muster (curl -sf, keine Zeitschranke, 3xx grün) nicht gefangen (nur ${healthMiss.length} Verstöße).`);
+  if (healthMiss.length < 4) {
+    console.error(`⛔ Selbsttest: Health-Gate nach altem Muster (curl -sf, keine Zeitschranke, 3xx grün) nicht gefangen (nur ${healthMiss.length} von 4 Verstößen).`);
     process.exit(1);
   }
 

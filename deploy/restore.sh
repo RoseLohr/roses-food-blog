@@ -78,6 +78,22 @@ UPLOADS_ARCHIV="${2:-}"
   || fail "Uploads-Archiv $UPLOADS_ARCHIV existiert nicht."
 [[ -d "$DATA_DIR" ]] || fail "Daten-Verzeichnis $DATA_DIR existiert nicht."
 
+# ── 0. Ein Lauf zur Zeit ───────────────────────────────────────────────────
+#
+# `app.db.eingehend` ist ein FESTER Name. Zwei Läufe gleichzeitig — im Ernstfall
+# keine Seltenheit, wenn jemand unter Druck zweimal drückt — und Lauf A prüft
+# Backup A, Lauf B überschreibt die Nebendatei mit Backup B, Lauf A spielt B ein
+# und meldet Erfolg für A. Falsche Daten, die sich für richtige ausgeben: die
+# teuerste Sorte Fehler, die dieses Verzeichnis kennt.
+command -v flock >/dev/null \
+  || fail "flock nicht gefunden (Paket util-linux). Ohne Sperre wird hier nicht \
+wiederhergestellt: Zwei gleichzeitige Läufe spielen sonst still das falsche \
+Backup ein."
+exec 9>"$DATA_DIR/.restore.lock"
+flock -n 9 \
+  || fail "Es läuft bereits eine Wiederherstellung in $DATA_DIR. Nichts \
+angefasst."
+
 # ── 1. Alles Prüfbare VOR dem ersten destruktiven Schritt ──────────────────
 #
 # Der Dienst läuft hier noch. Scheitert etwas in diesem Abschnitt, ist der
@@ -110,26 +126,68 @@ nichts eingespielt, der Dienst läuft weiter."; }
 
 # Das Medien-Archiv wird HIER geprüft, nicht erst beim Auspacken.
 #
-# `tar -xzf … -C "$DATA_DIR"` packt aus, was drinsteht. Ein Archiv, das
-# `app.db` mitbringt, überschriebe damit die gerade eingespielte Datenbank —
-# NACH allen Prüfungen, an denen sie hängt. Und ein unlesbares Archiv fiele
-# erst auf, wenn der Dienst schon steht: ein Fehlschlag, der zusätzlich den
-# Dienst kostet (dieselbe Klasse wie der Befund aus PR #110).
+# `tar -xzf …` packt aus, was drinsteht. Ein Archiv, das `app.db` mitbringt,
+# überschriebe damit die gerade eingespielte Datenbank — NACH allen Prüfungen,
+# an denen sie hängt. Und ein unlesbares Archiv fiele erst auf, wenn der Dienst
+# schon steht: ein Fehlschlag, der zusätzlich den Dienst kostet (dieselbe
+# Klasse wie der Befund aus PR #110).
 #
-# Verlangt wird: lesbar UND jedes Mitglied unter `uploads/`. Absolute Pfade
-# und `..` fallen damit ebenfalls heraus, ohne dass eine Liste verbotener
-# Muster gepflegt werden müsste — erlaubt ist genau eine Form.
+# ── DREI FRAGEN, UND DIE ZWEITE FEHLTE ZUERST ─────────────────────────────
+#
+# 1. NAMEN: alles unter `uploads/`, kein `..`-Glied, nichts Absolutes.
+#
+# 2. TYPEN: nur Verzeichnisse und reguläre Dateien. Die erste Fassung prüfte
+#    NUR Namen — und ein Symlink trägt einen einwandfreien Namen. Nachgemessen:
+#    `uploads/leak -> ../app.db` packt tar anstandslos aus (Exit 0), der Link
+#    landet im Medienverzeichnis, und die Auslieferungsroute liest daraufhin
+#    die Datenbank über HTTP. Hardlinks, Geräte und FIFOs fallen mit derselben
+#    Regel heraus: In einem Medien-Archiv hat nichts davon etwas zu suchen.
+#
+#    Die Typen stehen in der ERSTEN Spalte von `tar -tvzf`. Geprüft wird nur
+#    dieses eine Zeichen — kein Zerlegen von Namen, die Leerzeichen oder ein
+#    „ -> " enthalten dürfen.
+#
+# 3. INHALT: mindestens eine reguläre Datei unter `uploads/`. Ohne diese Frage
+#    lief ein Archiv ganz ohne `uploads/` durch die Namensprüfung (die verbietet
+#    ja nur Fremdes), der bisherige Bestand wanderte nach `uploads.alt`, das
+#    Einsetzen fand nichts — und der Dienst blieb aus.
+#
+# Der Namens-Traversal wird zwar auch von GNU tar abgewiesen (gemessen: Exit 2,
+# „Member name contains '..'"). Darauf verlässt sich diese Prüfung NICHT: Welche
+# tar-Fassung auf dem Server liegt, ist keine Zusage, die dieses Repository geben
+# kann.
 if [[ -n "$UPLOADS_ARCHIV" ]]; then
   log "Prüfe das Medien-Archiv: $UPLOADS_ARCHIV"
   MITGLIEDER="$(tar -tzf "$UPLOADS_ARCHIV")" \
     || { rm -f "$EINGEHEND"; fail "$UPLOADS_ARCHIV ist nicht lesbar — nichts \
 eingespielt, der Dienst läuft weiter."; }
+  ARCHIV_ABBRUCH(){ rm -f "$EINGEHEND"; fail "$1 Nichts eingespielt, der Dienst läuft weiter."; }
+
   while IFS= read -r m; do
     [[ -z "$m" ]] && continue
     [[ "$m" == "uploads" || "$m" == "uploads/"* ]] \
-      || { rm -f "$EINGEHEND"; fail "$UPLOADS_ARCHIV enthält '$m' — erlaubt ist \
-nur uploads/. Nichts eingespielt, der Dienst läuft weiter."; }
+      || ARCHIV_ABBRUCH "$UPLOADS_ARCHIV enthält '$m' — erlaubt ist nur uploads/."
+    # Ein `..`-GLIED, nicht bloß die Zeichenfolge: `uploads/..foto.jpg` ist ein
+    # gültiger Dateiname und darf nicht mit `uploads/../` verwechselt werden.
+    [[ "/$m/" == */../* ]] \
+      && ARCHIV_ABBRUCH "$UPLOADS_ARCHIV enthält '$m' — ein Pfadglied '..' führt aus uploads/ heraus."
   done <<< "$MITGLIEDER"
+
+  TYPEN="$(tar -tvzf "$UPLOADS_ARCHIV")" \
+    || ARCHIV_ABBRUCH "$UPLOADS_ARCHIV lässt sich nicht auflisten."
+  DATEIEN=0
+  while IFS= read -r z; do
+    [[ -z "$z" ]] && continue
+    case "${z:0:1}" in
+      d) ;;
+      -) DATEIEN=$((DATEIEN + 1)) ;;
+      l) ARCHIV_ABBRUCH "$UPLOADS_ARCHIV enthält einen SYMLINK. Ein Link im Medienverzeichnis zeigt aus ihm heraus; die Auslieferung folgte ihm." ;;
+      h) ARCHIV_ABBRUCH "$UPLOADS_ARCHIV enthält einen HARDLINK." ;;
+      *) ARCHIV_ABBRUCH "$UPLOADS_ARCHIV enthält ein Mitglied, das weder Verzeichnis noch reguläre Datei ist ('${z:0:1}')." ;;
+    esac
+  done <<< "$TYPEN"
+  [[ $DATEIEN -gt 0 ]] \
+    || ARCHIV_ABBRUCH "$UPLOADS_ARCHIV enthält keine einzige Mediendatei unter uploads/."
 fi
 
 # ── 2. Den JETZIGEN Stand sichern, solange er noch steht ──────────────────
