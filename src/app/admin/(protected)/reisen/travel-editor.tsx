@@ -20,6 +20,9 @@ import type { TravelBlock } from "@/lib/travel-blocks";
 import {
   bildIds,
   mitBildern,
+  mitFoto,
+  mitUnterschrift,
+  unterschriftAn,
   neueBildgruppe,
   neuesEinzelbild,
   zuBloecken,
@@ -495,21 +498,15 @@ export function TravelEditor({
                         // roh übernimmt, wirft die gesetzten Unterschriften
                         // bei jedem Umsortieren still weg.
                         onChange={(ids) => aendere(i, mitBildern(e, ids))}
-                        proBild={(id) => (
+                        // Angesprochen wird die STELLE, nicht die Bild-ID:
+                        // Dasselbe Foto darf zweimal in einer Gruppe stehen,
+                        // und dann sind es zwei Zeilen mit eigenen Angaben.
+                        proBild={(id, pos) => (
                           <UnterschriftHaken
-                            an={
-                              e.bilder.find((b) => b.imageId === id)
-                                ?.bildunterschrift ?? false
-                            }
+                            an={unterschriftAn(e, pos)}
                             altText={bildById.get(id)?.altText ?? ""}
                             onChange={(an) =>
-                              aendere(i, {
-                                bilder: e.bilder.map((b) =>
-                                  b.imageId === id
-                                    ? { ...b, bildunterschrift: an }
-                                    : b,
-                                ),
-                              })
+                              aendere(i, mitUnterschrift(e, pos, an))
                             }
                           />
                         )}
@@ -529,7 +526,10 @@ export function TravelEditor({
                         options={images}
                         multiple={false}
                         value={e.imageId > 0 ? [e.imageId] : []}
-                        onChange={(ids) => aendere(i, { imageId: ids[0] ?? 0 })}
+                        // `mitFoto` statt nur die ID zu setzen: Das Häkchen
+                        // gehört zum Alt-Text DIESES Fotos. Ein Ersatzbild
+                        // erbt es nicht.
+                        onChange={(ids) => aendere(i, mitFoto(e, ids[0] ?? 0))}
                         proBild={(id) => (
                           <UnterschriftHaken
                             an={e.bildunterschrift}

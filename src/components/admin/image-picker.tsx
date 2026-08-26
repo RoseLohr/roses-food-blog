@@ -123,9 +123,18 @@ export function ImagePicker({
   }
 
   const byId = new Map(options.map((o) => [o.id, o]));
+  /**
+   * Die gewählten Bilder MIT ihrer Stelle in `selected`.
+   *
+   * Die Stelle wird mitgeführt statt aus dieser Liste abgelesen: Ein Bild,
+   * das die Bibliothek nicht (mehr) kennt, fällt hier heraus — danach wäre
+   * jede weitere Stelle um eins verschoben, und `verschiebe`, das Entfernen
+   * und `proBild` griffen allesamt daneben. Die Stelle ist das, wonach der
+   * Aufrufer seine Angaben führt; sie darf nicht von der Anzeige abhängen.
+   */
   const selectedChoices = selected
-    .map((id) => byId.get(id))
-    .filter((x): x is ImageChoice => Boolean(x));
+    .map((id, pos) => ({ pos, c: byId.get(id) }))
+    .filter((x): x is { pos: number; c: ImageChoice } => Boolean(x.c));
 
   return (
     <fieldset>
@@ -139,8 +148,11 @@ export function ImagePicker({
       {/* Vorschau der aktuellen Auswahl */}
       {selectedChoices.length > 0 ? (
         <div className="mb-2 flex flex-wrap gap-2">
-          {selectedChoices.map((c, pos) => (
-            <div key={c.id} className="flex flex-col gap-1">
+          {selectedChoices.map(({ pos, c }) => (
+            // Schlüssel ist die STELLE, nicht die Bild-ID: Dasselbe Foto darf
+            // zweimal in der Auswahl stehen, und zwei gleiche Schlüssel legen
+            // React zwei verschiedene Kacheln zusammen.
+            <div key={pos} className="flex flex-col gap-1">
               <div className="group relative h-24 w-32 overflow-hidden border border-ink-soft/20 bg-cream">
                 {sortierbar && (
                   // Die Ziffer steht IMMER da, nicht erst beim Überfahren:
@@ -166,8 +178,10 @@ export function ImagePicker({
                 />
                 <button
                   type="button"
+                  // Das × meint DIESE Kachel. Nach der Bild-ID zu filtern
+                  // nähme bei zwei Vorkommen desselben Fotos beide heraus.
                   onClick={() =>
-                    setSelection(selected.filter((x) => x !== c.id))
+                    setSelection(selected.filter((_, x) => x !== pos))
                   }
                   aria-label={ip.remove}
                   title={ip.remove}
@@ -186,11 +200,11 @@ export function ImagePicker({
                       disabled={
                         richtung === -1
                           ? pos === 0
-                          : pos === selectedChoices.length - 1
+                          : pos === selected.length - 1
                       }
                       aria-label={`${
                         richtung === -1 ? ip.moveEarlier : ip.moveLater
-                      } — ${ip.position(pos + 1, selectedChoices.length)}`}
+                      } — ${ip.position(pos + 1, selected.length)}`}
                       title={richtung === -1 ? ip.moveEarlier : ip.moveLater}
                       className="flex-1 rounded border border-ink/20 py-0.5 text-xs hover:bg-cream disabled:opacity-40"
                     >

@@ -108,15 +108,80 @@ export function bildIds(gruppe: Bildgruppe): number[] {
  * Ohne das verlöre ein Umsortieren im Wähler jede gesetzte Unterschrift — die
  * Auswahl kommt als bloße ID-Liste zurück, und wer sie einfach übernimmt,
  * ersetzt gesetzte Häkchen still durch die Vorgabe. Neue Fotos starten ohne.
+ *
+ * Je Bild-ID steht dabei eine SCHLANGE der bekannten Angaben, nicht ein
+ * einzelner Wert: Ein Foto darf zweimal in derselben Gruppe stehen (über den
+ * Archiv-Import erreichbar), und dann sind es zwei Zeilen mit womöglich
+ * verschiedenen Angaben. Ein einzelner Wert je ID könnte nur eine davon
+ * kennen — aus [aus, an] würde beim ersten Pfeilklick [an, an]. Das erste
+ * Vorkommen erbt deshalb die erste Angabe, das zweite die zweite; ein
+ * weiteres Vorkommen ist neu und startet ohne.
  */
 export function mitBildern(gruppe: Bildgruppe, ids: number[]): Bildgruppe {
-  const bekannt = new Map(gruppe.bilder.map((b) => [b.imageId, b.bildunterschrift]));
+  const bekannt = new Map<number, boolean[]>();
+  for (const b of gruppe.bilder) {
+    const schlange = bekannt.get(b.imageId);
+    if (schlange) schlange.push(b.bildunterschrift);
+    else bekannt.set(b.imageId, [b.bildunterschrift]);
+  }
   return {
     ...gruppe,
     bilder: ids.map((imageId) => ({
       imageId,
-      bildunterschrift: bekannt.get(imageId) ?? false,
+      bildunterschrift: bekannt.get(imageId)?.shift() ?? false,
     })),
+  };
+}
+
+/**
+ * Trägt ein Gruppenfoto seinen Alt-Text als Unterschrift? Gefragt wird nach
+ * der STELLE, nicht nach der Bild-ID — siehe `mitUnterschrift`.
+ *
+ * Eine Stelle, die es nicht gibt, trägt keine Unterschrift. Das ist keine
+ * Nachsicht gegenüber falschen Aufrufen, sondern der Normalfall: Zwischen dem
+ * Abwählen eines Fotos und dem nächsten Rendern fragt der Wähler noch nach
+ * der alten Stelle.
+ */
+export function unterschriftAn(gruppe: Bildgruppe, position: number): boolean {
+  return gruppe.bilder[position]?.bildunterschrift ?? false;
+}
+
+/**
+ * Die Unterschrift EINES Gruppenfotos umstellen — angesprochen über seine
+ * STELLE in der Gruppe.
+ *
+ * Nicht über die Bild-ID: Steht dasselbe Foto zweimal in der Gruppe, träfe
+ * ein Klick am zweiten auch das erste. Die Stelle ist eindeutig, die ID nicht.
+ */
+export function mitUnterschrift(
+  gruppe: Bildgruppe,
+  position: number,
+  an: boolean,
+): Bildgruppe {
+  return {
+    ...gruppe,
+    bilder: gruppe.bilder.map((b, i) =>
+      i === position ? { ...b, bildunterschrift: an } : b,
+    ),
+  };
+}
+
+/**
+ * Das Foto eines Einzelbilds wechseln.
+ *
+ * Ein WECHSEL nimmt die Unterschrift mit weg: Das Häkchen war für den
+ * Alt-Text des alten Fotos gesetzt. Bliebe es stehen, erschiene unter dem
+ * neuen Bild ein fremder Satz, den für dieses Bild niemand freigegeben hat.
+ * Wird dasselbe Foto erneut gewählt, ändert sich nichts — kein Wechsel, kein
+ * Verlust.
+ */
+export function mitFoto(
+  bild: { imageId: number; bildunterschrift: boolean },
+  imageId: number,
+): { imageId: number; bildunterschrift: boolean } {
+  return {
+    imageId,
+    bildunterschrift: imageId === bild.imageId ? bild.bildunterschrift : false,
   };
 }
 

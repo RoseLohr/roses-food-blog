@@ -176,6 +176,39 @@ test("im Pop-up steht der Text ebenfalls unter dem Bild", async ({ page }) => {
   await expect(dialog.locator("figcaption")).not.toBeEmpty();
 });
 
+test("ein Fotowechsel nimmt dem Einzelbild die Unterschrift", async ({ page }) => {
+  // DER BEFUND (Gegenprüfung zu PR #121): Der Wechsel änderte nur die Bild-ID.
+  // Das Häkchen war aber für den Alt-Text des ALTEN Fotos gesetzt — stehen
+  // geblieben, erschiene unter dem neuen Bild ein fremder Satz, den für dieses
+  // Bild niemand freigegeben hat.
+  await page.goto(`/admin/reisen/${travelId}`);
+  const haken = page
+    .locator(EINZELBILD)
+    .getByRole("checkbox", { name: d.blockBildunterschrift });
+  await expect(haken).toBeChecked();
+
+  await page
+    .locator(EINZELBILD)
+    .getByRole("button", { name: ip.change, exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", { name: new RegExp(ip.title) });
+  await expect(dialog).toBeVisible();
+  await dialog.locator("button[aria-pressed]").nth(2).click();
+  await expect(dialog).toBeHidden();
+
+  // Das neue Foto HAT einen Alt-Text — sonst wäre das Häkchen ohnehin
+  // gesperrt und die Messung sagte nichts.
+  await expect(haken).toBeEnabled();
+  await expect(haken).not.toBeChecked();
+
+  // Und es bleibt aus, auch nach dem Speichern.
+  await speichern(page);
+  await page.goto(`/admin/reisen/${travelId}`);
+  await expect(
+    page.locator(EINZELBILD).getByRole("checkbox", { name: d.blockBildunterschrift }),
+  ).not.toBeChecked();
+});
+
 /** Aufräumen (B8): Der angelegte Bericht verschwindet wieder. */
 test.afterAll(() => {
   if (travelId === null) return;

@@ -18,6 +18,9 @@ import type { TravelBlock } from "@/lib/travel-blocks";
 import {
   bildIds,
   mitBildern,
+  mitFoto,
+  mitUnterschrift,
+  unterschriftAn,
   neueBildgruppe,
   neuesEinzelbild,
   zuBloecken,
@@ -280,6 +283,109 @@ describe("Die Fotoauswahl einer Gruppe", () => {
     const vorher = gruppe([[7, true]]);
     mitBildern(vorher, [8]);
     expect(vorher.bilder).toEqual([{ imageId: 7, bildunterschrift: true }]);
+  });
+
+  it("hält zwei Vorkommen DESSELBEN Fotos auseinander", () => {
+    // DER BEFUND (Gegenprüfung zu PR #121): Die Zuordnung lief über die
+    // BILD-ID. Ein Foto, das zweimal in derselben Gruppe steht — über den
+    // Archiv-Import erreichbar —, hat aber zwei Zeilen mit womöglich
+    // verschiedenen Angaben. Eine Zuordnung nach ID kann davon nur eine
+    // kennen: Aus [aus, an] wurde beim ersten Pfeilklick [an, an], und das
+    // erste Foto bekam eine Unterschrift, die niemand bestellt hat.
+    //
+    // Richtig ist die POSITION: Das erste Vorkommen von 7 erbt die Angabe des
+    // ersten, das zweite die des zweiten.
+    const vorher = gruppe([[7, false], [7, true]]);
+    expect(mitBildern(vorher, [7, 7]).bilder).toEqual([
+      { imageId: 7, bildunterschrift: false },
+      { imageId: 7, bildunterschrift: true },
+    ]);
+  });
+
+  it("gibt einem DRITTEN Vorkommen keine Unterschrift", () => {
+    // Es gibt nur zwei bekannte Angaben — die dritte Zeile ist neu.
+    expect(mitBildern(gruppe([[7, true], [7, true]]), [7, 7, 7]).bilder).toEqual([
+      { imageId: 7, bildunterschrift: true },
+      { imageId: 7, bildunterschrift: true },
+      { imageId: 7, bildunterschrift: false },
+    ]);
+  });
+});
+
+describe("Das Häkchen an einem Gruppenfoto", () => {
+  const gruppe = (bilder: Array<[number, boolean]>): Bildgruppe => ({
+    art: "bildgruppe",
+    bilder: bilder.map(([imageId, bildunterschrift]) => ({
+      imageId,
+      bildunterschrift,
+    })),
+  });
+
+  it("liest die Angabe des Fotos AN DIESER STELLE", () => {
+    const g = gruppe([[7, false], [7, true]]);
+    expect(unterschriftAn(g, 0)).toBe(false);
+    expect(unterschriftAn(g, 1)).toBe(true);
+  });
+
+  it("meldet für eine Stelle, die es nicht gibt, keine Unterschrift", () => {
+    expect(unterschriftAn(gruppe([[7, true]]), 3)).toBe(false);
+    expect(unterschriftAn(gruppe([[7, true]]), -1)).toBe(false);
+  });
+
+  it("setzt die Angabe NUR an der angeklickten Stelle", () => {
+    // DER BEFUND: Die Umschaltung lief über die Bild-ID und traf damit JEDES
+    // Vorkommen. Wer am zweiten Foto klickte, änderte auch das erste.
+    expect(mitUnterschrift(gruppe([[7, false], [7, false]]), 1, true).bilder).toEqual([
+      { imageId: 7, bildunterschrift: false },
+      { imageId: 7, bildunterschrift: true },
+    ]);
+  });
+
+  it("lässt eine Stelle außerhalb der Liste die Gruppe unverändert", () => {
+    const vorher = gruppe([[7, false]]);
+    expect(mitUnterschrift(vorher, 5, true).bilder).toEqual([
+      { imageId: 7, bildunterschrift: false },
+    ]);
+  });
+
+  it("lässt die übergebene Gruppe unangetastet", () => {
+    const vorher = gruppe([[7, false]]);
+    mitUnterschrift(vorher, 0, true);
+    expect(vorher.bilder).toEqual([{ imageId: 7, bildunterschrift: false }]);
+  });
+});
+
+describe("Der Fotowechsel am Einzelbild", () => {
+  const einzelbild = (imageId: number, bildunterschrift: boolean) => ({
+    art: "einzelbild" as const,
+    imageId,
+    groesse: "m" as const,
+    ausrichtung: "links" as const,
+    bildunterschrift,
+  });
+
+  it("nimmt dem Ersatzfoto die Unterschrift des Vorgängers", () => {
+    // DER BEFUND: Der Wechsel änderte nur die ID. Das neue Foto erbte damit
+    // ein Häkchen, das für den Alt-Text des ALTEN Fotos gesetzt war — eine
+    // sichtbare Unterschrift, die niemand für dieses Bild bestellt hat.
+    expect(mitFoto(einzelbild(7, true), 9)).toEqual({
+      imageId: 9,
+      bildunterschrift: false,
+    });
+  });
+
+  it("lässt die Unterschrift stehen, wenn dasselbe Foto gewählt wird", () => {
+    expect(mitFoto(einzelbild(7, true), 7)).toEqual({
+      imageId: 7,
+      bildunterschrift: true,
+    });
+  });
+
+  it("räumt die Unterschrift mit weg, wenn das Foto abgewählt wird", () => {
+    expect(mitFoto(einzelbild(7, true), 0)).toEqual({
+      imageId: 0,
+      bildunterschrift: false,
+    });
   });
 });
 
