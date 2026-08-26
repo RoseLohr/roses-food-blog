@@ -69,8 +69,15 @@ UPLOADS_OK=0
 ROH="$BACKUP_DIR/app-$STAMP.db"
 if [[ -f "$DATA_DIR/app.db" ]]; then
   rm -f "$ROH"
-  if "$PODMAN" run --rm --entrypoint node -v "$DATA_DIR:/data" localhost/roses-blog:latest \
-       -e "const db=require('better-sqlite3')('/data/app.db',{readonly:true});db.backup('/data/backups/'+process.argv[1]).then(()=>{db.close()}).catch(e=>{console.error(e);process.exit(1)})" \
+  # BACKUP_DIR wird als EIGENER Mount hereingereicht, nicht als Unterverzeichnis
+  # von DATA_DIR angenommen. Bis 08/2026 stand hier hart `/data/backups/`: Zeigte
+  # BACKUP_DIR woandershin — auf eine eingehängte Platte etwa, wozu die
+  # Einstellung da ist —, schrieb der Container trotzdem unter DATA_DIR, das
+  # Skript sah am angegebenen Ort nach, fand nichts und verwarf den Lauf. Die
+  # fehlgeleitete Datei blieb dabei liegen: Die Rotation räumt nur in
+  # BACKUP_DIR auf, also sah sie dort nie jemand wieder.
+  if "$PODMAN" run --rm --entrypoint node -v "$DATA_DIR:/data" -v "$BACKUP_DIR:/backups" localhost/roses-blog:latest \
+       -e "const db=require('better-sqlite3')('/data/app.db',{readonly:true});db.backup('/backups/'+process.argv[1]).then(()=>{db.close()}).catch(e=>{console.error(e);process.exit(1)})" \
        "app-$STAMP.db"
   then
     # ── ERST: LIEGT ÜBERHAUPT ETWAS DA? ────────────────────────────────────
@@ -85,8 +92,8 @@ if [[ -f "$DATA_DIR/app.db" ]]; then
     # ── DANN: SIE WIRD GELESEN, NICHT NUR ABGESETZT ────────────────────────
     # Dieselbe Prüfung, die rollback.sh vor dem Einspielen fährt. Wer sie hier
     # nicht fährt, verschiebt den Befund auf den Tag, an dem es darauf ankommt.
-    elif "$PODMAN" run --rm --entrypoint node -v "$DATA_DIR:/data" localhost/roses-blog:latest \
-         -e "const db=require('better-sqlite3')('/data/backups/'+process.argv[1],{readonly:true});const r=db.pragma('integrity_check',{simple:true});db.close();if(r!=='ok'){console.error(r);process.exit(1)}" \
+    elif "$PODMAN" run --rm --entrypoint node -v "$BACKUP_DIR:/backups" localhost/roses-blog:latest \
+         -e "const db=require('better-sqlite3')('/backups/'+process.argv[1],{readonly:true});const r=db.pragma('integrity_check',{simple:true});db.close();if(r!=='ok'){console.error(r);process.exit(1)}" \
          "app-$STAMP.db"
     then
       # Ab hier liegt eine GEPRÜFTE Sicherung. Sie wird nicht mehr weggeworfen.
@@ -112,7 +119,11 @@ fi
 
 # ── 2. Uploads archivieren ─────────────────────────────────────────────────
 UPLOADS_ARCHIV="$BACKUP_DIR/uploads-$STAMP.tar.gz"
+# Gibt es Medien, MUSS dieser Lauf ein Archiv davon erzeugen. Gibt es keine,
+# ist nichts zu sichern und der Lauf darf trotzdem gelingen.
+UPLOADS_NOETIG=0
 if [[ -d "$DATA_DIR/uploads" ]]; then
+  UPLOADS_NOETIG=1
   if tar -czf "$UPLOADS_ARCHIV" -C "$DATA_DIR" uploads; then
     UPLOADS_OK=1
     echo "Uploads-Backup: $UPLOADS_ARCHIV"
@@ -178,9 +189,19 @@ else
 fi
 
 # ── 4. Ergebnis ────────────────────────────────────────────────────────────
-# Ein Lauf ohne gültiges DB-Backup ist kein erfolgreicher Lauf. Cron wertet den
+# Ein Lauf ohne gültige Sicherung ist kein erfolgreicher Lauf. Cron wertet den
 # Exit-Code aus; eine Warnung im Protokoll tut das niemand.
+#
+# Das gilt für BEIDE Familien. Bis zur Gegenprüfung dieses Zweigs fragte das
+# Gate nur nach der Datenbank: Ein `tar`, das an der vollen Platte scheiterte,
+# hinterließ eine Warnung und Exit 0. Die Medien sind aber so sehr Teil der
+# Sicherung wie die Datenbank — ein Bericht ohne seine Fotos ist wiederher-
+# gestellt und trotzdem kaputt.
 [[ $DB_OK -eq 1 ]] \
   || fail "Kein gültiges DB-Backup in diesem Lauf ($STAMP). Die vorhandenen \
 Sicherungen in $BACKUP_DIR wurden NICHT rotiert."
+[[ $UPLOADS_NOETIG -eq 0 || $UPLOADS_OK -eq 1 ]] \
+  || fail "Kein Uploads-Archiv in diesem Lauf ($STAMP), obwohl \
+$DATA_DIR/uploads existiert. Die vorhandenen Uploads-Archive in $BACKUP_DIR \
+wurden NICHT rotiert."
 echo "Backup abgeschlossen: $STAMP"

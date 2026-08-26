@@ -329,28 +329,31 @@ Zwei Zusagen, auf die man sich verlassen kann (B16):
 Scheitert nur das Komprimieren, bleibt die geprüfte Sicherung unkomprimiert
 liegen (`app-<Zeitstempel>.db`) und zählt als gültig.
 
-**Restore** (App kurz stoppen):
+**Restore** — ein Befehl, der den Dienst selbst stoppt und wieder startet:
 
 ```bash
 cd ~/roses-food-blog
-podman compose down
-# Die Reihenfolge ist wichtig: erst in eine Nebendatei, dann das WAL des alten
-# Standes entfernen, dann atomar umbenennen. Wer app.db direkt überschreibt und
-# das WAL danach löscht, hinterlässt bei einem Abbruch neues app.db neben altem
-# WAL — SQLite spielt das WAL darüber, und der Restore war ein stiller No-op.
-gunzip -c /srv/roses-blog/data/backups/app-JJJJMMTT-HHMMSS.db.gz \
-  > /srv/roses-blog/data/app.db.neu
-rm -f /srv/roses-blog/data/app.db-wal /srv/roses-blog/data/app.db-shm
-mv -f /srv/roses-blog/data/app.db.neu /srv/roses-blog/data/app.db
-tar -xzf /srv/roses-blog/data/backups/uploads-JJJJMMTT-HHMMSS.tar.gz \
-  -C /srv/roses-blog/data
-podman compose up -d app
-curl -fsS "http://127.0.0.1:$(grep -E '^PORT=' .env | cut -d= -f2-)/health"
+./deploy/restore.sh /srv/roses-blog/data/backups/app-JJJJMMTT-HHMMSS.db.gz \
+                    /srv/roses-blog/data/backups/uploads-JJJJMMTT-HHMMSS.tar.gz
 ```
 
-> Auch hier der Port aus der `.env` — ein `curl` auf 3000 träfe auf dem Server
-> einen fremden Dienst und meldete Erfolg, während die Wiederherstellung in
-> Wahrheit noch gar nicht steht.
+Das Medien-Archiv ist optional; ohne es wird nur die Datenbank eingespielt.
+
+Das Skript prüft ALLES Prüfbare, bevor es das Erste anfasst — es entpackt die
+Sicherung, liest sie mit `integrity_check` und sichert den jetzigen Stand nach
+`backups/pre-restore-*.db`. Scheitert etwas davon, ist nichts eingespielt und
+der Dienst läuft unverändert weiter. Erst danach wird gestoppt, mit derselben
+Funktion eingespielt, die auch der Rollback und der monatliche Drill fahren
+(`deploy/db-restore.sh`), und zum Schluss der Health-Endpunkt auf dem Port aus
+der `.env` abgefragt: erst grün, dann gilt die Wiederherstellung.
+
+> **Warum kein Abtippen mehr.** Hier stand die Folge früher als einzelne Zeilen
+> zum Kopieren. In einer interaktiven Shell gilt weder `set -e` noch eine
+> Verkettung: Nachgemessen mit einem unlesbaren Archiv lief nach dem
+> gescheiterten `gunzip` das `rm` des WAL trotzdem, das `mv` schob die leer
+> angelegte Nebendatei über `app.db` — und der Start danach ebenso. Zurück
+> blieben eine LEERE Datenbank und kein WAL. Ein Wiederherstellungsversuch, der
+> alles vernichtet, und nichts hielt an.
 
 ## Fehlerbehebung
 

@@ -52,6 +52,19 @@ function spielwiese(): Platz {
  * Sie unterscheidet die zwei Aufrufe an dem, was WIRKLICH im Kommando steht
  * (`db.backup(` bzw. `integrity_check`) — nicht an ihrer Reihenfolge. Eine
  * Attrappe, die nur mitzählt, würde eine vertauschte Reihenfolge nicht merken.
+ *
+ * ── SIE LÖST DEN PFAD AUF WIE PODMAN ──────────────────────────────────────
+ *
+ * Bis 08/2026 nahm die Attrappe ihr Schreibziel aus `ATTRAPPE_ZIEL`, also aus
+ * der Umgebung des TESTS — und nicht aus dem Kommando, das das Skript ihr
+ * übergab. Damit konnte kein Test bemerken, WOHIN das Skript in Wahrheit
+ * sichert: Es stand `/data/backups/…` im Aufruf, geschrieben wurde, wohin der
+ * Test zeigte. Genau diese Sorte Prüfstand ist grün und prüft nichts.
+ *
+ * Jetzt sammelt sie die `-v host:container`-Paare ein und übersetzt den
+ * Container-Pfad aus dem Kommando damit zurück — dasselbe, was podman tut.
+ * Steht ein Pfad im Aufruf, der von keinem Mount gedeckt ist, wird NICHTS
+ * geschrieben, und das Skript merkt es an der fehlenden Datei.
  */
 function podmanAttrappe(platz: Platz, sichern: boolean, pruefen: boolean) {
   const log = path.join(tmp, "podman.log");
@@ -61,6 +74,25 @@ function podmanAttrappe(platz: Platz, sichern: boolean, pruefen: boolean) {
     [
       "#!/usr/bin/env bash",
       `echo "$*" >> ${JSON.stringify(log)}`,
+      // Die -v-Paare einsammeln: container -> host, wie podman sie auswertet.
+      "declare -A MOUNTS=()",
+      'vorher=""',
+      'for a in "$@"; do',
+      '  if [[ "$vorher" == "-v" ]]; then',
+      '    wirt="${a%%:*}"; rest="${a#*:}"; behaelter="${rest%%:*}"',
+      '    MOUNTS["$behaelter"]="$wirt"',
+      "  fi",
+      '  vorher="$a"',
+      "done",
+      // Container-Pfad -> Wirt-Pfad. Ohne deckenden Mount: leer.
+      "uebersetze(){",
+      '  local p="$1" c',
+      '  for c in "${!MOUNTS[@]}"; do',
+      '    [[ "$p" == "$c"/* ]] && { echo "${MOUNTS[$c]}/${p#"$c"/}"; return; }',
+      "  done",
+      "}",
+      // Das Verzeichnis steht IM Kommando, der Dateiname im letzten Argument.
+      "verzeichnis(){ sed -n \"s/.*$1('\\([^']*\\)'.*/\\1/p\" <<<\"$*\"; }",
       'if [[ "$*" == *"integrity_check"* ]]; then',
       `  exit ${pruefen ? 0 : 1}`,
       "fi",
@@ -68,9 +100,10 @@ function podmanAttrappe(platz: Platz, sichern: boolean, pruefen: boolean) {
       // Die echte API legt die Datei an; die Attrappe muss das auch tun,
       // sonst prüfte der Test einen Pfad, den es so nie gibt.
       `  [[ ${sichern ? 1 : 0} -eq 1 ]] || exit 1`,
-      // Ziel aus der Umgebung, nicht fest verdrahtet: Nur so kann ein Test
-      // prüfen, WELCHES Verzeichnis das Skript wirklich benutzt.
-      '  printf \'sqlite-sicherung\' > "$ATTRAPPE_ZIEL/${!#}"',
+      '  ziel="$(uebersetze "$(verzeichnis "db.backup" "$@")")"',
+      // Kein deckender Mount: podman könnte hier gar nicht schreiben.
+      '  [[ -n "$ziel" && -d "$ziel" ]] || exit 0',
+      '  printf \'sqlite-sicherung\' > "$ziel/${!#}"',
       "  exit 0",
       "fi",
       "exit 0",
@@ -99,7 +132,6 @@ function fahre(platz: Platz, umgebung: Record<string, string> = {}): Lauf {
           PODMAN: path.join(platz.bin, "podman"),
           DATA_DIR: platz.daten,
           BACKUP_DIR: platz.backups,
-          ATTRAPPE_ZIEL: platz.backups,
           ...umgebung,
         },
         encoding: "utf8",
@@ -231,10 +263,23 @@ describe("B14/8: ein gescheitertes gzip kostet die geprüfte Sicherung nicht", (
   it("behält die unkomprimierte Datei und meldet trotzdem Erfolg", () => {
     const platz = spielwiese();
     podmanAttrappe(platz, true, true);
-    // gzip, das immer scheitert — die Sicherung selbst ist geprüft und gut.
+    // gzip, das NUR an der Sicherung scheitert — sie selbst ist geprüft und
+    // gut. Bewusst nicht „scheitert immer": `tar -czf` ruft gzip mit, ein
+    // pauschaler Ausfall ließe also auch das Medien-Archiv scheitern und der
+    // Test prüfte dann zwei Dinge auf einmal.
     fs.writeFileSync(
       path.join(platz.bin, "gzip"),
-      "#!/usr/bin/env bash\nexit 1\n",
+      [
+        "#!/usr/bin/env bash",
+        'for a in "$@"; do [[ "$a" == *app-*.db ]] && exit 1; done',
+        // Für alles andere das ECHTE gzip — gefunden, indem das eigene
+        // Attrappen-Verzeichnis aus dem PATH fällt. Ein fester Pfad wie
+        // /usr/bin/gzip wäre eine Annahme über den Rechner, auf dem der Test
+        // läuft.
+        'eigenes="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"',
+        'PATH="$(IFS=:; for p in $PATH; do [[ "$p" == "$eigenes" ]] || printf "%s:" "$p"; done)"',
+        'exec gzip "$@"',
+      ].join("\n"),
       { mode: 0o755 },
     );
 
@@ -270,6 +315,61 @@ describe("Uploads", () => {
   });
 });
 
+describe("Ein Lauf ohne Medien-Archiv ist kein erfolgreicher Lauf", () => {
+  it("meldet Exit != 0, wenn das Uploads-Backup fehlschlägt", () => {
+    // DER BEFUND (Gegenprüfung zu diesem PR): Das Endgate fragte NUR nach dem
+    // DB-Backup. Ein `tar`, das an der vollen Platte scheitert, hinterließ
+    // eine Warnung im Protokoll und Exit 0 — Cron blieb grün. Das ist Wort
+    // für Wort die Fehlerklasse, gegen die dieses Skript geschrieben wurde,
+    // nur eine Familie weiter: Die Medien sind so sehr Teil der Sicherung wie
+    // die Datenbank.
+    const platz = spielwiese();
+    podmanAttrappe(platz, true, true);
+    fs.writeFileSync(
+      path.join(platz.bin, "tar"),
+      "#!/usr/bin/env bash\nexit 1\n",
+      { mode: 0o755 },
+    );
+
+    const lauf = fahre(platz);
+    expect(lauf.code).not.toBe(0);
+    expect(lauf.ausgabe).toMatch(/Uploads/);
+  });
+
+  it("bleibt erfolgreich, wenn es GAR KEINE Uploads gibt", () => {
+    // Kein Verzeichnis heißt: Es gibt nichts zu sichern. Das ist kein
+    // Fehlschlag — sonst schlüge eine frische Anlage bei jedem Lauf fehl.
+    const platz = spielwiese();
+    podmanAttrappe(platz, true, true);
+    fs.rmSync(path.join(platz.daten, "uploads"), { recursive: true });
+    expect(fahre(platz).code).toBe(0);
+  });
+});
+
+describe("BACKUP_DIR gilt auch dann, wenn es NICHT unter DATA_DIR liegt", () => {
+  it("sichert in das angegebene Verzeichnis — nicht in DATA_DIR/backups", () => {
+    // DER BEFUND: Das Skript reichte dem Container nur DATA_DIR herein und
+    // schrieb hart nach `/data/backups/`. Zeigte BACKUP_DIR woandershin — auf
+    // eine eingehängte Platte etwa, wozu die Einstellung ja da ist —, landete
+    // die Sicherung trotzdem unter DATA_DIR, während das Skript am
+    // angegebenen Ort nachsah, nichts fand und den Lauf verwarf. Die
+    // fehlgeleitete Datei blieb liegen: von der Rotation nie gesehen, weil
+    // die nur in BACKUP_DIR aufräumt.
+    const platz = spielwiese();
+    podmanAttrappe(platz, true, true);
+    const woanders = path.join(tmp, "nas");
+    fs.mkdirSync(woanders);
+
+    const lauf = fahre(platz, { BACKUP_DIR: woanders });
+
+    expect(lauf.code).toBe(0);
+    expect(fs.readdirSync(woanders).some((d) => /^app-.*\.db\.gz$/.test(d))).toBe(true);
+    expect(fs.readdirSync(woanders).some((d) => /^uploads-.*\.tar\.gz$/.test(d))).toBe(true);
+    // Und NICHTS ist daneben gelandet.
+    expect(fs.readdirSync(platz.backups)).toHaveLength(0);
+  });
+});
+
 describe("Rangfolge der Konfiguration: Aufrufer > .env > Standard", () => {
   it("das .env überschreibt NICHT, was der Aufrufer gesetzt hat", () => {
     const platz = spielwiese();
@@ -302,7 +402,6 @@ describe("Rangfolge der Konfiguration: Aufrufer > .env > Standard", () => {
           PODMAN: path.join(platz.bin, "podman"),
           DATA_DIR: platz.daten,
           BACKUP_DIR: platz.backups,
-          ATTRAPPE_ZIEL: platz.backups,
         },
         encoding: "utf8",
         stdio: ["ignore", "pipe", "pipe"],
