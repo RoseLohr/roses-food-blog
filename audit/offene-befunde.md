@@ -833,3 +833,41 @@ Negativkontrolle nicht anschlug — also an der Kontrolle, die eigens dafür da
 ist. Ohne sie wäre ein grüner, wirkungsloser Drill entstanden: dieselbe Klasse
 Fehler, die er beheben sollte.
 
+
+
+## B18 — Die Referenzaufnahme sieht kleine Änderungen auf großen Seiten nicht — GEMESSEN 08/2026, offen
+
+**Beobachtet beim Umbau der Zutatenzeile.** An jeder Zutat kamen zwei Knöpfe
+dazu (↑ ↓). Der Lauf `npx playwright test admin-referenz` meldete das NICHT:
+`admin-rezept-neu` und `admin-rezept-bearbeiten` blieben grün. Ebenso blieb
+`reise-detail @ desktop-1280` grün, obwohl der Restaurant-Titel sich geändert
+hatte — die beiden schmaleren Breiten derselben Seite schlugen an.
+
+**Die Ursache ist die Toleranz, und sie ist kein Fehler.** Verglichen wird mit
+`maxDiffPixelRatio: 0.002`, also 0,2 % der Bildpunkte. Auf einer 1280 × 2996
+Punkte großen Aufnahme sind das rund 7 700 Punkte; zwei kleine Knöpfe
+verändern weniger. Die Kontrolle ist damit nicht kaputt — sie ist eine Aussage
+über die FLÄCHE einer Änderung, nicht über ihr Vorhandensein.
+
+**Die Toleranz zu senken ist keine Lösung, und das ist gemessen, nicht
+vermutet.** Derselbe Lauf mit `maxDiffPixelRatio: 0` meldete achtzehn
+Abweichungen, darunter `admin-medien` und `saisonkalender` — zwei Seiten, die
+diese Änderung nicht anfasst. Bei Null ist jedes Rasterrauschen ein Fund; die
+Kontrolle würde bei jedem Lauf rot und wäre damit wertlos. Die 0,2 % sind der
+Preis dafür, dass sie überhaupt benutzbar ist.
+
+**Was daraus folgt, bis jemand es besser löst:** Wer eine kleine Änderung an
+einer großen Seite macht, verlässt sich NICHT darauf, dass der Referenzlauf
+sie meldet. Er benennt die betroffenen Seiten vorher selbst und nimmt sie mit
+`--update-snapshots=all` gezielt neu auf — `--update-snapshots` allein schreibt
+nur die Dateien neu, deren Unterschied über der Toleranz liegt, und lässt
+genau die zurück, die hier gemeint sind. Bei diesem Umbau waren das
+`admin-rezept-neu`, `admin-rezept-bearbeiten` und `reise-detail @ desktop-1280`:
+sechs Basisbilder, die sonst eine Oberfläche gezeigt hätten, die es nicht mehr
+gibt.
+
+**Denkbare Wurzel-Lösung, noch nicht gebaut:** je Seite einen Ausschnitt
+aufnehmen statt der ganzen Seite (`clip`), damit die Bezugsfläche zur Größe der
+Sache passt, über die die Aufnahme etwas aussagen soll. Das ist ein eigener
+Umbau der Mechanik in `tests/e2e/referenz.ts` und gehört nicht in eine
+Funktionsänderung.

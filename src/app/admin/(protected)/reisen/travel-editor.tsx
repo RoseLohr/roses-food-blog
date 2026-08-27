@@ -8,6 +8,7 @@
 import { useActionState, useMemo, useState } from "react";
 import { saveTravelAction, type TravelFormState } from "./actions";
 import { ImagePicker, type ImageChoice } from "@/components/admin/image-picker";
+import { verschoben, type Richtung } from "@/lib/reihenfolge";
 import {
   QuickAddCheckboxes,
   type Option as TaxonomyOption,
@@ -212,14 +213,8 @@ export function TravelEditor({
     setEintraege((prev) =>
       prev.map((e, idx) => (idx === i ? ({ ...e, ...patch } as Eintrag) : e)),
     );
-  const verschiebe = (i: number, richtung: -1 | 1) =>
-    setEintraege((prev) => {
-      const j = i + richtung;
-      if (j < 0 || j >= prev.length) return prev;
-      const next = [...prev];
-      [next[i], next[j]] = [next[j], next[i]];
-      return next;
-    });
+  const verschiebe = (i: number, richtung: Richtung) =>
+    setEintraege((prev) => verschoben(prev, i, richtung) as Eintrag[]);
   const entferne = (i: number) =>
     setEintraege((prev) => prev.filter((_, idx) => idx !== i));
   const fuegeAn = (e: EditorItem) =>

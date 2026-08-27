@@ -9,6 +9,7 @@ import { useActionState, useState } from "react";
 import { saveRecipeAction, type RecipeFormState } from "./actions";
 import { QuickAddCheckboxes } from "@/components/admin/quick-add-checkboxes";
 import { ImagePicker, type ImageChoice } from "@/components/admin/image-picker";
+import { verschoben, type Richtung } from "@/lib/reihenfolge";
 import { RichTextEditor } from "@/components/admin/rich-text-editor";
 import { RecipeAiAssistant } from "@/components/admin/recipe-ai-assistant";
 import type { RecipeDraft } from "@/lib/ai-recipe";
@@ -247,6 +248,22 @@ export function RecipeEditor({
 
   const updateSection = (i: number, patch: Partial<EditorSection>) =>
     setSections((prev) => prev.map((s, idx) => (idx === i ? { ...s, ...patch } : s)));
+
+  /**
+   * Eine Zutat innerhalb ihres Abschnitts um einen Platz verschieben. Die
+   * Reihenfolge der Zutaten ist eine Aussage — genau so steht sie auf der
+   * Rezeptseite — und war bisher die Reihenfolge, in der jemand sie eingetippt
+   * hatte. Am Rand passiert nichts; dann kommt dieselbe Liste zurück und der
+   * Abschnitt wird gar nicht erst neu gesetzt.
+   */
+  const verschiebeZutat = (si: number, ii: number, richtung: Richtung) =>
+    setSections((prev) =>
+      prev.map((s, idx) => {
+        if (idx !== si) return s;
+        const next = verschoben(s.ingredients, ii, richtung);
+        return next === s.ingredients ? s : { ...s, ingredients: [...next] };
+      }),
+    );
 
   // KI-Entwurf ins Formular übernehmen. WICHTIG: Es wird NICHTS in der
   // Datenbank angelegt. Vorgeschlagene Taxonomie-Namen werden nur gegen die
@@ -582,18 +599,45 @@ export function RecipeEditor({
                       placeholder={d.ingredientNote}
                       className={`${inputCls} zutat-note`}
                     />
-                    <button
-                      type="button"
-                      aria-label={`${d.ingredientName} ${ii + 1} ${d.remove}`}
-                      onClick={() =>
-                        updateSection(si, {
-                          ingredients: section.ingredients.filter((_, idx) => idx !== ii),
-                        })
-                      }
-                      className={`${btnSecondary} zutat-remove`}
-                    >
-                      ×
-                    </button>
+                    {/* Reihenfolge und Entfernen zusammen in EINER Zelle —
+                        dieselben zwei Pfeile wie an den Reise-Blöcken. Die
+                        Reihenfolge der Zutaten ist eine Aussage (Mengen zuerst,
+                        Gewürze zuletzt) und stand bisher fest in der
+                        Eingabereihenfolge. */}
+                    <div className="zutat-tasten">
+                      <button
+                        type="button"
+                        onClick={() => verschiebeZutat(si, ii, -1)}
+                        disabled={ii === 0}
+                        aria-label={`${d.ingredientUp} (${ii + 1})`}
+                        title={d.ingredientUp}
+                        className={`${btnSecondary} px-2 py-0.5 disabled:opacity-40`}
+                      >
+                        ↑
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => verschiebeZutat(si, ii, 1)}
+                        disabled={ii === section.ingredients.length - 1}
+                        aria-label={`${d.ingredientDown} (${ii + 1})`}
+                        title={d.ingredientDown}
+                        className={`${btnSecondary} px-2 py-0.5 disabled:opacity-40`}
+                      >
+                        ↓
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`${d.ingredientName} ${ii + 1} ${d.remove}`}
+                        onClick={() =>
+                          updateSection(si, {
+                            ingredients: section.ingredients.filter((_, idx) => idx !== ii),
+                          })
+                        }
+                        className={`${btnSecondary} zutat-remove`}
+                      >
+                        ×
+                      </button>
+                    </div>
                   </div>
                 ))}
                 <button

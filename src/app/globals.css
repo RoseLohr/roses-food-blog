@@ -202,13 +202,17 @@ html {
 }
 .zutat-row > .zutat-name,
 .zutat-row > .zutat-note,
-.zutat-row > .zutat-remove {
+.zutat-row > .zutat-tasten {
   grid-column: 1 / -1; /* volle Breite auf dem Handy */
 }
-.zutat-row > .zutat-remove {
+/* ↑ ↓ × sitzen in EINER Rasterzelle. Sonst bräuchte die Zeile zwei weitere
+   Spalten, und die Eingabefelder — worum es hier geht — würden schmaler. */
+.zutat-row > .zutat-tasten {
+  display: flex;
+  gap: 0.25rem;
   justify-self: end;
 }
-.zutat-row > .zutat-remove::before {
+.zutat-tasten > .zutat-remove::before {
   content: "Entfernen "; /* auf dem Handy Beschriftung, Desktop nur „×“ */
 }
 @media (min-width: 640px) {
@@ -220,11 +224,11 @@ html {
   }
   .zutat-row > .zutat-name,
   .zutat-row > .zutat-note,
-  .zutat-row > .zutat-remove {
+  .zutat-row > .zutat-tasten {
     grid-column: auto;
     justify-self: auto;
   }
-  .zutat-row > .zutat-remove::before {
+  .zutat-tasten > .zutat-remove::before {
     content: "";
   }
 }
