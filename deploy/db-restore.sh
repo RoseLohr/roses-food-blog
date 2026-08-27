@@ -68,10 +68,31 @@ db_einspielen(){
   [[ -f "$backup" ]] || fail "Backup $backup existiert nicht."
   [[ -d "$daten" ]] || fail "Daten-Verzeichnis $daten existiert nicht."
 
+  # ── DER MODUS GEHÖRT DER DATENBANK, NICHT DER SICHERUNG (Panel-Runde 7) ──
+  #
+  # `cp` legt die neue Datei mit dem Modus der QUELLE an. Eine Sicherung liegt
+  # regelmäßig als 0644 da (sie entsteht im Container, unter dessen umask);
+  # die laufende Datenbank ist 0600. Gemessen:
+  #
+  #     vorher   app.db 600, backup 644
+  #     nachher  app.db 644
+  #
+  # Ein Restore hätte die Datenbank also jedes Mal ein Stück weiter geöffnet —
+  # still, und ausgerechnet im Ernstfall. Der Modus des laufenden Standes wird
+  # deshalb vorher abgelesen und danach wieder aufgesetzt. Gibt es noch keine
+  # Datenbank (erste Wiederherstellung auf leerem Verzeichnis), gilt 0600:
+  # enger als das, was `cp` liefern würde, und für eine Datenbank das Richtige.
+  local modus="0600"
+  [[ -f "$daten/app.db" ]] && modus="$(stat -c %a "$daten/app.db" 2>/dev/null || echo 0600)"
+
   rm -f "$daten/app.db.neu"
   cp "$backup" "$daten/app.db.neu" \
     || fail "Einspielen von $backup fehlgeschlagen — app.db ist UNVERÄNDERT. \
 Die Sicherung des vorigen Standes liegt in $daten/backups/."
+  # VOR dem Umbenennen: Sonst stünde die Datenbank zwischen `mv` und `chmod`
+  # offen da, und genau dieses Fenster ist der Befund.
+  chmod "$modus" "$daten/app.db.neu" \
+    || fail "Modus $modus ließ sich nicht setzen — app.db ist UNVERÄNDERT."
   rm -f "$daten/app.db-wal" "$daten/app.db-shm"
   mv -f "$daten/app.db.neu" "$daten/app.db" \
     || fail "Umbenennen der eingespielten Datenbank fehlgeschlagen — \

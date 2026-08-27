@@ -65,9 +65,59 @@ fail(){ echo "[backup] FEHLER: $*" >&2; exit 1; }
 
 # Dasselbe für das Sicherungsverzeichnis selbst: Wäre es ein untergeschobener
 # Link, sicherte dieser Lauf woandershin — und die Rotation räumte dort auf.
+#
+# ── ERST DEN SCHLUSS-SCHRÄGSTRICH WEG (Panel-Runde 7) ─────────────────────
+#
+# `-L` prüft den PFAD, wie er dasteht. Ein Schluss-Schrägstrich zwingt das
+# Betriebssystem, ihn als Verzeichnis aufzulösen — der Test sieht dann das
+# ZIEL und nicht den Link. Gemessen:
+#
+#     BACKUP_DIR=…/verweis    ->  [[ -L ]] wahr    (Wächter greift)
+#     BACKUP_DIR=…/verweis/   ->  [[ -L ]] falsch  (Wächter LÄSST DURCH)
+#
+# Und dieser Wert kommt von außen: aus der Umgebung des Aufrufers oder aus
+# `.env`. Ein Pfad mit Schrägstrich am Ende ist dort nichts Ungewöhnliches.
+#
+# Eine frühere Panel-Runde hatte darauf hingewiesen, und ich habe sie abgewiesen
+# — mit der richtigen Feststellung, dass im QUELLTEXT kein Schrägstrich steht,
+# und der falschen Annahme, damit sei die Sache erledigt. Geprüft gehört der
+# WERT, nicht die Schreibweise an der Prüfstelle.
+#
+# `%/` in der Schleife, nicht `%%/`: Ein Pfad kann mehrere tragen ("a///"),
+# und `/` selbst muss stehen bleiben, sonst bliebe die leere Zeichenkette übrig.
+while [[ "$BACKUP_DIR" == */ && "$BACKUP_DIR" != "/" ]]; do
+  BACKUP_DIR="${BACKUP_DIR%/}"
+done
 [[ ! -L "$BACKUP_DIR" ]] \
   || fail "$BACKUP_DIR ist ein symbolischer Link. Dorthin wird nicht gesichert."
 mkdir -p "$BACKUP_DIR"
+
+# ── GESCHRIEBEN WIRD IN EINE WERKSTATT, NICHT AN DEN ZIELNAMEN (Runde 7) ───
+#
+# Die Prüfung „steht hier etwas?" fängt den VORHER gelegten Alias ab. Sie
+# fängt NICHT das Wettrennen danach: Zwischen der Prüfung und dem Augenblick,
+# in dem tar bzw. die Backup-API die Datei öffnet, kann jemand einen Link an
+# den Zielnamen legen — die Zielnamen tragen einen Zeitstempel und sind damit
+# vorhersagbar. Bisher stand genau das nur als ehrlicher Satz im Kommentar.
+#
+# Geschlossen wird es so: Gearbeitet wird in einem frisch angelegten
+# Verzeichnis mit unvorhersagbarem Namen, das nur uns gehört (0700). Dort
+# hinein kann niemand vorab etwas legen. Fertig wird die Datei mit `mv` an
+# ihren Platz gebracht — und `mv` benennt um, es schreibt nicht durch einen
+# Link hindurch. Gemessen:
+#
+#     ln -s opfer ziel;  mv -f quelle ziel
+#     -> "opfer" unverändert, "ziel" ist danach eine echte Datei.
+#
+# Damit gibt es kein Fenster mehr, in dem ein untergeschobener Alias etwas
+# bewirken könnte: Während des Schreibens ist der Name geheim, und beim
+# Veröffentlichen wird nicht geschrieben, sondern umbenannt.
+WERKSTATT="$(mktemp -d "$BACKUP_DIR/.werkstatt-XXXXXX")" \
+  || fail "Werkstatt-Verzeichnis in $BACKUP_DIR ließ sich nicht anlegen."
+chmod 700 "$WERKSTATT"
+# Auch bei Abbruch: eine halbfertige Sicherung gehört nicht in den Bestand,
+# und die Rotation soll sie nie zu Gesicht bekommen.
+trap 'rm -rf "$WERKSTATT"' EXIT
 
 DB_OK=0
 UPLOADS_OK=0
@@ -76,7 +126,10 @@ UPLOADS_OK=0
 # Online-Backup-API, funktioniert bei laufender App. Ein DB-Fehler darf das
 # Uploads-Backup NICHT verhindern — deshalb gekapselt statt `set -e`-Abbruch;
 # über den Exit-Code des Laufs entscheidet Schritt 4.
-ROH="$BACKUP_DIR/app-$STAMP.db"
+ZIEL_DB="$BACKUP_DIR/app-$STAMP.db"
+# Gearbeitet wird in der Werkstatt, veröffentlicht wird mit `mv`.
+ROH="$WERKSTATT/app-$STAMP.db"
+IM_MOUNT="$(basename "$WERKSTATT")/app-$STAMP.db"
 # Beide Zielpfade sind VORHERSAGBAR (Zeitstempel). Läge dort ein
 # untergeschobener Link, schriebe tar bzw. die Backup-API durch ihn hindurch
 # auf ein fremdes Ziel — und der Lauf könnte grün enden. Ein Link an dieser
@@ -110,8 +163,8 @@ nicht gesichert — an dieser Stelle steht nie etwas, das dieses Skript angelegt
 hat, und ein untergeschobener Alias (Sym- ODER Hardlink) ließe diesen Lauf \
 durch ihn hindurch schreiben."
 }
-platz_frei "$ROH"
-platz_frei "$ROH.gz"
+platz_frei "$ZIEL_DB"
+platz_frei "$ZIEL_DB.gz"
 if [[ -f "$DATA_DIR/app.db" ]]; then
   # BACKUP_DIR wird als EIGENER Mount hereingereicht, nicht als Unterverzeichnis
   # von DATA_DIR angenommen. Bis 08/2026 stand hier hart `/data/backups/`: Zeigte
@@ -122,7 +175,7 @@ if [[ -f "$DATA_DIR/app.db" ]]; then
   # BACKUP_DIR auf, also sah sie dort nie jemand wieder.
   if "$PODMAN" run --rm --entrypoint node -v "$DATA_DIR:/data" -v "$BACKUP_DIR:/backups" localhost/roses-blog:latest \
        -e "const db=require('better-sqlite3')('/data/app.db',{readonly:true});db.backup('/backups/'+process.argv[1]).then(()=>{db.close()}).catch(e=>{console.error(e);process.exit(1)})" \
-       "app-$STAMP.db"
+       "$IM_MOUNT"
   then
     # ── ERST: LIEGT ÜBERHAUPT ETWAS DA? ────────────────────────────────────
     # Der Exit-Status sagt nur, dass der Aufruf durchlief. Beim Schreiben
@@ -138,16 +191,23 @@ if [[ -f "$DATA_DIR/app.db" ]]; then
     # nicht fährt, verschiebt den Befund auf den Tag, an dem es darauf ankommt.
     elif "$PODMAN" run --rm --entrypoint node -v "$BACKUP_DIR:/backups" localhost/roses-blog:latest \
          -e "const db=require('better-sqlite3')('/backups/'+process.argv[1],{readonly:true});const r=db.pragma('integrity_check',{simple:true});db.close();if(r!=='ok'){console.error(r);process.exit(1)}" \
-         "app-$STAMP.db"
+         "$IM_MOUNT"
     then
       # Ab hier liegt eine GEPRÜFTE Sicherung. Sie wird nicht mehr weggeworfen.
       DB_OK=1
+      # Komprimieren NOCH in der Werkstatt, dann an den Platz bringen. Erst
+      # das `mv` macht die Sicherung sichtbar — halbfertig sieht sie niemand,
+      # und die Rotation bekommt sie nie in diesem Zustand zu Gesicht.
       if gzip "$ROH"; then
-        echo "DB-Backup:      $ROH.gz"
+        mv -f "$ROH.gz" "$ZIEL_DB.gz" \
+          || fail "Die geprüfte Sicherung ließ sich nicht nach $ZIEL_DB.gz bringen."
+        echo "DB-Backup:      $ZIEL_DB.gz"
       else
         warn "Komprimieren fehlgeschlagen — die GEPRÜFTE Sicherung bleibt \
-unkomprimiert liegen: $ROH. (Sie wird nicht gelöscht; früher tat das ein \
+unkomprimiert: $ZIEL_DB. (Sie wird nicht gelöscht; früher tat das ein \
 pauschales rm und vernichtete damit ein gültiges Backup.)"
+        mv -f "$ROH" "$ZIEL_DB" \
+          || fail "Die geprüfte Sicherung ließ sich nicht nach $ZIEL_DB bringen."
       fi
     else
       warn "DB-Backup $ROH ist beschädigt (integrity_check) — verworfen."
@@ -162,8 +222,9 @@ else
 fi
 
 # ── 2. Uploads archivieren ─────────────────────────────────────────────────
-UPLOADS_ARCHIV="$BACKUP_DIR/uploads-$STAMP.tar.gz"
-platz_frei "$UPLOADS_ARCHIV"
+ZIEL_UPLOADS="$BACKUP_DIR/uploads-$STAMP.tar.gz"
+UPLOADS_ARCHIV="$WERKSTATT/uploads-$STAMP.tar.gz"
+platz_frei "$ZIEL_UPLOADS"
 # Gibt es Medien, MUSS dieser Lauf ein Archiv davon erzeugen. Gibt es keine,
 # ist nichts zu sichern und der Lauf darf trotzdem gelingen.
 UPLOADS_NOETIG=0
@@ -180,8 +241,10 @@ if [[ -d "$DATA_DIR/uploads" ]]; then
     # gequellt — eine zweite Abschrift hier wäre genau die Uneinigkeit, die
     # den Befund erzeugt hat.
     if GRUND="$(archiv_typen_ok "$UPLOADS_ARCHIV")"; then
+      mv -f "$UPLOADS_ARCHIV" "$ZIEL_UPLOADS" \
+        || fail "Das geprüfte Archiv ließ sich nicht nach $ZIEL_UPLOADS bringen."
       UPLOADS_OK=1
-      echo "Uploads-Backup: $UPLOADS_ARCHIV"
+      echo "Uploads-Backup: $ZIEL_UPLOADS"
     else
       warn "Das erzeugte Archiv $UPLOADS_ARCHIV $GRUND
 Es ließe sich nicht wiederherstellen und wird deshalb NICHT als Sicherung

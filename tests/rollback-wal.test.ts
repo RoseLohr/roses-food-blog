@@ -251,3 +251,65 @@ describe("deploy/rollback.sh trägt die Konsequenz", () => {
     expect(ohneKommentar).toMatch(/Schema ist der zurückgerollten Anwendung VORAUS/);
   });
 });
+
+describe("Panel-Runde 7: der Dateimodus gehört der Datenbank, nicht der Sicherung", () => {
+  /** Laufender Stand + gültige Sicherung, beide mit gesetztem Modus. */
+  function stand(modusApp: number, modusBackup: number) {
+    const dir = frischesVerzeichnis();
+    const app = path.join(dir, "app.db");
+    const sicherung = path.join(dir, "sicherung.db");
+    befuellen(app, 5, "alt").close();
+    befuellen(sicherung, 7, "neu").close();
+    fs.chmodSync(app, modusApp);
+    fs.chmodSync(sicherung, modusBackup);
+    return { dir, app, sicherung };
+  }
+
+  const modusVon = (datei: string) =>
+    (fs.statSync(datei).mode & 0o777).toString(8);
+
+  it("die eingespielte app.db behält den Modus des laufenden Standes", () => {
+    // DER BEFUND: `cp` legt die neue Datei mit dem Modus der QUELLE an. Eine
+    // Sicherung liegt regelmäßig als 0644 da (sie entsteht im Container unter
+    // dessen umask), die laufende Datenbank ist 0600. Gemessen am nackten
+    // Werkzeug, bevor hier etwas geändert wurde:
+    //
+    //     vorher   app.db 600, backup 644
+    //     nachher  app.db 644
+    //
+    // Ein Restore hätte die Datenbank also jedes Mal ein Stück weiter
+    // geöffnet — still, und ausgerechnet im Ernstfall.
+    const { dir, app, sicherung } = stand(0o600, 0o644);
+
+    dbEinspielen(sicherung, dir);
+
+    expect(modusVon(app)).toBe("600");
+    // Und es ist wirklich die Sicherung, die jetzt dasteht.
+    expect(zeilen(app)).toBe(7);
+  });
+
+  it("ein ENGERER Modus der Sicherung macht die Datenbank nicht enger", () => {
+    // Gegenprobe in die andere Richtung: Der Modus kommt vom LAUFENDEN Stand,
+    // nicht vom Backup. Ohne sie wäre der Test darüber auch dann grün, wenn
+    // die Regel bloß „nimm immer 600" hieße und gar nichts abgelesen würde.
+    const { dir, app, sicherung } = stand(0o640, 0o600);
+
+    dbEinspielen(sicherung, dir);
+
+    expect(modusVon(app)).toBe("640");
+  });
+
+  it("ohne vorhandene app.db gilt 0600 — enger als das, was cp liefern würde", () => {
+    // Erste Wiederherstellung in ein leeres Verzeichnis: Es gibt keinen
+    // laufenden Stand, von dem sich etwas ablesen ließe. Dann darf nicht der
+    // Modus der Sicherung durchschlagen.
+    const dir = frischesVerzeichnis();
+    const sicherung = path.join(dir, "sicherung.db");
+    befuellen(sicherung, 7, "neu").close();
+    fs.chmodSync(sicherung, 0o644);
+
+    dbEinspielen(sicherung, dir);
+
+    expect(modusVon(path.join(dir, "app.db"))).toBe("600");
+  });
+});

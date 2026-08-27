@@ -1068,3 +1068,90 @@ Die neuen Invarianten für den Typ-Vertrag standen zuerst **nur** im
 kontrolliert, mitten in der Behebung von vier Befunden über genau das.
 Gefunden hat es die Gegenprobe, nicht das Nachdenken. Sie wird jetzt in beiden
 Läufen ausgewertet.
+
+## B21 — Der Wert, das Wettrennen und der Dateimodus — GEMESSEN 08/2026, behoben
+
+Drei Befunde aus der siebten Panel-Runde. Der erste ist eine Korrektur an mir
+selbst.
+
+### 1. Ein Schluss-Schrägstrich im WERT hebelte den Link-Wächter aus
+
+`[[ -L "$BACKUP_DIR" ]]` prüft den Pfad, wie er dasteht. Ein Schrägstrich am
+Ende zwingt das Betriebssystem, ihn als Verzeichnis aufzulösen — der Test sieht
+dann das ZIEL und nicht den Link. Gemessen:
+
+```
+BACKUP_DIR=…/verweis    ->  [[ -L ]] wahr    (Wächter greift)
+BACKUP_DIR=…/verweis/   ->  [[ -L ]] falsch  (Wächter LÄSST DURCH)
+```
+
+Der Wert kommt von außen: aus der Umgebung des Aufrufers oder aus `.env`. Ein
+Pfad mit Schrägstrich am Ende ist dort nichts Ungewöhnliches.
+
+**Das hatte ich in B20 schon einmal auf dem Tisch und abgewiesen.** Der
+damalige Hinweis lautete, `-L` auf `BACKUP_DIR/` dereferenziere den Link. Ich
+habe im Quelltext nachgesehen, dort keinen Schrägstrich gefunden und den Punkt
+für erledigt erklärt. Die Feststellung war richtig und die Schlussfolgerung
+falsch: Zu prüfen ist der **Wert**, nicht die Schreibweise an der Prüfstelle.
+Der Schrägstrich muss nicht im Code stehen — er kommt mit der Konfiguration.
+
+**Wurzel:** Der Wert wird normalisiert, bevor der Wächter ihn sieht.
+
+### 2. Das Wettrennen zwischen Prüfung und Schreiben — jetzt geschlossen statt benannt
+
+`platz_frei` fängt den VORHER gelegten Alias ab. Zwischen dieser Prüfung und
+dem Augenblick, in dem `tar` bzw. die Backup-API die Datei öffnet, kann jemand
+einen Link an den Zielnamen legen; die Zielnamen tragen einen Zeitstempel und
+sind damit vorhersagbar. Bisher stand genau das nur als ehrlicher Satz im
+Kommentar — als Reichweite, die wir nicht erreichen.
+
+**Wurzel:** Gearbeitet wird jetzt in einem frisch angelegten Verzeichnis mit
+unvorhersagbarem Namen (`mktemp -d`, 0700). Dort hinein kann niemand vorab
+etwas legen. Fertig wird die Datei mit `mv` an ihren Platz gebracht — und `mv`
+benennt um, es schreibt nicht durch einen Link hindurch. Gemessen:
+
+```
+ln -s opfer ziel;  mv -f quelle ziel
+-> "opfer" unverändert, "ziel" ist danach eine echte Datei.
+```
+
+Damit gibt es kein Fenster mehr: Während des Schreibens ist der Name geheim,
+und beim Veröffentlichen wird nicht geschrieben, sondern umbenannt.
+
+### 3. Der Restore öffnete die Datenbank jedes Mal ein Stück weiter
+
+`cp` legt die neue Datei mit dem Modus der QUELLE an. Eine Sicherung liegt
+regelmäßig als 0644 da (sie entsteht im Container unter dessen umask), die
+laufende Datenbank ist 0600. Gemessen:
+
+```
+vorher   app.db 600, backup 644
+nachher  app.db 644
+```
+
+Still, und ausgerechnet im Ernstfall.
+
+**Wurzel:** Der Modus des laufenden Standes wird vor dem Ersetzen abgelesen und
+auf die neue Datei gesetzt — **vor** dem `mv`, sonst stünde die Datenbank
+zwischen Umbenennen und `chmod` offen da. Gibt es noch keine Datenbank, gilt
+0600.
+
+### Nicht übernommen
+
+Der `h`-Zweig in `archiv_typen_ok` (`deploy/archiv-typen.sh`) sei wirkungslos,
+weil `tar -tvzf` Hardlinks als `-` melde. (Der Befund nannte dafür Zeile 64 —
+die Datei hat 63.) Gemessen mit GNU tar 1.35:
+
+```
+[h]  hrw-r--r-- root/root   0 … uploads/kopie.jpg link to uploads/echt.jpg
+```
+
+Der Typ steht als `h` in der ersten Spalte, der Zweig greift.
+
+### Und wieder ein grüner Test, der nichts prüfte
+
+Der Test für das Wettrennen hängte den Angriff an die podman-Attrappe **an** —
+hinter deren `exit 0`. Die Zeile lief nie, der Test war grün, und erst die
+Gegenprobe (`mv` durch `cp` ersetzen, das einem Link folgt) hat es gezeigt: Sie
+blieb ebenfalls grün. Der Angriff steht jetzt VOR der ersten Verzweigung.
+Das ist innerhalb dieses Zweiges der dritte Fall dieser Art.

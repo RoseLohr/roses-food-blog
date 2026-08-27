@@ -681,3 +681,82 @@ describe("Panel-Runde 6: Alias und Typ-Vertrag", () => {
     expect(fs.existsSync(path.join(platz.backups, `uploads-${stempel}.tar.gz`))).toBe(true);
   });
 });
+
+describe("Panel-Runde 7: der Schluss-Schrägstrich und das Wettrennen", () => {
+  it("ein BACKUP_DIR mit Schluss-Schrägstrich hebelt den Link-Wächter nicht mehr aus", () => {
+    // DER BEFUND: `-L` prüft den Pfad, wie er dasteht. Ein Schluss-Schrägstrich
+    // zwingt das Betriebssystem, ihn als Verzeichnis aufzulösen — der Test
+    // sieht dann das ZIEL und nicht den Link. Gemessen am nackten Werkzeug:
+    //
+    //     [[ -L "verweis"  ]]  ->  wahr
+    //     [[ -L "verweis/" ]]  ->  FALSCH
+    //
+    // Der Wert kommt von außen (Umgebung oder .env); ein Pfad mit Schrägstrich
+    // am Ende ist dort nichts Ungewöhnliches. Eine frühere Panel-Runde hatte
+    // darauf hingewiesen, und ich hatte sie abgewiesen — richtig war nur, dass
+    // im QUELLTEXT kein Schrägstrich steht. Geprüft gehört der WERT.
+    const platz = spielwiese();
+    podmanAttrappe(platz, true, true);
+    const woanders = path.join(tmp, "fremdes-verzeichnis");
+    fs.mkdirSync(woanders);
+    fs.rmSync(platz.backups, { recursive: true, force: true });
+    fs.symlinkSync(woanders, platz.backups);
+
+    const lauf = fahre(platz, { BACKUP_DIR: `${platz.backups}/` });
+
+    expect(lauf.code).not.toBe(0);
+    expect(lauf.ausgabe).toMatch(/Link/);
+    expect(fs.readdirSync(woanders)).toHaveLength(0);
+  });
+
+  it("ein Alias, der NACH der Prüfung auftaucht, zerstört sein Ziel nicht", () => {
+    // DAS WETTRENNEN: Zwischen `platz_frei` und dem Augenblick, in dem
+    // geschrieben wird, kann jemand einen Link an den Zielnamen legen — die
+    // Zielnamen tragen einen Zeitstempel und sind vorhersagbar. Bisher stand
+    // das nur als ehrlicher Satz im Kommentar.
+    //
+    // Die Attrappe spielt den Angreifer: Sie legt den Link GENAU DANN, wenn
+    // der Sicherungslauf gerade läuft — also nach der Prüfung. Ohne die
+    // Werkstatt schriebe `gzip` durch ihn hindurch auf das Opfer.
+    const platz = spielwiese();
+    const stempel = stempelFestlegen(platz, "20260101-000000");
+    const opfer = path.join(tmp, "opfer");
+    fs.writeFileSync(opfer, "gehoert jemand anderem");
+    podmanAttrappe(platz, true, true);
+    // Der Attrappe den Angriff EINBAUEN — nicht anhängen. Beim ersten Anlauf
+    // stand die Zeile hinter dem `exit 0` der Attrappe und lief nie; der Test
+    // war grün und prüfte nichts. Genau die Fehlerklasse, um die es hier geht.
+    // Sie muss deshalb VOR die erste Verzweigung, gleich hinter die Shebang.
+    const attrappe = path.join(platz.bin, "podman");
+    const zeilen = fs.readFileSync(attrappe, "utf8").split("\n");
+    zeilen.splice(
+      1,
+      0,
+      `ln -sf ${JSON.stringify(opfer)} ${JSON.stringify(path.join(platz.backups, `app-${stempel}.db.gz`))}`,
+    );
+    fs.writeFileSync(attrappe, zeilen.join("\n"), { mode: 0o755 });
+
+    const lauf = fahre(platz);
+
+    expect(lauf.code).toBe(0);
+    // Das Opfer ist unberührt — `mv` benennt um, es schreibt nicht durch.
+    expect(fs.readFileSync(opfer, "utf8")).toBe("gehoert jemand anderem");
+    // Und die Sicherung liegt als echte Datei da, nicht als Link.
+    const ziel = path.join(platz.backups, `app-${stempel}.db.gz`);
+    expect(fs.lstatSync(ziel).isSymbolicLink()).toBe(false);
+  });
+
+  it("die Werkstatt bleibt nicht liegen — auch nicht nach einem Fehllauf", () => {
+    // Ein Verzeichnis, das der Lauf zurücklässt, wäre neuer Müll im
+    // Sicherungsbestand — und die Rotation sähe Dateien, die niemand
+    // veröffentlicht hat.
+    const platz = spielwiese();
+    podmanAttrappe(platz, false, true); // DB-Backup scheitert -> Fehllauf
+    stempelFestlegen(platz, "20260101-000000");
+
+    const lauf = fahre(platz);
+
+    expect(lauf.code).not.toBe(0);
+    expect(fs.readdirSync(platz.backups).filter((n) => n.startsWith(".werkstatt-"))).toHaveLength(0);
+  });
+});
