@@ -1,11 +1,13 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
 import { getBaseUrl } from "@/lib/base-url";
 import { renderEmail, sendEmail } from "@/lib/mailer";
 import {
   clearAnthropicApiKey,
+  removeSettings,
   setSettings,
   type SettingKey,
 } from "@/lib/settings";
@@ -36,7 +38,21 @@ export async function saveSettingsAction(formData: FormData): Promise<void> {
     site_title_accent: str("site_title_accent"),
     site_title_word: str("site_title_word"),
     site_logo_image_id: str("site_logo_image_id"),
+    nachtmodus: str("nachtmodus"),
   };
+  // Nachtmodus-Standort: Ein leeres Feld ENTFERNT den Eintrag, statt ihn leer
+  // zu schreiben. „Leer" und „gar nicht gesetzt" bedeuten hier dasselbe (beides
+  // ergibt den Vorgabe-Standort) — eine leere Zeile wäre also eine Zeile ohne
+  // Auskunft. Sie legte sich bei JEDEM Speichern neu an, auch wenn der Nutzer
+  // die Felder nie angefasst hat, und die E2E-Zustandsprüfung meldete das
+  // zu Recht als Rückstand.
+  const leer: SettingKey[] = [];
+  for (const k of ["nachtmodus_breite", "nachtmodus_laenge"] as const) {
+    const wert = str(k);
+    if (wert) values[k] = wert;
+    else leer.push(k);
+  }
+  removeSettings(leer);
   // Passwort / API-Schlüssel / Token nur überschreiben, wenn ein neuer Wert eingegeben wurde.
   const pass = str("smtp_pass");
   if (pass) values.smtp_pass = pass;
@@ -48,6 +64,13 @@ export async function saveSettingsAction(formData: FormData): Promise<void> {
   // Der KI-Kill-Switch wird hier BEWUSST NICHT angefasst — siehe
   // setAiEnabledAction/haltAiAction.
   setSettings(values);
+  // Das LAYOUT muss neu gerechnet werden, nicht nur die Seite: Der Nachtmodus
+  // wird dort entschieden. Nach einer Server-Action navigiert Next
+  // clientseitig und behält das Layout-Segment — ohne diese Zeile stellte man
+  // „dunkel" ein, landete auf einer hellen Seite und hielte die Einstellung
+  // für kaputt. Sie greift erst beim harten Neuladen. Gemessen in
+  // tests/e2e/nachtmodus.spec.ts.
+  revalidatePath("/admin", "layout");
   back(d.saved);
 }
 
