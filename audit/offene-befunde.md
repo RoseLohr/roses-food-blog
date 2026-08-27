@@ -871,3 +871,100 @@ aufnehmen statt der ganzen Seite (`clip`), damit die Bezugsfläche zur Größe d
 Sache passt, über die die Aufnahme etwas aussagen soll. Das ist ein eigener
 Umbau der Mechanik in `tests/e2e/referenz.ts` und gehört nicht in eine
 Funktionsänderung.
+
+## B20 — Backup und Restore waren uneins, und der Alias-Wächter sah nur die Hälfte — GEMESSEN 08/2026, behoben
+
+Vier Befunde aus der sechsten Panel-Runde zu `deploy/backup.sh`,
+`deploy/restore.sh` und `deploy/health-gate.sh`. Alle vier sind dieselbe Klasse
+wie **B16**: eine Kontrolle, die grün ist, ohne das zu prüfen, was sie zu
+prüfen vorgibt.
+
+### 1. Gesichert wurde, was sich nie einspielen ließ — und die Rotation hing daran
+
+Der Typ-Vertrag für Medien-Archive („nur Verzeichnisse und reguläre Dateien")
+stand **nur** in `restore.sh`. `backup.sh` packte ein, was ihm vorlag.
+Gemessen mit einem Symlink in `uploads/`:
+
+```
+tar -czf … uploads      Exit 0   ->  UPLOADS_OK=1, Lauf gilt als ERFOLG
+Typgate im Restore      ABBRUCH  ->  dieses Archiv wird NIE eingespielt
+```
+
+Weil die Rotation an genau diesem grünen Lauf hängt, löschte sie danach die
+letzten Archive weg, die sich noch einspielen ließen. Ein Medienverzeichnis, in
+das je ein Link gerät, hätte damit **still jede Wiederherstellbarkeit
+verloren** — bemerkt hätte es, wer eines gebraucht hätte.
+
+**Wurzel:** Der Vertrag steht jetzt einmal in `deploy/archiv-typen.sh` und wird
+von beiden Skripten gequellt, wie `health-gate.sh` seit 08/2026. Das Backup
+prüft das ERZEUGTE Archiv dagegen — dieselbe Stelle, an der die Datenbank seit
+B16 ihren `integrity_check` bekommt. Scheitert es, bleibt `UPLOADS_OK=0`, der
+Lauf endet rot, und die Rotation läuft nicht.
+
+### 2. `kein_link` übersah Hardlinks — die Live-Datenbank war danach ein gzip-Archiv
+
+Der Wächter fragte allein `[[ ! -L ]]`. Ein Hardlink teilt sich den Inode mit
+seinem Ziel und ist für `-L` unsichtbar. Gemessen am nackten Werkzeug:
+
+```
+ln  daten/app.db  backups/uploads-STAMP.tar.gz
+tar -czf backups/uploads-STAMP.tar.gz -C daten uploads   -> Exit 0
+file daten/app.db   ->  "gzip compressed data"
+```
+
+`tar -czf` öffnet mit `O_TRUNC` und schreibt in den **Inode**, nicht in den
+Namen. Die laufende Datenbank war weg, und der Lauf meldete Erfolg.
+
+**Wurzel:** Die richtige Frage ist nicht „ist das ein Link?", sondern „steht
+hier überhaupt etwas?". Die Zielpfade tragen einen Zeitstempel; dort steht nie
+etwas, das dieses Skript angelegt hat. `platz_frei` verlangt jetzt
+`! -e && ! -L`. **Nicht** für `BACKUP_DIR` selbst — das Verzeichnis darf
+existieren und wird gleich darauf mit `mkdir -p` angelegt; dort bleibt die
+Frage nach dem Link die richtige.
+
+### 3. „Bewusst kein `-L`" war ein Satz, keine Zusage
+
+`curl` liest ohne `-q` seine Konfiguration aus `$CURL_HOME/.curlrc` bzw.
+`$HOME/.curlrc` und nimmt von dort **jede** Option an — gemessen: eine kaputte
+Zeile darin quittiert curl mit „warning:", die Datei wird also wirklich
+gelesen. Ein `-L` oder `--connect-to` darin dreht das Health-Gate um: Es folgte
+einer Umleitung oder fragte einen ganz anderen Rechner, und beides gälte als
+Antwort DIESER Anwendung. Dafür braucht es keinen Angreifer — die
+Bequemlichkeitszeile eines Betreibers genügt.
+
+Bitter daran: `scripts/regime/rollback-check.mjs` prüft den Quelltext auf die
+Abwesenheit von `-L`. Diese Kontrolle war grün, während die Umgebung das `-L`
+jederzeit wieder hineinreichen konnte.
+
+**Wurzel:** `curl -q` als erste Option, und eine Invariante, die das festhält.
+
+### 4. Ausgepackt wurde unbegrenzt, auf das Dateisystem der laufenden Datenbank
+
+Die Nebenablage liegt unter `$DATA_DIR` — also dort, wo SQLite schreibt, und
+das Auspacken läuft **vor** dem Stopp des Dienstes. Ein Archiv, dessen Inhalt
+größer ist als der freie Platz, lässt die Anwendung in ENOSPC laufen, während
+sie noch bedient.
+
+**Wurzel, mit ehrlich benannter Reichweite:** Geprüft wird, was das Archiv
+ANKÜNDIGT (Spalte 3 von `tar -tvzf`) gegen den freien Platz mit einem Viertel
+Luft. Ein Kopf kann lügen; tut er das, greift die Grenze nicht — dann scheitert
+`tar` am vollen Dateisystem, `ARCHIV_ABBRUCH` räumt die Nebenablage weg und
+gibt den Platz zurück, und eingespielt ist nichts. Diese Prüfung nimmt also dem
+EHRLICH angekündigten Fall den Schaden; den unehrlichen fängt erst das
+Aufräumen.
+
+### Nicht übernommen
+
+Der fünfte Punkt derselben Runde: `-L` auf `BACKUP_DIR/` dereferenziere wegen
+des Schluss-Schrägstrichs den Link. Im Quelltext steht `[[ ! -L "$BACKUP_DIR" ]]`
+**ohne** Schrägstrich (Zeile 62). Dass `link/` dereferenzieren *würde*, stimmt —
+gemessen —, nur steht diese Form dort nicht.
+
+### Und noch einmal derselbe Fehler, diesmal in der Kontrolle selbst
+
+Die neuen Invarianten für den Typ-Vertrag standen zuerst **nur** im
+`--selftest` von `rollback-check.mjs`. Entschärfte man `backup.sh` oder
+`restore.sh`, blieb der normale Lauf grün — eine Kontrolle, die nichts
+kontrolliert, mitten in der Behebung von vier Befunden über genau das.
+Gefunden hat es die Gegenprobe, nicht das Nachdenken. Sie wird jetzt in beiden
+Läufen ausgewertet.
