@@ -74,7 +74,8 @@
       "src/lib/seo",
       "src/lib/nav-data",
       "src/lib/branding",
-      "src/lib/bildreihen"
+      "src/lib/bildreihen",
+      "src/lib/reihenfolge"
     ],
     "platform-ops": [
       "src/server",
