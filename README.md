@@ -346,18 +346,26 @@ spielt still das Backup des anderen ein.
 Das Skript prüft ALLES Prüfbare, bevor es das Erste anfasst: Es entpackt die
 Sicherung, liest sie mit `integrity_check`, sichert den jetzigen Stand nach
 `backups/pre-restore-*.db` (geprüft wie jede andere Sicherung auch) — und
-sieht dem Medien-Archiv ins Inhaltsverzeichnis. Dort gilt dreierlei:
+packt das Medien-Archiv in eine Nebenablage aus, wo ein Fehlschlag nichts
+kostet.
 
-- **Namen:** alles unter `uploads/`, kein `..`-Glied, nichts Absolutes. Ein
-  Archiv, das `app.db` mitbrächte, überschriebe sonst die gerade eingespielte
-  Datenbank.
-- **Typen:** nur Verzeichnisse und reguläre Dateien. Ein Symlink trägt einen
-  einwandfreien Namen und ist trotzdem ein Loch — nachgemessen packt `tar`
-  `uploads/…/w100.webp -> ../../app.db` anstandslos aus, und die
+Geprüft wird dann, was **wirklich dasteht**, nicht das Inhaltsverzeichnis:
+
+- **Namen** (vorher, am Verzeichnis des Archivs): alles unter `uploads/`, kein
+  `..`-Glied, nichts Absolutes. Was aus der Nebenablage herausführte, landete
+  sonst gar nicht erst in dem Baum, den der Rundgang danach sieht.
+- **Gestalt** (nachher, am ausgepackten Baum): daneben liegt genau
+  `uploads/`, und das ist ein echtes Verzeichnis. Ein reguläres Mitglied
+  namens `uploads` steht im Inhaltsverzeichnis harmlos da und zeigt sich erst
+  beim Auspacken.
+- **Typen** (ebenda): nur Verzeichnisse und reguläre Dateien. Ein Symlink
+  trägt einen einwandfreien Namen und ist trotzdem ein Loch — nachgemessen
+  packt `tar` `uploads/…/w100.webp -> ../../app.db` anstandslos aus, und die
   Auslieferungsroute liest daraufhin die Datenbank über HTTP.
-- **Inhalt:** mindestens eine Mediendatei. Ein Archiv ganz ohne `uploads/`
-  lief sonst durch die Namensprüfung, der bisherige Bestand wanderte beiseite,
-  das Einsetzen fand nichts — und der Dienst blieb aus.
+
+Ein **leeres** `uploads/` ist dabei ausdrücklich gültig: `deploy/backup.sh`
+sichert einen leeren Medienbestand anstandslos, und was das eine Skript
+sichert, muss das andere wiederherstellen können.
 
 Scheitert etwas davon, ist nichts eingespielt und der Dienst läuft unverändert
 weiter.

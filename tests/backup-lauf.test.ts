@@ -148,6 +148,33 @@ function fahre(platz: Platz, umgebung: Record<string, string> = {}): Lauf {
   }
 }
 
+/**
+ * Legt den Zeitstempel des Laufs FEST, indem `date` auf dem PATH ersetzt wird.
+ *
+ * Der Stempel ist im Skript `date +%Y%m%d-%H%M%S`, also vorhersagbar — genau
+ * das ist der Punkt der beiden Link-Tests. Ihn hier auszurechnen wäre aber ein
+ * Wettrennen mit der Uhr: Tickt die Sekunde zwischen Testaufbau und Skriptlauf,
+ * zeigte der vorgelegte Link auf einen anderen Pfad. Ein Test, der an manchen
+ * Sekunden etwas anderes prüft als an anderen, ist keiner.
+ *
+ * Alles außer dem Stempel-Format geht an das echte `date` weiter — `find
+ * -mtime` und die Rotation arbeiten mit echten Zeiten.
+ */
+function stempelFestlegen(platz: Platz, stempel: string): string {
+  fs.writeFileSync(
+    path.join(platz.bin, "date"),
+    [
+      "#!/usr/bin/env bash",
+      `[[ "$1" == "+%Y%m%d-%H%M%S" ]] && { printf '%s' ${JSON.stringify(stempel)}; exit 0; }`,
+      'eigenes="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"',
+      'PATH="$(IFS=:; for p in $PATH; do [[ "$p" == "$eigenes" ]] || printf "%s:" "$p"; done)"',
+      'exec date "$@"',
+    ].join("\n"),
+    { mode: 0o755 },
+  );
+  return stempel;
+}
+
 /** Legt eine alte Sicherung an, die die Rotation entfernen WÜRDE. */
 function alteSicherung(platz: Platz, name: string) {
   const p = path.join(platz.backups, name);
@@ -402,6 +429,44 @@ describe("BACKUP_DIR gilt auch dann, wenn es NICHT unter DATA_DIR liegt", () => 
     expect(fs.readdirSync(woanders).some((d) => /^uploads-.*\.tar\.gz$/.test(d))).toBe(true);
     // Und NICHTS ist daneben gelandet.
     expect(fs.readdirSync(platz.backups)).toHaveLength(0);
+  });
+});
+
+describe("Es wird nicht durch einen Link hindurch gesichert", () => {
+  it("bricht ab, wenn das DB-Ziel ein untergeschobener Link ist", () => {
+    // DER BEFUND (Gegenprüfung, vierte Runde): Beide Zielpfade sind
+    // VORHERSAGBAR (Zeitstempel). Läge dort ein Link, schriebe die Backup-API
+    // durch ihn hindurch auf ein fremdes Ziel — und der Lauf könnte grün
+    // enden. Ein Link an dieser Stelle ist nie etwas, das dieses Skript
+    // angelegt hat.
+    const platz = spielwiese();
+    podmanAttrappe(platz, true, true);
+    const stempel = stempelFestlegen(platz, "20260101-000000");
+    const fremd = path.join(tmp, "fremdes-ziel");
+    fs.writeFileSync(fremd, "gehoert jemand anderem");
+    fs.symlinkSync(fremd, path.join(platz.backups, `app-${stempel}.db`));
+
+    const lauf = fahre(platz);
+
+    expect(lauf.code).not.toBe(0);
+    expect(lauf.ausgabe).toMatch(/Link/);
+    // Das fremde Ziel ist unangetastet.
+    expect(fs.readFileSync(fremd, "utf8")).toBe("gehoert jemand anderem");
+  });
+
+  it("bricht ab, wenn das Uploads-Ziel ein untergeschobener Link ist", () => {
+    const platz = spielwiese();
+    podmanAttrappe(platz, true, true);
+    const stempel = stempelFestlegen(platz, "20260101-000000");
+    const fremd = path.join(tmp, "fremdes-archiv");
+    fs.writeFileSync(fremd, "auch nicht meins");
+    fs.symlinkSync(fremd, path.join(platz.backups, `uploads-${stempel}.tar.gz`));
+
+    const lauf = fahre(platz);
+
+    expect(lauf.code).not.toBe(0);
+    expect(lauf.ausgabe).toMatch(/Link/);
+    expect(fs.readFileSync(fremd, "utf8")).toBe("auch nicht meins");
   });
 });
 

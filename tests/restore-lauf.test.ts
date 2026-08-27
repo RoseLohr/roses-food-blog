@@ -282,7 +282,7 @@ describe("Das Medien-Archiv wird geprüft, bevor irgendetwas angefasst wird", ()
     expect(lauf.code).not.toBe(0);
     expect(standUnberuehrt(platz)).toBe(true);
     expect(lauf.protokoll).not.toMatch(/compose down/);
-    // Und nichts davon ist im Datenverzeichnis gelandet.
+    // Und die Nebenablage ist weggeräumt — nichts davon bleibt liegen.
     expect(fs.existsSync(path.join(platz.daten, "uploads.neu"))).toBe(false);
   });
 
@@ -308,30 +308,64 @@ describe("Das Medien-Archiv wird geprüft, bevor irgendetwas angefasst wird", ()
     expect(lauf.protokoll).not.toMatch(/compose down/);
   });
 
-  it("weist ein Archiv OHNE Medien zurück — und legt den Bestand nicht beiseite", () => {
-    // DER BEFUND: Ein lesbares Archiv ganz ohne `uploads/`-Mitglied lief durch
-    // die Mitgliederschleife (die prüft ja nur, dass NICHTS Fremdes drin ist).
-    // Danach wanderte der bisherige Bestand nach `uploads.alt`, das `mv` fand
-    // nichts zum Einsetzen — und der Dienst blieb aus.
+  it("weist ein Archiv OHNE uploads/ zurück — und legt den Bestand nicht beiseite", () => {
+    // DER BEFUND: Ein lesbares Archiv ganz ohne `uploads/`-Mitglied lief durch,
+    // der bisherige Bestand wanderte nach `uploads.alt`, das Einsetzen fand
+    // nichts — und der Dienst blieb aus.
     const platz = spielwiese();
     fs.mkdirSync(path.join(platz.daten, "uploads"), { recursive: true });
     fs.writeFileSync(path.join(platz.daten, "uploads", "bestand.jpg"), "jpeg");
-    // Ein Archiv mit GENAU EINEM Mitglied: dem Verzeichnis `uploads/`, leer.
-    // Bewusst so und nicht als Archiv aus fremden Dateien — sonst fiele es
-    // schon der Namensprüfung zum Opfer, und diese Zusage bliebe ungeprüft.
-    // (Gegenprobe: Mit entschärfter Inhaltsprüfung fällt genau dieser Test.)
-    const quelle = path.join(tmp, "nur-leeres-uploads");
-    fs.mkdirSync(path.join(quelle, "uploads"), { recursive: true });
-    const archiv = path.join(platz.daten, "backups", "uploads-leer.tar.gz");
-    execFileSync("tar", ["-czf", archiv, "-C", quelle, "uploads"]);
+    const quelle = path.join(tmp, "ohne-uploads");
+    fs.mkdirSync(path.join(quelle, "sonstwas"), { recursive: true });
+    fs.writeFileSync(path.join(quelle, "sonstwas", "datei"), "x");
+    const archiv = path.join(platz.daten, "backups", "uploads-fremd.tar.gz");
+    execFileSync("tar", ["-czf", archiv, "-C", quelle, "sonstwas"]);
 
     const lauf = fahre(platz, [backupAnlegen(platz), archiv]);
 
     expect(lauf.code).not.toBe(0);
     expect(lauf.protokoll).not.toMatch(/compose down/);
-    // Der Bestand steht noch da, wo er hingehört.
     expect(fs.existsSync(path.join(platz.daten, "uploads", "bestand.jpg"))).toBe(true);
     expect(fs.existsSync(path.join(platz.daten, "uploads.alt"))).toBe(false);
+  });
+
+  it("nimmt ein LEERES uploads/ an — deploy/backup.sh sichert genau das", () => {
+    // DER BEFUND (vierte Runde): Die vorige Fassung verlangte mindestens eine
+    // Mediendatei. `deploy/backup.sh` sichert einen leeren Medienbestand aber
+    // anstandslos — die beiden Skripte waren damit uneins, und ein Stand, den
+    // das eine sichert, ließ sich vom anderen nicht wiederherstellen.
+    const platz = spielwiese();
+    fs.mkdirSync(path.join(platz.daten, "uploads"), { recursive: true });
+    fs.writeFileSync(path.join(platz.daten, "uploads", "alt.jpg"), "jpeg");
+    const quelle = path.join(tmp, "leeres-uploads");
+    fs.mkdirSync(path.join(quelle, "uploads"), { recursive: true });
+    const archiv = path.join(platz.daten, "backups", "uploads-leer.tar.gz");
+    execFileSync("tar", ["-czf", archiv, "-C", quelle, "uploads"]);
+
+    expect(fahre(platz, [backupAnlegen(platz), archiv]).code).toBe(0);
+
+    // Der leere Stand ist hergestellt, der vorige liegt daneben.
+    expect(fs.readdirSync(path.join(platz.daten, "uploads"))).toEqual([]);
+    expect(fs.readdirSync(path.join(platz.daten, "uploads.alt"))).toContain("alt.jpg");
+  });
+
+  it("weist ein Archiv zurück, in dem uploads eine DATEI ist", () => {
+    // DER BEFUND: Ein reguläres Mitglied namens `uploads` steht im
+    // Inhaltsverzeichnis harmlos da. Erst das Auspacken zeigt, dass daraus kein
+    // Verzeichnis wird — und das Auspacken stand vorher NACH `compose down`
+    // und dem Tausch der Datenbank. Der Fehlschlag kostete also den Dienst.
+    const platz = spielwiese();
+    const quelle = path.join(tmp, "uploads-als-datei");
+    fs.mkdirSync(quelle, { recursive: true });
+    fs.writeFileSync(path.join(quelle, "uploads"), "keine Sammlung, eine Datei");
+    const archiv = path.join(platz.daten, "backups", "uploads-datei.tar.gz");
+    execFileSync("tar", ["-czf", archiv, "-C", quelle, "uploads"]);
+
+    const lauf = fahre(platz, [backupAnlegen(platz), archiv]);
+
+    expect(lauf.code).not.toBe(0);
+    expect(standUnberuehrt(platz)).toBe(true);
+    expect(lauf.protokoll).not.toMatch(/compose down/);
   });
 
   it("weist ein unlesbares Archiv zurück, bevor der Dienst stoppt", () => {

@@ -67,6 +67,21 @@ UPLOADS_OK=0
 # Uploads-Backup NICHT verhindern — deshalb gekapselt statt `set -e`-Abbruch;
 # über den Exit-Code des Laufs entscheidet Schritt 4.
 ROH="$BACKUP_DIR/app-$STAMP.db"
+# Beide Zielpfade sind VORHERSAGBAR (Zeitstempel). Läge dort ein
+# untergeschobener Link, schriebe tar bzw. die Backup-API durch ihn hindurch
+# auf ein fremdes Ziel — und der Lauf könnte grün enden. Ein Link an dieser
+# Stelle ist nie etwas, das dieses Skript erzeugt hat.
+#
+# Ehrlich zur Reichweite: Das fängt einen VORHER untergeschobenen Link ab,
+# nicht das Wettrennen danach. Wer in $BACKUP_DIR schreiben darf, kann die
+# Sicherungen ohnehin unmittelbar verändern; hier geht es darum, nicht selbst
+# durch einen Link zu schreiben.
+kein_link(){
+  [[ ! -L "$1" ]] || fail "$1 ist ein symbolischer Link. Dorthin wird nicht \
+gesichert — an dieser Stelle steht nie ein Link, den dieses Skript angelegt hat."
+}
+kein_link "$ROH"
+kein_link "$ROH.gz"
 if [[ -f "$DATA_DIR/app.db" ]]; then
   rm -f "$ROH"
   # BACKUP_DIR wird als EIGENER Mount hereingereicht, nicht als Unterverzeichnis
@@ -119,6 +134,7 @@ fi
 
 # ── 2. Uploads archivieren ─────────────────────────────────────────────────
 UPLOADS_ARCHIV="$BACKUP_DIR/uploads-$STAMP.tar.gz"
+kein_link "$UPLOADS_ARCHIV"
 # Gibt es Medien, MUSS dieser Lauf ein Archiv davon erzeugen. Gibt es keine,
 # ist nichts zu sichern und der Lauf darf trotzdem gelingen.
 UPLOADS_NOETIG=0

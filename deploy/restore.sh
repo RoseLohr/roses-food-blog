@@ -89,7 +89,15 @@ command -v flock >/dev/null \
   || fail "flock nicht gefunden (Paket util-linux). Ohne Sperre wird hier nicht \
 wiederhergestellt: Zwei gleichzeitige Läufe spielen sonst still das falsche \
 Backup ein."
-exec 9>"$DATA_DIR/.restore.lock"
+# `>>` und nicht `>`: Ein `>` schneidet die Datei ab, auf die der Pfad zeigt.
+# Läge dort ein untergeschobener Link, wäre das Ziel leer, bevor irgendeine
+# Prüfung gelaufen ist. Zum Sperren genügt ein Schreib-Deskriptor; abschneiden
+# muss dafür niemand.
+#
+# Ehrlich zur Reichweite: Wer in $DATA_DIR schreiben darf, kann die Datenbank
+# ohnehin unmittelbar verändern — diese Zeile schließt keine Lücke, sie
+# vermeidet nur, selbst eine destruktive Wirkung zu haben.
+exec 9>>"$DATA_DIR/.restore.lock"
 flock -n 9 \
   || fail "Es läuft bereits eine Wiederherstellung in $DATA_DIR. Nichts \
 angefasst."
@@ -124,45 +132,53 @@ log "Prüfe die eingehende Datenbank (integrity_check)"
   || { rm -f "$EINGEHEND"; fail "$DB_BACKUP ist nicht lesbar (integrity_check) — \
 nichts eingespielt, der Dienst läuft weiter."; }
 
-# Das Medien-Archiv wird HIER geprüft, nicht erst beim Auspacken.
+# Das Medien-Archiv wird HIER geprüft — und zwar, indem es HIER ausgepackt
+# wird.
 #
 # `tar -xzf …` packt aus, was drinsteht. Ein Archiv, das `app.db` mitbringt,
-# überschriebe damit die gerade eingespielte Datenbank — NACH allen Prüfungen,
-# an denen sie hängt. Und ein unlesbares Archiv fiele erst auf, wenn der Dienst
-# schon steht: ein Fehlschlag, der zusätzlich den Dienst kostet (dieselbe
-# Klasse wie der Befund aus PR #110).
+# überschriebe damit die gerade eingespielte Datenbank. Und ein Archiv, das
+# sich erst beim Auspacken als kaputt erweist, kostete zusätzlich den Dienst:
+# Das Auspacken stand vorher NACH `compose down` und dem Tausch der Datenbank.
 #
-# ── DREI FRAGEN, UND DIE ZWEITE FEHLTE ZUERST ─────────────────────────────
+# ── WARUM DAS VERZEICHNIS GEPRÜFT WIRD UND NICHT DIE LISTE ────────────────
 #
-# 1. NAMEN: alles unter `uploads/`, kein `..`-Glied, nichts Absolutes.
+# Die vorige Fassung prüfte das INHALTSVERZEICHNIS (`tar -tvzf`) und packte
+# danach aus. Zwischen beiden Aufrufen liegt die Datei offen: Was aufgelistet
+# wurde, muss nicht sein, was ausgepackt wird. Und die Liste sagt ohnehin
+# nicht alles — ein reguläres Mitglied namens `uploads` (statt eines
+# Verzeichnisses) oder die Folge `a`, `a/b` steht darin harmlos da und
+# scheitert erst beim Auspacken.
 #
-# 2. TYPEN: nur Verzeichnisse und reguläre Dateien. Die erste Fassung prüfte
-#    NUR Namen — und ein Symlink trägt einen einwandfreien Namen. Nachgemessen:
-#    `uploads/leak -> ../app.db` packt tar anstandslos aus (Exit 0), der Link
-#    landet im Medienverzeichnis, und die Auslieferungsroute liest daraufhin
-#    die Datenbank über HTTP. Hardlinks, Geräte und FIFOs fallen mit derselben
-#    Regel heraus: In einem Medien-Archiv hat nichts davon etwas zu suchen.
+# Jetzt wird zuerst ausgepackt, in eine Nebenablage, die nichts kostet — und
+# dann geprüft, was WIRKLICH dasteht:
 #
-#    Die Typen stehen in der ERSTEN Spalte von `tar -tvzf`. Geprüft wird nur
-#    dieses eine Zeichen — kein Zerlegen von Namen, die Leerzeichen oder ein
-#    „ -> " enthalten dürfen.
+#   * genau ein Eintrag daneben: das Verzeichnis `uploads` (kein Link),
+#   * darin nur Verzeichnisse und reguläre Dateien. Ein Symlink trägt einen
+#     einwandfreien Namen und ist trotzdem ein Loch: Nachgemessen packt tar
+#     `uploads/leak -> ../app.db` anstandslos aus, und die Auslieferungsroute
+#     liest daraufhin die Datenbank über HTTP.
 #
-# 3. INHALT: mindestens eine reguläre Datei unter `uploads/`. Ohne diese Frage
-#    lief ein Archiv ganz ohne `uploads/` durch die Namensprüfung (die verbietet
-#    ja nur Fremdes), der bisherige Bestand wanderte nach `uploads.alt`, das
-#    Einsetzen fand nichts — und der Dienst blieb aus.
+# Die NAMEN werden trotzdem vorher geprüft, denn ein Mitglied, das aus der
+# Nebenablage herausführt (`..`, absolut), landet gar nicht erst in dem Baum,
+# den der Rundgang sieht. Beide Prüfungen tun also, was die andere nicht kann.
+# (Den Namens-Traversal weist GNU tar zwar selbst ab — gemessen: Exit 2. Welche
+# tar-Fassung auf dem Server liegt, ist aber keine Zusage, die dieses
+# Repository geben kann.)
 #
-# Der Namens-Traversal wird zwar auch von GNU tar abgewiesen (gemessen: Exit 2,
-# „Member name contains '..'"). Darauf verlässt sich diese Prüfung NICHT: Welche
-# tar-Fassung auf dem Server liegt, ist keine Zusage, die dieses Repository geben
-# kann.
+# Ein LEERES `uploads/` ist ausdrücklich gültig: `deploy/backup.sh` sichert
+# einen leeren Medienbestand anstandslos, und ein Stand, den das eine Skript
+# sichert, muss das andere wiederherstellen können. Die vorige Fassung
+# verlangte mindestens eine Datei und machte die beiden damit uneins.
+NEBENABLAGE="$DATA_DIR/uploads.neu"
 if [[ -n "$UPLOADS_ARCHIV" ]]; then
   log "Prüfe das Medien-Archiv: $UPLOADS_ARCHIV"
+  ARCHIV_ABBRUCH(){
+    rm -f "$EINGEHEND"
+    rm -rf "$NEBENABLAGE"
+    fail "$1 Nichts eingespielt, der Dienst läuft weiter."
+  }
   MITGLIEDER="$(tar -tzf "$UPLOADS_ARCHIV")" \
-    || { rm -f "$EINGEHEND"; fail "$UPLOADS_ARCHIV ist nicht lesbar — nichts \
-eingespielt, der Dienst läuft weiter."; }
-  ARCHIV_ABBRUCH(){ rm -f "$EINGEHEND"; fail "$1 Nichts eingespielt, der Dienst läuft weiter."; }
-
+    || ARCHIV_ABBRUCH "$UPLOADS_ARCHIV ist nicht lesbar."
   while IFS= read -r m; do
     [[ -z "$m" ]] && continue
     [[ "$m" == "uploads" || "$m" == "uploads/"* ]] \
@@ -173,21 +189,23 @@ eingespielt, der Dienst läuft weiter."; }
       && ARCHIV_ABBRUCH "$UPLOADS_ARCHIV enthält '$m' — ein Pfadglied '..' führt aus uploads/ heraus."
   done <<< "$MITGLIEDER"
 
-  TYPEN="$(tar -tvzf "$UPLOADS_ARCHIV")" \
-    || ARCHIV_ABBRUCH "$UPLOADS_ARCHIV lässt sich nicht auflisten."
-  DATEIEN=0
-  while IFS= read -r z; do
-    [[ -z "$z" ]] && continue
-    case "${z:0:1}" in
-      d) ;;
-      -) DATEIEN=$((DATEIEN + 1)) ;;
-      l) ARCHIV_ABBRUCH "$UPLOADS_ARCHIV enthält einen SYMLINK. Ein Link im Medienverzeichnis zeigt aus ihm heraus; die Auslieferung folgte ihm." ;;
-      h) ARCHIV_ABBRUCH "$UPLOADS_ARCHIV enthält einen HARDLINK." ;;
-      *) ARCHIV_ABBRUCH "$UPLOADS_ARCHIV enthält ein Mitglied, das weder Verzeichnis noch reguläre Datei ist ('${z:0:1}')." ;;
-    esac
-  done <<< "$TYPEN"
-  [[ $DATEIEN -gt 0 ]] \
-    || ARCHIV_ABBRUCH "$UPLOADS_ARCHIV enthält keine einzige Mediendatei unter uploads/."
+  rm -rf "$NEBENABLAGE"
+  mkdir -p "$NEBENABLAGE"
+  tar -xzf "$UPLOADS_ARCHIV" -C "$NEBENABLAGE" \
+    || ARCHIV_ABBRUCH "$UPLOADS_ARCHIV ließ sich nicht auspacken."
+
+  # Genau ein Eintrag daneben, und der ist ein echtes Verzeichnis.
+  NEBEN="$(find "$NEBENABLAGE" -mindepth 1 -maxdepth 1 ! -name uploads -print -quit)"
+  [[ -z "$NEBEN" ]] \
+    || ARCHIV_ABBRUCH "$UPLOADS_ARCHIV hat '$(basename "$NEBEN")' neben uploads/ angelegt."
+  [[ -d "$NEBENABLAGE/uploads" && ! -L "$NEBENABLAGE/uploads" ]] \
+    || ARCHIV_ABBRUCH "$UPLOADS_ARCHIV enthält kein Verzeichnis uploads/."
+
+  # Und darin NUR Verzeichnisse und reguläre Dateien. `find` folgt Links nicht,
+  # sieht sie also als das, was sie sind.
+  FREMD="$(find "$NEBENABLAGE" -mindepth 1 ! -type d ! -type f -print -quit)"
+  [[ -z "$FREMD" ]] \
+    || ARCHIV_ABBRUCH "$UPLOADS_ARCHIV hat '${FREMD#"$NEBENABLAGE/"}' angelegt — weder Verzeichnis noch reguläre Datei. Ein Link im Medienverzeichnis zeigt aus ihm heraus; die Auslieferung folgte ihm."
 fi
 
 # ── 2. Den JETZIGEN Stand sichern, solange er noch steht ──────────────────
@@ -236,35 +254,29 @@ rm -f "$EINGEHEND"
 
 if [[ -n "$UPLOADS_ARCHIV" ]]; then
   log "Spiele die Medien ein: $UPLOADS_ARCHIV"
-  # In eine NEBENABLAGE auspacken und dann tauschen, nicht über den Bestand
-  # legen. Zwei Gründe, und beide sind Zustände, die es sonst gäbe:
+  # Ausgepackt und geprüft ist längst — hier wird nur noch getauscht. Zwei
+  # Gründe, und beide sind Zustände, die es sonst gäbe:
   #
   #   * Ein Auspacken, das in der Mitte abbricht, hinterließe einen halb
-  #     ersetzten Medienbestand. Hier bricht es in der Nebenablage ab, und der
-  #     bisherige Stand steht unberührt daneben.
-  #   * Dateien, die das Backup NICHT kennt, blieben liegen. Der Stand danach
-  #     wäre weder der gesicherte noch der vorige, sondern eine Mischung —
-  #     eine Wiederherstellung, die nichts wiederherstellt.
+  #     ersetzten Medienbestand. Es ist deshalb oben passiert, wo ein
+  #     Abbruch nichts kostet.
+  #   * Dateien, die das Backup NICHT kennt, blieben beim Überlagern liegen.
+  #     Der Stand danach wäre weder der gesicherte noch der vorige, sondern
+  #     eine Mischung — eine Wiederherstellung, die nichts wiederherstellt.
   #
   # Der vorige Stand wird beiseitegelegt, nicht gelöscht: Die Medien sind das
   # Einzige, wofür dieses Skript kein eigenes Netz spannt.
-  rm -rf "$DATA_DIR/uploads.neu"
-  mkdir -p "$DATA_DIR/uploads.neu"
-  tar -xzf "$UPLOADS_ARCHIV" -C "$DATA_DIR/uploads.neu" \
-    || { rm -rf "$DATA_DIR/uploads.neu"; fail "Das Medien-Archiv ließ sich nicht \
-auspacken. Der bisherige Medienbestand ist UNVERÄNDERT; die Datenbank steht \
-bereits auf dem gesicherten Stand, der Dienst ist NICHT gestartet."; }
   if [[ -d "$DATA_DIR/uploads" ]]; then
     rm -rf "$DATA_DIR/uploads.alt"
     mv "$DATA_DIR/uploads" "$DATA_DIR/uploads.alt" \
       || fail "Der bisherige Medienbestand ließ sich nicht beiseitelegen."
     log "Der bisherige Medienbestand liegt in $DATA_DIR/uploads.alt."
   fi
-  mv "$DATA_DIR/uploads.neu/uploads" "$DATA_DIR/uploads" \
+  mv "$NEBENABLAGE/uploads" "$DATA_DIR/uploads" \
     || fail "Der eingespielte Medienbestand ließ sich nicht an seinen Platz \
-bringen. Er liegt in $DATA_DIR/uploads.neu/uploads, der bisherige in \
+bringen. Er liegt in $NEBENABLAGE/uploads, der bisherige in \
 $DATA_DIR/uploads.alt."
-  rmdir "$DATA_DIR/uploads.neu" 2>/dev/null || true
+  rmdir "$NEBENABLAGE" 2>/dev/null || true
 fi
 
 log "Starte den Dienst"
