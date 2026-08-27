@@ -668,3 +668,67 @@ describe("Ein Fehlschlag darf den vorhandenen Stand nicht verschlechtern", () =>
     expect(standUnberuehrt(platz)).toBe(true);
   });
 });
+
+describe("Panel-Runde 6: passt das Archiv überhaupt auf die Platte?", () => {
+  /**
+   * Eine `df`-Attrappe, die einen festen freien Platz meldet. Ohne sie hinge
+   * dieser Test am Füllstand des Läufers statt an der Regel — und wäre je nach
+   * Maschine grün oder rot, ohne dass sich am Code etwas geändert hätte.
+   *
+   * Sie ahmt das POSIX-Format von `df -Pk` nach: Kopfzeile, dann eine Zeile,
+   * in der Spalte 4 die freien KiB trägt.
+   */
+  function dfAttrappe(platz: Platz, freiKb: number) {
+    fs.writeFileSync(
+      path.join(platz.bin, "df"),
+      [
+        "#!/usr/bin/env bash",
+        'echo "Filesystem 1024-blocks Used Available Capacity Mounted on"',
+        `echo "/dev/attrappe 1000000 1000 ${freiKb} 1% /"`,
+      ].join("\n"),
+      { mode: 0o755 },
+    );
+  }
+
+  function kleinesArchiv(platz: Platz): string {
+    const quelle = path.join(tmp, "medien");
+    fs.mkdirSync(path.join(quelle, "uploads"), { recursive: true });
+    fs.writeFileSync(path.join(quelle, "uploads", "bild.jpg"), "x".repeat(50_000));
+    const archiv = path.join(platz.daten, "backups", "uploads-platz.tar.gz");
+    execFileSync("tar", ["-czf", archiv, "-C", quelle, "uploads"]);
+    return archiv;
+  }
+
+  it("bricht ab, wenn das Angekündigte nicht in den freien Platz passt", () => {
+    // DER BEFUND: Ausgepackt wird in eine Nebenablage UNTER $DATA_DIR — also
+    // auf dasselbe Dateisystem, auf dem die laufende Datenbank schreibt, und
+    // BEVOR der Dienst gestoppt ist. Ein Archiv, dessen Inhalt größer ist als
+    // der freie Platz, lässt SQLite in ENOSPC laufen, während die Anwendung
+    // noch bedient.
+    const platz = spielwiese();
+    const archiv = kleinesArchiv(platz);
+    dfAttrappe(platz, 10); // 10 KiB frei — 50 000 Byte passen nicht.
+
+    const lauf = fahre(platz, [backupAnlegen(platz), archiv]);
+
+    expect(lauf.code).not.toBe(0);
+    expect(lauf.ausgabe).toMatch(/kündigt .* Byte an/);
+    // Nichts angefasst, und der Dienst lief durchgehend weiter.
+    expect(standUnberuehrt(platz)).toBe(true);
+    expect(lauf.protokoll).not.toMatch(/compose down/);
+  });
+
+  it("Gegenprobe: mit genug Platz geht dasselbe Archiv durch", () => {
+    // Ohne diese Probe wäre der Test darüber auch dann grün, wenn das Gate
+    // JEDES Archiv verwürfe — und genau so ein Test war in Runde 5 schon
+    // einmal grün, ohne zu prüfen, was er zu prüfen vorgab.
+    const platz = spielwiese();
+    const archiv = kleinesArchiv(platz);
+    dfAttrappe(platz, 1_000_000); // ~1 GiB frei
+
+    const lauf = fahre(platz, [backupAnlegen(platz), archiv]);
+
+    expect(lauf.code).toBe(0);
+    expect(lauf.ausgabe).not.toMatch(/kündigt .* Byte an/);
+  });
+});

@@ -23,6 +23,24 @@
 #
 # Bewusst KEIN `-L`: Eine Umleitung ist hier keine Antwort, der man folgt,
 # sondern der Befund selbst.
+#
+# ── UND `-q`, DAMIT DAS AUCH GILT (Panel-Runde 6) ──────────────────────────
+#
+# „Bewusst kein -L" stand hier als Satz, war aber keine Zusage: curl liest
+# ohne `-q` seine Konfiguration aus $CURL_HOME/.curlrc bzw. $HOME/.curlrc und
+# nimmt von dort JEDE Option an. Gemessen — eine kaputte Zeile in der Datei
+# quittiert curl mit „warning:", die Datei wird also wirklich gelesen.
+#
+# Ein `-L` oder `--connect-to` darin dreht das Gate um: Es folgte dann einer
+# Umleitung oder fragte einen ganz anderen Rechner, und beides gälte als
+# Antwort DIESER Anwendung. Dafür braucht es keinen Angreifer — die
+# Bequemlichkeitszeile eines Betreibers genügt.
+#
+# Bitter daran: `scripts/regime/rollback-check.mjs` prüft den Quelltext auf
+# die Abwesenheit von `-L`. Diese Kontrolle war grün, während die Umgebung das
+# `-L` jederzeit wieder hineinreichen konnte — dieselbe Klasse wie B16.
+#
+# `-q` MUSS die erste Option sein; danach genannte Optionen gelten weiter.
 # ---------------------------------------------------------------------------
 
 health_gruen(){
@@ -30,7 +48,7 @@ health_gruen(){
   # `--noproxy '*'`: Ein in der Umgebung gesetztes http_proxy/https_proxy
   # schickte die Frage sonst an einen Vermittler — und dessen Antwort sagt
   # nichts über die Anwendung, die hier gerade hochkommen soll.
-  antwort="$(curl -s --noproxy '*' --max-time 5 -w '\n%{http_code}' "$1" 2>/dev/null)" || return 1
+  antwort="$(curl -q -s --noproxy '*' --max-time 5 -w '\n%{http_code}' "$1" 2>/dev/null)" || return 1
   code="${antwort##*$'\n'}"
   koerper="${antwort%$'\n'*}"
   [[ "$code" == "200" ]] || return 1

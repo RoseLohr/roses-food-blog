@@ -449,7 +449,10 @@ describe("Es wird nicht durch einen Link hindurch gesichert", () => {
     const lauf = fahre(platz);
 
     expect(lauf.code).not.toBe(0);
-    expect(lauf.ausgabe).toMatch(/Link/);
+    // Der Wächter fragt seit Panel-Runde 6 nicht mehr „ist das ein Link?",
+    // sondern „steht hier überhaupt etwas?" — ein Hardlink ist derselbe
+    // Angriff und für `-L` unsichtbar.
+    expect(lauf.ausgabe).toMatch(/existiert bereits/);
     // Das fremde Ziel ist unangetastet.
     expect(fs.readFileSync(fremd, "utf8")).toBe("gehoert jemand anderem");
   });
@@ -467,6 +470,10 @@ describe("Es wird nicht durch einen Link hindurch gesichert", () => {
     const lauf = fahre(platz);
 
     expect(lauf.code).not.toBe(0);
+    // Hier bleibt es bei der Frage nach dem LINK, und das mit Absicht: Das
+    // Sicherungsverzeichnis DARF existieren — es wird gleich darauf mit
+    // `mkdir -p` angelegt. „Steht hier etwas?" wäre an dieser einen Stelle
+    // die falsche Frage; nur bei den Ziel-DATEIEN ist Dasein schon verdächtig.
     expect(lauf.ausgabe).toMatch(/Link/);
     expect(fs.readdirSync(woanders)).toHaveLength(0);
   });
@@ -482,7 +489,10 @@ describe("Es wird nicht durch einen Link hindurch gesichert", () => {
     const lauf = fahre(platz);
 
     expect(lauf.code).not.toBe(0);
-    expect(lauf.ausgabe).toMatch(/Link/);
+    // Der Wächter fragt seit Panel-Runde 6 nicht mehr „ist das ein Link?",
+    // sondern „steht hier überhaupt etwas?" — ein Hardlink ist derselbe
+    // Angriff und für `-L` unsichtbar.
+    expect(lauf.ausgabe).toMatch(/existiert bereits/);
     expect(fs.readFileSync(fremd, "utf8")).toBe("auch nicht meins");
   });
 });
@@ -500,6 +510,13 @@ describe("Rangfolge der Konfiguration: Aufrufer > .env > Standard", () => {
     fs.mkdirSync(path.join(repo, "deploy"), { recursive: true });
     const kopie = path.join(repo, "deploy", "backup.sh");
     fs.copyFileSync(SKRIPT, kopie);
+    // Das Skript quellt seinen Typ-Vertrag aus dem EIGENEN Verzeichnis. Wer
+    // es kopiert, kopiert ihn mit — sonst prüft dieser Test ein Skript, das
+    // gar nicht erst startet.
+    fs.copyFileSync(
+      path.resolve(process.cwd(), "deploy/archiv-typen.sh"),
+      path.join(repo, "deploy", "archiv-typen.sh"),
+    );
     const envZiel = path.join(tmp, "aus-env");
     fs.mkdirSync(envZiel);
     fs.writeFileSync(
@@ -585,5 +602,82 @@ describe("rotieren() — die jüngste Datei überlebt jedes Alter", () => {
     expect(fs.readdirSync(platz.backups).sort()).toEqual([
       "app-20200103-000000.db",
     ]);
+  });
+});
+
+describe("Panel-Runde 6: Alias und Typ-Vertrag", () => {
+  it("ein HARDLINK auf die Datenbank zerstört sie nicht mehr", () => {
+    // DER BEFUND: `kein_link` fragte allein `[[ ! -L ]]`. Ein Hardlink teilt
+    // sich den Inode mit seinem Ziel und ist für `-L` unsichtbar. Gemessen am
+    // nackten Werkzeug, bevor hier etwas geändert wurde:
+    //
+    //     ln  daten/app.db  backups/uploads-STAMP.tar.gz
+    //     tar -czf backups/uploads-STAMP.tar.gz -C daten uploads   -> Exit 0
+    //     file daten/app.db   ->  "gzip compressed data"
+    //
+    // Die Live-Datenbank WAR das Archiv, und der Lauf meldete Erfolg.
+    const platz = spielwiese();
+    podmanAttrappe(platz, true, true);
+    const stempel = stempelFestlegen(platz, "20260101-000000");
+    const db = path.join(platz.daten, "app.db");
+    fs.linkSync(db, path.join(platz.backups, `uploads-${stempel}.tar.gz`));
+
+    const lauf = fahre(platz);
+
+    expect(lauf.code).not.toBe(0);
+    // Und das Entscheidende: die Datenbank steht unberührt da.
+    expect(fs.readFileSync(db, "utf8")).toBe("die laufende datenbank");
+  });
+
+  it("ein HARDLINK auf das DB-Ziel bricht den Lauf ab", () => {
+    const platz = spielwiese();
+    podmanAttrappe(platz, true, true);
+    const stempel = stempelFestlegen(platz, "20260101-000000");
+    const fremd = path.join(tmp, "fremde-datei");
+    fs.writeFileSync(fremd, "gehoert jemand anderem");
+    fs.linkSync(fremd, path.join(platz.backups, `app-${stempel}.db`));
+
+    const lauf = fahre(platz);
+
+    expect(lauf.code).not.toBe(0);
+    expect(fs.readFileSync(fremd, "utf8")).toBe("gehoert jemand anderem");
+  });
+
+  it("sichert NICHT, was sich nie einspielen ließe — und rotiert dann auch nicht", () => {
+    // DER BEFUND: Ein Symlink in uploads/ ergibt `tar -czf` Exit 0. Der Lauf
+    // galt als Erfolg, die Rotation lief — und löschte die letzten Archive
+    // weg, die sich noch einspielen ließen. Das neue Archiv weist
+    // deploy/restore.sh ab, es war also nie eine Sicherung.
+    const platz = spielwiese();
+    podmanAttrappe(platz, true, true);
+    stempelFestlegen(platz, "20260101-000000");
+    fs.symlinkSync("/etc/hostname", path.join(platz.daten, "uploads", "verweis"));
+
+    // Ein altes, EINSPIELBARES Archiv, das die Rotation wegräumen würde.
+    const alt = path.join(platz.backups, "uploads-20200101-000000.tar.gz");
+    fs.writeFileSync(alt, "altes archiv");
+    fs.utimesSync(alt, new Date(2020, 0, 1), new Date(2020, 0, 1));
+
+    const lauf = fahre(platz);
+
+    expect(lauf.code).not.toBe(0);
+    expect(lauf.ausgabe).toMatch(/SYMLINK/);
+    // Das unbrauchbare Archiv ist weg …
+    expect(fs.existsSync(path.join(platz.backups, "uploads-20260101-000000.tar.gz"))).toBe(false);
+    // … und das alte, einspielbare liegt noch da.
+    expect(fs.existsSync(alt)).toBe(true);
+  });
+
+  it("Gegenprobe: ohne Link im Medienverzeichnis gelingt derselbe Lauf", () => {
+    // Ohne diese Probe wäre der Test darüber auch dann grün, wenn das Skript
+    // JEDEN Lauf verwürfe.
+    const platz = spielwiese();
+    podmanAttrappe(platz, true, true);
+    const stempel = stempelFestlegen(platz, "20260101-000000");
+
+    const lauf = fahre(platz);
+
+    expect(lauf.code).toBe(0);
+    expect(fs.existsSync(path.join(platz.backups, `uploads-${stempel}.tar.gz`))).toBe(true);
   });
 });

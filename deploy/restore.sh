@@ -46,6 +46,10 @@ source "$(dirname "$0")/db-restore.sh"
 # Antwort. Warum sie nicht `curl -sf` lautet, steht dort.
 # shellcheck source=deploy/health-gate.sh
 source "$(dirname "$0")/health-gate.sh"
+# Der Typ-Vertrag für Medien-Archive — dieselbe Datei, die deploy/backup.sh
+# quellt, damit Sichern und Einspielen nicht auseinandergehen können.
+# shellcheck source=deploy/archiv-typen.sh
+source "$(dirname "$0")/archiv-typen.sh"
 
 # Rangfolge wie in rollback.sh und backup.sh: Aufrufer > .env > Standard.
 AUFRUFER_DATA_DIR="${DATA_DIR:-}"
@@ -212,20 +216,40 @@ if [[ -n "$UPLOADS_ARCHIV" ]]; then
   # liegt, ist keine Zusage, die dieses Repository geben kann.
   #
   # Also: KEIN Link-Mitglied, Punkt. Dann gibt es auch kein Linkziel zu
-  # prüfen. Der Typ steht in der ERSTEN Spalte von `tar -tvzf`; geprüft wird
-  # nur dieses Zeichen, damit Namen mit Leerzeichen oder " -> " nichts
-  # zerlegen.
-  TYPEN="$(tar -tvzf "$UPLOADS_ARCHIV")" \
-    || ARCHIV_ABBRUCH "$UPLOADS_ARCHIV lässt sich nicht auflisten."
-  while IFS= read -r z; do
-    [[ -z "$z" ]] && continue
-    case "${z:0:1}" in
-      d|-) ;;
-      l) ARCHIV_ABBRUCH "$UPLOADS_ARCHIV enthält einen SYMLINK. Ein Link im Archiv kann beim Auspacken aus dem Zielverzeichnis herausführen — die Datei danach schriebe tar durch ihn hindurch." ;;
-      h) ARCHIV_ABBRUCH "$UPLOADS_ARCHIV enthält einen HARDLINK." ;;
-      *) ARCHIV_ABBRUCH "$UPLOADS_ARCHIV enthält ein Mitglied, das weder Verzeichnis noch reguläre Datei ist ('${z:0:1}')." ;;
-    esac
-  done <<< "$TYPEN"
+  # prüfen.
+  #
+  # Der Vertrag selbst steht seit Panel-Runde 6 in deploy/archiv-typen.sh und
+  # wird auch von deploy/backup.sh gequellt. Vorher stand er NUR hier — mit
+  # dem Ergebnis, dass das Backup anstandslos Archive erzeugte und als Erfolg
+  # verbuchte, die genau diese Prüfung nie passiert hätten. Die Rotation hing
+  # an jenem grünen Lauf und löschte die letzten einspielbaren Archive weg.
+  if ! GRUND="$(archiv_typen_ok "$UPLOADS_ARCHIV")"; then
+    ARCHIV_ABBRUCH "$UPLOADS_ARCHIV $GRUND"
+  fi
+
+  # ── PASST ES ÜBERHAUPT AUF DIE PLATTE? ──────────────────────────────────
+  #
+  # Ausgepackt wird in eine Nebenablage UNTER $DATA_DIR — also auf dasselbe
+  # Dateisystem, auf dem die laufende Datenbank schreibt. Ein Archiv, dessen
+  # Inhalt größer ist als der freie Platz, füllt beim Auspacken die Platte,
+  # und SQLite läuft in ENOSPC, bevor der Dienst überhaupt gestoppt wird.
+  #
+  # Gefragt wird, was das Archiv ANKÜNDIGT (Spalte 3 von `tar -tvzf`, in
+  # Bytes), gegen den freien Platz mit einem Viertel Luft.
+  #
+  # Reichweite, ehrlich: Ein Kopf kann lügen. Tut er das, greift die Grenze
+  # nicht — dann scheitert `tar` am vollen Dateisystem, ARCHIV_ABBRUCH räumt
+  # die Nebenablage weg und gibt den Platz zurück, und eingespielt ist nichts.
+  # Diese Prüfung nimmt also dem EHRLICH angekündigten Fall den Schaden; den
+  # unehrlichen fängt erst das Aufräumen. Das ist weniger, als es aussieht,
+  # und deshalb steht es hier statt in einer Zusage.
+  ANGEKUENDIGT="$(tar -tvzf "$UPLOADS_ARCHIV" 2>/dev/null | awk '{s+=$3} END{print s+0}')"
+  FREI_KB="$(df -Pk "$DATA_DIR" | awk 'NR==2{print $4+0}')"
+  if [[ -n "$FREI_KB" && "$FREI_KB" -gt 0 ]]; then
+    BUDGET=$(( FREI_KB * 1024 / 5 * 4 ))
+    [[ "$ANGEKUENDIGT" -le "$BUDGET" ]] \
+      || ARCHIV_ABBRUCH "$UPLOADS_ARCHIV kündigt $ANGEKUENDIGT Byte an; auf dem Dateisystem von $DATA_DIR sind nur $((FREI_KB * 1024)) Byte frei. Auspacken füllte die Platte, auf der die laufende Datenbank schreibt."
+  fi
 
   rm -rf "$NEBENABLAGE"
   mkdir -p "$NEBENABLAGE"

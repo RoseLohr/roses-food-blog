@@ -54,6 +54,12 @@ KEEP_DAYS="${AUFRUFER_KEEP_DAYS:-${BACKUP_KEEP_DAYS:-14}}"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 PODMAN="${PODMAN:-podman}"
 
+# Der Typ-Vertrag für Medien-Archive — dieselbe Datei, die deploy/restore.sh
+# quellt. Wer sichert, muss sich an den Vertrag halten, an dem das Einspielen
+# später misst; sonst entsteht eine Sicherung, die niemand annimmt.
+# shellcheck source=deploy/archiv-typen.sh
+source "$(dirname "$0")/archiv-typen.sh"
+
 warn(){ echo "WARNUNG: $*" >&2; }
 fail(){ echo "[backup] FEHLER: $*" >&2; exit 1; }
 
@@ -76,18 +82,37 @@ ROH="$BACKUP_DIR/app-$STAMP.db"
 # auf ein fremdes Ziel — und der Lauf könnte grün enden. Ein Link an dieser
 # Stelle ist nie etwas, das dieses Skript erzeugt hat.
 #
-# Ehrlich zur Reichweite: Das fängt einen VORHER untergeschobenen Link ab,
+# Ehrlich zur Reichweite: Das fängt einen VORHER untergeschobenen Alias ab,
 # nicht das Wettrennen danach. Wer in $BACKUP_DIR schreiben darf, kann die
 # Sicherungen ohnehin unmittelbar verändern; hier geht es darum, nicht selbst
-# durch einen Link zu schreiben.
-kein_link(){
-  [[ ! -L "$1" ]] || fail "$1 ist ein symbolischer Link. Dorthin wird nicht \
-gesichert — an dieser Stelle steht nie ein Link, den dieses Skript angelegt hat."
+# durch einen Alias zu schreiben.
+#
+# ── WARUM NICHT NUR `-L` (Panel-Runde 6) ──────────────────────────────────
+# Die vorige Fassung hieß `kein_link` und fragte allein `[[ ! -L ]]`. Ein
+# HARDLINK ist aber genau derselbe Angriff mit einem anderen Werkzeug: Er
+# teilt sich den Inode mit seinem Ziel, und `-L` sieht ihn nicht. Gemessen:
+#
+#     ln $DATA_DIR/app.db $BACKUP_DIR/uploads-$STAMP.tar.gz
+#     tar -czf "$UPLOADS_ARCHIV" ...   Exit 0, UPLOADS_OK=1
+#     -> $DATA_DIR/app.db IST DANACH DAS GZIP-ARCHIV. Der Lauf bleibt grün.
+#
+# `tar -czf` (wie auch die Backup-API im Container) öffnet mit O_TRUNC und
+# schreibt in den Inode, nicht in den Namen. Die Live-Datenbank war weg, und
+# nichts im Protokoll sagte es.
+#
+# Die richtige Frage ist deshalb nicht „ist das ein Link?", sondern „ist hier
+# überhaupt etwas?". Die Zielpfade tragen einen Zeitstempel; an dieser Stelle
+# steht nie etwas, das dieses Skript angelegt hat — gleich welcher Art.
+# (`-e` folgt Links, `-L` fängt zusätzlich den toten Link ab, den `-e` verneint.)
+platz_frei(){
+  [[ ! -e "$1" && ! -L "$1" ]] || fail "$1 existiert bereits. Dorthin wird \
+nicht gesichert — an dieser Stelle steht nie etwas, das dieses Skript angelegt \
+hat, und ein untergeschobener Alias (Sym- ODER Hardlink) ließe diesen Lauf \
+durch ihn hindurch schreiben."
 }
-kein_link "$ROH"
-kein_link "$ROH.gz"
+platz_frei "$ROH"
+platz_frei "$ROH.gz"
 if [[ -f "$DATA_DIR/app.db" ]]; then
-  rm -f "$ROH"
   # BACKUP_DIR wird als EIGENER Mount hereingereicht, nicht als Unterverzeichnis
   # von DATA_DIR angenommen. Bis 08/2026 stand hier hart `/data/backups/`: Zeigte
   # BACKUP_DIR woandershin — auf eine eingehängte Platte etwa, wozu die
@@ -138,15 +163,32 @@ fi
 
 # ── 2. Uploads archivieren ─────────────────────────────────────────────────
 UPLOADS_ARCHIV="$BACKUP_DIR/uploads-$STAMP.tar.gz"
-kein_link "$UPLOADS_ARCHIV"
+platz_frei "$UPLOADS_ARCHIV"
 # Gibt es Medien, MUSS dieser Lauf ein Archiv davon erzeugen. Gibt es keine,
 # ist nichts zu sichern und der Lauf darf trotzdem gelingen.
 UPLOADS_NOETIG=0
 if [[ -d "$DATA_DIR/uploads" ]]; then
   UPLOADS_NOETIG=1
   if tar -czf "$UPLOADS_ARCHIV" -C "$DATA_DIR" uploads; then
-    UPLOADS_OK=1
-    echo "Uploads-Backup: $UPLOADS_ARCHIV"
+    # ── UND ES MUSS SICH EINSPIELEN LASSEN ─────────────────────────────────
+    # Der Exit-Code von tar sagt nur, dass ein Archiv entstanden ist — nicht,
+    # dass deploy/restore.sh es je annimmt. Dieselbe Lücke wie bei der
+    # Datenbank, wo `integrity_check` sie seit B16 schließt: Wer hier nicht
+    # prüft, verschiebt den Befund auf den Tag, an dem es darauf ankommt.
+    #
+    # Der Vertrag steht in deploy/archiv-typen.sh und wird von beiden Skripten
+    # gequellt — eine zweite Abschrift hier wäre genau die Uneinigkeit, die
+    # den Befund erzeugt hat.
+    if GRUND="$(archiv_typen_ok "$UPLOADS_ARCHIV")"; then
+      UPLOADS_OK=1
+      echo "Uploads-Backup: $UPLOADS_ARCHIV"
+    else
+      warn "Das erzeugte Archiv $UPLOADS_ARCHIV $GRUND
+Es ließe sich nicht wiederherstellen und wird deshalb NICHT als Sicherung
+gezählt — entfernt. Ursache beheben: $DATA_DIR/uploads enthält etwas, das
+weder Verzeichnis noch reguläre Datei ist."
+      rm -f "$UPLOADS_ARCHIV"
+    fi
   else
     warn "Uploads-Backup fehlgeschlagen — abgebrochenes Archiv wird entfernt."
     rm -f "$UPLOADS_ARCHIV"

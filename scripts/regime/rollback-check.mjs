@@ -38,6 +38,9 @@ const RESTORE = path.join(ROOT, "deploy/db-restore.sh");
 const DRILL = path.join(ROOT, "scripts/regime/restore-drill.sh");
 const HEALTH = path.join(ROOT, "deploy/health-gate.sh");
 const DEPLOY = path.join(ROOT, "deploy.sh");
+const BACKUP = path.join(ROOT, "deploy/backup.sh");
+const WIEDERHER = path.join(ROOT, "deploy/restore.sh");
+const ARCHIV_VERTRAG = path.join(ROOT, "deploy/archiv-typen.sh");
 
 /** Volle Kommentarzeilen (`#…`) entfernen, damit Tokens dort nicht zählen. */
 function stripComments(sh) {
@@ -162,6 +165,36 @@ const HEALTH_INVARIANTS = [
     what: "Health-Gate prüft die IDENTITÄT der Antwort (Körper trägt \"status\":\"ok\")",
     ok: (s) => /"status":"ok"/.test(s),
   },
+  {
+    // Ohne `-q` liest curl $CURL_HOME/.curlrc bzw. $HOME/.curlrc und nimmt
+    // von dort jede Option an — ein `-L` oder `--connect-to` darin dreht das
+    // Gate um. Die Abwesenheit von `-L` im Quelltext, die diese Liste prüft,
+    // war damit keine Zusage: Die Umgebung konnte es jederzeit nachreichen.
+    what: "Health-Gate ignoriert die Umgebungs-Konfiguration (`curl -q`, sonst greift .curlrc)",
+    ok: (s) => /curl\s+-q\b/.test(s),
+  },
+];
+
+// ── Der Typ-Vertrag für Medien-Archive ─────────────────────────────────────
+// Bis Panel-Runde 6 stand er NUR in deploy/restore.sh. deploy/backup.sh packte
+// deshalb Archive ein, die das Einspielen später abweist, verbuchte den Lauf
+// als Erfolg — und die daran hängende Rotation löschte die letzten Archive
+// weg, die sich noch einspielen ließen. Gemessen: ein Symlink in uploads/
+// ergibt `tar -czf` Exit 0 und im Restore einen ABBRUCH.
+//
+// Diese Invarianten halten fest, dass BEIDE Skripte denselben Vertrag quellen
+// und keines eine eigene Abschrift führt — eine zweite Abschrift ist genau die
+// Uneinigkeit, aus der der Befund entstand.
+const ARCHIV_INVARIANTS = [
+  {
+    what: "Typ-Vertrag GEQUELLT (deploy/archiv-typen.sh), keine eigene Abschrift",
+    ok: (s) => /source\s+"\$\(dirname "\$0"\)\/archiv-typen\.sh"/.test(s)
+      && !/^\s*archiv_typen_ok\(\)\s*\{/m.test(s),
+  },
+  {
+    what: "Das Ergebnis des Vertrags wird AUSGEWERTET (`archiv_typen_ok` gated etwas)",
+    ok: (s) => /\b(if\s+!?\s*)?GRUND="\$\(archiv_typen_ok /.test(s),
+  },
 ];
 
 // ── scripts/regime/restore-drill.sh — die Übung ────────────────────────────
@@ -277,8 +310,25 @@ if (process.argv.includes("--selftest")) {
     "}",
   ].join("\n");
   const healthMiss = pruefe(HEALTH_INVARIANTS, healthAttacke);
-  if (healthMiss.length < 4) {
-    console.error(`⛔ Selbsttest: Health-Gate nach altem Muster (curl -sf, keine Zeitschranke, 3xx grün) nicht gefangen (nur ${healthMiss.length} von 4 Verstößen).`);
+  if (healthMiss.length < 5) {
+    console.error(`⛔ Selbsttest: Health-Gate nach altem Muster (curl -sf, keine Zeitschranke, 3xx grün, .curlrc wirksam) nicht gefangen (nur ${healthMiss.length} von 5 Verstößen).`);
+    process.exit(1);
+  }
+
+  // Attacke auf den TYP-VERTRAG: ein Skript, das den Vertrag nicht quellt,
+  // sondern eine eigene Abschrift führt und ihr Ergebnis gar nicht auswertet —
+  // genau der Zustand vor Panel-Runde 6, in dem Backup und Restore uneins waren.
+  const archivAttacke = [
+    "#!/usr/bin/env bash",
+    '# source "$(dirname "$0")/archiv-typen.sh"   (nur Doku)',
+    "archiv_typen_ok(){",
+    '  tar -tvzf "$1" >/dev/null 2>&1',
+    "}",
+    'tar -czf "$UPLOADS_ARCHIV" -C "$DATA_DIR" uploads && UPLOADS_OK=1',
+  ].join("\n");
+  const archivMiss = pruefe(ARCHIV_INVARIANTS, archivAttacke);
+  if (archivMiss.length < 2) {
+    console.error(`⛔ Selbsttest: eigene Abschrift des Typ-Vertrags mit unausgewertetem Ergebnis nicht gefangen (nur ${archivMiss.length} von 2 Verstößen).`);
     process.exit(1);
   }
 
@@ -287,6 +337,8 @@ if (process.argv.includes("--selftest")) {
     [RESTORE, RESTORE_INVARIANTS, "deploy/db-restore.sh"],
     [DRILL, DRILL_INVARIANTS, "scripts/regime/restore-drill.sh"],
     [HEALTH, HEALTH_INVARIANTS, "deploy/health-gate.sh"],
+    [BACKUP, ARCHIV_INVARIANTS, "deploy/backup.sh"],
+    [WIEDERHER, ARCHIV_INVARIANTS, "deploy/restore.sh"],
   ]) {
     if (fs.existsSync(datei) && pruefe(liste, fs.readFileSync(datei, "utf8")).length) {
       console.error(`⛔ Selbsttest: reales ${name} fälschlich als kaputt geflaggt.`);
@@ -316,6 +368,18 @@ else for (const m of pruefe(DRILL_INVARIANTS, fs.readFileSync(DRILL, "utf8")))
 if (!fs.existsSync(HEALTH)) errors.push("deploy/health-gate.sh fehlt — Rollback und Restore hätten kein gemeinsames Health-Gate mehr.");
 else for (const m of pruefe(HEALTH_INVARIANTS, fs.readFileSync(HEALTH, "utf8")))
   errors.push(`health-gate.sh: Invariante fehlt/entkoppelt — ${m}`);
+
+// Der Typ-Vertrag, in BEIDEN Skripten. Genau hier hatte diese Datei den Fehler
+// noch einmal gemacht, den sie prüft: ARCHIV_INVARIANTS stand zuerst nur im
+// --selftest. Entschärfte man backup.sh oder restore.sh, blieb der normale
+// Lauf grün — eine Kontrolle, die nichts kontrolliert. Die Gegenprobe hat es
+// gefunden, nicht das Nachdenken.
+if (!fs.existsSync(ARCHIV_VERTRAG)) errors.push("deploy/archiv-typen.sh fehlt — Sichern und Einspielen hätten keinen gemeinsamen Typ-Vertrag mehr.");
+for (const [datei, name] of [[BACKUP, "backup.sh"], [WIEDERHER, "restore.sh"]]) {
+  if (!fs.existsSync(datei)) errors.push(`deploy/${name} fehlt.`);
+  else for (const m of pruefe(ARCHIV_INVARIANTS, fs.readFileSync(datei, "utf8")))
+    errors.push(`${name}: Invariante fehlt/entkoppelt — ${m}`);
+}
 
 const deploy = fs.existsSync(DEPLOY) ? stripComments(fs.readFileSync(DEPLOY, "utf8")) : "";
 if (!/podman tag localhost\/roses-blog:latest localhost\/roses-blog:previous/.test(deploy))
