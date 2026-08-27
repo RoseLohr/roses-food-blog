@@ -891,6 +891,8 @@ export const de = {
         "Der Alt-Text beschreibt das Foto für alle, die es nicht sehen können. Als sichtbare Unterschrift eignet er sich nur, wenn er dafür geschrieben ist.",
       blockBildunterschriftOhneText:
         "Dieses Foto hat keinen Alt-Text — es gibt nichts anzuzeigen. Der Text steht in der Medienverwaltung.",
+      blockBildunterschriftGesetztOhneText:
+        "Angeschaltet, aber dieses Foto hat gerade keinen Alt-Text: Es erscheint nichts. Sobald in der Medienverwaltung einer eingetragen wird, wird er hier sichtbar. Zum Abschalten hier klicken.",
       blockGroesse: "Größe",
       blockGroessen: { s: "Klein (⅓)", m: "Mittel (½)", l: "Groß (⅔)" },
       blockAusrichtung: "Seite",

@@ -980,17 +980,40 @@ function UnterschriftHaken({
   onChange: (an: boolean) => void;
 }) {
   const ohneText = altText.trim() === "";
+  /**
+   * Gesetzt, aber ohne Alt-Text — der Zustand, den es NICHT verschweigen darf.
+   *
+   * DER BEFUND (Gegenprüfung, dritte Runde): Das Häkchen zeigte
+   * `checked={an && !ohneText}` und war zugleich gesperrt. Bei gesetzter
+   * Angabe und leerem Alt-Text stand da also „aus", während „an" gespeichert
+   * blieb — und gesperrt hieß: nicht widerrufbar. Erreichbar ist das über die
+   * Medienverwaltung (Alt-Text nachträglich geleert) und über den
+   * Archiv-Import. Trägt jemand später wieder einen Alt-Text ein, erscheint
+   * die Unterschrift auf der öffentlichen Seite, ohne dass sie je jemand für
+   * diesen Zustand eingeschaltet hätte.
+   *
+   * Jetzt gilt: Was dasteht, ist der gespeicherte Zustand. Gesperrt ist nur
+   * das EINSCHALTEN ohne Alt-Text — ausschalten geht immer. Ein Häkchen, das
+   * man nicht mehr wegbekommt, wäre die andere Hälfte desselben Fehlers.
+   */
+  const gesetztOhneText = an && ohneText;
   return (
     <label
       className={`mt-1 flex max-w-32 items-start gap-1 text-xs ${
         ohneText ? "text-ink-soft/60" : "text-ink-soft"
       }`}
-      title={ohneText ? d.blockBildunterschriftOhneText : d.blockBildunterschriftHinweis}
+      title={
+        gesetztOhneText
+          ? d.blockBildunterschriftGesetztOhneText
+          : ohneText
+            ? d.blockBildunterschriftOhneText
+            : d.blockBildunterschriftHinweis
+      }
     >
       <input
         type="checkbox"
-        checked={an && !ohneText}
-        disabled={ohneText}
+        checked={an}
+        disabled={ohneText && !an}
         onChange={(e) => onChange(e.target.checked)}
         className="mt-0.5"
       />

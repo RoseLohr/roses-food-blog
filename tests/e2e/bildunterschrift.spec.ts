@@ -270,6 +270,84 @@ test("dasselbe Foto zweimal in einer Gruppe: das Entfernen trifft die STELLE", a
   expect(rest[0].bildunterschrift).toBe(0);
 });
 
+test("gesetzt, aber ohne Alt-Text: sichtbar UND abschaltbar", async ({ page }) => {
+  // DER BEFUND (Gegenprüfung, dritte Runde): Das Häkchen zeigte „aus", während
+  // „an" gespeichert blieb — und war dabei gesperrt, also nicht widerrufbar.
+  // Erreichbar ist der Zustand über die Medienverwaltung (Alt-Text
+  // nachträglich geleert) und über den Archiv-Import. Trägt später jemand
+  // wieder einen Alt-Text ein, erscheint die Unterschrift auf der
+  // öffentlichen Seite, ohne dass sie je jemand dafür eingeschaltet hätte.
+  //
+  // Hier wird genau das hergestellt: gesetzte Angabe, Alt-Text geleert.
+  // Eine EIGENE Gruppe für diesen Fall, statt auf den Rest der vorigen Tests
+  // zu bauen: Was die hinterlassen, ist ihre Sache, nicht die Voraussetzung
+  // dieser Messung.
+  await page.goto(`/admin/reisen/${travelId}`);
+  await page.getByRole("button", { name: `+ ${d.blockBildgruppe}`, exact: true }).click();
+  const neueGruppe = page.locator(GRUPPE).last();
+  await neueGruppe.getByRole("button", { name: ip.chooseMultiple }).click();
+  const bibliothek = page.getByRole("dialog");
+  await expect(bibliothek).toBeVisible();
+  await bibliothek.locator("button[aria-pressed]").nth(2).click();
+  await bibliothek.getByRole("button", { name: ip.close, exact: true }).click();
+  await expect(bibliothek).toBeHidden();
+  await speichern(page);
+
+  const db = new Database(path.resolve(process.cwd(), ".pw-data/app.db"));
+  const block = db
+    .prepare(
+      "SELECT id, image_id FROM travel_block WHERE travel_post_id = ? AND gruppe IS NOT NULL ORDER BY sort_order DESC LIMIT 1",
+    )
+    .get(travelId) as { id: number; image_id: number };
+  expect(block).toBeDefined();
+  const alterText = (
+    db.prepare("SELECT alt_text FROM media_image WHERE id = ?").get(block.image_id) as {
+      alt_text: string;
+    }
+  ).alt_text;
+  db.prepare("UPDATE travel_block SET bildunterschrift = 1 WHERE id = ?").run(block.id);
+  db.prepare("UPDATE media_image SET alt_text = '' WHERE id = ?").run(block.image_id);
+  db.close();
+
+  try {
+    await page.goto(`/admin/reisen/${travelId}`);
+    const haken = page
+      .locator(GRUPPE)
+      .last()
+      .getByRole("checkbox", { name: d.blockBildunterschrift })
+      .first();
+
+    // Was dasteht, ist der gespeicherte Zustand — nicht „aus".
+    await expect(haken).toBeChecked();
+    // Und es lässt sich abschalten. Gesperrt ist nur das EINSCHALTEN ohne
+    // Alt-Text; ein Häkchen, das man nicht mehr wegbekommt, wäre die andere
+    // Hälfte desselben Fehlers.
+    await expect(haken).toBeEnabled();
+    await haken.uncheck();
+    await expect(haken).not.toBeChecked();
+    // Jetzt ist es aus UND ohne Alt-Text — also gesperrt, wie es sein soll.
+    await expect(haken).toBeDisabled();
+
+    await speichern(page);
+    // Nach der Stelle fragen, nicht nach der Zeilen-ID: Das Speichern legt die
+    // Blöcke neu an, die alte ID gibt es danach nicht mehr.
+    const nachher = new Database(path.resolve(process.cwd(), ".pw-data/app.db"));
+    const rest = nachher
+      .prepare(
+        "SELECT bildunterschrift FROM travel_block WHERE travel_post_id = ? AND gruppe IS NOT NULL ORDER BY sort_order DESC LIMIT 1",
+      )
+      .get(travelId) as { bildunterschrift: number } | undefined;
+    nachher.close();
+    expect(rest?.bildunterschrift).toBe(0);
+  } finally {
+    const zurueck = new Database(path.resolve(process.cwd(), ".pw-data/app.db"));
+    zurueck
+      .prepare("UPDATE media_image SET alt_text = ? WHERE id = ?")
+      .run(alterText, block.image_id);
+    zurueck.close();
+  }
+});
+
 /** Aufräumen (B8): Der angelegte Bericht verschwindet wieder. */
 test.afterAll(() => {
   if (travelId === null) return;
