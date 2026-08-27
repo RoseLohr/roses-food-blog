@@ -1359,3 +1359,82 @@ muss den Fall treffen, den der andere meint, nicht den bequemsten Nachbarfall.
 Deshalb steht in dieser Runde bei jedem Punkt eine Aussage über die Sache
 selbst statt über ihre Erscheinungsform: der Inode statt des Namens, der ganze
 Pfad statt der letzten Komponente, die Rechte statt des Wettrennens.
+
+## B25 — Zahlen, die nicht die Sache messen — GEMESSEN 08/2026, behoben
+
+Vier Punkte aus der zehnten Panel-Runde. Drei davon sind Zahlen oder Modi, die
+eine bequeme Nachbargröße statt der Sache selbst erfassen.
+
+### 1. Die veröffentlichte Sicherung war weltlesbar
+
+Eine DB-Sicherung IST die vollständige Datenbank. Sie entstand unter der umask
+des Aufrufers:
+
+```
+umask 0022  ->  app-STAMP.db.gz = 644
+```
+
+Das widerspricht direkt dem, was B21 für den Restore festgelegt hat: Dort wird
+der Modus `0600` der laufenden Datenbank sorgfältig erhalten — und daneben lag
+eine frei lesbare Kopie derselben Daten.
+
+**Wurzel:** `umask 077` als Regel für den ganzen Lauf, nicht `chmod` je Datei.
+Eine Liste von `chmod`-Zeilen wäre wieder eine Aufzählung von Fällen; gemeint
+ist eine Aussage über alles, was dieser Lauf anlegt — auch über das, was später
+dazukommt.
+
+### 2. Geprüft wurde nur das Blatt, nicht der Weg dorthin
+
+Wer in einem **Eltern**verzeichnis schreiben darf, benennt `BACKUP_DIR` um und
+stellt ein eigenes an seine Stelle. Der Modus des Blattes sagt darüber nichts.
+Geprüft wird jetzt der ganze Pfad bis zur Wurzel.
+
+**Mit einer Unterscheidung, die zur Sache gehört:** Das **Sticky-Bit**.
+`/tmp` ist `1777` — jeder darf dort anlegen, aber niemand fremde Einträge
+umbenennen oder löschen, und genau das ist der Angriff. Ohne diese
+Unterscheidung wäre die Regel schlicht falsch und wiese jede Anlage unterhalb
+von `/tmp` ab. Eine Kontrolle, die den Regelfall verbietet, wird abgeschaltet
+und schützt dann gar nichts.
+
+### 3. Das Inhaltsverzeichnis lag komplett im Speicher
+
+`zeilen="$(tar -tvzf …)"` puffert die ganze Liste. Ein winziges Archiv aus
+Millionen Kopfsätzen ergibt hunderte Megabyte — der Prüfer stirbt am Speicher,
+bevor er ein Urteil fällt. Eine Kontrolle, die am zu prüfenden Gegenstand
+zugrunde geht, ist keine.
+
+**Wurzel:** gelesen wird im Strom, über eine Prozess-Ersetzung (eine Pipe legte
+die Schleife in eine Unterschale, aus der `return 1` nie ankäme).
+
+**Und der heikle Teil, den erst die Gegenprobe zeigte:** Scheitert `tar` in der
+Prozess-Ersetzung, liefert es KEINE Zeilen. Die Schleife liefe nie, und die
+Funktion antwortete „Typen in Ordnung" — über ein Archiv, das sich gar nicht
+öffnen lässt. Die Lesbarkeit wird deshalb eigens festgestellt.
+
+### 4. Das Platz-Gate zählte Nutzbytes statt Blöcke
+
+Eine Datei belegt immer einen ganzen Block und immer einen Inode. Gemessen:
+
+```
+3000 Dateien à 1 Byte
+angekündigt:      3 000 Byte
+belegt:      12 365 824 Byte   (Faktor 4121)
+Archivgröße:     38 385 Byte
+```
+
+Das Gate lag um drei Größenordnungen daneben. **Wurzel:** aufgerundet wird je
+Mitglied auf die Blockgröße des Ziel-Dateisystems, und die Anzahl der Mitglieder
+wird gegen die freien **Inodes** gehalten.
+
+### Und wieder zwei Kontrollen, die nichts kontrollierten — beide meine
+
+Die Gegenprobe zur Blockrechnung ließ die Testsuite **grün**: Es gab keinen
+Test, den das Entfernen der Rechnung umgeworfen hätte. Ebenso beim Typ-Vertrag:
+Entfernte man die Lesbarkeitsprüfung, blieb alles grün, weil der Vertrag bisher
+nur MITTELBAR geprüft war — über die beiden Skripte, die ihn umgeben und ihre
+eigenen Vorprüfungen mitbringen.
+
+Dass die Aufrufer das heute abfangen, macht den Vertrag nicht richtig: Ein
+gemeinsamer Baustein, der nur zusammen mit seinen jetzigen Aufrufern hält, ist
+genau die Abhängigkeit, wegen der er herausgezogen wurde. Deshalb jetzt
+`tests/archiv-typen.test.ts` — der Vertrag für sich allein gefahren.

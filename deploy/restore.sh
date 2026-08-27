@@ -185,7 +185,13 @@ if [[ -n "$UPLOADS_ARCHIV" ]]; then
     rm -rf "$NEBENABLAGE"
     fail "$1 Nichts eingespielt, der Dienst läuft weiter."
   }
-  MITGLIEDER="$(tar -tzf "$UPLOADS_ARCHIV")" \
+  # Im STROM, nicht in einen Puffer (Panel-Runde 10): Ein winziges Archiv aus
+  # Millionen Kopfsätzen ergibt eine Liste von hunderten Megabyte, und der
+  # Prüfer stürbe am Speicher, bevor er ein Urteil fällt. Erst die Lesbarkeit
+  # nach /dev/null feststellen, dann über eine Prozess-Ersetzung lesen — eine
+  # Pipe legte die Schleife in eine Unterschale, aus der ARCHIV_ABBRUCH den
+  # Lauf nicht mehr beenden könnte.
+  tar -tzf "$UPLOADS_ARCHIV" >/dev/null 2>&1 \
     || ARCHIV_ABBRUCH "$UPLOADS_ARCHIV ist nicht lesbar."
   while IFS= read -r m; do
     [[ -z "$m" ]] && continue
@@ -195,7 +201,7 @@ if [[ -n "$UPLOADS_ARCHIV" ]]; then
     # gültiger Dateiname und darf nicht mit `uploads/../` verwechselt werden.
     [[ "/$m/" == */../* ]] \
       && ARCHIV_ABBRUCH "$UPLOADS_ARCHIV enthält '$m' — ein Pfadglied '..' führt aus uploads/ heraus."
-  done <<< "$MITGLIEDER"
+  done < <(tar -tzf "$UPLOADS_ARCHIV" 2>/dev/null)
 
   # ── TYPEN, BEVOR AUSGEPACKT WIRD ────────────────────────────────────────
   #
@@ -247,12 +253,39 @@ if [[ -n "$UPLOADS_ARCHIV" ]]; then
   # Diese Prüfung nimmt also dem EHRLICH angekündigten Fall den Schaden; den
   # unehrlichen fängt erst das Aufräumen. Das ist weniger, als es aussieht,
   # und deshalb steht es hier statt in einer Zusage.
-  ANGEKUENDIGT="$(tar -tvzf "$UPLOADS_ARCHIV" 2>/dev/null | awk '{s+=$3} END{print s+0}')"
+  # ── GERECHNET WIRD IN BLÖCKEN UND INODES, NICHT IN NUTZBYTES (Runde 10) ──
+  #
+  # Die erste Fassung summierte die angekündigten Nutzbytes. Eine Datei belegt
+  # aber immer einen ganzen Block, und jede belegt einen Inode. Gemessen:
+  #
+  #     3000 Dateien à 1 Byte
+  #     angekündigt:      3 000 Byte
+  #     belegt:      12 365 824 Byte   (Faktor 4121)
+  #     Archivgröße:     38 385 Byte
+  #
+  # Das Gate lag also um drei Größenordnungen daneben — wieder eine Zahl, die
+  # die Sache nicht misst, sondern eine bequeme Nachbargröße.
+  #
+  # Aufgerundet wird je Mitglied auf die Blockgröße des Ziel-Dateisystems, und
+  # die Anzahl der Mitglieder wird gegen die freien Inodes gehalten. `stat -f`
+  # liefert beides für das Dateisystem, auf dem $DATA_DIR liegt.
+  BLOCK="$(stat -f -c %s "$DATA_DIR" 2>/dev/null || echo 4096)"
+  [[ "$BLOCK" -gt 0 ]] || BLOCK=4096
+  gebraucht="$(tar -tvzf "$UPLOADS_ARCHIV" 2>/dev/null \
+    | awk -v b="$BLOCK" '{n++; s += int(($3 + b - 1) / b) * b} END {print (s+0) " " (n+0)}')"
+  BEDARF="${gebraucht%% *}"
+  MITGLIEDERZAHL="${gebraucht##* }"
+
   FREI_KB="$(df -Pk "$DATA_DIR" | awk 'NR==2{print $4+0}')"
   if [[ -n "$FREI_KB" && "$FREI_KB" -gt 0 ]]; then
     BUDGET=$(( FREI_KB * 1024 / 5 * 4 ))
-    [[ "$ANGEKUENDIGT" -le "$BUDGET" ]] \
-      || ARCHIV_ABBRUCH "$UPLOADS_ARCHIV kündigt $ANGEKUENDIGT Byte an; auf dem Dateisystem von $DATA_DIR sind nur $((FREI_KB * 1024)) Byte frei. Auspacken füllte die Platte, auf der die laufende Datenbank schreibt."
+    [[ "$BEDARF" -le "$BUDGET" ]] \
+      || ARCHIV_ABBRUCH "$UPLOADS_ARCHIV braucht rund $BEDARF Byte an Blöcken; auf dem Dateisystem von $DATA_DIR sind nur $((FREI_KB * 1024)) Byte frei. Auspacken füllte die Platte, auf der die laufende Datenbank schreibt."
+  fi
+  FREIE_INODES="$(df -Pi "$DATA_DIR" 2>/dev/null | awk 'NR==2{print $4+0}')"
+  if [[ -n "$FREIE_INODES" && "$FREIE_INODES" -gt 0 ]]; then
+    [[ "$MITGLIEDERZAHL" -le $(( FREIE_INODES / 5 * 4 )) ]] \
+      || ARCHIV_ABBRUCH "$UPLOADS_ARCHIV enthält $MITGLIEDERZAHL Mitglieder; auf dem Dateisystem von $DATA_DIR sind nur $FREIE_INODES Inodes frei. Auspacken erschöpfte sie, und die laufende Datenbank könnte nichts mehr anlegen."
   fi
 
   rm -rf "$NEBENABLAGE"

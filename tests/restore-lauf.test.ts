@@ -678,16 +678,37 @@ describe("Panel-Runde 6: passt das Archiv überhaupt auf die Platte?", () => {
    * Sie ahmt das POSIX-Format von `df -Pk` nach: Kopfzeile, dann eine Zeile,
    * in der Spalte 4 die freien KiB trägt.
    */
-  function dfAttrappe(platz: Platz, freiKb: number) {
+  function dfAttrappe(platz: Platz, freiKb: number, freieInodes = 10_000_000) {
+    // ARGUMENT-ABHÄNGIG, und das ist kein Beiwerk: Das Skript fragt `df -Pk`
+    // nach Blöcken und `df -Pi` nach Inodes. Eine Attrappe, die beide gleich
+    // beantwortet, ließe nie erkennen, WELCHES Gate gefeuert hat — ein
+    // Prüfstand, der zwei Kontrollen zu einer verschmiert.
     fs.writeFileSync(
       path.join(platz.bin, "df"),
       [
         "#!/usr/bin/env bash",
-        'echo "Filesystem 1024-blocks Used Available Capacity Mounted on"',
-        `echo "/dev/attrappe 1000000 1000 ${freiKb} 1% /"`,
+        'if [[ "$*" == *-Pi* ]]; then',
+        '  echo "Filesystem Inodes IUsed IFree IUse% Mounted on"',
+        `  echo "/dev/attrappe 20000000 1000 ${freieInodes} 1% /"`,
+        "else",
+        '  echo "Filesystem 1024-blocks Used Available Capacity Mounted on"',
+        `  echo "/dev/attrappe 1000000 1000 ${freiKb} 1% /"`,
+        "fi",
       ].join("\n"),
       { mode: 0o755 },
     );
+  }
+
+  /** Ein Archiv aus `anzahl` Dateien à einem Byte. */
+  function vieleWinzige(platz: Platz, anzahl: number): string {
+    const quelle = path.join(tmp, "winzig");
+    fs.mkdirSync(path.join(quelle, "uploads"), { recursive: true });
+    for (let i = 0; i < anzahl; i++) {
+      fs.writeFileSync(path.join(quelle, "uploads", `f${i}.bin`), "x");
+    }
+    const archiv = path.join(platz.daten, "backups", "uploads-winzig.tar.gz");
+    execFileSync("tar", ["-czf", archiv, "-C", quelle, "uploads"]);
+    return archiv;
   }
 
   function kleinesArchiv(platz: Platz): string {
@@ -712,10 +733,61 @@ describe("Panel-Runde 6: passt das Archiv überhaupt auf die Platte?", () => {
     const lauf = fahre(platz, [backupAnlegen(platz), archiv]);
 
     expect(lauf.code).not.toBe(0);
-    expect(lauf.ausgabe).toMatch(/kündigt .* Byte an/);
+    expect(lauf.ausgabe).toMatch(/braucht rund .* Byte an Blöcken/);
     // Nichts angefasst, und der Dienst lief durchgehend weiter.
     expect(standUnberuehrt(platz)).toBe(true);
     expect(lauf.protokoll).not.toMatch(/compose down/);
+  });
+
+  it("viele winzige Dateien passieren das Platz-Gate nicht mehr", () => {
+    // DER BEFUND (Runde 10): Das Gate summierte die angekündigten NUTZBYTES.
+    // Eine Datei belegt aber immer einen ganzen Block. Gemessen:
+    //
+    //     3000 Dateien à 1 Byte
+    //     angekündigt:      3 000 Byte
+    //     belegt:      12 365 824 Byte   (Faktor 4121)
+    //     Archivgröße:     38 385 Byte
+    //
+    // Wieder eine Zahl, die nicht die Sache misst, sondern eine bequeme
+    // Nachbargröße. 100 KiB frei: Die 3000 angekündigten Byte passten mühelos,
+    // die Blöcke nicht. OHNE die Blockrechnung ist dieser Test grün — und
+    // genau daran ist meine erste Fassung aufgefallen: Die Gegenprobe
+    // (Blockrechnung entfernen) ließ die Testsuite unverändert grün.
+    const platz = spielwiese();
+    const archiv = vieleWinzige(platz, 3000);
+    dfAttrappe(platz, 100);
+
+    const lauf = fahre(platz, [backupAnlegen(platz), archiv]);
+
+    expect(lauf.code).not.toBe(0);
+    expect(lauf.ausgabe).toMatch(/braucht rund .* Byte an Blöcken/);
+    expect(standUnberuehrt(platz)).toBe(true);
+    expect(lauf.protokoll).not.toMatch(/compose down/);
+  });
+
+  it("erschöpfte Inodes halten das Archiv ebenfalls auf", () => {
+    // Der Platz kann reichen und die Inodes trotzdem ausgehen: Jede Datei
+    // belegt einen, gleich wie klein sie ist. Ein Dateisystem ohne freie
+    // Inodes ist für die laufende Datenbank so tot wie eine volle Platte.
+    const platz = spielwiese();
+    const archiv = vieleWinzige(platz, 3000);
+    dfAttrappe(platz, 10_000_000, 100);
+
+    const lauf = fahre(platz, [backupAnlegen(platz), archiv]);
+
+    expect(lauf.code).not.toBe(0);
+    expect(lauf.ausgabe).toMatch(/Inodes frei/);
+    expect(standUnberuehrt(platz)).toBe(true);
+  });
+
+  it("Gegenprobe: mit Platz UND Inodes geht das winzige Archiv durch", () => {
+    const platz = spielwiese();
+    const archiv = vieleWinzige(platz, 3000);
+    dfAttrappe(platz, 10_000_000, 10_000_000);
+
+    const lauf = fahre(platz, [backupAnlegen(platz), archiv]);
+
+    expect(lauf.code).toBe(0);
   });
 
   it("Gegenprobe: mit genug Platz geht dasselbe Archiv durch", () => {
@@ -729,6 +801,6 @@ describe("Panel-Runde 6: passt das Archiv überhaupt auf die Platte?", () => {
     const lauf = fahre(platz, [backupAnlegen(platz), archiv]);
 
     expect(lauf.code).toBe(0);
-    expect(lauf.ausgabe).not.toMatch(/kündigt .* Byte an/);
+    expect(lauf.ausgabe).not.toMatch(/braucht rund .* Byte an Blöcken/);
   });
 });

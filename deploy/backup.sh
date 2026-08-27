@@ -33,6 +33,23 @@
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
+# ── WAS HIER ENTSTEHT, GEHT NUR UNS AN (Panel-Runde 10) ───────────────────
+#
+# Eine DB-Sicherung ist die vollständige Datenbank. Sie entstand bisher unter
+# der umask des Aufrufers und lag damit als 0644 da — weltlesbar. Gemessen:
+#
+#     umask 0022  ->  app-STAMP.db.gz = 644
+#
+# Das widerspricht dem, was B21 für den Restore festgelegt hat: Dort wird der
+# Modus 0600 der laufenden Datenbank sorgfältig erhalten, und daneben lag eine
+# frei lesbare Kopie derselben Daten.
+#
+# `umask 077` als REGEL, nicht `chmod` je Datei: Es gilt für alles, was dieser
+# Lauf anlegt — Werkstatt, Archiv, Sicherung —, auch für das, was später
+# dazukommt. Eine Liste von chmod-Zeilen wäre wieder eine Aufzählung von
+# Fällen; hier ist eine Aussage über den ganzen Lauf gemeint.
+umask 077
+
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_DIR"
 
@@ -152,13 +169,29 @@ mkdir -p "$BACKUP_DIR"
 # Eigenschaft der Rechte auf dem Verzeichnis. Also wird sie hier nicht länger
 # angenommen, sondern VERLANGT: Wer nicht wir ist, darf hier nicht schreiben.
 # Damit fällt die ganze Klasse weg, statt Fall für Fall abgefangen zu werden.
-RECHTE="$(stat -c %a "$BACKUP_DIR" 2>/dev/null || echo "")"
-[[ -n "$RECHTE" ]] || fail "Rechte von $BACKUP_DIR nicht lesbar."
-[[ $((8#$RECHTE & 8#022)) -eq 0 ]] \
-  || fail "$BACKUP_DIR ist für Gruppe oder andere BESCHREIBBAR (Modus \
-$RECHTE). Wer dort schreiben darf, kann jede Sicherung dieses Laufs umleiten \
-oder ersetzen — dagegen hilft kein Wächter im Skript, nur der Modus. Bitte \
-`chmod go-w` setzen."
+# ── NACHTRAG RUNDE 10: AUCH DIE ELTERN ────────────────────────────────────
+# Nur das Blatt zu prüfen genügt nicht: Wer in einem ELTERNverzeichnis
+# schreiben darf, benennt $BACKUP_DIR um und stellt ein eigenes an seine
+# Stelle. Der Modus des Blattes sagt darüber nichts. Geprüft wird deshalb der
+# ganze Pfad bis zur Wurzel — dieselbe Bewegung wie bei der kanonischen Form:
+# eine Aussage über den PFAD, nicht über eine Komponente.
+PRUEFPFAD="$BACKUP_DIR"
+while :; do
+  RECHTE="$(stat -c %a "$PRUEFPFAD" 2>/dev/null || echo "")"
+  [[ -n "$RECHTE" ]] || fail "Rechte von $PRUEFPFAD nicht lesbar."
+  # Das STICKY-BIT gehört zur Frage, nicht daneben: Ein Verzeichnis wie /tmp
+  # ist 1777 — jeder darf dort anlegen, aber NIEMAND darf fremde Einträge
+  # umbenennen oder löschen. Genau das ist der Angriff, um den es hier geht.
+  # Ohne diese Unterscheidung wäre die Regel schlicht falsch und wiese jede
+  # Anlage unterhalb von /tmp ab, ohne dass dort etwas zu holen wäre.
+  [[ $((8#$RECHTE & 8#022)) -eq 0 || $((8#$RECHTE & 8#1000)) -ne 0 ]] \
+    || fail "$PRUEFPFAD ist für Gruppe oder andere BESCHREIBBAR (Modus \
+$RECHTE). Wer dort schreiben darf, kann die Sicherungen dieses Laufs umleiten, \
+ersetzen oder das Verzeichnis darunter austauschen — dagegen hilft kein \
+Wächter im Skript, nur der Modus. Bitte `chmod go-w $PRUEFPFAD` setzen."
+  [[ "$PRUEFPFAD" == "/" ]] && break
+  PRUEFPFAD="$(dirname "$PRUEFPFAD")"
+done
 
 # ── GESCHRIEBEN WIRD IN EINE WERKSTATT, NICHT AN DEN ZIELNAMEN (Runde 7) ───
 #

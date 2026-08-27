@@ -44,13 +44,28 @@
 #   Rückgabe 0: jedes Mitglied ist Verzeichnis oder reguläre Datei.
 #   Rückgabe 1: der Grund steht auf stdout (zum Anhängen an eine Fehlermeldung).
 archiv_typen_ok(){
-  local zeilen z
+  local z
   # `TAR_OPTIONS` aus der Umgebung neutralisieren: GNU tar nimmt von dort jede
   # Option an, und ein `--dereference` machte aus einem Symlink still eine
   # reguläre Datei mit fremdem Inhalt — dieser Vertrag wäre zufrieden und
   # trotzdem wertlos. Lokal, damit der Aufrufer nichts davon merkt.
   local TAR_OPTIONS=
-  zeilen="$(tar -tvzf "$1" 2>/dev/null)" \
+  # ── GELESEN WIRD IM STROM, NICHT IN EINEN PUFFER (Panel-Runde 10) ───────
+  # `zeilen="$(tar -tvzf …)"` hielt das GANZE Inhaltsverzeichnis im Speicher.
+  # Ein winziges Archiv aus Millionen Kopfsätzen komprimiert auf wenige
+  # Kilobyte und ergibt eine Liste von hunderten Megabyte — der Prüfer stirbt
+  # am Speicher, bevor er ein Urteil fällt. Eine Kontrolle, die am zu
+  # prüfenden Gegenstand zugrunde geht, ist keine.
+  #
+  # DIE LESBARKEIT MUSS DABEI EIGENS FESTGESTELLT WERDEN, und das ist der
+  # heikle Teil: Scheitert `tar` in der Prozess-Ersetzung, liefert es KEINE
+  # Zeilen. Die Schleife liefe dann nie, und die Funktion antwortete „Typen in
+  # Ordnung" — über ein Archiv, das sich gar nicht öffnen lässt. Deshalb erst
+  # ein Lesen nach /dev/null (im Strom, ohne Puffer), dann die Typprüfung.
+  #
+  # Prozess-Ersetzung und nicht Pipe: Eine Pipe legte die Schleife in eine
+  # Unterschale, und deren `return 1` käme hier nie an.
+  tar -tzf "$1" >/dev/null 2>&1 \
     || { echo "lässt sich nicht auflisten."; return 1; }
   while IFS= read -r z; do
     [[ -z "$z" ]] && continue
@@ -63,6 +78,6 @@ archiv_typen_ok(){
       *) echo "enthält ein Mitglied, das weder Verzeichnis noch reguläre Datei ist ('${z:0:1}')."
          return 1 ;;
     esac
-  done <<< "$zeilen"
+  done < <(tar -tvzf "$1" 2>/dev/null)
   return 0
 }

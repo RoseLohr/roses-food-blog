@@ -932,3 +932,56 @@ describe("Panel-Runde 9: der Name lügt, der Inode nicht", () => {
     expect(fs.existsSync(path.join(platz.backups, `uploads-${stempel}.tar.gz`))).toBe(true);
   });
 });
+
+describe("Panel-Runde 10: was entsteht, geht nur uns an", () => {
+  it("die veröffentlichte DB-Sicherung ist nicht weltlesbar", () => {
+    // DER BEFUND: Eine DB-Sicherung IST die vollständige Datenbank. Sie
+    // entstand unter der umask des Aufrufers und lag als 0644 da. Gemessen:
+    //
+    //     umask 0022  ->  app-STAMP.db.gz = 644
+    //
+    // Das widerspricht dem, was B21 für den Restore festgelegt hat: Dort wird
+    // der Modus 0600 der laufenden Datenbank sorgfältig erhalten — und daneben
+    // lag eine frei lesbare Kopie derselben Daten.
+    const platz = spielwiese();
+    podmanAttrappe(platz, true, true);
+    const stempel = stempelFestlegen(platz, "20260101-000000");
+
+    const lauf = fahre(platz);
+
+    expect(lauf.code).toBe(0);
+    const modus = (datei: string) =>
+      (fs.statSync(datei).mode & 0o777).toString(8);
+    expect(modus(path.join(platz.backups, `app-${stempel}.db.gz`))).toBe("600");
+    expect(modus(path.join(platz.backups, `uploads-${stempel}.tar.gz`))).toBe("600");
+  });
+
+  it("ein beschreibbares ELTERNverzeichnis wird abgewiesen", () => {
+    // Nur das Blatt zu prüfen genügt nicht: Wer im Elternverzeichnis schreiben
+    // darf, benennt BACKUP_DIR um und stellt ein eigenes an seine Stelle. Der
+    // Modus des Blattes sagt darüber nichts.
+    const platz = spielwiese();
+    podmanAttrappe(platz, true, true);
+    fs.chmodSync(platz.daten, 0o777); // der ELTERN-Ordner von backups/
+
+    const lauf = fahre(platz);
+
+    expect(lauf.code).not.toBe(0);
+    expect(lauf.ausgabe).toMatch(/BESCHREIBBAR/);
+  });
+
+  it("ein weltbeschreibbares Elternverzeichnis MIT Sticky-Bit ist in Ordnung", () => {
+    // Gegenprobe, und sie ist keine Formalie: /tmp ist 1777. Sticky verbietet
+    // genau das Umbenennen fremder Einträge — also den Angriff, um den es
+    // geht. Ohne diese Unterscheidung wiese die Regel jede Anlage unterhalb
+    // von /tmp ab, ohne dass dort etwas zu holen wäre. Eine Kontrolle, die
+    // den Regelfall verbietet, wird abgeschaltet und schützt dann gar nichts.
+    const platz = spielwiese();
+    podmanAttrappe(platz, true, true);
+    fs.chmodSync(platz.daten, 0o1777);
+
+    const lauf = fahre(platz);
+
+    expect(lauf.code).toBe(0);
+  });
+});
