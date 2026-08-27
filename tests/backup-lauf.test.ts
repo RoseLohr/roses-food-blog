@@ -847,3 +847,88 @@ describe("Panel-Runde 8: die Lücken in den Behebungen von Runde 7", () => {
     expect(fs.existsSync(path.join(platz.backups, `uploads-${stempel}.tar.gz`))).toBe(false);
   });
 });
+
+describe("Panel-Runde 9: der Name lügt, der Inode nicht", () => {
+  it("ein HARDLINK in uploads/ verhindert das Medien-Archiv", () => {
+    // DER BEFUND, und er kippt zwei meiner früheren Zurückweisungen:
+    // Ein Hardlink verschwindet im Archiv, sobald sein ZWEITER Name AUSSERHALB
+    // liegt — tar hat dann nichts zum Verlinken und schreibt eine reguläre
+    // Datei MIT INHALT. Gemessen:
+    //
+    //     ln daten/app.db daten/uploads/leak.webp
+    //     tar -czf … -C daten uploads
+    //     -> [-] uploads/leak.webp, Inhalt: GEHEIME-DATENBANK
+    //
+    // Der Typ-Vertrag ist zufrieden (Typ '-'), und der Restore veröffentlichte
+    // die Datenbank unter uploads/. In Runde 6 und 8 hatte ich den Punkt mit
+    // einer Messung abgewiesen, bei der BEIDE Namen im Archiv lagen; dann
+    // meldet tar 'h'. Richtig für den Fall, falsch als Widerlegung.
+    //
+    // Geprüft wird deshalb der INODE, nicht der Name und nicht die
+    // Serialisierung: Hat die Datei mehr als einen Namen?
+    const platz = spielwiese();
+    podmanAttrappe(platz, true, true);
+    const stempel = stempelFestlegen(platz, "20260101-000000");
+    fs.linkSync(
+      path.join(platz.daten, "app.db"),
+      path.join(platz.daten, "uploads", "leak.webp"),
+    );
+
+    const lauf = fahre(platz);
+
+    expect(lauf.code).not.toBe(0);
+    expect(lauf.ausgabe).toMatch(/mehr als einen Namen/);
+    expect(fs.existsSync(path.join(platz.backups, `uploads-${stempel}.tar.gz`))).toBe(false);
+  });
+
+  it("ein BACKUP_DIR, das IRGENDWO im Pfad durch einen Link führt, wird abgewiesen", () => {
+    // DER BEFUND: `-L` sieht nur die letzte Komponente. `verweis/sub` ist
+    // selbst kein Link und löst trotzdem durch `verweis` hindurch auf.
+    // Gemessen: [[ -L "verweis/sub" ]] -> falsch.
+    //
+    // Zum dritten Mal in Folge deckte die Regel ihre eigene Klasse nicht ab.
+    // Jetzt eine Aussage über den GANZEN Pfad: Er muss seiner kanonischen
+    // Form entsprechen.
+    const platz = spielwiese();
+    podmanAttrappe(platz, true, true);
+    const echt = path.join(tmp, "echtes-verzeichnis");
+    fs.mkdirSync(path.join(echt, "sub"), { recursive: true });
+    const verweis = path.join(tmp, "verweis");
+    fs.symlinkSync(echt, verweis);
+
+    const lauf = fahre(platz, { BACKUP_DIR: path.join(verweis, "sub") });
+
+    expect(lauf.code).not.toBe(0);
+    expect(lauf.ausgabe).toMatch(/löst nach .* auf/);
+    expect(fs.readdirSync(path.join(echt, "sub"))).toHaveLength(0);
+  });
+
+  it("ein für andere beschreibbares BACKUP_DIR wird abgewiesen", () => {
+    // Werkstatt, platz_frei und `mv -fT` verhindern, dass DIESES Skript durch
+    // einen Alias schreibt. Gegen jemanden, der IN $BACKUP_DIR schreiben darf,
+    // halten sie nicht: Der kann die Werkstatt wegbenennen und einen Link an
+    // ihre Stelle setzen, während der Lauf läuft.
+    //
+    // Das ist keine Lücke im Skript, sondern eine Eigenschaft der Rechte. Also
+    // wird sie verlangt statt angenommen — damit fällt die ganze Klasse weg.
+    const platz = spielwiese();
+    podmanAttrappe(platz, true, true);
+    fs.chmodSync(platz.backups, 0o777);
+
+    const lauf = fahre(platz);
+
+    expect(lauf.code).not.toBe(0);
+    expect(lauf.ausgabe).toMatch(/BESCHREIBBAR/);
+  });
+
+  it("Gegenprobe: ohne Alias, mit sauberem Pfad und Rechten gelingt der Lauf", () => {
+    const platz = spielwiese();
+    podmanAttrappe(platz, true, true);
+    const stempel = stempelFestlegen(platz, "20260101-000000");
+
+    const lauf = fahre(platz);
+
+    expect(lauf.code).toBe(0);
+    expect(fs.existsSync(path.join(platz.backups, `uploads-${stempel}.tar.gz`))).toBe(true);
+  });
+});

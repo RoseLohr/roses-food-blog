@@ -119,9 +119,46 @@ done
   || fail "$BACKUP_DIR enthält ein Pfadglied '.' oder '..'. Bitte den Pfad \
 schlicht angeben: solche Glieder lassen die Linkprüfung ins Leere greifen, \
 weil das Betriebssystem den Pfad dann als Verzeichnis auflöst."
-[[ ! -L "$BACKUP_DIR" ]] \
-  || fail "$BACKUP_DIR ist ein symbolischer Link. Dorthin wird nicht gesichert."
+# ── NACHTRAG RUNDE 9: `-L` SIEHT NUR DIE LETZTE KOMPONENTE ────────────────
+#
+# `verweis/sub` ist kein Link — `sub` ist ja einer echtes Verzeichnis —, und
+# der Pfad löst trotzdem durch `verweis` hindurch auf. Gemessen:
+#
+#     [[ -L "verweis/sub" ]]      -> falsch (Wächter LÄSST DURCH)
+#     readlink -f "verweis/sub"   -> …/echt/sub
+#
+# Zum dritten Mal in Folge lautete der Befund: Die Regel deckt ihre eigene
+# Klasse nicht ab. Deshalb hier keine weitere Komponente mehr, sondern eine
+# Aussage über den GANZEN Pfad: Er muss seiner eigenen kanonischen Form
+# entsprechen. Weicht sie ab, führte irgendwo ein Link hindurch — gleich an
+# welcher Stelle. (`-m` verlangt nicht, dass der Pfad schon existiert; das
+# Verzeichnis wird gleich darauf angelegt.)
+KANONISCH="$(readlink -m "$BACKUP_DIR")"
+[[ "$KANONISCH" == "$BACKUP_DIR" ]] \
+  || fail "$BACKUP_DIR löst nach $KANONISCH auf — irgendwo im Pfad steht ein \
+symbolischer Link, oder der Pfad ist nicht absolut und schlicht angegeben. \
+Dorthin wird nicht gesichert; bitte den aufgelösten Pfad direkt angeben."
 mkdir -p "$BACKUP_DIR"
+
+# ── DIE VORBEDINGUNG, DIE ALLE WÄCHTER OBEN STILL ANNAHMEN (Runde 9) ──────
+#
+# Werkstatt, `platz_frei` und `mv -fT` verhindern, dass DIESES Skript durch
+# einen untergeschobenen Alias schreibt. Gegen jemanden, der IN $BACKUP_DIR
+# schreiben darf, halten sie trotzdem nicht: Wer dort Einträge anlegen und
+# umbenennen kann, kann auch die Werkstatt wegbenennen und einen Link an ihre
+# Stelle setzen, während der Lauf läuft.
+#
+# Das ist keine Lücke, die sich im Skript schließen lässt — es ist eine
+# Eigenschaft der Rechte auf dem Verzeichnis. Also wird sie hier nicht länger
+# angenommen, sondern VERLANGT: Wer nicht wir ist, darf hier nicht schreiben.
+# Damit fällt die ganze Klasse weg, statt Fall für Fall abgefangen zu werden.
+RECHTE="$(stat -c %a "$BACKUP_DIR" 2>/dev/null || echo "")"
+[[ -n "$RECHTE" ]] || fail "Rechte von $BACKUP_DIR nicht lesbar."
+[[ $((8#$RECHTE & 8#022)) -eq 0 ]] \
+  || fail "$BACKUP_DIR ist für Gruppe oder andere BESCHREIBBAR (Modus \
+$RECHTE). Wer dort schreiben darf, kann jede Sicherung dieses Laufs umleiten \
+oder ersetzen — dagegen hilft kein Wächter im Skript, nur der Modus. Bitte \
+`chmod go-w` setzen."
 
 # ── GESCHRIEBEN WIRD IN EINE WERKSTATT, NICHT AN DEN ZIELNAMEN (Runde 7) ───
 #
@@ -275,7 +312,33 @@ platz_frei "$ZIEL_UPLOADS"
 UPLOADS_NOETIG=0
 if [[ -d "$DATA_DIR/uploads" ]]; then
   UPLOADS_NOETIG=1
-  if tar -czf "$UPLOADS_ARCHIV" -C "$DATA_DIR" uploads; then
+
+  # ── KEIN ALIAS IM QUELLBAUM (Panel-Runde 9) ─────────────────────────────
+  #
+  # Der Typ-Vertrag prüft, was das ARCHIV ankündigt. Ein Hardlink verschwindet
+  # dort aber, sobald sein zweiter Name AUSSERHALB des Archivs liegt: tar hat
+  # dann nichts zum Verlinken und schreibt eine reguläre Datei MIT INHALT.
+  # Gemessen:
+  #
+  #     ln $DATA_DIR/app.db $DATA_DIR/uploads/leak.webp
+  #     tar -czf … -C $DATA_DIR uploads
+  #     -> [-] uploads/leak.webp, Inhalt: die DATENBANK
+  #
+  # Der Vertrag ist zufrieden (Typ '-'), und der Restore veröffentlicht die
+  # Datenbank unter uploads/. Ich hatte diesen Befund zweimal abgewiesen — mit
+  # einer Messung, bei der BEIDE Namen im Archiv lagen; dann meldet tar 'h'.
+  # Die Messung war für ihren Fall richtig und als Widerlegung falsch.
+  #
+  # Die Lehre daraus steht in der Prüfung selbst: Ein Name kann lügen, ein
+  # INODE nicht. Gefragt wird deshalb nicht mehr, wie etwas heißt oder wie tar
+  # es serialisiert, sondern ob die Datei mehr als einen Namen hat. Ein
+  # Medienverzeichnis, das die Anwendung füllt, enthält keine Hardlinks.
+  ALIAS="$(find "$DATA_DIR/uploads" -type f -links +1 -print -quit 2>/dev/null || true)"
+  if [[ -n "$ALIAS" ]]; then
+    warn "$ALIAS trägt mehr als einen Namen (Hardlink). Ein solcher Eintrag \
+landet als reguläre Datei MIT dem Inhalt seines Gegenstücks im Archiv, und der \
+Restore veröffentlicht ihn unter uploads/. Es wird kein Medien-Archiv erzeugt."
+  elif tar -czf "$UPLOADS_ARCHIV" -C "$DATA_DIR" uploads; then
     # ── UND ES MUSS SICH EINSPIELEN LASSEN ─────────────────────────────────
     # Der Exit-Code von tar sagt nur, dass ein Archiv entstanden ist — nicht,
     # dass deploy/restore.sh es je annimmt. Dieselbe Lücke wie bei der

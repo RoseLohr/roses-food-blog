@@ -1275,3 +1275,87 @@ nicht ab". Eine Messung an einem Beispiel belegt das Beispiel, nicht die Regel.
 Wo eine Regel gemeint ist, gehört sie als Regel formuliert — deshalb steht bei
 Punkt 1 jetzt eine Aussage über die Form des Wertes und keine Liste von
 Schreibweisen.
+
+## B24 — Der Name lügt, der Inode nicht — GEMESSEN 08/2026, behoben
+
+Die neunte Panel-Runde. Der erste Punkt ist ein Befund, den ich **zweimal
+abgewiesen habe und der beide Male richtig war**.
+
+### 1. Ein Hardlink verschwindet im Archiv, wenn sein zweiter Name draußen liegt
+
+Die Behauptung lautete seit Runde 6: Der `h`-Zweig im Typ-Vertrag sei
+wirkungslos, weil `tar -tvzf` Hardlinks als `-` melde. Ich habe sie zweimal
+zurückgewiesen, mit dieser Messung:
+
+```
+[h]  hrw-r--r-- … uploads/kopie.jpg link to uploads/echt.jpg
+```
+
+Die stimmt — und widerlegt nichts. In ihr liegen **beide** Namen des Inodes im
+Archiv; dann hat tar einen früheren Eintrag, auf den es verweisen kann. Liegt
+der zweite Name **außerhalb**, gibt es nichts zu verlinken:
+
+```
+ln $DATA_DIR/app.db $DATA_DIR/uploads/leak.webp
+tar -czf … -C $DATA_DIR uploads
+-> [-] -rw-r--r-- 17 uploads/leak.webp
+   Inhalt: GEHEIME-DATENBANK
+```
+
+Der Typ-Vertrag ist zufrieden (Typ `-`), und der Restore veröffentlicht die
+**Datenbank** unter `uploads/`.
+
+**Wurzel:** Gefragt wird nicht mehr, wie etwas heißt oder wie tar es
+serialisiert, sondern ob die Datei **mehr als einen Namen hat**
+(`find … -type f -links +1`). Ein Name kann lügen, ein Inode nicht. Ein
+Medienverzeichnis, das die Anwendung füllt, enthält keine Hardlinks.
+
+### 2. `-L` sieht nur die letzte Komponente
+
+`verweis/sub` ist selbst kein Link und löst trotzdem durch `verweis` hindurch
+auf. Gemessen: `[[ -L "verweis/sub" ]]` → falsch.
+
+**Wurzel:** keine weitere Komponente mehr, sondern eine Aussage über den
+**ganzen** Pfad — er muss seiner kanonischen Form (`readlink -m`) entsprechen.
+Das deckt zugleich die Fälle aus B21 (Schluss-Schrägstrich) und B23 (`/.`) ab,
+die vorher als eigene Regeln danebenstanden.
+
+### 3. Die Vorbedingung, die alle Wächter still annahmen
+
+Werkstatt, `platz_frei` und `mv -fT` verhindern, dass *dieses Skript* durch
+einen Alias schreibt. Gegen jemanden, der **in** `BACKUP_DIR` schreiben darf,
+halten sie nicht: Der kann die Werkstatt wegbenennen und einen Link an ihre
+Stelle setzen, während der Lauf läuft.
+
+Das ist keine Lücke, die sich im Skript schließen lässt — es ist eine
+Eigenschaft der Rechte. **Wurzel:** Sie wird nicht mehr angenommen, sondern
+verlangt. Ist `BACKUP_DIR` für Gruppe oder andere beschreibbar, bricht der Lauf
+ab. Damit fällt die ganze Klasse weg, statt Fall für Fall abgefangen zu werden.
+
+### Nicht übernommen
+
+Die Neutralisierung von `TAR_OPTIONS` in `archiv_typen_ok` sei wirkungslos,
+weil eine lokale Shell-Variable die Umgebung des Kindprozesses nicht ändere.
+Gemessen:
+
+```
+TAR_OPTIONS=--dereference bash -c 'zeig(){ local TAR_OPTIONS=; env | grep -c …; }; zeig'
+-> 0     (neutralisiert)
+ohne local, zum Vergleich
+-> 1
+```
+
+Bash behält beim Überdecken einer exportierten Variablen das Export-Merkmal
+und reicht den **neuen** (leeren) Wert weiter. Die Behebung greift.
+
+### Das Muster, jetzt zum vierten Mal
+
+Runde 7, 8 und 9 trafen jeweils genau das, was in der Runde davor gebaut wurde.
+Immer derselbe Grund: **eine Messung an einem Beispiel belegt das Beispiel,
+nicht die Regel.** Bei Punkt 1 kommt erschwerend dazu, dass ich mit so einer
+Messung einen *richtigen* Befund zweimal abgewiesen habe — eine Widerlegung
+muss den Fall treffen, den der andere meint, nicht den bequemsten Nachbarfall.
+
+Deshalb steht in dieser Runde bei jedem Punkt eine Aussage über die Sache
+selbst statt über ihre Erscheinungsform: der Inode statt des Namens, der ganze
+Pfad statt der letzten Komponente, die Rechte statt des Wettrennens.
