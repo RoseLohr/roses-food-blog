@@ -165,6 +165,10 @@ export const de = {
       "Januar", "Februar", "März", "April", "Mai", "Juni",
       "Juli", "August", "September", "Oktober", "November", "Dezember",
     ],
+    /** NUR noch die Vorlese-Beschriftung der Restaurant-Bilderstrecke. Als
+     *  fester Zusatz vor dem Namen — in der Kartenüberschrift und im
+     *  Inhaltsverzeichnis — ist das Wort entfallen: Dort steht ausschließlich,
+     *  was im Admin eingegeben wurde. */
     restaurantWord: "Restaurant",
     dishIngredients: "Zutaten",
     tocTitle: "Inhalt",
@@ -829,6 +833,10 @@ export const de = {
       unit: "Einheit",
       ingredientNote: "Zusatz (z. B. fein gehackt)",
       addIngredient: "Zutat hinzufügen",
+      /** Die Reihenfolge der Zutaten ist eine Aussage — sie steht so auf der
+       *  Rezeptseite. Dieselben zwei Pfeile wie an den Reise-Blöcken. */
+      ingredientUp: "Zutat nach oben",
+      ingredientDown: "Zutat nach unten",
       remove: "Entfernen",
       steps: "Zubereitungsschritte",
       stepImage: "Bild zum Schritt (optional)",

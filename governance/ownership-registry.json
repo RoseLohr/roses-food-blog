@@ -75,6 +75,7 @@
       "src/lib/nav-data",
       "src/lib/branding",
       "src/lib/bildreihen",
+      "src/lib/reihenfolge",
       "src/lib/daemmerung"
     ],
     "platform-ops": [
