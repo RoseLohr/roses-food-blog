@@ -45,6 +45,11 @@
 #   Rückgabe 1: der Grund steht auf stdout (zum Anhängen an eine Fehlermeldung).
 archiv_typen_ok(){
   local zeilen z
+  # `TAR_OPTIONS` aus der Umgebung neutralisieren: GNU tar nimmt von dort jede
+  # Option an, und ein `--dereference` machte aus einem Symlink still eine
+  # reguläre Datei mit fremdem Inhalt — dieser Vertrag wäre zufrieden und
+  # trotzdem wertlos. Lokal, damit der Aufrufer nichts davon merkt.
+  local TAR_OPTIONS=
   zeilen="$(tar -tvzf "$1" 2>/dev/null)" \
     || { echo "lässt sich nicht auflisten."; return 1; }
   while IFS= read -r z; do

@@ -1203,3 +1203,75 @@ bestimmen, welche Zeilenbereiche abweichen — daran hängt, was noch nicht
 gemalt war. Erst dann lässt sich die Wurzel benennen. Eine Behebung auf eine
 unbelegte Vermutung zu bauen, wäre genau die Kontrolle, die grün ist und nichts
 prüft, gegen die B16, B20 und B21 geschrieben sind.
+
+## B23 — Drei Lücken in den Behebungen von B21 — GEMESSEN 08/2026, behoben
+
+Die achte Panel-Runde traf **ausschließlich** das, was ich eine Runde davor
+repariert hatte. Alle drei haben dieselbe Form: Ich hatte **einen Fall
+gemessen und die Klasse für erledigt erklärt**.
+
+### 1. Die Normalisierung sah nur den Schrägstrich
+
+`verweis/.` trägt keinen Schluss-Schrägstrich und dereferenziert trotzdem:
+
+```
+'verweis'    -> normalisiert 'verweis'    -> Wächter greift
+'verweis/'   -> normalisiert 'verweis'    -> Wächter greift
+'verweis/.'  -> normalisiert 'verweis/.'  -> Wächter LÄSST DURCH
+```
+
+**Wurzel, und diesmal keine Fallunterscheidung mehr:** eine Regel über die
+FORM des Wertes. Ein Sicherungsverzeichnis wird als schlichter Pfad angegeben;
+trägt der Wert ein `.`- oder `..`-Glied, wird er **abgewiesen** statt
+zurechtgebogen. Ein zurechtgebogener Wert wäre wieder eine Vermutung darüber,
+was der Betreiber gemeint hat.
+
+### 2. `mv` folgt einem Link auf ein VERZEICHNIS sehr wohl
+
+In B21 hatte ich gemessen: `mv -f` über einen Symlink lässt das Opfer
+unberührt. Das stimmt — für einen Link auf eine **Datei**. Zeigt er auf ein
+**Verzeichnis**, verschiebt `mv` die Datei hinein:
+
+```
+ln -s fremdes-verzeichnis ziel
+mv -f  quelle ziel   -> ziel bleibt Link, quelle liegt IM Fremdziel
+mv -fT quelle ziel   -> Link ersetzt
+```
+
+Die Sicherung wäre in einem fremden Verzeichnis gelandet, der Lauf grün
+geblieben.
+
+**Wurzel:** `mv -fT` an allen drei Stellen. `-T` sagt: Das Ziel ist ein NAME,
+kein Verzeichnis.
+
+### 3. `TAR_OPTIONS` — dieselbe Frage, die ich für `curl` gestellt hatte
+
+GNU tar liest `TAR_OPTIONS` aus der Umgebung und nimmt von dort jede Option
+an. Gemessen:
+
+```
+ln -s /pfad/geheim.txt uploads/harmlos.jpg
+TAR_OPTIONS=--dereference tar -czf …
+-> Mitglied trägt Typ '-', der Typ-Vertrag ist zufrieden,
+   und `tar -xzO` liefert GEHEIM.
+```
+
+Der Symlink wird also als **reguläre Datei mit fremdem Inhalt** archiviert; die
+Zusage „kein Link-Mitglied" bliebe wahr und wäre trotzdem wertlos, und der
+Restore veröffentlichte den Inhalt unter `uploads/`.
+
+Das ist **genau die Klasse, die ich in B20 für `curl`/`.curlrc` behoben habe**
+— dort mit `-q`. Dieselbe Frage für `tar` habe ich damals nicht gestellt.
+
+**Wurzel:** `unset TAR_OPTIONS` in `backup.sh` und `restore.sh`, dazu ein
+lokales `TAR_OPTIONS=` in `archiv_typen_ok`, damit der Vertrag auch dann hält,
+wenn ihn jemand anders quellt.
+
+### Was ich daraus mitnehme
+
+Drei Runden in Folge lautete der Befund nicht „hier fehlt eine Kontrolle",
+sondern „die Kontrolle, die du gerade eingebaut hast, deckt ihre eigene Klasse
+nicht ab". Eine Messung an einem Beispiel belegt das Beispiel, nicht die Regel.
+Wo eine Regel gemeint ist, gehört sie als Regel formuliert — deshalb steht bei
+Punkt 1 jetzt eine Aussage über die Form des Wertes und keine Liste von
+Schreibweisen.

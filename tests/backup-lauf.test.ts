@@ -760,3 +760,90 @@ describe("Panel-Runde 7: der Schluss-Schrägstrich und das Wettrennen", () => {
     expect(fs.readdirSync(platz.backups).filter((n) => n.startsWith(".werkstatt-"))).toHaveLength(0);
   });
 });
+
+describe("Panel-Runde 8: die Lücken in den Behebungen von Runde 7", () => {
+  it("weist ein BACKUP_DIR mit einem '.'-Glied ab, statt es zurechtzubiegen", () => {
+    // DER BEFUND: Die Normalisierung aus Runde 7 schnitt nur Schluss-
+    // Schrägstriche ab. `verweis/.` trägt keinen — und dereferenziert genauso.
+    // Gemessen am nackten Werkzeug:
+    //
+    //     'verweis'    -> normalisiert 'verweis'    -> Wächter greift
+    //     'verweis/.'  -> normalisiert 'verweis/.'  -> Wächter LÄSST DURCH
+    //
+    // Dasselbe Muster wie eine Runde davor: einen Fall gemessen, die Klasse
+    // für erledigt erklärt. Jetzt eine Regel über die FORM des Wertes.
+    const platz = spielwiese();
+    podmanAttrappe(platz, true, true);
+    const woanders = path.join(tmp, "fremdes-verzeichnis");
+    fs.mkdirSync(woanders);
+    fs.rmSync(platz.backups, { recursive: true, force: true });
+    fs.symlinkSync(woanders, platz.backups);
+
+    const lauf = fahre(platz, { BACKUP_DIR: `${platz.backups}/.` });
+
+    expect(lauf.code).not.toBe(0);
+    expect(lauf.ausgabe).toMatch(/Pfadglied/);
+    expect(fs.readdirSync(woanders)).toHaveLength(0);
+  });
+
+  it("ein Link auf ein VERZEICHNIS am Zielnamen bekommt die Sicherung nicht", () => {
+    // DER BEFUND: `mv -f` ohne `-T` verschiebt die Datei IN das Verzeichnis,
+    // auf das der Link zeigt, statt den Link zu ersetzen. Gemessen:
+    //
+    //     ln -s fremdes-verzeichnis ziel
+    //     mv -f  quelle ziel  -> ziel bleibt Link, quelle liegt IM Fremdziel
+    //     mv -fT quelle ziel  -> Link ersetzt
+    //
+    // In Runde 7 hatte ich mit einem Link auf eine DATEI gemessen und daraus
+    // geschlossen, `mv` folge Links nie. Für Verzeichnisse stimmt das nicht.
+    const platz = spielwiese();
+    const stempel = stempelFestlegen(platz, "20260101-000000");
+    const fremd = path.join(tmp, "fremdes-verzeichnis");
+    fs.mkdirSync(fremd);
+    podmanAttrappe(platz, true, true);
+    // Der Angreifer legt den Link, während der Sicherungslauf schon läuft.
+    const attrappe = path.join(platz.bin, "podman");
+    const zeilen = fs.readFileSync(attrappe, "utf8").split("\n");
+    zeilen.splice(
+      1,
+      0,
+      `ln -sfn ${JSON.stringify(fremd)} ${JSON.stringify(path.join(platz.backups, `app-${stempel}.db.gz`))}`,
+    );
+    fs.writeFileSync(attrappe, zeilen.join("\n"), { mode: 0o755 });
+
+    const lauf = fahre(platz);
+
+    expect(lauf.code).toBe(0);
+    // Im fremden Verzeichnis darf NICHTS gelandet sein.
+    expect(fs.readdirSync(fremd)).toHaveLength(0);
+    // Und am Zielnamen steht eine echte Datei, kein Link mehr.
+    const ziel = path.join(platz.backups, `app-${stempel}.db.gz`);
+    expect(fs.lstatSync(ziel).isSymbolicLink()).toBe(false);
+  });
+
+  it("TAR_OPTIONS aus der Umgebung kann den Typ-Vertrag nicht unterlaufen", () => {
+    // DER BEFUND: GNU tar liest `TAR_OPTIONS` und nimmt von dort jede Option
+    // an — dieselbe Klasse wie `.curlrc` beim Health-Gate. Gemessen:
+    //
+    //     ln -s /pfad/geheim.txt uploads/harmlos.jpg
+    //     TAR_OPTIONS=--dereference tar -czf …
+    //     -> Mitglied trägt Typ '-', der Vertrag ist zufrieden,
+    //        und `tar -xzO` liefert GEHEIM.
+    //
+    // Der Restore hätte den fremden Inhalt danach unter uploads/ veröffentlicht.
+    const platz = spielwiese();
+    podmanAttrappe(platz, true, true);
+    const stempel = stempelFestlegen(platz, "20260101-000000");
+    const geheim = path.join(tmp, "geheim.txt");
+    fs.writeFileSync(geheim, "GEHEIMER INHALT");
+    fs.symlinkSync(geheim, path.join(platz.daten, "uploads", "harmlos.jpg"));
+
+    const lauf = fahre(platz, { TAR_OPTIONS: "--dereference" });
+
+    // Der Lauf MUSS scheitern: Das Archiv trüge einen Link — bzw. mit
+    // --dereference dessen Inhalt — und ließe sich nicht einspielen.
+    expect(lauf.code).not.toBe(0);
+    expect(lauf.ausgabe).toMatch(/SYMLINK/);
+    expect(fs.existsSync(path.join(platz.backups, `uploads-${stempel}.tar.gz`))).toBe(false);
+  });
+});

@@ -50,6 +50,10 @@ source "$(dirname "$0")/health-gate.sh"
 # quellt, damit Sichern und Einspielen nicht auseinandergehen können.
 # shellcheck source=deploy/archiv-typen.sh
 source "$(dirname "$0")/archiv-typen.sh"
+# Die Umgebung darf tar nicht umstimmen — siehe deploy/backup.sh, Runde 8.
+# Ein `--dereference` oder `--absolute-names` aus TAR_OPTIONS unterliefe hier
+# jede Prüfung, die auf dem entsteht, was das Archiv ankündigt.
+unset TAR_OPTIONS
 
 # Rangfolge wie in rollback.sh und backup.sh: Aufrufer > .env > Standard.
 AUFRUFER_DATA_DIR="${DATA_DIR:-}"

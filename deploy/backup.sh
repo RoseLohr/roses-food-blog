@@ -60,6 +60,21 @@ PODMAN="${PODMAN:-podman}"
 # shellcheck source=deploy/archiv-typen.sh
 source "$(dirname "$0")/archiv-typen.sh"
 
+# ── DIE UMGEBUNG DARF TAR NICHT UMSTIMMEN (Panel-Runde 8) ─────────────────
+# GNU tar liest `TAR_OPTIONS` und nimmt von dort jede Option an — dieselbe
+# Klasse wie `.curlrc` beim Health-Gate, nur beim anderen Werkzeug. Ein
+# `--dereference` darin archiviert einen Symlink in uploads/ als REGULÄRE
+# Datei MIT DEM INHALT, auf den er zeigt. Gemessen:
+#
+#     ln -s /pfad/geheim.txt uploads/harmlos.jpg
+#     TAR_OPTIONS=--dereference tar -czf …
+#     -> Mitglied trägt Typ '-', der Typ-Vertrag ist zufrieden,
+#        und `tar -xzO` liefert GEHEIM.
+#
+# Der Restore veröffentlichte den Inhalt danach unter uploads/. Die Zusage
+# „kein Link-Mitglied" wäre also wahr geblieben und trotzdem wertlos.
+unset TAR_OPTIONS
+
 warn(){ echo "WARNUNG: $*" >&2; }
 fail(){ echo "[backup] FEHLER: $*" >&2; exit 1; }
 
@@ -83,11 +98,27 @@ fail(){ echo "[backup] FEHLER: $*" >&2; exit 1; }
 # und der falschen Annahme, damit sei die Sache erledigt. Geprüft gehört der
 # WERT, nicht die Schreibweise an der Prüfstelle.
 #
-# `%/` in der Schleife, nicht `%%/`: Ein Pfad kann mehrere tragen ("a///"),
-# und `/` selbst muss stehen bleiben, sonst bliebe die leere Zeichenkette übrig.
+# ── NACHTRAG RUNDE 8: `/` ALLEIN GENÜGT NICHT ─────────────────────────────
+# Die erste Fassung schnitt nur Schluss-Schrägstriche ab. `verweis/.` trägt
+# keinen — und dereferenziert genauso. Gemessen:
+#
+#     'verweis'    -> 'verweis'    -> Wächter greift
+#     'verweis/'   -> 'verweis'    -> Wächter greift
+#     'verweis/.'  -> 'verweis/.'  -> Wächter LÄSST DURCH
+#
+# Dasselbe Muster wie eine Runde davor: Ich hatte EINEN Fall gemessen und die
+# Klasse für erledigt erklärt. Deshalb jetzt nicht mehr Fall für Fall, sondern
+# eine Regel über die Form: Ein Sicherungsverzeichnis wird als schlichter Pfad
+# angegeben. Trägt der Wert ein `.`- oder `..`-Glied, wird er ABGEWIESEN statt
+# zurechtgebogen — ein zurechtgebogener Wert ist wieder eine Aussage darüber,
+# was der Betreiber wohl gemeint hat.
 while [[ "$BACKUP_DIR" == */ && "$BACKUP_DIR" != "/" ]]; do
   BACKUP_DIR="${BACKUP_DIR%/}"
 done
+[[ "/$BACKUP_DIR/" != */../* && "/$BACKUP_DIR/" != */./* ]] \
+  || fail "$BACKUP_DIR enthält ein Pfadglied '.' oder '..'. Bitte den Pfad \
+schlicht angeben: solche Glieder lassen die Linkprüfung ins Leere greifen, \
+weil das Betriebssystem den Pfad dann als Verzeichnis auflöst."
 [[ ! -L "$BACKUP_DIR" ]] \
   || fail "$BACKUP_DIR ist ein symbolischer Link. Dorthin wird nicht gesichert."
 mkdir -p "$BACKUP_DIR"
@@ -106,12 +137,26 @@ mkdir -p "$BACKUP_DIR"
 # ihren Platz gebracht — und `mv` benennt um, es schreibt nicht durch einen
 # Link hindurch. Gemessen:
 #
-#     ln -s opfer ziel;  mv -f quelle ziel
+#     ln -s opfer ziel;  mv -fT quelle ziel
 #     -> "opfer" unverändert, "ziel" ist danach eine echte Datei.
 #
 # Damit gibt es kein Fenster mehr, in dem ein untergeschobener Alias etwas
 # bewirken könnte: Während des Schreibens ist der Name geheim, und beim
 # Veröffentlichen wird nicht geschrieben, sondern umbenannt.
+#
+# ── NACHTRAG RUNDE 8: `-T` IST NICHT OPTIONAL ─────────────────────────────
+# Oben stand zuerst `mv -f`, gemessen an einem Link auf eine DATEI. Zeigt der
+# Link aber auf ein VERZEICHNIS, verschiebt `mv` die Datei HINEIN, statt den
+# Link zu ersetzen. Gemessen:
+#
+#     ln -s fremdes-verzeichnis ziel
+#     mv -f  quelle ziel   -> ziel bleibt Link, quelle liegt IM Fremdziel
+#     mv -fT quelle ziel   -> Link ersetzt
+#
+# Die Sicherung wäre also in einem fremden Verzeichnis gelandet, der Lauf
+# grün geblieben. `-T` sagt: Das Ziel ist ein NAME, kein Verzeichnis.
+# Wieder dasselbe Muster: einen Fall gemessen, die Klasse für erledigt
+# erklärt.
 WERKSTATT="$(mktemp -d "$BACKUP_DIR/.werkstatt-XXXXXX")" \
   || fail "Werkstatt-Verzeichnis in $BACKUP_DIR ließ sich nicht anlegen."
 chmod 700 "$WERKSTATT"
@@ -199,14 +244,14 @@ if [[ -f "$DATA_DIR/app.db" ]]; then
       # das `mv` macht die Sicherung sichtbar — halbfertig sieht sie niemand,
       # und die Rotation bekommt sie nie in diesem Zustand zu Gesicht.
       if gzip "$ROH"; then
-        mv -f "$ROH.gz" "$ZIEL_DB.gz" \
+        mv -fT "$ROH.gz" "$ZIEL_DB.gz" \
           || fail "Die geprüfte Sicherung ließ sich nicht nach $ZIEL_DB.gz bringen."
         echo "DB-Backup:      $ZIEL_DB.gz"
       else
         warn "Komprimieren fehlgeschlagen — die GEPRÜFTE Sicherung bleibt \
 unkomprimiert: $ZIEL_DB. (Sie wird nicht gelöscht; früher tat das ein \
 pauschales rm und vernichtete damit ein gültiges Backup.)"
-        mv -f "$ROH" "$ZIEL_DB" \
+        mv -fT "$ROH" "$ZIEL_DB" \
           || fail "Die geprüfte Sicherung ließ sich nicht nach $ZIEL_DB bringen."
       fi
     else
@@ -241,7 +286,7 @@ if [[ -d "$DATA_DIR/uploads" ]]; then
     # gequellt — eine zweite Abschrift hier wäre genau die Uneinigkeit, die
     # den Befund erzeugt hat.
     if GRUND="$(archiv_typen_ok "$UPLOADS_ARCHIV")"; then
-      mv -f "$UPLOADS_ARCHIV" "$ZIEL_UPLOADS" \
+      mv -fT "$UPLOADS_ARCHIV" "$ZIEL_UPLOADS" \
         || fail "Das geprüfte Archiv ließ sich nicht nach $ZIEL_UPLOADS bringen."
       UPLOADS_OK=1
       echo "Uploads-Backup: $ZIEL_UPLOADS"
