@@ -1155,3 +1155,51 @@ hinter deren `exit 0`. Die Zeile lief nie, der Test war grün, und erst die
 Gegenprobe (`mv` durch `cp` ersetzen, das einem Link folgt) hat es gezeigt: Sie
 blieb ebenfalls grün. Der Angriff steht jetzt VOR der ersten Verzweigung.
 Das ist innerhalb dieses Zweiges der dritte Fall dieser Art.
+
+## B22 — Die Referenzaufnahme wird sporadisch rot und reißt den ganzen E2E-Lauf mit — GEMESSEN 08/2026, OFFEN
+
+**Beobachtet** am 27.08. auf `claude/betriebsbefunde-backup-drill`:
+`Referenz: reise-detail @ desktop-1280` scheiterte mit
+
+```
+Failed to take two consecutive stable screenshots.
+3052147 pixels (ratio 0.25 of all image pixels) are different.
+```
+
+**Was gemessen ist:**
+
+* Die zuletzt aufgenommene Datei war **byte-identisch** mit dem Basisbild
+  (gleiche MD5). Die Seite rendert also richtig; die Behauptung „sieht aus wie
+  die Basis" stimmt.
+* Gescheitert ist allein die Forderung nach **zwei aufeinanderfolgenden
+  stabilen** Aufnahmen: Der erste Schuss wich um 25 % ab, der zweite passte.
+  Innerhalb der zehn Sekunden (`expect: { timeout: 10_000 }`) kam Playwright
+  nicht zur Ruhe.
+* Zweimal reproduziert, danach fünfmal grün — **auch auf dem Commit davor**.
+  Es hängt nicht an einer Codeänderung, sondern am Lauf: Der Fehlschlag trat
+  im vollen Lauf (parallele Arbeiter) auf, die grünen Läufe waren einzeln.
+
+**Warum das nicht bloß lästig ist:** Das `referenz`-Projekt ist eine
+Abhängigkeit von `alles-weitere` (`playwright.config.ts`). Fällt eine einzige
+Aufnahme, läuft der Rest gar nicht erst — aus 329 Tests wurden 116. Und
+`test:e2e` ist seit B9 Teil des CI-Gates. Ein sporadisch rotes Bild blockiert
+damit jeden PR, unabhängig von seinem Inhalt.
+
+**Was NICHT die Lösung ist:** die Zeitschranke hochsetzen oder
+`maxDiffPixelRatio` anheben. Das erste verschiebt das Problem, das zweite
+zerstört die Kontrolle — und beides ist in `CLAUDE.md` ausdrücklich untersagt.
+
+**Was ich NICHT herausgefunden habe, und das ist der offene Teil:** was im
+ersten Schuss fehlte. Eine naheliegende Vermutung — Bilder sind bei `complete`
+zwar geladen, aber noch nicht dekodiert, und `tests/e2e/bilder-fertig.ts`
+wartet nur auf `complete` — habe ich nachgemessen und **widerlegt**: Auf der
+geprüften Seite liegen zwei Bilder, `decode()` kehrt nach 0 ms zurück. Die
+Artefakte des Fehllaufs (`*-previous.png`, `*-diff.png`) hatten die späteren
+grünen Läufe bereits aufgeräumt, bevor ich die abweichenden Zeilen bestimmen
+konnte.
+
+**Nächster Schritt, wenn es wieder auftritt:** Die Artefakte SOFORT sichern und
+bestimmen, welche Zeilenbereiche abweichen — daran hängt, was noch nicht
+gemalt war. Erst dann lässt sich die Wurzel benennen. Eine Behebung auf eine
+unbelegte Vermutung zu bauen, wäre genau die Kontrolle, die grün ist und nichts
+prüft, gegen die B16, B20 und B21 geschrieben sind.
