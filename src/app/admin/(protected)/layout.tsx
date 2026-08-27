@@ -4,7 +4,8 @@ import { AdminMobileNav } from "@/components/admin/admin-mobile-nav";
 import { AdminNav, type AdminNavSection } from "@/components/admin/admin-nav";
 import { logoutAction } from "./actions";
 import { requireAdmin } from "@/lib/auth";
-import { getSiteName } from "@/lib/settings";
+import { getNachtmodus, getSiteName } from "@/lib/settings";
+import { istDunkel } from "@/lib/daemmerung";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -65,9 +66,21 @@ export default async function AdminLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   const admin = await requireAdmin();
+  // Hell oder dunkel — entschieden auf dem SERVER, bei jeder Anfrage. Der
+  // Admin ist ohnehin dynamisch (requireAdmin), es gibt hier nichts zu cachen,
+  // was veralten könnte. Kein Skript im Kopf, kein Umschalten nach dem ersten
+  // Rendern: Die Seite kommt fertig in der Farbe an, in der sie bleibt.
+  const { wahl, ort } = getNachtmodus();
+  const dunkel = istDunkel(wahl, new Date(), ort);
 
   return (
-    <div className="flex min-h-screen bg-cream">
+    <div
+      // Alles Weitere hängt an diesem Attribut (src/app/globals.css). Steht es
+      // nicht da, ist alles wie zuvor — der Nachtmodus fügt der hellen
+      // Darstellung nichts hinzu und nimmt ihr nichts.
+      data-theme={dunkel ? "dark" : undefined}
+      className="flex min-h-screen bg-cream"
+    >
       <aside className="hidden w-56 shrink-0 flex-col border-r border-ink/10 bg-white p-4 md:flex">
         <Link href="/admin" className="mb-6 text-lg font-bold text-rose-primary">
           {getSiteName()}

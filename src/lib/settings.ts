@@ -7,6 +7,12 @@
  * Stellen wie renderEmail() ohne Umbau nutzbar sind.
  */
 import { eq } from "drizzle-orm";
+import {
+  ortAus,
+  wahlAus,
+  type NachtmodusWahl,
+  type Ort,
+} from "@/lib/daemmerung";
 import { db, schema } from "@/db";
 
 /** Bekannte Einstellungs-Schlüssel (nur diese werden gespeichert/gelesen). */
@@ -27,6 +33,10 @@ export const SETTING_KEYS = [
   "site_title_word",
   "site_logo_image_id",
   "reisen_text_unten",
+  /* Nachtmodus: „auto" (Sonnenuntergang bis Sonnenaufgang), „hell", „dunkel". */
+  "nachtmodus",
+  "nachtmodus_breite",
+  "nachtmodus_laenge",
 ] as const;
 export type SettingKey = (typeof SETTING_KEYS)[number];
 
@@ -53,7 +63,16 @@ export function getAllSettings(): Record<string, string> {
   return Object.fromEntries(rows.map((r) => [r.key, r.value]));
 }
 
-/** Setzt mehrere Werte; leere/undefined-Werte werden übersprungen (nicht gelöscht). */
+/**
+ * Setzt mehrere Werte. Übersprungen wird nur `undefined` — ein LEERER Text
+ * wird geschrieben und leert den Eintrag damit.
+ *
+ * Hier stand „leere/undefined-Werte werden übersprungen (nicht gelöscht)". Das
+ * war eine Beschreibung, die der Code nie erfüllt hat: Er prüft ausschließlich
+ * auf `undefined`. Aufrufer verlassen sich sehr wohl auf das Leeren (Logo
+ * entfernen, Standort zurücksetzen) — der Kommentar hat behauptet, das ginge
+ * nicht.
+ */
 export function setSettings(values: Partial<Record<SettingKey, string>>): void {
   const now = new Date();
   db.transaction((tx) => {
@@ -67,6 +86,22 @@ export function setSettings(values: Partial<Record<SettingKey, string>>): void {
         })
         .run();
     }
+  });
+}
+
+/**
+ * Entfernt Einträge ganz, statt sie leer zu schreiben.
+ *
+ * Für Werte, bei denen „leer" und „gar nicht da" DASSELBE bedeuten. Eine leere
+ * Zeile trägt dann keine Auskunft, steht aber trotzdem in der Tabelle — und
+ * jede Kontrolle, die den Bestand vergleicht, sieht sie als Veränderung. Genau
+ * daran hat der Nachtmodus-Standort zuerst die E2E-Zustandsprüfung ausgelöst:
+ * Jedes Speichern des Einstellungs-Formulars legte zwei leere Koordinaten an.
+ */
+export function removeSettings(keys: SettingKey[]): void {
+  if (keys.length === 0) return;
+  db.transaction((tx) => {
+    for (const key of keys) tx.delete(schema.setting).where(eq(schema.setting.key, key)).run();
   });
 }
 
@@ -220,4 +255,17 @@ export function getSiteBranding(): SiteBranding {
 export function getSiteName(): string {
   const b = getSiteBranding();
   return `${b.accent} ${b.word}`.trim();
+}
+
+/**
+ * Der Nachtmodus, wie er im Admin eingestellt ist — Wahl und Standort.
+ *
+ * An EINER Stelle gelesen, damit nicht jede Seite ihre eigene Auslegung
+ * kaputter Werte mitbringt. Was hier herauskommt, ist immer gültig.
+ */
+export function getNachtmodus(): { wahl: NachtmodusWahl; ort: Ort } {
+  return {
+    wahl: wahlAus(getSetting("nachtmodus")),
+    ort: ortAus(getSetting("nachtmodus_breite"), getSetting("nachtmodus_laenge")),
+  };
 }

@@ -531,6 +531,17 @@ export const de = {
       lastAdmin: "Der letzte Admin kann nicht gelöscht werden.",
     },
     settings: {
+      nachtTitle: "Nachtmodus",
+      nachtIntro:
+        "Bei Nacht wird der Admin-Bereich dunkel dargestellt: schwarzer Grund, weiße Schrift. Wann Nacht ist, rechnet der Sonnenstand am unten angegebenen Ort aus.",
+      nachtLabel: "Wann dunkel?",
+      nachtAuto: "Automatisch — von Sonnenuntergang bis Sonnenaufgang",
+      nachtHell: "Nie — immer helle Darstellung",
+      nachtDunkel: "Immer — dauerhaft dunkle Darstellung",
+      nachtBreiteLabel: "Breitengrad",
+      nachtLaengeLabel: "Längengrad",
+      nachtOrtHinweis:
+        "Nach Norden und Süden positiv bzw. negativ (Berlin: 52.52 / 13.405). Leer oder unbrauchbar = Berlin.",
       title: "Einstellungen",
       intro:
         "Hier hinterlegte Werte haben Vorrang vor der .env-Datei. Leer lassen, um die .env-Vorgabe zu nutzen.",

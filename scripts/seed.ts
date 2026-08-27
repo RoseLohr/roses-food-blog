@@ -33,6 +33,15 @@ async function main() {
     return;
   }
 
+  // Nachtmodus fest auf HELL. Der Auslieferungs-Standard ist „auto" — dunkel
+  // von Sonnenuntergang bis Sonnenaufgang —, und genau das darf ein geseedeter
+  // Bestand NICHT haben: Die Referenzaufnahmen des Admin-Bereichs verglichen
+  // sonst je nach Uhrzeit ein anderes Bild, und der ganze Prüfstand hinge am
+  // Tageslicht statt an den Daten.
+  await db
+    .insert(schema.setting)
+    .values({ key: "nachtmodus", value: "hell", updatedAt: new Date() });
+
   console.log("[seed] Lege Taxonomien an ...");
   const tax = async (
     type: TaxonomyType,
