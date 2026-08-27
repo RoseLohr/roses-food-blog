@@ -196,7 +196,7 @@ test.describe("Reisebericht: Foto-Galerie / Lightbox", () => {
   }) => {
     await page.goto(REPORT);
 
-    // Restaurant-Karte „Restaurant Trattoria da Nino" — der Karten-Container
+    // Restaurant-Karte „Trattoria da Nino" — der Karten-Container
     // trägt id="restaurant-<id>". Sein erstes Bild ist das Restaurant-Foto.
     const card = page
       .locator('div[id^="restaurant-"]')

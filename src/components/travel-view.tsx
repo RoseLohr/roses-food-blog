@@ -562,8 +562,12 @@ function RestaurantCard({
       className="overflow-hidden rounded-sm border border-ink/15"
     >
       <div className="border-b border-ink/10 bg-cream/50 px-4 py-3 md:px-6 md:py-4">
+        {/* NUR der eingegebene Name. Vorher stand hier fest „Restaurant" davor
+            — ein Wort, das niemand eingetippt hatte und das bei Namen, die es
+            selbst schon führen, doppelt dastand. Was hier steht, kommt aus dem
+            Admin; sonst nichts. */}
         <h3 className="font-display text-xl font-bold">
-          {dict.travelList.restaurantWord} {r.name}
+          {r.name}
           {r.city && (
             <span className="ml-2 text-sm font-normal text-ink-soft">
               ·{" "}
@@ -600,6 +604,10 @@ function RestaurantCard({
         // nicht zuschneidet.
         <GalleryLightbox
           images={r.images}
+          // Hier bleibt das Wort stehen: Das ist die VORLESE-Beschriftung der
+          // Bilderstrecke, keine sichtbare Überschrift. Ohne sie hörte ein
+          // Screenreader nur einen Eigennamen und erführe nicht, wozu die
+          // Fotos gehören.
           label={`${dict.travelList.restaurantWord} ${r.name}`}
           thumbSizes={
             r.images.length === 1 ? vollbildSizes() : restaurantPaarSizes()
@@ -711,7 +719,7 @@ export async function TravelView({
       if (r?.name) {
         tocEntries.push({
           id: `restaurant-${r.id}`,
-          label: `${dict.travelList.restaurantWord} ${r.name}`,
+          label: r.name,
           children: dishLeaves(r),
         });
       }
@@ -725,7 +733,7 @@ export async function TravelView({
         .filter((r) => r.name)
         .map((r) => ({
           id: `restaurant-${r.id}`,
-          label: `${dict.travelList.restaurantWord} ${r.name}`,
+          label: r.name,
           children: dishLeaves(r),
         })),
     });

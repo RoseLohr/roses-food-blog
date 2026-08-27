@@ -68,6 +68,18 @@ test("Reisen: Titel, Editor, Formatierung, Reihenfolge und volle Breite", async 
   await expect(page.locator("#reisen-text-oben")).toHaveCount(0);
   await expect(page.getByText("Text vor der Weltkarte")).toHaveCount(0);
 
+  // Das verbliebene Feld steht GANZ UNTEN, unter der Auflistung der Berichte.
+  // Vorher stand es zwischen Titelzeile und Tabelle und schob die Liste — das
+  // Tagesgeschäft dieser Seite — unter die Falz.
+  const feldNachListe = await page.evaluate(() => {
+    const liste = document.querySelector("table");
+    const feld = document.querySelector('textarea[name="textUnten"]');
+    if (!liste || !feld) return null;
+    // DOCUMENT_POSITION_FOLLOWING: das Feld steht im Dokument NACH der Liste.
+    return Boolean(liste.compareDocumentPosition(feld) & Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+  expect(feldNachListe, "Seitentext-Feld steht nicht unter der Berichtsliste").toBe(true);
+
   // Das verbliebene Feld ist seit 08/2026 derselbe WYSIWYG-Editor wie bei
   // Seiten und Rezepten (contentEditable + verstecktes Markdown-Feld).
   const seitentext = page.locator(

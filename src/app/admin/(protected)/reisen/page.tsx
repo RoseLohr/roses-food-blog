@@ -40,30 +40,6 @@ export default async function TravelAdminPage(props: {
       </div>
       <Meldung text={message} />
 
-      {/* Text der öffentlichen Reisen-Seite (nach der Weltkarte) */}
-      <form
-        action={saveReisenTexteAction}
-        className="mb-8 flex flex-col gap-3 bg-white p-5 shadow-sm"
-      >
-        <h2 className="text-lg font-semibold">{dict.admin.travel.pageTexts}</h2>
-        <p className="text-sm text-ink-soft">{dict.admin.travel.pageTextsHint}</p>
-        {/* Derselbe WYSIWYG-Editor wie bei Seiten, Rezepten und Kampagnen:
-            Fett, Kursiv, Überschriften, Listen, Zitat, Link. Gespeichert wird
-            weiterhin Markdown im gleichnamigen versteckten Feld — die Server
-            Action und der Einstellungs-Store bleiben unangetastet. */}
-        <RichTextEditor
-          name="textUnten"
-          label={dict.admin.travel.textBelow}
-          initialMarkdown={textUnten}
-        />
-        <button
-          type="submit"
-          className="self-start rounded-lg bg-rose-primary px-4 py-2 font-semibold text-white hover:bg-rose-primary-dark"
-        >
-          {dict.common.save}
-        </button>
-      </form>
-
       <div className="overflow-x-auto bg-white shadow-sm">
         <table className="w-full text-left text-sm">
           <thead>
@@ -114,6 +90,30 @@ export default async function TravelAdminPage(props: {
           </tbody>
         </table>
       </div>
+
+      {/* Text der öffentlichen Reisen-Seite (nach der Weltkarte) */}
+      <form
+        action={saveReisenTexteAction}
+        className="mt-8 flex flex-col gap-3 bg-white p-5 shadow-sm"
+      >
+        <h2 className="text-lg font-semibold">{dict.admin.travel.pageTexts}</h2>
+        <p className="text-sm text-ink-soft">{dict.admin.travel.pageTextsHint}</p>
+        {/* Derselbe WYSIWYG-Editor wie bei Seiten, Rezepten und Kampagnen:
+            Fett, Kursiv, Überschriften, Listen, Zitat, Link. Gespeichert wird
+            weiterhin Markdown im gleichnamigen versteckten Feld — die Server
+            Action und der Einstellungs-Store bleiben unangetastet. */}
+        <RichTextEditor
+          name="textUnten"
+          label={dict.admin.travel.textBelow}
+          initialMarkdown={textUnten}
+        />
+        <button
+          type="submit"
+          className="self-start rounded-lg bg-rose-primary px-4 py-2 font-semibold text-white hover:bg-rose-primary-dark"
+        >
+          {dict.common.save}
+        </button>
+      </form>
     </>
   );
 }

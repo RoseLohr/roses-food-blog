@@ -15,6 +15,7 @@ import { useEffect, useId, useState } from "react";
 import { createPortal } from "react-dom";
 import { FocusPointEditor } from "@/components/admin/focus-point-editor";
 import { fokusStil } from "@/lib/media-url";
+import { verschoben, type Richtung } from "@/lib/reihenfolge";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -104,12 +105,9 @@ export function ImagePicker({
   }
 
   /** Ein Bild um einen Platz verschieben. Am Rand passiert nichts. */
-  function verschiebe(von: number, richtung: -1 | 1) {
-    const nach = von + richtung;
-    if (nach < 0 || nach >= selected.length) return;
-    const next = [...selected];
-    [next[von], next[nach]] = [next[nach], next[von]];
-    setSelection(next);
+  function verschiebe(von: number, richtung: Richtung) {
+    const next = verschoben(selected, von, richtung);
+    if (next !== selected) setSelection([...next]);
   }
 
   const byId = new Map(options.map((o) => [o.id, o]));
