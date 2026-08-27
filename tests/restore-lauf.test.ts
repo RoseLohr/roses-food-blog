@@ -129,6 +129,23 @@ function spielwiese(modus: Modus = {}): Platz {
   return { daten, bin, protokoll, vorher };
 }
 
+/**
+ * Die podman-Attrappe so einstellen, dass sie NICHT nach `daten/backups`
+ * schreibt — in einem Test, der genau dieses Verzeichnis durch einen Link
+ * ersetzt, wäre das ein Aufbau, der sich selbst im Weg steht.
+ */
+function podmanAttrappeUmleiten(platz: Platz) {
+  fs.writeFileSync(
+    path.join(platz.bin, "podman"),
+    [
+      "#!/usr/bin/env bash",
+      `echo "podman $*" >> ${JSON.stringify(platz.protokoll)}`,
+      "exit 0",
+    ].join("\n"),
+    { mode: 0o755 },
+  );
+}
+
 /** Ein gültiges, gepacktes DB-Backup. */
 function backupAnlegen(platz: Platz, inhalt = "der gesicherte stand"): string {
   const ziel = path.join(platz.daten, "backups", "app-20260826-033000.db.gz");
@@ -364,6 +381,71 @@ describe("Das Medien-Archiv wird geprüft, bevor irgendetwas angefasst wird", ()
     const lauf = fahre(platz, [backupAnlegen(platz), archiv]);
 
     expect(lauf.code).not.toBe(0);
+    expect(standUnberuehrt(platz)).toBe(true);
+    expect(lauf.protokoll).not.toMatch(/compose down/);
+  });
+
+  it("weist die Folge Symlink-dann-Datei zurück, BEVOR ausgepackt wird", () => {
+    // DER BEFUND (fünfte Runde): Die Typprüfung stand nach dem Auspacken. Der
+    // Angriff ist zwei Mitglieder lang:
+    //
+    //     uploads/p         -> ../..   (Symlink)
+    //     uploads/p/app.db             (Datei)
+    //
+    // Beide Namen liegen unter uploads/ und tragen kein `..`-Glied, kommen
+    // also durchs Namensgate. tar legt erst den Link an und schriebe die Datei
+    // dann durch ihn hindurch — auf $DATA_DIR/app.db, lange bevor irgendein
+    // Rundgang läuft. Nachgemessen weist GNU tar das ab (Exit 2), aber das ist
+    // tars Härtung, nicht unsere.
+    const platz = spielwiese();
+    const archiv = path.join(platz.daten, "backups", "uploads-angriff.tar.gz");
+    // Von Hand gebaut: `tar -c` legt einen solchen Bauplan nicht an.
+    const py = path.join(tmp, "bau.py");
+    fs.writeFileSync(
+      py,
+      [
+        "import tarfile, io",
+        `tf = tarfile.open(${JSON.stringify(archiv)}, 'w:gz')`,
+        "d = tarfile.TarInfo('uploads'); d.type = tarfile.DIRTYPE; d.mode = 0o755",
+        "tf.addfile(d)",
+        "l = tarfile.TarInfo('uploads/p'); l.type = tarfile.SYMTYPE; l.linkname = '../..'",
+        "tf.addfile(l)",
+        "inhalt = b'BOESE DATENBANK'",
+        "f = tarfile.TarInfo('uploads/p/app.db'); f.size = len(inhalt); f.mode = 0o644",
+        "tf.addfile(f, io.BytesIO(inhalt))",
+        "tf.close()",
+      ].join("\n"),
+    );
+    execFileSync("python3", [py]);
+
+    const lauf = fahre(platz, [backupAnlegen(platz), archiv]);
+
+    expect(lauf.code).not.toBe(0);
+    expect(lauf.ausgabe).toMatch(/SYMLINK/);
+    expect(standUnberuehrt(platz)).toBe(true);
+    expect(lauf.protokoll).not.toMatch(/compose down/);
+    // Und es ist gar nicht erst ausgepackt worden.
+    expect(fs.existsSync(path.join(platz.daten, "uploads.neu"))).toBe(false);
+  });
+
+  it("legt das Netz nicht in ein verlinktes backups-Verzeichnis", () => {
+    // DER BEFUND: Wäre `backups` ein untergeschobener Link, landete die
+    // Sicherung des jetzigen Standes woanders — und die Prüfungen darunter
+    // (`-s`, integrity_check) folgten ihm brav mit und bestätigten sie dort.
+    const platz = spielwiese();
+    podmanAttrappeUmleiten(platz);
+    const woanders = path.join(tmp, "fremdes-verzeichnis");
+    fs.mkdirSync(woanders);
+    fs.rmSync(path.join(platz.daten, "backups"), { recursive: true, force: true });
+    fs.symlinkSync(woanders, path.join(platz.daten, "backups"));
+    // Das Backup liegt jetzt hinter dem Link — der Aufruf findet es trotzdem.
+    const backup = path.join(woanders, "app-20260826-033000.db.gz");
+    fs.writeFileSync(backup, zlib.gzipSync(Buffer.from("der gesicherte stand")));
+
+    const lauf = fahre(platz, [backup]);
+
+    expect(lauf.code).not.toBe(0);
+    expect(lauf.ausgabe).toMatch(/Link/);
     expect(standUnberuehrt(platz)).toBe(true);
     expect(lauf.protokoll).not.toMatch(/compose down/);
   });

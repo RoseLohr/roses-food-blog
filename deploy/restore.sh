@@ -189,6 +189,44 @@ if [[ -n "$UPLOADS_ARCHIV" ]]; then
       && ARCHIV_ABBRUCH "$UPLOADS_ARCHIV enthält '$m' — ein Pfadglied '..' führt aus uploads/ heraus."
   done <<< "$MITGLIEDER"
 
+  # ── TYPEN, BEVOR AUSGEPACKT WIRD ────────────────────────────────────────
+  #
+  # Diese Prüfung stand hier schon einmal und ist beim Umbau auf den
+  # Baum-Rundgang herausgeflogen — mit der Begründung, der Rundgang decke sie
+  # ab. Das war falsch, und der Befund benennt genau warum: Ein Rundgang NACH
+  # dem Auspacken kann Schaden WÄHRENDDESSEN nicht verhindern.
+  #
+  # Der Angriff dazu ist zwei Mitglieder lang:
+  #
+  #     uploads/p         -> ../..        (Symlink)
+  #     uploads/p/app.db                  (Datei)
+  #
+  # Beide Namen liegen unter `uploads/` und tragen kein `..`-Glied, kommen
+  # also durch das Namensgate. tar legt erst den Link an und schriebe die
+  # Datei dann durch ihn hindurch — auf `$DATA_DIR/app.db`, lange bevor
+  # irgendein Rundgang läuft.
+  #
+  # Nachgemessen weist GNU tar das ab („Cannot open: Not a directory", Exit 2,
+  # app.db unberührt). Aber das ist tars Härtung, nicht unsere — dieselbe
+  # Feststellung wie beim Namens-Traversal. Welche tar-Fassung auf dem Server
+  # liegt, ist keine Zusage, die dieses Repository geben kann.
+  #
+  # Also: KEIN Link-Mitglied, Punkt. Dann gibt es auch kein Linkziel zu
+  # prüfen. Der Typ steht in der ERSTEN Spalte von `tar -tvzf`; geprüft wird
+  # nur dieses Zeichen, damit Namen mit Leerzeichen oder " -> " nichts
+  # zerlegen.
+  TYPEN="$(tar -tvzf "$UPLOADS_ARCHIV")" \
+    || ARCHIV_ABBRUCH "$UPLOADS_ARCHIV lässt sich nicht auflisten."
+  while IFS= read -r z; do
+    [[ -z "$z" ]] && continue
+    case "${z:0:1}" in
+      d|-) ;;
+      l) ARCHIV_ABBRUCH "$UPLOADS_ARCHIV enthält einen SYMLINK. Ein Link im Archiv kann beim Auspacken aus dem Zielverzeichnis herausführen — die Datei danach schriebe tar durch ihn hindurch." ;;
+      h) ARCHIV_ABBRUCH "$UPLOADS_ARCHIV enthält einen HARDLINK." ;;
+      *) ARCHIV_ABBRUCH "$UPLOADS_ARCHIV enthält ein Mitglied, das weder Verzeichnis noch reguläre Datei ist ('${z:0:1}')." ;;
+    esac
+  done <<< "$TYPEN"
+
   rm -rf "$NEBENABLAGE"
   mkdir -p "$NEBENABLAGE"
   tar -xzf "$UPLOADS_ARCHIV" -C "$NEBENABLAGE" \
@@ -203,6 +241,10 @@ if [[ -n "$UPLOADS_ARCHIV" ]]; then
 
   # Und darin NUR Verzeichnisse und reguläre Dateien. `find` folgt Links nicht,
   # sieht sie also als das, was sie sind.
+  #
+  # Das ist KEINE Wiederholung der Typprüfung von oben, sondern ihre zweite
+  # Hälfte: Die eine sagt, was das Archiv ANKÜNDIGT, diese, was WIRKLICH
+  # dasteht. Gingen die beiden auseinander, fiele es genau hier auf.
   FREMD="$(find "$NEBENABLAGE" -mindepth 1 ! -type d ! -type f -print -quit)"
   [[ -z "$FREMD" ]] \
     || ARCHIV_ABBRUCH "$UPLOADS_ARCHIV hat '${FREMD#"$NEBENABLAGE/"}' angelegt — weder Verzeichnis noch reguläre Datei. Ein Link im Medienverzeichnis zeigt aus ihm heraus; die Auslieferung folgte ihm."
@@ -215,6 +257,20 @@ fi
 # festgeschriebenen Zeilen nicht (nachgemessen in tests/rollback-wal.test.ts:
 # app.db 4096 Byte, das WAL 70 KB). Das Netz wäre leer gewesen.
 if [[ -f "$DATA_DIR/app.db" ]]; then
+  # Das Netz wird nicht durch einen Link gespannt. Wäre `backups` ein
+  # untergeschobener Link, landete die Sicherung des jetzigen Standes irgendwo
+  # anders — und die Prüfungen darunter (`-s`, integrity_check) folgten ihm
+  # brav mit und bestätigten sie dort.
+  #
+  # Ehrlich zur Reichweite: Der Befund nannte als Folge ein Leck über die
+  # Medien-Auslieferung. Das trägt nicht — die Route verlangt
+  # `<20 Hex>/w<Zahl>.webp`, und `pre-restore-….db` trifft das nie. Der
+  # Wächter ist trotzdem richtig: Die Sicherung gehört dorthin, wo das Skript
+  # sie hinlegt, und nirgendwo sonst hin.
+  [[ ! -L "$DATA_DIR/backups" ]] \
+    || { rm -f "$EINGEHEND"; fail "$DATA_DIR/backups ist ein symbolischer Link. \
+Dorthin wird die Sicherung des jetzigen Standes nicht gelegt — nichts \
+eingespielt, der Dienst läuft weiter."; }
   mkdir -p "$DATA_DIR/backups"
   VORHER="pre-restore-$(date +%Y%m%d-%H%M%S).db"
   log "Sichere den jetzigen Stand: backups/$VORHER"

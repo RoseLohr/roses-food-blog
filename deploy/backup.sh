@@ -57,6 +57,10 @@ PODMAN="${PODMAN:-podman}"
 warn(){ echo "WARNUNG: $*" >&2; }
 fail(){ echo "[backup] FEHLER: $*" >&2; exit 1; }
 
+# Dasselbe für das Sicherungsverzeichnis selbst: Wäre es ein untergeschobener
+# Link, sicherte dieser Lauf woandershin — und die Rotation räumte dort auf.
+[[ ! -L "$BACKUP_DIR" ]] \
+  || fail "$BACKUP_DIR ist ein symbolischer Link. Dorthin wird nicht gesichert."
 mkdir -p "$BACKUP_DIR"
 
 DB_OK=0

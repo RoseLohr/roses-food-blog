@@ -454,6 +454,23 @@ describe("Es wird nicht durch einen Link hindurch gesichert", () => {
     expect(fs.readFileSync(fremd, "utf8")).toBe("gehoert jemand anderem");
   });
 
+  it("bricht ab, wenn das SICHERUNGSVERZEICHNIS selbst ein Link ist", () => {
+    // Wäre BACKUP_DIR ein untergeschobener Link, sicherte dieser Lauf
+    // woandershin — und die Rotation räumte dort auf.
+    const platz = spielwiese();
+    podmanAttrappe(platz, true, true);
+    const woanders = path.join(tmp, "fremdes-verzeichnis");
+    fs.mkdirSync(woanders);
+    fs.rmSync(platz.backups, { recursive: true, force: true });
+    fs.symlinkSync(woanders, platz.backups);
+
+    const lauf = fahre(platz);
+
+    expect(lauf.code).not.toBe(0);
+    expect(lauf.ausgabe).toMatch(/Link/);
+    expect(fs.readdirSync(woanders)).toHaveLength(0);
+  });
+
   it("bricht ab, wenn das Uploads-Ziel ein untergeschobener Link ist", () => {
     const platz = spielwiese();
     podmanAttrappe(platz, true, true);
