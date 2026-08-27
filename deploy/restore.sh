@@ -191,17 +191,37 @@ if [[ -n "$UPLOADS_ARCHIV" ]]; then
   # nach /dev/null feststellen, dann über eine Prozess-Ersetzung lesen — eine
   # Pipe legte die Schleife in eine Unterschale, aus der ARCHIV_ABBRUCH den
   # Lauf nicht mehr beenden könnte.
-  tar -tzf "$UPLOADS_ARCHIV" >/dev/null 2>&1 \
-    || ARCHIV_ABBRUCH "$UPLOADS_ARCHIV ist nicht lesbar."
-  while IFS= read -r m; do
-    [[ -z "$m" ]] && continue
-    [[ "$m" == "uploads" || "$m" == "uploads/"* ]] \
-      || ARCHIV_ABBRUCH "$UPLOADS_ARCHIV enthält '$m' — erlaubt ist nur uploads/."
-    # Ein `..`-GLIED, nicht bloß die Zeichenfolge: `uploads/..foto.jpg` ist ein
-    # gültiger Dateiname und darf nicht mit `uploads/../` verwechselt werden.
-    [[ "/$m/" == */../* ]] \
-      && ARCHIV_ABBRUCH "$UPLOADS_ARCHIV enthält '$m' — ein Pfadglied '..' führt aus uploads/ heraus."
-  done < <(tar -tzf "$UPLOADS_ARCHIV" 2>/dev/null)
+  # ── EIN LESEVORGANG, UND SEIN STATUS ZÄHLT (Panel-Runde 11) ─────────────
+  #
+  # Die vorige Fassung las zweimal: erst `tar -tzf` nach /dev/null, dann
+  # dieselbe Liste in einer Prozess-Ersetzung. Deren Exit-Status ging verloren.
+  # Scheitert der zweite Lauf, liefert er keine Zeilen, die Schleife läuft nie,
+  # und der Namensgate hätte NICHTS geprüft und trotzdem durchgelassen.
+  # Gemessen am Typ-Vertrag, wo dieselbe Konstruktion stand: Ein Archiv MIT
+  # Symlink kam als „in Ordnung" heraus.
+  #
+  # `awk` fällt das Urteil in DEMSELBEN Lauf und gibt es über den Exit-Status
+  # zurück; `pipefail` lässt ein gescheitertes `tar` durchschlagen. Kein
+  # vorzeitiges `exit` in awk, damit tar kein SIGPIPE bekommt und sein Status
+  # die Lesbarkeit bezeichnet und nur sie.
+  NAMENSGRUND="$(
+    set -o pipefail
+    tar -tzf "$UPLOADS_ARCHIV" 2>/dev/null | awk '
+      grund == "" && $0 != "" {
+        if ($0 != "uploads" && substr($0, 1, 8) != "uploads/")
+          grund = "enthält \047" $0 "\047 — erlaubt ist nur uploads/."
+        else if (index("/" $0 "/", "/../") > 0)
+          grund = "enthält \047" $0 "\047 — ein Pfadglied \047..\047 führt aus uploads/ heraus."
+      }
+      END { if (grund != "") { print grund; exit 3 } }
+    '
+  )"
+  NAMENSSTATUS=$?
+  case "$NAMENSSTATUS" in
+    0) ;;
+    3) ARCHIV_ABBRUCH "$UPLOADS_ARCHIV $NAMENSGRUND" ;;
+    *) ARCHIV_ABBRUCH "$UPLOADS_ARCHIV ist nicht lesbar." ;;
+  esac
 
   # ── TYPEN, BEVOR AUSGEPACKT WIRD ────────────────────────────────────────
   #
@@ -271,8 +291,13 @@ if [[ -n "$UPLOADS_ARCHIV" ]]; then
   # liefert beides für das Dateisystem, auf dem $DATA_DIR liegt.
   BLOCK="$(stat -f -c %s "$DATA_DIR" 2>/dev/null || echo 4096)"
   [[ "$BLOCK" -gt 0 ]] || BLOCK=4096
-  gebraucht="$(tar -tvzf "$UPLOADS_ARCHIV" 2>/dev/null \
-    | awk -v b="$BLOCK" '{n++; s += int(($3 + b - 1) / b) * b} END {print (s+0) " " (n+0)}')"
+  # `pipefail` auch hier: Ein gescheitertes `tar` ergäbe sonst „0 Byte, 0
+  # Mitglieder" — und das Gate ließe genau dann durch, wenn es nichts weiß.
+  gebraucht="$(
+    set -o pipefail
+    tar -tvzf "$UPLOADS_ARCHIV" 2>/dev/null \
+      | awk -v b="$BLOCK" '{n++; s += int(($3 + b - 1) / b) * b} END {print (s+0) " " (n+0)}'
+  )" || ARCHIV_ABBRUCH "$UPLOADS_ARCHIV ist nicht lesbar."
   BEDARF="${gebraucht%% *}"
   MITGLIEDERZAHL="${gebraucht##* }"
 

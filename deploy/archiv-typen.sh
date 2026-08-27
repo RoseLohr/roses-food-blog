@@ -44,40 +44,58 @@
 #   Rückgabe 0: jedes Mitglied ist Verzeichnis oder reguläre Datei.
 #   Rückgabe 1: der Grund steht auf stdout (zum Anhängen an eine Fehlermeldung).
 archiv_typen_ok(){
-  local z
   # `TAR_OPTIONS` aus der Umgebung neutralisieren: GNU tar nimmt von dort jede
   # Option an, und ein `--dereference` machte aus einem Symlink still eine
   # reguläre Datei mit fremdem Inhalt — dieser Vertrag wäre zufrieden und
   # trotzdem wertlos. Lokal, damit der Aufrufer nichts davon merkt.
   local TAR_OPTIONS=
-  # ── GELESEN WIRD IM STROM, NICHT IN EINEN PUFFER (Panel-Runde 10) ───────
-  # `zeilen="$(tar -tvzf …)"` hielt das GANZE Inhaltsverzeichnis im Speicher.
-  # Ein winziges Archiv aus Millionen Kopfsätzen komprimiert auf wenige
-  # Kilobyte und ergibt eine Liste von hunderten Megabyte — der Prüfer stirbt
-  # am Speicher, bevor er ein Urteil fällt. Eine Kontrolle, die am zu
-  # prüfenden Gegenstand zugrunde geht, ist keine.
+  local ausgabe status
+
+  # ── EIN LESEVORGANG, UND SEIN STATUS ZÄHLT (Panel-Runde 11) ─────────────
   #
-  # DIE LESBARKEIT MUSS DABEI EIGENS FESTGESTELLT WERDEN, und das ist der
-  # heikle Teil: Scheitert `tar` in der Prozess-Ersetzung, liefert es KEINE
-  # Zeilen. Die Schleife liefe dann nie, und die Funktion antwortete „Typen in
-  # Ordnung" — über ein Archiv, das sich gar nicht öffnen lässt. Deshalb erst
-  # ein Lesen nach /dev/null (im Strom, ohne Puffer), dann die Typprüfung.
+  # Die vorige Fassung las ZWEIMAL: erst `tar -tzf` nach /dev/null als
+  # Lesbarkeitsprüfung, dann `tar -tvzf` in einer Prozess-Ersetzung für die
+  # Typen. Deren Exit-Status ging dabei verloren. Scheitert der zweite Lauf,
+  # liefert er keine Zeilen, die Schleife läuft nie — und die Funktion
+  # antwortet „Typen in Ordnung". Gemessen, mit einem Archiv, das einen
+  # Symlink ENTHÄLT:
   #
-  # Prozess-Ersetzung und nicht Pipe: Eine Pipe legte die Schleife in eine
-  # Unterschale, und deren `return 1` käme hier nie an.
-  tar -tzf "$1" >/dev/null 2>&1 \
-    || { echo "lässt sich nicht auflisten."; return 1; }
-  while IFS= read -r z; do
-    [[ -z "$z" ]] && continue
-    case "${z:0:1}" in
-      d|-) ;;
-      l) echo "enthält einen SYMLINK. Ein Link im Archiv kann beim Auspacken aus dem Zielverzeichnis herausführen — die Datei danach schriebe tar durch ihn hindurch."
-         return 1 ;;
-      h) echo "enthält einen HARDLINK."
-         return 1 ;;
-      *) echo "enthält ein Mitglied, das weder Verzeichnis noch reguläre Datei ist ('${z:0:1}')."
-         return 1 ;;
-    esac
-  done < <(tar -tvzf "$1" 2>/dev/null)
-  return 0
+  #     tar -tzf  gelingt  /  tar -tvzf scheitert
+  #     -> archiv_typen_ok: „Typen in Ordnung"   (fail-open)
+  #
+  # Das ist dieselbe Lehre wie aus Runde 4 — die Liste ist nicht der Baum —,
+  # nur diesmal auf meine eigenen zwei Lesevorgänge angewandt: Was der erste
+  # Lauf festgestellt hat, muss für den zweiten nicht mehr gelten.
+  #
+  # Deshalb jetzt EIN Lauf. Das Urteil kommt über den Exit-Status zurück und
+  # nicht über eine Variable, die eine früh abgebrochene Schleife nie gesetzt
+  # hat. `pipefail` sorgt dafür, dass ein gescheitertes `tar` durchschlägt;
+  # `awk` läuft bis zum Ende durch (kein vorzeitiges `exit`), damit `tar` kein
+  # SIGPIPE bekommt und sein Status die Lesbarkeit und nur sie bezeichnet.
+  #
+  #   Status 0  — jedes Mitglied ist Verzeichnis oder reguläre Datei
+  #   Status 3  — Typverstoß; die Begründung steht auf stdout
+  #   sonst     — tar konnte das Archiv nicht lesen
+  ausgabe="$(
+    set -o pipefail
+    tar -tvzf "$1" 2>/dev/null | awk '
+      grund == "" {
+        c = substr($0, 1, 1)
+        if (c == "l")
+          grund = "enthält einen SYMLINK. Ein Link im Archiv kann beim Auspacken aus dem Zielverzeichnis herausführen — die Datei danach schriebe tar durch ihn hindurch."
+        else if (c == "h")
+          grund = "enthält einen HARDLINK."
+        else if (c != "d" && c != "-")
+          grund = "enthält ein Mitglied, das weder Verzeichnis noch reguläre Datei ist (\047" c "\047)."
+      }
+      END { if (grund != "") { print grund; exit 3 } }
+    '
+  )"
+  status=$?
+
+  case "$status" in
+    0) return 0 ;;
+    3) echo "$ausgabe"; return 1 ;;
+    *) echo "lässt sich nicht auflisten."; return 1 ;;
+  esac
 }

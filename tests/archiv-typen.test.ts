@@ -109,6 +109,49 @@ describe("deploy/archiv-typen.sh — der Typ-Vertrag für sich allein", () => {
     expect(ergebnis.grund).toMatch(/HARDLINK/);
   });
 
+  it("erklärt ein Archiv nicht für einwandfrei, wenn das LESEN scheitert", () => {
+    // DER BEFUND (Runde 11), und er traf genau die Behebung aus Runde 10:
+    // Die las ZWEIMAL — erst `tar -tzf` als Lesbarkeitsprüfung, dann
+    // `tar -tvzf` in einer Prozess-Ersetzung für die Typen. Deren Exit-Status
+    // ging verloren. Scheitert der zweite Lauf, liefert er keine Zeilen, die
+    // Schleife läuft nie, und die Funktion antwortet „Typen in Ordnung".
+    //
+    // Gemessen mit einem Archiv, das einen Symlink ENTHÄLT, und einer
+    // tar-Attrappe, die nur den zweiten Lauf scheitern lässt:
+    //
+    //     tar -tzf gelingt / tar -tvzf scheitert
+    //     -> „Typen in Ordnung"   (fail-open)
+    //
+    // Dieselbe Lehre wie aus Runde 4 — die Liste ist nicht der Baum —, nur auf
+    // die eigenen zwei Lesevorgänge angewandt. Jetzt EIN Lauf, dessen Status
+    // das Urteil trägt.
+    const dir = platz();
+    fs.mkdirSync(path.join(dir, "q", "uploads"), { recursive: true });
+    fs.writeFileSync(path.join(dir, "q", "uploads", "echt.jpg"), "jpeg");
+    fs.symlinkSync("../app.db", path.join(dir, "q", "uploads", "leak"));
+    const archiv = path.join(dir, "zwei-laeufe.tar.gz");
+    execFileSync("tar", ["-czf", archiv, "-C", path.join(dir, "q"), "uploads"]);
+
+    // Die Attrappe: die knappe Auflistung gelingt, die ausführliche nicht.
+    const bin = path.join(dir, "bin");
+    fs.mkdirSync(bin);
+    fs.writeFileSync(
+      path.join(bin, "tar"),
+      [
+        "#!/usr/bin/env bash",
+        'if [[ "$*" == *-tvzf* ]]; then exit 2; fi',
+        'eigenes="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"',
+        'PATH="$(IFS=:; for p in $PATH; do [[ "$p" == "$eigenes" ]] || printf "%s:" "$p"; done)"',
+        'exec tar "$@"',
+      ].join("\n"),
+      { mode: 0o755 },
+    );
+
+    const ergebnis = pruefe(archiv, { PATH: `${bin}:${process.env.PATH}` });
+    expect(ergebnis.ok).toBe(false);
+    expect(ergebnis.grund).toMatch(/auflisten/);
+  });
+
   it("lässt sich von TAR_OPTIONS aus der Umgebung nicht umstimmen", () => {
     // `--dereference` machte aus dem Symlink still eine reguläre Datei MIT
     // fremdem Inhalt — der Vertrag wäre zufrieden und trotzdem wertlos.

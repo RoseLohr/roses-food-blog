@@ -1438,3 +1438,54 @@ Dass die Aufrufer das heute abfangen, macht den Vertrag nicht richtig: Ein
 gemeinsamer Baustein, der nur zusammen mit seinen jetzigen Aufrufern hält, ist
 genau die Abhängigkeit, wegen der er herausgezogen wurde. Deshalb jetzt
 `tests/archiv-typen.test.ts` — der Vertrag für sich allein gefahren.
+
+## B26 — Zwei Lesevorgänge, ein verworfener Status — GEMESSEN 08/2026, behoben
+
+Die elfte Panel-Runde, ein Befund, und er trifft genau die Behebung aus B25.
+
+Um das Puffern des Inhaltsverzeichnisses loszuwerden, hatte ich dort ZWEIMAL
+gelesen: erst `tar -tzf` nach `/dev/null` als Lesbarkeitsprüfung, dann
+`tar -tvzf` in einer Prozess-Ersetzung für die Typen. **Der Exit-Status des
+zweiten Laufs ging dabei verloren.** Scheitert er, liefert er keine Zeilen, die
+Schleife läuft nie — und die Funktion antwortet „Typen in Ordnung".
+
+Gemessen, mit einem Archiv, das einen Symlink **enthält**, und einer
+tar-Attrappe, die nur den ausführlichen Lauf scheitern lässt:
+
+```
+tar -tzf  gelingt  /  tar -tvzf scheitert
+-> archiv_typen_ok: „Typen in Ordnung"     (fail-open)
+```
+
+Das ist **dieselbe Lehre wie aus Runde 4** — die Liste ist nicht der Baum —,
+nur diesmal auf meine eigenen zwei Lesevorgänge angewandt: Was der erste Lauf
+festgestellt hat, muss für den zweiten nicht mehr gelten. Zwischen beiden liegt
+die Datei offen.
+
+### Wurzel
+
+**Ein** Lesevorgang, und das Urteil kommt über dessen Exit-Status zurück statt
+über eine Variable, die eine früh abgebrochene Schleife nie gesetzt hat.
+`awk` fällt die Entscheidung im selben Lauf; `pipefail` lässt ein gescheitertes
+`tar` durchschlagen; `awk` läuft bis zum Ende durch (kein vorzeitiges `exit`),
+damit `tar` kein SIGPIPE bekommt und sein Status die Lesbarkeit bezeichnet und
+nur sie.
+
+```
+Status 0  — jedes Mitglied ist Verzeichnis oder reguläre Datei
+Status 3  — Typverstoß; die Begründung steht auf stdout
+sonst     — tar konnte das Archiv nicht lesen
+```
+
+Dieselbe Konstruktion stand im **Namensgate** von `deploy/restore.sh` und ist
+dort mitgezogen. Auch das Platz-Gate liest jetzt unter `pipefail`: Ein
+gescheitertes `tar` ergäbe sonst „0 Byte, 0 Mitglieder" — und das Gate ließe
+genau dann durch, wenn es nichts weiß.
+
+### Was daran allgemein ist
+
+Eine Prüfung und die Sache, über die sie urteilt, müssen **denselben**
+Lesevorgang teilen. Zwei Läufe über dieselbe Datei sind zwei Beobachtungen,
+und die Kontrolle spricht dann über die erste, während gehandelt wird auf
+Grundlage der zweiten. Das galt in Runde 4 für Inhaltsverzeichnis gegen
+ausgepackten Baum und gilt hier für Vorabprüfung gegen Detailprüfung.
