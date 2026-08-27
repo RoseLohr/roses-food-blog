@@ -65,15 +65,27 @@ export type RenderBlock =
   | { art: "text"; markdown: string }
   | { art: "restaurant"; index: number }
   /** Eine Gruppe: erstes Bild über die ganze Breite, alle weiteren in einer
-   *  Reihe darunter. Ein ununterbrochener Lauf gleicher Marke. */
-  | { art: "bild"; imageIds: number[] }
+   *  Reihe darunter. Ein ununterbrochener Lauf gleicher Marke.
+   *
+   *  Die Bilder stehen als OBJEKTE da, nicht als IDs mit einer zweiten Liste
+   *  daneben: Jedes Foto entscheidet für sich, ob seine Unterschrift steht,
+   *  und zwei gleichlange Listen, die man Position für Position
+   *  zusammenhalten muss, laufen irgendwann auseinander. */
+  | { art: "bild"; bilder: GruppenBild[] }
   /** Ein Bild ohne Gruppe: eigene Breite, eigene Seite, Text läuft darum. */
   | {
       art: "einzelbild";
       imageId: number;
       groesse: Bildgroesse;
       ausrichtung: Ausrichtung;
+      bildunterschrift: boolean;
     };
+
+/** Ein Foto innerhalb einer Gruppe, mit seiner eigenen Unterschrift-Angabe. */
+export interface GruppenBild {
+  imageId: number;
+  bildunterschrift: boolean;
+}
 
 /** Breite eines Einzelbildes als Anteil der Inhaltsspalte. */
 export const EINZELBILD_ANTEIL = { s: 1 / 3, m: 1 / 2, l: 2 / 3 } as const;
@@ -121,16 +133,18 @@ export function zuRenderBloecken(blocks: TravelBlock[]): RenderBlock[] {
         imageId: b.imageId,
         groesse: b.groesse ?? EINZELBILD_VORGABE.groesse,
         ausrichtung: b.ausrichtung ?? EINZELBILD_VORGABE.ausrichtung,
+        bildunterschrift: b.bildunterschrift,
       });
       // Ein Einzelbild unterbricht den Lauf: Zwei gleich markierte Bilder mit
       // einem Einzelbild dazwischen stehen NICHT zusammen.
       offeneMarke = null;
     } else {
       const letzte = out[out.length - 1];
+      const bild = { imageId: b.imageId, bildunterschrift: b.bildunterschrift };
       if (letzte?.art === "bild" && offeneMarke === b.gruppe) {
-        letzte.imageIds.push(b.imageId);
+        letzte.bilder.push(bild);
       } else {
-        out.push({ art: "bild", imageIds: [b.imageId] });
+        out.push({ art: "bild", bilder: [bild] });
         offeneMarke = b.gruppe;
       }
     }

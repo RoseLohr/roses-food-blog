@@ -16,10 +16,16 @@ import { describe, expect, it } from "vitest";
 import { zuRenderBloecken } from "@/lib/bildreihen";
 import type { TravelBlock } from "@/lib/travel-blocks";
 import {
+  bildIds,
+  mitBildern,
+  mitFoto,
+  mitUnterschrift,
+  unterschriftAn,
   neueBildgruppe,
   neuesEinzelbild,
   zuBloecken,
   zuItems,
+  type Bildgruppe,
   type EditorItem,
 } from "@/lib/travel-editor-items";
 
@@ -30,6 +36,7 @@ const inGruppe = (imageId: number, gruppe: number): TravelBlock => ({
   gruppe,
   groesse: null,
   ausrichtung: null,
+  bildunterschrift: false,
 });
 
 /** Ein Bild OHNE Gruppe — mit eigener Breite und Seite. */
@@ -37,7 +44,14 @@ const einzeln = (
   imageId: number,
   groesse: "s" | "m" | "l" = "m",
   ausrichtung: "links" | "rechts" = "links",
-): TravelBlock => ({ type: "bild", imageId, gruppe: null, groesse, ausrichtung });
+): TravelBlock => ({
+  type: "bild",
+  imageId,
+  gruppe: null,
+  groesse,
+  ausrichtung,
+  bildunterschrift: false,
+});
 
 const text = (markdown: string): TravelBlock => ({ type: "text", markdown });
 const lokal = (index: number): TravelBlock => ({ type: "restaurant", index });
@@ -110,14 +124,14 @@ describe("Der Bericht bleibt derselbe", () => {
 describe("Aus Blöcken werden Karten", () => {
   it("fasst einen Lauf gleicher Marke zu EINER Gruppe zusammen", () => {
     expect(zuItems([inGruppe(1, 4), inGruppe(2, 4), inGruppe(3, 4)])).toEqual([
-      { art: "bildgruppe", imageIds: [1, 2, 3] },
+      { art: "bildgruppe", bilder: [{ imageId: 1, bildunterschrift: false }, { imageId: 2, bildunterschrift: false }, { imageId: 3, bildunterschrift: false }] },
     ]);
   });
 
   it("trennt zwei Marken, die direkt aneinandergrenzen", () => {
     expect(zuItems([inGruppe(1, 1), inGruppe(2, 2)])).toEqual([
-      { art: "bildgruppe", imageIds: [1] },
-      { art: "bildgruppe", imageIds: [2] },
+      { art: "bildgruppe", bilder: [{ imageId: 1, bildunterschrift: false }] },
+      { art: "bildgruppe", bilder: [{ imageId: 2, bildunterschrift: false }] },
     ]);
   });
 
@@ -125,9 +139,9 @@ describe("Aus Blöcken werden Karten", () => {
     // Was auseinandersteht, kann nicht gemeinsam in einer Reihe stehen —
     // dieselbe Lesart wie im Renderer.
     expect(zuItems([inGruppe(1, 7), text("x"), inGruppe(2, 7)])).toEqual([
-      { art: "bildgruppe", imageIds: [1] },
+      { art: "bildgruppe", bilder: [{ imageId: 1, bildunterschrift: false }] },
       { art: "text", markdown: "x" },
-      { art: "bildgruppe", imageIds: [2] },
+      { art: "bildgruppe", bilder: [{ imageId: 2, bildunterschrift: false }] },
     ]);
   });
 
@@ -138,9 +152,16 @@ describe("Aus Blöcken werden Karten", () => {
       gruppe: null,
       groesse: null,
       ausrichtung: null,
+      bildunterschrift: false,
     };
     expect(zuItems([ohneAngabe])).toEqual([
-      { art: "einzelbild", imageId: 5, groesse: "m", ausrichtung: "links" },
+      {
+        art: "einzelbild",
+        imageId: 5,
+        groesse: "m",
+        ausrichtung: "links",
+        bildunterschrift: false,
+      },
     ]);
   });
 });
@@ -150,22 +171,22 @@ describe("Aus Karten werden Blöcke", () => {
     // Der Fallstrick: Mit derselben Marke zöge der Renderer beide zu einer
     // einzigen Gruppe zusammen — aus zwei Reihen würde eine.
     const items: EditorItem[] = [
-      { art: "bildgruppe", imageIds: [1, 2] },
-      { art: "bildgruppe", imageIds: [3, 4] },
+      { art: "bildgruppe", bilder: [{ imageId: 1, bildunterschrift: false }, { imageId: 2, bildunterschrift: false }] },
+      { art: "bildgruppe", bilder: [{ imageId: 3, bildunterschrift: false }, { imageId: 4, bildunterschrift: false }] },
     ];
     const blocks = zuBloecken(items);
     const marken = blocks.map((b) => (b.type === "bild" ? b.gruppe : null));
     expect(marken).toEqual([1, 1, 2, 2]);
     expect(zuRenderBloecken(blocks)).toEqual([
-      { art: "bild", imageIds: [1, 2] },
-      { art: "bild", imageIds: [3, 4] },
+      { art: "bild", bilder: [{ imageId: 1, bildunterschrift: false }, { imageId: 2, bildunterschrift: false }] },
+      { art: "bild", bilder: [{ imageId: 3, bildunterschrift: false }, { imageId: 4, bildunterschrift: false }] },
     ]);
   });
 
   it("gibt Bildern einer Gruppe weder Größe noch Seite", () => {
     // Beides zugleich weisen Vertrag und Datenbank zurück
     // (travel_block_bild_regler_check) — es darf gar nicht erst entstehen.
-    const blocks = zuBloecken([{ art: "bildgruppe", imageIds: [1, 2] }]);
+    const blocks = zuBloecken([{ art: "bildgruppe", bilder: [{ imageId: 1, bildunterschrift: false }, { imageId: 2, bildunterschrift: false }] }]);
     for (const b of blocks) {
       expect(b.type === "bild" && b.groesse).toBeNull();
       expect(b.type === "bild" && b.ausrichtung).toBeNull();
@@ -177,7 +198,7 @@ describe("Aus Karten werden Blöcke", () => {
   });
 
   it("überspringt Plätze ohne Foto innerhalb einer Gruppe", () => {
-    const blocks = zuBloecken([{ art: "bildgruppe", imageIds: [1, 0, 2] }]);
+    const blocks = zuBloecken([{ art: "bildgruppe", bilder: [{ imageId: 1, bildunterschrift: false }, { imageId: 0, bildunterschrift: false }, { imageId: 2, bildunterschrift: false }] }]);
     expect(blocks.map((b) => (b.type === "bild" ? b.imageId : null))).toEqual([1, 2]);
   });
 
@@ -185,23 +206,215 @@ describe("Aus Karten werden Blöcke", () => {
     // Eine leere Gruppe dazwischen darf keine Marke verbrauchen — sonst hinge
     // die Nummerierung an etwas, das gar nicht gespeichert wird.
     const blocks = zuBloecken([
-      { art: "bildgruppe", imageIds: [1] },
+      { art: "bildgruppe", bilder: [{ imageId: 1, bildunterschrift: false }] },
       neueBildgruppe(),
-      { art: "bildgruppe", imageIds: [2] },
+      { art: "bildgruppe", bilder: [{ imageId: 2, bildunterschrift: false }] },
     ]);
     expect(blocks.map((b) => (b.type === "bild" ? b.gruppe : null))).toEqual([1, 2]);
   });
 
   it("behält Größe und Seite am Einzelbild", () => {
-    expect(zuBloecken([{ art: "einzelbild", imageId: 8, groesse: "l", ausrichtung: "rechts" }])).toEqual([
-      { type: "bild", imageId: 8, gruppe: null, groesse: "l", ausrichtung: "rechts" },
+    expect(
+      zuBloecken([
+        {
+          art: "einzelbild",
+          imageId: 8,
+          groesse: "l",
+          ausrichtung: "rechts",
+          bildunterschrift: false,
+        },
+      ]),
+    ).toEqual([
+      {
+        type: "bild",
+        imageId: 8,
+        gruppe: null,
+        groesse: "l",
+        ausrichtung: "rechts",
+        bildunterschrift: false,
+      },
     ]);
+  });
+});
+
+describe("Die Fotoauswahl einer Gruppe", () => {
+  const gruppe = (bilder: Array<[number, boolean]>): Bildgruppe => ({
+    art: "bildgruppe",
+    bilder: bilder.map(([imageId, bildunterschrift]) => ({
+      imageId,
+      bildunterschrift,
+    })),
+  });
+
+  it("gibt die Fotos als reine ID-Liste heraus — das, was der Wähler versteht", () => {
+    expect(bildIds(gruppe([[7, true], [8, false]]))).toEqual([7, 8]);
+  });
+
+  it("behält beim Umsortieren die gesetzten Unterschriften", () => {
+    // DER PUNKT: Der Bilderwähler gibt eine neue Liste zurück. Wer nur die
+    // IDs übernimmt, ersetzt jedes gesetzte Häkchen still durch die Vorgabe —
+    // die Unterschriften wären nach jedem Pfeilklick weg.
+    const vorher = gruppe([[7, true], [8, false], [9, true]]);
+    expect(mitBildern(vorher, [9, 7, 8], [2, 0, 1]).bilder).toEqual([
+      { imageId: 9, bildunterschrift: true },
+      { imageId: 7, bildunterschrift: true },
+      { imageId: 8, bildunterschrift: false },
+    ]);
+  });
+
+  it("gibt einem NEU hinzugekommenen Foto keine Unterschrift", () => {
+    expect(mitBildern(gruppe([[7, true]]), [7, 42], [0, null]).bilder).toEqual([
+      { imageId: 7, bildunterschrift: true },
+      { imageId: 42, bildunterschrift: false },
+    ]);
+  });
+
+  it("vergisst ein entferntes Foto samt seiner Angabe", () => {
+    expect(mitBildern(gruppe([[7, true], [8, true]]), [8], [1]).bilder).toEqual([
+      { imageId: 8, bildunterschrift: true },
+    ]);
+  });
+
+  it("kommt mit einer geleerten Auswahl zurecht", () => {
+    expect(mitBildern(gruppe([[7, true]]), [], []).bilder).toEqual([]);
+  });
+
+  it("lässt die übergebene Gruppe unangetastet", () => {
+    const vorher = gruppe([[7, true]]);
+    mitBildern(vorher, [8], [null]);
+    expect(vorher.bilder).toEqual([{ imageId: 7, bildunterschrift: true }]);
+  });
+
+  it("behält beim Entfernen die Angabe der ÜBERLEBENDEN Stelle", () => {
+    // DER BEFUND (Gegenprüfung, zweite Runde): Zwei Vorkommen desselben
+    // Fotos, das erste mit Unterschrift. Wer die ERSTE Kachel entfernt, muss
+    // das zweite Foto OHNE Unterschrift übrig behalten. Eine ID-Liste allein
+    // kann das nicht sagen — [7] entsteht auch beim Entfernen des zweiten.
+    // Die Herkunft sagt es: Stelle 1 hat überlebt.
+    const vorher = gruppe([[7, true], [7, false]]);
+    expect(mitBildern(vorher, [7], [1]).bilder).toEqual([
+      { imageId: 7, bildunterschrift: false },
+    ]);
+    // Und andersherum ebenso.
+    expect(mitBildern(vorher, [7], [0]).bilder).toEqual([
+      { imageId: 7, bildunterschrift: true },
+    ]);
+  });
+
+  it("bewegt beim Tauschen zweier GLEICHER Fotos auch die Angaben mit", () => {
+    // Die ID-Liste ist vor und nach dem Tausch dieselbe — die Bewegung wäre
+    // in ihr gar nicht zu sehen, und die Angaben blieben stehen.
+    const vorher = gruppe([[7, true], [7, false]]);
+    expect(mitBildern(vorher, [7, 7], [1, 0]).bilder).toEqual([
+      { imageId: 7, bildunterschrift: false },
+      { imageId: 7, bildunterschrift: true },
+    ]);
+  });
+
+  it("gibt einem DRITTEN Vorkommen keine Unterschrift", () => {
+    expect(
+      mitBildern(gruppe([[7, true], [7, true]]), [7, 7, 7], [0, 1, null]).bilder,
+    ).toEqual([
+      { imageId: 7, bildunterschrift: true },
+      { imageId: 7, bildunterschrift: true },
+      { imageId: 7, bildunterschrift: false },
+    ]);
+  });
+
+  it("verwirft die Angabe, wenn an der Herkunftsstelle ein ANDERES Foto stand", () => {
+    // Ein Sicherheitsnetz gegen eine unstimmige Herkunft: Die Unterschrift
+    // gehört zum Alt-Text EINES bestimmten Fotos. Zeigt die Herkunft auf ein
+    // anderes, ist sie für dieses Foto nicht freigegeben.
+    expect(mitBildern(gruppe([[7, true]]), [8], [0]).bilder).toEqual([
+      { imageId: 8, bildunterschrift: false },
+    ]);
+    // Ebenso eine Stelle, die es gar nicht gibt.
+    expect(mitBildern(gruppe([[7, true]]), [7], [5]).bilder).toEqual([
+      { imageId: 7, bildunterschrift: false },
+    ]);
+  });
+});
+
+describe("Das Häkchen an einem Gruppenfoto", () => {
+  const gruppe = (bilder: Array<[number, boolean]>): Bildgruppe => ({
+    art: "bildgruppe",
+    bilder: bilder.map(([imageId, bildunterschrift]) => ({
+      imageId,
+      bildunterschrift,
+    })),
+  });
+
+  it("liest die Angabe des Fotos AN DIESER STELLE", () => {
+    const g = gruppe([[7, false], [7, true]]);
+    expect(unterschriftAn(g, 0)).toBe(false);
+    expect(unterschriftAn(g, 1)).toBe(true);
+  });
+
+  it("meldet für eine Stelle, die es nicht gibt, keine Unterschrift", () => {
+    expect(unterschriftAn(gruppe([[7, true]]), 3)).toBe(false);
+    expect(unterschriftAn(gruppe([[7, true]]), -1)).toBe(false);
+  });
+
+  it("setzt die Angabe NUR an der angeklickten Stelle", () => {
+    // DER BEFUND: Die Umschaltung lief über die Bild-ID und traf damit JEDES
+    // Vorkommen. Wer am zweiten Foto klickte, änderte auch das erste.
+    expect(mitUnterschrift(gruppe([[7, false], [7, false]]), 1, true).bilder).toEqual([
+      { imageId: 7, bildunterschrift: false },
+      { imageId: 7, bildunterschrift: true },
+    ]);
+  });
+
+  it("lässt eine Stelle außerhalb der Liste die Gruppe unverändert", () => {
+    const vorher = gruppe([[7, false]]);
+    expect(mitUnterschrift(vorher, 5, true).bilder).toEqual([
+      { imageId: 7, bildunterschrift: false },
+    ]);
+  });
+
+  it("lässt die übergebene Gruppe unangetastet", () => {
+    const vorher = gruppe([[7, false]]);
+    mitUnterschrift(vorher, 0, true);
+    expect(vorher.bilder).toEqual([{ imageId: 7, bildunterschrift: false }]);
+  });
+});
+
+describe("Der Fotowechsel am Einzelbild", () => {
+  const einzelbild = (imageId: number, bildunterschrift: boolean) => ({
+    art: "einzelbild" as const,
+    imageId,
+    groesse: "m" as const,
+    ausrichtung: "links" as const,
+    bildunterschrift,
+  });
+
+  it("nimmt dem Ersatzfoto die Unterschrift des Vorgängers", () => {
+    // DER BEFUND: Der Wechsel änderte nur die ID. Das neue Foto erbte damit
+    // ein Häkchen, das für den Alt-Text des ALTEN Fotos gesetzt war — eine
+    // sichtbare Unterschrift, die niemand für dieses Bild bestellt hat.
+    expect(mitFoto(einzelbild(7, true), 9)).toEqual({
+      imageId: 9,
+      bildunterschrift: false,
+    });
+  });
+
+  it("lässt die Unterschrift stehen, wenn dasselbe Foto gewählt wird", () => {
+    expect(mitFoto(einzelbild(7, true), 7)).toEqual({
+      imageId: 7,
+      bildunterschrift: true,
+    });
+  });
+
+  it("räumt die Unterschrift mit weg, wenn das Foto abgewählt wird", () => {
+    expect(mitFoto(einzelbild(7, true), 0)).toEqual({
+      imageId: 0,
+      bildunterschrift: false,
+    });
   });
 });
 
 describe("Die Knöpfe legen an, was sie versprechen", () => {
   it("Der Knopf für die Gruppe beginnt leer — die Bilder kommen aus der Bibliothek", () => {
-    expect(neueBildgruppe()).toEqual({ art: "bildgruppe", imageIds: [] });
+    expect(neueBildgruppe()).toEqual({ art: "bildgruppe", bilder: [] });
   });
 
   it("Der Knopf für das Bild legt ein Einzelbild mit den Vorgaben an", () => {
@@ -210,6 +423,7 @@ describe("Die Knöpfe legen an, was sie versprechen", () => {
       imageId: 0,
       groesse: "m",
       ausrichtung: "links",
+      bildunterschrift: false,
     });
   });
 });
