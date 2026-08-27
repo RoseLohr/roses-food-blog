@@ -234,6 +234,85 @@ const REQUIRED_APPROVER = (process.env.VERIFIER_REQUIRED_APPROVER || "gpt-5.6-so
 const _minOthersEnv = Number(process.env.VERIFIER_MIN_OTHER_APPROVERS);
 const MIN_OTHERS = Number.isFinite(_minOthersEnv) && _minOthersEnv >= 1 ? Math.floor(_minOthersEnv) : 1;
 
+// Rate-Limit/Timeout/Conflict und 5xx. Auch 401 wird als transient behandelt:
+// beobachtet wurde ein flakiges „insufficient permissions" auf EINER von drei
+// identischen, gleichzeitigen Anfragen (Load-Balancer-Knoten) — derselbe Key/Modell
+// lieferte die anderen Stimmen korrekt. Deterministische Client-Fehler
+// (400/403/404) NICHT retryen — das Ergebnis ändert sich nicht.
+// Steht hier oben bei den übrigen reinen Entscheidungen, damit der --selftest
+// sie ausführen kann.
+export const isTransient = (s) => s === 401 || s === 408 || s === 409 || s === 429 || s >= 500;
+
+/**
+ * Ist das eine STIMME — also etwas, worüber sich abstimmen lässt?
+ *
+ * Eine Stimme ist zugestellt (`ok`), geparst (`v`) und trägt ein boolesches
+ * `refuted`. Alles andere ist KEIN Urteil, sondern eine Nicht-Antwort.
+ *
+ * Die Frage stand vorher dreimal wortgleich als lokales `isValid` in
+ * requireApprovals(), attestReasons() und attestProof(). Sie ist der Begriff,
+ * auf dem jedes Gate aufsetzt, und gehört deshalb einmal hierher.
+ */
+/** Was im Protokoll steht, wenn der Endpunkt zwar antwortet, aber nichts Verwertbares. */
+export const NICHTANTWORT = "Antwort ohne verwertbares refuted-Feld (Nicht-Antwort, kein Urteil)";
+
+/**
+ * Die Stimme, die nach ALLEN Versuchen stumm geblieben ist.
+ *
+ * ── WARUM SIE EIN EIGENES MERKMAL TRÄGT (Befund des Panels an B19) ─────────
+ *
+ * Der erste Anlauf dieser Behebung etikettierte sie einfach auf `ok:false` um
+ * — wie einen Netzfehler. Das war ein FAIL-OPEN: `strictAnyRefutation` sieht
+ * nur Stimmen mit `ok`, eine stumme dritte Stimme blockte also nicht mehr.
+ * Vorher tat sie es (als `{ok:true, v:{}}` fiel sie durch `decide()`).
+ * Zwei Stimmen grün + eine stumm wurde damit aus ROT ein GRÜN — genau das
+ * Gegenteil dessen, was im Audit versprochen war.
+ *
+ * Ein Netzfehler und eine stumme Antwort sind eben NICHT dasselbe: Der eine
+ * ist Zustellung, die andere ist ein Endpunkt, der antwortet und nichts sagt.
+ * Für die Wiederholung zählt beides gleich, für das Urteil nicht.
+ *
+ * Das Merkmal sitzt am TRANSPORT-Umschlag, nicht in `v`. Ein Endpunkt, der
+ * `{"stumm": true}` zurückgäbe, kann es damit nicht fälschen — was er sendet,
+ * landet ausschließlich in `v`.
+ */
+export function stummeStimme() {
+  return { ok: false, stumm: true, reason: NICHTANTWORT };
+}
+
+export function istStimme(x) {
+  return !!(x && x.ok && x.v && typeof x.v.refuted === "boolean");
+}
+
+/**
+ * Was ist mit einer Antwort des Verifier-Endpunkts zu tun?
+ *
+ *   "stimme"     — verwertbar, die Runde ist fertig.
+ *   "erneut"     — nichts Verwertbares, aber ein neuer Versuch kann helfen.
+ *   "endgueltig" — deterministischer Fehler; ein Retry ändert nichts.
+ *
+ * ── DER BEFUND (08/2026) ────────────────────────────────────────────────────
+ *
+ * Der Retry hing allein an der ZUSTELLUNG: Netzfehler und 5xx wurden erneut
+ * versucht, eine HTTP-200-Antwort mit unbrauchbarer Nutzlast dagegen als
+ * abgegebene Stimme gewertet. Genau das trat auf (PR #122, zweimal): Eine
+ * Stimme lieferte `refuted=undefined` ohne Begründung, das Panel verweigerte
+ * fail-closed — und der einzige Weg zurück war, den ganzen Job neu zu starten,
+ * obwohl es keinen Befund gab, auf den man hätte antworten können.
+ *
+ * Eine leere Nutzlast ist kein Urteil. Sie ist derselbe Ausfall wie ein
+ * abgerissenes Netz, nur eine Schicht höher — und wird deshalb genauso
+ * behandelt. Fail-closed bleibt fail-closed: Sind alle Versuche verbraucht,
+ * blockt das Panel weiterhin, nur eben nach drei Anläufen statt nach einem und
+ * mit der richtigen Begründung.
+ */
+export function zustellung(x) {
+  if (istStimme(x)) return "stimme";
+  // Zugestellt, aber nichts Verwertbares darin → Nicht-Antwort, kein Urteil.
+  if (x?.ok) return "erneut";
+  return x?.status !== undefined && !isTransient(x.status) ? "endgueltig" : "erneut";
+}
+
 /**
  * Reine Entscheidungsfunktion PRO Stimme. Fail-CLOSED: eine Antwort ohne
  * boolesches `refuted` (Feld fehlt / unparsbar) blockiert. Ein Refutat mit
@@ -257,10 +336,27 @@ export function decide(v) {
 export function strictAnyRefutation(votes, models) {
   for (let i = 0; i < votes.length; i++) {
     const x = votes[i];
-    if (x?.ok && decide(x.v).block) {
+    // Eine stumme Stimme blockt, wie sie es vor der B19-Behebung tat. Sie
+    // steht VOR der decide()-Prüfung, weil sie kein `ok` trägt und dort nie
+    // ankäme — genau daran ist der erste Anlauf gescheitert.
+    if (x?.stumm) {
       return {
         block: true,
-        reason: `Strikt-Modus: ${models[i]} refutiert (confidence=${x.v?.confidence ?? "?"}) → fail-closed`,
+        reason: `Strikt-Modus: ${models[i]} ohne verwertbares Urteil nach allen Versuchen → fail-closed`,
+      };
+    }
+    const urteil = decide(x?.v);
+    if (x?.ok && urteil.block) {
+      // Eine Stimme OHNE verwertbares Urteil hat nicht refutiert — sie hat
+      // nicht geantwortet. Beides blockt (fail-closed), aber die Meldung muss
+      // sie unterscheiden: „refutiert (confidence=?)" schickt den Leser auf
+      // die Suche nach einem Befund, den es gar nicht gibt (beobachtet an
+      // PR #122, zweimal).
+      return {
+        block: true,
+        reason: istStimme(x)
+          ? `Strikt-Modus: ${models[i]} refutiert (confidence=${x.v.confidence ?? "?"}) → fail-closed`
+          : `Strikt-Modus: ${models[i]} ohne verwertbares Urteil (${urteil.reason}) → fail-closed`,
       };
     }
   }
@@ -309,7 +405,6 @@ export function modelMatches(modelId, want) {
 export function requireApprovals(votes, models, requiredApprover, minOthers = 1, challenge = null) {
   // NaN/negativ/Unfug → 1 (sonst würde `need = NaN` jeden Vergleich fail-open machen).
   const need = Number.isFinite(minOthers) && minOthers >= 1 ? Math.floor(minOthers) : 1;
-  const isValid = (x) => !!(x && x.ok && x.v && typeof x.v.refuted === "boolean");
   const reqIdx = new Set();
   for (let i = 0; i < votes.length; i++) {
     if (modelMatches(models[i], requiredApprover)) reqIdx.add(i);
@@ -318,7 +413,7 @@ export function requireApprovals(votes, models, requiredApprover, minOthers = 1,
     return { block: true, reason: `Pflicht-Approver „${requiredApprover}" nicht im Panel aufgelöst (nicht freigeschaltet oder durch Fallback ersetzt) → fail-closed` };
   for (const i of reqIdx) {
     const x = votes[i];
-    if (!isValid(x))
+    if (!istStimme(x))
       return { block: true, reason: `Pflicht-Approver „${requiredApprover}" ohne gültige Stimme (Fehler/unparsbar) → fail-closed` };
     if (x.v.refuted !== false)
       return { block: true, reason: `Pflicht-Approver „${requiredApprover}" stimmt NICHT zu (refuted, confidence=${x.v.confidence ?? "?"}) → Veto, fail-closed` };
@@ -334,7 +429,7 @@ export function requireApprovals(votes, models, requiredApprover, minOthers = 1,
   // Unabhängige Korroboration: DISTINCT Nicht-Pflicht-Modelle mit Zustimmung.
   const independent = new Set();
   votes.forEach((x, i) => {
-    if (!reqIdx.has(i) && isValid(x) && x.v.refuted === false && models[i]) independent.add(models[i]);
+    if (!reqIdx.has(i) && istStimme(x) && x.v.refuted === false && models[i]) independent.add(models[i]);
   });
   if (independent.size < need)
     return { block: true, reason: `nur ${independent.size} unabhängige(s) zustimmende(s) Modell(e) neben „${requiredApprover}" (< ${need}) → keine unabhängige Korroboration, fail-closed` };
@@ -388,7 +483,7 @@ export function attestReasons(votes, panelSize) {
   const norm = normReason;
   // Nur GRÜN tragende Stimmen (gültig, geparst, decide()-durchgelassen), Begründung
   // mit echter Substanz nach Normalisierung.
-  const green = votes.filter((x) => x.ok && x.v && typeof x.v.refuted === "boolean" && !decide(x.v).block);
+  const green = votes.filter((x) => istStimme(x) && !decide(x.v).block);
   const normed = green.map((x) => norm(x.v.reason)).filter((s) => s.length >= MIN_REASON_LEN);
   if (normed.length < need)
     return { block: true, reason: `nur ${normed.length}/${panelSize} Grün-Stimmen mit echter Begründung (< Mehrheit ${need}) → Schein-Grün-Verdacht, fail-closed` };
@@ -416,7 +511,7 @@ export function attestReasons(votes, panelSize) {
  */
 export function attestProof(votes, challenge, panelSize) {
   const need = Math.floor(panelSize / 2) + 1; // Mehrheit
-  const green = votes.filter((x) => x.ok && x.v && typeof x.v.refuted === "boolean" && !decide(x.v).block);
+  const green = votes.filter((x) => istStimme(x) && !decide(x.v).block);
   const proven = green.filter((x) => hasValidProof(x.v, challenge));
   if (proven.length < need)
     return { block: true, reason: `nur ${proven.length}/${panelSize} Grün-Stimmen mit gültigem Proof-of-Check (Challenge-Echo) (< Mehrheit ${need}) → Verdacht auf hartcodiertes Grün, fail-closed` };
@@ -734,6 +829,97 @@ if (process.argv.includes("--selftest")) {
   expect(requireApprovals([RF, A2, A], SM, "gpt-5.6-sol", 1).block === false
     && strictAnyRefutation([RF, A2, A], SM).block === true,
     "derselbe Stimmensatz: Standard grün, Strikt-Modus block — die Option ist wirksam.");
+  // istStimme() + zustellung(): eine Nicht-Antwort ist kein Urteil.
+  expect(istStimme({ ok: true, v: { refuted: false } }) === true, "zugestellt + geparst + boolesches refuted = Stimme.");
+  expect(istStimme({ ok: true, v: {} }) === false, "ohne refuted-Feld ist es keine Stimme.");
+  expect(istStimme({ ok: true, v: { refuted: "vielleicht" } }) === false, "refuted muss BOOLESCH sein.");
+  expect(istStimme({ ok: false, v: { refuted: false } }) === false, "nicht zugestellt ist keine Stimme.");
+  expect(istStimme(undefined) === false, "gar nichts ist keine Stimme.");
+  expect(zustellung({ ok: true, v: { refuted: true, confidence: "high" } }) === "stimme", "ein Refutat IST eine Stimme — kein Retry.");
+  // DER BEFUND: Genau dieser Fall galt als abgegebene Stimme und wurde nie
+  // wiederholt — HTTP 200, leere Nutzlast, Panel fail-closed ohne Befund.
+  expect(zustellung({ ok: true, v: {} }) === "erneut", "200 mit unbrauchbarer Nutzlast ist eine Nicht-Antwort → erneut versuchen.");
+  expect(zustellung({ ok: true, v: null }) === "erneut", "gar keine Nutzlast ebenso.");
+  expect(zustellung({ ok: false, status: 500 }) === "erneut", "5xx bleibt transient.");
+  expect(zustellung({ ok: false, status: 401 }) === "erneut", "401 bleibt transient (flakiger LB-Knoten).");
+  expect(zustellung({ ok: false }) === "erneut", "Netzfehler ohne Status bleibt transient.");
+  expect(zustellung({ ok: false, status: 400 }) === "endgueltig", "400 ändert sich nicht — kein Retry.");
+  expect(zustellung({ ok: false, status: 404 }) === "endgueltig", "404 ebenso.");
+  // ── Die Schleife WIRKLICH fahren, nicht ihren Ausgang nachbauen ──────────
+  //
+  // DER BEFUND (Panel an der ersten Fassung von B19): Hier stand ein von Hand
+  // gebautes `{ok:true, v:{}}`, das an strictAnyRefutation gereicht wurde —
+  // ein Zustand, den die Schleife nach der Änderung gar nicht mehr liefert.
+  // Der Test war grün, während die Produktion aus einem BLOCK ein DURCH
+  // gemacht hatte. Deshalb geht die Kette jetzt von der Antwort des
+  // Endpunkts bis zum Urteil des Gates.
+  const SM2 = ["a/1", "b/2", "c/3"];
+  const sofort = async () => {};                       // kein echtes Warten im Test
+  const stumm = await stimmeHolen(async () => ({ ok: true, v: {} }), 3, sofort);
+  expect(stumm.ok === false && stumm.stumm === true,
+    "eine dauerhaft stumme Antwort wird als STUMME Stimme geführt, nicht als Netzfehler.");
+  expect(strictAnyRefutation([A, A2, stumm], SM2).block === true,
+    "und sie blockt weiterhin — genau das ging im ersten Anlauf verloren (fail-open).");
+  expect(!strictAnyRefutation([A, A2, stumm], SM2).reason.includes("refutiert"),
+    "sie darf aber NICHT „refutiert\" heißen — es gibt keinen Befund.");
+  expect(strictAnyRefutation([A, A2, stumm], SM2).reason.includes("c/3"),
+    "die Meldung benennt die stumme Stimme.");
+  expect(strictAnyRefutation([A, A2, RF], SM2).reason.includes("refutiert"),
+    "ein echtes Refutat heißt weiterhin refutiert.");
+
+  // Ein reiner NETZFEHLER ist etwas anderes und blockt hier NICHT — so war es
+  // vor B19 und so bleibt es; requireApprovals deckt ihn ab.
+  const netz = await stimmeHolen(async () => ({ ok: false, status: 500 }), 3, sofort);
+  expect(netz.stumm === undefined, "ein Netzfehler ist keine stumme Stimme.");
+  expect(strictAnyRefutation([A, A2, netz], SM2).block === false,
+    "ein Netzfehler blockt den Strikt-Modus nicht (unverändert gegenüber vorher).");
+
+  // Wiederholt wird wirklich: erst stumm, dann eine Stimme.
+  let n = 0;
+  const spaet = await stimmeHolen(async () => (++n < 3 ? { ok: true, v: {} } : A), 3, sofort);
+  expect(n === 3 && spaet === A, "eine Stimme im dritten Versuch zählt — dafür ist die Wiederholung da.");
+
+  // Ein deterministischer Fehler bricht SOFORT ab (kein Retry-Budget verbrannt).
+  let m = 0;
+  const hart = await stimmeHolen(async () => { m++; return { ok: false, status: 400 }; }, 3, sofort);
+  expect(m === 1 && hart.status === 400, "400 wird nicht wiederholt.");
+  expect(hart.stumm === undefined && strictAnyRefutation([A, A2, hart], SM2).block === false,
+    "ein reines 400 ohne vorherige Stille bleibt ein Zustellfehler und blockt nicht.");
+
+  // ── EINMAL STUMM BLEIBT STUMM (zweiter Panel-Befund an B19) ──────────────
+  //
+  // Das Merkmal lag vorher nur in `last` — und `last` wird zu Beginn jedes
+  // Versuchs überschrieben. Späteres Rauschen löschte damit die Beobachtung,
+  // und die Stimme kam als gewöhnlicher Zustellfehler heraus: unsichtbar für
+  // den Strikt-Modus, also wieder fail-open.
+  const folgen = (...antworten) => {
+    let k = 0;
+    return async () => antworten[Math.min(k++, antworten.length - 1)];
+  };
+  const stummDann500 = await stimmeHolen(
+    folgen({ ok: true, v: {} }, { ok: false, status: 500 }, { ok: false, status: 500 }), 3, sofort);
+  expect(stummDann500.stumm === true,
+    "200 mit unbrauchbarer Nutzlast, dann zweimal 5xx → bleibt STUMM.");
+  expect(strictAnyRefutation([A, A2, stummDann500], SM2).block === true,
+    "und blockt damit weiterhin.");
+
+  const stummDann400 = await stimmeHolen(
+    folgen({ ok: true, v: {} }, { ok: false, status: 400 }), 3, sofort);
+  expect(stummDann400.stumm === true,
+    "auch ein deterministisches 400 NACH einer stummen Antwort endet stumm — der Endpunkt KANN antworten, er sagt nur nichts.");
+  expect(strictAnyRefutation([A, A2, stummDann400], SM2).block === true,
+    "und blockt ebenfalls.");
+
+  // Reines Rauschen ohne je eine Antwort bleibt ein Zustellfehler — so war es
+  // vor B19, und daran ändert sich nichts.
+  const nurNetz = await stimmeHolen(folgen({ ok: false, status: 500 }), 3, sofort);
+  expect(nurNetz.stumm === undefined && strictAnyRefutation([A, A2, nurNetz], SM2).block === false,
+    "dreimal 5xx ohne je eine Antwort ist KEINE stumme Stimme.");
+
+  // Und eine echte Stimme nach einer stummen Antwort zählt selbstverständlich.
+  const dochNoch = await stimmeHolen(folgen({ ok: true, v: {} }, A), 3, sofort);
+  expect(dochNoch === A, "wer im zweiten Versuch antwortet, hat abgestimmt.");
+
   console.log("   ✓ Selbsttest: decide() + modelMatches() + requireApprovals() (Pflicht-Approver Sol + Korroboration) + attestReasons() + attestProof() + validateRangeInputs() + normalizeBase() + authHeader() + strictAnyRefutation() + mdInline() + renderStepSummary() korrekt.");
   process.exit(0);
 }
@@ -830,13 +1016,6 @@ function parseVerdict(content) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // Transient = vorübergehend, ein Retry kann helfen: Netzfehler (kein Status),
-// Rate-Limit/Timeout/Conflict und 5xx. Auch 401 wird als transient behandelt:
-// beobachtet wurde ein flakiges „insufficient permissions" auf EINER von drei
-// identischen, gleichzeitigen Anfragen (Load-Balancer-Knoten) — derselbe Key/Modell
-// lieferte die anderen Stimmen korrekt. Deterministische Client-Fehler
-// (400/403/404) NICHT retryen — das Ergebnis ändert sich nicht.
-const isTransient = (s) => s === 401 || s === 408 || s === 409 || s === 429 || s >= 500;
-
 const H = { "Content-Type": "application/json", ...AUTH };
 
 /** Text aus einem Responses-API-Response-OBJEKT ziehen: output_text (falls
@@ -1013,26 +1192,69 @@ async function chatFallback(i, sys, finish, why, primaryStatus) {
   return { ok: false, status, reason: `Chat-Fallback ${res.status}: ${detail} (Primär: ${why})` };
 }
 
-async function verifyOnce(i) {
-  // Pro Stimme mehrere Versuche bei TRANSIENTEN Fehlern (mit kurzem Backoff), damit
-  // ein flakiger API-Fehler nicht die Zahl gültiger Panel-Stimmen senkt und so das
-  // Schein-Grün-Gate fälschlich fail-closed auslöst. KEIN Aufweichen der Sicherheit:
-  // das Modell führt bei jedem Versuch die volle adversariale Analyse aus; nur die
-  // Zustellung wird robuster. Deterministische Fehler brechen sofort ab.
-  const ATTEMPTS = 3;
+/**
+ * Eine Stimme holen — mit Wiederholung bei allem, was keine Stimme ist.
+ *
+ * Pro Stimme mehrere Versuche bei TRANSIENTEN Fehlern (mit kurzem Backoff), damit
+ * ein flakiger API-Fehler nicht die Zahl gültiger Panel-Stimmen senkt und so das
+ * Schein-Grün-Gate fälschlich fail-closed auslöst. KEIN Aufweichen der Sicherheit:
+ * das Modell führt bei jedem Versuch die volle adversariale Analyse aus; nur die
+ * Zustellung wird robuster. Deterministische Fehler brechen sofort ab.
+ *
+ * `versuch` und `warte` sind Argumente, damit der --selftest die Schleife WIRKLICH
+ * fahren kann. Das ist nicht Kosmetik: Der erste Anlauf der B19-Behebung prüfte
+ * `strictAnyRefutation` an einem von Hand gebauten Zustand — und übersah dabei,
+ * dass diese Schleife genau diesen Zustand gar nicht mehr liefert. Der Test war
+ * grün für etwas, das die Produktion nicht tat.
+ */
+export async function stimmeHolen(versuch, attempts = 3, warte = sleep) {
   let last = { ok: false, reason: "kein Versuch ausgeführt" };
-  for (let a = 1; a <= ATTEMPTS; a++) {
+  /**
+   * Hat dieser Endpunkt in DIESER Runde schon einmal geantwortet und nichts
+   * gesagt?
+   *
+   * ── WARUM DAS GEMERKT WERDEN MUSS (zweiter Panel-Befund an B19) ──────────
+   *
+   * Der vorige Anlauf führte das Merkmal nur in `last` mit — und `last` wird
+   * am Anfang jedes Versuchs überschrieben. Die Folge, am Modell nachgerechnet:
+   *
+   *     200+ungültig → 500 → 500   endete als {ok:false, status:500}
+   *     200+ungültig → 400         kehrte sofort mit dem 400 zurück
+   *
+   * In beiden Fällen ohne `stumm`, also unsichtbar für den Strikt-Modus — mit
+   * zwei gültigen Grün passierte der Rest der Gates. Wieder ein fail-open,
+   * diesmal eine Schicht tiefer als beim ersten Mal.
+   *
+   * Ein Endpunkt, der EINMAL geantwortet und nichts gesagt hat, ist damit
+   * belegt stumm. Späteres Rauschen — Netzfehler, 5xx, auch ein
+   * deterministisches 400 — löscht diese Beobachtung nicht. Unbekannt bleibt
+   * unsicher.
+   */
+  let warStumm = false;
+  for (let a = 1; a <= attempts; a++) {
     try {
-      last = await attemptOnce(i);
-      if (last.ok) return last;
-      if (last.status && !isTransient(last.status)) return last; // deterministisch → kein Retry
+      const jetzt = await versuch(a);
+      const wie = zustellung(jetzt);
+      if (wie === "stimme") return jetzt;
+      // Zugestellt, aber ohne verwertbares Urteil: geantwortet und nichts
+      // gesagt. Das wird gemerkt, nicht nur in `last` abgelegt.
+      if (jetzt.ok) warStumm = true;
+      // Deterministisch gescheitert → kein weiterer Versuch. War der Endpunkt
+      // vorher schon stumm, gilt das trotzdem: Er KANN antworten, er sagt nur
+      // nichts.
+      if (wie === "endgueltig") return warStumm ? stummeStimme() : jetzt;
+      last = jetzt;
     } catch (err) {
       last = { ok: false, reason: err instanceof Error ? err.message : String(err) }; // Netzfehler → transient
     }
-    if (a < ATTEMPTS) await sleep(500 * a); // 0,5 s, dann 1,0 s
+    if (a < attempts) await warte(500 * a); // 0,5 s, dann 1,0 s
   }
-  return last;
+  // Die stumme Stimme blockt (siehe stummeStimme()), und das Protokoll sagt
+  // „ohne verwertbares Urteil" statt „refutiert".
+  return warStumm ? stummeStimme() : last;
 }
+
+const verifyOnce = (i) => stimmeHolen(() => attemptOnce(i));
 
 const votes = await Promise.all(Array.from({ length: PANEL }, (_, i) => verifyOnce(i)));
 votes.forEach((x, i) => {

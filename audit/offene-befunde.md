@@ -775,3 +775,104 @@ aufnehmen statt der ganzen Seite (`clip`), damit die Bezugsfläche zur Größe d
 Sache passt, über die die Aufnahme etwas aussagen soll. Das ist ein eigener
 Umbau der Mechanik in `tests/e2e/referenz.ts` und gehört nicht in eine
 Funktionsänderung.
+
+## B19 — Eine stumme Prüfstimme galt als Ablehnung — ERLEDIGT 08/2026
+
+**Befund.** Das Fremd-Vendor-Panel (`scripts/regime/independent-verify.mjs`)
+wiederholte einen Versuch nur, wenn die ZUSTELLUNG scheiterte: Netzfehler,
+5xx, 429, 401. Antwortete der Endpunkt dagegen mit HTTP 200 und einer
+Nutzlast ohne verwertbares `refuted`, zählte das als abgegebene Stimme — ohne
+jeden weiteren Versuch.
+
+Beobachtet an PR #122, zweimal hintereinander: `combo/SOTA-C` lieferte
+`refuted=undefined confidence=undefined` und „(keine Begründung geliefert)".
+Der Strikt-Modus blockte daraufhin — mit der Meldung
+
+    ⛔ Strikt-Modus: combo/SOTA-C refutiert (confidence=?) → fail-closed
+
+Zwei Dinge daran waren falsch:
+
+1. **Die Behandlung.** Eine leere Nutzlast ist kein Urteil, sondern derselbe
+   Ausfall wie ein abgerissenes Netz, nur eine Schicht höher. Sie gehört in
+   dieselbe Wiederholung. Ohne sie war der einzige Weg zurück, den ganzen Job
+   neu zu starten — was beim zweiten Mal genauso endete.
+
+2. **Die Meldung.** „refutiert" schickt den Leser auf die Suche nach einem
+   Befund, den es nicht gibt. Genau das ist hier passiert: Der Quelltext wurde
+   nach einem Fehler abgesucht, den keine Stimme je behauptet hatte.
+
+**Wurzel behoben.** Die Frage „ist das eine Stimme?" steht jetzt einmal
+(`istStimme`) statt dreimal wortgleich als lokales `isValid`, und
+`zustellung()` entscheidet in EINER reinen Funktion zwischen „stimme",
+„erneut" und „endgueltig". Eine zugestellte Nicht-Antwort ist „erneut".
+
+**Das Gate wird dadurch NICHT weicher.** Sind alle drei Versuche verbraucht,
+blockt die Nicht-Antwort weiterhin — nur eben nach drei Anläufen statt nach
+einem, und mit der Begründung „ohne verwertbares Urteil" statt „refutiert".
+
+### Der erste Anlauf hielt genau diesen Satz NICHT — und das Panel hat es gesehen
+
+Er etikettierte die erschöpfte Nicht-Antwort einfach auf `{ok:false}` um, wie
+einen Netzfehler. `strictAnyRefutation` sieht aber nur Stimmen mit `ok`; die
+stumme dritte Stimme blockte damit nicht mehr. Am Modell nachgerechnet:
+
+    VORHER (200 + leere Nutzlast als Stimme): BLOCK
+    NACHHER (auf ok:false umetikettiert)   : DURCH
+
+Zwei grüne Stimmen plus eine stumme wurden also aus ROT ein GRÜN — das
+Gegenteil der Zusage, die zwei Absätze weiter oben stand. Ein **fail-open**,
+eingeführt von der Behebung eines fail-closed-Ärgernisses.
+
+Zwei Stimmen des Panels haben es unabhängig benannt, und die zweite auch
+gleich, warum mein Test es nicht fand: Er reichte `strictAnyRefutation` ein
+von Hand gebautes `{ok:true, v:{}}` — einen Zustand, den die geänderte
+Schleife gar nicht mehr liefert. **Grün für etwas, das die Produktion nicht
+tat**: dieselbe Fehlerklasse, die dieses Verzeichnis seit Monaten sammelt, nur
+diesmal in der Prüfung der Prüfung.
+
+**Wurzel:** Ein Netzfehler und eine stumme Antwort sind NICHT dasselbe. Der
+eine ist Zustellung, die andere ein Endpunkt, der antwortet und nichts sagt.
+Für die Wiederholung zählt beides gleich, für das Urteil nicht. Die stumme
+Stimme trägt deshalb ein eigenes Merkmal (`stumm`), und der Strikt-Modus
+blockt sie — vor der `decide()`-Prüfung, weil sie dort mangels `ok` nie
+ankäme. Ein reiner Netzfehler blockt weiterhin nicht; so war es vor B19 und so
+bleibt es.
+
+**Und der Test geht jetzt die ganze Kette.** Die Versuchsschleife steht als
+`stimmeHolen(versuch, attempts, warte)` da, damit der `--selftest` sie WIRKLICH
+fährt — von der Antwort des Endpunkts bis zum Urteil des Gates, ohne
+Zwischenzustand von Hand. Gegenprobe zu beiden Hälften gefahren; jede lässt
+genau die Zeile umfallen, die sie hält.
+
+### Und der zweite Anlauf hatte dasselbe Loch eine Schicht tiefer
+
+Das `stumm`-Merkmal lag nur in `last` — und `last` wird zu Beginn jedes
+Versuchs überschrieben. Am Modell nachgerechnet:
+
+    200+ungültig → 500 → 500   endete als {ok:false, status:500}
+    200+ungültig → 400         kehrte sofort mit dem 400 zurück
+
+Beide ohne `stumm`, also unsichtbar für den Strikt-Modus; mit zwei gültigen
+Grün passierte der Rest der Gates. **Wieder ein fail-open**, gefunden von
+derselben Stimme, die schon den ersten gefunden hatte.
+
+**Wurzel:** Ein Endpunkt, der EINMAL geantwortet und nichts gesagt hat, ist
+belegt stumm. Späteres Rauschen — Netzfehler, 5xx, auch ein deterministisches
+400 — löscht diese Beobachtung nicht. Die Schleife merkt sie deshalb getrennt
+(`warStumm`), nicht im überschriebenen Zwischenergebnis.
+
+Reines Rauschen ohne je eine Antwort bleibt dagegen ein Zustellfehler und
+blockt den Strikt-Modus nicht — so war es vor B19, und daran ändert sich
+nichts.
+
+**Zweimal hintereinander dieselbe Richtung.** Beide Male habe ich eine
+Blockade in ein Durchlassen verwandelt, während ich das Gegenteil in den Text
+schrieb. Das ist kein Zufall, sondern die Richtung, in die ein Fehler kippt,
+wenn man ein Ärgernis beseitigen will: Wer eine Sperre als lästig empfindet,
+baut versehentlich an ihr vorbei. Deshalb steht jede Zusage dieses Befundes
+jetzt als ausgeführte Gegenprobe da und nicht als Satz.
+
+**Reichweite, ehrlich.** Das behebt die stumme Stimme, nicht ihre Ursache beim
+Anbieter. Bleibt eine Stimme über alle drei Versuche stumm, ist der PR
+weiterhin rot — das ist beabsichtigt, denn dann hat nachweislich niemand
+geprüft.
