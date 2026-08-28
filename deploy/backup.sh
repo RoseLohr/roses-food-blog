@@ -48,6 +48,32 @@ set -euo pipefail
 # Lauf anlegt — Werkstatt, Archiv, Sicherung —, auch für das, was später
 # dazukommt. Eine Liste von chmod-Zeilen wäre wieder eine Aufzählung von
 # Fällen; hier ist eine Aussage über den ganzen Lauf gemeint.
+#
+# ── UND GENAU EINE AUSNAHME, DIE DIE REGEL NICHT DECKT (Panel-Runde 12) ────
+#
+# Eine umask vererbt sich entlang des PROZESSBAUMS. Die DB-Sicherung schreibt
+# aber nicht dieser Lauf, sondern ein CONTAINER — und der hängt nicht an
+# unserem Baum. Podman setzt ihm seine eigene umask (Vorgabe 0022). Gemessen:
+#
+#     Aufrufer umask 077
+#       Kindprozess (erbt)             ->  600
+#       Container (eigene umask 0022)  ->  644
+#       gzip erhält den Modus          ->  644
+#       mv erhält den Modus            ->  644  in BACKUP_DIR
+#
+# BACKUP_DIR darf 0755 sein — der Ahnen-Wächter unten verbietet Schreib-,
+# nicht Leserechte. Die vollständige Datenbank läge damit für jeden lokalen
+# Benutzer lesbar da, also genau der Zustand, gegen den diese Regel steht.
+#
+# Bitter daran, und darum steht es hier: Der Prüfstand war grün. Die
+# podman-Attrappe ist ein Bash-Kindprozess und ERBT die 077 — sie maß die
+# Vererbung, nicht die Produktion. Dieselbe Fehlerklasse wie B16: eine
+# Kontrolle, die grün ist, ohne das zu prüfen, was sie zu prüfen vorgibt.
+#
+# Behoben wird das nicht mit einer zweiten umask, sondern indem der Modus der
+# Sicherung dort GESETZT statt geerbt wird (siehe `chmod 600 "$ROH"` weiter
+# unten): eine Aussage über die Datei, die wir veröffentlichen, unabhängig
+# davon, wer sie angelegt hat und mit welcher umask.
 umask 077
 
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -300,6 +326,22 @@ if [[ -f "$DATA_DIR/app.db" ]]; then
     # der Test zur Konfigurations-Rangfolge, nicht das Nachdenken.
     if [[ ! -s "$ROH" ]]; then
       warn "Der Sicherungslauf meldete Erfolg, aber $ROH fehlt oder ist leer — verworfen."
+      rm -f "$ROH"
+    # ── DANN: DER MODUS WIRD GESETZT, NICHT GEERBT ─────────────────────────
+    # Diese Datei hat der CONTAINER angelegt, nicht dieser Lauf — die `umask
+    # 077` oben gilt für ihn nicht (gemessen: 644 statt 600; die Begründung
+    # steht im Kopf der Datei). Der Modus wird deshalb hier gesetzt, solange
+    # die Sicherung noch in der 700er-Werkstatt liegt und niemand sie sehen
+    # kann. `gzip` und `mv -fT` reichen ihn danach unverändert weiter, also
+    # gilt er für das, was am Ende in BACKUP_DIR steht.
+    #
+    # Scheitert das, wird die Sicherung verworfen wie eine beschädigte: Eine
+    # Kopie der ganzen Datenbank, deren Rechte wir nicht setzen können, ist
+    # nichts, was dieser Lauf veröffentlichen darf. DB_OK bleibt 0, der Lauf
+    # endet rot, und die Rotation läuft nicht.
+    elif ! chmod 600 "$ROH"; then
+      warn "Modus 600 ließ sich auf $ROH nicht setzen — verworfen, statt sie \
+frei lesbar liegen zu lassen."
       rm -f "$ROH"
     # ── DANN: SIE WIRD GELESEN, NICHT NUR ABGESETZT ────────────────────────
     # Dieselbe Prüfung, die rollback.sh vor dem Einspielen fährt. Wer sie hier

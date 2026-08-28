@@ -1489,3 +1489,68 @@ Lesevorgang teilen. Zwei Läufe über dieselbe Datei sind zwei Beobachtungen,
 und die Kontrolle spricht dann über die erste, während gehandelt wird auf
 Grundlage der zweiten. Das galt in Runde 4 für Inhaltsverzeichnis gegen
 ausgepackten Baum und gilt hier für Vorabprüfung gegen Detailprüfung.
+
+---
+
+## B27 — die umask galt für den Lauf, aber die Sicherung schrieb ein Container
+
+**Gefunden:** Panel-Runde 12 (`combo/SOTA-A`, refutiert).
+**Betrifft:** `deploy/backup.sh`, `tests/backup-lauf.test.ts`.
+
+Runde 10 hatte eine DB-Sicherung, die weltlesbar dalag, mit `umask 077`
+geschlossen — als **Regel** über den ganzen Lauf statt als Liste von
+`chmod`-Zeilen. Die Begründung war gut und die Behebung trotzdem unvollständig:
+Eine umask vererbt sich entlang des **Prozessbaums**, und die DB-Sicherung
+schreibt nicht dieser Lauf, sondern ein **Container**. Der hängt nicht an
+unserem Baum; podman gibt ihm seine eigene umask (Vorgabe 0022). Gemessen:
+
+```
+Aufrufer umask 077
+  Kindprozess (erbt)             ->  600
+  Container (eigene umask 0022)  ->  644
+  gzip erhält den Modus          ->  644
+  mv  erhält den Modus           ->  644   in BACKUP_DIR
+```
+
+`BACKUP_DIR` darf 0755 sein — der Ahnen-Wächter aus Runde 10 verbietet
+Schreib-, nicht Leserechte. Die **vollständige Datenbank** läge damit für jeden
+lokalen Benutzer lesbar da, also genau in dem Zustand, gegen den die Regel
+geschrieben wurde.
+
+### Warum der Prüfstand grün war
+
+Das ist der eigentliche Befund. Die podman-Attrappe ist ein Bash-Kindprozess
+von `backup.sh` und **erbt** dessen `umask 077` — sie legte von sich aus 0600
+an. Der Test verlangte 600, bekam 600 und maß dabei die **Vererbung**, nicht
+die Produktion. Eine Kontrolle, die grün ist, ohne das zu prüfen, was sie zu
+prüfen vorgibt: dieselbe Fehlerklasse wie B16, und damit die dritte Stelle in
+diesem Zweig, an der eine Attrappe für die Sache genommen wurde.
+
+### Wurzel
+
+Nicht eine zweite umask, sondern eine Aussage über **die Datei, die wir
+veröffentlichen**: `chmod 600 "$ROH"`, solange sie noch in der 700er-Werkstatt
+liegt. `gzip` und `mv -fT` reichen den Modus unverändert weiter, also gilt er
+für das, was am Ende in `BACKUP_DIR` steht — unabhängig davon, wer die Datei
+angelegt hat und mit welcher umask. Scheitert das `chmod`, wird die Sicherung
+verworfen wie eine beschädigte: `DB_OK` bleibt 0, der Lauf endet rot, die
+Rotation läuft nicht.
+
+Die Attrappe schreibt seither in einer Subshell mit `umask 0022`, also so wie
+podman. Gegengeprüft: ohne das `chmod` steht dort 644, und der Test fällt um.
+
+### Reichweite, ehrlich
+
+Das Uploads-Archiv legt `tar` in **unserem** Prozessbaum an; dort gilt die
+`umask 077` wirklich, und die Zusage 0600 dafür trägt. `deploy/db-restore.sh`
+setzt den Modus seit B21 ohnehin ausdrücklich. Was ein laufender
+Anwendungscontainer im Regelbetrieb neben `app.db` anlegt (`-wal`, `-shm`),
+entsteht nicht in diesem Skript und wird hier weder behauptet noch geregelt —
+wer das prüfen will, prüft die Anwendung, nicht die Sicherung.
+
+### Was daran allgemein ist
+
+Eine Regel über „diesen Lauf" endet am Prozessbaum. Wo etwas **außerhalb**
+davon schreibt — Container, `sudo`, ein Dienst —, gilt sie nicht mehr, und eine
+Attrappe, die ein Kindprozess ist, verdeckt genau diesen Unterschied. Der Modus
+einer Datei, auf den es ankommt, gehört deshalb gesetzt und nicht geerbt.

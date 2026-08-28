@@ -103,7 +103,14 @@ function podmanAttrappe(platz: Platz, sichern: boolean, pruefen: boolean) {
       '  ziel="$(uebersetze "$(verzeichnis "db.backup" "$@")")"',
       // Kein deckender Mount: podman könnte hier gar nicht schreiben.
       '  [[ -n "$ziel" && -d "$ziel" ]] || exit 0',
-      '  printf \'sqlite-sicherung\' > "$ziel/${!#}"',
+      // WIE EIN CONTAINER SCHREIBEN, NICHT WIE EIN KINDPROZESS (Runde 12):
+      // Diese Attrappe ist ein Bash-Kind von backup.sh und ERBTE damit dessen
+      // `umask 077` — sie legte 0600 an, wo die Produktion 0644 anlegt. Der
+      // Test war grün für die Vererbung, nicht für das, was podman tut: Ein
+      // Container hängt nicht am Prozessbaum des Aufrufers, podman gibt ihm
+      // seine eigene umask (Vorgabe 0022). Die Subshell stellt genau das her,
+      // damit die Modus-Prüfung das SKRIPT misst und nicht die Attrappe.
+      '  ( umask 0022; printf \'sqlite-sicherung\' > "$ziel/${!#}" )',
       "  exit 0",
       "fi",
       "exit 0",
@@ -943,6 +950,16 @@ describe("Panel-Runde 10: was entsteht, geht nur uns an", () => {
     // Das widerspricht dem, was B21 für den Restore festgelegt hat: Dort wird
     // der Modus 0600 der laufenden Datenbank sorgfältig erhalten — und daneben
     // lag eine frei lesbare Kopie derselben Daten.
+    //
+    // WAS DIESER TEST BIS RUNDE 12 IN WAHRHEIT MASS (B27): nicht das Skript,
+    // sondern die Attrappe. Die ist ein Bash-Kind von backup.sh und ERBTE
+    // dessen `umask 077`, legte also von sich aus 0600 an. Ein Container erbt
+    // das nicht — podman gibt ihm seine eigene umask (Vorgabe 0022), und
+    // gzip wie mv reichen den Modus unverändert weiter. Die Zusage galt also
+    // für einen Weg, den die Produktion nie geht. Die Attrappe schreibt
+    // seither in einer Subshell mit `umask 0022`; grün ist dieser Test nur
+    // noch, weil backup.sh den Modus SETZT (`chmod 600 "$ROH"`) statt ihn zu
+    // erben. Gegengeprüft: ohne dieses chmod steht hier 644.
     const platz = spielwiese();
     podmanAttrappe(platz, true, true);
     const stempel = stempelFestlegen(platz, "20260101-000000");
