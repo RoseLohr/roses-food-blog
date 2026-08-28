@@ -689,12 +689,8 @@ Im Zweig von PR #110 (also selbst verursacht, gehört zuerst geprüft):
 
 Außerhalb dieses Zweigs (vorbestehend, hier nur notiert):
 
-8. `deploy/backup.sh:33` — meldet Erfolg, wenn das DB-Backup fehlschlägt, und
-   rotiert die letzten vorhandenen trotzdem weg. Das nächtliche Cron läuft ohne
-   Login-Session, wo rootless `podman run` scheitern kann.
-9. `scripts/regime/restore-drill.sh:38` — der Drill belegt B-31 über einen Weg,
-   den der Betrieb nicht geht: eigene Quelle, Host-node statt `deploy/backup.sh`,
-   `cp` in ein leeres Verzeichnis.
+8. ~~`deploy/backup.sh:33`~~ — ERLEDIGT 08/2026, siehe B16.
+9. ~~`scripts/regime/restore-drill.sh:38`~~ — ERLEDIGT 08/2026, siehe B17.
 
 Sowie zwei Beobachtungen ohne eigene Fundstelle: das Health-Gate des Rollbacks
 verwirft den Antwortrumpf, obwohl `/health` den `commit` liefert (es könnte
@@ -737,6 +733,106 @@ derselben Runde Punkte genannt, die auf diesem Stand nicht mehr zutreffen (der
 Container-Stopp im Rollback ist seit Runde 4 geprüft, die SMTP-Übergabe seit
 Runde 3/4 vorhanden). Nachgesehen und verworfen; der Pflicht-Approver hatte
 recht, die dritte Stimme las einen älteren Stand.
+
+---
+
+## B16 — Ein Backup-Lauf, der Erfolg meldet und nichts gesichert hat — ERLEDIGT 08/2026
+
+**Befund (B14/8, vorbestehend).** `deploy/backup.sh` meldete Erfolg, wenn das
+DB-Backup fehlschlug: ein `echo "WARNUNG…"` und Exit 0. Für Cron war der Lauf
+in Ordnung. Und die Rotation lief danach UNBEDINGT weiter — nach vierzehn
+Fehlläufen in Folge war kein Backup mehr da. Gemerkt hätte es erst, wer eines
+gebraucht hätte. Das nächtliche Cron läuft ohne Login-Session, wo rootless
+`podman run` scheitern kann; der Fall ist also nicht theoretisch.
+
+**Beim Nachlesen kamen drei weitere Fehler im selben Block heraus:**
+
+* Lief `podman` durch und scheiterte erst `gzip`, löschte der Aufräum-Zweig
+  eine GÜLTIGE unkomprimierte Sicherung. Er unterschied nicht, was er wegwarf.
+* Die Sicherung wurde nie GELESEN. Nur der Exit-Status von `db.backup()`
+  zählte. `deploy/rollback.sh` prüft jedes Backup mit `integrity_check`, bevor
+  es sich darauf verlässt — die Stelle, die es ERZEUGT, tat es nicht.
+* Ein `podman`, das 0 meldet und nichts schreibt, ergab einen „erfolgreichen"
+  Lauf ganz ohne Backup. **Diesen dritten Fehler hat erst der Test gefunden,
+  nicht das Nachdenken** — er entstand in der Reparatur selbst und ist damit
+  wieder ein Fall der Klasse „die Behebung war die nächste Lücke" (vgl. B15).
+
+**Wurzel behoben.** Die Regeln, die das Skript jetzt trägt:
+
+1. Ein Lauf ohne gültiges DB-Backup endet mit Exit ≠ 0.
+2. Gelöscht wird nur, was ERSETZT ist: Rotation läuft nur für die Familie, für
+   die dieser Lauf etwas Gültiges erzeugt hat — und die jüngste Datei bleibt
+   IMMER liegen (`app-*.db` und `app-*.db.gz` sind EINE Familie).
+3. Eine Sicherung gilt erst als gut, wenn sie DA ist (`-s`) und der
+   `integrity_check` sie liest.
+4. Ein gescheitertes `gzip` kostet die geprüfte Sicherung nicht.
+
+Mitgenommen, weil es dieselbe Klasse ist: Die Konfigurations-Rangfolge ist jetzt
+die von `rollback.sh` (Aufrufer > `.env` > Standard). Vorher überschrieb ein
+blindes `set -a; source` die Angabe des Aufrufers — wer `DATA_DIR=… backup.sh`
+rief, sicherte stillschweigend etwas anderes.
+
+**Belegt in `tests/backup-lauf.test.ts` (11 Fälle), am AUSGEFÜHRTEN Skript**
+gegen ein aufzeichnendes podman/gzip/tar. Gegenprobe gegen den vorigen Stand:
+zehn der elf fallen um. Der elfte prüft, dass überhaupt rotiert wird, und muss
+auf beiden Ständen grün sein; die neue Zusage „die jüngste Datei überlebt jedes
+Alter" ist über einen normalen Lauf nicht erreichbar (wer rotiert, hat gerade
+eine frische Datei erzeugt) und wird deshalb an der aus dem Skript
+GESCHNITTENEN Funktion `rotieren()` einzeln geprüft — entfernt man die
+Schutzregel, fällt genau dieser Fall.
+
+---
+
+## B17 — Der Restore-Drill übte einen Weg, den die Produktion nie geht — ERLEDIGT 08/2026
+
+**Befund (B14/9, vorbestehend).** `scripts/regime/restore-drill.sh` stellte mit
+`cp` in ein LEERES Verzeichnis wieder her. Die Produktion stellt über eine
+LEBENDE Datenbank wieder her, neben der ein gefülltes `-wal` liegt — der
+Container ist gerade hart weggenommen worden. Genau dieser Weg war
+katastrophal kaputt (B3: SQLite spielte das alte WAL über das eingespielte
+Backup, der Restore war ein stiller No-op und meldete Erfolg), und der Drill
+blieb Monat für Monat grün, weil er ihn nie ging.
+
+**Nachgemessen, statt angenommen.** Ein naives `cp` über `app.db` mit
+liegengebliebenem WAL: die nach dem Backup geschriebenen Daten ÜBERLEBEN den
+Restore. Mit der Dreierfolge (Nebendatei → WAL/SHM weg → `mv`): die Datenbank
+trägt exakt den Inhalt des Backups.
+
+**Wurzel behoben.** Nicht „der Drill baut den Ablauf richtiger nach" — der
+Ablauf steht jetzt genau EINMAL, in `deploy/db-restore.sh`, und wird von
+`deploy/rollback.sh` UND vom Drill GEQUELLT. Auseinanderlaufen ist damit keine
+Frage der Disziplin mehr, sondern unmöglich. Der Drill:
+
+* stellt über eine lebende Datenbank mit nachgewiesen gefülltem WAL wieder her
+  (der Schreiber beendet sich mit SIGKILL, weil ein `close()` einen Checkpoint
+  führe und genau die Bedingung beseitigte, um die es geht),
+* fährt `db_einspielen` — denselben Aufruf wie der Ernstfall,
+* führt eine NEGATIVKONTROLLE mit: derselbe Aufbau, naiv mit `cp`. Sie MUSS den
+  Fehler zeigen; tut sie es nicht, kann der Drill die beiden Wege nicht
+  unterscheiden, und er bricht ab statt grün zu melden,
+* benennt im Beleg, was er NICHT abdeckt (podman, Container-Stopp,
+  Image-Rollback, Uploads-Archiv).
+
+**Und das Gate hält es fest.** `scripts/regime/rollback-check.mjs` prüft jetzt
+zusätzlich `deploy/db-restore.sh` (drei Schritte in Reihenfolge, kein direktes
+`cp` auf `app.db`, Fehlschläge münden in `fail`) und den Drill (quellt die
+Produktionsfunktion, fährt sie, lebende DB, Negativkontrolle wird AUSGEWERTET).
+Gegenprobe an den echten Dateien: Restore naiv gemacht → 2 Verstöße; `source`
+im Drill entfernt → Verstoß; Negativkontrolle entfernt → Verstoß; `rollback.sh`
+legt sich wieder ein eigenes `cp` hin → Verstoß.
+
+**Belegt zusätzlich in `tests/rollback-wal.test.ts`:** Die Prüfung des
+Einspielens führt jetzt die ECHTE Funktion aus, statt sie in TypeScript
+nachzubauen — ein Nachbau ließe genau die Lücke, um die es hier geht.
+
+**Beim Schreiben selbst hineingelaufen.** Der erste Aufbau kopierte nur
+`app.db` in das Übungsverzeichnis. Der Seed hinterlässt aber ein 2 MB großes
+`-wal`; die Daten standen also gar nicht in `app.db`, und der Drill arbeitete
+ab da mit einer leeren Tabelle. Aufgefallen ist das ausschließlich, weil die
+Negativkontrolle nicht anschlug — also an der Kontrolle, die eigens dafür da
+ist. Ohne sie wäre ein grüner, wirkungsloser Drill entstanden: dieselbe Klasse
+Fehler, die er beheben sollte.
+
 
 
 ## B18 — Die Referenzaufnahme sieht kleine Änderungen auf großen Seiten nicht — GEMESSEN 08/2026, offen
@@ -876,3 +972,585 @@ jetzt als ausgeführte Gegenprobe da und nicht als Satz.
 Anbieter. Bleibt eine Stimme über alle drei Versuche stumm, ist der PR
 weiterhin rot — das ist beabsichtigt, denn dann hat nachweislich niemand
 geprüft.
+## B20 — Backup und Restore waren uneins, und der Alias-Wächter sah nur die Hälfte — GEMESSEN 08/2026, behoben
+
+Vier Befunde aus der sechsten Panel-Runde zu `deploy/backup.sh`,
+`deploy/restore.sh` und `deploy/health-gate.sh`. Alle vier sind dieselbe Klasse
+wie **B16**: eine Kontrolle, die grün ist, ohne das zu prüfen, was sie zu
+prüfen vorgibt.
+
+### 1. Gesichert wurde, was sich nie einspielen ließ — und die Rotation hing daran
+
+Der Typ-Vertrag für Medien-Archive („nur Verzeichnisse und reguläre Dateien")
+stand **nur** in `restore.sh`. `backup.sh` packte ein, was ihm vorlag.
+Gemessen mit einem Symlink in `uploads/`:
+
+```
+tar -czf … uploads      Exit 0   ->  UPLOADS_OK=1, Lauf gilt als ERFOLG
+Typgate im Restore      ABBRUCH  ->  dieses Archiv wird NIE eingespielt
+```
+
+Weil die Rotation an genau diesem grünen Lauf hängt, löschte sie danach die
+letzten Archive weg, die sich noch einspielen ließen. Ein Medienverzeichnis, in
+das je ein Link gerät, hätte damit **still jede Wiederherstellbarkeit
+verloren** — bemerkt hätte es, wer eines gebraucht hätte.
+
+**Wurzel:** Der Vertrag steht jetzt einmal in `deploy/archiv-typen.sh` und wird
+von beiden Skripten gequellt, wie `health-gate.sh` seit 08/2026. Das Backup
+prüft das ERZEUGTE Archiv dagegen — dieselbe Stelle, an der die Datenbank seit
+B16 ihren `integrity_check` bekommt. Scheitert es, bleibt `UPLOADS_OK=0`, der
+Lauf endet rot, und die Rotation läuft nicht.
+
+### 2. `kein_link` übersah Hardlinks — die Live-Datenbank war danach ein gzip-Archiv
+
+Der Wächter fragte allein `[[ ! -L ]]`. Ein Hardlink teilt sich den Inode mit
+seinem Ziel und ist für `-L` unsichtbar. Gemessen am nackten Werkzeug:
+
+```
+ln  daten/app.db  backups/uploads-STAMP.tar.gz
+tar -czf backups/uploads-STAMP.tar.gz -C daten uploads   -> Exit 0
+file daten/app.db   ->  "gzip compressed data"
+```
+
+`tar -czf` öffnet mit `O_TRUNC` und schreibt in den **Inode**, nicht in den
+Namen. Die laufende Datenbank war weg, und der Lauf meldete Erfolg.
+
+**Wurzel:** Die richtige Frage ist nicht „ist das ein Link?", sondern „steht
+hier überhaupt etwas?". Die Zielpfade tragen einen Zeitstempel; dort steht nie
+etwas, das dieses Skript angelegt hat. `platz_frei` verlangt jetzt
+`! -e && ! -L`. **Nicht** für `BACKUP_DIR` selbst — das Verzeichnis darf
+existieren und wird gleich darauf mit `mkdir -p` angelegt; dort bleibt die
+Frage nach dem Link die richtige.
+
+### 3. „Bewusst kein `-L`" war ein Satz, keine Zusage
+
+`curl` liest ohne `-q` seine Konfiguration aus `$CURL_HOME/.curlrc` bzw.
+`$HOME/.curlrc` und nimmt von dort **jede** Option an — gemessen: eine kaputte
+Zeile darin quittiert curl mit „warning:", die Datei wird also wirklich
+gelesen. Ein `-L` oder `--connect-to` darin dreht das Health-Gate um: Es folgte
+einer Umleitung oder fragte einen ganz anderen Rechner, und beides gälte als
+Antwort DIESER Anwendung. Dafür braucht es keinen Angreifer — die
+Bequemlichkeitszeile eines Betreibers genügt.
+
+Bitter daran: `scripts/regime/rollback-check.mjs` prüft den Quelltext auf die
+Abwesenheit von `-L`. Diese Kontrolle war grün, während die Umgebung das `-L`
+jederzeit wieder hineinreichen konnte.
+
+**Wurzel:** `curl -q` als erste Option, und eine Invariante, die das festhält.
+
+### 4. Ausgepackt wurde unbegrenzt, auf das Dateisystem der laufenden Datenbank
+
+Die Nebenablage liegt unter `$DATA_DIR` — also dort, wo SQLite schreibt, und
+das Auspacken läuft **vor** dem Stopp des Dienstes. Ein Archiv, dessen Inhalt
+größer ist als der freie Platz, lässt die Anwendung in ENOSPC laufen, während
+sie noch bedient.
+
+**Wurzel, mit ehrlich benannter Reichweite:** Geprüft wird, was das Archiv
+ANKÜNDIGT (Spalte 3 von `tar -tvzf`) gegen den freien Platz mit einem Viertel
+Luft. Ein Kopf kann lügen; tut er das, greift die Grenze nicht — dann scheitert
+`tar` am vollen Dateisystem, `ARCHIV_ABBRUCH` räumt die Nebenablage weg und
+gibt den Platz zurück, und eingespielt ist nichts. Diese Prüfung nimmt also dem
+EHRLICH angekündigten Fall den Schaden; den unehrlichen fängt erst das
+Aufräumen.
+
+### Nicht übernommen
+
+Der fünfte Punkt derselben Runde: `-L` auf `BACKUP_DIR/` dereferenziere wegen
+des Schluss-Schrägstrichs den Link. Im Quelltext steht `[[ ! -L "$BACKUP_DIR" ]]`
+**ohne** Schrägstrich (Zeile 62). Dass `link/` dereferenzieren *würde*, stimmt —
+gemessen —, nur steht diese Form dort nicht.
+
+### Und noch einmal derselbe Fehler, diesmal in der Kontrolle selbst
+
+Die neuen Invarianten für den Typ-Vertrag standen zuerst **nur** im
+`--selftest` von `rollback-check.mjs`. Entschärfte man `backup.sh` oder
+`restore.sh`, blieb der normale Lauf grün — eine Kontrolle, die nichts
+kontrolliert, mitten in der Behebung von vier Befunden über genau das.
+Gefunden hat es die Gegenprobe, nicht das Nachdenken. Sie wird jetzt in beiden
+Läufen ausgewertet.
+
+## B21 — Der Wert, das Wettrennen und der Dateimodus — GEMESSEN 08/2026, behoben
+
+Drei Befunde aus der siebten Panel-Runde. Der erste ist eine Korrektur an mir
+selbst.
+
+### 1. Ein Schluss-Schrägstrich im WERT hebelte den Link-Wächter aus
+
+`[[ -L "$BACKUP_DIR" ]]` prüft den Pfad, wie er dasteht. Ein Schrägstrich am
+Ende zwingt das Betriebssystem, ihn als Verzeichnis aufzulösen — der Test sieht
+dann das ZIEL und nicht den Link. Gemessen:
+
+```
+BACKUP_DIR=…/verweis    ->  [[ -L ]] wahr    (Wächter greift)
+BACKUP_DIR=…/verweis/   ->  [[ -L ]] falsch  (Wächter LÄSST DURCH)
+```
+
+Der Wert kommt von außen: aus der Umgebung des Aufrufers oder aus `.env`. Ein
+Pfad mit Schrägstrich am Ende ist dort nichts Ungewöhnliches.
+
+**Das hatte ich in B20 schon einmal auf dem Tisch und abgewiesen.** Der
+damalige Hinweis lautete, `-L` auf `BACKUP_DIR/` dereferenziere den Link. Ich
+habe im Quelltext nachgesehen, dort keinen Schrägstrich gefunden und den Punkt
+für erledigt erklärt. Die Feststellung war richtig und die Schlussfolgerung
+falsch: Zu prüfen ist der **Wert**, nicht die Schreibweise an der Prüfstelle.
+Der Schrägstrich muss nicht im Code stehen — er kommt mit der Konfiguration.
+
+**Wurzel:** Der Wert wird normalisiert, bevor der Wächter ihn sieht.
+
+### 2. Das Wettrennen zwischen Prüfung und Schreiben — jetzt geschlossen statt benannt
+
+`platz_frei` fängt den VORHER gelegten Alias ab. Zwischen dieser Prüfung und
+dem Augenblick, in dem `tar` bzw. die Backup-API die Datei öffnet, kann jemand
+einen Link an den Zielnamen legen; die Zielnamen tragen einen Zeitstempel und
+sind damit vorhersagbar. Bisher stand genau das nur als ehrlicher Satz im
+Kommentar — als Reichweite, die wir nicht erreichen.
+
+**Wurzel:** Gearbeitet wird jetzt in einem frisch angelegten Verzeichnis mit
+unvorhersagbarem Namen (`mktemp -d`, 0700). Dort hinein kann niemand vorab
+etwas legen. Fertig wird die Datei mit `mv` an ihren Platz gebracht — und `mv`
+benennt um, es schreibt nicht durch einen Link hindurch. Gemessen:
+
+```
+ln -s opfer ziel;  mv -f quelle ziel
+-> "opfer" unverändert, "ziel" ist danach eine echte Datei.
+```
+
+Damit gibt es kein Fenster mehr: Während des Schreibens ist der Name geheim,
+und beim Veröffentlichen wird nicht geschrieben, sondern umbenannt.
+
+### 3. Der Restore öffnete die Datenbank jedes Mal ein Stück weiter
+
+`cp` legt die neue Datei mit dem Modus der QUELLE an. Eine Sicherung liegt
+regelmäßig als 0644 da (sie entsteht im Container unter dessen umask), die
+laufende Datenbank ist 0600. Gemessen:
+
+```
+vorher   app.db 600, backup 644
+nachher  app.db 644
+```
+
+Still, und ausgerechnet im Ernstfall.
+
+**Wurzel:** Der Modus des laufenden Standes wird vor dem Ersetzen abgelesen und
+auf die neue Datei gesetzt — **vor** dem `mv`, sonst stünde die Datenbank
+zwischen Umbenennen und `chmod` offen da. Gibt es noch keine Datenbank, gilt
+0600.
+
+### Nicht übernommen
+
+Der `h`-Zweig in `archiv_typen_ok` (`deploy/archiv-typen.sh`) sei wirkungslos,
+weil `tar -tvzf` Hardlinks als `-` melde. (Der Befund nannte dafür Zeile 64 —
+die Datei hat 63.) Gemessen mit GNU tar 1.35:
+
+```
+[h]  hrw-r--r-- root/root   0 … uploads/kopie.jpg link to uploads/echt.jpg
+```
+
+Der Typ steht als `h` in der ersten Spalte, der Zweig greift.
+
+### Und wieder ein grüner Test, der nichts prüfte
+
+Der Test für das Wettrennen hängte den Angriff an die podman-Attrappe **an** —
+hinter deren `exit 0`. Die Zeile lief nie, der Test war grün, und erst die
+Gegenprobe (`mv` durch `cp` ersetzen, das einem Link folgt) hat es gezeigt: Sie
+blieb ebenfalls grün. Der Angriff steht jetzt VOR der ersten Verzweigung.
+Das ist innerhalb dieses Zweiges der dritte Fall dieser Art.
+
+## B22 — Die Referenzaufnahme wird sporadisch rot und reißt den ganzen E2E-Lauf mit — GEMESSEN 08/2026, OFFEN
+
+**Beobachtet** am 27.08. auf `claude/betriebsbefunde-backup-drill`:
+`Referenz: reise-detail @ desktop-1280` scheiterte mit
+
+```
+Failed to take two consecutive stable screenshots.
+3052147 pixels (ratio 0.25 of all image pixels) are different.
+```
+
+**Was gemessen ist:**
+
+* Die zuletzt aufgenommene Datei war **byte-identisch** mit dem Basisbild
+  (gleiche MD5). Die Seite rendert also richtig; die Behauptung „sieht aus wie
+  die Basis" stimmt.
+* Gescheitert ist allein die Forderung nach **zwei aufeinanderfolgenden
+  stabilen** Aufnahmen: Der erste Schuss wich um 25 % ab, der zweite passte.
+  Innerhalb der zehn Sekunden (`expect: { timeout: 10_000 }`) kam Playwright
+  nicht zur Ruhe.
+* Zweimal reproduziert, danach fünfmal grün — **auch auf dem Commit davor**.
+  Es hängt nicht an einer Codeänderung, sondern am Lauf: Der Fehlschlag trat
+  im vollen Lauf (parallele Arbeiter) auf, die grünen Läufe waren einzeln.
+
+**Warum das nicht bloß lästig ist:** Das `referenz`-Projekt ist eine
+Abhängigkeit von `alles-weitere` (`playwright.config.ts`). Fällt eine einzige
+Aufnahme, läuft der Rest gar nicht erst — aus 329 Tests wurden 116. Und
+`test:e2e` ist seit B9 Teil des CI-Gates. Ein sporadisch rotes Bild blockiert
+damit jeden PR, unabhängig von seinem Inhalt.
+
+**Was NICHT die Lösung ist:** die Zeitschranke hochsetzen oder
+`maxDiffPixelRatio` anheben. Das erste verschiebt das Problem, das zweite
+zerstört die Kontrolle — und beides ist in `CLAUDE.md` ausdrücklich untersagt.
+
+**Was ich NICHT herausgefunden habe, und das ist der offene Teil:** was im
+ersten Schuss fehlte. Eine naheliegende Vermutung — Bilder sind bei `complete`
+zwar geladen, aber noch nicht dekodiert, und `tests/e2e/bilder-fertig.ts`
+wartet nur auf `complete` — habe ich nachgemessen und **widerlegt**: Auf der
+geprüften Seite liegen zwei Bilder, `decode()` kehrt nach 0 ms zurück. Die
+Artefakte des Fehllaufs (`*-previous.png`, `*-diff.png`) hatten die späteren
+grünen Läufe bereits aufgeräumt, bevor ich die abweichenden Zeilen bestimmen
+konnte.
+
+**Nächster Schritt, wenn es wieder auftritt:** Die Artefakte SOFORT sichern und
+bestimmen, welche Zeilenbereiche abweichen — daran hängt, was noch nicht
+gemalt war. Erst dann lässt sich die Wurzel benennen. Eine Behebung auf eine
+unbelegte Vermutung zu bauen, wäre genau die Kontrolle, die grün ist und nichts
+prüft, gegen die B16, B20 und B21 geschrieben sind.
+
+## B23 — Drei Lücken in den Behebungen von B21 — GEMESSEN 08/2026, behoben
+
+Die achte Panel-Runde traf **ausschließlich** das, was ich eine Runde davor
+repariert hatte. Alle drei haben dieselbe Form: Ich hatte **einen Fall
+gemessen und die Klasse für erledigt erklärt**.
+
+### 1. Die Normalisierung sah nur den Schrägstrich
+
+`verweis/.` trägt keinen Schluss-Schrägstrich und dereferenziert trotzdem:
+
+```
+'verweis'    -> normalisiert 'verweis'    -> Wächter greift
+'verweis/'   -> normalisiert 'verweis'    -> Wächter greift
+'verweis/.'  -> normalisiert 'verweis/.'  -> Wächter LÄSST DURCH
+```
+
+**Wurzel, und diesmal keine Fallunterscheidung mehr:** eine Regel über die
+FORM des Wertes. Ein Sicherungsverzeichnis wird als schlichter Pfad angegeben;
+trägt der Wert ein `.`- oder `..`-Glied, wird er **abgewiesen** statt
+zurechtgebogen. Ein zurechtgebogener Wert wäre wieder eine Vermutung darüber,
+was der Betreiber gemeint hat.
+
+### 2. `mv` folgt einem Link auf ein VERZEICHNIS sehr wohl
+
+In B21 hatte ich gemessen: `mv -f` über einen Symlink lässt das Opfer
+unberührt. Das stimmt — für einen Link auf eine **Datei**. Zeigt er auf ein
+**Verzeichnis**, verschiebt `mv` die Datei hinein:
+
+```
+ln -s fremdes-verzeichnis ziel
+mv -f  quelle ziel   -> ziel bleibt Link, quelle liegt IM Fremdziel
+mv -fT quelle ziel   -> Link ersetzt
+```
+
+Die Sicherung wäre in einem fremden Verzeichnis gelandet, der Lauf grün
+geblieben.
+
+**Wurzel:** `mv -fT` an allen drei Stellen. `-T` sagt: Das Ziel ist ein NAME,
+kein Verzeichnis.
+
+### 3. `TAR_OPTIONS` — dieselbe Frage, die ich für `curl` gestellt hatte
+
+GNU tar liest `TAR_OPTIONS` aus der Umgebung und nimmt von dort jede Option
+an. Gemessen:
+
+```
+ln -s /pfad/geheim.txt uploads/harmlos.jpg
+TAR_OPTIONS=--dereference tar -czf …
+-> Mitglied trägt Typ '-', der Typ-Vertrag ist zufrieden,
+   und `tar -xzO` liefert GEHEIM.
+```
+
+Der Symlink wird also als **reguläre Datei mit fremdem Inhalt** archiviert; die
+Zusage „kein Link-Mitglied" bliebe wahr und wäre trotzdem wertlos, und der
+Restore veröffentlichte den Inhalt unter `uploads/`.
+
+Das ist **genau die Klasse, die ich in B20 für `curl`/`.curlrc` behoben habe**
+— dort mit `-q`. Dieselbe Frage für `tar` habe ich damals nicht gestellt.
+
+**Wurzel:** `unset TAR_OPTIONS` in `backup.sh` und `restore.sh`, dazu ein
+lokales `TAR_OPTIONS=` in `archiv_typen_ok`, damit der Vertrag auch dann hält,
+wenn ihn jemand anders quellt.
+
+### Was ich daraus mitnehme
+
+Drei Runden in Folge lautete der Befund nicht „hier fehlt eine Kontrolle",
+sondern „die Kontrolle, die du gerade eingebaut hast, deckt ihre eigene Klasse
+nicht ab". Eine Messung an einem Beispiel belegt das Beispiel, nicht die Regel.
+Wo eine Regel gemeint ist, gehört sie als Regel formuliert — deshalb steht bei
+Punkt 1 jetzt eine Aussage über die Form des Wertes und keine Liste von
+Schreibweisen.
+
+## B24 — Der Name lügt, der Inode nicht — GEMESSEN 08/2026, behoben
+
+Die neunte Panel-Runde. Der erste Punkt ist ein Befund, den ich **zweimal
+abgewiesen habe und der beide Male richtig war**.
+
+### 1. Ein Hardlink verschwindet im Archiv, wenn sein zweiter Name draußen liegt
+
+Die Behauptung lautete seit Runde 6: Der `h`-Zweig im Typ-Vertrag sei
+wirkungslos, weil `tar -tvzf` Hardlinks als `-` melde. Ich habe sie zweimal
+zurückgewiesen, mit dieser Messung:
+
+```
+[h]  hrw-r--r-- … uploads/kopie.jpg link to uploads/echt.jpg
+```
+
+Die stimmt — und widerlegt nichts. In ihr liegen **beide** Namen des Inodes im
+Archiv; dann hat tar einen früheren Eintrag, auf den es verweisen kann. Liegt
+der zweite Name **außerhalb**, gibt es nichts zu verlinken:
+
+```
+ln $DATA_DIR/app.db $DATA_DIR/uploads/leak.webp
+tar -czf … -C $DATA_DIR uploads
+-> [-] -rw-r--r-- 17 uploads/leak.webp
+   Inhalt: GEHEIME-DATENBANK
+```
+
+Der Typ-Vertrag ist zufrieden (Typ `-`), und der Restore veröffentlicht die
+**Datenbank** unter `uploads/`.
+
+**Wurzel:** Gefragt wird nicht mehr, wie etwas heißt oder wie tar es
+serialisiert, sondern ob die Datei **mehr als einen Namen hat**
+(`find … -type f -links +1`). Ein Name kann lügen, ein Inode nicht. Ein
+Medienverzeichnis, das die Anwendung füllt, enthält keine Hardlinks.
+
+### 2. `-L` sieht nur die letzte Komponente
+
+`verweis/sub` ist selbst kein Link und löst trotzdem durch `verweis` hindurch
+auf. Gemessen: `[[ -L "verweis/sub" ]]` → falsch.
+
+**Wurzel:** keine weitere Komponente mehr, sondern eine Aussage über den
+**ganzen** Pfad — er muss seiner kanonischen Form (`readlink -m`) entsprechen.
+Das deckt zugleich die Fälle aus B21 (Schluss-Schrägstrich) und B23 (`/.`) ab,
+die vorher als eigene Regeln danebenstanden.
+
+### 3. Die Vorbedingung, die alle Wächter still annahmen
+
+Werkstatt, `platz_frei` und `mv -fT` verhindern, dass *dieses Skript* durch
+einen Alias schreibt. Gegen jemanden, der **in** `BACKUP_DIR` schreiben darf,
+halten sie nicht: Der kann die Werkstatt wegbenennen und einen Link an ihre
+Stelle setzen, während der Lauf läuft.
+
+Das ist keine Lücke, die sich im Skript schließen lässt — es ist eine
+Eigenschaft der Rechte. **Wurzel:** Sie wird nicht mehr angenommen, sondern
+verlangt. Ist `BACKUP_DIR` für Gruppe oder andere beschreibbar, bricht der Lauf
+ab. Damit fällt die ganze Klasse weg, statt Fall für Fall abgefangen zu werden.
+
+### Nicht übernommen
+
+Die Neutralisierung von `TAR_OPTIONS` in `archiv_typen_ok` sei wirkungslos,
+weil eine lokale Shell-Variable die Umgebung des Kindprozesses nicht ändere.
+Gemessen:
+
+```
+TAR_OPTIONS=--dereference bash -c 'zeig(){ local TAR_OPTIONS=; env | grep -c …; }; zeig'
+-> 0     (neutralisiert)
+ohne local, zum Vergleich
+-> 1
+```
+
+Bash behält beim Überdecken einer exportierten Variablen das Export-Merkmal
+und reicht den **neuen** (leeren) Wert weiter. Die Behebung greift.
+
+### Das Muster, jetzt zum vierten Mal
+
+Runde 7, 8 und 9 trafen jeweils genau das, was in der Runde davor gebaut wurde.
+Immer derselbe Grund: **eine Messung an einem Beispiel belegt das Beispiel,
+nicht die Regel.** Bei Punkt 1 kommt erschwerend dazu, dass ich mit so einer
+Messung einen *richtigen* Befund zweimal abgewiesen habe — eine Widerlegung
+muss den Fall treffen, den der andere meint, nicht den bequemsten Nachbarfall.
+
+Deshalb steht in dieser Runde bei jedem Punkt eine Aussage über die Sache
+selbst statt über ihre Erscheinungsform: der Inode statt des Namens, der ganze
+Pfad statt der letzten Komponente, die Rechte statt des Wettrennens.
+
+## B25 — Zahlen, die nicht die Sache messen — GEMESSEN 08/2026, behoben
+
+Vier Punkte aus der zehnten Panel-Runde. Drei davon sind Zahlen oder Modi, die
+eine bequeme Nachbargröße statt der Sache selbst erfassen.
+
+### 1. Die veröffentlichte Sicherung war weltlesbar
+
+Eine DB-Sicherung IST die vollständige Datenbank. Sie entstand unter der umask
+des Aufrufers:
+
+```
+umask 0022  ->  app-STAMP.db.gz = 644
+```
+
+Das widerspricht direkt dem, was B21 für den Restore festgelegt hat: Dort wird
+der Modus `0600` der laufenden Datenbank sorgfältig erhalten — und daneben lag
+eine frei lesbare Kopie derselben Daten.
+
+**Wurzel:** `umask 077` als Regel für den ganzen Lauf, nicht `chmod` je Datei.
+Eine Liste von `chmod`-Zeilen wäre wieder eine Aufzählung von Fällen; gemeint
+ist eine Aussage über alles, was dieser Lauf anlegt — auch über das, was später
+dazukommt.
+
+### 2. Geprüft wurde nur das Blatt, nicht der Weg dorthin
+
+Wer in einem **Eltern**verzeichnis schreiben darf, benennt `BACKUP_DIR` um und
+stellt ein eigenes an seine Stelle. Der Modus des Blattes sagt darüber nichts.
+Geprüft wird jetzt der ganze Pfad bis zur Wurzel.
+
+**Mit einer Unterscheidung, die zur Sache gehört:** Das **Sticky-Bit**.
+`/tmp` ist `1777` — jeder darf dort anlegen, aber niemand fremde Einträge
+umbenennen oder löschen, und genau das ist der Angriff. Ohne diese
+Unterscheidung wäre die Regel schlicht falsch und wiese jede Anlage unterhalb
+von `/tmp` ab. Eine Kontrolle, die den Regelfall verbietet, wird abgeschaltet
+und schützt dann gar nichts.
+
+### 3. Das Inhaltsverzeichnis lag komplett im Speicher
+
+`zeilen="$(tar -tvzf …)"` puffert die ganze Liste. Ein winziges Archiv aus
+Millionen Kopfsätzen ergibt hunderte Megabyte — der Prüfer stirbt am Speicher,
+bevor er ein Urteil fällt. Eine Kontrolle, die am zu prüfenden Gegenstand
+zugrunde geht, ist keine.
+
+**Wurzel:** gelesen wird im Strom, über eine Prozess-Ersetzung (eine Pipe legte
+die Schleife in eine Unterschale, aus der `return 1` nie ankäme).
+
+**Und der heikle Teil, den erst die Gegenprobe zeigte:** Scheitert `tar` in der
+Prozess-Ersetzung, liefert es KEINE Zeilen. Die Schleife liefe nie, und die
+Funktion antwortete „Typen in Ordnung" — über ein Archiv, das sich gar nicht
+öffnen lässt. Die Lesbarkeit wird deshalb eigens festgestellt.
+
+### 4. Das Platz-Gate zählte Nutzbytes statt Blöcke
+
+Eine Datei belegt immer einen ganzen Block und immer einen Inode. Gemessen:
+
+```
+3000 Dateien à 1 Byte
+angekündigt:      3 000 Byte
+belegt:      12 365 824 Byte   (Faktor 4121)
+Archivgröße:     38 385 Byte
+```
+
+Das Gate lag um drei Größenordnungen daneben. **Wurzel:** aufgerundet wird je
+Mitglied auf die Blockgröße des Ziel-Dateisystems, und die Anzahl der Mitglieder
+wird gegen die freien **Inodes** gehalten.
+
+### Und wieder zwei Kontrollen, die nichts kontrollierten — beide meine
+
+Die Gegenprobe zur Blockrechnung ließ die Testsuite **grün**: Es gab keinen
+Test, den das Entfernen der Rechnung umgeworfen hätte. Ebenso beim Typ-Vertrag:
+Entfernte man die Lesbarkeitsprüfung, blieb alles grün, weil der Vertrag bisher
+nur MITTELBAR geprüft war — über die beiden Skripte, die ihn umgeben und ihre
+eigenen Vorprüfungen mitbringen.
+
+Dass die Aufrufer das heute abfangen, macht den Vertrag nicht richtig: Ein
+gemeinsamer Baustein, der nur zusammen mit seinen jetzigen Aufrufern hält, ist
+genau die Abhängigkeit, wegen der er herausgezogen wurde. Deshalb jetzt
+`tests/archiv-typen.test.ts` — der Vertrag für sich allein gefahren.
+
+## B26 — Zwei Lesevorgänge, ein verworfener Status — GEMESSEN 08/2026, behoben
+
+Die elfte Panel-Runde, ein Befund, und er trifft genau die Behebung aus B25.
+
+Um das Puffern des Inhaltsverzeichnisses loszuwerden, hatte ich dort ZWEIMAL
+gelesen: erst `tar -tzf` nach `/dev/null` als Lesbarkeitsprüfung, dann
+`tar -tvzf` in einer Prozess-Ersetzung für die Typen. **Der Exit-Status des
+zweiten Laufs ging dabei verloren.** Scheitert er, liefert er keine Zeilen, die
+Schleife läuft nie — und die Funktion antwortet „Typen in Ordnung".
+
+Gemessen, mit einem Archiv, das einen Symlink **enthält**, und einer
+tar-Attrappe, die nur den ausführlichen Lauf scheitern lässt:
+
+```
+tar -tzf  gelingt  /  tar -tvzf scheitert
+-> archiv_typen_ok: „Typen in Ordnung"     (fail-open)
+```
+
+Das ist **dieselbe Lehre wie aus Runde 4** — die Liste ist nicht der Baum —,
+nur diesmal auf meine eigenen zwei Lesevorgänge angewandt: Was der erste Lauf
+festgestellt hat, muss für den zweiten nicht mehr gelten. Zwischen beiden liegt
+die Datei offen.
+
+### Wurzel
+
+**Ein** Lesevorgang, und das Urteil kommt über dessen Exit-Status zurück statt
+über eine Variable, die eine früh abgebrochene Schleife nie gesetzt hat.
+`awk` fällt die Entscheidung im selben Lauf; `pipefail` lässt ein gescheitertes
+`tar` durchschlagen; `awk` läuft bis zum Ende durch (kein vorzeitiges `exit`),
+damit `tar` kein SIGPIPE bekommt und sein Status die Lesbarkeit bezeichnet und
+nur sie.
+
+```
+Status 0  — jedes Mitglied ist Verzeichnis oder reguläre Datei
+Status 3  — Typverstoß; die Begründung steht auf stdout
+sonst     — tar konnte das Archiv nicht lesen
+```
+
+Dieselbe Konstruktion stand im **Namensgate** von `deploy/restore.sh` und ist
+dort mitgezogen. Auch das Platz-Gate liest jetzt unter `pipefail`: Ein
+gescheitertes `tar` ergäbe sonst „0 Byte, 0 Mitglieder" — und das Gate ließe
+genau dann durch, wenn es nichts weiß.
+
+### Was daran allgemein ist
+
+Eine Prüfung und die Sache, über die sie urteilt, müssen **denselben**
+Lesevorgang teilen. Zwei Läufe über dieselbe Datei sind zwei Beobachtungen,
+und die Kontrolle spricht dann über die erste, während gehandelt wird auf
+Grundlage der zweiten. Das galt in Runde 4 für Inhaltsverzeichnis gegen
+ausgepackten Baum und gilt hier für Vorabprüfung gegen Detailprüfung.
+
+---
+
+## B27 — die umask galt für den Lauf, aber die Sicherung schrieb ein Container
+
+**Gefunden:** Panel-Runde 12 (`combo/SOTA-A`, refutiert).
+**Betrifft:** `deploy/backup.sh`, `tests/backup-lauf.test.ts`.
+
+Runde 10 hatte eine DB-Sicherung, die weltlesbar dalag, mit `umask 077`
+geschlossen — als **Regel** über den ganzen Lauf statt als Liste von
+`chmod`-Zeilen. Die Begründung war gut und die Behebung trotzdem unvollständig:
+Eine umask vererbt sich entlang des **Prozessbaums**, und die DB-Sicherung
+schreibt nicht dieser Lauf, sondern ein **Container**. Der hängt nicht an
+unserem Baum; podman gibt ihm seine eigene umask (Vorgabe 0022). Gemessen:
+
+```
+Aufrufer umask 077
+  Kindprozess (erbt)             ->  600
+  Container (eigene umask 0022)  ->  644
+  gzip erhält den Modus          ->  644
+  mv  erhält den Modus           ->  644   in BACKUP_DIR
+```
+
+`BACKUP_DIR` darf 0755 sein — der Ahnen-Wächter aus Runde 10 verbietet
+Schreib-, nicht Leserechte. Die **vollständige Datenbank** läge damit für jeden
+lokalen Benutzer lesbar da, also genau in dem Zustand, gegen den die Regel
+geschrieben wurde.
+
+### Warum der Prüfstand grün war
+
+Das ist der eigentliche Befund. Die podman-Attrappe ist ein Bash-Kindprozess
+von `backup.sh` und **erbt** dessen `umask 077` — sie legte von sich aus 0600
+an. Der Test verlangte 600, bekam 600 und maß dabei die **Vererbung**, nicht
+die Produktion. Eine Kontrolle, die grün ist, ohne das zu prüfen, was sie zu
+prüfen vorgibt: dieselbe Fehlerklasse wie B16, und damit die dritte Stelle in
+diesem Zweig, an der eine Attrappe für die Sache genommen wurde.
+
+### Wurzel
+
+Nicht eine zweite umask, sondern eine Aussage über **die Datei, die wir
+veröffentlichen**: `chmod 600 "$ROH"`, solange sie noch in der 700er-Werkstatt
+liegt. `gzip` und `mv -fT` reichen den Modus unverändert weiter, also gilt er
+für das, was am Ende in `BACKUP_DIR` steht — unabhängig davon, wer die Datei
+angelegt hat und mit welcher umask. Scheitert das `chmod`, wird die Sicherung
+verworfen wie eine beschädigte: `DB_OK` bleibt 0, der Lauf endet rot, die
+Rotation läuft nicht.
+
+Die Attrappe schreibt seither in einer Subshell mit `umask 0022`, also so wie
+podman. Gegengeprüft: ohne das `chmod` steht dort 644, und der Test fällt um.
+
+### Reichweite, ehrlich
+
+Das Uploads-Archiv legt `tar` in **unserem** Prozessbaum an; dort gilt die
+`umask 077` wirklich, und die Zusage 0600 dafür trägt. `deploy/db-restore.sh`
+setzt den Modus seit B21 ohnehin ausdrücklich. Was ein laufender
+Anwendungscontainer im Regelbetrieb neben `app.db` anlegt (`-wal`, `-shm`),
+entsteht nicht in diesem Skript und wird hier weder behauptet noch geregelt —
+wer das prüfen will, prüft die Anwendung, nicht die Sicherung.
+
+### Was daran allgemein ist
+
+Eine Regel über „diesen Lauf" endet am Prozessbaum. Wo etwas **außerhalb**
+davon schreibt — Container, `sudo`, ein Dienst —, gilt sie nicht mehr, und eine
+Attrappe, die ein Kindprozess ist, verdeckt genau diesen Unterschied. Der Modus
+einer Datei, auf den es ankommt, gehört deshalb gesetzt und nicht geerbt.

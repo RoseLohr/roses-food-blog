@@ -153,9 +153,20 @@ exit 0
     `#!/usr/bin/env bash\necho "compose $*" >> "$FAKE_PROTOKOLL"\nexit 0\n`,
     { mode: 0o755 },
   );
+  // curl antwortet wie die echte Route: erst der Körper, dann — durch `-w
+  // '\n%{http_code}'` angehängt — der Status. Ein blankes `exit 0` genügt
+  // nicht mehr: Das Health-Gate liest BEIDES, statt `-f` zu vertrauen
+  // (deploy/health-gate.sh — eine 301 galt `-f` als Erfolg, und ein 200 von
+  // einem fremden Dienst auf dem Nachbarport ebenso).
   fs.writeFileSync(
     path.join(bin, "curl"),
-    `#!/usr/bin/env bash\necho "curl $*" >> "$FAKE_PROTOKOLL"\nexit 0\n`,
+    [
+      "#!/usr/bin/env bash",
+      'echo "curl $*" >> "$FAKE_PROTOKOLL"',
+      `printf '%s' '{"status":"ok","version":"0.1.0","commit":"dev","checks":{}}'`,
+      `printf '\\n%s' 200`,
+      "exit 0",
+    ].join("\n"),
     { mode: 0o755 },
   );
 
@@ -465,22 +476,25 @@ describe("Das Einspielen hinterlaesst keinen gefaehrlichen Zwischenstand", () =>
     // Die Reihenfolge ist der ganze Punkt: Nach dem Entfernen des WAL darf
     // app.db noch den alten Stand tragen (stimmig, nur veraltet) — aber es
     // darf nie das NEUE app.db neben dem ALTEN WAL geben.
+    // Der Ablauf steht seit B14/9 in deploy/db-restore.sh — dort, weil der
+    // Restore-Drill dieselbe Funktion ausführt und nicht einen Nachbau.
+    // rollback.sh ruft sie nur noch auf.
     const skript = fs.readFileSync(
-      path.resolve(process.cwd(), "deploy/rollback.sh"),
+      path.resolve(process.cwd(), "deploy/db-restore.sh"),
       "utf8",
     );
     const ohneKommentar = skript
       .split("\n")
       .filter((l) => !/^\s*#/.test(l))
       .join("\n");
-    const kopieren = ohneKommentar.indexOf('cp "$BACKUP" "$DATA_DIR/app.db.neu"');
-    const walWeg = ohneKommentar.indexOf('rm -f "$DATA_DIR/app.db-wal"');
-    const umbenennen = ohneKommentar.indexOf('mv -f "$DATA_DIR/app.db.neu"');
+    const kopieren = ohneKommentar.indexOf('cp "$backup" "$daten/app.db.neu"');
+    const walWeg = ohneKommentar.indexOf('rm -f "$daten/app.db-wal"');
+    const umbenennen = ohneKommentar.indexOf('mv -f "$daten/app.db.neu"');
     expect(kopieren).toBeGreaterThan(-1);
     expect(walWeg).toBeGreaterThan(kopieren);
     expect(umbenennen).toBeGreaterThan(walWeg);
     // Und app.db wird nirgends mehr direkt beschrieben.
-    expect(ohneKommentar).not.toMatch(/cp "\$BACKUP" "\$DATA_DIR\/app\.db"/);
+    expect(ohneKommentar).not.toMatch(/cp "\$backup" "\$daten\/app\.db"/);
   });
 });
 
@@ -563,6 +577,12 @@ describe("der glückliche Fall bleibt glücklich", () => {
       "backup-inhalt",
     );
     expect(fs.existsSync(path.join(platz.daten, "app.db-wal"))).toBe(false);
+
+    // Der Rollback fragt über das GEMEINSAME Health-Gate, nicht über ein
+    // eigenes `curl -sf`: Die Zeitschranke steht im Aufruf. Ohne sie wartete
+    // jeder der dreißig Versuche unbegrenzt auf einen hängenden Gegenüber —
+    // das Gate käme zu gar keinem Ergebnis, auch nicht zu einem roten.
+    expect(lauf.protokoll.some((z) => /curl .*--max-time/.test(z))).toBe(true);
 
     const reihenfolge = ["integrity_check", "podman rm", "podman tag", "curl"];
     const stellen = reihenfolge.map((m) =>

@@ -15,6 +15,13 @@
  *    echtes, ATOMARES Einspielen sein (cp nach app.db.neu → WAL/SHM weg → mv, in
  *    dieser Reihenfolge, und kein direktes cp auf app.db); die Vorbedingung :previous muss
  *    in `|| fail` münden, nicht in `|| true`),
+ *
+ * ERWEITERT (08/2026, Befund B14/9): Der Restore steht in deploy/db-restore.sh und
+ * wird von rollback.sh UND vom Restore-Drill gequellt. Geprüft wird deshalb auch,
+ * dass der Drill diese Funktion FÄHRT (statt sie nachzubauen), über eine LEBENDE
+ * Datenbank mit gefülltem WAL — und dass seine Negativkontrolle ausgewertet wird.
+ * Vorher stellte er mit cp in ein leeres Verzeichnis wieder her und blieb grün,
+ * während der echte Weg ein stiller No-op war.
  *  - der --selftest führt eine Positiv-Attacke: ein Skript, das alle Tokens nur in
  *    Kommentaren/`|| true` trägt, MUSS abgelehnt werden.
  *
@@ -27,7 +34,13 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const RB = path.join(ROOT, "deploy/rollback.sh");
+const RESTORE = path.join(ROOT, "deploy/db-restore.sh");
+const DRILL = path.join(ROOT, "scripts/regime/restore-drill.sh");
+const HEALTH = path.join(ROOT, "deploy/health-gate.sh");
 const DEPLOY = path.join(ROOT, "deploy.sh");
+const BACKUP = path.join(ROOT, "deploy/backup.sh");
+const WIEDERHER = path.join(ROOT, "deploy/restore.sh");
+const ARCHIV_VERTRAG = path.join(ROOT, "deploy/archiv-typen.sh");
 
 /** Volle Kommentarzeilen (`#…`) entfernen, damit Tokens dort nicht zählen. */
 function stripComments(sh) {
@@ -43,12 +56,20 @@ const RB_INVARIANTS = [
     ok: (s) => /podman image exists localhost\/roses-blog:previous[\s\S]{0,120}?\|\|\s*fail\b/.test(s),
   },
   {
-    what: "Healthcheck-Gate: `if curl -sf \"$HEALTH_URL\"` gated den Erfolg",
-    ok: (s) => /\bif\s+curl -sf "\$HEALTH_URL"/.test(s),
+    // Das Gate steht seit 08/2026 in deploy/health-gate.sh, gequellt von
+    // rollback.sh UND restore.sh. Ohne das `source` könnte hier ein eigenes,
+    // schwächeres `health_gruen` stehen und die Prüfung ginge daran vorbei.
+    what: "Health-Gate GEQUELLT (deploy/health-gate.sh), kein eigener Nachbau",
+    ok: (s) => /source\s+"\$\(dirname "\$0"\)\/health-gate\.sh"/.test(s)
+      && !/^\s*health_gruen\(\)\s*\{/m.test(s),
   },
   {
-    what: "Health-Ergebnis NICHT verworfen (kein `curl -sf \"$HEALTH_URL\" … || true`)",
-    ok: (s) => !/curl -sf "\$HEALTH_URL"[^\n]*\|\|\s*true/.test(s),
+    what: "Healthcheck-Gate: `if health_gruen \"$HEALTH_URL\"` gated den Erfolg",
+    ok: (s) => /\bif\s+health_gruen "\$HEALTH_URL"/.test(s),
+  },
+  {
+    what: "Health-Ergebnis NICHT verworfen (kein `health_gruen \"$HEALTH_URL\" … || true`)",
+    ok: (s) => !/health_gruen "\$HEALTH_URL"[^\n]*\|\|\s*true/.test(s),
   },
   {
     // Die erste Alternative war eine literale Meldung („Health nach Rollback
@@ -68,32 +89,158 @@ const RB_INVARIANTS = [
     ok: (s) => /--dry-run\)\s*DRY=1/.test(s) && /\[\[\s*\$DRY -eq 1\s*\]\]/.test(s),
   },
   {
-    // Seit dem atomaren Einspielen (B14/3) geht der Restore über eine
-    // Nebendatei: kopieren nach app.db.neu, WAL und SHM entfernen, dann
-    // umbenennen. Geprüft werden alle DREI Schritte UND ihre Reihenfolge —
-    // vorher stand hier nur die eine `cp`-Zeile, und die sagte nichts darüber,
-    // ob zwischen Kopie und WAL-Entfernung ein gefährlicher Zwischenstand
-    // liegt. Ein direktes `cp` auf app.db ist jetzt ausdrücklich verboten.
+    // Der Restore steht seit 08/2026 in deploy/db-restore.sh, weil der
+    // Restore-Drill GENAU DIESE Funktion fahren muss. Hier wird nur noch
+    // geprüft, dass rollback.sh sie quellt, aufruft — und keinen eigenen Weg
+    // danebenstellt. Die Schritte selbst prüft RESTORE_INVARIANTS.
     what:
-      "DB-Restore ist echt UND atomar: cp nach app.db.neu, dann WAL/SHM weg, " +
-      "dann mv — und kein direktes cp auf app.db",
+      "DB-Restore über die gemeinsame Funktion: db-restore.sh gequellt, " +
+      "db_einspielen aufgerufen, kein eigenes cp auf app.db",
+    ok: (s) =>
+      /source\s+"\$\(dirname "\$0"\)\/db-restore\.sh"/.test(s) &&
+      /\bdb_einspielen "\$BACKUP" "\$DATA_DIR"/.test(s) &&
+      !/cp "\$BACKUP" "\$DATA_DIR\/app\.db"/.test(s),
+  },
+];
+
+// ── deploy/db-restore.sh — der Ablauf selbst ────────────────────────────────
+// Geprüft werden alle DREI Schritte UND ihre Reihenfolge. Ein `cp` direkt auf
+// app.db ist verboten: es hinterlässt bei einem Abbruch neues app.db neben
+// altem WAL, und SQLite spielt das WAL darüber — der Restore wird zum stillen
+// No-op (B3).
+const RESTORE_INVARIANTS = [
+  {
+    what:
+      "atomar: cp nach app.db.neu, dann WAL/SHM weg, dann mv — " +
+      "und kein direktes cp auf app.db",
     ok: (s) => {
-      const kopie = s.indexOf('cp "$BACKUP" "$DATA_DIR/app.db.neu"');
-      const walWeg = s.indexOf('rm -f "$DATA_DIR/app.db-wal"');
-      const umbenennen = s.indexOf('mv -f "$DATA_DIR/app.db.neu"');
+      const kopie = s.indexOf('cp "$backup" "$daten/app.db.neu"');
+      const walWeg = s.indexOf('rm -f "$daten/app.db-wal" "$daten/app.db-shm"');
+      const umbenennen = s.indexOf('mv -f "$daten/app.db.neu" "$daten/app.db"');
       return (
         kopie > -1 &&
         walWeg > kopie &&
         umbenennen > walWeg &&
-        !/cp "\$BACKUP" "\$DATA_DIR\/app\.db"(?!\.neu)/.test(s)
+        !/cp "\$backup" "\$daten\/app\.db"/.test(s)
       );
     },
   },
+  {
+    what: "Fehlschlag beim Kopieren/Umbenennen mündet in `fail` (kein stiller Weiterlauf)",
+    ok: (s) =>
+      /cp "\$backup" "\$daten\/app\.db\.neu"[\s\S]{0,40}?\|\|\s*fail\b/.test(s) &&
+      /mv -f "\$daten\/app\.db\.neu" "\$daten\/app\.db"[\s\S]{0,40}?\|\|\s*fail\b/.test(s),
+  },
 ];
 
-function checkRollback(rawContent) {
+// ── deploy/health-gate.sh — die eine Health-Frage ─────────────────────────
+/**
+ * Das gemeinsame Health-Gate (deploy/health-gate.sh).
+ *
+ * Beide Eigenschaften sind Befunde der Gegenprüfung 08/2026 und deshalb hier
+ * festgenagelt statt bloß einmal repariert: `curl -sf` galt eine 301 als
+ * Erfolg (ein Reverse-Proxy auf einer Wartungsseite hätte den Lauf für
+ * gelungen erklärt), und ohne Zeitschranke wartete jeder Versuch unbegrenzt —
+ * das Gate käme zu gar keinem Ergebnis, auch nicht zu einem roten.
+ */
+const HEALTH_INVARIANTS = [
+  {
+    what: "Health-Gate mit Zeitschranke (`--max-time`) — ein hängender Peer blockiert nicht",
+    ok: (s) => /curl[^\n]*--max-time\s+\d+/.test(s),
+  },
+  {
+    what: "Health-Gate liest den HTTP-Code und verlangt 200 (kein `-f`, dem eine 3xx als Erfolg gilt)",
+    ok: (s) => /%\{http_code\}/.test(s) && /==\s*"200"/.test(s),
+  },
+  {
+    // Beide aus derselben Runde: Ein 200 beweist nur, dass IRGENDWER
+    // geantwortet hat. Ein gesetztes http_proxy schickt die Frage an einen
+    // Vermittler, und auf dem Server hören auf benachbarten Ports andere
+    // Dienste — genau davor warnt die README beim Restore-Port seit Monaten,
+    // während die Prüfung selbst es nicht tat.
+    what: "Health-Gate fragt am Vermittler vorbei (`--noproxy`)",
+    ok: (s) => /--noproxy/.test(s),
+  },
+  {
+    what: "Health-Gate prüft die IDENTITÄT der Antwort (Körper trägt \"status\":\"ok\")",
+    ok: (s) => /"status":"ok"/.test(s),
+  },
+  {
+    // Ohne `-q` liest curl $CURL_HOME/.curlrc bzw. $HOME/.curlrc und nimmt
+    // von dort jede Option an — ein `-L` oder `--connect-to` darin dreht das
+    // Gate um. Die Abwesenheit von `-L` im Quelltext, die diese Liste prüft,
+    // war damit keine Zusage: Die Umgebung konnte es jederzeit nachreichen.
+    what: "Health-Gate ignoriert die Umgebungs-Konfiguration (`curl -q`, sonst greift .curlrc)",
+    ok: (s) => /curl\s+-q\b/.test(s),
+  },
+];
+
+// ── Der Typ-Vertrag für Medien-Archive ─────────────────────────────────────
+// Bis Panel-Runde 6 stand er NUR in deploy/restore.sh. deploy/backup.sh packte
+// deshalb Archive ein, die das Einspielen später abweist, verbuchte den Lauf
+// als Erfolg — und die daran hängende Rotation löschte die letzten Archive
+// weg, die sich noch einspielen ließen. Gemessen: ein Symlink in uploads/
+// ergibt `tar -czf` Exit 0 und im Restore einen ABBRUCH.
+//
+// Diese Invarianten halten fest, dass BEIDE Skripte denselben Vertrag quellen
+// und keines eine eigene Abschrift führt — eine zweite Abschrift ist genau die
+// Uneinigkeit, aus der der Befund entstand.
+const ARCHIV_INVARIANTS = [
+  {
+    what: "Typ-Vertrag GEQUELLT (deploy/archiv-typen.sh), keine eigene Abschrift",
+    ok: (s) => /source\s+"\$\(dirname "\$0"\)\/archiv-typen\.sh"/.test(s)
+      && !/^\s*archiv_typen_ok\(\)\s*\{/m.test(s),
+  },
+  {
+    what: "Das Ergebnis des Vertrags wird AUSGEWERTET (`archiv_typen_ok` gated etwas)",
+    ok: (s) => /\b(if\s+!?\s*)?GRUND="\$\(archiv_typen_ok /.test(s),
+  },
+];
+
+// ── scripts/regime/restore-drill.sh — die Übung ────────────────────────────
+// Bis 08/2026 stellte der Drill mit `cp` in ein LEERES Verzeichnis wieder her.
+// Er bescheinigte damit B-31 über einen Weg, den die Produktion nie geht, und
+// blieb grün, während der echte Weg (lebende DB, gefülltes WAL) kaputt war.
+// Diese Invarianten halten fest, dass er den Ernstfall fährt — und dass seine
+// Negativkontrolle wirklich ausgewertet wird statt nur dazustehen.
+const DRILL_INVARIANTS = [
+  {
+    what: "Drill quellt die PRODUKTIONSFUNKTION (deploy/db-restore.sh) statt sie nachzubauen",
+    ok: (s) => /source "\$ROOT\/deploy\/db-restore\.sh"/.test(s),
+  },
+  {
+    what: "Drill fährt `db_einspielen` — denselben Aufruf wie der Ernstfall",
+    ok: (s) => /\bdb_einspielen "\$WORK\/backup\.db" "\$ECHT"/.test(s),
+  },
+  {
+    what:
+      "wiederhergestellt wird über eine LEBENDE Datenbank, deren gefülltes WAL " +
+      "vor dem Restore nachgewiesen ist",
+    ok: (s) =>
+      /lebend_herstellen "\$ECHT"/.test(s) &&
+      /\[\[ -s "\$ziel\/app\.db-wal" \]\][\s\S]{0,40}?\|\|\s*fail\b/.test(s),
+  },
+  {
+    what:
+      "Negativkontrolle (naives cp) vorhanden UND ausgewertet — ihr Ergebnis " +
+      "fließt in die Fehlerliste, statt nur protokolliert zu werden",
+    ok: (s) =>
+      /cp "\$WORK\/backup\.db" "\$NAIV\/app\.db"/.test(s) &&
+      /"\$NACHHER_NAIV"[\s\S]{0,240}?FEHLER\+=\(/.test(s),
+  },
+  {
+    what: "Ergebnis gated den Exit (`[[ \"$RESULT\" == \"ERFOLG\" ]] || exit 1`)",
+    ok: (s) => /\[\[ "\$RESULT" == "ERFOLG" \]\]\s*\|\|\s*exit 1/.test(s),
+  },
+];
+
+function pruefe(invarianten, rawContent) {
   const s = stripComments(rawContent);
-  return RB_INVARIANTS.filter((i) => !i.ok(s)).map((i) => i.what);
+  return invarianten.filter((i) => !i.ok(s)).map((i) => i.what);
+}
+
+function checkRollback(rawContent) {
+  return pruefe(RB_INVARIANTS, rawContent);
 }
 
 if (process.argv.includes("--selftest")) {
@@ -119,12 +266,120 @@ if (process.argv.includes("--selftest")) {
     console.error("⛔ Selbsttest: reales rollback.sh fälschlich als kaputt geflaggt.");
     process.exit(1);
   }
-  console.log("   ✓ Selbsttest: kommentar-only/entkoppeltes Rollback (Health verworfen, kein Restore/Timing/Dry-Run) gefangen; reales Skript grün.");
+
+  // Attacke auf den RESTORE: alle drei Schritte da, aber in der falschen
+  // Reihenfolge (WAL erst NACH dem Umbenennen weg) und ohne `|| fail`. Genau
+  // der Zwischenstand, den die Atomarität ausschließen soll.
+  const restoreAttacke = [
+    "#!/usr/bin/env bash",
+    "db_einspielen(){",
+    '  local backup="$1" daten="$2"',
+    '  cp "$backup" "$daten/app.db.neu"',
+    '  mv -f "$daten/app.db.neu" "$daten/app.db"',
+    '  rm -f "$daten/app.db-wal" "$daten/app.db-shm"',
+    "}",
+  ].join("\n");
+  const restoreMiss = pruefe(RESTORE_INVARIANTS, restoreAttacke);
+  if (restoreMiss.length < 2) {
+    console.error(`⛔ Selbsttest: nicht-atomarer Restore (WAL zuletzt, kein fail) nicht gefangen (nur ${restoreMiss.length} Verstöße).`);
+    process.exit(1);
+  }
+
+  // Attacke auf den DRILL: der Stand von vor 08/2026 — eigenes cp in ein
+  // leeres Verzeichnis, keine Produktionsfunktion, keine Negativkontrolle.
+  const drillAttacke = [
+    "#!/usr/bin/env bash",
+    '# db_einspielen "$WORK/backup.db" "$ECHT"  (nur Doku)',
+    '# lebend_herstellen "$ECHT"  (nur Doku)',
+    'cp "$WORK/backup.db" "$DST/app.db"',
+    'echo "$RESULT"',
+  ].join("\n");
+  const drillMiss = pruefe(DRILL_INVARIANTS, drillAttacke);
+  if (drillMiss.length < 5) {
+    console.error(`⛔ Selbsttest: Drill nach altem Muster (cp in leeres Verzeichnis, kein db_einspielen, keine Negativkontrolle) nicht gefangen (nur ${drillMiss.length} Verstöße).`);
+    process.exit(1);
+  }
+
+  // Attacke auf das HEALTH-GATE: der Stand von vor 08/2026 — `curl -sf` ohne
+  // Zeitschranke, dem eine 301 als Erfolg gilt. Beide Invarianten müssen fallen.
+  const healthAttacke = [
+    "#!/usr/bin/env bash",
+    "# curl -s --max-time 5 -w '%{http_code}' … == \"200\"  (nur Doku)",
+    "health_gruen(){",
+    '  curl -sf "$1" >/dev/null 2>&1',
+    "}",
+  ].join("\n");
+  const healthMiss = pruefe(HEALTH_INVARIANTS, healthAttacke);
+  if (healthMiss.length < 5) {
+    console.error(`⛔ Selbsttest: Health-Gate nach altem Muster (curl -sf, keine Zeitschranke, 3xx grün, .curlrc wirksam) nicht gefangen (nur ${healthMiss.length} von 5 Verstößen).`);
+    process.exit(1);
+  }
+
+  // Attacke auf den TYP-VERTRAG: ein Skript, das den Vertrag nicht quellt,
+  // sondern eine eigene Abschrift führt und ihr Ergebnis gar nicht auswertet —
+  // genau der Zustand vor Panel-Runde 6, in dem Backup und Restore uneins waren.
+  const archivAttacke = [
+    "#!/usr/bin/env bash",
+    '# source "$(dirname "$0")/archiv-typen.sh"   (nur Doku)',
+    "archiv_typen_ok(){",
+    '  tar -tvzf "$1" >/dev/null 2>&1',
+    "}",
+    'tar -czf "$UPLOADS_ARCHIV" -C "$DATA_DIR" uploads && UPLOADS_OK=1',
+  ].join("\n");
+  const archivMiss = pruefe(ARCHIV_INVARIANTS, archivAttacke);
+  if (archivMiss.length < 2) {
+    console.error(`⛔ Selbsttest: eigene Abschrift des Typ-Vertrags mit unausgewertetem Ergebnis nicht gefangen (nur ${archivMiss.length} von 2 Verstößen).`);
+    process.exit(1);
+  }
+
+  // Die realen Dateien MÜSSEN alle Invarianten erfüllen (kein Fehlalarm).
+  for (const [datei, liste, name] of [
+    [RESTORE, RESTORE_INVARIANTS, "deploy/db-restore.sh"],
+    [DRILL, DRILL_INVARIANTS, "scripts/regime/restore-drill.sh"],
+    [HEALTH, HEALTH_INVARIANTS, "deploy/health-gate.sh"],
+    [BACKUP, ARCHIV_INVARIANTS, "deploy/backup.sh"],
+    [WIEDERHER, ARCHIV_INVARIANTS, "deploy/restore.sh"],
+  ]) {
+    if (fs.existsSync(datei) && pruefe(liste, fs.readFileSync(datei, "utf8")).length) {
+      console.error(`⛔ Selbsttest: reales ${name} fälschlich als kaputt geflaggt.`);
+      process.exit(1);
+    }
+  }
+
+  console.log("   ✓ Selbsttest: kommentar-only/entkoppeltes Rollback, nicht-atomarer Restore, Drill nach altem Muster und Health-Gate nach altem Muster gefangen; reale Skripte grün.");
 }
 
 const errors = [];
 if (!fs.existsSync(RB)) errors.push("deploy/rollback.sh fehlt.");
 else for (const m of checkRollback(fs.readFileSync(RB, "utf8"))) errors.push(`rollback.sh: Invariante fehlt/entkoppelt — ${m}`);
+
+
+// Die gemeinsame Restore-Funktion und der Drill, der sie fährt. Ohne diese
+// beiden Blöcke stünden die Listen oben da und prüften nichts — genau die
+// Fehlerklasse, die dieses Projekt sieben Mal getroffen hat.
+if (!fs.existsSync(RESTORE)) errors.push("deploy/db-restore.sh fehlt — der gemeinsame Restore-Ablauf ist weg.");
+else for (const m of pruefe(RESTORE_INVARIANTS, fs.readFileSync(RESTORE, "utf8")))
+  errors.push(`db-restore.sh: Invariante fehlt/entkoppelt — ${m}`);
+
+if (!fs.existsSync(DRILL)) errors.push("scripts/regime/restore-drill.sh fehlt — B-31 hat keine Übung mehr.");
+else for (const m of pruefe(DRILL_INVARIANTS, fs.readFileSync(DRILL, "utf8")))
+  errors.push(`restore-drill.sh: Invariante fehlt/entkoppelt — ${m}`);
+
+if (!fs.existsSync(HEALTH)) errors.push("deploy/health-gate.sh fehlt — Rollback und Restore hätten kein gemeinsames Health-Gate mehr.");
+else for (const m of pruefe(HEALTH_INVARIANTS, fs.readFileSync(HEALTH, "utf8")))
+  errors.push(`health-gate.sh: Invariante fehlt/entkoppelt — ${m}`);
+
+// Der Typ-Vertrag, in BEIDEN Skripten. Genau hier hatte diese Datei den Fehler
+// noch einmal gemacht, den sie prüft: ARCHIV_INVARIANTS stand zuerst nur im
+// --selftest. Entschärfte man backup.sh oder restore.sh, blieb der normale
+// Lauf grün — eine Kontrolle, die nichts kontrolliert. Die Gegenprobe hat es
+// gefunden, nicht das Nachdenken.
+if (!fs.existsSync(ARCHIV_VERTRAG)) errors.push("deploy/archiv-typen.sh fehlt — Sichern und Einspielen hätten keinen gemeinsamen Typ-Vertrag mehr.");
+for (const [datei, name] of [[BACKUP, "backup.sh"], [WIEDERHER, "restore.sh"]]) {
+  if (!fs.existsSync(datei)) errors.push(`deploy/${name} fehlt.`);
+  else for (const m of pruefe(ARCHIV_INVARIANTS, fs.readFileSync(datei, "utf8")))
+    errors.push(`${name}: Invariante fehlt/entkoppelt — ${m}`);
+}
 
 const deploy = fs.existsSync(DEPLOY) ? stripComments(fs.readFileSync(DEPLOY, "utf8")) : "";
 if (!/podman tag localhost\/roses-blog:latest localhost\/roses-blog:previous/.test(deploy))
@@ -135,4 +390,9 @@ if (errors.length) {
   console.error(`\n⛔ Rollback-Check: ${errors.length} fehlende/entkoppelte Invariante(n). Merge blockiert (A-06/B-11).`);
   process.exit(1);
 }
-console.log("[rollback-check] Rollback-Fähigkeit + Drill semantisch verdrahtet (Vorbedingung→fail, DB-Restore, Health-Gate, getimt, Dry-Run-Abzweig). Grün.");
+console.log(
+  "[rollback-check] Rollback-Fähigkeit + Drill semantisch verdrahtet " +
+    "(Vorbedingung→fail, atomarer Restore in db-restore.sh, Drill fährt genau diese " +
+    "Funktion über eine lebende DB mit Negativkontrolle, Health-Gate, getimt, " +
+    "Dry-Run-Abzweig). Grün.",
+);

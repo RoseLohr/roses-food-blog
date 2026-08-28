@@ -314,27 +314,85 @@ Das Deployment ist auf Geschwindigkeit optimiert:
 
 `deploy/backup.sh` erzeugt in `$DATA_DIR/backups/`:
 
-- `app-<Zeitstempel>.db.gz` — konsistentes SQLite-Backup (Online-Backup-API)
+- `app-<Zeitstempel>.db.gz` — konsistentes SQLite-Backup (Online-Backup-API),
+  vor dem Komprimieren mit `integrity_check` gelesen
 - `uploads-<Zeitstempel>.tar.gz` — Medien
 - Rotation nach 14 Tagen (`BACKUP_KEEP_DAYS` in `.env` übersteuert das)
 
-**Restore** (App kurz stoppen):
+Zwei Zusagen, auf die man sich verlassen kann (B16):
+
+- **Ein Lauf ohne gültiges DB-Backup endet mit Exit ≠ 0.** Cron meldet ihn also.
+  Früher stand nur eine Warnung im Protokoll, und der Lauf galt als erfolgreich.
+- **Rotiert wird nur, was ersetzt ist.** Ein Fehllauf löscht nichts, und die
+  jüngste Sicherung bleibt in jedem Fall liegen — es gibt immer mindestens eine.
+
+Scheitert nur das Komprimieren, bleibt die geprüfte Sicherung unkomprimiert
+liegen (`app-<Zeitstempel>.db`) und zählt als gültig.
+
+**Restore** — ein Befehl, der den Dienst selbst stoppt und wieder startet:
 
 ```bash
 cd ~/roses-food-blog
-podman compose down
-gunzip -c /srv/roses-blog/data/backups/app-JJJJMMTT-HHMMSS.db.gz \
-  > /srv/roses-blog/data/app.db
-rm -f /srv/roses-blog/data/app.db-wal /srv/roses-blog/data/app.db-shm
-tar -xzf /srv/roses-blog/data/backups/uploads-JJJJMMTT-HHMMSS.tar.gz \
-  -C /srv/roses-blog/data
-podman compose up -d app
-curl -fsS "http://127.0.0.1:$(grep -E '^PORT=' .env | cut -d= -f2-)/health"
+./deploy/restore.sh /srv/roses-blog/data/backups/app-JJJJMMTT-HHMMSS.db.gz \
+                    /srv/roses-blog/data/backups/uploads-JJJJMMTT-HHMMSS.tar.gz
 ```
 
-> Auch hier der Port aus der `.env` — ein `curl` auf 3000 träfe auf dem Server
-> einen fremden Dienst und meldete Erfolg, während die Wiederherstellung in
-> Wahrheit noch gar nicht steht.
+Das Medien-Archiv ist optional; ohne es wird nur die Datenbank eingespielt.
+
+Es läuft **ein Restore zur Zeit** (`flock` auf `$DATA_DIR/.restore.lock`).
+Zwei gleichzeitige Läufe teilen sich sonst dieselbe Nebendatei, und einer
+spielt still das Backup des anderen ein.
+
+Das Skript prüft ALLES Prüfbare, bevor es das Erste anfasst: Es entpackt die
+Sicherung, liest sie mit `integrity_check`, sichert den jetzigen Stand nach
+`backups/pre-restore-*.db` (geprüft wie jede andere Sicherung auch) — und
+packt das Medien-Archiv in eine Nebenablage aus, wo ein Fehlschlag nichts
+kostet.
+
+Geprüft wird dann, was **wirklich dasteht**, nicht das Inhaltsverzeichnis:
+
+- **Namen** (vorher, am Verzeichnis des Archivs): alles unter `uploads/`, kein
+  `..`-Glied, nichts Absolutes. Was aus der Nebenablage herausführte, landete
+  sonst gar nicht erst in dem Baum, den der Rundgang danach sieht.
+- **Gestalt** (nachher, am ausgepackten Baum): daneben liegt genau
+  `uploads/`, und das ist ein echtes Verzeichnis. Ein reguläres Mitglied
+  namens `uploads` steht im Inhaltsverzeichnis harmlos da und zeigt sich erst
+  beim Auspacken.
+- **Typen** (ebenda): nur Verzeichnisse und reguläre Dateien. Ein Symlink
+  trägt einen einwandfreien Namen und ist trotzdem ein Loch — nachgemessen
+  packt `tar` `uploads/…/w100.webp -> ../../app.db` anstandslos aus, und die
+  Auslieferungsroute liest daraufhin die Datenbank über HTTP.
+
+Ein **leeres** `uploads/` ist dabei ausdrücklich gültig: `deploy/backup.sh`
+sichert einen leeren Medienbestand anstandslos, und was das eine Skript
+sichert, muss das andere wiederherstellen können.
+
+Scheitert etwas davon, ist nichts eingespielt und der Dienst läuft unverändert
+weiter.
+
+Erst danach wird gestoppt und mit derselben Funktion eingespielt, die auch der
+Rollback und der monatliche Drill fahren (`deploy/db-restore.sh`). Die Medien
+werden dabei **ersetzt, nicht überlagert**: Sie landen zuerst in einer
+Nebenablage, der bisherige Bestand wandert nach `uploads.alt`, dann tritt der
+neue an seine Stelle. Ein Auspacken, das in der Mitte abbricht, lässt den
+bisherigen Bestand damit unberührt, und Dateien, die das Backup nicht kennt,
+bleiben nicht als Mischbestand liegen. `uploads.alt` bleibt stehen — es ist
+das Einzige, wofür dieses Skript kein eigenes Netz spannt; wegräumen darf es,
+wer nachgesehen hat.
+
+Zum Schluss der Health-Endpunkt auf dem Port aus der `.env`: erst grün, dann
+gilt die Wiederherstellung. Grün heißt **HTTP 200 und `"status":"ok"` im
+Körper**, gefragt **am Vermittler vorbei** (`--noproxy`). Eine Umleitung auf
+eine Wartungsseite ist keine Antwort der Anwendung, und ein 200 von einem
+fremden Dienst auf dem Nachbarport erst recht nicht.
+
+> **Warum kein Abtippen mehr.** Hier stand die Folge früher als einzelne Zeilen
+> zum Kopieren. In einer interaktiven Shell gilt weder `set -e` noch eine
+> Verkettung: Nachgemessen mit einem unlesbaren Archiv lief nach dem
+> gescheiterten `gunzip` das `rm` des WAL trotzdem, das `mv` schob die leer
+> angelegte Nebendatei über `app.db` — und der Start danach ebenso. Zurück
+> blieben eine LEERE Datenbank und kein WAL. Ein Wiederherstellungsversuch, der
+> alles vernichtet, und nichts hielt an.
 
 ## Fehlerbehebung
 
@@ -384,8 +442,9 @@ scripts/regime/ Gates und Betriebsprüfungen — darunter die drei Proxy-Skripte
                 (npm-container-finden.sh, npm-snippet-einspielen.sh,
                 kompression-pruefen.sh)
 deploy/npm/     http_top.conf — die WIRKSAME Kompression am Ursprung
-deploy/         rollback.sh, systemd-Unit, backup.sh, nginx.conf.example
-                (letztere historisch, siehe ihren Kopf)
+deploy/         rollback.sh, db-restore.sh (der atomare Restore, den auch der
+                Restore-Drill fährt), systemd-Unit, backup.sh,
+                nginx.conf.example (letztere historisch, siehe ihren Kopf)
 docs/           PLAN.md, ASSUMPTIONS.md, ABNAHME.md
 governance/     Verfassung, ADRs, Ownership
 audit/          Befunde, Fahrplan, Ausnahmen-Ledger
