@@ -19,6 +19,7 @@
     "src/lib/bildreihen.ts",
     "src/lib/travel-editor-items.ts",
     "src/lib/reihenfolge.ts",
+    "src/lib/zeitpunkt.ts",
     "src/lib/daemmerung.ts",
     "src/lib/seo/model.ts"
   ],
