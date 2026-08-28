@@ -34,6 +34,8 @@ export interface ImageChoice {
    *  Reise-Editor rechnet daraus die fertige Anzeigehöhe eines Bildes aus. */
   width?: number;
   height?: number;
+  /** Der Alt-Text selbst (nicht `label`, das ersatzweise den Dateinamen nimmt). */
+  altText?: string;
 }
 
 export function ImagePicker({
@@ -47,13 +49,23 @@ export function ImagePicker({
   clearable = true,
   max,
   sortierbar = false,
+  proBild,
 }: {
   name?: string;
   legend: string;
   options: ImageChoice[];
   selectedIds?: number[];
   value?: number[];
-  onChange?: (ids: number[]) => void;
+  /**
+   * Die neue Auswahl. `herkunft[i]` sagt, WOHER der Eintrag an Stelle `i`
+   * kommt: die vorige Stelle, oder `null` für ein neu hinzugekommenes Bild.
+   *
+   * Wer je Bild eigene Angaben führt, ordnet sie damit richtig zu. Die bloße
+   * ID-Liste kann das nicht, sobald dasselbe Bild zweimal in der Auswahl
+   * steht — siehe `setzeAuswahl`. Wer keine solchen Angaben hat, lässt den
+   * zweiten Parameter einfach weg.
+   */
+  onChange?: (ids: number[], herkunft: (number | null)[]) => void;
   multiple: boolean;
   /**
    * Nur Mehrfachauswahl: Die Reihenfolge BEDEUTET etwas — dann bekommt jedes
@@ -66,6 +78,15 @@ export function ImagePicker({
    * darunter — die Reihenfolge ist dort die ganze Einstellung.
    */
   sortierbar?: boolean;
+  /**
+   * Zusätzliche Bedienung UNTER jedem gewählten Bild — z. B. ein Häkchen, das
+   * nur den Aufrufer etwas angeht.
+   *
+   * Als Render-Funktion statt fester Felder: Der Picker weiß nicht, was ein
+   * Reisebericht ist, und soll es auch nicht erfahren. Er sagt nur, WO das
+   * Bedienelement hingehört; WAS dort steht, entscheidet der Aufrufer.
+   */
+  proBild?: (imageId: number, position: number) => React.ReactNode;
   /** Nur Einzelauswahl: erlaubt das Abwählen ("Kein Bild"). Default true. */
   clearable?: boolean;
   /**
@@ -82,10 +103,31 @@ export function ImagePicker({
   const selected = controlled ? (value ?? []) : internalSel;
   const [open, setOpen] = useState(false);
 
-  function setSelection(next: number[]) {
-    if (controlled) onChange(next);
-    else setInternalSel(next);
+  /**
+   * Jede Änderung der Auswahl als HERKUNFTSLISTE: je Eintrag entweder die
+   * Stelle, an der das Bild vorher stand, oder ein neu hinzugekommenes Bild.
+   *
+   * ── WARUM NICHT EINFACH DIE NEUE ID-LISTE ────────────────────────────────
+   *
+   * Weil eine ID-Liste eine VERLUSTBEHAFTETE Abbildung einer Stellenoperation
+   * ist, sobald dasselbe Bild zweimal in der Auswahl steht (über den
+   * Archiv-Import erreichbar). Steht dort [A, A] und der Benutzer entfernt die
+   * ERSTE Kachel, kommt [A] heraus — dieselbe Liste, die auch beim Entfernen
+   * der ZWEITEN entstünde. Wer je Bild eigene Angaben führt (im Reise-Editor
+   * die Bildunterschrift), kann die überlebende nicht mehr zuordnen und rät.
+   * Ein Tausch zweier gleicher IDs ist in der ID-Liste sogar gar nicht zu
+   * sehen.
+   *
+   * Deshalb sagt der Wähler jetzt, WOHER jeder Eintrag kommt. Raten entfällt.
+   */
+  type Schritt = { von: number } | { neu: number };
+  function setzeAuswahl(schritte: Schritt[]) {
+    const ids = schritte.map((s) => ("von" in s ? selected[s.von] : s.neu));
+    if (controlled) onChange(ids, schritte.map((s) => ("von" in s ? s.von : null)));
+    else setInternalSel(ids);
   }
+  /** Die jetzige Auswahl als Herkunftsliste — Ausgangspunkt jeder Änderung. */
+  const bisher = (): Schritt[] => selected.map((_, i) => ({ von: i }));
 
   /** Voll: Weitere Bilder lassen sich nicht mehr dazunehmen. */
   const voll = multiple && max !== undefined && selected.length >= max;
@@ -93,27 +135,42 @@ export function ImagePicker({
   function pick(id: number) {
     if (multiple) {
       if (selected.includes(id)) {
-        setSelection(selected.filter((x) => x !== id));
+        // Die Kachel in der Bibliothek zeigt EIN Foto, nicht eine Stelle:
+        // Sie abzuwählen heißt „dieses Foto nicht mehr", also alle Vorkommen.
+        setzeAuswahl(bisher().filter((s) => selected[(s as { von: number }).von] !== id));
         return;
       }
       if (voll) return;
-      setSelection([...selected, id]);
+      setzeAuswahl([...bisher(), { neu: id }]);
     } else {
-      setSelection([id]);
+      setzeAuswahl([{ neu: id }]);
       setOpen(false);
     }
   }
 
   /** Ein Bild um einen Platz verschieben. Am Rand passiert nichts. */
   function verschiebe(von: number, richtung: Richtung) {
-    const next = verschoben(selected, von, richtung);
-    if (next !== selected) setSelection([...next]);
+    // Verschoben wird die HERKUNFTSLISTE, nicht die ID-Liste: Bei zwei
+    // gleichen IDs wäre die vertauschte ID-Liste identisch mit der alten —
+    // die Bewegung wäre unsichtbar und die Angaben blieben an Ort und Stelle.
+    const schritte = bisher();
+    const next = verschoben(schritte, von, richtung);
+    if (next !== schritte) setzeAuswahl([...next]);
   }
 
   const byId = new Map(options.map((o) => [o.id, o]));
+  /**
+   * Die gewählten Bilder MIT ihrer Stelle in `selected`.
+   *
+   * Die Stelle wird mitgeführt statt aus dieser Liste abgelesen: Ein Bild,
+   * das die Bibliothek nicht (mehr) kennt, fällt hier heraus — danach wäre
+   * jede weitere Stelle um eins verschoben, und `verschiebe`, das Entfernen
+   * und `proBild` griffen allesamt daneben. Die Stelle ist das, wonach der
+   * Aufrufer seine Angaben führt; sie darf nicht von der Anzeige abhängen.
+   */
   const selectedChoices = selected
-    .map((id) => byId.get(id))
-    .filter((x): x is ImageChoice => Boolean(x));
+    .map((id, pos) => ({ pos, c: byId.get(id) }))
+    .filter((x): x is { pos: number; c: ImageChoice } => Boolean(x.c));
 
   return (
     <fieldset>
@@ -127,8 +184,11 @@ export function ImagePicker({
       {/* Vorschau der aktuellen Auswahl */}
       {selectedChoices.length > 0 ? (
         <div className="mb-2 flex flex-wrap gap-2">
-          {selectedChoices.map((c, pos) => (
-            <div key={c.id} className="flex flex-col gap-1">
+          {selectedChoices.map(({ pos, c }) => (
+            // Schlüssel ist die STELLE, nicht die Bild-ID: Dasselbe Foto darf
+            // zweimal in der Auswahl stehen, und zwei gleiche Schlüssel legen
+            // React zwei verschiedene Kacheln zusammen.
+            <div key={pos} className="flex flex-col gap-1">
               <div className="group relative h-24 w-32 overflow-hidden border border-ink-soft/20 bg-cream">
                 {sortierbar && (
                   // Die Ziffer steht IMMER da, nicht erst beim Überfahren:
@@ -154,9 +214,9 @@ export function ImagePicker({
                 />
                 <button
                   type="button"
-                  onClick={() =>
-                    setSelection(selected.filter((x) => x !== c.id))
-                  }
+                  // Das × meint DIESE Kachel. Nach der Bild-ID zu filtern
+                  // nähme bei zwei Vorkommen desselben Fotos beide heraus.
+                  onClick={() => setzeAuswahl(bisher().filter((_, x) => x !== pos))}
                   aria-label={ip.remove}
                   title={ip.remove}
                   className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-sm text-white opacity-0 transition group-hover:opacity-100"
@@ -174,11 +234,11 @@ export function ImagePicker({
                       disabled={
                         richtung === -1
                           ? pos === 0
-                          : pos === selectedChoices.length - 1
+                          : pos === selected.length - 1
                       }
                       aria-label={`${
                         richtung === -1 ? ip.moveEarlier : ip.moveLater
-                      } — ${ip.position(pos + 1, selectedChoices.length)}`}
+                      } — ${ip.position(pos + 1, selected.length)}`}
                       title={richtung === -1 ? ip.moveEarlier : ip.moveLater}
                       className="flex-1 rounded border border-ink/20 py-0.5 text-xs hover:bg-cream disabled:opacity-40"
                     >
@@ -187,6 +247,7 @@ export function ImagePicker({
                   ))}
                 </div>
               )}
+              {proBild?.(c.id, pos)}
               {/* Bildausschnitt (Fokuspunkt) direkt am gewählten Bild anpassbar */}
               {c.fullUrl && (
                 <FocusPointEditor
@@ -232,7 +293,7 @@ export function ImagePicker({
           clearable={clearable}
           voll={voll}
           onPick={pick}
-          onClear={() => setSelection([])}
+          onClear={() => setzeAuswahl([])}
           onClose={() => setOpen(false)}
           onUploaded={(img) => {
             setOptions((prev) =>
@@ -243,9 +304,9 @@ export function ImagePicker({
               // in der BIBLIOTHEK (oben), aber nicht in der Auswahl — sonst
               // fiele ein anderes still heraus.
               if (!selected.includes(img.id) && !voll)
-                setSelection([...selected, img.id]);
+                setzeAuswahl([...bisher(), { neu: img.id }]);
             } else {
-              setSelection([img.id]);
+              setzeAuswahl([{ neu: img.id }]);
               setOpen(false);
             }
           }}

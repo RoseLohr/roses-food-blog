@@ -518,6 +518,22 @@ export const travelBlock = sqliteTable(
      */
     groesse: text("groesse", { enum: ["s", "m", "l"] }),
     ausrichtung: text("ausrichtung", { enum: ["links", "rechts"] }),
+    /**
+     * Soll der Alt-Text dieses Fotos als Bildunterschrift darunter stehen?
+     *
+     * Standard ist NEIN. Der Alt-Text ist zuerst eine Beschreibung für alle,
+     * die das Bild nicht sehen können; er ist nicht automatisch ein Text, den
+     * jeder lesen soll („Nahaufnahme eines Tellers, von schräg oben"). Wer ihn
+     * anzeigen will, sagt es je Foto.
+     *
+     * Wie `gruppe` eine MARKE über das Bild selbst — keine Aussage über
+     * Nachbarn. Auch innerhalb einer Gruppe trägt jedes Foto seine eigene;
+     * anders als Größe und Seite widerspricht sie der Anordnung nicht, denn
+     * sie sagt nichts darüber, WO das Bild steht.
+     */
+    bildunterschrift: integer("bildunterschrift", { mode: "boolean" })
+      .notNull()
+      .default(false),
     restaurantId: integer("restaurant_id").references(() => restaurant.id, {
       onDelete: "cascade",
     }),
@@ -544,7 +560,7 @@ export const travelBlock = sqliteTable(
     /** Was kein Bild ist, trägt auch keine Bildangaben. */
     check(
       "travel_block_nur_bild_check",
-      sql`${t.type} = 'bild' OR (${t.gruppe} IS NULL AND ${t.groesse} IS NULL AND ${t.ausrichtung} IS NULL)`,
+      sql`${t.type} = 'bild' OR (${t.gruppe} IS NULL AND ${t.groesse} IS NULL AND ${t.ausrichtung} IS NULL AND ${t.bildunterschrift} = 0)`,
     ),
     /** Ein Bild-Block ohne Foto ist keine Auszeichnung, sondern ein Verlust. */
     check(

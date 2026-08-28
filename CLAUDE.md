@@ -65,6 +65,19 @@ diesem Repository arbeitet. Sie ist Teil des Governance-Regimes (A-32/A-33/A-37)
   Wer hier ein Feld einführt, das über einen ANDEREN Block spricht, führt die
   Fehlerklasse wieder ein.
 
+  - **Bildunterschrift (08/2026):** Jedes Bild im Bericht kann seinen Alt-Text
+    sichtbar darunter zeigen — je Foto, standardmäßig AUS. Auch innerhalb einer
+    Gruppe, und dort je Foto einzeln: Anders als Größe und Seite sagt eine
+    Unterschrift nichts darüber, WO das Bild steht, kann der Anordnung also
+    nicht widersprechen. Sie ist wie `gruppe` eine Marke über das Bild selbst.
+    NICHT an Restaurant- und Gericht-Fotos — die waren ausdrücklich ausgenommen.
+    Der Renderer packt ein Foto mit Unterschrift in eine `<figure>` und hängt
+    die Rahmen-Angaben (Float-Anteil, `--ar`) DORTHIN; bliebe der Rahmen am
+    Knopf, stünde die Unterschrift außerhalb des Bildplatzes. Gemessen an echtem
+    Chromium (`tests/e2e/bildunterschrift.spec.ts`): Die Bilder einer Reihe
+    bleiben gleich hoch, und beim Einzelbild hängt der Text im schwebenden
+    Platz.
+
   **Im Admin ist eine Gruppe EIN Block** (`src/lib/travel-editor-items.ts`):
   ein Knopf „+ Bildgruppe", eine Karte, darin die Fotos in einem Zug aus der
   Bibliothek gewählt und mit ←/→ geordnet. Die Marke vergibt der Editor beim
