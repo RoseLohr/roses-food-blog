@@ -5,6 +5,7 @@ import { db, schema } from "@/db";
 import { requireAdmin } from "@/lib/auth";
 import { focusPosition, imageUrl, variantWidthsByImage } from "@/lib/media";
 import { MediaThumb } from "@/components/admin/media-thumb";
+import { alsDatum, alsZeitpunkt } from "@/lib/zeitpunkt";
 import { FocusPointEditor } from "@/components/admin/focus-point-editor";
 import { t } from "@/i18n/de";
 import {
@@ -19,14 +20,6 @@ const dict = t();
 const m = dict.admin.media;
 
 export const metadata: Metadata = { title: m.title };
-
-/** Upload-Datum als DD-MM-YY. */
-function formatDate(d: Date): string {
-  const dd = String(d.getDate()).padStart(2, "0");
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const yy = String(d.getFullYear()).slice(-2);
-  return `${dd}-${mm}-${yy}`;
-}
 
 export default async function MediaPage(props: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -137,8 +130,16 @@ export default async function MediaPage(props: {
                   {img.originalName}
                 </p>
                 <p className="text-xs text-ink-soft">
-                  {img.width}×{img.height} · {m.uploadedOn}{" "}
-                  {formatDate(img.createdAt)}
+                  {img.width}×{img.height} ·{" "}
+                  {/* Lauf-abhängig: Die Saat setzt das Hochladedatum auf
+                      `new Date()`, der Wert ist also an jedem Tag ein anderer.
+                      Ohne Maske fror die Referenzaufnahme ihn stillschweigend
+                      als Basis ein — grün nur so lange, wie der Tag zufällig
+                      derselbe blieb (tests/e2e/referenz.ts). */}
+                  {m.uploadedOn}{" "}
+                  <span data-referenz-maske="true">
+                    {alsZeitpunkt(img.createdAt)}
+                  </span>
                 </p>
                 <form
                   action={updateAltTextAction}
@@ -191,7 +192,23 @@ export default async function MediaPage(props: {
                 {img.originalName}
               </p>
               <p className="text-[0.7rem] text-ink-soft">
-                {img.width}×{img.height} · {formatDate(img.createdAt)}
+                {img.width}×{img.height}
+              </p>
+              {/* Eigene Zeile mit Beschriftung: Vorher stand hier eine nackte
+                  Zahlenfolge hinter den Maßen — dass „28-08-26" ein
+                  Hochladedatum ist, musste man wissen. `title` trägt zusätzlich
+                  die Uhrzeit; sichtbar bleibt der Tag, denn auf dem iPad gibt
+                  es kein Hover. Zur Maske siehe Listenansicht. */}
+              <p
+                className="text-[0.7rem] text-ink-soft"
+                title={`${m.uploadedOn} ${alsZeitpunkt(img.createdAt)}`}
+              >
+                {m.uploadedOn}{" "}
+                {/* Maskiert wird NUR das Datum, nicht die Beschriftung:
+                    Verschwände „Hochgeladen am", müsste die Aufnahme das
+                    weiterhin melden. Zur Begründung der Maske siehe
+                    Listenansicht. */}
+                <span data-referenz-maske="true">{alsDatum(img.createdAt)}</span>
               </p>
               <form action={updateAltTextAction} className="mt-2 flex gap-1">
                 <input type="hidden" name="id" value={img.id} />
