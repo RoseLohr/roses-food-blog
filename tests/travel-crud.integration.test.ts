@@ -208,9 +208,30 @@ describe("Reise-CRUD", () => {
     // EINZELBILD — die Zugehörigkeit wird gesagt, nicht erraten.
     expect(full!.blocks).toEqual([
       { type: "text", markdown: "## Ankunft\n\nErster Abend." },
-      { type: "bild", imageId: img.id, gruppe: null, groesse: null, ausrichtung: null },
-      { type: "bild", imageId: img.id, gruppe: 1, groesse: null, ausrichtung: null },
-      { type: "bild", imageId: img.id, gruppe: 1, groesse: null, ausrichtung: null },
+      {
+        type: "bild",
+        imageId: img.id,
+        gruppe: null,
+        groesse: null,
+        ausrichtung: null,
+        bildunterschrift: false,
+      },
+      {
+        type: "bild",
+        imageId: img.id,
+        gruppe: 1,
+        groesse: null,
+        ausrichtung: null,
+        bildunterschrift: false,
+      },
+      {
+        type: "bild",
+        imageId: img.id,
+        gruppe: 1,
+        groesse: null,
+        ausrichtung: null,
+        bildunterschrift: false,
+      },
       { type: "restaurant", index: 0 },
     ]);
     expect(full!.blockImages[img.id]?.fileKey).toBe("blocktest");
@@ -281,8 +302,22 @@ describe("Reise-CRUD", () => {
       id: (result as { travelId: number }).travelId,
     });
     expect(full!.blocks).toEqual([
-      { type: "bild", imageId: bilder[0].id, gruppe: 4, groesse: null, ausrichtung: null },
-      { type: "bild", imageId: bilder[1].id, gruppe: 4, groesse: null, ausrichtung: null },
+      {
+        type: "bild",
+        imageId: bilder[0].id,
+        gruppe: 4,
+        groesse: null,
+        ausrichtung: null,
+        bildunterschrift: false,
+      },
+      {
+        type: "bild",
+        imageId: bilder[1].id,
+        gruppe: 4,
+        groesse: null,
+        ausrichtung: null,
+        bildunterschrift: false,
+      },
     ]);
     // Und beim Rendern sind es EINE Gruppe, nicht zwei. Genau dafür ist die
     // Marke da: Der weggefallene Block reißt nichts auseinander, weil die
@@ -290,7 +325,15 @@ describe("Reise-CRUD", () => {
     // wieder nebeneinanderstehen.
     expect(
       zuRenderBloecken(full!.blocks).filter((b) => b.art === "bild"),
-    ).toEqual([{ art: "bild", imageIds: [bilder[0].id, bilder[1].id] }]);
+    ).toEqual([
+      {
+        art: "bild",
+        bilder: [
+          { imageId: bilder[0].id, bildunterschrift: false },
+          { imageId: bilder[1].id, bildunterschrift: false },
+        ],
+      },
+    ]);
   });
 
   it("schlägt ähnliche Rezepte nur bei Kategorie+Küche+Zutat-Überschneidung vor", async () => {

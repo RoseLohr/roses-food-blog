@@ -352,6 +352,7 @@ async function collectTravel(
             gruppe: b.gruppe,
             groesse: b.groesse,
             ausrichtung: b.ausrichtung,
+            bildunterschrift: b.bildunterschrift,
           });
       } else if (b.restaurantId != null) {
         const idx = restaurantIndexById.get(b.restaurantId);

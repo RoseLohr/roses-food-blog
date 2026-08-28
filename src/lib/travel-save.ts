@@ -437,6 +437,10 @@ export async function saveTravelFromForm(
             // Zweitangabe gescheitert.
             groesse: b.gruppe === null ? b.groesse : null,
             ausrichtung: b.gruppe === null ? b.ausrichtung : null,
+            // Die Unterschrift gilt AUCH in einer Gruppe: Sie sagt nichts
+            // darüber, WO das Bild steht, kann der Anordnung also nicht
+            // widersprechen. Deshalb hier keine Fallunterscheidung.
+            bildunterschrift: b.bildunterschrift,
           };
         }
         return {

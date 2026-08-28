@@ -43,7 +43,7 @@
  * Browser-Bündel des Reise-Editors mit, und dessen Routenbudget ist der
  * knappste Posten der Anwendung (scripts/regime/bundle-budget.mjs).
  */
-import type { Ausrichtung, Bildgroesse } from "@/lib/bildreihen";
+import type { Ausrichtung, Bildgroesse, GruppenBild } from "@/lib/bildreihen";
 import { EINZELBILD_VORGABE } from "@/lib/bildreihen";
 import type { TravelBlock } from "@/lib/travel-blocks";
 
@@ -62,13 +62,15 @@ export type EditorItem =
       imageId: number;
       groesse: Bildgroesse;
       ausrichtung: Ausrichtung;
+      /** Alt-Text als sichtbare Unterschrift darunter? Standard nein. */
+      bildunterschrift: boolean;
     }
   /**
    * Eine Bildgruppe: das erste Bild über die ganze Breite, alle weiteren in
    * einer Reihe darunter. Die REIHENFOLGE ist die ganze Einstellung — mehr
    * gibt es an einer Gruppe nicht zu entscheiden.
    */
-  | { art: "bildgruppe"; imageIds: number[] }
+  | { art: "bildgruppe"; bilder: GruppenBild[] }
   | { art: "restaurant"; index: number };
 
 /** Die Karte einer Bildgruppe — die einzige Art mit mehreren Fotos. */
@@ -76,7 +78,7 @@ export type Bildgruppe = Extract<EditorItem, { art: "bildgruppe" }>;
 
 /** Eine leere Gruppe, wie sie der Knopf „+ Bildgruppe" anlegt. */
 export function neueBildgruppe(): EditorItem {
-  return { art: "bildgruppe", imageIds: [] };
+  return { art: "bildgruppe", bilder: [] };
 }
 
 /** Ein neues Einzelbild mit den Vorgaben. */
@@ -86,6 +88,122 @@ export function neuesEinzelbild(): EditorItem {
     imageId: 0,
     groesse: EINZELBILD_VORGABE.groesse,
     ausrichtung: EINZELBILD_VORGABE.ausrichtung,
+    bildunterschrift: false,
+  };
+}
+
+/**
+ * Die Fotos einer Gruppe als reine ID-Liste — das, womit der Bilderwähler
+ * arbeitet. Die Unterschrift-Angabe bleibt dabei am Foto und wird von
+ * `mitBildern` wieder zusammengeführt.
+ */
+export function bildIds(gruppe: Bildgruppe): number[] {
+  return gruppe.bilder.map((b) => b.imageId);
+}
+
+/**
+ * Neue Foto-Auswahl in eine Gruppe übernehmen und dabei die Unterschrift-
+ * Angaben der Fotos BEHALTEN, die schon drin waren.
+ *
+ * Ohne das verlöre ein Umsortieren im Wähler jede gesetzte Unterschrift — die
+ * Auswahl kommt als neue Liste zurück, und wer sie einfach übernimmt, ersetzt
+ * gesetzte Häkchen still durch die Vorgabe.
+ *
+ * Zugeordnet wird über die HERKUNFT, die der Wähler mitliefert: `herkunft[i]`
+ * ist die Stelle, an der der Eintrag vorher stand, oder `null` für ein neu
+ * hinzugekommenes Foto.
+ *
+ * ── WARUM NICHT ÜBER DIE BILD-ID ────────────────────────────────────────────
+ *
+ * Weil die ID nicht eindeutig ist: Dasselbe Foto darf zweimal in einer Gruppe
+ * stehen (über den Archiv-Import erreichbar). Eine Zuordnung nach ID kennt
+ * dann nur eine der beiden Angaben. Und eine Zuordnung nach REIHENFOLGE der
+ * gleichen IDs rät ebenfalls: Steht dort [7 mit, 7 ohne] und der Benutzer
+ * entfernt die ERSTE Kachel, kommt [7] heraus — genau dieselbe Liste wie beim
+ * Entfernen der zweiten. Das Foto, das übrig bleibt, bekäme die Unterschrift
+ * des gelöschten. Ein Tausch zweier gleicher IDs wäre in der Liste sogar gar
+ * nicht zu sehen.
+ *
+ * Die Herkunft sagt es ohne Raten. Zeigt sie ins Leere oder auf ein ANDERES
+ * Foto, gilt die Angabe nicht: Eine Unterschrift ist die Freigabe für den
+ * Alt-Text EINES bestimmten Bildes.
+ */
+export function mitBildern(
+  gruppe: Bildgruppe,
+  ids: number[],
+  herkunft: (number | null)[],
+): Bildgruppe {
+  // Nachschlagen über eine Karte statt über den Index: Eine `null`-Herkunft
+  // (neu hinzugekommen) und eine Stelle außerhalb der Liste treffen dann
+  // beide ins Leere, ohne dass davor eine eigene Abfrage stehen muss. Genau
+  // die stand hier zuerst — und war ein Zweig, den kein Verhalten
+  // unterscheidet: `bilder[null]` ist in JavaScript ebenfalls `undefined`.
+  // Ein Zweig, den kein Test halten kann, gehört nicht in den Quelltext.
+  const anStelle = new Map<number | null, GruppenBild>(
+    gruppe.bilder.map((b, i) => [i, b]),
+  );
+  return {
+    ...gruppe,
+    bilder: ids.map((imageId, i) => {
+      const vorher = anStelle.get(herkunft[i]);
+      return {
+        imageId,
+        bildunterschrift:
+          vorher?.imageId === imageId ? vorher.bildunterschrift : false,
+      };
+    }),
+  };
+}
+
+/**
+ * Trägt ein Gruppenfoto seinen Alt-Text als Unterschrift? Gefragt wird nach
+ * der STELLE, nicht nach der Bild-ID — siehe `mitUnterschrift`.
+ *
+ * Eine Stelle, die es nicht gibt, trägt keine Unterschrift. Das ist keine
+ * Nachsicht gegenüber falschen Aufrufen, sondern der Normalfall: Zwischen dem
+ * Abwählen eines Fotos und dem nächsten Rendern fragt der Wähler noch nach
+ * der alten Stelle.
+ */
+export function unterschriftAn(gruppe: Bildgruppe, position: number): boolean {
+  return gruppe.bilder[position]?.bildunterschrift ?? false;
+}
+
+/**
+ * Die Unterschrift EINES Gruppenfotos umstellen — angesprochen über seine
+ * STELLE in der Gruppe.
+ *
+ * Nicht über die Bild-ID: Steht dasselbe Foto zweimal in der Gruppe, träfe
+ * ein Klick am zweiten auch das erste. Die Stelle ist eindeutig, die ID nicht.
+ */
+export function mitUnterschrift(
+  gruppe: Bildgruppe,
+  position: number,
+  an: boolean,
+): Bildgruppe {
+  return {
+    ...gruppe,
+    bilder: gruppe.bilder.map((b, i) =>
+      i === position ? { ...b, bildunterschrift: an } : b,
+    ),
+  };
+}
+
+/**
+ * Das Foto eines Einzelbilds wechseln.
+ *
+ * Ein WECHSEL nimmt die Unterschrift mit weg: Das Häkchen war für den
+ * Alt-Text des alten Fotos gesetzt. Bliebe es stehen, erschiene unter dem
+ * neuen Bild ein fremder Satz, den für dieses Bild niemand freigegeben hat.
+ * Wird dasselbe Foto erneut gewählt, ändert sich nichts — kein Wechsel, kein
+ * Verlust.
+ */
+export function mitFoto(
+  bild: { imageId: number; bildunterschrift: boolean },
+  imageId: number,
+): { imageId: number; bildunterschrift: boolean } {
+  return {
+    imageId,
+    bildunterschrift: imageId === bild.imageId ? bild.bildunterschrift : false,
   };
 }
 
@@ -122,12 +240,19 @@ export function zuItems(blocks: TravelBlock[]): EditorItem[] {
         imageId: b.imageId,
         groesse: b.groesse ?? EINZELBILD_VORGABE.groesse,
         ausrichtung: b.ausrichtung ?? EINZELBILD_VORGABE.ausrichtung,
+        bildunterschrift: b.bildunterschrift,
       });
       offen = null;
     } else if (offen !== null && offen.marke === b.gruppe) {
-      offen.karte.imageIds.push(b.imageId);
+      offen.karte.bilder.push({
+        imageId: b.imageId,
+        bildunterschrift: b.bildunterschrift,
+      });
     } else {
-      const karte: Bildgruppe = { art: "bildgruppe", imageIds: [b.imageId] };
+      const karte: Bildgruppe = {
+        art: "bildgruppe",
+        bilder: [{ imageId: b.imageId, bildunterschrift: b.bildunterschrift }],
+      };
       items.push(karte);
       offen = { marke: b.gruppe, karte };
     }
@@ -163,21 +288,25 @@ export function zuBloecken(items: EditorItem[]): TravelBlock[] {
         gruppe: null,
         groesse: item.groesse,
         ausrichtung: item.ausrichtung,
+        bildunterschrift: item.bildunterschrift,
       });
     } else {
-      const bilder = item.imageIds.filter((id) => id > 0);
+      const bilder = item.bilder.filter((b) => b.imageId > 0);
       if (bilder.length === 0) continue;
       marke += 1;
-      for (const imageId of bilder) {
+      for (const bild of bilder) {
         blocks.push({
           type: "bild",
-          imageId,
+          imageId: bild.imageId,
           gruppe: marke,
           // In einer Gruppe bestimmt die Position die Anordnung. Eine Größe
           // daneben wäre eine zweite, unwirksame Wahrheit — Vertrag und
           // Datenbank weisen sie zurück (travel_block_bild_regler_check).
           groesse: null,
           ausrichtung: null,
+          // Die Unterschrift dagegen sagt nichts über die Position und gilt
+          // deshalb auch in einer Gruppe — je Foto.
+          bildunterschrift: bild.bildunterschrift,
         });
       }
     }

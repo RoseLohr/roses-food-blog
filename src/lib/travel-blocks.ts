@@ -52,6 +52,20 @@ const blockSchema = z.discriminatedUnion("type", [
      */
     groesse: z.enum(["s", "m", "l"]).nullable().default(null),
     ausrichtung: z.enum(["links", "rechts"]).nullable().default(null),
+    /**
+     * Soll der Alt-Text dieses Fotos als Bildunterschrift darunter stehen?
+     *
+     * Standard NEIN, und das ist eine Entscheidung: Der Alt-Text beschreibt
+     * das Bild für alle, die es nicht sehen können, und liest sich oft
+     * entsprechend. Als sichtbare Unterschrift taugt er nur dort, wo jemand
+     * ihn dafür geschrieben hat.
+     *
+     * Anders als `groesse` und `ausrichtung` ist diese Angabe AUCH in einer
+     * Gruppe erlaubt. Die beiden Regler sagen, WO ein Bild steht, und
+     * widersprächen dort der Anordnung. Eine Unterschrift sagt nichts über die
+     * Position — sie hängt unter dem Bild, wo immer es steht.
+     */
+    bildunterschrift: z.boolean().default(false),
   }),
   z.object({
     type: z.literal("restaurant"),
