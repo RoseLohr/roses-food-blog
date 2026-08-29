@@ -7,15 +7,26 @@ import { JsonLd, breadcrumbJsonLd, organizationJsonLd } from "@/lib/jsonld";
 import { TravelView } from "@/components/travel-view";
 import { PageTracker } from "@/components/page-tracker";
 import { getSiteName } from "@/lib/settings";
+import {
+  darfGezeigtWerden,
+  istEntwurf,
+  sichtbarkeitFuerBesucher,
+} from "@/lib/entwurfsansicht";
+import { Entwurfshinweis } from "@/components/entwurfshinweis";
 import { t } from "@/i18n/de";
 
 const dict = t();
 
 export const dynamic = "force-dynamic";
 
-async function loadPublished(slug: string) {
+/**
+ * Der Reisebericht — oder `null`, wenn der Besucher ihn nicht sehen darf.
+ * Begründung der Reihenfolge siehe rezepte/[slug]/page.tsx.
+ */
+async function ladeSichtbares(slug: string) {
+  const sichtbarkeit = await sichtbarkeitFuerBesucher();
   const full = await getFullTravelPost({ slug });
-  if (!full || full.post.status !== "veroeffentlicht") return null;
+  if (!full || !darfGezeigtWerden(full.post.status, sichtbarkeit)) return null;
   return full;
 }
 
@@ -23,40 +34,64 @@ export async function generateMetadata(props: {
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await props.params;
-  const full = await loadPublished(slug);
+  const full = await ladeSichtbares(slug);
   if (!full) return {};
   const { post } = full;
   const base = await getPublicBaseUrl();
   const ogImage = absoluteImageUrl(base, full.heroImage);
   const title = post.seoTitle || post.title;
   const description = post.seoDescription || post.teaser;
+  const entwurf = istEntwurf(post.status);
   return {
     title,
     description,
+    // Ein Entwurf ist nur fuer den angemeldeten Admin ueberhaupt erreichbar —
+    // aber falls ihn doch je etwas abruft, sagt die Seite selbst, dass sie
+    // nicht in einen Index gehoert. Guertel und Hosentraeger.
+    robots: entwurf ? { index: false, follow: false } : undefined,
+    // Das Canonical BLEIBT — auch am Entwurf. Es beschreibt keine Inhalte,
+    // sondern nennt die eigene Adresse, und neben `noindex` ist es fuer
+    // Crawler ohnehin wirkungslos. Weglassen wuerde nichts schuetzen und die
+    // Regel des SEO-Gates (jede indexierbare Route traegt eins) unnoetig
+    // aufweichen.
     alternates: { canonical: `/reisen/${post.slug}` },
-    openGraph: {
-      title,
-      description,
-      type: "article",
-      url: `${base}/reisen/${post.slug}`,
-      images: ogImage ? [{ url: ogImage }] : undefined,
-      locale: "de_DE",
-      siteName: getSiteName(),
-      publishedTime: post.publishedAt?.toISOString(),
-      modifiedTime: post.updatedAt.toISOString(),
-    },
-    twitter: {
-      card: ogImage ? "summary_large_image" : "summary",
-      title,
-      description,
-      images: ogImage ? [ogImage] : undefined,
-    },
+    // Ein Entwurf bekommt KEINE Teil-Vorschau. OpenGraph und Twitter-Card
+    // existieren einzig, damit FREMDE Plattformen daraus eine Karte bauen —
+    // dieselbe Klasse wie JSON-LD, Sitemap und llms.txt, und die bleiben
+    // ausnahmslos bei Veroeffentlichtem. `og:image` traegt die Adresse des
+    // Titelbilds, `og:description` den Teaser, `article:published_time` ein
+    // Datum, das es nicht gibt.
+    //
+    // Titel und Beschreibung bleiben: Die braucht der Redakteur im Tab, und
+    // sie richten sich an IHN, nicht an eine fremde Plattform. Genau da
+    // verlaeuft die Linie.
+    ...(entwurf
+      ? {}
+      : {
+          openGraph: {
+            title,
+            description,
+            type: "article",
+            url: `${base}/reisen/${post.slug}`,
+            images: ogImage ? [{ url: ogImage }] : undefined,
+            locale: "de_DE",
+            siteName: getSiteName(),
+            publishedTime: post.publishedAt?.toISOString(),
+            modifiedTime: post.updatedAt.toISOString(),
+          },
+          twitter: {
+            card: ogImage ? "summary_large_image" : "summary",
+            title,
+            description,
+            images: ogImage ? [ogImage] : undefined,
+          },
+        }),
   };
 }
 
 function articleJsonLd(
   base: string,
-  full: NonNullable<Awaited<ReturnType<typeof loadPublished>>>,
+  full: NonNullable<Awaited<ReturnType<typeof ladeSichtbares>>>,
 ) {
   const { post } = full;
   // Google verlangt für Article einen Autor; der Blog tritt als Organisation
@@ -86,9 +121,10 @@ export default async function TravelPostPage(props: {
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await props.params;
-  const full = await loadPublished(slug);
+  const full = await ladeSichtbares(slug);
   if (!full) notFound();
   const base = await getPublicBaseUrl();
+  const entwurf = istEntwurf(full.post.status);
 
   return (
     <main>
@@ -97,13 +133,25 @@ export default async function TravelPostPage(props: {
         contentId={full.post.id}
         path={`/reisen/${full.post.slug}`}
       />
-      <JsonLd data={articleJsonLd(base, full)} />
-      <JsonLd
-        data={breadcrumbJsonLd(base, [
-          [dict.nav.travel, "/reisen"],
-          [full.post.title, `/reisen/${full.post.slug}`],
-        ])}
-      />
+      <Entwurfshinweis entwurf={entwurf} />
+      {/* KEINE strukturierten Daten am Entwurf. JSON-LD ist eine Ausgabe für
+          Maschinen — dieselbe Klasse wie Sitemap und llms.txt, und die bleiben
+          ausnahmslos bei Veröffentlichtem. Dass diese Seite nur der
+          Angemeldete öffnen kann, ändert daran nichts: Ein Werkzeug, das sie
+          in seiner Sitzung liest, bekäme sonst einen unveröffentlichten
+          Beitrag maschinenlesbar beschrieben — mit URL, Bild und einem
+          Erscheinungsdatum, das es nicht gibt. */}
+      {!entwurf && (
+        <>
+          <JsonLd data={articleJsonLd(base, full)} />
+          <JsonLd
+            data={breadcrumbJsonLd(base, [
+              [dict.nav.travel, "/reisen"],
+              [full.post.title, `/reisen/${full.post.slug}`],
+            ])}
+          />
+        </>
+      )}
       <TravelView full={full} />
     </main>
   );

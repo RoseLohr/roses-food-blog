@@ -5,7 +5,7 @@ import { db, schema } from "@/db";
 import { requireAdmin } from "@/lib/auth";
 import { t } from "@/i18n/de";
 import { Meldung, meldungAus } from "@/components/admin/meldung";
-import { Statuschip } from "@/components/admin/statuschip";
+import { Statuschip } from "@/components/statuschip";
 
 const dict = t();
 const d = dict.admin.contacts;

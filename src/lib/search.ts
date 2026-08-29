@@ -7,7 +7,7 @@ import { and, asc, desc, eq, gt, inArray, isNotNull, lte, or, sql } from "drizzl
 import { db, schema } from "@/db";
 import type { RecipeCardData } from "@/components/recipe-card";
 import { srcset, thumbUrl, variantWidthsByImage } from "@/lib/media";
-import { publishedRecipeCards } from "@/lib/recipe-list";
+import { rezeptkarten } from "@/lib/recipe-list";
 import type { MediaImage } from "@/lib/recipes";
 import { dishTaxonomiesByDish, type TaxonomyType } from "@/lib/taxonomies";
 
@@ -223,7 +223,13 @@ export async function searchRecipes(
     .from(schema.recipe)
     .where(and(...conditions))
     .orderBy(desc(schema.recipe.publishedAt));
-  return publishedRecipeCards({ ids: rows.map((r) => r.id) });
+  // Die Suche bleibt bei Veroeffentlichtem — auch fuer den angemeldeten
+  // Admin. Sie ist ein Index ueber den Blog, keine Vorschau; wer seine
+  // Entwuerfe sucht, hat dafuer die Liste im Admin.
+  return rezeptkarten({
+    sichtbarkeit: "nur-veroeffentlicht",
+    ids: rows.map((r) => r.id),
+  });
 }
 
 export interface TravelSearchHit {
@@ -465,7 +471,8 @@ export async function searchIngredients(
         eq(schema.recipeIngredient.sectionId, schema.recipeSection.id),
       )
       .where(eq(schema.recipeIngredient.ingredientId, ing.id));
-    const recipes = await publishedRecipeCards({
+    const recipes = await rezeptkarten({
+      sichtbarkeit: "nur-veroeffentlicht",
       ids: [...new Set(recipeRows.map((r) => r.id))],
     });
 

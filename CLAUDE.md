@@ -133,6 +133,61 @@ diesem Repository arbeitet. Sie ist Teil des Governance-Regimes (A-32/A-33/A-37)
   machen will, legt zuerst die Rasterungsumgebung fest — die Toleranz wird
   NICHT angehoben.
 
+## Entwürfe im öffentlichen Bereich (08/2026) — nicht verhandelbar
+Ein angemeldeter Admin sieht Startseite, Rezept-/Reiseliste und die drei
+Detailseiten MIT seinen Entwürfen (Plakette „Entwurf"); alle anderen sehen sie
+nicht. Die Regel steht EINMAL, in `src/lib/entwurfsansicht.ts`.
+
+- **Der Parameter `sichtbarkeit` ist PFLICHT** und ein ausgeschriebenes Wort
+  (`"nur-veroeffentlicht"` / `"auch-entwuerfe"`), kein `boolean`. Kein
+  Vorgabewert — weder der sichere noch der bequeme: Eine Vorgabe macht genau
+  die Aufrufstellen unsichtbar, an denen später jemand etwas ändert. Wer eine
+  neue Abfrage schreibt, wird vom Übersetzer gefragt.
+- **Erst nicht laden, dann nicht anzeigen — nie umgekehrt.** Was eine
+  Server-Komponente an ihre Kinder reicht, steht im RSC-Payload und im HTML.
+  „Laden und ausblenden" liefert den Entwurf im Quelltext mit. Die
+  Entscheidung gehört in die WHERE-Bedingung bzw. unmittelbar hinter den
+  Lader, nicht ins Layout (ein Layout kann die Datenabfrage seiner `children`
+  nicht verhindern) und niemals in eine Client-Komponente.
+- **Maschinen und Nebenwege bleiben bei Veröffentlichtem** — auch für den
+  Angemeldeten: sitemap.xml, llms.txt, robots.txt, Suche, Weltkarte,
+  Navigation, „ähnliche Rezepte", Kategorie- und Filterseiten, Newsletter,
+  Druckansicht. `loadSeoContent()` bekommt KEINEN Sichtbarkeits-Parameter;
+  sein Name ist die Zusage.
+- **Ein Entwurf trägt KEIN JSON-LD** — auch nicht auf seiner eigenen
+  Detailseite, die nur der Angemeldete öffnen kann. Strukturierte Daten sind
+  eine Ausgabe für Maschinen, dieselbe Klasse wie Sitemap und llms.txt; ein
+  Werkzeug, das die Seite in der Sitzung des Redakteurs liest (Erweiterung,
+  Lesezeichendienst, Link-Vorschau), bekäme sonst einen unveröffentlichten
+  Beitrag als `Recipe`/`Article` beschrieben — mit URL, Bild und einem
+  Erscheinungsdatum, das es nicht gibt. Die drei Detailseiten prüfen dafür
+  `istEntwurf(status)`; gemessen wird es in
+  `tests/e2e/entwurf-sichtbarkeit.spec.ts` samt Gegenprobe an einer
+  veröffentlichten Seite (sonst bliebe die Zusage auch dann grün, wenn das
+  JSON-LD überall verschwände).
+- **Und KEINE Teil-Vorschau** — kein OpenGraph, keine Twitter-Card. Sie
+  existieren einzig, damit FREMDE Plattformen daraus eine Karte bauen, sind
+  also dieselbe Klasse wie das JSON-LD darüber: `og:image` trägt die Adresse
+  des Titelbilds, `og:description` den Teaser, `article:published_time` ein
+  Datum, das es nicht gibt. Die Linie verläuft zwischen „für eine fremde
+  Plattform" und „für den, der die Seite offen hat": **Titel, Beschreibung
+  und Canonical BLEIBEN** — den Titel braucht der Redakteur im Tab.
+  Gemessen wird der INHALT der Marken, nicht ihre Zahl: Das Wurzel-Layout
+  setzt seitenweite Angaben (Blogname, Untertitel, Titelbild des zuletzt
+  VERÖFFENTLICHTEN Rezepts), die stehen bleiben sollen. Ein Test auf „null
+  Marken" würde etwas anderes messen als das, was zugesagt ist.
+- **Kein Vorschau-Modus an einer indexierbaren URL.** Kein `?vorschau=1`, kein
+  Token: Die Detailseiten tragen `alternates.canonical` auf die öffentliche
+  Adresse, ein Parameter würde Entwurfsinhalt unter der kanonischen URL
+  ausliefern. Sichtbarkeit hängt an der Sitzung, nicht an der Adresse.
+- **Die Auslieferung trägt das mit:** Jede öffentliche Route ist
+  `force-dynamic`, Next liefert dadurch `Cache-Control: private, no-store`.
+  Fällt das weg, könnte ein geteilter Cache die für den Admin gerenderte
+  Antwort an Anonyme geben. `tests/e2e/entwurf-sichtbarkeit.spec.ts` misst den
+  Kopf, statt ihn vorauszusetzen — dort steht auch die vollständige Matrix
+  (jede Adresse einmal mit und einmal ohne Sitzung). Wer hier etwas ändert,
+  fährt diesen Spec.
+
 ## Gemeinsame Bausteine — benutzen statt abschreiben
 Wer im Admin eine Seite anlegt oder ändert, nimmt diese und schreibt sie nicht
 neu (B6, 08/2026):

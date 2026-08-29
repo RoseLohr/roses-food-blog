@@ -11,16 +11,28 @@ import { getPublicBaseUrl } from "@/lib/base-url";
 import { JsonLd, breadcrumbJsonLd } from "@/lib/jsonld";
 import { PageTracker } from "@/components/page-tracker";
 import { ResponsiveImg } from "@/components/responsive-img";
+import {
+  darfGezeigtWerden,
+  istEntwurf,
+  sichtbarkeitFuerBesucher,
+  VEROEFFENTLICHT,
+} from "@/lib/entwurfsansicht";
+import { Entwurfshinweis } from "@/components/entwurfshinweis";
 
 
 export const dynamic = "force-dynamic";
 
+/**
+ * Die CMS-Seite — oder `null`, wenn der Besucher sie nicht sehen darf.
+ * Begründung der Reihenfolge siehe rezepte/[slug]/page.tsx.
+ */
 async function loadPage(slug: string) {
+  const sichtbarkeit = await sichtbarkeitFuerBesucher();
   const [page] = await db
     .select()
     .from(schema.page)
     .where(eq(schema.page.slug, slug));
-  if (!page || page.status !== "veroeffentlicht") return null;
+  if (!page || !darfGezeigtWerden(page.status, sichtbarkeit)) return null;
   const heroImage = await mediaImageWithWidths(page.heroImageId);
   return { page, heroImage };
 }
@@ -34,6 +46,11 @@ export async function generateMetadata(props: {
   return {
     title: data.page.seoTitle || data.page.title,
     description: data.page.seoDescription || undefined,
+    // Ein Entwurf ist nur fuer den angemeldeten Admin ueberhaupt erreichbar —
+    // aber falls ihn doch je etwas abruft, sagt die Seite selbst, dass sie
+    // nicht in einen Index gehoert. Guertel und Hosentraeger.
+    robots:
+      data.page.status === VEROEFFENTLICHT ? undefined : { index: false, follow: false },
     alternates: { canonical: `/${data.page.slug}` },
   };
 }
@@ -46,15 +63,26 @@ export default async function CmsPage(props: {
   if (!data) notFound();
   const { page, heroImage } = data;
   const base = await getPublicBaseUrl();
+  const entwurf = istEntwurf(page.status);
 
   return (
     <main className="mx-auto max-w-3xl">
       <PageTracker contentType="seite" contentId={page.id} path={`/${page.slug}`} />
-      <JsonLd
-        data={breadcrumbJsonLd(base, [
-          [page.title, `/${page.slug}`],
-        ])}
-      />
+      <Entwurfshinweis entwurf={entwurf} />
+      {/* KEINE strukturierten Daten am Entwurf. JSON-LD ist eine Ausgabe für
+          Maschinen — dieselbe Klasse wie Sitemap und llms.txt, und die bleiben
+          ausnahmslos bei Veröffentlichtem. Dass diese Seite nur der
+          Angemeldete öffnen kann, ändert daran nichts: Ein Werkzeug, das sie
+          in seiner Sitzung liest, bekäme sonst einen unveröffentlichten
+          Beitrag maschinenlesbar beschrieben — mit URL, Bild und einem
+          Erscheinungsdatum, das es nicht gibt. */}
+      {!entwurf && (
+        <JsonLd
+          data={breadcrumbJsonLd(base, [
+            [page.title, `/${page.slug}`],
+          ])}
+        />
+      )}
       <h1 className="font-display text-3xl font-bold md:text-4xl">{page.title}</h1>
       {heroImage && (
         // Halbe Inhaltsbreite (Wunsch: Bild halb so groß), zentriert.
