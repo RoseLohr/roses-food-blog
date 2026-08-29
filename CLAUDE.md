@@ -133,6 +133,39 @@ diesem Repository arbeitet. Sie ist Teil des Governance-Regimes (A-32/A-33/A-37)
   machen will, legt zuerst die Rasterungsumgebung fest — die Toleranz wird
   NICHT angehoben.
 
+## Entwürfe im öffentlichen Bereich (08/2026) — nicht verhandelbar
+Ein angemeldeter Admin sieht Startseite, Rezept-/Reiseliste und die drei
+Detailseiten MIT seinen Entwürfen (Plakette „Entwurf"); alle anderen sehen sie
+nicht. Die Regel steht EINMAL, in `src/lib/entwurfsansicht.ts`.
+
+- **Der Parameter `sichtbarkeit` ist PFLICHT** und ein ausgeschriebenes Wort
+  (`"nur-veroeffentlicht"` / `"auch-entwuerfe"`), kein `boolean`. Kein
+  Vorgabewert — weder der sichere noch der bequeme: Eine Vorgabe macht genau
+  die Aufrufstellen unsichtbar, an denen später jemand etwas ändert. Wer eine
+  neue Abfrage schreibt, wird vom Übersetzer gefragt.
+- **Erst nicht laden, dann nicht anzeigen — nie umgekehrt.** Was eine
+  Server-Komponente an ihre Kinder reicht, steht im RSC-Payload und im HTML.
+  „Laden und ausblenden" liefert den Entwurf im Quelltext mit. Die
+  Entscheidung gehört in die WHERE-Bedingung bzw. unmittelbar hinter den
+  Lader, nicht ins Layout (ein Layout kann die Datenabfrage seiner `children`
+  nicht verhindern) und niemals in eine Client-Komponente.
+- **Maschinen und Nebenwege bleiben bei Veröffentlichtem** — auch für den
+  Angemeldeten: sitemap.xml, llms.txt, robots.txt, JSON-LD-Indizes, Suche,
+  Weltkarte, Navigation, „ähnliche Rezepte", Kategorie- und Filterseiten,
+  Newsletter, Druckansicht. `loadSeoContent()` bekommt KEINEN
+  Sichtbarkeits-Parameter; sein Name ist die Zusage.
+- **Kein Vorschau-Modus an einer indexierbaren URL.** Kein `?vorschau=1`, kein
+  Token: Die Detailseiten tragen `alternates.canonical` auf die öffentliche
+  Adresse, ein Parameter würde Entwurfsinhalt unter der kanonischen URL
+  ausliefern. Sichtbarkeit hängt an der Sitzung, nicht an der Adresse.
+- **Die Auslieferung trägt das mit:** Jede öffentliche Route ist
+  `force-dynamic`, Next liefert dadurch `Cache-Control: private, no-store`.
+  Fällt das weg, könnte ein geteilter Cache die für den Admin gerenderte
+  Antwort an Anonyme geben. `tests/e2e/entwurf-sichtbarkeit.spec.ts` misst den
+  Kopf, statt ihn vorauszusetzen — dort steht auch die vollständige Matrix
+  (jede Adresse einmal mit und einmal ohne Sitzung). Wer hier etwas ändert,
+  fährt diesen Spec.
+
 ## Gemeinsame Bausteine — benutzen statt abschreiben
 Wer im Admin eine Seite anlegt oder ändert, nimmt diese und schreibt sie nicht
 neu (B6, 08/2026):

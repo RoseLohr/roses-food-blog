@@ -131,6 +131,19 @@ export const de = {
     changesBody:
       "Diese Datenschutzerklärung entspricht dem aktuellen Stand. Durch die Weiterentwicklung der Website oder aufgrund geänderter gesetzlicher bzw. behördlicher Vorgaben kann es notwendig werden, sie anzupassen. Es gilt jeweils die auf dieser Seite abrufbare Fassung.",
   },
+  /**
+   * Die Entwurfs-Ansicht im öffentlichen Bereich (nur für angemeldete
+   * Redakteure sichtbar, siehe src/lib/entwurfsansicht.ts).
+   *
+   * Der Hinweissatz nennt ausdrücklich, dass ANDERE das hier nicht sehen —
+   * das ist die Frage, die sich beim Betrachten stellt, und sie soll nicht
+   * geraten werden müssen.
+   */
+  entwurf: {
+    plakette: "Entwurf",
+    hinweis:
+      "Dieser Beitrag ist noch nicht veröffentlicht. Du siehst ihn, weil du angemeldet bist — für alle anderen existiert diese Seite nicht.",
+  },
   recipeList: {
     title: "Alle Rezepte",
     intro: "Gesunde Rezepte für jeden Tag — zum Suchen, Filtern und Nachkochen.",

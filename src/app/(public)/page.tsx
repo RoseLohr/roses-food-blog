@@ -6,7 +6,8 @@ import { HeroSlider, type SlideData } from "@/components/hero-slider";
 import { RecipeCard } from "@/components/recipe-card";
 import { ResponsiveImg } from "@/components/responsive-img";
 import { DietBox, type DietBoxItem } from "@/components/diet-box";
-import { publishedRecipeCards } from "@/lib/recipe-list";
+import { rezeptkarten } from "@/lib/recipe-list";
+import { sichtbarkeitFuerBesucher } from "@/lib/entwurfsansicht";
 import { CALORIE_BANDS } from "@/lib/search";
 import {
   focusPosition,
@@ -129,9 +130,14 @@ async function loadHomepage() {
 
   const aboutImage = await mediaImageWithWidths(config?.aboutTeaserImageId);
 
+  // Einmal fragen, an beide Listen weiterreichen: Zwei getrennte Abfragen
+  // koennten auseinanderlaufen, und ein halb angemeldeter Zustand waere die
+  // verwirrendste aller Anzeigen.
+  const sichtbarkeit = await sichtbarkeitFuerBesucher();
+
   const [popular, latest, taxByType, filterGroupRows] = await Promise.all([
-    publishedRecipeCards({ limit: config?.popularCount ?? 6, orderByLikes: true }),
-    publishedRecipeCards({ limit: config?.latestCount ?? 6 }),
+    rezeptkarten({ sichtbarkeit, limit: config?.popularCount ?? 6, orderByLikes: true }),
+    rezeptkarten({ sichtbarkeit, limit: config?.latestCount ?? 6 }),
     taxonomiesByType(),
     // Aktive Filtergruppen der „Rezepte filtern"-Box (Admin-konfigurierbar).
     db.select().from(schema.homepageFilterGroup),

@@ -6,7 +6,7 @@ import { requireAdmin } from "@/lib/auth";
 import { t } from "@/i18n/de";
 import { deletePageAction } from "./actions";
 import { Meldung, meldungAus } from "@/components/admin/meldung";
-import { Statuschip } from "@/components/admin/statuschip";
+import { Statuschip } from "@/components/statuschip";
 import { LoeschForm } from "@/components/admin/loesch-form";
 
 const dict = t();

@@ -10,7 +10,7 @@ import { and, eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { db, schema } from "@/db";
 import { RecipeCard } from "@/components/recipe-card";
-import { publishedRecipeCards } from "@/lib/recipe-list";
+import { rezeptkarten } from "@/lib/recipe-list";
 import { taxonomyBySlug } from "@/lib/taxonomies";
 import { PageTracker } from "@/components/page-tracker";
 import { getPublicBaseUrl } from "@/lib/base-url";
@@ -63,7 +63,12 @@ export default async function CategoryPage(props: {
   if (!cat) notFound();
 
   const ids = await recipeIdsInCategory(cat.id);
-  const recipes = await publishedRecipeCards({ ids });
+  // Kategorieseiten bleiben bei Veroeffentlichtem: Sie sind indexierbar
+  // und stehen in der Sitemap; ihr Inhalt soll fuer jeden derselbe sein.
+  const recipes = await rezeptkarten({
+    sichtbarkeit: "nur-veroeffentlicht",
+    ids,
+  });
   const base = await getPublicBaseUrl();
 
   return (

@@ -4,6 +4,7 @@
  */
 import Link from "next/link";
 import { ResponsiveImg } from "./responsive-img";
+import { Entwurfsplakette } from "@/components/entwurfshinweis";
 
 export type TravelCardData = {
   slug: string;
@@ -19,6 +20,13 @@ export type TravelCardData = {
   variantWidths: number[] | null;
   focusX?: number | null;
   focusY?: number | null;
+  /**
+   * Noch nicht veröffentlicht — die Karte trägt dann die Plakette „Entwurf".
+   * Eine solche Karte entsteht nur für einen angemeldeten Admin
+   * (src/lib/entwurfsansicht.ts); die Karte blendet nichts aus, sie
+   * beschriftet nur, was sie ohnehin bekommt.
+   */
+  entwurf?: boolean;
 };
 
 export function TravelPostCard({ post }: { post: TravelCardData }) {
@@ -46,6 +54,12 @@ export function TravelPostCard({ post }: { post: TravelCardData }) {
           <div aria-hidden className="aspect-[2/1] w-full bg-cream" />
         )}
         <div className="p-5">
+          {/* Über der Herkunftszeile: erst der Status, dann der Inhalt. */}
+          {post.entwurf && (
+            <p className="mb-1.5">
+              <Entwurfsplakette entwurf />
+            </p>
+          )}
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-leaf">
             {[post.country, post.region, post.city].filter(Boolean).join(" · ")}
           </p>

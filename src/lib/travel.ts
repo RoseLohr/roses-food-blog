@@ -2,13 +2,18 @@
  * Datenzugriff für Reiseberichte inkl. Restaurants, Gerichten,
  * Gericht-Bildern, Zutaten-Referenzen und Inhalts-Blöcken (travel_block).
  */
-import { asc, desc, eq, inArray } from "drizzle-orm";
+import { asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { db, schema } from "@/db";
 import type { MediaImage } from "@/lib/recipes";
 import { variantWidthsByImage } from "@/lib/media";
 import { dishTaxonomiesByDish, type TaxonomyRef } from "@/lib/taxonomies";
 import type { TravelBlock } from "@/lib/travel-blocks";
 import { restaurantFotoIds } from "@/lib/restaurant-fotos";
+import {
+  statusBedingung,
+  VEROEFFENTLICHT,
+  type Sichtbarkeit,
+} from "@/lib/entwurfsansicht";
 
 export type TravelPost = typeof schema.travelPost.$inferSelect;
 export type { TaxonomyRef };
@@ -103,9 +108,20 @@ export function decodeFilterValue(raw: string): string {
  * Land-/Region-/Stadt-Ergebnisseiten), neueste zuerst. Optional auf einen
  * Spaltenwert (Land/Region/Stadt) gefiltert — komma-token-genau (s. o.).
  */
-export async function publishedTravelCards(filter?: {
-  column: "country" | "region" | "city";
-  value: string;
+/**
+ * Kartendaten fuer Reise-Uebersichten.
+ *
+ * HIESS BIS 08/2026 `publishedTravelCards` — umbenannt aus demselben Grund wie
+ * `rezeptkarten`: Ein Name, der „published" verspricht, darf nicht manchmal
+ * Entwuerfe liefern.
+ */
+export async function reisekarten(options: {
+  /** Pflicht — siehe src/lib/entwurfsansicht.ts, warum es keine Vorgabe gibt. */
+  sichtbarkeit: Sichtbarkeit;
+  filter?: {
+    column: "country" | "region" | "city";
+    value: string;
+  };
 }): Promise<
   Array<{
     slug: string;
@@ -114,6 +130,8 @@ export async function publishedTravelCards(filter?: {
     country: string;
     region: string;
     city: string;
+    /** Noch nicht veroeffentlicht — die Kachel traegt dann die Plakette. */
+    entwurf: boolean;
     fileKey: string | null;
     altText: string | null;
     width: number | null;
@@ -131,6 +149,7 @@ export async function publishedTravelCards(filter?: {
       country: schema.travelPost.country,
       region: schema.travelPost.region,
       city: schema.travelPost.city,
+      status: schema.travelPost.status,
       imageId: schema.mediaImage.id,
       fileKey: schema.mediaImage.fileKey,
       altText: schema.mediaImage.altText,
@@ -144,18 +163,41 @@ export async function publishedTravelCards(filter?: {
       schema.mediaImage,
       eq(schema.travelPost.heroImageId, schema.mediaImage.id),
     )
-    .where(eq(schema.travelPost.status, "veroeffentlicht"))
-    .orderBy(desc(schema.travelPost.publishedAt), desc(schema.travelPost.id));
+    .where(statusBedingung(schema.travelPost.status, options.sichtbarkeit))
+    .orderBy(
+      // ENTWÜRFE ZUERST — und zwar nur dann, wenn es überhaupt welche geben
+      // kann. Für „nur-veroeffentlicht" entsteht dieser Schlüssel GAR NICHT:
+      // Die Abfrage des anonymen Besuchers ist damit Zeichen für Zeichen die
+      // alte, und die Zusage „für ihn ändert sich nichts" ist strukturell
+      // wahr statt argumentiert.
+      //
+      // Der erste Anlauf hängte den Ausdruck unbedingt an und begründete das
+      // damit, dass er bei lauter veröffentlichten Zeilen denselben Wert
+      // liefert. Das stimmt fürs ERGEBNIS, nicht für den Weg dorthin: Ein
+      // führender Ausdruck ist für den Abfrageplaner nicht als konstant
+      // erkennbar, die Index-Ordnung fällt weg und SQLite legt einen
+      // temporären Sortierbaum an (nachgemessen mit EXPLAIN QUERY PLAN:
+      // `USE TEMP B-TREE FOR ORDER BY`, wo vorher nichts stand).       // Nötig ist der Schlüssel, weil ein Entwurf `published_at = NULL` trägt
+      // (siehe travel-save.ts) und SQLite NULL bei DESC ans ENDE sortiert. Ein Entwurf
+      // landete damit hinter allem — und stünde in der Liste ganz unten.
+      ...(options.sichtbarkeit === "auch-entwuerfe"
+        ? [asc(sql`${schema.travelPost.status} = ${VEROEFFENTLICHT}`)]
+        : []),
+      desc(schema.travelPost.publishedAt),
+      desc(schema.travelPost.id),
+    );
   // Filterung komma-token-genau in JS (nicht in SQL): so matcht „Queensland"
   // auch einen kommagetrennten Region-/Stadt-Wert, nicht nur die exakte Kette.
+  const filter = options.filter;
   const rows = filter
     ? allRows.filter((r) => matchesCommaToken(r[filter.column], filter.value))
     : allRows;
   const widthsById = await variantWidthsByImage(
     rows.flatMap((r) => (r.imageId ? [r.imageId] : [])),
   );
-  return rows.map(({ imageId, ...r }) => ({
+  return rows.map(({ imageId, status, ...r }) => ({
     ...r,
+    entwurf: status !== VEROEFFENTLICHT,
     variantWidths: imageId ? (widthsById.get(imageId) ?? []) : null,
   }));
 }

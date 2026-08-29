@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import { TravelMap } from "@/components/travel-map";
 import { TravelPostCard } from "@/components/travel-post-card";
 import { getTravelMapPins } from "@/lib/travel-map";
-import { publishedTravelCards } from "@/lib/travel";
+import { reisekarten } from "@/lib/travel";
+import { sichtbarkeitFuerBesucher } from "@/lib/entwurfsansicht";
 import { getReisenTextUnten } from "@/lib/settings";
 import { renderMarkdown } from "@/lib/markdown";
 import { t } from "@/i18n/de";
@@ -21,7 +22,11 @@ export const dynamic = "force-dynamic";
 
 export default async function TravelListPage() {
   const mapPins = await getTravelMapPins();
-  const posts = await publishedTravelCards();
+  // Wie in der Rezeptliste: Der angemeldete Admin sieht seine Entwuerfe an
+  // derselben Stelle mit, an der sie spaeter stehen werden.
+  const posts = await reisekarten({
+    sichtbarkeit: await sichtbarkeitFuerBesucher(),
+  });
   // Im Admin (Reiseberichte) bearbeitbarer Seitentext zwischen Weltkarte und
   // Reiseliste. Über der Karte steht der feste Einleitungssatz — kein Textfeld.
   const textUnten = getReisenTextUnten();

@@ -70,7 +70,7 @@ describe("decodeFilterValue (Filter-Routenparameter)", () => {
 describe("Filter-Werte mit Sonderzeichen finden den Bericht (dekodiert)", () => {
   it("dekodierter Region-Wert matcht den veröffentlichten Bericht (der eigentliche Fix)", async () => {
     const { saveTravelFromForm } = await import("@/lib/travel-save");
-    const { publishedTravelCards } = await import("@/lib/travel");
+    const { reisekarten } = await import("@/lib/travel");
     const fd = new FormData();
     fd.set("titel", "Perth-Trip");
     fd.set("status", "veroeffentlicht");
@@ -80,16 +80,16 @@ describe("Filter-Werte mit Sonderzeichen finden den Bericht (dekodiert)", () => 
 
     // So läuft es in der Route: der ROHe Param „Western%20Australia" wird EINMAL
     // dekodiert und findet dann den Bericht (vorher: 0 Treffer → 404).
-    const cards = await publishedTravelCards({
-      column: "region",
-      value: decodeFilterValue("Western%20Australia"),
+    const cards = await reisekarten({
+      sichtbarkeit: "nur-veroeffentlicht",
+      filter: { column: "region", value: decodeFilterValue("Western%20Australia") },
     });
     expect(cards.some((c) => c.title === "Perth-Trip")).toBe(true);
 
     // Auch nicht-kanonische, aber gültige Kodierungen dekodieren korrekt.
-    const cards2 = await publishedTravelCards({
-      column: "region",
-      value: decodeFilterValue("Western%20Australi%61"),
+    const cards2 = await reisekarten({
+      sichtbarkeit: "nur-veroeffentlicht",
+      filter: { column: "region", value: decodeFilterValue("Western%20Australi%61") },
     });
     expect(cards2.some((c) => c.title === "Perth-Trip")).toBe(true);
   });
@@ -160,17 +160,26 @@ describe("Reise: Region/Stadt-Filter + Reisejahr", () => {
 
   it("findet den Bericht über JEDEN einzelnen Region-/Stadt-Wert", async () => {
     const { saveTravelFromForm } = await import("@/lib/travel-save");
-    const { publishedTravelCards } = await import("@/lib/travel");
+    const { reisekarten } = await import("@/lib/travel");
     await saveTravelFromForm(form({ titel: "Filter-Australien" }), adminId);
 
-    const bySingleRegion = await publishedTravelCards({ column: "region", value: "New South Wales" });
+    const bySingleRegion = await reisekarten({
+      sichtbarkeit: "nur-veroeffentlicht",
+      filter: { column: "region", value: "New South Wales" },
+    });
     expect(bySingleRegion.some((p) => p.title === "Filter-Australien")).toBe(true);
 
-    const byCity = await publishedTravelCards({ column: "city", value: "Sydney" });
+    const byCity = await reisekarten({
+      sichtbarkeit: "nur-veroeffentlicht",
+      filter: { column: "city", value: "Sydney" },
+    });
     expect(byCity.some((p) => p.title === "Filter-Australien")).toBe(true);
 
     // Ein nicht vorkommender Wert findet nichts.
-    const none = await publishedTravelCards({ column: "region", value: "Tasmanien" });
+    const none = await reisekarten({
+      sichtbarkeit: "nur-veroeffentlicht",
+      filter: { column: "region", value: "Tasmanien" },
+    });
     expect(none.some((p) => p.title === "Filter-Australien")).toBe(false);
   });
 });
