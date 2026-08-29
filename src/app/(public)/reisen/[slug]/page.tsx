@@ -9,6 +9,7 @@ import { PageTracker } from "@/components/page-tracker";
 import { getSiteName } from "@/lib/settings";
 import {
   darfGezeigtWerden,
+  istEntwurf,
   sichtbarkeitFuerBesucher,
   VEROEFFENTLICHT,
 } from "@/lib/entwurfsansicht";
@@ -104,6 +105,7 @@ export default async function TravelPostPage(props: {
   const full = await ladeSichtbares(slug);
   if (!full) notFound();
   const base = await getPublicBaseUrl();
+  const entwurf = istEntwurf(full.post.status);
 
   return (
     <main>
@@ -112,14 +114,25 @@ export default async function TravelPostPage(props: {
         contentId={full.post.id}
         path={`/reisen/${full.post.slug}`}
       />
-      <Entwurfshinweis entwurf={full.post.status !== VEROEFFENTLICHT} />
-      <JsonLd data={articleJsonLd(base, full)} />
-      <JsonLd
-        data={breadcrumbJsonLd(base, [
-          [dict.nav.travel, "/reisen"],
-          [full.post.title, `/reisen/${full.post.slug}`],
-        ])}
-      />
+      <Entwurfshinweis entwurf={entwurf} />
+      {/* KEINE strukturierten Daten am Entwurf. JSON-LD ist eine Ausgabe für
+          Maschinen — dieselbe Klasse wie Sitemap und llms.txt, und die bleiben
+          ausnahmslos bei Veröffentlichtem. Dass diese Seite nur der
+          Angemeldete öffnen kann, ändert daran nichts: Ein Werkzeug, das sie
+          in seiner Sitzung liest, bekäme sonst einen unveröffentlichten
+          Beitrag maschinenlesbar beschrieben — mit URL, Bild und einem
+          Erscheinungsdatum, das es nicht gibt. */}
+      {!entwurf && (
+        <>
+          <JsonLd data={articleJsonLd(base, full)} />
+          <JsonLd
+            data={breadcrumbJsonLd(base, [
+              [dict.nav.travel, "/reisen"],
+              [full.post.title, `/reisen/${full.post.slug}`],
+            ])}
+          />
+        </>
+      )}
       <TravelView full={full} />
     </main>
   );

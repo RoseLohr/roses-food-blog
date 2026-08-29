@@ -15,6 +15,7 @@ import { SQLiteSyncDialect, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import {
   VEROEFFENTLICHT,
   darfGezeigtWerden,
+  istEntwurf,
   sichtbarkeitFuerBesucher,
   statusBedingung,
   type Sichtbarkeit,
@@ -76,6 +77,31 @@ describe("darfGezeigtWerden — die vollständige Wahrheitstafel", () => {
     // Der Wert kommt aus einer CHECK-beschränkten Spalte; eine Abweichung wäre
     // ein Datenfehler und darf nicht als „veröffentlicht" durchgehen.
     expect(darfGezeigtWerden("Veroeffentlicht", "nur-veroeffentlicht")).toBe(false);
+  });
+});
+
+describe("istEntwurf — entscheidet, WIE gezeigt wird", () => {
+  it("nennt Veröffentlichtes keinen Entwurf", () => {
+    expect(istEntwurf(VEROEFFENTLICHT)).toBe(false);
+  });
+
+  it("nennt alles andere einen Entwurf", () => {
+    // Fail-closed wie `darfGezeigtWerden`: Ein unbekannter Status bekommt die
+    // Plakette und KEINE strukturierten Daten, statt still als
+    // veröffentlicht durchzugehen.
+    for (const status of ["entwurf", "", "archiviert", "Veroeffentlicht", "geplant"]) {
+      expect(istEntwurf(status), status).toBe(true);
+    }
+  });
+
+  it("ist die Gegenfrage zu „darf ein Dritter das sehen“", () => {
+    // Beide Funktionen entscheiden Verschiedenes — WIE gezeigt wird gegen OB
+    // gezeigt wird —, dürfen sich über den Status aber nie widersprechen.
+    for (const status of ["entwurf", VEROEFFENTLICHT, "archiviert"]) {
+      expect(istEntwurf(status)).toBe(
+        !darfGezeigtWerden(status, "nur-veroeffentlicht"),
+      );
+    }
   });
 });
 

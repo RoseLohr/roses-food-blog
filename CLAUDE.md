@@ -150,10 +150,21 @@ nicht. Die Regel steht EINMAL, in `src/lib/entwurfsansicht.ts`.
   Lader, nicht ins Layout (ein Layout kann die Datenabfrage seiner `children`
   nicht verhindern) und niemals in eine Client-Komponente.
 - **Maschinen und Nebenwege bleiben bei Veröffentlichtem** — auch für den
-  Angemeldeten: sitemap.xml, llms.txt, robots.txt, JSON-LD-Indizes, Suche,
-  Weltkarte, Navigation, „ähnliche Rezepte", Kategorie- und Filterseiten,
-  Newsletter, Druckansicht. `loadSeoContent()` bekommt KEINEN
-  Sichtbarkeits-Parameter; sein Name ist die Zusage.
+  Angemeldeten: sitemap.xml, llms.txt, robots.txt, Suche, Weltkarte,
+  Navigation, „ähnliche Rezepte", Kategorie- und Filterseiten, Newsletter,
+  Druckansicht. `loadSeoContent()` bekommt KEINEN Sichtbarkeits-Parameter;
+  sein Name ist die Zusage.
+- **Ein Entwurf trägt KEIN JSON-LD** — auch nicht auf seiner eigenen
+  Detailseite, die nur der Angemeldete öffnen kann. Strukturierte Daten sind
+  eine Ausgabe für Maschinen, dieselbe Klasse wie Sitemap und llms.txt; ein
+  Werkzeug, das die Seite in der Sitzung des Redakteurs liest (Erweiterung,
+  Lesezeichendienst, Link-Vorschau), bekäme sonst einen unveröffentlichten
+  Beitrag als `Recipe`/`Article` beschrieben — mit URL, Bild und einem
+  Erscheinungsdatum, das es nicht gibt. Die drei Detailseiten prüfen dafür
+  `istEntwurf(status)`; gemessen wird es in
+  `tests/e2e/entwurf-sichtbarkeit.spec.ts` samt Gegenprobe an einer
+  veröffentlichten Seite (sonst bliebe die Zusage auch dann grün, wenn das
+  JSON-LD überall verschwände).
 - **Kein Vorschau-Modus an einer indexierbaren URL.** Kein `?vorschau=1`, kein
   Token: Die Detailseiten tragen `alternates.canonical` auf die öffentliche
   Adresse, ein Parameter würde Entwurfsinhalt unter der kanonischen URL

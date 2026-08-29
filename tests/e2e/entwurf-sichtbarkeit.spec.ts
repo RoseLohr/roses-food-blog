@@ -63,13 +63,21 @@ const entwuerfe = (() => {
   // Cache-Control-Messung: Eine Entwurfsadresse antwortet ohne Sitzung mit
   // 404 und trägt dann einen anderen Kopf; gemessen werden soll aber der Kopf
   // der ausgelieferten Detailseite.
+  // Eine Entwurfs-CMS-Seite aus der Saat: Der dritte Seitentyp, der eine
+  // Sichtbarkeitsentscheidung trifft — ohne ihn bliebe ein Drittel der
+  // Zusage ungemessen.
+  const entwurfsSeite = (
+    db
+      .prepare("SELECT slug, title FROM page WHERE status = 'entwurf' ORDER BY id LIMIT 1")
+      .get() as { slug: string; title: string } | undefined
+  );
   const veroeffentlicht = {
     rezept: (db.prepare("SELECT slug FROM recipe WHERE status = 'veroeffentlicht' LIMIT 1").get() as { slug: string } | undefined)?.slug,
     reise: (db.prepare("SELECT slug FROM travel_post WHERE status = 'veroeffentlicht' LIMIT 1").get() as { slug: string } | undefined)?.slug,
     seite: (db.prepare("SELECT slug FROM page WHERE status = 'veroeffentlicht' LIMIT 1").get() as { slug: string } | undefined)?.slug,
   };
   db.close();
-  return { rezept, reise, veroeffentlicht };
+  return { rezept, reise, seite: entwurfsSeite, veroeffentlicht };
 })();
 
 test.beforeAll(() => {
@@ -77,6 +85,7 @@ test.beforeAll(() => {
   // sein und nicht still grün.
   expect(entwuerfe.rezept.status).toBe("entwurf");
   expect(entwuerfe.reise.status).toBe("entwurf");
+  expect(entwuerfe.seite, "Saat ohne Entwurfs-CMS-Seite").toBeTruthy();
   // Und die drei veröffentlichten Adressen für die Kopf-Messung.
   for (const [art, slug] of Object.entries(entwuerfe.veroeffentlicht)) {
     expect(slug, `Saat ohne veröffentlichte(n/s) ${art}`).toBeTruthy();
@@ -86,6 +95,10 @@ test.beforeAll(() => {
 const REZEPT = `/rezepte/${entwuerfe.rezept.slug}`;
 const REISE = `/reisen/${entwuerfe.reise.slug}`;
 const DRUCK = `/drucken/rezepte/${entwuerfe.rezept.slug}`;
+const SEITE = `/${entwuerfe.seite!.slug}`;
+
+/** Alle strukturierten Daten (JSON-LD) einer Seite. */
+const STRUKTURIERT = 'script[type="application/ld+json"]';
 
 /** Seite als angemeldeter Admin. */
 async function anmelden(page: Page) {
@@ -196,6 +209,41 @@ test.describe("Mit Anmeldung erscheint er — beschriftet", () => {
     await expect(
       page.locator(`a[href="/rezepte/${entwuerfe.rezept.slug}"]`),
     ).toHaveCount(0);
+  });
+});
+
+test.describe("Ein Entwurf beschreibt sich nicht maschinenlesbar", () => {
+  /**
+   * JSON-LD ist eine Ausgabe für MASCHINEN — dieselbe Klasse wie Sitemap und
+   * llms.txt, und die bleiben ausnahmslos bei Veröffentlichtem. Dass die Seite
+   * nur der Angemeldete öffnen kann, ist kein Grund, in ihr einen
+   * unveröffentlichten Beitrag als `Recipe` mit URL, Bild und fehlendem
+   * Erscheinungsdatum zu beschreiben.
+   *
+   * Der Befund kam aus dem Fremd-Vendor-Panel und war berechtigt: Die drei
+   * Detailseiten lieferten ihr JSON-LD zunächst unbedingt.
+   */
+  test.beforeEach(async ({ page }) => anmelden(page));
+
+  for (const [name, pfad] of [
+    ["Rezept", REZEPT],
+    ["Reisebericht", REISE],
+    ["CMS-Seite", SEITE],
+  ] as const) {
+    test(`${name}: der Entwurf trägt KEIN JSON-LD`, async ({ page }) => {
+      const antwort = await page.goto(pfad);
+      expect(antwort?.status(), pfad).toBe(200);
+      await expect(page.locator(STRUKTURIERT)).toHaveCount(0);
+    });
+  }
+
+  test("veröffentlicht trägt weiterhin JSON-LD — sonst prüfte das oben nichts", async ({
+    page,
+  }) => {
+    // Ohne diesen Gegenprobe-Fall bliebe die Zusage auch dann grün, wenn die
+    // strukturierten Daten überall verschwänden.
+    await page.goto(`/rezepte/${entwuerfe.veroeffentlicht.rezept}`);
+    await expect(page.locator(STRUKTURIERT)).not.toHaveCount(0);
   });
 });
 

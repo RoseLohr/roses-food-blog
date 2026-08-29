@@ -97,6 +97,25 @@ export function darfGezeigtWerden(
 }
 
 /**
+ * Ist dieser Inhalt ein Entwurf?
+ *
+ * Die Gegenfrage zu `darfGezeigtWerden`, und sie hat einen eigenen Namen,
+ * weil sie eine andere Sache entscheidet: nicht OB gezeigt wird, sondern WIE.
+ * Ein Entwurf, der auf dem Bildschirm des Angemeldeten steht, bekommt die
+ * Plakette — und er bekommt KEINE strukturierten Daten.
+ *
+ * Warum das zusammengehört: JSON-LD ist eine Ausgabe für MASCHINEN, genau wie
+ * Sitemap und llms.txt. Dass die Seite nur der Angemeldete öffnen kann, ist
+ * kein Grund, in ihr einen unveröffentlichten Beitrag als `Recipe` mit URL,
+ * Bild und (fehlendem) Erscheinungsdatum zu beschreiben. Wer die Seite mit
+ * einem Werkzeug liest — Erweiterung, Lesezeichendienst, Link-Vorschau —,
+ * bekäme sonst maschinenlesbar etwas, das es öffentlich nicht gibt.
+ */
+export function istEntwurf(status: string): boolean {
+  return status !== VEROEFFENTLICHT;
+}
+
+/**
  * Die WHERE-Bedingung für eine Statusspalte — oder `undefined`, wenn nicht
  * eingeschränkt werden soll.
  *

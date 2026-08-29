@@ -9,6 +9,7 @@ import { PageTracker } from "@/components/page-tracker";
 import { getSiteName } from "@/lib/settings";
 import {
   darfGezeigtWerden,
+  istEntwurf,
   sichtbarkeitFuerBesucher,
   VEROEFFENTLICHT,
 } from "@/lib/entwurfsansicht";
@@ -79,6 +80,7 @@ export default async function RecipePage(props: {
   const full = await ladeSichtbares(slug);
   if (!full) notFound();
   const base = await getPublicBaseUrl();
+  const entwurf = istEntwurf(full.recipe.status);
 
   return (
     // -mt-4 zieht den Detail-Inhalt 16 px hoch, damit der Abstand ÜBER dem Bild
@@ -89,14 +91,25 @@ export default async function RecipePage(props: {
         contentId={full.recipe.id}
         path={`/rezepte/${full.recipe.slug}`}
       />
-      <Entwurfshinweis entwurf={full.recipe.status !== VEROEFFENTLICHT} />
-      <JsonLd data={recipeJsonLd(base, full)} />
-      <JsonLd
-        data={breadcrumbJsonLd(base, [
-          [dict.nav.recipes, "/rezepte"],
-          [full.recipe.title, `/rezepte/${full.recipe.slug}`],
-        ])}
-      />
+      <Entwurfshinweis entwurf={entwurf} />
+      {/* KEINE strukturierten Daten am Entwurf. JSON-LD ist eine Ausgabe für
+          Maschinen — dieselbe Klasse wie Sitemap und llms.txt, und die bleiben
+          ausnahmslos bei Veröffentlichtem. Dass diese Seite nur der
+          Angemeldete öffnen kann, ändert daran nichts: Ein Werkzeug, das sie
+          in seiner Sitzung liest, bekäme sonst einen unveröffentlichten
+          Beitrag maschinenlesbar beschrieben — mit URL, Bild und einem
+          Erscheinungsdatum, das es nicht gibt. */}
+      {!entwurf && (
+        <>
+          <JsonLd data={recipeJsonLd(base, full)} />
+          <JsonLd
+            data={breadcrumbJsonLd(base, [
+              [dict.nav.recipes, "/rezepte"],
+              [full.recipe.title, `/rezepte/${full.recipe.slug}`],
+            ])}
+          />
+        </>
+      )}
       <RecipeView full={full} />
     </main>
   );
