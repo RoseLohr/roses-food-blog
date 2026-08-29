@@ -76,7 +76,8 @@
       "src/lib/branding",
       "src/lib/bildreihen",
       "src/lib/reihenfolge",
-      "src/lib/daemmerung"
+      "src/lib/daemmerung",
+      "src/lib/zeitpunkt"
     ],
     "platform-ops": [
       "src/server",
