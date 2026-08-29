@@ -147,7 +147,26 @@ const SEITEN: Seitentyp[] = [
   },
   { name: "admin-zutaten", ziel: async () => "/admin/zutaten" },
   { name: "admin-startseite", ziel: async () => "/admin/startseite" },
-  { name: "admin-medien", ziel: async () => "/admin/medien" },
+  {
+    // Das Hochladedatum kommt aus `new Date()` beim Seeden und ist damit an
+    // jedem Tag ein anderes. Ohne Anmeldung als maskiert fror die Aufnahme es
+    // als Basis ein: Gemessen am 28.08. lieferte die Seite „28-08-26", die
+    // Basis zeigte „24-08-26" — und der Vergleich blieb trotzdem grün, weil
+    // die geänderten Ziffern unter der Pixel-Toleranz von 0,2 % blieben. Genau
+    // die Falle, vor der der Kommentar in referenz.ts warnt.
+    name: "admin-medien",
+    ziel: async () => "/admin/medien",
+    maskiert: true,
+  },
+  {
+    // Die LISTE ist ein eigener Zustand derselben Adresse (`?ansicht=liste`)
+    // und war unfotografiert — dabei steht das Hochladedatum genau dort mit
+    // Beschriftung UND Uhrzeit. Wer den Zustand ändert, ohne dass es eine
+    // Aufnahme gibt, hat hinterher nichts zu vergleichen.
+    name: "admin-medien-liste",
+    ziel: async () => "/admin/medien?ansicht=liste",
+    maskiert: true,
+  },
 
   { name: "admin-newsletter", ziel: async () => "/admin/newsletter" },
   { name: "admin-kampagnen", ziel: async () => "/admin/kampagnen" },

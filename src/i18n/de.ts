@@ -1243,7 +1243,7 @@ export const de = {
           .join(", ")}. Erst dort entfernen, dann löschen.`,
       inUse: "Wird verwendet",
       dimensions: "Maße",
-      uploadedOn: "Hochgeladen",
+      uploadedOn: "Hochgeladen am",
       viewTiles: "Kacheln",
       viewList: "Liste",
       viewLarge: "Groß anzeigen",
