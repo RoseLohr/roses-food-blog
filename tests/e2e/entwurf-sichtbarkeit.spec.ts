@@ -99,6 +99,8 @@ const SEITE = `/${entwuerfe.seite!.slug}`;
 
 /** Alle strukturierten Daten (JSON-LD) einer Seite. */
 const STRUKTURIERT = 'script[type="application/ld+json"]';
+/** Die Teil-Vorschau: was FREMDE Plattformen aus der Seite bauen. */
+const TEILVORSCHAU = 'meta[property^="og:"], meta[name^="twitter:"], meta[property^="article:"]';
 
 /** Seite als angemeldeter Admin. */
 async function anmelden(page: Page) {
@@ -237,6 +239,51 @@ test.describe("Ein Entwurf beschreibt sich nicht maschinenlesbar", () => {
     });
   }
 
+  for (const [name, pfad, beitrag] of [
+    ["Rezept", REZEPT, entwuerfe.rezept],
+    ["Reisebericht", REISE, entwuerfe.reise],
+  ] as const) {
+    test(`${name}: keine Teil-Vorschau beschreibt den Entwurf`, async ({ page }) => {
+      // OpenGraph und Twitter-Card existieren einzig, damit fremde
+      // Plattformen daraus eine Karte bauen. Dieselbe Klasse wie JSON-LD,
+      // also dieselbe Regel: Sie dürfen den Entwurf nicht beschreiben.
+      //
+      // Geprüft wird der INHALT, nicht die Zahl der Marken: Das Wurzel-Layout
+      // setzt seine eigenen, seitenweiten Angaben (Name des Blogs, Untertitel,
+      // Titelbild des zuletzt VERÖFFENTLICHTEN Rezepts). Die bleiben stehen
+      // und sollen es auch — sie beschreiben die Website, nicht den Beitrag.
+      // Ein Test auf „null Marken" würde also etwas anderes messen, als hier
+      // zugesagt ist.
+      await page.goto(pfad);
+      const inhalte = await page
+        .locator(TEILVORSCHAU)
+        .evaluateAll((ms) => ms.map((m) => m.getAttribute("content") ?? ""));
+      expect(inhalte.length, "ohne Marken prüfte das hier nichts").toBeGreaterThan(0);
+      for (const wert of inhalte) {
+        expect(wert, `Teil-Vorschau nennt den Entwurfstitel: „${wert}"`).not.toContain(
+          beitrag.title,
+        );
+        expect(wert, `Teil-Vorschau nennt den Entwurfs-Slug: „${wert}"`).not.toContain(
+          beitrag.slug,
+        );
+      }
+      // Und kein Erscheinungsdatum: Ein Entwurf hat keines.
+      await expect(page.locator('meta[property="article:published_time"]')).toHaveCount(0);
+    });
+  }
+
+  test("Titel und Beschreibung bleiben — sie richten sich an den Redakteur", async ({
+    page,
+  }) => {
+    // Die Linie verläuft zwischen „für eine fremde Plattform" und „für den,
+    // der die Seite offen hat". Ohne diesen Fall könnte man die Zusage oben
+    // erfüllen, indem man der Entwurfsseite alle Metadaten nimmt.
+    await page.goto(REZEPT);
+    await expect(page).toHaveTitle(/.+/);
+    await expect(page.locator('meta[name="description"]')).toHaveCount(1);
+    await expect(page.locator('link[rel="canonical"]')).toHaveCount(1);
+  });
+
   test("veröffentlicht trägt weiterhin JSON-LD — sonst prüfte das oben nichts", async ({
     page,
   }) => {
@@ -244,6 +291,12 @@ test.describe("Ein Entwurf beschreibt sich nicht maschinenlesbar", () => {
     // strukturierten Daten überall verschwänden.
     await page.goto(`/rezepte/${entwuerfe.veroeffentlicht.rezept}`);
     await expect(page.locator(STRUKTURIERT)).not.toHaveCount(0);
+    // Und die Teil-Vorschau nennt dort SEHR WOHL den Beitrag — sonst wäre die
+    // Prüfung oben auch dann grün, wenn OpenGraph überall verstummte.
+    const inhalte = await page
+      .locator(TEILVORSCHAU)
+      .evaluateAll((ms) => ms.map((m) => m.getAttribute("content") ?? ""));
+    expect(inhalte.some((w) => w.includes(entwuerfe.veroeffentlicht.rezept!))).toBe(true);
   });
 });
 
