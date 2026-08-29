@@ -165,6 +165,17 @@ nicht. Die Regel steht EINMAL, in `src/lib/entwurfsansicht.ts`.
   `tests/e2e/entwurf-sichtbarkeit.spec.ts` samt Gegenprobe an einer
   veröffentlichten Seite (sonst bliebe die Zusage auch dann grün, wenn das
   JSON-LD überall verschwände).
+- **Und KEINE Teil-Vorschau** — kein OpenGraph, keine Twitter-Card. Sie
+  existieren einzig, damit FREMDE Plattformen daraus eine Karte bauen, sind
+  also dieselbe Klasse wie das JSON-LD darüber: `og:image` trägt die Adresse
+  des Titelbilds, `og:description` den Teaser, `article:published_time` ein
+  Datum, das es nicht gibt. Die Linie verläuft zwischen „für eine fremde
+  Plattform" und „für den, der die Seite offen hat": **Titel, Beschreibung
+  und Canonical BLEIBEN** — den Titel braucht der Redakteur im Tab.
+  Gemessen wird der INHALT der Marken, nicht ihre Zahl: Das Wurzel-Layout
+  setzt seitenweite Angaben (Blogname, Untertitel, Titelbild des zuletzt
+  VERÖFFENTLICHTEN Rezepts), die stehen bleiben sollen. Ein Test auf „null
+  Marken" würde etwas anderes messen als das, was zugesagt ist.
 - **Kein Vorschau-Modus an einer indexierbaren URL.** Kein `?vorschau=1`, kein
   Token: Die Detailseiten tragen `alternates.canonical` auf die öffentliche
   Adresse, ein Parameter würde Entwurfsinhalt unter der kanonischen URL
