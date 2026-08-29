@@ -103,7 +103,7 @@ function arStil(img: MediaImage): React.CSSProperties {
  * Kein Regler, keine Fallunterscheidung nach Bildzahl: Ein einzelnes Bild ist
  * die Bühne ohne Reihe darunter, und das ergibt sich von selbst.
  */
-function Bildgruppe({ images }: { images: MediaImage[] }) {
+function Bildgruppe({ images }: { images: GruppenFoto[] }) {
   if (images.length === 0) return null;
   const sizes = bildgruppeSizes(
     images.map((img) => seitenverhaeltnis(img.width, img.height)),
@@ -145,17 +145,25 @@ function Einzelbild({
   bild,
   groesse,
   ausrichtung,
+  bildunterschrift,
 }: {
   bild: MediaImage;
   groesse: Bildgroesse;
   ausrichtung: Ausrichtung;
+  bildunterschrift: boolean;
 }) {
   return (
     <div className={`einzelbild eb-${groesse} eb-${ausrichtung}`}>
-      <GalleryLightbox images={[bild]} thumbSizes={einzelbildSizes(groesse)} />
+      <GalleryLightbox
+        images={[{ ...bild, bildunterschrift }]}
+        thumbSizes={einzelbildSizes(groesse)}
+      />
     </div>
   );
 }
+
+/** Ein Foto einer Gruppe samt der Frage, ob seine Unterschrift steht. */
+type GruppenFoto = MediaImage & { bildunterschrift: boolean };
 
 /** Google-Maps-Ziel aus Koordinaten — gleiche URL wie die Weltkarten-Pins. */
 function mapsUrl(lat: number, lng: number): string {
@@ -879,8 +887,13 @@ export async function TravelView({
                   return (
                     <Bildgruppe
                       key={i}
-                      images={b.imageIds
-                        .map((id) => full.blockImages[id])
+                      images={b.bilder
+                        .map((bild) => {
+                          const img = full.blockImages[bild.imageId];
+                          return img
+                            ? { ...img, bildunterschrift: bild.bildunterschrift }
+                            : undefined;
+                        })
                         .filter((img) => img !== undefined)}
                     />
                   );
@@ -893,6 +906,7 @@ export async function TravelView({
                       bild={bild}
                       groesse={b.groesse}
                       ausrichtung={b.ausrichtung}
+                      bildunterschrift={b.bildunterschrift}
                     />
                   ) : null;
                 }

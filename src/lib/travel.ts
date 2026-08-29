@@ -261,6 +261,7 @@ export async function getFullTravelPost(
           gruppe: b.gruppe,
           groesse: b.groesse,
           ausrichtung: b.ausrichtung,
+          bildunterschrift: b.bildunterschrift,
         });
     } else {
       const idx =

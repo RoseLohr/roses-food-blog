@@ -38,13 +38,21 @@ const bild = (imageId: number, gruppe = 1): TravelBlock => ({
   gruppe,
   groesse: null,
   ausrichtung: null,
+  bildunterschrift: false,
 });
 /** Ein Bild OHNE Gruppe: eigene Breite, eigene Seite, Text läuft darum. */
 const einzeln = (
   imageId: number,
   groesse: "s" | "m" | "l" | null = null,
   ausrichtung: "links" | "rechts" | null = null,
-): TravelBlock => ({ type: "bild", imageId, gruppe: null, groesse, ausrichtung });
+): TravelBlock => ({
+  type: "bild",
+  imageId,
+  gruppe: null,
+  groesse,
+  ausrichtung,
+  bildunterschrift: false,
+});
 const text = (markdown = "Text."): TravelBlock => ({ type: "text", markdown });
 const restaurant = (index = 0): TravelBlock => ({ type: "restaurant", index });
 
@@ -52,7 +60,7 @@ const restaurant = (index = 0): TravelBlock => ({ type: "restaurant", index });
 function gruppen(blocks: TravelBlock[]): number[][] {
   return zuRenderBloecken(blocks)
     .filter((b) => b.art === "bild")
-    .map((b) => b.imageIds);
+    .map((b) => b.bilder.map((x) => x.imageId));
 }
 
 describe("zuRenderBloecken — die Reihenfolge ist die ganze Regel", () => {
@@ -84,7 +92,7 @@ describe("zuRenderBloecken — die Reihenfolge ist die ganze Regel", () => {
   it("gibt Text und Restaurants unverändert in der Reihenfolge zurück", () => {
     expect(zuRenderBloecken([text("A"), bild(1), restaurant(2), text("B")])).toEqual([
       { art: "text", markdown: "A" },
-      { art: "bild", imageIds: [1] },
+      { art: "bild", bilder: [{ imageId: 1, bildunterschrift: false }] },
       { art: "restaurant", index: 2 },
       { art: "text", markdown: "B" },
     ]);
@@ -193,6 +201,7 @@ describe("Einzelbilder und Gruppen", () => {
       imageId: 1,
       groesse: "l",
       ausrichtung: "rechts",
+      bildunterschrift: false,
     });
   });
 
@@ -203,6 +212,7 @@ describe("Einzelbilder und Gruppen", () => {
       imageId: 1,
       groesse: EINZELBILD_VORGABE.groesse,
       ausrichtung: EINZELBILD_VORGABE.ausrichtung,
+      bildunterschrift: false,
     });
   });
 

@@ -14,6 +14,18 @@ start=$(date +%s)
 log(){ echo "[rollback] $*"; }
 fail(){ echo "[rollback] FEHLER: $*" >&2; exit 1; }
 
+# Der atomare DB-Restore steht in einer eigenen Datei, weil der Restore-Drill
+# (scripts/regime/restore-drill.sh) GENAU DIESE Funktion fahren muss und nicht
+# einen Nachbau. Warum das nicht verhandelbar ist: siehe deploy/db-restore.sh.
+# Nach `fail`, damit die dortige Notfassung nicht greift.
+# shellcheck source=deploy/db-restore.sh
+source "$(dirname "$0")/db-restore.sh"
+# Das Health-Gate steht ebenfalls in einer eigenen Datei: Es entscheidet hier
+# und in deploy/restore.sh dieselbe Frage. `curl -sf` war an BEIDEN Stellen
+# falsch (3xx galt als grün, keine Zeitschranke) — die Begründung dort.
+# shellcheck source=deploy/health-gate.sh
+source "$(dirname "$0")/health-gate.sh"
+
 # DIESELBE Konfigurationsquelle wie deploy.sh. Vorher riet das Skript
 # DATA_DIR=/opt/roses/data und PORT=3000 — auf der echten Anlage liegen die
 # Daten woanders und der Port ist 3011. Folge: Das Health-Gate unten pollte
@@ -294,42 +306,11 @@ Der jetzige Stand liegt noch unverändert in $DATA_DIR/app.db."
   fi
 
   log "Spiele Backup ein: $BACKUP"
-  # Mit `|| fail`, wie jede andere riskante Operation hier auch: Ein an der
-  # vollen Platte abgebrochenes `cp` hinterlässt eine HALBE Datenbank — und der
-  # Lauf machte bisher weiter, löschte das WAL und quittierte Erfolg.
-  # ── UND DIE ALTEN WAL-DATEIEN MÜSSEN WEG ────────────────────────────────
-  # Sonst spielt SQLite beim nächsten Öffnen das WAL der ERSETZTEN Datenbank
-  # über das eingespielte Backup. Nachgemessen: nach hartem Abbruch
-  # (`podman rm -f`, also der Regelfall hier) liefert die Datenbank danach die
-  # 3000 ALTEN Zeilen statt der 7 gesicherten — der Restore tut nichts und
-  # meldet Erfolg. Das ist schlimmer als ein Fehlschlag.
-  #
-  # ── UND ZWISCHEN DEN SCHRITTEN DARF ES DIESEN ZUSTAND NICHT GEBEN ───────
-  #
-  # Bis 08/2026 stand hier `cp` und DANACH das Entfernen des WAL. Wer den Lauf
-  # dazwischen abbrach (Strom, Kill, volle Platte), hinterließ genau die
-  # Kombination, die der Absatz oben beschreibt: neues app.db, altes WAL
-  # daneben. Beim nächsten Öffnen spielt SQLite das alte WAL darüber — der
-  # Rollback wird zum stillen No-op, und niemand hat etwas davon gemerkt
-  # (Befund gpt-5.6-sol, PR #110, Runde 4).
-  #
-  # Deshalb in drei Schritten, von denen KEIN Zwischenstand gefährlich ist:
-  #   1. In eine Nebendatei kopieren — app.db bleibt unangetastet, ein
-  #      halb geschriebenes Backup landet nie auf der echten Datenbank.
-  #   2. Erst dann WAL und SHM entfernen. Bricht es hier ab, bleibt das ALTE
-  #      app.db ohne WAL zurück: der letzte festgeschriebene Stand, in sich
-  #      stimmig — und der vollständige alte Stand liegt ohnehin als
-  #      pre-rollback-*.db daneben.
-  #   3. Umbenennen. `mv` innerhalb desselben Dateisystems ist atomar; einen
-  #      Zwischenstand „neu und alt zugleich" gibt es nicht.
-  rm -f "$DATA_DIR/app.db.neu"
-  cp "$BACKUP" "$DATA_DIR/app.db.neu" \
-    || fail "Einspielen von $BACKUP fehlgeschlagen — app.db ist UNVERÄNDERT. \
-Die Sicherung des vorigen Standes liegt in $DATA_DIR/backups/."
-  rm -f "$DATA_DIR/app.db-wal" "$DATA_DIR/app.db-shm"
-  mv -f "$DATA_DIR/app.db.neu" "$DATA_DIR/app.db" \
-    || fail "Umbenennen der eingespielten Datenbank fehlgeschlagen — \
-$DATA_DIR/app.db.neu liegt bereit, app.db trägt noch den vorigen Stand."
+  # Der Ablauf — Nebendatei, WAL/SHM weg, atomares Umbenennen — und die
+  # Begründung jedes einzelnen Schrittes stehen in deploy/db-restore.sh.
+  # Dort, weil der Drill dieselbe Funktion ausführt: Was hier im Ernstfall
+  # läuft, ist Zeile für Zeile das, was monatlich geübt wird.
+  db_einspielen "$BACKUP" "$DATA_DIR"
 
   # 4b. Das letzte Wort hat die Datei, die WIRKLICH daliegt.
   #
@@ -357,7 +338,7 @@ $COMPOSE up -d || fail "Container-Neustart fehlgeschlagen."
 
 # 6. Healthcheck-Gate: erst grün, dann gilt der Rollback als erfolgreich.
 for i in $(seq 1 30); do
-  if curl -sf "$HEALTH_URL" >/dev/null 2>&1; then
+  if health_gruen "$HEALTH_URL"; then
     dur=$(( $(date +%s) - start ))
     log "Rollback erfolgreich in ${dur}s (Health grün)."
     exit 0

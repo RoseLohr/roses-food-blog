@@ -158,6 +158,16 @@ const contentBlockSchema = z.discriminatedUnion("type", [
     gruppe: z.number().int().positive().nullable().optional(),
     groesse: z.enum(["s", "m", "l"]).nullable().optional(),
     ausrichtung: z.enum(["links", "rechts"]).nullable().optional(),
+    /**
+     * Steht der Alt-Text als Bildunterschrift unter dem Foto?
+     *
+     * ADDITIV, deshalb steigt EXPORT_VERSION nicht: Ein Archiv von vor dieser
+     * Änderung bringt das Feld nicht mit und bekommt `false` — genau den
+     * Zustand, den es hatte. Hier ist ein Default also richtig, anders als bei
+     * `gruppe`: Dort unterscheidet `undefined` ein Alt-Archiv von einem
+     * ausdrücklichen Einzelbild, hier gibt es nichts zu unterscheiden.
+     */
+    bildunterschrift: z.boolean().default(false),
   }),
   z.object({ type: z.literal("restaurant"), index: z.number().int().nonnegative() }),
 ]);
