@@ -4,6 +4,7 @@
   "roles": {
     "platform-security": [
       "src/lib/auth",
+      "src/lib/entwurfsansicht",
       "src/lib/csrf",
       "src/lib/ratelimit",
       "src/app/api/admin",
