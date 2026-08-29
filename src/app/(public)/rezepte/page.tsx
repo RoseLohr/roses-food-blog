@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { RecipeCard } from "@/components/recipe-card";
-import { publishedRecipeCards } from "@/lib/recipe-list";
+import { rezeptkarten } from "@/lib/recipe-list";
+import { sichtbarkeitFuerBesucher } from "@/lib/entwurfsansicht";
 import { t } from "@/i18n/de";
 import { PageTracker } from "@/components/page-tracker";
 
@@ -15,7 +16,12 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function RecipesPage() {
-  const recipes = await publishedRecipeCards();
+  // Wer angemeldet ist, sieht seine Entwuerfe hier mit — als Kachel mit
+  // Plakette, an derselben Stelle, an der sie nach dem Veroeffentlichen
+  // stehen werden. Fuer alle anderen aendert sich nichts.
+  const recipes = await rezeptkarten({
+    sichtbarkeit: await sichtbarkeitFuerBesucher(),
+  });
 
   return (
     <main>

@@ -13,7 +13,7 @@
 import { eq, inArray } from "drizzle-orm";
 import { db, schema } from "@/db";
 import type { RecipeCardData } from "@/components/recipe-card";
-import { publishedRecipeCards } from "@/lib/recipe-list";
+import { rezeptkarten } from "@/lib/recipe-list";
 import type { FullDish } from "@/lib/travel";
 
 interface RecipeFacts {
@@ -129,7 +129,13 @@ export async function getSimilarRecipesByDish(
   }
   if (pickedIds.size === 0) return result;
 
-  const cards = await publishedRecipeCards({ ids: [...pickedIds] });
+  // „Aehnliche Rezepte" stehen unter einem Rezept als Empfehlung — ein
+  // Entwurf gehoert dort nicht hin, auch nicht fuer den Admin: Die Kachel
+  // saehe aus wie eine Empfehlung an den Leser.
+  const cards = await rezeptkarten({
+    sichtbarkeit: "nur-veroeffentlicht",
+    ids: [...pickedIds],
+  });
   const cardById = new Map(cards.map((c) => [c.id, c]));
   for (const [dishId, picks] of picksByDish) {
     const tiles = picks

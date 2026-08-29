@@ -7,15 +7,26 @@ import { JsonLd, breadcrumbJsonLd, organizationJsonLd } from "@/lib/jsonld";
 import { TravelView } from "@/components/travel-view";
 import { PageTracker } from "@/components/page-tracker";
 import { getSiteName } from "@/lib/settings";
+import {
+  darfGezeigtWerden,
+  sichtbarkeitFuerBesucher,
+  VEROEFFENTLICHT,
+} from "@/lib/entwurfsansicht";
+import { Entwurfshinweis } from "@/components/entwurfshinweis";
 import { t } from "@/i18n/de";
 
 const dict = t();
 
 export const dynamic = "force-dynamic";
 
-async function loadPublished(slug: string) {
+/**
+ * Der Reisebericht — oder `null`, wenn der Besucher ihn nicht sehen darf.
+ * Begründung der Reihenfolge siehe rezepte/[slug]/page.tsx.
+ */
+async function ladeSichtbares(slug: string) {
+  const sichtbarkeit = await sichtbarkeitFuerBesucher();
   const full = await getFullTravelPost({ slug });
-  if (!full || full.post.status !== "veroeffentlicht") return null;
+  if (!full || !darfGezeigtWerden(full.post.status, sichtbarkeit)) return null;
   return full;
 }
 
@@ -23,7 +34,7 @@ export async function generateMetadata(props: {
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await props.params;
-  const full = await loadPublished(slug);
+  const full = await ladeSichtbares(slug);
   if (!full) return {};
   const { post } = full;
   const base = await getPublicBaseUrl();
@@ -33,6 +44,10 @@ export async function generateMetadata(props: {
   return {
     title,
     description,
+    // Ein Entwurf ist nur fuer den angemeldeten Admin ueberhaupt erreichbar —
+    // aber falls ihn doch je etwas abruft, sagt die Seite selbst, dass sie
+    // nicht in einen Index gehoert. Guertel und Hosentraeger.
+    robots: post.status === VEROEFFENTLICHT ? undefined : { index: false, follow: false },
     alternates: { canonical: `/reisen/${post.slug}` },
     openGraph: {
       title,
@@ -56,7 +71,7 @@ export async function generateMetadata(props: {
 
 function articleJsonLd(
   base: string,
-  full: NonNullable<Awaited<ReturnType<typeof loadPublished>>>,
+  full: NonNullable<Awaited<ReturnType<typeof ladeSichtbares>>>,
 ) {
   const { post } = full;
   // Google verlangt für Article einen Autor; der Blog tritt als Organisation
@@ -86,7 +101,7 @@ export default async function TravelPostPage(props: {
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await props.params;
-  const full = await loadPublished(slug);
+  const full = await ladeSichtbares(slug);
   if (!full) notFound();
   const base = await getPublicBaseUrl();
 
@@ -97,6 +112,7 @@ export default async function TravelPostPage(props: {
         contentId={full.post.id}
         path={`/reisen/${full.post.slug}`}
       />
+      <Entwurfshinweis entwurf={full.post.status !== VEROEFFENTLICHT} />
       <JsonLd data={articleJsonLd(base, full)} />
       <JsonLd
         data={breadcrumbJsonLd(base, [

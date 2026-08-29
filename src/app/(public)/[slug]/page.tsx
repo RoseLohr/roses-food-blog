@@ -11,16 +11,27 @@ import { getPublicBaseUrl } from "@/lib/base-url";
 import { JsonLd, breadcrumbJsonLd } from "@/lib/jsonld";
 import { PageTracker } from "@/components/page-tracker";
 import { ResponsiveImg } from "@/components/responsive-img";
+import {
+  darfGezeigtWerden,
+  sichtbarkeitFuerBesucher,
+  VEROEFFENTLICHT,
+} from "@/lib/entwurfsansicht";
+import { Entwurfshinweis } from "@/components/entwurfshinweis";
 
 
 export const dynamic = "force-dynamic";
 
+/**
+ * Die CMS-Seite — oder `null`, wenn der Besucher sie nicht sehen darf.
+ * Begründung der Reihenfolge siehe rezepte/[slug]/page.tsx.
+ */
 async function loadPage(slug: string) {
+  const sichtbarkeit = await sichtbarkeitFuerBesucher();
   const [page] = await db
     .select()
     .from(schema.page)
     .where(eq(schema.page.slug, slug));
-  if (!page || page.status !== "veroeffentlicht") return null;
+  if (!page || !darfGezeigtWerden(page.status, sichtbarkeit)) return null;
   const heroImage = await mediaImageWithWidths(page.heroImageId);
   return { page, heroImage };
 }
@@ -34,6 +45,11 @@ export async function generateMetadata(props: {
   return {
     title: data.page.seoTitle || data.page.title,
     description: data.page.seoDescription || undefined,
+    // Ein Entwurf ist nur fuer den angemeldeten Admin ueberhaupt erreichbar —
+    // aber falls ihn doch je etwas abruft, sagt die Seite selbst, dass sie
+    // nicht in einen Index gehoert. Guertel und Hosentraeger.
+    robots:
+      data.page.status === VEROEFFENTLICHT ? undefined : { index: false, follow: false },
     alternates: { canonical: `/${data.page.slug}` },
   };
 }
@@ -50,6 +66,7 @@ export default async function CmsPage(props: {
   return (
     <main className="mx-auto max-w-3xl">
       <PageTracker contentType="seite" contentId={page.id} path={`/${page.slug}`} />
+      <Entwurfshinweis entwurf={page.status !== VEROEFFENTLICHT} />
       <JsonLd
         data={breadcrumbJsonLd(base, [
           [page.title, `/${page.slug}`],

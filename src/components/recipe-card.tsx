@@ -3,6 +3,7 @@
  */
 import Link from "next/link";
 import { ResponsiveImg, type MediaImageLike } from "./responsive-img";
+import { Entwurfsplakette } from "@/components/entwurfshinweis";
 import { CompactLike } from "./compact-like";
 import { IconClock } from "./icons";
 import { t } from "@/i18n/de";
@@ -20,6 +21,15 @@ export interface RecipeCardData {
   /** Ernährungsform (wird hinter der Kategorie mit „/“ getrennt gezeigt). */
   dietType?: string | null;
   image: MediaImageLike | null;
+  /**
+   * Noch nicht veröffentlicht — die Kachel trägt dann die Plakette „Entwurf".
+   *
+   * Eine solche Kachel entsteht ausschließlich, wenn der Lader mit
+   * `sichtbarkeit: "auch-entwuerfe"` gerufen wurde, und das setzt eine
+   * angemeldete Admin-Sitzung voraus (src/lib/entwurfsansicht.ts). Die Kachel
+   * BLENDET also nichts aus — sie beschriftet nur, was sie ohnehin bekommt.
+   */
+  entwurf?: boolean;
 }
 
 /**
@@ -88,6 +98,16 @@ export function RecipeCard({
       {/* Innerer Abstand: auf schmalen (2-spaltigen) Kacheln links/rechts knapper
           (px-3), damit mehr Platz für Titel/Text bleibt; ab sm wieder p-5. */}
       <div className={`px-3 py-4 sm:p-5 ${zeile ? "sm:self-center" : ""}`}>
+        {/* Die Plakette steht ÜBER der Kategorie-Zeile und damit an der
+            obersten Stelle des Textteils — die Frage „ist das schon
+            veröffentlicht?" soll man beantwortet haben, bevor man den Titel
+            liest. Eine solche Kachel entsteht nur für einen angemeldeten
+            Admin (src/lib/entwurfsansicht.ts). */}
+        {recipe.entwurf && (
+          <p className="mb-1.5">
+            <Entwurfsplakette entwurf />
+          </p>
+        )}
         {(recipe.category || recipe.dietType) && (
           // break-words: „FAMILIENESSEN" ist ein einziges langes Wort und lief
           // auf schmalen Kacheln über die Kante — sichtbar ABGESCHNITTEN, weil

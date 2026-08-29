@@ -7,15 +7,29 @@ import { JsonLd, breadcrumbJsonLd, recipeJsonLd } from "@/lib/jsonld";
 import { RecipeView } from "@/components/recipe-view";
 import { PageTracker } from "@/components/page-tracker";
 import { getSiteName } from "@/lib/settings";
+import {
+  darfGezeigtWerden,
+  sichtbarkeitFuerBesucher,
+  VEROEFFENTLICHT,
+} from "@/lib/entwurfsansicht";
+import { Entwurfshinweis } from "@/components/entwurfshinweis";
 import { t } from "@/i18n/de";
 
 const dict = t();
 
 export const dynamic = "force-dynamic";
 
-async function loadPublished(slug: string) {
+/**
+ * Das Rezept — oder `null`, wenn der Besucher es nicht sehen darf.
+ *
+ * Die Statusfrage steht hier und NICHT beim Rendern: Ein Entwurf, den jemand
+ * nicht sehen darf, wird gar nicht erst geladen. Ausgeblendet werden koennte
+ * er nur, nachdem er schon im RSC-Payload steht.
+ */
+async function ladeSichtbares(slug: string) {
+  const sichtbarkeit = await sichtbarkeitFuerBesucher();
   const full = await getFullRecipe({ slug });
-  if (!full || full.recipe.status !== "veroeffentlicht") return null;
+  if (!full || !darfGezeigtWerden(full.recipe.status, sichtbarkeit)) return null;
   return full;
 }
 
@@ -23,7 +37,7 @@ export async function generateMetadata(props: {
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await props.params;
-  const full = await loadPublished(slug);
+  const full = await ladeSichtbares(slug);
   if (!full) return {};
   const { recipe } = full;
   const base = await getPublicBaseUrl();
@@ -33,6 +47,10 @@ export async function generateMetadata(props: {
   return {
     title,
     description,
+    // Ein Entwurf ist nur fuer den angemeldeten Admin ueberhaupt erreichbar —
+    // aber falls ihn doch je etwas abruft, sagt die Seite selbst, dass sie
+    // nicht in einen Index gehoert. Guertel und Hosentraeger.
+    robots: recipe.status === VEROEFFENTLICHT ? undefined : { index: false, follow: false },
     alternates: { canonical: `/rezepte/${recipe.slug}` },
     openGraph: {
       title,
@@ -58,7 +76,7 @@ export default async function RecipePage(props: {
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await props.params;
-  const full = await loadPublished(slug);
+  const full = await ladeSichtbares(slug);
   if (!full) notFound();
   const base = await getPublicBaseUrl();
 
@@ -71,6 +89,7 @@ export default async function RecipePage(props: {
         contentId={full.recipe.id}
         path={`/rezepte/${full.recipe.slug}`}
       />
+      <Entwurfshinweis entwurf={full.recipe.status !== VEROEFFENTLICHT} />
       <JsonLd data={recipeJsonLd(base, full)} />
       <JsonLd
         data={breadcrumbJsonLd(base, [

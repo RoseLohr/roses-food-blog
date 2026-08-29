@@ -10,7 +10,7 @@ import {
 } from "./actions";
 import { SequenceEditor } from "./sequence-editor";
 import { Meldung, meldungAus } from "@/components/admin/meldung";
-import { Statuschip } from "@/components/admin/statuschip";
+import { Statuschip } from "@/components/statuschip";
 import { LoeschForm } from "@/components/admin/loesch-form";
 
 const dict = t();

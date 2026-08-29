@@ -8,7 +8,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageTracker } from "./page-tracker";
 import { TravelPostCard } from "./travel-post-card";
-import { publishedTravelCards } from "@/lib/travel";
+import { reisekarten } from "@/lib/travel";
 import { getPublicBaseUrl } from "@/lib/base-url";
 import { JsonLd, breadcrumbJsonLd } from "@/lib/jsonld";
 import { t } from "@/i18n/de";
@@ -38,7 +38,13 @@ export async function TravelFilterList({
   /** Bereits dekodierter Filterwert (die Route dekodiert den Routenparameter). */
   value: string;
 }) {
-  const posts = await publishedTravelCards({ column: COLUMN[dimension], value });
+  // Land-/Region-/Stadt-Seiten bleiben bei Veroeffentlichtem: Sie sind
+  // indexierbar und stehen in der Sitemap; ihr Inhalt soll fuer jeden
+  // derselbe sein.
+  const posts = await reisekarten({
+    sichtbarkeit: "nur-veroeffentlicht",
+    filter: { column: COLUMN[dimension], value },
+  });
   if (posts.length === 0) notFound();
 
   const path = `/reisen/${dimension}/${encodeURIComponent(value)}`;
