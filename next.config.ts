@@ -84,11 +84,34 @@ const nextConfig: NextConfig = {
           // am laufenden Server: Alle Seiten, die die E2E-Sammlung ansieht,
           // laden ihre Ressourcen weiterhin vollständig.
           //
-          // Bewusst OHNE Cross-Origin-Opener-Policy: Erst beide Header zusammen
-          // ergeben „cross-origin isolated". COOP `same-origin` kappt aber
-          // window.open-Beziehungen zu fremden Seiten, und das ist eine eigene
-          // Entscheidung — nicht das, was hier gemeldet wurde.
           { key: "Cross-Origin-Embedder-Policy", value: "require-corp" },
+          // ── UND DIE ZWEITE HÄLFTE, NACHGEMESSEN (08/2026) ────────────────
+          //
+          // Hier stand „bewusst OHNE Cross-Origin-Opener-Policy", begründet
+          // damit, dass COOP `same-origin` window.open-Beziehungen zu fremden
+          // Seiten kappt. Der Satz stimmt allgemein — nur zahlt DIESE
+          // Anwendung den Preis nicht. Am Quelltext ausgezählt:
+          //
+          //     window.open / window.opener / postMessage   ->  0 Fundstellen
+          //     target="_blank"                             ->  6 Fundstellen
+          //     davon mit rel="noopener"                    ->  6
+          //
+          // Fünf der sechs sind Admin-Vorschaulinks auf die eigene Seite —
+          // same-origin, die COOP ausdrücklich erlaubt. Der sechste ist der
+          // Google-Maps-Link im Reisebericht, mit `rel="noopener noreferrer"`.
+          // Die Opener-Beziehung ist also überall bereits von Hand gekappt;
+          // COOP schneidet nichts ab, was es noch gäbe.
+          //
+          // Damit ist die Anwendung „cross-origin isolated". Zusätzliche
+          // Anforderungen an Unterressourcen entstehen dadurch NICHT — die
+          // stellt `require-corp` oben bereits, und die CSP lässt ohnehin nur
+          // 'self' und data: zu.
+          //
+          // Gemeldet als ZAP-Regel 90004 (Issue #75), zehn Fundstellen. Dass
+          // die Meldung damit wirklich verschwindet, zeigt erst ein
+          // DAST-Lauf — die Kopfzeile auf dem Draht ist die Prämisse, nicht
+          // das Ergebnis.
+          { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
         ],
       },
       {

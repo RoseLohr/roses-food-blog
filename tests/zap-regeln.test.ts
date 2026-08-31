@@ -58,16 +58,24 @@ function kopfzeilenDerAnwendung(): string[] {
 }
 
 describe("ZAP-Regeln", () => {
-  it("die Anwendung setzt die vier Kopfzeilen für ALLE Routen", () => {
+  it("die Anwendung setzt die Sicherheits-Kopfzeilen für ALLE Routen", () => {
     // Die Prämisse der Herabstufung. Fällt sie weg, ist die Herabstufung
     // wieder begründet — dann muss aber auch sie zurück, nicht bloß dieser
     // Test angepasst werden.
+    //
+    // COEP und COOP stehen mit in der Liste, obwohl für sie keine Regel
+    // herabgestuft ist (90004 steht gar nicht in rules.tsv): Sie wirken nur
+    // ALS PAAR — erst zusammen ergeben sie „cross-origin isolated". Fiele eine
+    // von beiden still weg, bliebe die andere ohne Wirkung und niemand merkte
+    // es. Deshalb werden beide hier festgehalten.
     const gesetzt = kopfzeilenDerAnwendung();
     for (const kopf of [
       "Content-Security-Policy",
       "X-Content-Type-Options",
       "X-Frame-Options",
       "Permissions-Policy",
+      "Cross-Origin-Embedder-Policy",
+      "Cross-Origin-Opener-Policy",
     ]) {
       expect(gesetzt, `${kopf} muss in next.config.ts für /:path* stehen`).toContain(kopf);
     }
