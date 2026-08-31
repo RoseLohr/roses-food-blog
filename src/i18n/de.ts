@@ -1285,6 +1285,21 @@ export const de = {
       focusPreview: "Vorschau der Zuschnitte",
       focusReset: "Auf Mitte zurücksetzen",
       focusSaved: "Bildausschnitt gespeichert.",
+      altTextButton: "Alt-Text",
+      altTextTitle: "Alt-Text bearbeiten",
+      /**
+       * Der Zustand, der wirklich etwas zu tun gibt. Ein Bild ohne Alt-Text
+       * ist fuer Screenreader stumm — in einer Wand aus Kacheln muss man das
+       * SEHEN koennen, ohne jede einzeln aufzuklappen.
+       */
+      altTextMissing: "Alt-Text fehlt",
+      altTextSaved: "Alt-Text gespeichert.",
+      /**
+       * Loeschen steht nur noch in der Listenansicht. In der Kachel sass es
+       * einen Klick neben „Ausschnitt", ohne Rueckfrage und ueber den Rand
+       * hinaus — und die Kachel ist zum Ansehen da, nicht zum Aufraeumen.
+       */
+      deleteInList: "Bilder löschen: in der Listenansicht.",
     },
   },
 } as const;
