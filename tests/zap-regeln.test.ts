@@ -50,11 +50,36 @@ function regeln(): { id: string; stufe: string; text: string }[] {
     });
 }
 
-/** Kopfzeilen, die next.config.ts für ALLE Routen setzt. */
+/**
+ * Kopfzeilen, die next.config.ts für ALLE Routen setzt.
+ *
+ * Der Ausschnitt endet am NÄCHSTEN `source:` — nicht am Dateiende. Solange
+ * jede Kopfzeile nur einmal vorkam, war der Unterschied folgenlos. Seit
+ * /uploads eine eigene Cross-Origin-Resource-Policy trägt, ist er tragend:
+ * Bis zum Dateiende gelesen, bliebe dieser Test grün, wenn jemand die strenge
+ * CORP aus dem /:path*-Block entfernte und nur die Ausnahme stehen ließe —
+ * er hätte dann das Gegenteil dessen gemessen, was er zusagt.
+ */
 function kopfzeilenDerAnwendung(): string[] {
   const cfg = fs.readFileSync(path.join(ROOT, "next.config.ts"), "utf8");
-  const block = cfg.slice(cfg.indexOf('source: "/:path*"'));
+  const start = cfg.indexOf('source: "/:path*"');
+  const naechste = cfg.indexOf("source:", start + 1);
+  const block = cfg.slice(start, naechste === -1 ? undefined : naechste);
   return [...block.matchAll(/key:\s*"([A-Za-z-]+)"/g)].map((m) => m[1]);
+}
+
+/** Kopfzeilen des /uploads-Blocks, als key/value-Paare. */
+function kopfzeilenDerUploads(): Record<string, string> {
+  const cfg = fs.readFileSync(path.join(ROOT, "next.config.ts"), "utf8");
+  const start = cfg.indexOf('source: "/uploads/:pfad*"');
+  if (start === -1) return {};
+  const naechste = cfg.indexOf("source:", start + 1);
+  const block = cfg.slice(start, naechste === -1 ? undefined : naechste);
+  return Object.fromEntries(
+    [...block.matchAll(/key:\s*"([A-Za-z-]+)",\s*value:\s*"([^"]+)"/g)].map(
+      (m) => [m[1], m[2]],
+    ),
+  );
 }
 
 describe("ZAP-Regeln", () => {
@@ -76,9 +101,36 @@ describe("ZAP-Regeln", () => {
       "Permissions-Policy",
       "Cross-Origin-Embedder-Policy",
       "Cross-Origin-Opener-Policy",
+      "Cross-Origin-Resource-Policy",
     ]) {
       expect(gesetzt, `${kopf} muss in next.config.ts für /:path* stehen`).toContain(kopf);
     }
+  });
+
+  it("/uploads behält die Erlaubnis, cross-origin eingebettet zu werden", () => {
+    // Die gemessene Ausnahme zur strengen CORP. Sie hat einen Zweck, der sich
+    // NICHT von selbst meldet, wenn er kaputtgeht: Newsletter-Bilder lädt ein
+    // Webmailer als Unterressource einer fremden Herkunft. Fiele dieser Block
+    // weg, blieben sie leer — im Postfach des Lesers, lange nachdem die Mail
+    // heraus ist. Niemand von uns bekäme das je zu sehen.
+    const uploads = kopfzeilenDerUploads();
+    expect(
+      uploads["Cross-Origin-Resource-Policy"],
+      "/uploads muss cross-origin einbettbar bleiben — sonst sind die Bilder " +
+        "in bereits verschickten Newslettern leer.",
+    ).toBe("cross-origin");
+    // Und die Gegenprobe: Die Ausnahme gilt NUR für /uploads. Stünde
+    // cross-origin auch im allgemeinen Block, wäre die Strenge überall weg.
+    expect(
+      kopfzeilenDerAnwendung(),
+      "der /:path*-Block darf die Ausnahme nicht selbst enthalten",
+    ).toContain("Cross-Origin-Resource-Policy");
+    const cfg = fs.readFileSync(path.join(ROOT, "next.config.ts"), "utf8");
+    const start = cfg.indexOf('source: "/:path*"');
+    const naechste = cfg.indexOf("source:", start + 1);
+    expect(cfg.slice(start, naechste)).toContain(
+      '{ key: "Cross-Origin-Resource-Policy", value: "same-origin" }',
+    );
   });
 
   it("keine Regel ist für eine Kopfzeile herabgestuft, die die Anwendung selbst setzt", () => {
