@@ -47,6 +47,11 @@ export const DYNAMIC_ROUTES = {
     changeFrequency: "weekly",
     priority: 0.5,
   },
+  diet: {
+    prefix: "/rezepte/ernaehrung",
+    changeFrequency: "weekly",
+    priority: 0.5,
+  },
   travelFilter: { prefix: "/reisen", changeFrequency: "monthly", priority: 0.4 },
   page: { prefix: "", changeFrequency: "yearly", priority: 0.3 },
 } as const satisfies Record<
@@ -61,6 +66,7 @@ export const DYNAMIC_ROUTES = {
 export const DYNAMIC_ROUTE_PATTERNS: readonly string[] = [
   "/rezepte/[slug]",
   "/rezepte/kategorie/[slug]",
+  "/rezepte/ernaehrung/[slug]",
   "/reisen/[slug]",
   "/reisen/land/[wert]",
   "/reisen/region/[wert]",

@@ -7,9 +7,13 @@
  * type und validieren beim Zuordnen. Direkte Queries auf schema.taxonomy
  * außerhalb dieser Datei bitte vermeiden.
  */
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, count, eq, inArray } from "drizzle-orm";
 import { db, schema } from "@/db";
-import { TAXONOMY_TYPES, type TaxonomyType } from "@/db/schema";
+import {
+  TAXONOMY_TYPES,
+  VEROEFFENTLICHT,
+  type TaxonomyType,
+} from "@/db/schema";
 import { slugify, uniqueSlug } from "@/lib/slug";
 
 export { TAXONOMY_TYPES };
@@ -58,6 +62,86 @@ export async function taxonomiesByType(): Promise<
   ) as Record<TaxonomyType, TaxonomyRow[]>;
   for (const row of rows) grouped[row.type].push(row);
   return grouped;
+}
+
+/** Ein Taxonomie-Eintrag samt Zahl seiner VEROEFFENTLICHTEN Rezepte. */
+export interface TaxonomieMitAnzahl {
+  id: number;
+  name: string;
+  slug: string;
+  anzahl: number;
+}
+
+/**
+ * Alle Eintraege einer Art, die mindestens EIN veroeffentlichtes Rezept
+ * tragen — alphabetisch, mit Anzahl.
+ *
+ * ── WARUM DAS HIER STEHT UND NICHT DREIMAL ANDERSWO ─────────────────────────
+ *
+ * Dieselbe Frage stellten bis 08/2026 zwei Stellen mit zwei eigenen Abfragen:
+ * das Menue (`nav-data.ts`) und die SEO-Artefakte (`seo/content.ts`). Beide
+ * meinten „Kategorien, die es wert sind, verlinkt zu werden", und beide
+ * mussten dafuer denselben Doppel-Join schreiben. Mit den Ernaehrungsformen
+ * waere es die vierte und fuenfte Abschrift geworden.
+ *
+ * Die Bedingung „mindestens ein veroeffentlichtes Rezept" ist dabei keine
+ * Feinheit, sondern die Aussage selbst: Eine leere Uebersichtsseite gehoert
+ * weder ins Menue noch in die Sitemap. Steht sie an zwei Stellen, driften
+ * Menue und Sitemap auseinander, ohne dass es jemand merkt.
+ *
+ * Die INNER JOINs erzwingen die Bedingung bereits — ein `HAVING` waere
+ * doppelt gemoppelt.
+ */
+export async function taxonomienMitRezepten(
+  type: TaxonomyType,
+): Promise<TaxonomieMitAnzahl[]> {
+  return db
+    .select({
+      id: schema.taxonomy.id,
+      name: schema.taxonomy.name,
+      slug: schema.taxonomy.slug,
+      anzahl: count(schema.recipeTaxonomy.recipeId),
+    })
+    .from(schema.taxonomy)
+    .innerJoin(
+      schema.recipeTaxonomy,
+      eq(schema.recipeTaxonomy.taxonomyId, schema.taxonomy.id),
+    )
+    .innerJoin(
+      schema.recipe,
+      and(
+        eq(schema.recipe.id, schema.recipeTaxonomy.recipeId),
+        eq(schema.recipe.status, VEROEFFENTLICHT),
+      ),
+    )
+    .where(eq(schema.taxonomy.type, type))
+    .groupBy(schema.taxonomy.id)
+    .orderBy(asc(schema.taxonomy.name));
+}
+
+/**
+ * Die IDs der veroeffentlichten Rezepte an einem Taxonomie-Eintrag.
+ *
+ * Uebersichtsseiten (Kategorie, Ernaehrungsform) bleiben bei
+ * Veroeffentlichtem — auch fuer den angemeldeten Admin: Sie sind indexierbar
+ * und stehen in der Sitemap, ihr Inhalt soll fuer jeden derselbe sein. Der
+ * Status steht deshalb hier fest und ist kein Parameter.
+ */
+export async function veroeffentlichteRezeptIds(
+  taxonomyId: number,
+): Promise<number[]> {
+  const rows = await db
+    .select({ id: schema.recipeTaxonomy.recipeId })
+    .from(schema.recipeTaxonomy)
+    .innerJoin(
+      schema.recipe,
+      and(
+        eq(schema.recipe.id, schema.recipeTaxonomy.recipeId),
+        eq(schema.recipe.status, VEROEFFENTLICHT),
+      ),
+    )
+    .where(eq(schema.recipeTaxonomy.taxonomyId, taxonomyId));
+  return rows.map((r) => r.id);
 }
 
 /** Eintrag per Art + Slug (z. B. Kategorie-Seite). */

@@ -46,6 +46,7 @@ function inhalt(overrides: Partial<SeoContent> = {}): SeoContent {
     travels: [],
     pages: [],
     categories: [],
+    dietForms: [],
     travelFilters: [],
     lastModified: null,
     ...overrides,

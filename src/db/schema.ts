@@ -121,6 +121,19 @@ export const TAXONOMY_TYPES = [
 ] as const;
 export type TaxonomyType = (typeof TAXONOMY_TYPES)[number];
 
+/**
+ * Der Wert, den `status` traegt, wenn ein Inhalt oeffentlich ist.
+ *
+ * Er steht HIER und nicht in `lib/entwurfsansicht.ts`, obwohl dort die Regel
+ * wohnt, die ihn auswertet: Das Wort ist der GESPEICHERTE Wert, kein Stueck
+ * Server-Logik. `entwurfsansicht.ts` traegt `server-only` — voellig richtig,
+ * denn es liest die Sitzung —, und daran haengte sich sonst jedes Skript mit,
+ * das nur eine Zeichenkette braucht (Seed und E2E-Vorbereitung liefen genau
+ * darauf auf). `entwurfsansicht.ts` reicht ihn weiterhin durch, damit die
+ * Regel eine Adresse behaelt.
+ */
+export const VEROEFFENTLICHT = "veroeffentlicht" as const;
+
 export const taxonomy = sqliteTable(
   "taxonomy",
   {

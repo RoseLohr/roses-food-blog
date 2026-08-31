@@ -14,6 +14,7 @@ import "server-only";
 import { and, eq } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { newestDate, travelFilterEntries, type SeoContent } from "./model";
+import { taxonomienMitRezepten } from "@/lib/taxonomies";
 
 const PUBLISHED = "veroeffentlicht" as const;
 
@@ -93,6 +94,19 @@ export async function loadSeoContent(): Promise<SeoContent> {
     description: row.seoDescription,
     lastModified: row.updatedAt,
   }));
+  // Ernaehrungsformen mit mindestens einem veroeffentlichten Rezept —
+  // dieselbe Bedingung wie oben fuer die Kategorien, hier aber ueber die
+  // gemeinsame Abfrage statt als zweiter handgeschriebener Doppel-Join.
+  const dietRows = await taxonomienMitRezepten("ernaehrungsform");
+  const dietForms = dietRows
+    .map((row) => ({
+      path: `/rezepte/ernaehrung/${row.slug}`,
+      title: row.name,
+      description: "",
+      lastModified: null,
+    }))
+    .sort((a, b) => a.path.localeCompare(b.path));
+
   const categories = categoryRows
     .map((row) => ({
       path: `/rezepte/kategorie/${row.slug}`,
@@ -107,6 +121,7 @@ export async function loadSeoContent(): Promise<SeoContent> {
     travels,
     pages,
     categories,
+    dietForms,
     travelFilters: travelFilterEntries(travelRows),
     lastModified: newestDate([
       ...recipes.map((e) => e.lastModified),

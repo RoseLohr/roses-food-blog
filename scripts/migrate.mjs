@@ -454,6 +454,32 @@ try {
         );
       console.log("[migrate] Kernseite „ueber-mich“ (Entwurf) angelegt.");
     }
+    // Die Uebersicht der Ernaehrungsformen. Das Hauptmenue verlaesst sich auf
+    // diesen Slug (src/lib/ernaehrung.ts), deshalb geschuetzt. Anders als
+    // „ueber-mich" gleich VEROEFFENTLICHT: Ihr Inhalt ist die Liste der
+    // Ernaehrungsformen, die die Seite selbst erzeugt — es gibt keinen
+    // Platzhaltertext, der ungewollt oeffentlich werden koennte.
+    const hatErnaehrungsformen = sqlite
+      .prepare("SELECT id FROM page WHERE slug = ?")
+      .get("ernaehrungsformen");
+    if (!hatErnaehrungsformen) {
+      sqlite
+        .prepare(
+          "INSERT INTO page (title, slug, content, seo_title, seo_description, status, is_protected, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .run(
+          "Ernährungsformen",
+          "ernaehrungsformen",
+          "Rezepte nach Ernährungsform. Wähle unten eine Form, um alle passenden Rezepte zu sehen.",
+          "Ernährungsformen",
+          "",
+          "veroeffentlicht",
+          1,
+          Date.now(),
+          Date.now(),
+        );
+      console.log("[migrate] Kernseite „ernaehrungsformen“ angelegt.");
+    }
   }
 } catch (err) {
   console.error("[migrate] Kernseiten-Anlage fehlgeschlagen:", err.message);

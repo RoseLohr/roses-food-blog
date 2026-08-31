@@ -18,6 +18,8 @@ import {
   VEROEFFENTLICHT,
 } from "@/lib/entwurfsansicht";
 import { Entwurfshinweis } from "@/components/entwurfshinweis";
+import { ErnaehrungsformenListe } from "@/components/ernaehrungsformen-liste";
+import { ERNAEHRUNGSFORMEN_SLUG } from "@/lib/ernaehrung";
 
 
 export const dynamic = "force-dynamic";
@@ -99,6 +101,13 @@ export default async function CmsPage(props: {
         className="prose-content mt-6"
         dangerouslySetInnerHTML={{ __html: renderMarkdown(page.content) }}
       />
+      {/* Die EINE Seite, die unter ihrem Text noch etwas trägt: Die Übersicht
+          der Ernährungsformen ist eine gepflegte Seite (Titel und Text aus dem
+          Admin) MIT einer Liste darunter. Eine eigene Route dafür hätte den
+          ganzen Aufbau hier abschreiben müssen — Entwurfsregel, Titelbild,
+          Markdown, Breadcrumb, Metadaten. Deshalb diese eine Bedingung statt
+          einer zweiten Datei. */}
+      {page.slug === ERNAEHRUNGSFORMEN_SLUG && <ErnaehrungsformenListe />}
     </main>
   );
 }

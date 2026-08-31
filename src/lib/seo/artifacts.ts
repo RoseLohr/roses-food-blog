@@ -168,6 +168,7 @@ export function buildSitemapUrls(base: string, content: SeoContent): SitemapUrl[
     ...urlsFor(base, content.recipes, DYNAMIC_ROUTES.recipe),
     ...urlsFor(base, content.travels, DYNAMIC_ROUTES.travel),
     ...urlsFor(base, content.categories, DYNAMIC_ROUTES.category),
+    ...urlsFor(base, content.dietForms, DYNAMIC_ROUTES.diet),
     ...urlsFor(base, content.travelFilters, DYNAMIC_ROUTES.travelFilter),
     ...urlsFor(base, content.pages, DYNAMIC_ROUTES.page),
   ];
@@ -246,6 +247,7 @@ export function buildLlmsTxt(
     ...llmsSection("Rezepte", base, newestFirst(content.recipes)),
     ...llmsSection("Reiseberichte", base, newestFirst(content.travels)),
     ...llmsSection("Kategorien", base, content.categories),
+    ...llmsSection("Ernährungsformen", base, content.dietForms),
     ...llmsSection("Seiten", base, content.pages),
     "## Optional",
     "",

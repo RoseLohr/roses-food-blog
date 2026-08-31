@@ -733,6 +733,16 @@ async function main() {
       content:
         "> **PLATZHALTER — RECHTSTEXT ERFORDERLICH**\n>\n> Angaben gemäß § 5 DDG bitte ergänzen: Name, Anschrift, Kontakt, Verantwortliche/r i. S. d. § 18 Abs. 2 MStV.",
     },
+    {
+      // Die Übersicht der Ernährungsformen. Geschützt wie die übrigen
+      // Kernseiten, weil das Hauptmenü sich auf ihren Slug verlässt.
+      // Veröffentlicht, weil ihr eigentlicher Inhalt — die Liste der
+      // Ernährungsformen — auch ohne einen Satz Einleitung vollständig ist.
+      title: "Ernährungsformen",
+      slug: "ernaehrungsformen",
+      content:
+        "Rezepte nach Ernährungsform. Wähle unten eine Form, um alle passenden Rezepte zu sehen.",
+    },
   ];
   for (const p of pages) {
     await db

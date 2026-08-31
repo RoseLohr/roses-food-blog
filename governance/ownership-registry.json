@@ -74,6 +74,7 @@
       "src/lib/jsonld",
       "src/lib/seo",
       "src/lib/nav-data",
+        "src/lib/ernaehrung",
       "src/lib/branding",
       "src/lib/bildreihen",
       "src/lib/reihenfolge",

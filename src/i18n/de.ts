@@ -43,6 +43,13 @@ export const de = {
     recipes: "Rezepte",
     travel: "Reisen",
     seasonCalendar: "Saisonkalender",
+    /**
+     * Die Gruppe ueber Saisonkalender und Ernaehrungsformen. Sie hat KEINE
+     * eigene Seite — ein Klick klappt nur auf. Deshalb steht sie im Menue als
+     * Knopf und nicht als Link (siehe site-header.tsx).
+     */
+    nutrition: "Ernährung",
+    dietForms: "Ernährungsformen",
     about: "Über mich",
     search: "Suche",
     menu: "Menü",
@@ -157,6 +164,27 @@ export const de = {
     metaTitle: (name: string) => `${name} – Rezepte`,
     metaDescription: (name: string) =>
       `Alle Rezepte der Kategorie „${name}“ auf Rose’s Gourmet Compass.`,
+  },
+  /** Die Seite einer einzelnen Ernaehrungsform (/rezepte/ernaehrung/<slug>). */
+  diet: {
+    backToForms: "Alle Ernährungsformen",
+    count: (n: number) => (n === 1 ? "1 Rezept" : `${n} Rezepte`),
+    empty: "Noch keine Rezepte mit dieser Ernährungsform.",
+    metaTitle: (name: string) => `${name} – Rezepte`,
+    metaDescription: (name: string) =>
+      `Alle Rezepte der Ernährungsform „${name}“ auf Rose’s Gourmet Compass.`,
+  },
+  /** Die Uebersicht ueber alle Ernaehrungsformen (/ernaehrungsformen). */
+  dietForms: {
+    /**
+     * Fallback-Titel: Die Seite ist eine gepflegte CMS-Seite; Titel und Text
+     * kommen aus dem Admin. Dieser Wert greift nur, solange dort nichts steht.
+     */
+    title: "Ernährungsformen",
+    empty: "Noch keine Ernährungsformen mit veröffentlichten Rezepten.",
+    metaDescription:
+      "Rezepte nach Ernährungsform — vegan, vegetarisch und mehr, auf Rose’s Gourmet Compass.",
+    count: (n: number) => (n === 1 ? "1 Rezept" : `${n} Rezepte`),
   },
   travelList: {
     title: "Kulinarische Reisen",

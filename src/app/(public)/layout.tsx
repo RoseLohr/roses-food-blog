@@ -12,7 +12,8 @@ const dict = t();
 export default async function PublicLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  const { recipeChildren, travelChildren } = await getNavMenus();
+  const { recipeChildren, travelChildren, nutritionChildren } =
+    await getNavMenus();
   const brand = await getHeaderBrand();
   const siteName = getSiteName();
   return (
@@ -28,6 +29,7 @@ export default async function PublicLayout({
         brand={brand}
         recipeChildren={recipeChildren}
         travelChildren={travelChildren}
+        nutritionChildren={nutritionChildren}
       />
 
       <div id="inhalt" className="mx-auto w-full max-w-6xl grow px-4 py-8">
