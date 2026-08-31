@@ -15,9 +15,6 @@
  * wäre er eine Verabredung, an die sich niemand erinnert.
  */
 import "server-only";
-import { eq } from "drizzle-orm";
-import { db, schema } from "@/db";
-import { mediaImageWithWidths } from "@/lib/media";
 import {
   taxonomienMitRezepten,
   type TaxonomieMitAnzahl,
@@ -42,22 +39,4 @@ export function ernaehrungsformPfad(slug: string): string {
  */
 export async function ernaehrungsformen(): Promise<TaxonomieMitAnzahl[]> {
   return taxonomienMitRezepten("ernaehrungsform");
-}
-
-/**
- * Die gepflegte Seite hinter der Übersicht — oder `null`, wenn es sie (noch)
- * nicht gibt bzw. sie ein Entwurf ist.
- *
- * Die Sichtbarkeitsfrage bekommt der Aufrufer als Parameter herein, damit sie
- * dort steht, wo sie beantwortet wird (`src/lib/entwurfsansicht.ts`) — und
- * nicht hier ein zweites Mal.
- */
-export async function ernaehrungsformenSeite() {
-  const [seite] = await db
-    .select()
-    .from(schema.page)
-    .where(eq(schema.page.slug, ERNAEHRUNGSFORMEN_SLUG));
-  if (!seite) return null;
-  const titelbild = await mediaImageWithWidths(seite.heroImageId);
-  return { seite, titelbild };
 }
