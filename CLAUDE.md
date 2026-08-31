@@ -197,6 +197,27 @@ neu (B6, 08/2026):
 - `<LoeschForm action={…} id={…} />` — das Löschen-Formular. Vorbelegt auf den
   Regelfall; `gestalt` und `beschriftung` nur für die Ausnahmen. **Eine
   Rückfrage vor dem Löschen gehört, wenn sie kommt, HIERHIN — einmal.**
+- `<AdminDialog offen schliessen titel fuss>` (`src/components/admin/admin-dialog.tsx`)
+  — die Hülle JEDES Admin-Modals: Overlay, Kopfzeile mit ×, Fußzeile für die
+  Knöpfe. Sie trägt die vier Dinge, die man einzeln vergisst: Fokusfalle,
+  Escape, gesperrter Hintergrund-Scroll und **Fokus-Rückgabe an den öffnenden
+  Knopf**. Wer ein zweites Modal von Hand baut, schreibt drei davon ab und
+  vergisst das vierte.
+  **Die Schließen-Funktion steht dort in einer Ref, nicht in den Abhängigkeiten
+  des Effekts** — und das ist keine Feinheit: Die Aufrufstellen übergeben
+  `() => setOffen(false)`, ein bei jedem Rendern neues Objekt. In der
+  Abhängigkeitsliste liefe der Effekt nach JEDEM Tastendruck neu und risse den
+  Fokus auf den ×-Knopf zurück; ein Textfeld im Dialog bliebe leer. Gemessen in
+  `tests/e2e/medien-kachel-bedienung.spec.ts` — mit `pressSequentially`, denn
+  `fill()` setzt den Wert in einem Zug und ginge an genau diesem Fehler vorbei.
+- **In einer Kachel wird nicht getippt und nicht gelöscht** (Medien, 08/2026).
+  Eine Kachel ist bei sechs Spalten rund 133 px breit. Ein Eingabefeld neben
+  einem „Speichern"-Knopf behielt darin wenige Millimeter — weder zu lesen noch
+  zu beschreiben; „Löschen" stand ohne Rückfrage einen Klick neben „Ausschnitt"
+  und ragte über den Rand. Der Alt-Text steht deshalb LESBAR in der Kachel
+  (fehlt er: `<Statuschip ton="gelb">`, denn das ist der Zustand, der etwas zu
+  tun gibt) und wird im Dialog geschrieben, wo das Bild daneben steht.
+  Gelöscht wird in der Listenansicht.
 - `listImageChoices()` (`src/lib/media.ts`) — die Auswahlliste für JEDEN
   `<ImagePicker>`. Sie führt neben Vorschau und Originalmaßen die große
   Variante (`fullUrl`) und den Fokuspunkt mit. **Daran hängt der Knopf

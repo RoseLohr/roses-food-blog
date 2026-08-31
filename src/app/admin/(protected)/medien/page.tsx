@@ -7,6 +7,8 @@ import { focusPosition, imageUrl, variantWidthsByImage } from "@/lib/media";
 import { MediaThumb } from "@/components/admin/media-thumb";
 import { alsDatum, alsZeitpunkt } from "@/lib/zeitpunkt";
 import { FocusPointEditor } from "@/components/admin/focus-point-editor";
+import { AltTextEditor } from "@/components/admin/alt-text-editor";
+import { Statuschip } from "@/components/statuschip";
 import { t } from "@/i18n/de";
 import {
   deleteImageAction,
@@ -107,6 +109,14 @@ export default async function MediaPage(props: {
         </Link>
       </div>
 
+      {/* Loeschen steht nur in der Listenansicht. Ohne diesen Satz waere die
+          erste Frage in der Kachelansicht „wo ist es hin?" — und die
+          Antwort stuende nirgends. Einmal ueber dem Raster, nicht in jeder
+          der bis zu sechs Kacheln pro Reihe. */}
+      {view === "kacheln" && images.length > 0 && (
+        <p className="mb-3 text-xs text-ink-soft">{m.deleteInList}</p>
+      )}
+
       {images.length === 0 ? (
         <p className="text-ink-soft">{m.empty}</p>
       ) : view === "liste" ? (
@@ -178,7 +188,11 @@ export default async function MediaPage(props: {
         // Kacheln — ~20 % kleiner als zuvor (mehr Spalten)
         <ul className="grid grid-cols-3 gap-4 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
           {images.map((img) => (
-            <li key={img.id} className="bg-white p-2.5 shadow-sm">
+            // `flex flex-col` + `mt-auto` an der Knopfzeile: Die Kacheln einer
+            // Reihe werden unterschiedlich hoch, sobald der eine Alt-Text zwei
+            // Zeilen braucht und der naechste keine. Ohne das staenden die
+            // Knoepfe auf verschiedenen Hoehen.
+            <li key={img.id} className="flex flex-col bg-white p-2.5 shadow-sm">
               <div className="mb-2">
                 <MediaThumb
                   thumbUrl={thumb(img)}
@@ -210,26 +224,32 @@ export default async function MediaPage(props: {
                     Listenansicht. */}
                 <span data-referenz-maske="true">{alsDatum(img.createdAt)}</span>
               </p>
-              <form action={updateAltTextAction} className="mt-2 flex gap-1">
-                <input type="hidden" name="id" value={img.id} />
-                <label className="sr-only" htmlFor={`alt-${img.id}`}>
-                  {m.altText}
-                </label>
-                <input
-                  id={`alt-${img.id}`}
-                  name="altText"
-                  defaultValue={img.altText}
-                  placeholder={m.altText}
-                  className="w-full min-w-0 border border-ink-soft/30 px-2 py-1 text-xs"
-                />
-                <button
-                  type="submit"
-                  className="rounded border border-ink/20 px-2 py-1 text-xs hover:bg-cream"
-                >
-                  {dict.common.save}
-                </button>
-              </form>
-              <div className="mt-1 flex items-center justify-between gap-2">
+
+              {/* Der Alt-Text steht hier LESBAR — vorher steckte er in einem
+                  Eingabefeld, das neben seinem „Speichern"-Knopf auf wenige
+                  Millimeter zusammengedrueckt war: weder zu lesen noch zu
+                  schreiben. Geschrieben wird er jetzt im Dialog, wo das Bild
+                  daneben steht. Fehlt er, ist das der Zustand, der etwas zu
+                  tun gibt — deshalb die gelbe Plakette statt einer Leerzeile. */}
+              <div className="mt-1.5 min-w-0">
+                {img.altText ? (
+                  <p className="line-clamp-2 text-xs text-ink" title={img.altText}>
+                    {img.altText}
+                  </p>
+                ) : (
+                  <Statuschip ton="gelb">{m.altTextMissing}</Statuschip>
+                )}
+              </div>
+
+              {/* Untereinander, nicht nebeneinander: „Ausschnitt" und
+                  „Alt-Text" brauchen zusammen rund 152 px, eine Kachel bietet
+                  bei sechs Spalten 133 px. Nebeneinander gestellt braechen sie
+                  ohnehin um — dann aber links ausgerichtet und verschieden
+                  breit. Gestapelt und auf volle Breite sieht es gewollt aus
+                  und ist auf dem iPad das groessere Ziel. `mt-auto` haelt die
+                  Zeile am Kachelboden, damit sie in einer Reihe auf gleicher
+                  Hoehe stehen, auch wenn ein Alt-Text zwei Zeilen braucht. */}
+              <div className="mt-auto flex flex-col gap-1 pt-2">
                 <FocusPointEditor
                   imageId={img.id}
                   imageSrc={full(img)}
@@ -237,7 +257,11 @@ export default async function MediaPage(props: {
                   initialX={img.focusX}
                   initialY={img.focusY}
                 />
-                <LoeschForm action={deleteImageAction} id={img.id} gestalt="klein" />
+                <AltTextEditor
+                  imageId={img.id}
+                  imageSrc={full(img)}
+                  initialAltText={img.altText}
+                />
               </div>
             </li>
           ))}

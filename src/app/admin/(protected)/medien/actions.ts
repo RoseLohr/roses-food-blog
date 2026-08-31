@@ -33,18 +33,50 @@ export async function uploadImageAction(formData: FormData): Promise<void> {
   back(dict.admin.media.uploaded);
 }
 
+/**
+ * Schreibt den Alt-Text eines Bildes. Die EINE Schreibstelle — es gibt zwei
+ * Eingaenge dorthin, und die unterscheiden sich nur in ihrer Form:
+ *
+ *   - das Formular der Listenansicht (abschicken, umleiten, Meldung oben),
+ *   - der Alt-Text-Dialog der Kachelansicht (bleibt offen, meldet selbst).
+ *
+ * Was GESCHRIEBEN wird, darf davon nicht abhaengen. Zwei Fassungen derselben
+ * Regel waeren zwei Gelegenheiten, sie unterschiedlich zu aendern.
+ *
+ * Rueckgabe `false` heisst: nichts geschrieben — ungueltige ID oder das Bild
+ * gibt es nicht (mehr). Kein falsches „Gespeichert" (vgl. saveFocusPointAction).
+ */
+async function altTextSchreiben(id: number, altText: string): Promise<boolean> {
+  if (!Number.isInteger(id)) return false;
+  const ergebnis = await db
+    .update(schema.mediaImage)
+    .set({ altText: altText.trim() })
+    .where(eq(schema.mediaImage.id, id));
+  if (ergebnis.changes === 0) return false;
+  revalidatePath("/admin/medien");
+  return true;
+}
+
 export async function updateAltTextAction(formData: FormData): Promise<void> {
   await requireAdmin();
   const view = String(formData.get("ansicht") ?? "");
   const id = Number(formData.get("id"));
-  const altText = String(formData.get("altText") ?? "").trim();
-  if (!Number.isInteger(id)) back(dict.common.error, view);
-  await db
-    .update(schema.mediaImage)
-    .set({ altText })
-    .where(eq(schema.mediaImage.id, id));
-  revalidatePath("/admin/medien");
-  back(dict.common.saved, view);
+  const altText = String(formData.get("altText") ?? "");
+  const ok = await altTextSchreiben(id, altText);
+  back(ok ? dict.common.saved : dict.common.error, view);
+}
+
+/**
+ * Alt-Text aus dem Dialog (Kachelansicht). Rueckgabewert statt Umleitung,
+ * damit das Modal offen bleiben und die Rueckmeldung selbst anzeigen kann —
+ * dieselbe Bauform wie `saveFocusPointAction`.
+ */
+export async function saveAltTextAction(
+  id: number,
+  altText: string,
+): Promise<{ ok: boolean }> {
+  await requireAdmin();
+  return { ok: await altTextSchreiben(id, altText) };
 }
 
 /**
