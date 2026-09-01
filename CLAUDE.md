@@ -133,6 +133,48 @@ diesem Repository arbeitet. Sie ist Teil des Governance-Regimes (A-32/A-33/A-37)
   machen will, legt zuerst die Rasterungsumgebung fest — die Toleranz wird
   NICHT angehoben.
 
+## Hauptmenü (08/2026) — zwei Ebenen, und wohin sie zeigen dürfen
+Das Menü trägt seit 08/2026 eine ZWEITE Ebene:
+
+```
+Ernährung                    ← Gruppe OHNE eigene Seite
+  Ernährungsformen           ← geschützte CMS-Seite (/ernaehrungsformen)
+    Vegan, Vegetarisch, …    ← je eine Übersichtsseite
+  Saisonkalender
+```
+
+- **Ein Menüpunkt darf nur auf eine indexierbare Seite zeigen.** Vegan & Co.
+  führten früher auf `/suche?ernaehrung=<slug>` — und `robots.txt` sperrt
+  `/suche?` (`DISALLOWED_PREFIXES`). Das Hauptmenü steht auf JEDER Seite; es
+  hätte überall auf gesperrte Adressen gezeigt. Deshalb gibt es
+  `/rezepte/ernaehrung/[slug]`, gebaut wie die Kategorieseite (gemeinsam:
+  `TaxonomieListe`). Wer einen Menüpunkt anlegt, prüft sein Ziel gegen
+  `DISALLOWED_PREFIXES`.
+- **Eine Gruppe ohne eigene Seite hat kein `href`** (`NavItem.href` ist
+  optional) und rendert einen `<button>`. Kein `href="#"`: Das wäre für
+  Screenreader ein Ziel, das es nicht gibt.
+  **Auf dem Desktop ÖFFNET der Klick, er schaltet nicht um** — die Maus hat
+  beim Hinzeigen bereits geöffnet (`onMouseEnter`), ein Umschalten klappte die
+  Liste im selben Moment wieder zu, in dem man auf ihre Überschrift klickt.
+  Geschlossen wird über den Pfeil, Escape, einen Klick daneben oder Weggehen.
+  Im mobilen Panel gibt es kein Hovern, dort schaltet der Text um.
+- **`/ernaehrungsformen` ist eine GESCHÜTZTE Kernseite** (`page.is_protected`,
+  angelegt von `scripts/seed.ts` UND `scripts/migrate.mjs`). Nur deshalb darf
+  das Menü sich auf ihren Slug verlassen; bei einer frei angelegten Seite
+  verschwände der Eintrag stillschweigend, sobald jemand den Slug ändert. Der
+  Slug steht einmal in `src/lib/ernaehrung.ts`. Der Eintrag erscheint nur,
+  wenn die Seite VERÖFFENTLICHT ist — sonst zeigte jede Seite auf einen 404.
+- **Die Referenzaufnahmen sehen eine Menü-Änderung NICHT.** Ein getauschtes
+  Wort im Kopf blieb unter der Pixel-Toleranz von 0,2 % (die laut den
+  Layout-Regeln nicht angehoben wird — sie zu SENKEN ist hier aber auch keine
+  Lösung, das machte die Aufnahmen flatterig). Wer das Menü ändert, misst es
+  darum in `tests/e2e/ernaehrung-menue.spec.ts` — auf BEIDEN Wegen, Desktop
+  und Hamburger-Panel, denn das sind zwei getrennte Code-Zweige.
+- **Der gespeicherte Status-Wert steht in `src/db/schema.ts`**
+  (`VEROEFFENTLICHT`), nicht in `src/lib/entwurfsansicht.ts` — das trägt
+  `server-only` und riss sonst Seed und E2E-Vorbereitung mit hinein.
+  `entwurfsansicht.ts` reicht ihn durch; die REGEL wohnt weiterhin dort.
+
 ## Entwürfe im öffentlichen Bereich (08/2026) — nicht verhandelbar
 Ein angemeldeter Admin sieht Startseite, Rezept-/Reiseliste und die drei
 Detailseiten MIT seinen Entwürfen (Plakette „Entwurf"); alle anderen sehen sie

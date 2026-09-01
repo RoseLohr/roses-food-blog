@@ -454,6 +454,50 @@ try {
         );
       console.log("[migrate] Kernseite „ueber-mich“ (Entwurf) angelegt.");
     }
+    // Die Uebersicht der Ernaehrungsformen. Das Hauptmenue verlaesst sich auf
+    // diesen Slug (src/lib/ernaehrung.ts), deshalb geschuetzt. Anders als
+    // „ueber-mich" gleich VEROEFFENTLICHT: Ihr Inhalt ist die Liste der
+    // Ernaehrungsformen, die die Seite selbst erzeugt — es gibt keinen
+    // Platzhaltertext, der ungewollt oeffentlich werden koennte.
+    //
+    // WICHTIG — der Bestandsfall: „ernaehrungsformen" ist ein Slug, den ein
+    // Admin laengst selbst angelegt haben kann. Wuerde hier nur beim FEHLEN
+    // eingefuegt, bliebe eine solche Zeile ungeschuetzt (is_protected = 0);
+    // die Slug- und Loeschsperre in admin/seiten/actions.ts griffe nicht, und
+    // die Seite liesse sich umbenennen oder loeschen. Genau das, wogegen die
+    // geschuetzte Kernseite schuetzen soll: Das Menue zeigte dann auf einen
+    // 404, und der Ruckweg jeder Ernaehrungsform-Seite ins Leere. Deshalb
+    // wird eine vorhandene Zeile NACHGERUESTET statt uebersprungen — nur das
+    // Schutz-Flag, Titel und Text bleiben, wie der Admin sie hat.
+    const hatErnaehrungsformen = sqlite
+      .prepare("SELECT id, is_protected FROM page WHERE slug = ?")
+      .get("ernaehrungsformen");
+    if (hatErnaehrungsformen && !hatErnaehrungsformen.is_protected) {
+      sqlite
+        .prepare("UPDATE page SET is_protected = 1 WHERE slug = ?")
+        .run("ernaehrungsformen");
+      console.log(
+        "[migrate] Bestehende Seite „ernaehrungsformen“ als Kernseite geschuetzt.",
+      );
+    }
+    if (!hatErnaehrungsformen) {
+      sqlite
+        .prepare(
+          "INSERT INTO page (title, slug, content, seo_title, seo_description, status, is_protected, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .run(
+          "Ernährungsformen",
+          "ernaehrungsformen",
+          "Rezepte nach Ernährungsform. Wähle unten eine Form, um alle passenden Rezepte zu sehen.",
+          "Ernährungsformen",
+          "",
+          "veroeffentlicht",
+          1,
+          Date.now(),
+          Date.now(),
+        );
+      console.log("[migrate] Kernseite „ernaehrungsformen“ angelegt.");
+    }
   }
 } catch (err) {
   console.error("[migrate] Kernseiten-Anlage fehlgeschlagen:", err.message);

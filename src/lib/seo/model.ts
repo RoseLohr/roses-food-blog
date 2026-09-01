@@ -20,6 +20,8 @@ export interface SeoContent {
   travels: SeoEntry[];
   pages: SeoEntry[];
   categories: SeoEntry[];
+  /** Uebersichtsseiten je Ernaehrungsform (/rezepte/ernaehrung/<slug>). */
+  dietForms: SeoEntry[];
   travelFilters: SeoEntry[];
   /** Jüngste Änderung über alle Inhalte — Sitemap-lastmod der Startseite. */
   lastModified: Date | null;

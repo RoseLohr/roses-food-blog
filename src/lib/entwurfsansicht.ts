@@ -56,9 +56,13 @@ import "server-only";
 import { eq, type SQL } from "drizzle-orm";
 import type { AnyColumn } from "drizzle-orm";
 import { getCurrentAdmin } from "@/lib/auth";
+import { VEROEFFENTLICHT } from "@/db/schema";
 
 /** Der gespeicherte Status eines veröffentlichten Inhalts. */
-export const VEROEFFENTLICHT = "veroeffentlicht";
+// Der Wert selbst steht im Schema (siehe dort, warum). Hier steht die Regel,
+// die ihn auswertet — und sie reicht ihn weiter, damit Aufrufstellen der Regel
+// nicht zwei Adressen kennen muessen.
+export { VEROEFFENTLICHT };
 
 /**
  * Für wen wird geladen?

@@ -284,6 +284,17 @@ beforeAll(async () => {
   void iOel;
 });
 
+/**
+ * Die geschützten Kernseiten, die `migrate.mjs` in JEDER frischen Datenbank
+ * anlegt (`page.is_protected`).
+ *
+ * Sie gehören zum Grundzustand, nicht zum Fixture dieses Specs — und ihre Zahl
+ * wächst. Stünde sie als nackte Zahl in fünf Erwartungen, wäre jede neue
+ * Kernseite ein Rätselraten über fünf rote Tests. So steht sie einmal, und die
+ * Erwartungen rechnen ihr eigenes Fixture dazu.
+ */
+const KERNSEITEN = ["ernaehrungsformen", "ueber-mich"] as const;
+
 // Modul-Zustand über die (geordneten) Tests hinweg
 let exportedZip: Uint8Array;
 
@@ -293,7 +304,7 @@ describe("Export", () => {
     expect(bundle.version).toBe(2);
     expect(bundle.recipes).toHaveLength(1);
     expect(bundle.travel).toHaveLength(1);
-    expect(bundle.pages).toHaveLength(2);
+    expect(bundle.pages).toHaveLength(1 + KERNSEITEN.length);
 
     // Nur A & B referenziert; C (verwaist) NICHT im Export.
     const keys = bundle.images.map((i) => i.fileKey).sort();
@@ -359,7 +370,7 @@ describe("Export", () => {
     const bundle = await collectExport({ recipes: false, travel: false, pages: true });
     expect(bundle.recipes).toHaveLength(0);
     expect(bundle.travel).toHaveLength(0);
-    expect(bundle.pages).toHaveLength(2);
+    expect(bundle.pages).toHaveLength(1 + KERNSEITEN.length);
     expect(bundle.images).toHaveLength(0); // Seiten hier ohne Titelbild
     expect(bundle.scope).toBe("pages");
   });
@@ -384,7 +395,7 @@ describe("Löschen", () => {
     expect(res.recipes).toBe(1);
     expect(res.travel).toBe(1);
     expect(res.pages).toBe(1); // „kontakt" gelöscht
-    expect(res.pagesProtectedKept).toBe(1); // „ueber-mich" bleibt (is_protected)
+    expect(res.pagesProtectedKept).toBe(KERNSEITEN.length);
 
     // Alle genutzten Zutaten waren nur hier referenziert → alle 4 entfernt.
     expect(res.ingredientsRemoved).toBe(4);
@@ -396,7 +407,7 @@ describe("Löschen", () => {
     const pages = await db.select().from(schema.page);
     expect(recipes).toHaveLength(0);
     expect(travel).toHaveLength(0);
-    expect(pages.map((p) => p.slug)).toEqual(["ueber-mich"]);
+    expect(pages.map((p) => p.slug).sort()).toEqual([...KERNSEITEN]);
 
     // Dateien: A & B weg, C noch da.
     expect(fs.existsSync(path.join(uploadsDir(), "aaaa1111"))).toBe(false);
@@ -522,7 +533,9 @@ describe("Import (Round-Trip)", () => {
 
     // Seite „kontakt" als Kopie (nie geschützt); „ueber-mich" bleibt einzigartig.
     const pages = await db.select().from(schema.page);
-    expect(pages.map((p) => p.slug).sort()).toEqual(["kontakt", "ueber-mich"]);
+    expect(pages.map((p) => p.slug).sort()).toEqual(
+      ["kontakt", ...KERNSEITEN].sort(),
+    );
     expect(pages.find((p) => p.slug === "kontakt")?.isProtected).toBe(false);
   });
 

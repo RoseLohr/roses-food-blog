@@ -3,15 +3,15 @@
  * ohne Such-/Filterleiste. Oben der Kategoriename, darunter die Rezepte als
  * Karten (gleiche Optik wie die Rezeptübersicht). Verlinkt aus dem
  * „Rezepte"-Menü im Kopfbereich.
+ *
+ * Kopf, Zählzeile und Kartenraster stehen in `TaxonomieListe` — geteilt mit
+ * der Ernährungsform-Seite, die dasselbe sagt.
  */
 import type { Metadata } from "next";
-import Link from "next/link";
-import { and, eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
-import { db, schema } from "@/db";
-import { RecipeCard } from "@/components/recipe-card";
 import { rezeptkarten } from "@/lib/recipe-list";
-import { taxonomyBySlug } from "@/lib/taxonomies";
+import { taxonomyBySlug, veroeffentlichteRezeptIds } from "@/lib/taxonomies";
+import { TaxonomieListe } from "@/components/taxonomie-liste";
 import { PageTracker } from "@/components/page-tracker";
 import { getPublicBaseUrl } from "@/lib/base-url";
 import { JsonLd, breadcrumbJsonLd } from "@/lib/jsonld";
@@ -24,22 +24,6 @@ export const dynamic = "force-dynamic";
 
 async function loadCategory(slug: string) {
   return taxonomyBySlug("kategorie", slug);
-}
-
-/** Veröffentlichte Rezept-IDs dieser Kategorie. */
-async function recipeIdsInCategory(categoryId: number): Promise<number[]> {
-  const rows = await db
-    .select({ id: schema.recipeTaxonomy.recipeId })
-    .from(schema.recipeTaxonomy)
-    .innerJoin(
-      schema.recipe,
-      and(
-        eq(schema.recipe.id, schema.recipeTaxonomy.recipeId),
-        eq(schema.recipe.status, "veroeffentlicht"),
-      ),
-    )
-    .where(eq(schema.recipeTaxonomy.taxonomyId, categoryId));
-  return rows.map((r) => r.id);
 }
 
 export async function generateMetadata(props: {
@@ -62,7 +46,7 @@ export default async function CategoryPage(props: {
   const cat = await loadCategory(slug);
   if (!cat) notFound();
 
-  const ids = await recipeIdsInCategory(cat.id);
+  const ids = await veroeffentlichteRezeptIds(cat.id);
   // Kategorieseiten bleiben bei Veroeffentlichtem: Sie sind indexierbar
   // und stehen in der Sitemap; ihr Inhalt soll fuer jeden derselbe sein.
   const recipes = await rezeptkarten({
@@ -83,27 +67,14 @@ export default async function CategoryPage(props: {
           [cat.name, `/rezepte/kategorie/${cat.slug}`],
         ])}
       />
-
-      <Link
-        href="/rezepte"
-        className="text-sm font-medium text-ink-soft transition-colors hover:text-leaf"
-      >
-        ‹ {d.backToRecipes}
-      </Link>
-      <h1 className="mt-1 font-display text-3xl font-bold md:text-4xl">
-        {cat.name}
-      </h1>
-      <p className="mt-2 text-ink-soft">{d.count(recipes.length)}</p>
-
-      {recipes.length === 0 ? (
-        <p className="mt-8 text-ink-soft">{d.empty}</p>
-      ) : (
-        <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {recipes.map((r) => (
-            <RecipeCard key={r.slug} recipe={r} />
-          ))}
-        </div>
-      )}
+      <TaxonomieListe
+        name={cat.name}
+        rezepte={recipes}
+        zurueckHref="/rezepte"
+        zurueckLabel={d.backToRecipes}
+        anzahlText={d.count(recipes.length)}
+        leerText={d.empty}
+      />
     </main>
   );
 }

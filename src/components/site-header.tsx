@@ -20,8 +20,34 @@ import { t } from "@/i18n/de";
 
 const dict = t();
 
-export type NavChild = { href: string; label: string };
-type NavItem = { href: string; label: string; children: NavChild[] };
+/**
+ * Ein Menue-Unterpunkt. `children` traegt die ZWEITE Ebene — sie gibt es
+ * seit 08/2026 fuer „Ernaehrung → Ernaehrungsformen → Vegan".
+ */
+export type NavChild = { href: string; label: string; children?: NavChild[] };
+
+/**
+ * Ein Hauptmenue-Punkt.
+ *
+ * `href` ist OPTIONAL: „Ernaehrung" ist eine reine Gruppenueberschrift ohne
+ * eigene Seite. Ohne diese Moeglichkeit haette die Gruppe auf eine ihrer
+ * Unterseiten zeigen muessen — zwei Eintraege mit demselben Ziel, und der
+ * obere waere im Menue als Link erschienen, der nichts Eigenes zeigt.
+ * Ist `href` leer, steht dort ein Knopf, der nur auf- und zuklappt.
+ */
+type NavItem = { href?: string; label: string; children: NavChild[] };
+
+/** Trifft dieser Pfad den Eintrag oder einen seiner Unterpunkte? */
+function istAktiv(pathname: string, item: NavItem): boolean {
+  const passt = (href: string) =>
+    pathname === href || pathname.startsWith(href + "/");
+  if (item.href && passt(item.href)) return true;
+  // Eine Gruppe ohne eigene Seite ist aktiv, wenn eines ihrer Ziele es ist —
+  // sonst waere „Ernaehrung" auf der Seite „Vegan" unmarkiert.
+  return item.children.some(
+    (c) => passt(c.href) || (c.children ?? []).some((g) => passt(g.href)),
+  );
+}
 
 function Chevron({ open }: { open: boolean }) {
   return (
@@ -92,13 +118,20 @@ export function SiteHeader({
   brand,
   recipeChildren = [],
   travelChildren = [],
+  nutritionChildren = [],
 }: {
   brand: HeaderBrand;
   recipeChildren?: NavChild[];
   travelChildren?: NavChild[];
+  /** „Ernährung": Ernährungsformen (mit ihren Formen) und Saisonkalender. */
+  nutritionChildren?: NavChild[];
 }) {
   const [open, setOpen] = useState(false);
-  // Offenes Desktop-Dropdown bzw. aufgeklappter Mobil-Eintrag (per href).
+  // Offenes Desktop-Dropdown bzw. aufgeklappter Mobil-Eintrag.
+  //
+  // Erkannt wird ein Eintrag an seiner BESCHRIFTUNG, nicht mehr an seinem
+  // `href`: „Ernährung" hat keines. Die Beschriftungen des Hauptmenüs sind
+  // fest verdrahtet und eindeutig.
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [mobileSub, setMobileSub] = useState<string | null>(null);
   const menuId = useId();
@@ -108,7 +141,10 @@ export function SiteHeader({
   const NAV: NavItem[] = [
     { href: "/rezepte", label: dict.nav.recipes, children: recipeChildren },
     { href: "/reisen", label: dict.nav.travel, children: travelChildren },
-    { href: "/saisonkalender", label: dict.nav.seasonCalendar, children: [] },
+    // „Ernährung" ohne eigene Seite: eine Klammer um Ernährungsformen und
+    // Saisonkalender. Der Saisonkalender stand bis 08/2026 als eigener
+    // Hauptpunkt daneben.
+    { label: dict.nav.nutrition, children: nutritionChildren },
     { href: "/ueber-mich", label: dict.nav.about, children: [] },
     { href: "/suche", label: dict.nav.search, children: [] },
   ];
@@ -162,35 +198,55 @@ export function SiteHeader({
         <nav className="hidden lg:block" aria-label={dict.nav.menu}>
           <ul className="flex items-center gap-1">
             {desktopNav.map((item) => {
-              const active =
-                pathname === item.href || pathname.startsWith(item.href + "/");
+              const active = istAktiv(pathname, item);
               const hasChildren = item.children.length > 0;
-              const expanded = openMenu === item.href;
+              const expanded = openMenu === item.label;
+              const beschriftung = `block whitespace-nowrap py-2 pl-3 text-sm font-semibold transition-colors hover:text-leaf ${
+                hasChildren ? "pr-1" : "pr-3"
+              } ${active ? "text-leaf" : "text-ink"}`;
               return (
                 <li
-                  key={item.href}
+                  key={item.label}
                   className="relative"
-                  onMouseEnter={() => hasChildren && setOpenMenu(item.href)}
+                  onMouseEnter={() => hasChildren && setOpenMenu(item.label)}
                   onMouseLeave={() =>
-                    setOpenMenu((m) => (m === item.href ? null : m))
+                    setOpenMenu((m) => (m === item.label ? null : m))
                   }
                 >
                   <span className="flex items-center">
-                    <Link
-                      href={item.href}
-                      className={`block whitespace-nowrap py-2 pl-3 text-sm font-semibold transition-colors hover:text-leaf ${
-                        hasChildren ? "pr-1" : "pr-3"
-                      } ${active ? "text-leaf" : "text-ink"}`}
-                    >
-                      {item.label}
-                    </Link>
+                    {item.href ? (
+                      <Link href={item.href} className={beschriftung}>
+                        {item.label}
+                      </Link>
+                    ) : (
+                      /* Gruppe ohne eigene Seite: ein Knopf, kein Link. Ein
+                         Link auf „nichts" (href="#") wäre ein Versprechen,
+                         das die Seite nicht einlöst — und für Screenreader
+                         ein Ziel, das es nicht gibt.
+
+                         Der Klick ÖFFNET, er schaltet nicht um. Das ist kein
+                         Detail: Die Maus hat beim Hinzeigen schon geöffnet
+                         (onMouseEnter am <li>), ein Umschalten würde die
+                         Liste im selben Moment wieder zuklappen, in dem man
+                         auf ihre Überschrift klickt. Geschlossen wird über
+                         den Pfeil daneben, Escape, einen Klick daneben oder
+                         indem man mit der Maus weggeht. */
+                      <button
+                        type="button"
+                        aria-expanded={expanded}
+                        onClick={() => setOpenMenu(item.label)}
+                        className={beschriftung}
+                      >
+                        {item.label}
+                      </button>
+                    )}
                     {hasChildren && (
                       <button
                         type="button"
                         aria-expanded={expanded}
                         aria-label={dict.nav.toggleSubmenu(item.label)}
                         onClick={() =>
-                          setOpenMenu((m) => (m === item.href ? null : item.href))
+                          setOpenMenu((m) => (m === item.label ? null : item.label))
                         }
                         className="mr-1 p-1 text-ink-soft transition-colors hover:text-leaf"
                       >
@@ -208,6 +264,25 @@ export function SiteHeader({
                           >
                             {c.label}
                           </Link>
+                          {/* Zweite Ebene: eingerückt IM selben Feld statt in
+                              einem seitlich ausklappenden zweiten Feld. Ein
+                              Flyout müsste man mit der Maus treffen, ohne das
+                              erste Feld zu verlassen — bei fünf Einträgen
+                              lohnt das den Aufwand und das Risiko nicht. */}
+                          {(c.children ?? []).length > 0 && (
+                            <ul className="border-l border-ink/10 pl-3 ml-4">
+                              {c.children!.map((g) => (
+                                <li key={g.href}>
+                                  <Link
+                                    href={g.href}
+                                    className="block px-2 py-1.5 text-sm text-ink-soft transition-colors hover:bg-cream hover:text-leaf"
+                                  >
+                                    {g.label}
+                                  </Link>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
                         </li>
                       ))}
                     </ul>
@@ -258,22 +333,37 @@ export function SiteHeader({
             <nav aria-label={dict.nav.menu}>
               <ul className="flex flex-col gap-1">
                 {NAV.map((item) => {
-                  const active =
-                    pathname === item.href ||
-                    pathname.startsWith(item.href + "/");
+                  const active = istAktiv(pathname, item);
                   const hasChildren = item.children.length > 0;
-                  const expanded = mobileSub === item.href;
+                  const expanded = mobileSub === item.label;
+                  const beschriftung = `block py-2 text-left font-display text-lg font-semibold transition-colors hover:text-leaf ${
+                    active ? "text-leaf" : "text-ink"
+                  }`;
                   return (
-                    <li key={item.href}>
+                    <li key={item.label}>
                       <span className="flex items-center justify-between">
-                        <Link
-                          href={item.href}
-                          className={`block py-2 font-display text-lg font-semibold transition-colors hover:text-leaf ${
-                            active ? "text-leaf" : "text-ink"
-                          }`}
-                        >
-                          {item.label}
-                        </Link>
+                        {item.href ? (
+                          <Link href={item.href} className={beschriftung}>
+                            {item.label}
+                          </Link>
+                        ) : (
+                          /* Gruppe ohne eigene Seite: Der Text selbst klappt
+                             auf. Auf dem Handy ist er das größere Ziel als
+                             der Pfeil daneben — und ein Tipp darauf, der
+                             nichts tut, wäre die schlechteste Antwort. */
+                          <button
+                            type="button"
+                            aria-expanded={expanded}
+                            onClick={() =>
+                              setMobileSub((m) =>
+                                m === item.label ? null : item.label,
+                              )
+                            }
+                            className={beschriftung}
+                          >
+                            {item.label}
+                          </button>
+                        )}
                         {hasChildren && (
                           <button
                             type="button"
@@ -281,7 +371,7 @@ export function SiteHeader({
                             aria-label={dict.nav.toggleSubmenu(item.label)}
                             onClick={() =>
                               setMobileSub((m) =>
-                                m === item.href ? null : item.href,
+                                m === item.label ? null : item.label,
                               )
                             }
                             className="flex h-11 w-11 items-center justify-center text-ink-soft hover:text-leaf"
@@ -300,6 +390,20 @@ export function SiteHeader({
                               >
                                 {c.label}
                               </Link>
+                              {(c.children ?? []).length > 0 && (
+                                <ul className="mb-1 ml-1 flex flex-col gap-0.5 border-l border-ink/10 pl-3">
+                                  {c.children!.map((g) => (
+                                    <li key={g.href}>
+                                      <Link
+                                        href={g.href}
+                                        className="block py-1.5 text-sm text-ink-soft transition-colors hover:text-leaf"
+                                      >
+                                        {g.label}
+                                      </Link>
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
                             </li>
                           ))}
                         </ul>
