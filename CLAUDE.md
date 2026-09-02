@@ -281,6 +281,14 @@ neu (B6, 08/2026):
 - **Vor jedem Push den VOLLEN Gate-Lauf lokal fahren** (nicht nur die geänderten
   Skripte) — Root-Cause-Disziplin heißt auch, rote Checks nicht erst in CI zu
   entdecken.
+- **Für jedes neue Feature IMMER einen Pull Request anlegen (angeordnet
+  2026-09-01, verbindlich):** Nicht auf eine Aufforderung warten — der PR
+  gehört zur Fertigstellung, nicht zur Nachbereitung. Ein Zweig ohne PR ist
+  nicht geliefert: Deployt wird aus `main`, und was dort nicht ankommt, sieht
+  vorne niemand. Genau so lag die Petrol-Farbe der Schritt-Nummern einen Tag
+  lang unbemerkt auf einem Zweig.
+  Erst das volle Gate örtlich, dann Push, dann PR — und danach die Regel
+  darunter.
 - **IMMER den PR beobachten (angeordnet, verbindlich):** Nach jedem erstellten
   ODER aktualisierten Pull Request den PR abonnieren (CI- **und** Review-
   Aktivität, `subscribe_pr_activity`) und dranbleiben, bis er gemergt/geschlossen
