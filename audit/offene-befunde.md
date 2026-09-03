@@ -1622,3 +1622,74 @@ Das Panel herabstufen, überspringen oder daran vorbeimergen. Und ebenso wenig:
 so lange neu starten, bis es grün ist. Ein Gate, das im Regelfall drei Anläufe
 braucht, erzieht genau dazu — und dann ist der dritte Lauf keine Bestätigung
 mehr, sondern eine Gewohnheit.
+
+## B28 — das Bild-Auslieferungsbudget springt selten und ohne Anlass
+
+**Teilweise behoben.** Die Ursache ist eingegrenzt, aber nicht gefunden; was
+sich beheben ließ, ist die Blindheit der Kontrolle.
+
+`tests/e2e/bild-auslieferung.spec.ts` („die Leiter liefert nicht systematisch
+zu groß aus") gehört zu `npm run test:e2e` und damit zum CI-Gate. Zweimal
+belegt hat die Quote ihren Deckel von 34 % gerissen, **ohne dass am Quelltext
+etwas geändert war**:
+
+    main, isoliert:   28,9 · 28,9 · 28,9 · 34,2   ← reißt
+    ein Zweig davon:  31,5 · 35,2 · 35,6 · 45,6
+
+### Die erste Vermutung war falsch
+
+Zuerst stand hier, die Grundgesamtheit aus B2 sei zurückgefallen: Der Spec-Kopf
+hält 150 gewertete Bilder als stabilisierten Stand fest und nennt 141
+ausdrücklich als Symptom von „gemessen, bevor die Seite zur Ruhe gekommen
+war"; gemessen werden 141. Das war ein Fehlschluss aus einer Übereinstimmung
+von Zahlen.
+
+Nachgemessen: Die **141 standen in ELF Läufen hintereinander unverändert** da —
+isoliert, im vollen Verbund und auf beiden Seiten eines Vergleichs. Die
+Grundgesamtheit ist nicht flatterhaft, sie ist nur kleiner geworden, weil
+seither Bilder von den gemessenen Seiten verschwunden sind (u. a. die
+entfernte Reise-Galerie). Der Spec-Kopf war veraltet und hat in die falsche
+Richtung gezeigt; er ist richtiggestellt.
+
+### Was ausgeschlossen ist
+
+* **Die gemeinsame Datenbank (B8).** Eine Probe, die dieselbe Rechnung je Seite
+  und Geräteklasse ausgibt, liefert isoliert und im vollen Verbund
+  Zeile für Zeile dasselbe Ergebnis.
+* **Der Messzeitpunkt.** Sieben gezielte Wiederholungen ergaben siebenmal
+  exakt `141 gewertet · 28,9 %`, Zeile für Zeile identisch.
+* **Die Kopfzeilen aus dem CORP-Zweig**, an denen der Verdacht zuerst hing:
+  Netzverkehr und `currentSrc` waren auf beiden Ständen byte- und
+  variantengleich (9 Anfragen, 27570 Bytes).
+
+### Was übrig bleibt — Verdacht, nicht Befund
+
+Beide Ausschläge traten in Läufen mit **vielen parallelen Arbeitern** auf, nie
+in einem Einzellauf. Das passt zu einer Eigenheit, die der Datei-Kopf schon
+beschreibt: Chrome verwendet für DIESELBE Datei eine bereits geladene größere
+Variante wieder — welches Vorkommen zuerst lädt, entscheidet ein Rennen, und
+unter Last fällt es anders aus. Der Einzelbild-Test rechnet diese
+Wiederverwendung ausdrücklich heraus; der Budget-Test tut es nicht.
+
+Belegt ist das **nicht**. Es einzubauen, ohne den Ausschlag einmal eingefangen
+zu haben, hieße eine Kontrolle auf Verdacht zu ändern — und der Verdacht wäre
+ausgerechnet einer, der die Quote senkt.
+
+### Was stattdessen getan ist
+
+Die Kontrolle gibt ihre Bilanz jetzt **je Seite und Geräteklasse** aus, bei
+Erfolg wie im Fehlerfall. Bisher stand da eine einzige Zahl; wurde sie rot,
+kostete die Frage „woher?" eine Sitzung mit Nachstellen. Schon der erste Lauf
+zeigt, wo die Quote wirklich sitzt:
+
+      525,0 %  n= 1  /suche?q=pasta — Desktop 1280px @ DPR 1
+       79,8 %  n= 4  /rezepte — Desktop 1280px @ DPR 1
+       51,5 %  n=12  / — Retina 1440px @ DPR 2
+
+Der nächste Ausschlag nennt damit seinen Ort, statt nur seine Höhe.
+
+### Was NICHT die Lösung ist
+
+Den Deckel anheben. Er steht bei 34 %, weil vier Punkte Abstand die
+Rasterungsunterschiede zu CI abdecken (B9); ihn dem Messrauschen nachzuziehen
+hieße, die Kontrolle dem Fehler anzupassen, statt den Fehler zu suchen.
