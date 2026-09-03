@@ -12,7 +12,38 @@ import type { TaxonomyType } from "../src/db/schema";
 import { slugify } from "../src/lib/slug";
 import { storeImage } from "../src/lib/media";
 
-const NOW = new Date();
+/**
+ * FESTER Zeitpunkt statt `new Date()` — die Saat darf nicht vom Kalender
+ * abhängen (Befund 09/2026).
+ *
+ * Dieselbe Begründung, die den Nachtmodus im Seed auf „hell" festnagelt:
+ * Sonst hängt jede Admin-Referenzaufnahme am Tag des Laufs statt an den
+ * Daten. Der Weg dorthin ist unauffällig und war es ein halbes Jahr lang:
+ *
+ *   1. Die Saat schrieb `new Date()` in `createdAt`.
+ *   2. Der Medien-Admin zeigt daraus „Hochgeladen am <Datum>".
+ *   3. Das Datum trägt `data-referenz-maske` — Playwright legt ein Rechteck
+ *      darüber.
+ *
+ * Punkt 3 sieht nach Absicherung aus, ist es aber nur halb: Das Rechteck hat
+ * die Größe der ELEMENT-BOX, und die folgt dem Text darunter.
+ * `alsDatum` schreibt ohne führende Null, also ist „3.9.2026" schmaler als
+ * „28.8.2026". Gemessen an den drei roten Aufnahmen vom 03.09.:
+ *
+ *     Referenz (Aufnahmetag):  „Hochgeladen am" + Maske  ->  UMBRUCH, Kachel höher
+ *     Ist      (03.09.):       beides passt in eine Zeile ->  Kachel niedriger
+ *
+ * Der ganze „strukturelle" Unterschied war dieser Umbruch — und alles
+ * darunter verschob sich mit. tests/e2e/referenz.ts benennt die Lücke im
+ * eigenen Kopf: „Die Maske deckt den TEXT ab, nicht die Geometrie."
+ *
+ * Ein fester Zeitpunkt schließt sie an der Quelle, für JEDE maskierte
+ * Datumszelle statt nur für die drei, die gerade aufgefallen sind. Die Masken
+ * bleiben trotzdem: Sie halten fest, dass der Wert nicht zur Basis gehört.
+ *
+ * Mittags gewählt, damit keine Zeitzone den Tag über Mitternacht schiebt.
+ */
+const NOW = new Date("2026-01-15T12:00:00");
 
 async function placeholder(label: string, color: string, w = 1280, h = 850) {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">
@@ -40,7 +71,7 @@ async function main() {
   // Tageslicht statt an den Daten.
   await db
     .insert(schema.setting)
-    .values({ key: "nachtmodus", value: "hell", updatedAt: new Date() });
+    .values({ key: "nachtmodus", value: "hell", updatedAt: NOW });
 
   console.log("[seed] Lege Taxonomien an ...");
   const tax = async (
