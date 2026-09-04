@@ -34,7 +34,7 @@
     "ios_saf >= 16.4"
   ],
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.120.0",
+    "@anthropic-ai/sdk": "^0.122.0",
     "@types/leaflet.markercluster": "^1.5.6",
     "better-sqlite3": "13.0.3",
     "drizzle-orm": "0.45.2",
@@ -46,19 +46,19 @@
     "leaflet.markercluster": "^1.5.3",
     "marked": "^18.0.11",
     "mmdb-lib": "^3.0.3",
-    "next": "16.3.2",
+    "next": "16.3.4",
     "node-cron": "4.6.0",
-    "nodemailer": "9.0.5",
+    "nodemailer": "9.1.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "server-only": "^0.0.1",
-    "sharp": "0.35.3",
-    "zod": "4.4.3"
+    "sharp": "0.35.4",
+    "zod": "4.5.4"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
     "@eslint/js": "^9.39.5",
-    "@next/eslint-plugin-next": "^16.3.2",
+    "@next/eslint-plugin-next": "^16.3.4",
     "@playwright/test": "^1.62.1",
     "@stryker-mutator/core": "^10.0.0",
     "@stryker-mutator/vitest-runner": "^10.0.0",
@@ -73,11 +73,11 @@
     "eslint": "^9.39.5",
     "eslint-plugin-jsx-a11y": "^6.10.2",
     "eslint-plugin-react-hooks": "^7.1.1",
-    "jscpd": "^5.0.16",
+    "jscpd": "^5.1.1",
     "tailwindcss": "4.3.3",
-    "tsx": "^4.23.12",
+    "tsx": "^4.23.13",
     "typescript": "^5.9.0",
-    "typescript-eslint": "^8.68.0",
+    "typescript-eslint": "^8.69.0",
     "vitest": "^3.2.0"
   },
   "overrides": {
