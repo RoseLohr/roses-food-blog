@@ -84,11 +84,83 @@ const nextConfig: NextConfig = {
           // am laufenden Server: Alle Seiten, die die E2E-Sammlung ansieht,
           // laden ihre Ressourcen weiterhin vollständig.
           //
-          // Bewusst OHNE Cross-Origin-Opener-Policy: Erst beide Header zusammen
-          // ergeben „cross-origin isolated". COOP `same-origin` kappt aber
-          // window.open-Beziehungen zu fremden Seiten, und das ist eine eigene
-          // Entscheidung — nicht das, was hier gemeldet wurde.
           { key: "Cross-Origin-Embedder-Policy", value: "require-corp" },
+          // ── UND DIE ZWEITE HÄLFTE, NACHGEMESSEN (08/2026) ────────────────
+          //
+          // Hier stand „bewusst OHNE Cross-Origin-Opener-Policy", begründet
+          // damit, dass COOP `same-origin` window.open-Beziehungen zu fremden
+          // Seiten kappt. Der Satz stimmt allgemein — nur zahlt DIESE
+          // Anwendung den Preis nicht. Am Quelltext ausgezählt:
+          //
+          //     window.open / window.opener / postMessage   ->  0 Fundstellen
+          //     target="_blank"                             ->  6 Fundstellen
+          //     davon mit rel="noopener"                    ->  6
+          //
+          // Fünf der sechs sind Admin-Vorschaulinks auf die eigene Seite —
+          // same-origin, die COOP ausdrücklich erlaubt. Der sechste ist der
+          // Google-Maps-Link im Reisebericht, mit `rel="noopener noreferrer"`.
+          // Die Opener-Beziehung ist also überall bereits von Hand gekappt;
+          // COOP schneidet nichts ab, was es noch gäbe.
+          //
+          // Damit ist die Anwendung „cross-origin isolated". Zusätzliche
+          // Anforderungen an Unterressourcen entstehen dadurch NICHT — die
+          // stellt `require-corp` oben bereits, und die CSP lässt ohnehin nur
+          // 'self' und data: zu.
+          //
+          // Gemeldet als ZAP-Regel 90004 (Issue #75), zehn Fundstellen. Dass
+          // die Meldung damit wirklich verschwindet, zeigt erst ein
+          // DAST-Lauf — die Kopfzeile auf dem Draht ist die Prämisse, nicht
+          // das Ergebnis.
+          { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
+          // ── UND DIE DRITTE, MIT EINER GEMESSENEN AUSNAHME (08/2026) ──────
+          //
+          // CORP sagt, WER diese Antwort einbetten darf. `same-origin` ist
+          // hier die richtige Strenge, denn die Dokumente dieser Anwendung
+          // sind sitzungsabhängig: Ein angemeldeter Admin bekommt dieselbe
+          // öffentliche Adresse MIT seinen Entwürfen ausgeliefert
+          // (src/lib/entwurfsansicht.ts). Genau so etwas soll keine fremde
+          // Seite als Unterressource ziehen können.
+          //
+          // GEMESSEN, nicht angenommen — der eine Fall, der daran zerbräche:
+          // Newsletter. Der Kampagnen-Editor ist ein Markdown-Editor
+          // (`initialMarkdown`), und renderMarkdown() setzt für `![alt](url)`
+          // ein echtes <img> in die Mail:
+          //
+          //     renderMarkdown("![Torte](https://…/uploads/…webp)")
+          //       ->  <p><img src="https://…/uploads/…webp" alt="Torte"></p>
+          //
+          // Ein Webmailer lädt dieses Bild als Unterressource einer FREMDEN
+          // Herkunft. Unter `same-origin` bliebe es leer — im Postfach des
+          // Lesers, wo es niemand von uns je zu sehen bekäme. Deshalb steht
+          // unten ein eigener Block für /uploads.
+          //
+          // Das ist KEIN Weichspülen: Für /uploads ist `cross-origin` die
+          // wahre Aussage. Dort liegen ausschließlich fertig verarbeitete,
+          // für alle identische Bildvarianten (Pfad streng validiert,
+          // 20-Hex-Schlüssel + w<Breite>.webp) — nichts Sitzungsabhängiges,
+          // das ein Angreifer abgreifen könnte. Die Strenge steht da, wo es
+          // etwas zu schützen gibt, und die Erlaubnis da, wo das Einbetten
+          // der ZWECK ist.
+          //
+          // Dass der spätere, speziellere Block den allgemeinen ERSETZT und
+          // nicht ergänzt, ist am laufenden Server nachgemessen — eine
+          // doppelte Kopfzeile wäre je nach Client beliebig ausgelegt worden:
+          //
+          //     GET /                          ->  CORP: same-origin   (1x)
+          //     GET /uploads/<key>/w640.webp   ->  CORP: cross-origin  (1x)
+          //     GET /fonts/…                   ->  CORP: same-origin   (1x)
+          //
+          { key: "Cross-Origin-Resource-Policy", value: "same-origin" },
+        ],
+      },
+      {
+        // Die gemessene Ausnahme von oben: Bildvarianten sind öffentlich und
+        // sollen eingebettet werden (Newsletter-Bilder im Webmailer). Wer
+        // diesen Block streicht, macht sie dort still leer — die Mail ist
+        // dann schon verschickt. tests/zap-regeln.test.ts hält ihn fest.
+        source: "/uploads/:pfad*",
+        headers: [
+          { key: "Cross-Origin-Resource-Policy", value: "cross-origin" },
         ],
       },
       {

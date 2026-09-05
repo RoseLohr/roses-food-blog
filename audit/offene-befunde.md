@@ -1554,3 +1554,209 @@ Eine Regel über „diesen Lauf" endet am Prozessbaum. Wo etwas **außerhalb**
 davon schreibt — Container, `sudo`, ein Dienst —, gilt sie nicht mehr, und eine
 Attrappe, die ein Kindprozess ist, verdeckt genau diesen Unterschied. Der Modus
 einer Datei, auf den es ankommt, gehört deshalb gesetzt und nicht geerbt.
+
+## B29 — das Fremd-Vendor-Panel ist als Pflicht-Gate unzuverlässig
+
+**Offen.** Gemessen und eingegrenzt, nicht behoben — die Ursache liegt
+außerhalb des Repositories.
+
+`cross-vendor` (Workflow `Independent-Verify`) ist ein Pflichtcheck: Ohne sein
+Urteil ist kein PR mergefähig. Er antwortet mal in **20 Sekunden**, mal
+**35 Minuten lang gar nicht**.
+
+### Gemessen an PR #134 (drei Läufe auf demselben Commit `b30d312`)
+
+    Versuch 1  01.09. 15:09 – 15:44   35 min   fetch failed   -> verweigert
+    Versuch 2  01.09. 15:46 – 16:22   35 min   fetch failed   -> verweigert
+    Versuch 3  02.09. 16:22 – 16:23   20 s     echtes Urteil  -> bestätigt
+
+Derselbe Diff, dreimal. Zwei Fehlschläge, ein Erfolg — die Kontrolle hat also
+nicht zweimal etwas gefunden, sondern zweimal nichts gesehen.
+
+### Was in den Fehlschlägen passiert
+
+    [independent-verify] /v1/models nicht verfügbar → Fallback-Modell für alle Stimmen.
+    [independent-verify] Stimme 1/2/3: /responses nicht nutzbar (Netzfehler: fetch failed)
+      Verifier 1/3, 2/3, 3/3: Fehler (fetch failed)
+    ⛔ Pflicht-Approver „combo/SOTA-A" nicht im Panel aufgelöst → fail-closed
+
+Erst fällt die Modell-Liste aus, alle drei Stimmen laufen auf ein Ersatzmodell
+zurück; dann scheitert auch der Aufruf selbst. **Das Gate schließt dabei
+korrekt** — ein Pflicht-Approver, der nie geantwortet hat, darf nicht als
+Zustimmung gelten. Der Fehler liegt nicht in der Entscheidung, sondern darin,
+dass es überhaupt so oft nichts zu entscheiden gibt.
+
+### Dass es kein Einzelfall ist
+
+    31.08. 16:21  claude/ernaehrung-menue    success   ← nach zwei Fehlschlägen
+    31.08. 11:46  claude/medien-kachel       success   ← Versuch 3
+    02.09. 16:23  claude/schritt-nummern     success   ← Versuch 3
+
+Die letzten drei Merges brauchten je zwei bis drei Anläufe. #134 hing dadurch
+**einen Tag** fest, obwohl alle übrigen Checks von der ersten Minute an grün
+waren.
+
+### Dass es nicht am Inhalt liegt
+
+Gegengeprüft an zwei Diffs ohne jede Gemeinsamkeit, im selben Zeitfenster:
+
+    #134  Tailwind-Klasse, ein Test, zwei PNG   ->  panel rot
+    #135  acht Zeilen CLAUDE.md, kein Code      ->  panel rot
+
+### Was zu untersuchen wäre
+
+Alles davon liegt im Betrieb, nicht im Quelltext dieses Repositories:
+
+* Erreichbarkeit von `VERIFIER_BASE_URL` aus dem GitHub-Läufer heraus — DNS,
+  Egress-Regeln, Ratenbegrenzung am Gateway.
+* Die Zeitgrenzen in `scripts/regime/independent-verify.mjs`: 35 Minuten bis
+  zum Aufgeben sind lang genug, dass niemand nebenher wartet, und kurz genug,
+  dass der Lauf trotzdem verfällt.
+* Die Wiederholstrategie: Der Rückfall `/responses` → `/chat/completions`
+  greift, das Gateway bleibt aber unerreichbar — wiederholt wird also etwas,
+  das aus demselben Grund erneut scheitert.
+
+### Was NICHT die Lösung ist
+
+Das Panel herabstufen, überspringen oder daran vorbeimergen. Und ebenso wenig:
+so lange neu starten, bis es grün ist. Ein Gate, das im Regelfall drei Anläufe
+braucht, erzieht genau dazu — und dann ist der dritte Lauf keine Bestätigung
+mehr, sondern eine Gewohnheit.
+
+## B28 — das Bild-Auslieferungsbudget verbucht Chromes Wiederverwendung als Verschwendung
+
+**Ursache gefunden, Behebung offen.** Der Ausschlag ist eingefangen und
+erklärt; offen ist nur noch, wie die Summe stattdessen rechnen soll — das ist
+eine Entscheidung über eine Kontrolle (siehe „Was zu entscheiden ist").
+
+`tests/e2e/bild-auslieferung.spec.ts` („die Leiter liefert nicht systematisch
+zu groß aus") gehört zu `npm run test:e2e` und damit zum CI-Gate. Zweimal
+belegt hat die Quote ihren Deckel von 34 % gerissen, **ohne dass am Quelltext
+etwas geändert war**:
+
+    main, isoliert:   28,9 · 28,9 · 28,9 · 34,2   ← reißt
+    ein Zweig davon:  31,5 · 35,2 · 35,6 · 45,6
+
+### Die erste Vermutung war falsch
+
+Zuerst stand hier, die Grundgesamtheit aus B2 sei zurückgefallen: Der Spec-Kopf
+hält 150 gewertete Bilder als stabilisierten Stand fest und nennt 141
+ausdrücklich als Symptom von „gemessen, bevor die Seite zur Ruhe gekommen
+war"; gemessen werden 141. Das war ein Fehlschluss aus einer Übereinstimmung
+von Zahlen.
+
+Nachgemessen: Die **141 standen in ELF Läufen hintereinander unverändert** da —
+isoliert, im vollen Verbund und auf beiden Seiten eines Vergleichs. Die
+Grundgesamtheit ist nicht flatterhaft, sie ist nur kleiner geworden, weil
+seither Bilder von den gemessenen Seiten verschwunden sind (u. a. die
+entfernte Reise-Galerie). Der Spec-Kopf war veraltet und hat in die falsche
+Richtung gezeigt; er ist richtiggestellt.
+
+### Was ausgeschlossen ist
+
+* **Die gemeinsame Datenbank (B8).** Eine Probe, die dieselbe Rechnung je Seite
+  und Geräteklasse ausgibt, liefert isoliert und im vollen Verbund
+  Zeile für Zeile dasselbe Ergebnis.
+* **Der Messzeitpunkt.** Sieben gezielte Wiederholungen ergaben siebenmal
+  exakt `141 gewertet · 28,9 %`, Zeile für Zeile identisch.
+* **Die Kopfzeilen aus dem CORP-Zweig**, an denen der Verdacht zuerst hing:
+  Netzverkehr und `currentSrc` waren auf beiden Ständen byte- und
+  variantengleich (9 Anfragen, 27570 Bytes).
+
+### Der Ausschlag ist gefangen — von der Aufschlüsselung aus diesem Befund
+
+Die Bilanz je Seite und Geräteklasse (siehe „Was stattdessen getan ist") war
+für genau diesen Fall gebaut und hat beim ERSTEN Ausschlag geliefert
+(CI-Lauf 33966135791, 05.09.2026, PR #139):
+
+| Stelle | örtlich | im Ausschlag |
+|---|---|---|
+| `/` — Retina 1440px @ DPR 2 (n=12) | 51,5 % | **193,5 %** |
+| `/suche?q=pasta` — Desktop (n=1) | 525,0 % | 525,0 % |
+| `/rezepte` — Desktop (n=4) | 79,8 % | 79,8 % |
+
+Der gesamte Sprung von 28,9 auf 35,6 % sitzt in EINER Zelle; alles andere
+steht still. Keine allgemeine Flatterhaftigkeit, sondern ein Ort.
+
+### Die Ursache, am laufenden Browser nachgemessen
+
+Auf `/` erscheint EINE Bilddatei viermal — einmal als Slider-Bühne mit Bedarf
+2880 px (bekommt mit `w1280` das Leiterende) und dreimal klein:
+
+    Datei 9427dcb2  Vorkommen=4  maxBedarf=2880
+        bedarf=2880  gewaehlt=w1280      (die Bühne)
+        bedarf= 408  gewaehlt=w480
+        bedarf= 512  gewaehlt=w640
+        bedarf= 512  gewaehlt=w640
+
+Der Seed setzt in den Slider die Hero-Bilder der ersten drei Rezepte, und
+dieselben Rezepte stehen darunter als Kacheln (`scripts/seed.ts`, „Slider:
+Hero-Bilder der ersten drei Rezepte"). In einem Food-Blog ist das die normale
+Lage, keine Seed-Marotte — am Seed zu drehen wäre der Workaround.
+
+Lädt unter Last die Bühne zuerst, verwendet Chrome deren `w1280` für die drei
+kleinen Vorkommen mit. Das sind exakt die drei größten Abweichungen des
+Ausschlags: ×9,84 bei Bedarf 408, zweimal ×6,25 bei Bedarf 512.
+
+### Warum das ein Fehler der Messung ist, nicht der Auslieferung
+
+Beide Rechnungen stehen in **derselben Datei** und behandeln dieselbe Tatsache
+verschieden:
+
+* Die **Einzelbild-Prüfung** rechnet die Wiederverwendung ausdrücklich heraus
+  — Deckel je Datei = Maximum über alle Vorkommen
+  (`tests/e2e/bild-auslieferung.spec.ts`, „Chrome darf eine bereits geladene
+  GRÖSSERE Variante derselben Datei wiederverwenden").
+* Die **Budget-Summe** tut das nicht: Sie verbucht jedes Vorkommen gegen
+  seinen EIGENEN Bedarf.
+
+Deshalb blieben im Ausschlag 260 Tests grün — darunter `/` bei Retina 1440
+selbst — und nur die Quote riss.
+
+Verbucht wird dabei ausgerechnet der GÜNSTIGERE Ausgang: Ohne
+Wiederverwendung lädt die Datei drei Varianten (`w1280`, `w480`, `w640`), mit
+Wiederverwendung eine einzige. Weniger Bytes, schlechtere Quote. Eine Kontrolle,
+die das bestraft, misst nicht mehr, was sie zu messen behauptet.
+
+### Was zu entscheiden ist
+
+Zwei Entwürfe, beide vertretbar, mit verschiedenen Zahlen — und beide
+verlangen eine **neu hergeleitete Grenze**, denn ein Deckel von 34 % auf einer
+anderen Metrik ist keine Aussage mehr:
+
+1. **Je Vorkommen den Leitersprung verbuchen** statt der tatsächlich
+   gewählten Variante: Kosten = `deckel(bedarf)² − bedarf²`, wobei `deckel`
+   die kleinste deckende Leiterstufe ist. Deterministisch, unabhängig davon,
+   welches Vorkommen das Rennen gewinnt — und misst genau das, wofür die
+   Summe da ist: die Grobheit der LEITER. Preis: Eine `sizes`-Lüge fällt hier
+   nicht mehr auf; sie bleibt Sache der Einzelbild-Prüfung, die sie ohnehin
+   fängt.
+2. **Je Datei statt je Vorkommen rechnen**: eine Datei, ein Download, eine
+   Buchung gegen den größten Bedarf ihrer Vorkommen. Näher an den Bytes,
+   ändert aber die Grundgesamtheit (aus 141 Vorkommen werden deutlich
+   weniger) und damit die Vergleichbarkeit mit allem, was bisher gemessen
+   wurde.
+
+**Nicht nebenbei zu entscheiden.** An dieser Summe sind schon zweimal feine
+Fehler erst im Fremd-Vendor-Veto aufgefallen (PR #71: erst hoben sich Über-
+und Unterlieferung auf, dann war das Budget durch UNTERlieferung erfüllbar).
+Das Panel ist derzeit ausgefallen (B29), kann also nicht gegenlesen.
+
+### Was stattdessen getan ist
+
+Die Kontrolle gibt ihre Bilanz jetzt **je Seite und Geräteklasse** aus, bei
+Erfolg wie im Fehlerfall. Bisher stand da eine einzige Zahl; wurde sie rot,
+kostete die Frage „woher?" eine Sitzung mit Nachstellen. Schon der erste Lauf
+zeigt, wo die Quote wirklich sitzt:
+
+      525,0 %  n= 1  /suche?q=pasta — Desktop 1280px @ DPR 1
+       79,8 %  n= 4  /rezepte — Desktop 1280px @ DPR 1
+       51,5 %  n=12  / — Retina 1440px @ DPR 2
+
+Der nächste Ausschlag nennt damit seinen Ort, statt nur seine Höhe.
+
+### Was NICHT die Lösung ist
+
+Den Deckel anheben. Er steht bei 34 %, weil vier Punkte Abstand die
+Rasterungsunterschiede zu CI abdecken (B9); ihn dem Messrauschen nachzuziehen
+hieße, die Kontrolle dem Fehler anzupassen, statt den Fehler zu suchen.
