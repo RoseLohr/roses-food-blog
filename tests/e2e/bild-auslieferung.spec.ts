@@ -334,23 +334,53 @@ test.describe("Bild-Auslieferung: gewählte Variante passt zur Rendergröße", (
  * gemessen" liest — so stand es bis hierher —, sucht ein Problem, das an
  * dieser Stelle nicht mehr ist.
  *
- * WAS OFFEN BLEIBT: Die Quote springt selten und bisher nicht auf Kommando.
- * Zweimal belegt, beide Male ohne Änderung am Quelltext:
+ * DER AUSSCHLAG IST GEFANGEN — und zwar von der Aufschlüsselung, die dieser
+ * Test seit 09/2026 JE SEITE UND GERÄTEKLASSE ausgibt. Sie war dafür gebaut,
+ * und sie hat beim ERSTEN Ausschlag geliefert (CI-Lauf 33966135791, 05.09.):
  *
- *     main, isoliert:   28,9 · 28,9 · 28,9 · 34,2   ← reißt den Deckel von 34 %
- *     ein Zweig davon:  31,5 · 35,2 · 35,6 · 45,6
+ *     Stelle                              örtlich    im Ausschlag
+ *     / — Retina 1440px @ DPR 2  (n=12)     51,5 %       193,5 %
+ *     /suche?q=pasta — Desktop   (n= 1)    525,0 %       525,0 %
+ *     /rezepte — Desktop         (n= 4)     79,8 %        79,8 %
  *
- * Sieben gezielte Wiederholungen danach ergaben siebenmal exakt 28,9 % — die
- * Abweichung ließ sich nicht einfangen. Verdacht, nicht Befund: Sie trat nur
- * in Läufen mit vielen parallelen Arbeitern auf. Passt dazu, dass Chrome für
- * DIESELBE Datei eine bereits geladene größere Variante wiederverwendet
- * (siehe Kopf dieser Datei) — welches Vorkommen zuerst lädt, entscheidet dann
- * ein Rennen, und unter Last fällt es anders aus.
+ * Der gesamte Sprung (28,9 → 35,6 % gesamt) sitzt in EINER Zelle; alles
+ * andere steht still. Das ist keine allgemeine Flatterhaftigkeit, sondern
+ * ein Ort.
  *
- * Deshalb gibt dieser Test seine Bilanz jetzt JE SEITE UND GERÄTEKLASSE aus.
- * Bisher stand da eine einzige Zahl; wird sie rot, weiß niemand, wo sie
- * herkommt. Mit der Aufschlüsselung nennt der nächste Ausschlag seinen Ort,
- * statt wieder eine Sitzung mit Nachstellen zu kosten.
+ * DIE URSACHE, nachgemessen am laufenden Browser: Auf `/` erscheint EINE
+ * Bilddatei VIERMAL — einmal als Slider-Bühne (Bedarf 2880 px, bekommt mit
+ * w1280 das Leiterende) und dreimal klein (Bedarf 408 bzw. 512 px). Der Seed
+ * setzt in den Slider die Hero-Bilder der ersten drei Rezepte, und dieselben
+ * Rezepte stehen darunter als Kacheln — in einem Food-Blog die normale Lage,
+ * keine Seed-Marotte.
+ *
+ *     Datei 9427dcb2  Vorkommen=4  maxBedarf=2880
+ *         bedarf=2880  gewaehlt=w1280      (die Bühne)
+ *         bedarf= 408  gewaehlt=w480
+ *         bedarf= 512  gewaehlt=w640
+ *         bedarf= 512  gewaehlt=w640
+ *
+ * Lädt unter Last die Bühne zuerst, verwendet Chrome deren w1280 für die drei
+ * kleinen Vorkommen mit — genau die drei größten Abweichungen des Ausschlags
+ * (×9,84 bei Bedarf 408, zweimal ×6,25 bei Bedarf 512).
+ *
+ * UND DAMIT MISST DIESE RECHNUNG HIER DAS FALSCHE. Die Einzelbild-Prüfung
+ * oben rechnet die Wiederverwendung ausdrücklich heraus (Deckel je Datei =
+ * Maximum ihrer Vorkommen, Zeile ~228); diese Summe tut es nicht — sie
+ * verbucht jedes Vorkommen gegen seinen EIGENEN Bedarf. Deshalb blieben im
+ * Ausschlag 260 Tests grün, darunter `/` bei Retina 1440 selbst, und nur die
+ * Quote riss: zwei Rechnungen über dieselbe Tatsache, in derselben Datei.
+ *
+ * Verbucht wird dabei ausgerechnet der GÜNSTIGERE Ausgang. Ohne
+ * Wiederverwendung lädt die Datei drei Varianten (w1280, w480, w640), mit
+ * Wiederverwendung eine einzige — weniger Bytes, schlechtere Quote.
+ *
+ * WAS NOCH OFFEN IST: wie die Summe stattdessen rechnen soll. Zwei
+ * Entwürfe stehen zur Wahl, sie ergeben verschiedene Zahlen und verlangen
+ * beide eine neu hergeleitete Grenze; ein Deckel von 34 % auf einer anderen
+ * Metrik ist keine Aussage mehr. Das ist eine Entscheidung über eine
+ * Kontrolle und wird nicht nebenbei getroffen — schon zweimal ist an dieser
+ * Summe ein feiner Fehler erst im Fremd-Vendor-Veto aufgefallen (PR #71).
  *
  * Der Deckel bleibt bei 34 % und wird NICHT nachgezogen, obwohl der Wert jetzt
  * reproduzierbar ist: Die vier Punkte Abstand decken die Rundungsunterschiede

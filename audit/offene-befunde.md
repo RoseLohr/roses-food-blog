@@ -1623,10 +1623,11 @@ so lange neu starten, bis es grün ist. Ein Gate, das im Regelfall drei Anläufe
 braucht, erzieht genau dazu — und dann ist der dritte Lauf keine Bestätigung
 mehr, sondern eine Gewohnheit.
 
-## B28 — das Bild-Auslieferungsbudget springt selten und ohne Anlass
+## B28 — das Bild-Auslieferungsbudget verbucht Chromes Wiederverwendung als Verschwendung
 
-**Teilweise behoben.** Die Ursache ist eingegrenzt, aber nicht gefunden; was
-sich beheben ließ, ist die Blindheit der Kontrolle.
+**Ursache gefunden, Behebung offen.** Der Ausschlag ist eingefangen und
+erklärt; offen ist nur noch, wie die Summe stattdessen rechnen soll — das ist
+eine Entscheidung über eine Kontrolle (siehe „Was zu entscheiden ist").
 
 `tests/e2e/bild-auslieferung.spec.ts` („die Leiter liefert nicht systematisch
 zu groß aus") gehört zu `npm run test:e2e` und damit zum CI-Gate. Zweimal
@@ -1662,18 +1663,84 @@ Richtung gezeigt; er ist richtiggestellt.
   Netzverkehr und `currentSrc` waren auf beiden Ständen byte- und
   variantengleich (9 Anfragen, 27570 Bytes).
 
-### Was übrig bleibt — Verdacht, nicht Befund
+### Der Ausschlag ist gefangen — von der Aufschlüsselung aus diesem Befund
 
-Beide Ausschläge traten in Läufen mit **vielen parallelen Arbeitern** auf, nie
-in einem Einzellauf. Das passt zu einer Eigenheit, die der Datei-Kopf schon
-beschreibt: Chrome verwendet für DIESELBE Datei eine bereits geladene größere
-Variante wieder — welches Vorkommen zuerst lädt, entscheidet ein Rennen, und
-unter Last fällt es anders aus. Der Einzelbild-Test rechnet diese
-Wiederverwendung ausdrücklich heraus; der Budget-Test tut es nicht.
+Die Bilanz je Seite und Geräteklasse (siehe „Was stattdessen getan ist") war
+für genau diesen Fall gebaut und hat beim ERSTEN Ausschlag geliefert
+(CI-Lauf 33966135791, 05.09.2026, PR #139):
 
-Belegt ist das **nicht**. Es einzubauen, ohne den Ausschlag einmal eingefangen
-zu haben, hieße eine Kontrolle auf Verdacht zu ändern — und der Verdacht wäre
-ausgerechnet einer, der die Quote senkt.
+| Stelle | örtlich | im Ausschlag |
+|---|---|---|
+| `/` — Retina 1440px @ DPR 2 (n=12) | 51,5 % | **193,5 %** |
+| `/suche?q=pasta` — Desktop (n=1) | 525,0 % | 525,0 % |
+| `/rezepte` — Desktop (n=4) | 79,8 % | 79,8 % |
+
+Der gesamte Sprung von 28,9 auf 35,6 % sitzt in EINER Zelle; alles andere
+steht still. Keine allgemeine Flatterhaftigkeit, sondern ein Ort.
+
+### Die Ursache, am laufenden Browser nachgemessen
+
+Auf `/` erscheint EINE Bilddatei viermal — einmal als Slider-Bühne mit Bedarf
+2880 px (bekommt mit `w1280` das Leiterende) und dreimal klein:
+
+    Datei 9427dcb2  Vorkommen=4  maxBedarf=2880
+        bedarf=2880  gewaehlt=w1280      (die Bühne)
+        bedarf= 408  gewaehlt=w480
+        bedarf= 512  gewaehlt=w640
+        bedarf= 512  gewaehlt=w640
+
+Der Seed setzt in den Slider die Hero-Bilder der ersten drei Rezepte, und
+dieselben Rezepte stehen darunter als Kacheln (`scripts/seed.ts`, „Slider:
+Hero-Bilder der ersten drei Rezepte"). In einem Food-Blog ist das die normale
+Lage, keine Seed-Marotte — am Seed zu drehen wäre der Workaround.
+
+Lädt unter Last die Bühne zuerst, verwendet Chrome deren `w1280` für die drei
+kleinen Vorkommen mit. Das sind exakt die drei größten Abweichungen des
+Ausschlags: ×9,84 bei Bedarf 408, zweimal ×6,25 bei Bedarf 512.
+
+### Warum das ein Fehler der Messung ist, nicht der Auslieferung
+
+Beide Rechnungen stehen in **derselben Datei** und behandeln dieselbe Tatsache
+verschieden:
+
+* Die **Einzelbild-Prüfung** rechnet die Wiederverwendung ausdrücklich heraus
+  — Deckel je Datei = Maximum über alle Vorkommen
+  (`tests/e2e/bild-auslieferung.spec.ts`, „Chrome darf eine bereits geladene
+  GRÖSSERE Variante derselben Datei wiederverwenden").
+* Die **Budget-Summe** tut das nicht: Sie verbucht jedes Vorkommen gegen
+  seinen EIGENEN Bedarf.
+
+Deshalb blieben im Ausschlag 260 Tests grün — darunter `/` bei Retina 1440
+selbst — und nur die Quote riss.
+
+Verbucht wird dabei ausgerechnet der GÜNSTIGERE Ausgang: Ohne
+Wiederverwendung lädt die Datei drei Varianten (`w1280`, `w480`, `w640`), mit
+Wiederverwendung eine einzige. Weniger Bytes, schlechtere Quote. Eine Kontrolle,
+die das bestraft, misst nicht mehr, was sie zu messen behauptet.
+
+### Was zu entscheiden ist
+
+Zwei Entwürfe, beide vertretbar, mit verschiedenen Zahlen — und beide
+verlangen eine **neu hergeleitete Grenze**, denn ein Deckel von 34 % auf einer
+anderen Metrik ist keine Aussage mehr:
+
+1. **Je Vorkommen den Leitersprung verbuchen** statt der tatsächlich
+   gewählten Variante: Kosten = `deckel(bedarf)² − bedarf²`, wobei `deckel`
+   die kleinste deckende Leiterstufe ist. Deterministisch, unabhängig davon,
+   welches Vorkommen das Rennen gewinnt — und misst genau das, wofür die
+   Summe da ist: die Grobheit der LEITER. Preis: Eine `sizes`-Lüge fällt hier
+   nicht mehr auf; sie bleibt Sache der Einzelbild-Prüfung, die sie ohnehin
+   fängt.
+2. **Je Datei statt je Vorkommen rechnen**: eine Datei, ein Download, eine
+   Buchung gegen den größten Bedarf ihrer Vorkommen. Näher an den Bytes,
+   ändert aber die Grundgesamtheit (aus 141 Vorkommen werden deutlich
+   weniger) und damit die Vergleichbarkeit mit allem, was bisher gemessen
+   wurde.
+
+**Nicht nebenbei zu entscheiden.** An dieser Summe sind schon zweimal feine
+Fehler erst im Fremd-Vendor-Veto aufgefallen (PR #71: erst hoben sich Über-
+und Unterlieferung auf, dann war das Budget durch UNTERlieferung erfüllbar).
+Das Panel ist derzeit ausgefallen (B29), kann also nicht gegenlesen.
 
 ### Was stattdessen getan ist
 
