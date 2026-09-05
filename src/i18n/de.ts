@@ -880,6 +880,10 @@ export const de = {
       ingredientDown: "Zutat nach unten",
       remove: "Entfernen",
       steps: "Zubereitungsschritte",
+      /** Ein Schritt sagt, WANN etwas getan wird — die Reihenfolge ist hier
+       *  noch mehr Aussage als bei den Zutaten. Dieselben zwei Pfeile. */
+      stepUp: "Schritt nach oben",
+      stepDown: "Schritt nach unten",
       stepImage: "Bild zum Schritt (optional)",
       addStep: "Schritt hinzufügen",
       notes: "Notizen",
