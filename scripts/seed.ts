@@ -12,7 +12,26 @@ import type { TaxonomyType } from "../src/db/schema";
 import { slugify } from "../src/lib/slug";
 import { storeImage } from "../src/lib/media";
 
-const NOW = new Date();
+/**
+ * Ein FESTES Datum für alles, was der Seed anlegt — nicht `new Date()`.
+ *
+ * Grund ist derselbe wie beim Nachtmodus, der hier fest auf „hell" steht: Eine
+ * Referenzaufnahme soll an den DATEN hängen, nicht am Tag des Laufs.
+ *
+ * Die Datumszellen im Admin tragen zwar `data-referenz-maske`, aber eine Maske
+ * deckt nur die PIXEL ab, nicht die GEOMETRIE: Playwright legt ein Rechteck
+ * über die Box des Elements, und diese Box ist am 5.9.2026 schmaler als am
+ * 21.8.2026. Am 05.09.2026 sind daran drei Medien-Aufnahmen zerbrochen — ohne
+ * dass sich an der Seite etwas geändert hätte. Eine Kontrolle, die vom
+ * Kalender abhängt, wird abgeschaltet statt beachtet.
+ *
+ * Welches Datum es ist, ist gleichgültig — fest muss es sein. Der 15.3. ist
+ * gewählt, weil `toLocaleDateString("de-DE")` daraus „15.3.2026" macht: genau
+ * so breit wie das Datum, mit dem die vorhandenen Vergleichsbilder aufgenommen
+ * wurden. Damit war kein einziges davon neu aufzunehmen. Die Uhrzeit steht
+ * mit dabei, damit auch eine Anzeige mit Stunde reproduzierbar bleibt.
+ */
+const NOW = new Date("2026-03-15T09:30:00.000Z");
 
 async function placeholder(label: string, color: string, w = 1280, h = 850) {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">
@@ -792,6 +811,15 @@ async function main() {
         "Hallo {{vorname}},\n\nzum Einstieg habe ich dir meine drei beliebtesten Rezepte zusammengestellt — schau mal auf dem Blog vorbei!\n\nHerzliche Grüße\nRose",
     },
   ]);
+
+  /**
+   * Die Bildzeilen bekommen ihr Datum von `storeImage` — und das setzt zu
+   * Recht `new Date()`: Ein echter Upload ist wirklich jetzt. Nur der Seed ist
+   * kein echter Upload. Also wird das Datum hier nachgezogen, statt die
+   * Produktionsfunktion zu verbiegen. Ohne diese Zeile hinge die
+   * Medienbibliothek weiter am Tag des Laufs (siehe NOW oben).
+   */
+  await db.update(schema.mediaImage).set({ createdAt: NOW });
 
   console.log("[seed] Fertig.");
 }

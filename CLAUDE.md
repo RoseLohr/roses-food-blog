@@ -127,6 +127,17 @@ diesem Repository arbeitet. Sie ist Teil des Governance-Regimes (A-32/A-33/A-37)
   in ihrer Liste. Die Mechanik prüft beides gegeneinander: eine angemeldete
   Maske, die nichts trifft, ist ein Fehler — genau so war sie ein halbes Jahr
   wirkungslos.
+  **Eine Maske deckt die PIXEL ab, nicht die GEOMETRIE** (09/2026): Playwright
+  legt ein Rechteck über die BOX des Elements. Ändert sich die Breite des
+  maskierten Textes, wandert alles daneben — „5.9.2026" ist eine Stelle kürzer
+  als „21.8.2026", und daran sind drei Medien-Aufnahmen zerbrochen, ohne dass
+  jemand die Seite angefasst hatte. Ein lauf-abhängiger Wert gehört deshalb
+  ZUSÄTZLICH festgenagelt, wo er entsteht: **`scripts/seed.ts` verankert alle
+  Zeitstempel auf einem festen Datum** (`const NOW`, dazu ein Nachzug auf
+  `media_image.created_at` — `storeImage` setzt zu Recht `new Date()`, ein
+  echter Upload ist wirklich jetzt). Dieselbe Begründung wie beim Nachtmodus,
+  der fest auf `hell` steht. Festgehalten in `tests/seed-datum.test.ts`; die
+  Toleranz wird dafür NICHT angehoben.
   **Das ist ein ÖRTLICHES Werkzeug und läuft in CI nicht:** Der Läufer rastert
   Schrift anders, die Seiten werden dort unterschiedlich hoch (Zahlen in
   `playwright.config.ts` und `audit/offene-befunde.md` B9). Wer es zum Gate
