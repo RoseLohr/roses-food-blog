@@ -1554,3 +1554,71 @@ Eine Regel über „diesen Lauf" endet am Prozessbaum. Wo etwas **außerhalb**
 davon schreibt — Container, `sudo`, ein Dienst —, gilt sie nicht mehr, und eine
 Attrappe, die ein Kindprozess ist, verdeckt genau diesen Unterschied. Der Modus
 einer Datei, auf den es ankommt, gehört deshalb gesetzt und nicht geerbt.
+
+## B29 — das Fremd-Vendor-Panel ist als Pflicht-Gate unzuverlässig
+
+**Offen.** Gemessen und eingegrenzt, nicht behoben — die Ursache liegt
+außerhalb des Repositories.
+
+`cross-vendor` (Workflow `Independent-Verify`) ist ein Pflichtcheck: Ohne sein
+Urteil ist kein PR mergefähig. Er antwortet mal in **20 Sekunden**, mal
+**35 Minuten lang gar nicht**.
+
+### Gemessen an PR #134 (drei Läufe auf demselben Commit `b30d312`)
+
+    Versuch 1  01.09. 15:09 – 15:44   35 min   fetch failed   -> verweigert
+    Versuch 2  01.09. 15:46 – 16:22   35 min   fetch failed   -> verweigert
+    Versuch 3  02.09. 16:22 – 16:23   20 s     echtes Urteil  -> bestätigt
+
+Derselbe Diff, dreimal. Zwei Fehlschläge, ein Erfolg — die Kontrolle hat also
+nicht zweimal etwas gefunden, sondern zweimal nichts gesehen.
+
+### Was in den Fehlschlägen passiert
+
+    [independent-verify] /v1/models nicht verfügbar → Fallback-Modell für alle Stimmen.
+    [independent-verify] Stimme 1/2/3: /responses nicht nutzbar (Netzfehler: fetch failed)
+      Verifier 1/3, 2/3, 3/3: Fehler (fetch failed)
+    ⛔ Pflicht-Approver „combo/SOTA-A" nicht im Panel aufgelöst → fail-closed
+
+Erst fällt die Modell-Liste aus, alle drei Stimmen laufen auf ein Ersatzmodell
+zurück; dann scheitert auch der Aufruf selbst. **Das Gate schließt dabei
+korrekt** — ein Pflicht-Approver, der nie geantwortet hat, darf nicht als
+Zustimmung gelten. Der Fehler liegt nicht in der Entscheidung, sondern darin,
+dass es überhaupt so oft nichts zu entscheiden gibt.
+
+### Dass es kein Einzelfall ist
+
+    31.08. 16:21  claude/ernaehrung-menue    success   ← nach zwei Fehlschlägen
+    31.08. 11:46  claude/medien-kachel       success   ← Versuch 3
+    02.09. 16:23  claude/schritt-nummern     success   ← Versuch 3
+
+Die letzten drei Merges brauchten je zwei bis drei Anläufe. #134 hing dadurch
+**einen Tag** fest, obwohl alle übrigen Checks von der ersten Minute an grün
+waren.
+
+### Dass es nicht am Inhalt liegt
+
+Gegengeprüft an zwei Diffs ohne jede Gemeinsamkeit, im selben Zeitfenster:
+
+    #134  Tailwind-Klasse, ein Test, zwei PNG   ->  panel rot
+    #135  acht Zeilen CLAUDE.md, kein Code      ->  panel rot
+
+### Was zu untersuchen wäre
+
+Alles davon liegt im Betrieb, nicht im Quelltext dieses Repositories:
+
+* Erreichbarkeit von `VERIFIER_BASE_URL` aus dem GitHub-Läufer heraus — DNS,
+  Egress-Regeln, Ratenbegrenzung am Gateway.
+* Die Zeitgrenzen in `scripts/regime/independent-verify.mjs`: 35 Minuten bis
+  zum Aufgeben sind lang genug, dass niemand nebenher wartet, und kurz genug,
+  dass der Lauf trotzdem verfällt.
+* Die Wiederholstrategie: Der Rückfall `/responses` → `/chat/completions`
+  greift, das Gateway bleibt aber unerreichbar — wiederholt wird also etwas,
+  das aus demselben Grund erneut scheitert.
+
+### Was NICHT die Lösung ist
+
+Das Panel herabstufen, überspringen oder daran vorbeimergen. Und ebenso wenig:
+so lange neu starten, bis es grün ist. Ein Gate, das im Regelfall drei Anläufe
+braucht, erzieht genau dazu — und dann ist der dritte Lauf keine Bestätigung
+mehr, sondern eine Gewohnheit.
