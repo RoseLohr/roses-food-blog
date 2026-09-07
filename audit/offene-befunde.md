@@ -1811,10 +1811,10 @@ Zukunft und kann falsch rot werden — ein Workaround, keine Wurzel.
   `origin/main` auf `HEAD` (Push auf `main`), dann `HEAD^1`. Ein Bezugspunkt,
   der auf `HEAD` zeigt, nicht vorhanden oder nicht auflösbar ist, ist ein
   **Befund** — kein Grün ohne Vergleich.
-* `ci.yml` nennt dem Skript bei einem Push auf `main` den Stand davor —
-  `github.event.before`, geholt mit `--depth=1` — und holt sonst wie bisher
-  die Spitze von `main`. Es wird nichts mehr in einen Ref gepresst, den der
-  Checkout schon gesetzt hat.
+* `ci.yml` holt die `main`-Historie ab dem Stand, in den gemergt wird, in
+  einen eigenen Ref (`refs/remotes/pruef/verlauf`) und nennt dem Skript den
+  letzten Commit mit bestandenem Gate (Runde drei, s. u.). Es wird nichts
+  mehr in einen Ref gepresst, den der Checkout schon gesetzt hat.
 
 **Runde zwei — das Panel hat den ersten Anlauf widerlegt, zu Recht.** Der
 erste Fix nahm bei einem Push auf `main` `HEAD^1` als Stand davor: „auf main
@@ -1830,8 +1830,33 @@ an, C ist beliebig), `origin/main == C`:
 
 Deshalb rät das Skript jetzt gar nicht mehr: Zeigt `origin/main` auf `HEAD`
 und ist kein Bezugspunkt genannt, ist das ein Befund mit der Ansage, was zu
-nennen ist. Eine Heuristik im Gate ist eine zweite Fehlerquelle — der Push
-weiß, was vor ihm war; nur er.
+nennen ist. Eine Heuristik im Gate ist eine zweite Fehlerquelle.
+
+**Runde drei — und auch `github.event.before` ist keine Basis.** Der Push
+weiß, was vor ihm stand — aber nicht, ob das bestanden hat. Zwei Pushes,
+nachgemessen mit dem Verstoß von oben:
+
+| Push | Bezugspunkt `before` | Ergebnis |
+|---|---|---|
+| B manipuliert den Eintrag | A | ✗ rot — richtig |
+| C lässt ihn stehen | B | **grün** — die vergiftete Basis ist Vertrauensbasis |
+| D korrigiert auf A zurück | C | ✗ **rot** — die Korrektur wird bestraft |
+| D gegen A | A | grün — richtig |
+
+Eine Basis ohne Nachweis ist keine. Der Anker hängt jetzt am NACHWEIS:
+`scripts/regime/gate-bezugspunkt.sh` läuft die First-Parent-Historie von
+`main` rückwärts und nimmt den ersten Commit, dessen Check-Run `gate` des
+CI-Gate-Workflows bestanden hat (GitHub-API, nur lesend — `checks: read` nur
+im Job `gate`). Ein roter oder nie gelaufener Commit wird übersprungen;
+scheitert die Abfrage selbst, ist das ein Abbruch, nicht „nicht grün" —
+sonst schöbe ein Ratenlimit den Anker still nach hinten. Das gilt für Pull
+Requests genauso wie für Pushes: sonst stünde ein Reparatur-PR gegen einen
+vergifteten `main` fest (D gegen C, rot), und der Zustand ließe sich über
+den regulären Weg nicht mehr beheben. Ein selbst gesetzter Zeugen-Ref wäre
+der andere Weg gewesen; er bräuchte Schreibrechte für das CI-Token — eine
+Kontrolle, die sich selbst beglaubigt. Selbsttest gegen eine `gh`-Attrappe:
+erster Nachweis gewinnt, ohne Nachweis kein Bezugspunkt, Abfragefehler
+bricht ab, und eine Abfrage, die nicht nach `gate` fragt, wird verweigert.
 * `tests/migrationen-reihenfolge.test.ts`: der Test „hält das echte Journal
   … für sauber" hatte `if (!basisDa) return;` — einen stillen Durchmarsch,
   wenn `origin/main` fehlte. Weg; er nennt den Bezugspunkt jetzt selbst

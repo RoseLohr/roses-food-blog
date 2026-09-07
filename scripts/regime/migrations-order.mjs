@@ -72,8 +72,12 @@ const DRIZZLE = path.join(ROOT, "drizzle");
  *     widerlegt, nachgemessen: Bei einem Push A→B→C (etwa „Rebase and
  *     merge") ist HEAD^1 = B; ändert B das Journal, vergleicht das Gate C mit
  *     B und ist grün, obwohl gegenüber dem ausgelieferten A ein Verstoß
- *     vorliegt. Den richtigen Stand kennt nur der Push selbst
- *     (`github.event.before`), und den reicht ci.yml als MIGRATIONS_BASIS.
+ *     vorliegt. Und `github.event.before` (Runde zwei) ist der vorige Stand,
+ *     nicht ein bestandener: B manipuliert (rot), C lässt es stehen (grün
+ *     gegen B), die Korrektur D wäre gegen C rot. Den Anker liefert deshalb
+ *     ein NACHWEIS — scripts/regime/gate-bezugspunkt.sh sucht den letzten
+ *     main-Commit mit bestandenem Gate, und ci.yml reicht ihn als
+ *     MIGRATIONS_BASIS, für Pull Requests genauso.
  *   - zeigt der gewählte Bezugspunkt auf HEAD, ist er nicht vorhanden oder
  *     nicht auflösbar → BEFUND, kein Durchwinken.
  */
@@ -108,8 +112,9 @@ export function waehleBasis({ vorgabe, vorgabeSha, originMain, head }) {
   return {
     fehler:
       "origin/main zeigt auf HEAD selbst — ein Journal, das mit sich selbst verglichen wird, besteht jede Prüfung. " +
-      "Der Stand VOR diesem Push muss genannt werden: MIGRATIONS_BASIS=<Commit> (in CI aus github.event.before; " +
-      "HEAD^1 ist KEIN Ersatz, bei einem Push mehrerer Commits liegt der Verstoß davor).",
+      "Der ausgelieferte Stand muss genannt werden: MIGRATIONS_BASIS=<Commit> (in CI der letzte main-Commit mit " +
+      "bestandenem Gate, s. gate-bezugspunkt.sh; HEAD^1 ist KEIN Ersatz, bei einem Push mehrerer Commits liegt der " +
+      "Verstoß davor, und der vorige Push ist ohne Nachweis keine Basis).",
   };
 }
 

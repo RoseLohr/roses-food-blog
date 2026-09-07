@@ -17,6 +17,13 @@ jobs:
   # ---- Merge-Gate: typecheck + lint(a11y/standards) + test + build ----------
   gate:
     runs-on: ubuntu-latest
+    # `checks: read` NUR hier, NUR lesend: der Bezugspunkt des Migrations-Gates
+    # ist der letzte main-Commit mit bestandenem Gate — und ob eines bestanden
+    # hat, steht in den Check-Runs (B30). Kein Schreibrecht: ein Zeugen-Ref,
+    # den CI selbst setzt, wäre eine Kontrolle, die sich selbst beglaubigt.
+    permissions:
+      contents: read
+      checks: read
     env:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
       NEXT_TELEMETRY_DISABLED: "1"
@@ -39,28 +46,43 @@ jobs:
       #     einmal in denselben Ref — das Journal wurde mit sich selbst
       #     verglichen (grün, ohne zu prüfen), und sobald zwei Merges kurz
       #     hintereinander landeten, war es ein Non-Fast-Forward (rot, ohne
-      #     Grund). Den ausgelieferten Stand VOR diesem Push kennt nur der
-      #     Push selbst: `github.event.before`. NICHT HEAD^1 — bei einem Push
-      #     mehrerer Commits (Rebase and merge) ist das ein Commit desselben
-      #     Pushs, und ein Verstoß davor bliebe ungeprüft (Panel-Befund,
-      #     nachgemessen). Der Stand wird geholt und dem Skript genannt; das
-      #     Skript rät nicht und verweigert einen Bezugspunkt, der auf HEAD
-      #     zeigt. Ist nichts lesbar, ist das ein Befund — deshalb kein `|| true`.
+      #     Grund).
+      #
+      # WELCHER Stand der ausgelieferte ist, entscheidet ein NACHWEIS, nicht die
+      # Reihenfolge (B30, Runde drei): der letzte Commit in der First-Parent-
+      # Historie von main, dessen Check-Run „gate" bestanden hat. Weder HEAD^1
+      # (bei einem Push mehrerer Commits ein Commit desselben Pushs) noch
+      # `github.event.before` (der vorige Stand, auch wenn er rot war: B
+      # manipuliert, C lässt es stehen und ist grün gegen B, die Korrektur D
+      # wäre gegen C rot). Beides nachgemessen. Gesucht wird ab dem Stand, in
+      # den gemergt wird — beim Push auf main der davor, im PR die Basis, sonst
+      # die Spitze von main — in einer eigens geholten Historie, nicht in einem
+      # Ref, den der Checkout schon gesetzt hat. Das Skript verweigert einen
+      # Bezugspunkt, der auf HEAD zeigt. Ohne Nachweis kein Grün — kein `|| true`.
       - name: Bezugspunkt für das Migrations-Gate bereitstellen
         env:
+          GH_TOKEN: ${{ github.token }}
           VORHER: ${{ github.event.before }}
+          PR_BASIS: ${{ github.event.pull_request.base.sha }}
         run: |
-          if [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF_NAME" = main ]; then
-            case "$VORHER" in
-              ""|0000000000000000000000000000000000000000)
-                echo "::error::Push auf main ohne Stand davor (github.event.before leer) — das Migrations-Gate hat keinen Bezugspunkt."
-                exit 1 ;;
-            esac
-            git fetch --no-tags --depth=1 origin "$VORHER"
-            echo "MIGRATIONS_BASIS=$VORHER" >> "$GITHUB_ENV"
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            start="$PR_BASIS"
+          elif [ "$GITHUB_REF_NAME" = main ]; then
+            start="$VORHER"
           else
-            git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
+            start="$(git ls-remote --exit-code origin refs/heads/main | cut -f1)"
           fi
+          case "$start" in
+            ""|0000000000000000000000000000000000000000)
+              echo "::error::kein Ausgangspunkt für den Bezugspunkt des Migrations-Gates (Ereignis $GITHUB_EVENT_NAME)."
+              exit 1 ;;
+          esac
+          git fetch --no-tags --depth=60 origin "$start:refs/remotes/pruef/verlauf"
+          basis="$(bash scripts/regime/gate-bezugspunkt.sh refs/remotes/pruef/verlauf)"
+          echo "Bezugspunkt: $basis (letzter main-Commit mit bestandenem Gate ab ${start:0:7})"
+          echo "MIGRATIONS_BASIS=$basis" >> "$GITHUB_ENV"
+      - name: Bezugspunkt-Selbsttest (B30 — erster Nachweis gewinnt, ohne Nachweis kein Bezugspunkt)
+        run: bash scripts/regime/gate-bezugspunkt.sh --selftest
       - name: Typecheck (tsc --noEmit)
         run: npm run typecheck
       - name: Lint (Standards + Barrierefreiheit, blockierend)
