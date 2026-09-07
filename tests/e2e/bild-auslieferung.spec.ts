@@ -319,6 +319,69 @@ test.describe("Bild-Auslieferung: gewählte Variante passt zur Rendergröße", (
  * bevor die Seite zur Ruhe gekommen war. Die Quote selbst war davon kaum
  * berührt (30,0–30,1 %); die Flatterhaftigkeit saß in der Grundgesamtheit.
  *
+ * ── RICHTIGSTELLUNG 09/2026 (B28) ────────────────────────────────────────────
+ *
+ * Der Stand darüber ist überholt, und wer ihn liest, sucht an der falschen
+ * Stelle. Gemessen wird heute:
+ *
+ *     Übergröße 28,9 % · 141 gewertet · 15 unterliefert
+ *
+ * Die 141 sind KEIN Rückfall hinter B2. Sie standen in ELF Läufen hintereinander
+ * unverändert da — isoliert, im vollen Verbund und auf beiden Seiten eines
+ * Vergleichs. Die Grundgesamtheit ist also stabil; sie ist nur kleiner
+ * geworden, weil seither Bilder von den gemessenen Seiten verschwunden sind
+ * (u. a. die entfernte Reise-Galerie). Wer 141 als Symptom von „zu früh
+ * gemessen" liest — so stand es bis hierher —, sucht ein Problem, das an
+ * dieser Stelle nicht mehr ist.
+ *
+ * DER AUSSCHLAG IST GEFANGEN — und zwar von der Aufschlüsselung, die dieser
+ * Test seit 09/2026 JE SEITE UND GERÄTEKLASSE ausgibt. Sie war dafür gebaut,
+ * und sie hat beim ERSTEN Ausschlag geliefert (CI-Lauf 33966135791, 05.09.):
+ *
+ *     Stelle                              örtlich    im Ausschlag
+ *     / — Retina 1440px @ DPR 2  (n=12)     51,5 %       193,5 %
+ *     /suche?q=pasta — Desktop   (n= 1)    525,0 %       525,0 %
+ *     /rezepte — Desktop         (n= 4)     79,8 %        79,8 %
+ *
+ * Der gesamte Sprung (28,9 → 35,6 % gesamt) sitzt in EINER Zelle; alles
+ * andere steht still. Das ist keine allgemeine Flatterhaftigkeit, sondern
+ * ein Ort.
+ *
+ * DIE URSACHE, nachgemessen am laufenden Browser: Auf `/` erscheint EINE
+ * Bilddatei VIERMAL — einmal als Slider-Bühne (Bedarf 2880 px, bekommt mit
+ * w1280 das Leiterende) und dreimal klein (Bedarf 408 bzw. 512 px). Der Seed
+ * setzt in den Slider die Hero-Bilder der ersten drei Rezepte, und dieselben
+ * Rezepte stehen darunter als Kacheln — in einem Food-Blog die normale Lage,
+ * keine Seed-Marotte.
+ *
+ *     Datei 9427dcb2  Vorkommen=4  maxBedarf=2880
+ *         bedarf=2880  gewaehlt=w1280      (die Bühne)
+ *         bedarf= 408  gewaehlt=w480
+ *         bedarf= 512  gewaehlt=w640
+ *         bedarf= 512  gewaehlt=w640
+ *
+ * Lädt unter Last die Bühne zuerst, verwendet Chrome deren w1280 für die drei
+ * kleinen Vorkommen mit — genau die drei größten Abweichungen des Ausschlags
+ * (×9,84 bei Bedarf 408, zweimal ×6,25 bei Bedarf 512).
+ *
+ * UND DAMIT MISST DIESE RECHNUNG HIER DAS FALSCHE. Die Einzelbild-Prüfung
+ * oben rechnet die Wiederverwendung ausdrücklich heraus (Deckel je Datei =
+ * Maximum ihrer Vorkommen, Zeile ~228); diese Summe tut es nicht — sie
+ * verbucht jedes Vorkommen gegen seinen EIGENEN Bedarf. Deshalb blieben im
+ * Ausschlag 260 Tests grün, darunter `/` bei Retina 1440 selbst, und nur die
+ * Quote riss: zwei Rechnungen über dieselbe Tatsache, in derselben Datei.
+ *
+ * Verbucht wird dabei ausgerechnet der GÜNSTIGERE Ausgang. Ohne
+ * Wiederverwendung lädt die Datei drei Varianten (w1280, w480, w640), mit
+ * Wiederverwendung eine einzige — weniger Bytes, schlechtere Quote.
+ *
+ * WAS NOCH OFFEN IST: wie die Summe stattdessen rechnen soll. Zwei
+ * Entwürfe stehen zur Wahl, sie ergeben verschiedene Zahlen und verlangen
+ * beide eine neu hergeleitete Grenze; ein Deckel von 34 % auf einer anderen
+ * Metrik ist keine Aussage mehr. Das ist eine Entscheidung über eine
+ * Kontrolle und wird nicht nebenbei getroffen — schon zweimal ist an dieser
+ * Summe ein feiner Fehler erst im Fremd-Vendor-Veto aufgefallen (PR #71).
+ *
  * Der Deckel bleibt bei 34 % und wird NICHT nachgezogen, obwohl der Wert jetzt
  * reproduzierbar ist: Die vier Punkte Abstand decken die Rundungsunterschiede
  * zwischen dem hier laufenden Chromium 141 und dem in CI installierten Build
@@ -336,9 +399,20 @@ test.describe("Bild-Auslieferung: Budget über alle Seiten", () => {
     let gewertet = 0;
     let unterliefert = 0;
     const schlimmste: Array<{ faktor: number; info: string }> = [];
+    // Bilanz JE SEITE UND GERÄTEKLASSE (B28). Die Gesamtquote allein sagt
+    // nicht, wo sie herkommt — und genau das kostete beim letzten Ausschlag
+    // eine Sitzung mit Nachstellen.
+    const jeStelle: Array<{
+      stelle: string;
+      n: number;
+      zuviel: number;
+      bedarf: number;
+    }> = [];
 
     for (const kontext of KONTEXTE) {
       for (const seite of SEITEN) {
+        const stelle = { stelle: `${seite} — ${kontext.name}`, n: 0, zuviel: 0, bedarf: 0 };
+        jeStelle.push(stelle);
         for (const m of await messeSeite(browser, kontext, seite)) {
           const gewaehlt = Number(/\/w(\d+)\.webp/.exec(m.current)?.[1] ?? 0);
           const bedarf = Math.ceil(m.breite * kontext.deviceScaleFactor);
@@ -356,6 +430,9 @@ test.describe("Bild-Auslieferung: Budget über alle Seiten", () => {
           zuviel += (gewaehlt * gewaehlt - bedarf * bedarf) * verhaeltnis;
           bedarfsflaeche += bedarf * bedarf * verhaeltnis;
           gewertet++;
+          stelle.zuviel += (gewaehlt * gewaehlt - bedarf * bedarf) * verhaeltnis;
+          stelle.bedarf += bedarf * bedarf * verhaeltnis;
+          stelle.n++;
           schlimmste.push({
             faktor: (gewaehlt * gewaehlt) / (bedarf * bedarf),
             info:
@@ -383,6 +460,19 @@ test.describe("Bild-Auslieferung: Budget über alle Seiten", () => {
         `${gewertet} gewertet · ${unterliefert} unterliefert · ` +
         `Deckel ${(UEBERGROESSE_DECKEL * 100).toFixed(0)} %`,
     );
+    // Auch bei Erfolg: Wer den Deckel heranschleichen sehen will, braucht die
+    // Verteilung, nicht nur die Summe.
+    const aufschluesselung = jeStelle
+      .filter((s) => s.n > 0)
+      .map((s) => ({ ...s, quote: s.zuviel / s.bedarf }))
+      .sort((a, b) => b.zuviel - a.zuviel)
+      .map(
+        (s) =>
+          `  ${(s.quote * 100).toFixed(1).padStart(5)} %  n=${String(s.n).padStart(2)}  ${s.stelle}`,
+      )
+      .join("\n");
+    console.log(`[bild-budget] je Seite und Geräteklasse:\n${aufschluesselung}`);
+
     const bericht = schlimmste
       .slice(0, 8)
       .map((s) => `  ×${s.faktor.toFixed(2)}  ${s.info}`)
@@ -393,6 +483,7 @@ test.describe("Bild-Auslieferung: Budget über alle Seiten", () => {
       `Übergröße ${(uebergroesse * 100).toFixed(1)} % über ${gewertet} gewertete ` +
         `Bilder (${unterliefert} unterlieferte bleiben außen vor, Deckel ` +
         `${(UEBERGROESSE_DECKEL * 100).toFixed(0)} %).\n` +
+        `Bilanz je Seite und Geräteklasse:\n${aufschluesselung}\n\n` +
         `Größte Einzelabweichungen:\n${bericht}`,
     ).toBeLessThanOrEqual(UEBERGROESSE_DECKEL);
   });
