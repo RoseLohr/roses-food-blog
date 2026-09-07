@@ -1623,11 +1623,11 @@ so lange neu starten, bis es grün ist. Ein Gate, das im Regelfall drei Anläufe
 braucht, erzieht genau dazu — und dann ist der dritte Lauf keine Bestätigung
 mehr, sondern eine Gewohnheit.
 
-## B28 — das Bild-Auslieferungsbudget verbucht Chromes Wiederverwendung als Verschwendung
+## B28 — das Bild-Auslieferungsbudget verbuchte Chromes Wiederverwendung als Verschwendung
 
-**Ursache gefunden, Behebung offen.** Der Ausschlag ist eingefangen und
-erklärt; offen ist nur noch, wie die Summe stattdessen rechnen soll — das ist
-eine Entscheidung über eine Kontrolle (siehe „Was zu entscheiden ist").
+**Behoben (Leitersprung je Vorkommen, 09/2026).** Der Ausschlag ist
+eingefangen, erklärt und an der Wurzel beseitigt; die Neuherleitung des Deckels
+liegt dem Eigentümer als Vorschlag vor (siehe „Entschieden" und „Der Deckel").
 
 `tests/e2e/bild-auslieferung.spec.ts` („die Leiter liefert nicht systematisch
 zu groß aus") gehört zu `npm run test:e2e` und damit zum CI-Gate. Zweimal
@@ -1718,31 +1718,77 @@ Wiederverwendung lädt die Datei drei Varianten (`w1280`, `w480`, `w640`), mit
 Wiederverwendung eine einzige. Weniger Bytes, schlechtere Quote. Eine Kontrolle,
 die das bestraft, misst nicht mehr, was sie zu messen behauptet.
 
-### Was zu entscheiden ist
+### Entschieden (06.09.2026, Eigentümer): Leitersprung je Vorkommen
 
-Zwei Entwürfe, beide vertretbar, mit verschiedenen Zahlen — und beide
-verlangen eine **neu hergeleitete Grenze**, denn ein Deckel von 34 % auf einer
-anderen Metrik ist keine Aussage mehr:
+Die Summe verbucht je Vorkommen die **kleinste Leiterstufe ≥ Bedarf** — das,
+was der Browser ohne Wiederverwendung wählt — statt der tatsächlich gezeigten
+Variante. Beide Prüfungen nehmen die Stufe jetzt aus **einer** Funktion
+(`leiterstufe` in `tests/e2e/bild-auslieferung.spec.ts`): die
+Einzelbild-Prüfung ihren Deckel (mit Toleranz), das Budget seinen Sprung
+(ohne). Die Rechnung hängt damit allein an Leiter und Layout; ein Laderennen
+kann sie nicht mehr bewegen.
 
-1. **Je Vorkommen den Leitersprung verbuchen** statt der tatsächlich
-   gewählten Variante: Kosten = `deckel(bedarf)² − bedarf²`, wobei `deckel`
-   die kleinste deckende Leiterstufe ist. Deterministisch, unabhängig davon,
-   welches Vorkommen das Rennen gewinnt — und misst genau das, wofür die
-   Summe da ist: die Grobheit der LEITER. Preis: Eine `sizes`-Lüge fällt hier
-   nicht mehr auf; sie bleibt Sache der Einzelbild-Prüfung, die sie ohnehin
-   fängt.
-2. **Je Datei statt je Vorkommen rechnen**: eine Datei, ein Download, eine
-   Buchung gegen den größten Bedarf ihrer Vorkommen. Näher an den Bytes,
-   ändert aber die Grundgesamtheit (aus 141 Vorkommen werden deutlich
-   weniger) und damit die Vergleichbarkeit mit allem, was bisher gemessen
-   wurde.
+Verworfen: je Datei statt je Vorkommen rechnen. Näher an den Bytes, aber es
+schrumpft die Grundgesamtheit von 141 Vorkommen auf gut 40 Dateien und macht
+jede bisherige Zahl unvergleichbar.
 
-**Nicht nebenbei zu entscheiden.** An dieser Summe sind schon zweimal feine
-Fehler erst im Fremd-Vendor-Veto aufgefallen (PR #71: erst hoben sich Über-
-und Unterlieferung auf, dann war das Budget durch UNTERlieferung erfüllbar).
-Das Panel ist derzeit ausgefallen (B29), kann also nicht gegenlesen.
+Der Umbau ist durch ein sechsköpfiges Prüf-Panel mit Widerlegungsrunde
+gegangen (Blickwinkel Browserwahl, Zweck, Fail-closed, Refactor, Doku,
+sizes-Lüge). Zehn Befunde mit 3/3 bestätigt — alle Diagnose und Kommentar,
+keiner an der Summe selbst — und im selben Commit behoben. Die Widerleger
+der Blickwinkel *Doku* und *sizes-Lüge* fielen einem Sitzungslimit zum Opfer;
+deren Punkte sind von Hand am Code nachvollzogen (siehe „Was damit akzeptiert
+ist").
 
-### Was stattdessen getan ist
+### Messreihe mit der neuen Rechnung
+
+| Lauf | Bedingungen | Ergebnis |
+|---|---|---|
+| 1 | isoliert (`--no-deps`), Chromium 141 | 28,9 % · 141 gewertet · 15 über Leiterende |
+| 2 | voller Verbund, alle Arbeiter | 28,9 % · 141 · 15 |
+| 3 | voller Verbund, alle Arbeiter | 28,9 % · 141 · 15 |
+| 4 | voller Verbund, alle Arbeiter | 28,9 % · 141 · 15 |
+
+Im ruhigen Lauf ist das dieselbe Zahl wie mit der alten Rechnung: Ohne
+Wiederverwendung *ist* die Leiterstufe die gezeigte Variante. Der Unterschied
+liegt allein dort, wo die alte Rechnung sprang — im vollen Verbund, wo sie
+34,2 und 35,6 % erreichte, steht die neue still.
+
+**Ein Lauf ist verworfen**, und der Grund gehört hierher: Während eines
+Verbund-Laufs hat ein Agent des Prüf-Panels „rechne nach" wörtlich genommen
+und mit eigener Konfiguration einen **zweiten Playwright-Runner** gestartet —
+der dieselbe Provisionierung (`rm -rf .pw-data`, Saat, `npm run build`) unter
+dem laufenden Server ausführte. Ergebnis: 45 Fehlschläge quer durch fremde
+Specs, 404 für geseedete Seiten, unladbare Upload-Varianten, und der
+Budget-Test starb am Fail-closed-Wächter (`0 gemessen`). Das ist kein Signal
+über die Metrik, sondern ein Fehler der Orchestrierung (Prüf-Agenten mit
+vollen Werkzeugen auf demselben Arbeitsbaum wie eine laufende Messung). Der
+Lauf wurde allein auf der Maschine wiederholt — das ist Lauf 4.
+
+### Was damit akzeptiert ist
+
+* **Eine `sizes`-Lüge fällt in der Summe nicht mehr auf** — die Summe sieht
+  `sizes` gar nicht mehr. Sie bleibt Sache der Einzelbild-Prüfung, die sie an
+  jedem Vorkommen fängt, dessen Datei auf der Seite kein größeres legitimes
+  Vorkommen hat.
+* **Restlücke der Einzelbild-Prüfung, unverändert durch den Umbau:** An einem
+  *Nebenvorkommen* einer geteilten Datei kann sich eine `sizes`-Lüge hinter
+  der Zulage je Datei verstecken (der Deckel ist das Maximum aller Vorkommen).
+  Trennbar wäre das nur, wenn je Vorkommen zusätzlich die *deklarierte*
+  Breite gemessen würde (`sizes` so auswerten, wie der Browser es tut). Das
+  ist ein eigener Umbau und nicht Teil von B28. Vom Panel unbestätigt (die
+  Widerleger fielen aus), am Code nachvollzogen; die Kommentare an der
+  Obergrenze versprechen seither nicht mehr „jede" Lüge.
+
+### Der Deckel
+
+`UEBERGROESSE_DECKEL = 0.34` stammt aus der Vorkommens-Rechnung: 28,9 % plus
+vier Punkte Abstand für die Rasterungsunterschiede zum CI-Build (B9). Auf der
+Leitersprung-Rechnung ist der ruhige Wert identisch, die Herleitung trägt
+also weiter — neu hergeleitet ist sie damit nicht. Der Vorschlag steht im
+PR-Text und ist Sache des Eigentümers; bis dahin bleibt die Zahl.
+
+### Was zuerst getan war — die Aufschlüsselung, die den Ausschlag fing
 
 Die Kontrolle gibt ihre Bilanz jetzt **je Seite und Geräteklasse** aus, bei
 Erfolg wie im Fehlerfall. Bisher stand da eine einzige Zahl; wurde sie rot,

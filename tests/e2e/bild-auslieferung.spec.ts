@@ -100,6 +100,26 @@ function verfuegbareBreiten(m: Messung): number[] {
   return einzel ? [Number(einzel[1])] : [];
 }
 
+/**
+ * Die kleinste Leiterstufe, die einen Bedarf deckt — oder `undefined`, wenn
+ * die Leiter dafür nichts hat. Das ist die Stufe, die der Browser für dieses
+ * Vorkommen wählt, solange er nichts aus dem Cache wiederverwendet.
+ *
+ * EINE Funktion für beide Prüfungen unten. Die Einzelbild-Prüfung leitet
+ * daraus ihren Deckel ab (mit Toleranz), das Budget seinen Leitersprung
+ * (ohne). Vorher verbuchte das Budget die tatsächlich GEZEIGTE Variante und
+ * damit Chromes Wiederverwendung — daran ist B28 entstanden.
+ */
+function leiterstufe(leiter: number[], bedarf: number): number | undefined {
+  const deckende = leiter.filter((w) => w >= bedarf);
+  return deckende.length > 0 ? Math.min(...deckende) : undefined;
+}
+
+/** Was eine Datei `/uploads/<key>/w<Breite>.webp` eindeutig macht. */
+function dateiSchluessel(current: string): string {
+  return /\/uploads\/([^/]+)\//.exec(current)?.[1] ?? "";
+}
+
 async function messeSeite(
   browser: Browser,
   kontext: (typeof KONTEXTE)[number],
@@ -214,12 +234,9 @@ test.describe("Bild-Auslieferung: gewählte Variante passt zur Rendergröße", (
           const gewaehlt = Number(/\/w(\d+)\.webp/.exec(m.current)?.[1] ?? 0);
           const leiter = verfuegbareBreiten(m);
           const bedarf = Math.ceil(m.breite * dpr);
-          const deckende = leiter.filter(
-            (w) => w >= bedarf * BEDARFS_TOLERANZ,
-          );
           const deckel =
-            deckende.length > 0 ? Math.min(...deckende) : Math.max(...leiter);
-          const dateiKey = /\/uploads\/([^/]+)\//.exec(m.current)?.[1] ?? "";
+            leiterstufe(leiter, bedarf * BEDARFS_TOLERANZ) ?? Math.max(...leiter);
+          const dateiKey = dateiSchluessel(m.current);
           return { ...m, gewaehlt, leiter, bedarf, deckel, dateiKey };
         });
 
@@ -245,7 +262,11 @@ test.describe("Bild-Auslieferung: gewählte Variante passt zur Rendergröße", (
           expect(e.naturalWidth, `LÄDT NICHT (404/defekt?): ${info}`)
             .toBeGreaterThan(0);
           // Obergrenze: keine Variante größer als der größte legitime Bedarf
-          // dieser Datei (+ Toleranz) — fängt jede künftige sizes-Lüge.
+          // dieser Datei (+ Toleranz) — fängt eine sizes-Lüge an jedem
+          // Vorkommen, dessen Datei auf der Seite kein größeres legitimes
+          // Vorkommen hat. An einem Nebenvorkommen einer GETEILTEN Datei kann
+          // sie sich hinter der Zulage verstecken: Restlücke, benannt in B28
+          // („Was damit akzeptiert ist").
           expect(e.gewaehlt, `ZU GROSS: ${info}`).toBeLessThanOrEqual(erlaubt);
           // Untergrenze: nicht sichtbar weich — außer es gibt nichts Größeres.
           if (e.gewaehlt < e.bedarf * SCHAERFE_MINIMUM) {
@@ -260,8 +281,10 @@ test.describe("Bild-Auslieferung: gewählte Variante passt zur Rendergröße", (
 });
 
 /**
- * Auslieferungs-Budget: Wie viel Pixelfläche wird ÜBER den Bedarf hinaus
- * geliefert — über alle Seiten und Geräteklassen zusammen?
+ * Auslieferungs-Budget: Wie viel Pixelfläche gibt die LEITER über den Bedarf
+ * hinaus her — je Vorkommen die kleinste deckende Stufe, unabhängig davon,
+ * was Chrome durch Wiederverwendung tatsächlich zeigt — über alle Seiten und
+ * Geräteklassen zusammen?
  *
  * Die Prüfungen oben arbeiten je Bild und fragen: „passt die gewählte Stufe
  * zur Rendergröße?" Sie sind gegen Fehlgriffe robust, sagen aber nichts über
@@ -285,9 +308,13 @@ test.describe("Bild-Auslieferung: gewählte Variante passt zur Rendergröße", (
  *     Bild die Quote — das Budget blieb also durch UNTERlieferung erfüllbar,
  *     obwohl genau hier das Gegenteil behauptet stand.
  *
- * Jetzt gehen unterlieferte Bilder (gewählt < Bedarf) in KEINE der beiden
- * Summen ein. Sie sind Sache der SCHAERFE_MINIMUM-Prüfung oben; wer sie hier
- * mitzählte, könnte das eine Problem mit dem anderen bezahlen.
+ * Jetzt gehen Vorkommen, für die die Leiter KEINE deckende Stufe hat (Bedarf
+ * über dem Leiterende, `stufe === undefined`), in KEINE der beiden Summen ein:
+ * Ihr Fehlbetrag ist kein Leitersprung. Ob sie sichtbar weich sind, prüft
+ * SCHAERFE_MINIMUM oben; wer sie hier mitzählte, könnte das eine Problem mit
+ * dem anderen bezahlen. Seit je Vorkommen der Leitersprung verbucht wird
+ * (09/2026, B28), ist jeder Summand ≥ 0 — das Budget ist durch Unterlieferung
+ * nicht mehr erfüllbar.
  *
  * ECHTE FLÄCHE, NICHT BREITE ZUM QUADRAT. Ebenfalls Sol-Befund: w² gewichtet
  * ein quadratisches Thumbnail und ein 16:9-Bild gleicher Breite gleich, obwohl
@@ -307,8 +334,10 @@ test.describe("Bild-Auslieferung: gewählte Variante passt zur Rendergröße", (
  * in tests/media-regeneration.integration.test.ts.
  */
 /**
- * Gemessen mit der korrigierten Metrik: alte Leiter 41,2 %, mit der Stufe 1152
- * noch 28,8 % (damals 101 gewertete Bilder). Wer 1152 wieder entfernt, wird rot.
+ * Gemessen mit der korrigierten Metrik (noch mit der Vorkommens-Rechnung, siehe
+ * unten): alte Leiter 41,2 %, mit der Stufe 1152 noch 28,8 % (damals 101
+ * gewertete Bilder). Die 1152-Gegenprobe ist mit der Leitersprung-Rechnung
+ * nicht wiederholt; im ruhigen Lauf liefern beide Rechnungen dieselbe Zahl.
  *
  * STAND 08/2026, nach der Stabilisierung der Grundgesamtheit (B2):
  *
@@ -322,7 +351,7 @@ test.describe("Bild-Auslieferung: gewählte Variante passt zur Rendergröße", (
  * ── RICHTIGSTELLUNG 09/2026 (B28) ────────────────────────────────────────────
  *
  * Der Stand darüber ist überholt, und wer ihn liest, sucht an der falschen
- * Stelle. Gemessen wird heute:
+ * Stelle. Gemessen wurde mit der Vorkommens-Rechnung (bis 09/2026):
  *
  *     Übergröße 28,9 % · 141 gewertet · 15 unterliefert
  *
@@ -364,29 +393,50 @@ test.describe("Bild-Auslieferung: gewählte Variante passt zur Rendergröße", (
  * kleinen Vorkommen mit — genau die drei größten Abweichungen des Ausschlags
  * (×9,84 bei Bedarf 408, zweimal ×6,25 bei Bedarf 512).
  *
- * UND DAMIT MISST DIESE RECHNUNG HIER DAS FALSCHE. Die Einzelbild-Prüfung
- * oben rechnet die Wiederverwendung ausdrücklich heraus (Deckel je Datei =
- * Maximum ihrer Vorkommen, Zeile ~228); diese Summe tut es nicht — sie
- * verbucht jedes Vorkommen gegen seinen EIGENEN Bedarf. Deshalb blieben im
- * Ausschlag 260 Tests grün, darunter `/` bei Retina 1440 selbst, und nur die
- * Quote riss: zwei Rechnungen über dieselbe Tatsache, in derselben Datei.
+ * BIS 09/2026 MASS DIESE SUMME DAS FALSCHE. Die Einzelbild-Prüfung oben
+ * rechnet die Wiederverwendung ausdrücklich heraus (`deckelJeDatei`: Deckel je
+ * Datei = Maximum ihrer Vorkommen); die Summe tat es nicht — sie verbuchte
+ * jedes Vorkommen mit der tatsächlich GEZEIGTEN Variante gegen seinen eigenen
+ * Bedarf. Deshalb blieben im Ausschlag 260 Tests grün, darunter `/` bei Retina
+ * 1440 selbst, und nur die Quote riss: zwei Rechnungen über dieselbe Tatsache,
+ * in derselben Datei.
  *
  * Verbucht wird dabei ausgerechnet der GÜNSTIGERE Ausgang. Ohne
  * Wiederverwendung lädt die Datei drei Varianten (w1280, w480, w640), mit
  * Wiederverwendung eine einzige — weniger Bytes, schlechtere Quote.
  *
- * WAS NOCH OFFEN IST: wie die Summe stattdessen rechnen soll. Zwei
- * Entwürfe stehen zur Wahl, sie ergeben verschiedene Zahlen und verlangen
- * beide eine neu hergeleitete Grenze; ein Deckel von 34 % auf einer anderen
- * Metrik ist keine Aussage mehr. Das ist eine Entscheidung über eine
- * Kontrolle und wird nicht nebenbei getroffen — schon zweimal ist an dieser
- * Summe ein feiner Fehler erst im Fremd-Vendor-Veto aufgefallen (PR #71).
+ * ENTSCHIEDEN 09/2026 (B28, Entscheidung des Eigentümers): Die Summe verbucht
+ * je Vorkommen den LEITERSPRUNG — die kleinste Leiterstufe ≥ Bedarf, also das,
+ * was der Browser ohne Wiederverwendung wählt (`leiterstufe`, dieselbe
+ * Funktion, aus der die Einzelbild-Prüfung ihren Deckel ableitet). Die
+ * Rechnung hängt damit allein an Leiter und Layout; welches Vorkommen ein
+ * Laderennen gewinnt, kann sie nicht mehr bewegen.
  *
- * Der Deckel bleibt bei 34 % und wird NICHT nachgezogen, obwohl der Wert jetzt
- * reproduzierbar ist: Die vier Punkte Abstand decken die Rundungsunterschiede
- * zwischen dem hier laufenden Chromium 141 und dem in CI installierten Build
- * ab (siehe B9). Sobald beide Umgebungen denselben Build fahren, ist das
- * Nachziehen fällig — dann ist es messbar statt geschätzt.
+ * Preis, bewusst akzeptiert: Eine sizes-Lüge fällt in der SUMME nicht mehr
+ * auf — die Summe sieht `sizes` gar nicht. Sie bleibt Sache der
+ * Einzelbild-Prüfung oben, mit deren Restlücke an Nebenvorkommen geteilter
+ * Dateien (B28, „Was damit akzeptiert ist"). Verworfen: je DATEI statt je
+ * Vorkommen rechnen — näher an den Bytes, aber es ändert die Grundgesamtheit
+ * und macht jede bisherige Zahl unvergleichbar.
+ *
+ * MESSREIHE MIT DER LEITERSPRUNG-RECHNUNG (06./07.09.2026, Chromium 141):
+ *
+ *     isoliert (--no-deps):            28,9 % · 141 gewertet · 15 über Leiterende
+ *     voller Verbund, alle Arbeiter:   28,9 % · 28,9 % · 28,9 % · 141 · 15
+ *
+ * Im ruhigen Lauf ist das dieselbe Zahl wie mit der alten Rechnung — ohne
+ * Wiederverwendung IST die Leiterstufe die gezeigte Variante. Der Unterschied
+ * liegt allein dort, wo die alte Rechnung sprang: Im vollen Verbund, wo sie
+ * 34,2 und 35,6 % erreichte, steht die neue still.
+ *
+ * DER DECKEL: UEBERGROESSE_DECKEL = 0.34 stammt aus der Vorkommens-Rechnung
+ * (28,9 % + vier Punkte Abstand für die Rasterungsunterschiede zum CI-Build,
+ * B9). Auf der Leitersprung-Rechnung ist der ruhige Wert identisch, die
+ * Herleitung trägt also weiter — aber sie ist nicht NEU hergeleitet. Der
+ * Vorschlag dazu liegt dem Eigentümer vor (PR-Text); bis zur Entscheidung
+ * bleibt die Zahl, wie sie ist. Die Kopplung an B9 bleibt: Sobald beide
+ * Umgebungen denselben Build fahren, ist das Nachziehen messbar statt
+ * geschätzt.
  */
 const UEBERGROESSE_DECKEL = 0.34;
 
@@ -397,7 +447,7 @@ test.describe("Bild-Auslieferung: Budget über alle Seiten", () => {
     let zuviel = 0;
     let bedarfsflaeche = 0;
     let gewertet = 0;
-    let unterliefert = 0;
+    let ueberLeiterende = 0;
     const schlimmste: Array<{ faktor: number; info: string }> = [];
     // Bilanz JE SEITE UND GERÄTEKLASSE (B28). Die Gesamtquote allein sagt
     // nicht, wo sie herkommt — und genau das kostete beim letzten Ausschlag
@@ -419,25 +469,44 @@ test.describe("Bild-Auslieferung: Budget über alle Seiten", () => {
           if (!gewaehlt || !bedarf || !m.naturalWidth || !m.naturalHeight) {
             continue;
           }
-          if (gewaehlt < bedarf) {
-            unterliefert++;
-            continue; // gehört zur Schärfe-Prüfung, nicht ins Übergrößen-Budget
+          // DER LEITERSPRUNG, NICHT DIE GELADENE VARIANTE (B28). Verbucht wird
+          // die Stufe, die die Leiter für DIESEN Bedarf hergibt — nicht, was
+          // Chrome am Ende gezeigt hat. Denn Chrome verwendet für dieselbe
+          // Datei eine bereits geladene größere Variante wieder, und welches
+          // Vorkommen zuerst lädt, entscheidet unter Last ein Rennen. Das
+          // kostet keine Bytes (EIN Download statt drei), stand hier aber als
+          // Verschwendung in der Summe. Die Rechnung hängt jetzt allein an
+          // Leiter und Layout; `gewaehlt` bleibt zur Diagnose im Bericht.
+          const stufe = leiterstufe(verfuegbareBreiten(m), bedarf);
+          if (stufe === undefined) {
+            ueberLeiterende++;
+            continue; // Bedarf über dem Leiterende: kein Leitersprung, Sache der Schärfe-Prüfung
           }
           // Fläche statt Breite: Bytes hängen an der Fläche, und ein
           // Breitenvergleich unterschätzte den Aufwand quadratisch. Das
           // Seitenverhältnis kommt aus der geladenen Datei selbst.
           const verhaeltnis = m.naturalHeight / m.naturalWidth;
-          zuviel += (gewaehlt * gewaehlt - bedarf * bedarf) * verhaeltnis;
+          const sprung = (stufe * stufe - bedarf * bedarf) * verhaeltnis;
+          zuviel += sprung;
           bedarfsflaeche += bedarf * bedarf * verhaeltnis;
           gewertet++;
-          stelle.zuviel += (gewaehlt * gewaehlt - bedarf * bedarf) * verhaeltnis;
+          stelle.zuviel += sprung;
           stelle.bedarf += bedarf * bedarf * verhaeltnis;
           stelle.n++;
           schlimmste.push({
-            faktor: (gewaehlt * gewaehlt) / (bedarf * bedarf),
+            faktor: (stufe * stufe) / (bedarf * bedarf),
             info:
-              `${seite} · ${kontext.name} · Bedarf ${bedarf}px → w${gewaehlt}\n` +
-              `        sizes:   ${m.sizes}\n` +
+              `${seite} · ${kontext.name} · Bedarf ${bedarf}px → Leiter w${stufe}` +
+              // Richtung, nicht Ursache: Größer als die Stufe ist meist Chromes
+              // Wiederverwendung (oder ein zu großes sizes — das fängt die
+              // Einzelbild-Prüfung); kleiner heißt, das Layout ist breiter als
+              // der sizes-Wert, den Chrome zugrunde legt.
+              (gewaehlt > stufe
+                ? ` (gezeigt w${gewaehlt} — größer: Wiederverwendung oder sizes zu groß)`
+                : gewaehlt < stufe
+                  ? ` (gezeigt w${gewaehlt} — kleiner: Layoutbreite über dem sizes-Wert)`
+                  : "") +
+              `\n        sizes:   ${m.sizes}\n` +
               `        Klassen: ${m.klassen}`,
           });
         }
@@ -457,7 +526,7 @@ test.describe("Bild-Auslieferung: Budget über alle Seiten", () => {
     // ohne dass ein einziges Bild anders ausgeliefert würde (B2).
     console.log(
       `[bild-budget] Übergröße ${(uebergroesse * 100).toFixed(1)} % · ` +
-        `${gewertet} gewertet · ${unterliefert} unterliefert · ` +
+        `${gewertet} gewertet · ${ueberLeiterende} über Leiterende · ` +
         `Deckel ${(UEBERGROESSE_DECKEL * 100).toFixed(0)} %`,
     );
     // Auch bei Erfolg: Wer den Deckel heranschleichen sehen will, braucht die
@@ -481,7 +550,7 @@ test.describe("Bild-Auslieferung: Budget über alle Seiten", () => {
     expect(
       uebergroesse,
       `Übergröße ${(uebergroesse * 100).toFixed(1)} % über ${gewertet} gewertete ` +
-        `Bilder (${unterliefert} unterlieferte bleiben außen vor, Deckel ` +
+        `Bilder (${ueberLeiterende} über dem Leiterende bleiben außen vor, Deckel ` +
         `${(UEBERGROESSE_DECKEL * 100).toFixed(0)} %).\n` +
         `Bilanz je Seite und Geräteklasse:\n${aufschluesselung}\n\n` +
         `Größte Einzelabweichungen:\n${bericht}`,
