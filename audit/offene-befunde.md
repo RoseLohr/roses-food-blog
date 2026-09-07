@@ -1623,11 +1623,52 @@ so lange neu starten, bis es grün ist. Ein Gate, das im Regelfall drei Anläufe
 braucht, erzieht genau dazu — und dann ist der dritte Lauf keine Bestätigung
 mehr, sondern eine Gewohnheit.
 
-## B28 — das Bild-Auslieferungsbudget verbucht Chromes Wiederverwendung als Verschwendung
+### Nachtrag 07.09.2026 — die zweite Signatur: 74 Stunden 502
 
-**Ursache gefunden, Behebung offen.** Der Ausschlag ist eingefangen und
-erklärt; offen ist nur noch, wie die Summe stattdessen rechnen soll — das ist
-eine Entscheidung über eine Kontrolle (siehe „Was zu entscheiden ist").
+Der Eintrag oben beschreibt die erste Signatur (35 Minuten `fetch failed`,
+dann fail-closed). Vom **03.09. 21:07 UTC bis 06.09. 23:45 UTC** gab es eine
+zweite, und sie ist die ergiebigere:
+
+    [independent-verify] /v1/models nicht verfügbar → Fallback-Modell gpt-4o-2024-08-06
+    [independent-verify] Stimme 1/2/3: /responses nicht nutzbar
+        (Responses-API 502: … <center>openresty</center> …) → Fallback /chat/completions
+      Verifier 1/3, 2/3, 3/3: Fehler (Chat-Fallback 502: … openresty …)
+    ⛔ Pflicht-Approver-Gate: „combo/SOTA-A" nicht im Panel aufgelöst → fail-closed
+
+Das Gateway antwortete — sein Upstream nicht. **Beide** API-Pfade fielen
+identisch um, alle drei Stimmen, nach zwei bis vier Sekunden statt nach 35
+Minuten. Auch `/v1/models` war weg, sodass das Skript auf ein Fallback-Modell
+auswich, das den Pflicht-Approver nicht stellen kann. Das Gate hat wieder
+richtig entschieden: fail-closed.
+
+Gemessen mit **siebzehn** gezielten Probe-Läufen auf demselben Commit
+(`651c45d`, PR #136), im Abstand von vier bis fünf Stunden, jeder einzeln
+angestoßen und im Log gelesen — keine Dauerschleife, denn ein 502 vom Upstream
+heilt nicht durchs Nachfragen:
+
+    Versuch  1–16   03.09. 21:07 – 06.09. 13:02   je 2–4 s   502 openresty   -> verweigert
+    Versuch 17      06.09. 23:45 – 23:46          38 s       echtes Urteil   -> bestätigt
+
+Danach lieferte das Panel für #137, #138 und #139 innerhalb von neun Minuten
+drei weitere echte Urteile (77 s, 112 s, 3,5 min), jedes mit drei
+eigenständigen Begründungen von `combo/SOTA-A/B/C`. Der Draht ist also nicht
+langsam, wenn er steht — er ist entweder da oder gar nicht.
+
+Was die zweite Signatur zur Untersuchungsliste oben hinzufügt: Der Ausfall lag
+diesmal nicht im Netz zwischen Läufer und Gateway (das antwortete sofort),
+sondern **hinter** dem Gateway. Erreichbarkeit von `VERIFIER_BASE_URL` allein
+ist als Prüfung zu wenig; die Frage ist, ob sein Upstream lebt — und das lässt
+sich nur dort beantworten, wo der Dienst betrieben wird, nicht aus diesem
+Repository.
+
+Vier Pull Requests (#136–#139) hingen dadurch drei Tage, obwohl auf jedem von
+der ersten Minute an jeder andere Check grün war.
+
+## B28 — das Bild-Auslieferungsbudget verbuchte Chromes Wiederverwendung als Verschwendung
+
+**Behoben (Leitersprung je Vorkommen, 09/2026).** Der Ausschlag ist
+eingefangen, erklärt und an der Wurzel beseitigt; die Neuherleitung des Deckels
+liegt dem Eigentümer als Vorschlag vor (siehe „Entschieden" und „Der Deckel").
 
 `tests/e2e/bild-auslieferung.spec.ts` („die Leiter liefert nicht systematisch
 zu groß aus") gehört zu `npm run test:e2e` und damit zum CI-Gate. Zweimal
@@ -1718,31 +1759,86 @@ Wiederverwendung lädt die Datei drei Varianten (`w1280`, `w480`, `w640`), mit
 Wiederverwendung eine einzige. Weniger Bytes, schlechtere Quote. Eine Kontrolle,
 die das bestraft, misst nicht mehr, was sie zu messen behauptet.
 
-### Was zu entscheiden ist
+### Entschieden (06.09.2026, Eigentümer): Leitersprung je Vorkommen
 
-Zwei Entwürfe, beide vertretbar, mit verschiedenen Zahlen — und beide
-verlangen eine **neu hergeleitete Grenze**, denn ein Deckel von 34 % auf einer
-anderen Metrik ist keine Aussage mehr:
+Die Summe verbucht je Vorkommen die **kleinste Leiterstufe ≥ Bedarf** — das,
+was der Browser ohne Wiederverwendung wählt — statt der tatsächlich gezeigten
+Variante. Beide Prüfungen nehmen die Stufe jetzt aus **einer** Funktion
+(`leiterstufe` in `tests/e2e/bild-auslieferung.spec.ts`): die
+Einzelbild-Prüfung ihren Deckel (mit Toleranz), das Budget seinen Sprung
+(ohne). Die Rechnung hängt damit allein an Leiter und Layout; ein Laderennen
+kann sie nicht mehr bewegen.
 
-1. **Je Vorkommen den Leitersprung verbuchen** statt der tatsächlich
-   gewählten Variante: Kosten = `deckel(bedarf)² − bedarf²`, wobei `deckel`
-   die kleinste deckende Leiterstufe ist. Deterministisch, unabhängig davon,
-   welches Vorkommen das Rennen gewinnt — und misst genau das, wofür die
-   Summe da ist: die Grobheit der LEITER. Preis: Eine `sizes`-Lüge fällt hier
-   nicht mehr auf; sie bleibt Sache der Einzelbild-Prüfung, die sie ohnehin
-   fängt.
-2. **Je Datei statt je Vorkommen rechnen**: eine Datei, ein Download, eine
-   Buchung gegen den größten Bedarf ihrer Vorkommen. Näher an den Bytes,
-   ändert aber die Grundgesamtheit (aus 141 Vorkommen werden deutlich
-   weniger) und damit die Vergleichbarkeit mit allem, was bisher gemessen
-   wurde.
+Verworfen: je Datei statt je Vorkommen rechnen. Näher an den Bytes, aber es
+schrumpft die Grundgesamtheit von 141 Vorkommen auf gut 40 Dateien und macht
+jede bisherige Zahl unvergleichbar.
 
-**Nicht nebenbei zu entscheiden.** An dieser Summe sind schon zweimal feine
-Fehler erst im Fremd-Vendor-Veto aufgefallen (PR #71: erst hoben sich Über-
-und Unterlieferung auf, dann war das Budget durch UNTERlieferung erfüllbar).
-Das Panel ist derzeit ausgefallen (B29), kann also nicht gegenlesen.
+Der Umbau ist durch ein sechsköpfiges Prüf-Panel mit Widerlegungsrunde
+gegangen (Blickwinkel Browserwahl, Zweck, Fail-closed, Refactor, Doku,
+sizes-Lüge). Zehn Befunde mit 3/3 bestätigt — alle Diagnose und Kommentar,
+keiner an der Summe selbst — und im selben Commit behoben. Die Widerleger
+der Blickwinkel *Doku* und *sizes-Lüge* fielen einem Sitzungslimit zum Opfer;
+deren Punkte sind von Hand am Code nachvollzogen (siehe „Was damit akzeptiert
+ist").
 
-### Was stattdessen getan ist
+### Messreihe mit der neuen Rechnung
+
+| Lauf | Bedingungen | Ergebnis |
+|---|---|---|
+| 1 | isoliert (`--no-deps`), Chromium 141 | 28,9 % · 141 gewertet · 15 über Leiterende |
+| 2 | voller Verbund, alle Arbeiter | 28,9 % · 141 · 15 |
+| 3 | voller Verbund, alle Arbeiter | 28,9 % · 141 · 15 |
+| 4 | voller Verbund, alle Arbeiter | 28,9 % · 141 · 15 |
+
+Im ruhigen Lauf ist das dieselbe Zahl wie mit der alten Rechnung: Ohne
+Wiederverwendung *ist* die Leiterstufe die gezeigte Variante. Der Unterschied
+liegt allein dort, wo die alte Rechnung sprang — im vollen Verbund, wo sie
+34,2 und 35,6 % erreichte, steht die neue still.
+
+**Ein Lauf ist verworfen**, und der Grund gehört hierher: Während eines
+Verbund-Laufs hat ein Agent des Prüf-Panels „rechne nach" wörtlich genommen
+und mit eigener Konfiguration einen **zweiten Playwright-Runner** gestartet —
+der dieselbe Provisionierung (`rm -rf .pw-data`, Saat, `npm run build`) unter
+dem laufenden Server ausführte. Ergebnis: 45 Fehlschläge quer durch fremde
+Specs, 404 für geseedete Seiten, unladbare Upload-Varianten, und der
+Budget-Test starb am Fail-closed-Wächter (`0 gemessen`). Das ist kein Signal
+über die Metrik, sondern ein Fehler der Orchestrierung (Prüf-Agenten mit
+vollen Werkzeugen auf demselben Arbeitsbaum wie eine laufende Messung). Der
+Lauf wurde allein auf der Maschine wiederholt — das ist Lauf 4.
+
+### Was damit akzeptiert ist — und was das Panel NICHT akzeptiert hat
+
+* **Eine `sizes`-Lüge fällt in der Summe nicht mehr auf** — die Summe sieht
+  `sizes` gar nicht mehr. Sie ist Sache der Einzelbild-Prüfung.
+* **Die Restlücke der Einzelbild-Prüfung ist geschlossen — nach einem Veto.**
+  An einem *Nebenvorkommen* einer geteilten Datei konnte sich eine
+  `sizes`-Lüge hinter der Zulage je Datei verstecken (der Deckel ist das
+  Maximum aller Vorkommen). Der erste Stand dieses Umbaus trug das als
+  „Restlücke, akzeptiert" ein. Das Fremd-Vendor-Panel hat genau daran
+  refutiert (`combo/SOTA-A`, PR #143): Vorher zählte das Budget eine solche
+  Lüge wenigstens verrauscht mit, mit dem Leitersprung sähe sie keine der
+  beiden Prüfungen — eine Kontrolle darf keine Abdeckung verlieren, auch
+  keine verrauschte. Das Veto war richtig, meine Gewichtung falsch.
+
+  Geschlossen ist die Lücke so, wie es beide Blickwinkel (Panel und der
+  eigene Prüf-Workflow) genannt haben: Die Messung liest je Vorkommen die
+  **deklarierte** Breite — `sizes` ausgewertet wie im Browser (erste
+  zutreffende Medienbedingung; Längen inkl. `vw`/`calc` löst ein Messelement
+  auf; ohne `sizes` gilt 100vw) — und die Einzelbild-Prüfung hält sie gegen
+  die gerenderte Breite: `SIZES ZU GROSS`, wenn die Erklärung die
+  Wirklichkeit um mehr als die Toleranz übersteigt. Das vergleicht nicht die
+  gewählte Variante, sondern die Erklärung selbst; die Zulage je Datei kann
+  es nicht verdecken. Erste Messung auf dem heutigen Stand: keine `sizes`-Lüge in 141 Vorkommen. Die Kontrolle fing zuerst ihren eigenen Parser — ein gieriger Regex an `calc()` in der Medienbedingung meldete das korrekte `sizes` des Reiseberichts als Lüge; das war ihr Rot vor Grün. Die Auswertung steht seither als eigene Funktion mit Fixture-Test (360 und 1440 px, darunter der `calc()`-Fall und eine deklarierte Lüge, die erkannt werden muss).
+
+### Der Deckel
+
+`UEBERGROESSE_DECKEL = 0.34` stammt aus der Vorkommens-Rechnung: 28,9 % plus
+vier Punkte Abstand für die Rasterungsunterschiede zum CI-Build (B9). Auf der
+Leitersprung-Rechnung ist der ruhige Wert identisch, die Herleitung trägt
+also weiter — neu hergeleitet ist sie damit nicht. Der Vorschlag steht im
+PR-Text und ist Sache des Eigentümers; bis dahin bleibt die Zahl.
+
+### Was zuerst getan war — die Aufschlüsselung, die den Ausschlag fing
 
 Die Kontrolle gibt ihre Bilanz jetzt **je Seite und Geräteklasse** aus, bei
 Erfolg wie im Fehlerfall. Bisher stand da eine einzige Zahl; wurde sie rot,

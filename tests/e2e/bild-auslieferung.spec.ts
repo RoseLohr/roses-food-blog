@@ -85,8 +85,19 @@ interface Messung {
   naturalWidth: number;
   /** Für die Flächengewichtung im Budget: echtes Seitenverhältnis der Datei. */
   naturalHeight: number;
-  /** Nur für die Diagnose eines Ausreißers — nicht für die Bewertung. */
-  sizes: string;
+  /** Das WIRKSAME `sizes` (null = keins) — bei <picture> das des zutreffenden
+   *  <source>, sonst das des <img>; siehe `rohdatenAlle`. Die deklarierte
+   *  Breite unten ist daraus abgeleitet; im Bericht steht es zur Diagnose. */
+  sizes: string | null;
+  /**
+   * Die Breite, die `sizes` dem Browser FÜR DIESES Vorkommen erklärt — in
+   * CSS-Pixeln, aufgelöst wie der Browser es tut (erste zutreffende
+   * Medienbedingung, Längen inkl. vw/calc über ein Messelement). Ohne
+   * `sizes` gilt 100vw. Gegen `breite` gehalten ist das die direkte Prüfung
+   * auf eine sizes-Lüge — je Vorkommen, unabhängig davon, ob die Datei auf
+   * der Seite noch woanders steht (Veto des Fremd-Vendor-Panels auf PR #143).
+   */
+  deklariert: number;
   /** dito: die Klassen des Bildes und seines Elternelements. */
   klassen: string;
 }
@@ -98,6 +109,146 @@ function verfuegbareBreiten(m: Messung): number[] {
   if (ws.length > 0) return ws.sort((a, b) => a - b);
   const einzel = /\/w(\d+)\.webp/.exec(m.current);
   return einzel ? [Number(einzel[1])] : [];
+}
+
+/**
+ * Die kleinste Leiterstufe, die einen Bedarf deckt — oder `undefined`, wenn
+ * die Leiter dafür nichts hat. Das ist die Stufe, die der Browser für dieses
+ * Vorkommen wählt, solange er nichts aus dem Cache wiederverwendet.
+ *
+ * EINE Funktion für beide Prüfungen unten. Die Einzelbild-Prüfung leitet
+ * daraus ihren Deckel ab (mit Toleranz), das Budget seinen Leitersprung
+ * (ohne). Vorher verbuchte das Budget die tatsächlich GEZEIGTE Variante und
+ * damit Chromes Wiederverwendung — daran ist B28 entstanden.
+ */
+function leiterstufe(leiter: number[], bedarf: number): number | undefined {
+  const deckende = leiter.filter((w) => w >= bedarf);
+  return deckende.length > 0 ? Math.min(...deckende) : undefined;
+}
+
+/** Was eine Datei `/uploads/<key>/w<Breite>.webp` eindeutig macht. */
+function dateiSchluessel(current: string): string {
+  return /\/uploads\/([^/]+)\//.exec(current)?.[1] ?? "";
+}
+
+/**
+ * Liest ein `sizes`-Attribut so, wie der Browser es liest, und gibt die
+ * Breite in CSS-Pixeln zurück, die es DIESEM Viewport erklärt: Einträge an
+ * Kommas getrennt, je Eintrag „Medienbedingung Länge", die erste zutreffende
+ * Bedingung gewinnt, ein Eintrag ohne Bedingung ist der Rückfall, ohne
+ * `sizes` gilt 100vw. Die Länge (px, vw, calc, …) löst ein Messelement auf —
+ * kein eigener Parser für CSS-Längen.
+ *
+ * Bedingung und Länge trennt die letzte Lücke auf Klammertiefe 0. Ein Regex
+ * wie /^(\(.*\))\s+(.*)$/ scheitert an
+ * `(max-width: 767px) calc((100vw - 5rem) * 1)`: Das gierige `.*` frisst bis
+ * in die verschachtelte Klammer, die Bedingung wird ungültig, `matchMedia`
+ * sagt nein, und der Rückfall greift — die erste Messung hat genau das als
+ * „sizes-Lüge" gemeldet. Deshalb steht diese Funktion für sich und hat unten
+ * einen eigenen Test mit Fixtures.
+ *
+ * LÄUFT IM BROWSER (page.evaluate). Keine Bezüge nach außen — Playwright
+ * serialisiert nur die Funktion selbst.
+ */
+/**
+ * Rohdaten je <img> — läuft IM Browser (`page.$$eval`), deshalb eine
+ * eigenständige Funktion ohne Bezüge nach außen. Ein Rumpf für die Messung
+ * UND die Fixtures unten; eine zweite Abschrift hätte wieder zwei Rechnungen.
+ *
+ * `sizes` ist das WIRKSAME sizes: Steht das Bild in einem <picture>, gilt das
+ * `sizes` des ersten <source>, dessen `media` zutrifft (ohne `media`: immer),
+ * sonst das des <img>. Ein <source> mit `type` wählt der Browser nach
+ * Formatunterstützung — das ist hier nicht modelliert und meldet sich LAUT,
+ * statt still das falsche Attribut zu lesen (Veto SOTA-A, PR #143).
+ */
+function rohdatenAlle(imgs: Element[]) {
+  const wirksamesSizes = (img: Element): string | null => {
+    const eltern = img.parentElement;
+    if (eltern && eltern.tagName === "PICTURE") {
+      for (const kind of Array.from(eltern.children)) {
+        if (kind === img) break;
+        if (kind.tagName !== "SOURCE") continue;
+        if (kind.hasAttribute("type")) {
+          throw new Error(
+            "<source type=…> wird von der sizes-Messung nicht modelliert — " +
+              "bitte die Auswertung erweitern, statt sie zu umgehen",
+          );
+        }
+        const media = kind.getAttribute("media");
+        if (!media || window.matchMedia(media).matches) {
+          return kind.getAttribute("sizes");
+        }
+      }
+    }
+    return img.getAttribute("sizes");
+  };
+  return imgs.map((el) => {
+    const img = el as HTMLImageElement;
+    return {
+      current: img.currentSrc,
+      srcset: img.getAttribute("srcset") ?? "",
+      breite: img.getBoundingClientRect().width,
+      naturalWidth: img.naturalWidth,
+      naturalHeight: img.naturalHeight,
+      sizes: wirksamesSizes(img),
+      // Diagnose: Ein Ausreißer ist fast immer ein `sizes`, das für DIESE
+      // Stelle nicht stimmt. Die Klassen sagen einem, WO man suchen muss.
+      klassen:
+        `${img.className || "—"}` +
+        (img.parentElement ? ` | Eltern: ${img.parentElement.className || "—"}` : ""),
+    };
+  });
+}
+
+function deklarierteBreiteImBrowser(sizes: string | null): number {
+  const laengeInPx = (l: string): number => {
+    const d = document.createElement("div");
+    d.style.cssText = `position:absolute;visibility:hidden;height:0;width:${l}`;
+    document.body.appendChild(d);
+    const w = d.getBoundingClientRect().width;
+    d.remove();
+    return w;
+  };
+  const trenne = (eintrag: string): [string | null, string] => {
+    let tiefe = 0;
+    let schnitt = -1;
+    for (let i = 0; i < eintrag.length; i++) {
+      const c = eintrag[i];
+      if (c === "(") tiefe++;
+      else if (c === ")") tiefe--;
+      else if (tiefe === 0 && /\s/.test(c)) schnitt = i;
+    }
+    if (schnitt < 0) return [null, eintrag];
+    return [eintrag.slice(0, schnitt).trim(), eintrag.slice(schnitt + 1).trim()];
+  };
+  // Kommas trennen Einträge — aber nur auf Klammertiefe 0. In `min()`,
+  // `max()` und `clamp()` stehen ebenfalls Kommas, und die Lightbox liefert
+  // genau so ein sizes aus (`min(calc(100vw - 2rem), calc(88vh * …))`). Ein
+  // nackter split(",") machte daraus eine ungültige Länge, Breite 0 — und die
+  // Prüfung wäre für dieses Bild für immer grün (Veto SOTA-A, PR #143).
+  const teileAnKommas = (text: string): string[] => {
+    const teile: string[] = [];
+    let tiefe = 0;
+    let start = 0;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (c === "(") tiefe++;
+      else if (c === ")") tiefe--;
+      else if (c === "," && tiefe === 0) {
+        teile.push(text.slice(start, i));
+        start = i + 1;
+      }
+    }
+    teile.push(text.slice(start));
+    return teile;
+  };
+  if (!sizes) return window.innerWidth;
+  for (const eintrag of teileAnKommas(sizes).map((e) => e.trim()).filter(Boolean)) {
+    const [bedingung, laenge] = trenne(eintrag);
+    if (bedingung === null) return laengeInPx(laenge);
+    if (window.matchMedia(bedingung).matches) return laengeInPx(laenge);
+  }
+  return window.innerWidth;
 }
 
 async function messeSeite(
@@ -177,27 +328,85 @@ async function messeSeite(
       `vergleichbar.`,
   ).toBeGreaterThanOrEqual(3);
 
-  const daten = await page.evaluate(() =>
-    Array.from(document.querySelectorAll("img"))
-      .map((img) => ({
-        current: img.currentSrc,
-        srcset: img.getAttribute("srcset") ?? "",
-        breite: img.getBoundingClientRect().width,
-        naturalWidth: img.naturalWidth,
-        naturalHeight: img.naturalHeight,
-        // Diagnose: Ein Ausreißer ist fast immer ein `sizes`, das für DIESE
-        // Stelle nicht stimmt. Ohne die Angabe muss man sie im Quelltext
-        // suchen — und die Klassen sagen einem, WO man suchen muss.
-        sizes: img.getAttribute("sizes") ?? "(kein sizes)",
-        klassen:
-          `${img.className || "—"}` +
-          (img.parentElement ? ` | Eltern: ${img.parentElement.className || "—"}` : ""),
-      }))
-      .filter((d) => d.current.includes("/uploads/") && d.breite > 0),
+  const roh = (await page.$$eval("img", rohdatenAlle)).filter(
+    (d) => d.current.includes("/uploads/") && d.breite > 0,
   );
+  // Die deklarierte Breite je EINDEUTIGEM sizes-String — im Browser, mit
+  // derselben Funktion, die unten gegen Fixtures geprüft wird.
+  const deklariertJeSizes = new Map<string | null, number>();
+  for (const sizes of new Set(roh.map((d) => d.sizes))) {
+    deklariertJeSizes.set(
+      sizes,
+      await page.evaluate(deklarierteBreiteImBrowser, sizes),
+    );
+  }
+  // Nichts wird abgestreift: jedes Feld der Messung bleibt, `deklariert`
+  // kommt dazu.
+  const daten: Messung[] = roh.map((d) => ({
+    ...d,
+    deklariert: deklariertJeSizes.get(d.sizes)!,
+  }));
   await context.close();
   return daten;
 }
+
+test.describe("sizes-Auswertung: erklärt, was der Browser liest", () => {
+  // Fixtures: [sizes, Breite bei 360 px, Breite bei 1440 px]. Der erste ist
+  // das echte sizes des Reiseberichts — mit calc() IN der Medienbedingung,
+  // woran der frühere Regex scheiterte. Der letzte ist eine Lüge: 2000 px
+  // erklärt für ein Bild, das nie so breit ist — die Prüfung unten MUSS sie
+  // als „zu groß" lesen, sonst prüft sie nichts (fail-closed).
+  const FIXTURES: Array<[string | null, number, number]> = [
+    ["(max-width: 767px) calc((100vw - 5rem - 0px) * 1), (max-width: 928px) calc((100vw - 7rem - 0px) * 1), 816px", 280, 816],
+    ["(max-width: 640px) 22vw, 208px", 79.2, 208],
+    ["(min-width: 1000px) and (max-width: 2000px) 500px, 100px", 100, 500],
+    ["100vw", 360, 1440],
+    [null, 360, 1440],
+    // Kommas IN Funktionen (Veto SOTA-A): das Beispiel des Panels und das
+    // echte sizes der Lightbox (Seitenverhältnis 1,5; Viewport-Höhe 800).
+    ["max(480px, 1280px)", 1280, 1280],
+    ["min(calc(100vw - 2rem), calc(88vh * 1.5000))", 328, 1056],
+    ["(max-width: 640px) min(100vw, 300px), clamp(200px, 50vw, 900px)", 300, 720],
+    ["2000px", 2000, 2000],
+  ];
+  for (const [breite, spalte] of [[360, 1], [1440, 2]] as const) {
+    test(`bei ${breite} px Viewport`, async ({ browser }) => {
+      const context = await browser.newContext({ viewport: { width: breite, height: 800 } });
+      const page = await context.newPage();
+      await page.goto("/");
+      for (const fixture of FIXTURES) {
+        const erwartet = fixture[spalte];
+        const gelesen = await page.evaluate(deklarierteBreiteImBrowser, fixture[0]);
+        expect(gelesen, `sizes=${JSON.stringify(fixture[0])} bei ${breite}px`).toBeCloseTo(erwartet, 0);
+      }
+      // Die Lüge muss über der Toleranz liegen, sonst wäre die Prüfung stumm.
+      const luege = await page.evaluate(deklarierteBreiteImBrowser, "2000px");
+      expect(luege).toBeGreaterThan(300 * BEDARFS_TOLERANZ);
+
+      // <picture>: Das wirksame sizes ist das des zutreffenden <source>, nicht
+      // das des <img> — sonst prüfte man den kleinen img-Slot, während der
+      // Browser den großen Source-Slot lädt (Veto SOTA-A).
+      await page.evaluate(() => {
+        const wrap = document.createElement("div");
+        wrap.id = "pw-fixture";
+        wrap.innerHTML =
+          `<picture><source media="(min-width: 800px)" sizes="1200px" srcset="/uploads/fixture/w1200.webp 1200w">` +
+          `<img src="/uploads/fixture/w100.webp" sizes="100px" srcset="/uploads/fixture/w100.webp 100w" alt=""></picture>` +
+          `<picture><source type="image/avif" sizes="900px" srcset="/uploads/fixture/x.avif 900w">` +
+          `<img src="/uploads/fixture/w100.webp" sizes="100px" alt=""></picture>`;
+        document.body.appendChild(wrap);
+      });
+      const [mitMedia] = await page.$$eval("#pw-fixture picture:first-child img", rohdatenAlle);
+      expect(mitMedia.sizes, `<picture> bei ${breite}px`).toBe(breite >= 800 ? "1200px" : "100px");
+      // Ein <source type> ist nicht modelliert — und sagt das, statt still
+      // das <img>-Attribut zu nehmen.
+      await expect(
+        page.$$eval("#pw-fixture picture:last-child img", rohdatenAlle),
+      ).rejects.toThrow(/source type/);
+      await context.close();
+    });
+  }
+});
 
 test.describe("Bild-Auslieferung: gewählte Variante passt zur Rendergröße", () => {
   for (const kontext of KONTEXTE) {
@@ -214,12 +423,9 @@ test.describe("Bild-Auslieferung: gewählte Variante passt zur Rendergröße", (
           const gewaehlt = Number(/\/w(\d+)\.webp/.exec(m.current)?.[1] ?? 0);
           const leiter = verfuegbareBreiten(m);
           const bedarf = Math.ceil(m.breite * dpr);
-          const deckende = leiter.filter(
-            (w) => w >= bedarf * BEDARFS_TOLERANZ,
-          );
           const deckel =
-            deckende.length > 0 ? Math.min(...deckende) : Math.max(...leiter);
-          const dateiKey = /\/uploads\/([^/]+)\//.exec(m.current)?.[1] ?? "";
+            leiterstufe(leiter, bedarf * BEDARFS_TOLERANZ) ?? Math.max(...leiter);
+          const dateiKey = dateiSchluessel(m.current);
           return { ...m, gewaehlt, leiter, bedarf, deckel, dateiKey };
         });
 
@@ -245,8 +451,23 @@ test.describe("Bild-Auslieferung: gewählte Variante passt zur Rendergröße", (
           expect(e.naturalWidth, `LÄDT NICHT (404/defekt?): ${info}`)
             .toBeGreaterThan(0);
           // Obergrenze: keine Variante größer als der größte legitime Bedarf
-          // dieser Datei (+ Toleranz) — fängt jede künftige sizes-Lüge.
+          // dieser Datei (+ Toleranz). Die Zulage je Datei ist nötig, weil
+          // Chrome wiederverwendet — sie ließe aber eine sizes-Lüge an einem
+          // Nebenvorkommen einer GETEILTEN Datei durch. Deshalb prüft
+          // „SIZES ZU GROSS" unten die Erklärung selbst, je Vorkommen.
           expect(e.gewaehlt, `ZU GROSS: ${info}`).toBeLessThanOrEqual(erlaubt);
+          // sizes-Lüge, DIREKT und je Vorkommen: Was `sizes` dem Browser
+          // erklärt, darf die gerenderte Breite nicht um mehr als die
+          // Toleranz übersteigen. Das braucht keine Zulage je Datei — es
+          // vergleicht nicht die gewählte Variante, sondern die Erklärung mit
+          // der Wirklichkeit. Damit fängt es auch die Lüge an einem
+          // Nebenvorkommen einer geteilten Datei, die sich hinter dem
+          // Maximum-Deckel oben verstecken könnte (Veto SOTA-A, PR #143).
+          expect(
+            e.deklariert,
+            `SIZES ZU GROSS: ${info} · sizes erklärt ${Math.round(e.deklariert)}px ` +
+              `CSS für ${Math.round(e.breite)}px gerendert (sizes=${e.sizes === null ? "keins" : `"${e.sizes}"`})`,
+          ).toBeLessThanOrEqual(e.breite * BEDARFS_TOLERANZ);
           // Untergrenze: nicht sichtbar weich — außer es gibt nichts Größeres.
           if (e.gewaehlt < e.bedarf * SCHAERFE_MINIMUM) {
             expect(e.gewaehlt, `ZU KLEIN (weich): ${info}`).toBe(
@@ -260,8 +481,10 @@ test.describe("Bild-Auslieferung: gewählte Variante passt zur Rendergröße", (
 });
 
 /**
- * Auslieferungs-Budget: Wie viel Pixelfläche wird ÜBER den Bedarf hinaus
- * geliefert — über alle Seiten und Geräteklassen zusammen?
+ * Auslieferungs-Budget: Wie viel Pixelfläche gibt die LEITER über den Bedarf
+ * hinaus her — je Vorkommen die kleinste deckende Stufe, unabhängig davon,
+ * was Chrome durch Wiederverwendung tatsächlich zeigt — über alle Seiten und
+ * Geräteklassen zusammen?
  *
  * Die Prüfungen oben arbeiten je Bild und fragen: „passt die gewählte Stufe
  * zur Rendergröße?" Sie sind gegen Fehlgriffe robust, sagen aber nichts über
@@ -285,9 +508,13 @@ test.describe("Bild-Auslieferung: gewählte Variante passt zur Rendergröße", (
  *     Bild die Quote — das Budget blieb also durch UNTERlieferung erfüllbar,
  *     obwohl genau hier das Gegenteil behauptet stand.
  *
- * Jetzt gehen unterlieferte Bilder (gewählt < Bedarf) in KEINE der beiden
- * Summen ein. Sie sind Sache der SCHAERFE_MINIMUM-Prüfung oben; wer sie hier
- * mitzählte, könnte das eine Problem mit dem anderen bezahlen.
+ * Jetzt gehen Vorkommen, für die die Leiter KEINE deckende Stufe hat (Bedarf
+ * über dem Leiterende, `stufe === undefined`), in KEINE der beiden Summen ein:
+ * Ihr Fehlbetrag ist kein Leitersprung. Ob sie sichtbar weich sind, prüft
+ * SCHAERFE_MINIMUM oben; wer sie hier mitzählte, könnte das eine Problem mit
+ * dem anderen bezahlen. Seit je Vorkommen der Leitersprung verbucht wird
+ * (09/2026, B28), ist jeder Summand ≥ 0 — das Budget ist durch Unterlieferung
+ * nicht mehr erfüllbar.
  *
  * ECHTE FLÄCHE, NICHT BREITE ZUM QUADRAT. Ebenfalls Sol-Befund: w² gewichtet
  * ein quadratisches Thumbnail und ein 16:9-Bild gleicher Breite gleich, obwohl
@@ -307,8 +534,10 @@ test.describe("Bild-Auslieferung: gewählte Variante passt zur Rendergröße", (
  * in tests/media-regeneration.integration.test.ts.
  */
 /**
- * Gemessen mit der korrigierten Metrik: alte Leiter 41,2 %, mit der Stufe 1152
- * noch 28,8 % (damals 101 gewertete Bilder). Wer 1152 wieder entfernt, wird rot.
+ * Gemessen mit der korrigierten Metrik (noch mit der Vorkommens-Rechnung, siehe
+ * unten): alte Leiter 41,2 %, mit der Stufe 1152 noch 28,8 % (damals 101
+ * gewertete Bilder). Die 1152-Gegenprobe ist mit der Leitersprung-Rechnung
+ * nicht wiederholt; im ruhigen Lauf liefern beide Rechnungen dieselbe Zahl.
  *
  * STAND 08/2026, nach der Stabilisierung der Grundgesamtheit (B2):
  *
@@ -322,7 +551,7 @@ test.describe("Bild-Auslieferung: gewählte Variante passt zur Rendergröße", (
  * ── RICHTIGSTELLUNG 09/2026 (B28) ────────────────────────────────────────────
  *
  * Der Stand darüber ist überholt, und wer ihn liest, sucht an der falschen
- * Stelle. Gemessen wird heute:
+ * Stelle. Gemessen wurde mit der Vorkommens-Rechnung (bis 09/2026):
  *
  *     Übergröße 28,9 % · 141 gewertet · 15 unterliefert
  *
@@ -364,29 +593,52 @@ test.describe("Bild-Auslieferung: gewählte Variante passt zur Rendergröße", (
  * kleinen Vorkommen mit — genau die drei größten Abweichungen des Ausschlags
  * (×9,84 bei Bedarf 408, zweimal ×6,25 bei Bedarf 512).
  *
- * UND DAMIT MISST DIESE RECHNUNG HIER DAS FALSCHE. Die Einzelbild-Prüfung
- * oben rechnet die Wiederverwendung ausdrücklich heraus (Deckel je Datei =
- * Maximum ihrer Vorkommen, Zeile ~228); diese Summe tut es nicht — sie
- * verbucht jedes Vorkommen gegen seinen EIGENEN Bedarf. Deshalb blieben im
- * Ausschlag 260 Tests grün, darunter `/` bei Retina 1440 selbst, und nur die
- * Quote riss: zwei Rechnungen über dieselbe Tatsache, in derselben Datei.
+ * BIS 09/2026 MASS DIESE SUMME DAS FALSCHE. Die Einzelbild-Prüfung oben
+ * rechnet die Wiederverwendung ausdrücklich heraus (`deckelJeDatei`: Deckel je
+ * Datei = Maximum ihrer Vorkommen); die Summe tat es nicht — sie verbuchte
+ * jedes Vorkommen mit der tatsächlich GEZEIGTEN Variante gegen seinen eigenen
+ * Bedarf. Deshalb blieben im Ausschlag 260 Tests grün, darunter `/` bei Retina
+ * 1440 selbst, und nur die Quote riss: zwei Rechnungen über dieselbe Tatsache,
+ * in derselben Datei.
  *
  * Verbucht wird dabei ausgerechnet der GÜNSTIGERE Ausgang. Ohne
  * Wiederverwendung lädt die Datei drei Varianten (w1280, w480, w640), mit
  * Wiederverwendung eine einzige — weniger Bytes, schlechtere Quote.
  *
- * WAS NOCH OFFEN IST: wie die Summe stattdessen rechnen soll. Zwei
- * Entwürfe stehen zur Wahl, sie ergeben verschiedene Zahlen und verlangen
- * beide eine neu hergeleitete Grenze; ein Deckel von 34 % auf einer anderen
- * Metrik ist keine Aussage mehr. Das ist eine Entscheidung über eine
- * Kontrolle und wird nicht nebenbei getroffen — schon zweimal ist an dieser
- * Summe ein feiner Fehler erst im Fremd-Vendor-Veto aufgefallen (PR #71).
+ * ENTSCHIEDEN 09/2026 (B28, Entscheidung des Eigentümers): Die Summe verbucht
+ * je Vorkommen den LEITERSPRUNG — die kleinste Leiterstufe ≥ Bedarf, also das,
+ * was der Browser ohne Wiederverwendung wählt (`leiterstufe`, dieselbe
+ * Funktion, aus der die Einzelbild-Prüfung ihren Deckel ableitet). Die
+ * Rechnung hängt damit allein an Leiter und Layout; welches Vorkommen ein
+ * Laderennen gewinnt, kann sie nicht mehr bewegen.
  *
- * Der Deckel bleibt bei 34 % und wird NICHT nachgezogen, obwohl der Wert jetzt
- * reproduzierbar ist: Die vier Punkte Abstand decken die Rundungsunterschiede
- * zwischen dem hier laufenden Chromium 141 und dem in CI installierten Build
- * ab (siehe B9). Sobald beide Umgebungen denselben Build fahren, ist das
- * Nachziehen fällig — dann ist es messbar statt geschätzt.
+ * Preis: Eine sizes-Lüge fällt in der SUMME nicht mehr auf — die Summe sieht
+ * `sizes` gar nicht. Sie ist Sache der Einzelbild-Prüfung oben. Deren Zulage
+ * je Datei hätte eine Lüge an einem Nebenvorkommen einer geteilten Datei
+ * durchgelassen — das Fremd-Vendor-Panel hat genau daran refutiert (PR #143),
+ * zu Recht. Seitdem prüft „SIZES ZU GROSS" die Erklärung selbst, je
+ * Vorkommen, mit `deklarierteBreiteImBrowser`. Verworfen: je DATEI statt je
+ * Vorkommen rechnen — näher an den Bytes, aber es ändert die Grundgesamtheit
+ * und macht jede bisherige Zahl unvergleichbar.
+ *
+ * MESSREIHE MIT DER LEITERSPRUNG-RECHNUNG (06./07.09.2026, Chromium 141):
+ *
+ *     isoliert (--no-deps):            28,9 % · 141 gewertet · 15 über Leiterende
+ *     voller Verbund, alle Arbeiter:   28,9 % · 28,9 % · 28,9 % · 141 · 15
+ *
+ * Im ruhigen Lauf ist das dieselbe Zahl wie mit der alten Rechnung — ohne
+ * Wiederverwendung IST die Leiterstufe die gezeigte Variante. Der Unterschied
+ * liegt allein dort, wo die alte Rechnung sprang: Im vollen Verbund, wo sie
+ * 34,2 und 35,6 % erreichte, steht die neue still.
+ *
+ * DER DECKEL: UEBERGROESSE_DECKEL = 0.34 stammt aus der Vorkommens-Rechnung
+ * (28,9 % + vier Punkte Abstand für die Rasterungsunterschiede zum CI-Build,
+ * B9). Auf der Leitersprung-Rechnung ist der ruhige Wert identisch, die
+ * Herleitung trägt also weiter — aber sie ist nicht NEU hergeleitet. Der
+ * Vorschlag dazu liegt dem Eigentümer vor (PR-Text); bis zur Entscheidung
+ * bleibt die Zahl, wie sie ist. Die Kopplung an B9 bleibt: Sobald beide
+ * Umgebungen denselben Build fahren, ist das Nachziehen messbar statt
+ * geschätzt.
  */
 const UEBERGROESSE_DECKEL = 0.34;
 
@@ -397,7 +649,7 @@ test.describe("Bild-Auslieferung: Budget über alle Seiten", () => {
     let zuviel = 0;
     let bedarfsflaeche = 0;
     let gewertet = 0;
-    let unterliefert = 0;
+    let ueberLeiterende = 0;
     const schlimmste: Array<{ faktor: number; info: string }> = [];
     // Bilanz JE SEITE UND GERÄTEKLASSE (B28). Die Gesamtquote allein sagt
     // nicht, wo sie herkommt — und genau das kostete beim letzten Ausschlag
@@ -419,25 +671,44 @@ test.describe("Bild-Auslieferung: Budget über alle Seiten", () => {
           if (!gewaehlt || !bedarf || !m.naturalWidth || !m.naturalHeight) {
             continue;
           }
-          if (gewaehlt < bedarf) {
-            unterliefert++;
-            continue; // gehört zur Schärfe-Prüfung, nicht ins Übergrößen-Budget
+          // DER LEITERSPRUNG, NICHT DIE GELADENE VARIANTE (B28). Verbucht wird
+          // die Stufe, die die Leiter für DIESEN Bedarf hergibt — nicht, was
+          // Chrome am Ende gezeigt hat. Denn Chrome verwendet für dieselbe
+          // Datei eine bereits geladene größere Variante wieder, und welches
+          // Vorkommen zuerst lädt, entscheidet unter Last ein Rennen. Das
+          // kostet keine Bytes (EIN Download statt drei), stand hier aber als
+          // Verschwendung in der Summe. Die Rechnung hängt jetzt allein an
+          // Leiter und Layout; `gewaehlt` bleibt zur Diagnose im Bericht.
+          const stufe = leiterstufe(verfuegbareBreiten(m), bedarf);
+          if (stufe === undefined) {
+            ueberLeiterende++;
+            continue; // Bedarf über dem Leiterende: kein Leitersprung, Sache der Schärfe-Prüfung
           }
           // Fläche statt Breite: Bytes hängen an der Fläche, und ein
           // Breitenvergleich unterschätzte den Aufwand quadratisch. Das
           // Seitenverhältnis kommt aus der geladenen Datei selbst.
           const verhaeltnis = m.naturalHeight / m.naturalWidth;
-          zuviel += (gewaehlt * gewaehlt - bedarf * bedarf) * verhaeltnis;
+          const sprung = (stufe * stufe - bedarf * bedarf) * verhaeltnis;
+          zuviel += sprung;
           bedarfsflaeche += bedarf * bedarf * verhaeltnis;
           gewertet++;
-          stelle.zuviel += (gewaehlt * gewaehlt - bedarf * bedarf) * verhaeltnis;
+          stelle.zuviel += sprung;
           stelle.bedarf += bedarf * bedarf * verhaeltnis;
           stelle.n++;
           schlimmste.push({
-            faktor: (gewaehlt * gewaehlt) / (bedarf * bedarf),
+            faktor: (stufe * stufe) / (bedarf * bedarf),
             info:
-              `${seite} · ${kontext.name} · Bedarf ${bedarf}px → w${gewaehlt}\n` +
-              `        sizes:   ${m.sizes}\n` +
+              `${seite} · ${kontext.name} · Bedarf ${bedarf}px → Leiter w${stufe}` +
+              // Richtung, nicht Ursache: Größer als die Stufe ist meist Chromes
+              // Wiederverwendung (oder ein zu großes sizes — das fängt die
+              // Einzelbild-Prüfung); kleiner heißt, das Layout ist breiter als
+              // der sizes-Wert, den Chrome zugrunde legt.
+              (gewaehlt > stufe
+                ? ` (gezeigt w${gewaehlt} — größer: Wiederverwendung oder sizes zu groß)`
+                : gewaehlt < stufe
+                  ? ` (gezeigt w${gewaehlt} — kleiner: Layoutbreite über dem sizes-Wert)`
+                  : "") +
+              `\n        sizes:   ${m.sizes ?? "(kein sizes)"}\n` +
               `        Klassen: ${m.klassen}`,
           });
         }
@@ -457,7 +728,7 @@ test.describe("Bild-Auslieferung: Budget über alle Seiten", () => {
     // ohne dass ein einziges Bild anders ausgeliefert würde (B2).
     console.log(
       `[bild-budget] Übergröße ${(uebergroesse * 100).toFixed(1)} % · ` +
-        `${gewertet} gewertet · ${unterliefert} unterliefert · ` +
+        `${gewertet} gewertet · ${ueberLeiterende} über Leiterende · ` +
         `Deckel ${(UEBERGROESSE_DECKEL * 100).toFixed(0)} %`,
     );
     // Auch bei Erfolg: Wer den Deckel heranschleichen sehen will, braucht die
@@ -481,7 +752,7 @@ test.describe("Bild-Auslieferung: Budget über alle Seiten", () => {
     expect(
       uebergroesse,
       `Übergröße ${(uebergroesse * 100).toFixed(1)} % über ${gewertet} gewertete ` +
-        `Bilder (${unterliefert} unterlieferte bleiben außen vor, Deckel ` +
+        `Bilder (${ueberLeiterende} über dem Leiterende bleiben außen vor, Deckel ` +
         `${(UEBERGROESSE_DECKEL * 100).toFixed(0)} %).\n` +
         `Bilanz je Seite und Geräteklasse:\n${aufschluesselung}\n\n` +
         `Größte Einzelabweichungen:\n${bericht}`,
