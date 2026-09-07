@@ -1623,6 +1623,47 @@ so lange neu starten, bis es grün ist. Ein Gate, das im Regelfall drei Anläufe
 braucht, erzieht genau dazu — und dann ist der dritte Lauf keine Bestätigung
 mehr, sondern eine Gewohnheit.
 
+### Nachtrag 07.09.2026 — die zweite Signatur: 74 Stunden 502
+
+Der Eintrag oben beschreibt die erste Signatur (35 Minuten `fetch failed`,
+dann fail-closed). Vom **03.09. 21:07 UTC bis 06.09. 23:45 UTC** gab es eine
+zweite, und sie ist die ergiebigere:
+
+    [independent-verify] /v1/models nicht verfügbar → Fallback-Modell gpt-4o-2024-08-06
+    [independent-verify] Stimme 1/2/3: /responses nicht nutzbar
+        (Responses-API 502: … <center>openresty</center> …) → Fallback /chat/completions
+      Verifier 1/3, 2/3, 3/3: Fehler (Chat-Fallback 502: … openresty …)
+    ⛔ Pflicht-Approver-Gate: „combo/SOTA-A" nicht im Panel aufgelöst → fail-closed
+
+Das Gateway antwortete — sein Upstream nicht. **Beide** API-Pfade fielen
+identisch um, alle drei Stimmen, nach zwei bis vier Sekunden statt nach 35
+Minuten. Auch `/v1/models` war weg, sodass das Skript auf ein Fallback-Modell
+auswich, das den Pflicht-Approver nicht stellen kann. Das Gate hat wieder
+richtig entschieden: fail-closed.
+
+Gemessen mit **siebzehn** gezielten Probe-Läufen auf demselben Commit
+(`651c45d`, PR #136), im Abstand von vier bis fünf Stunden, jeder einzeln
+angestoßen und im Log gelesen — keine Dauerschleife, denn ein 502 vom Upstream
+heilt nicht durchs Nachfragen:
+
+    Versuch  1–16   03.09. 21:07 – 06.09. 13:02   je 2–4 s   502 openresty   -> verweigert
+    Versuch 17      06.09. 23:45 – 23:46          38 s       echtes Urteil   -> bestätigt
+
+Danach lieferte das Panel für #137, #138 und #139 innerhalb von neun Minuten
+drei weitere echte Urteile (77 s, 112 s, 3,5 min), jedes mit drei
+eigenständigen Begründungen von `combo/SOTA-A/B/C`. Der Draht ist also nicht
+langsam, wenn er steht — er ist entweder da oder gar nicht.
+
+Was die zweite Signatur zur Untersuchungsliste oben hinzufügt: Der Ausfall lag
+diesmal nicht im Netz zwischen Läufer und Gateway (das antwortete sofort),
+sondern **hinter** dem Gateway. Erreichbarkeit von `VERIFIER_BASE_URL` allein
+ist als Prüfung zu wenig; die Frage ist, ob sein Upstream lebt — und das lässt
+sich nur dort beantworten, wo der Dienst betrieben wird, nicht aus diesem
+Repository.
+
+Vier Pull Requests (#136–#139) hingen dadurch drei Tage, obwohl auf jedem von
+der ersten Minute an jeder andere Check grün war.
+
 ## B28 — das Bild-Auslieferungsbudget verbuchte Chromes Wiederverwendung als Verschwendung
 
 **Behoben (Leitersprung je Vorkommen, 09/2026).** Der Ausschlag ist
