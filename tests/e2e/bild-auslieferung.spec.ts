@@ -85,8 +85,9 @@ interface Messung {
   naturalWidth: number;
   /** Für die Flächengewichtung im Budget: echtes Seitenverhältnis der Datei. */
   naturalHeight: number;
-  /** Das `sizes`-Attribut, roh (null = keins). Die deklarierte Breite unten
-   *  ist daraus abgeleitet; im Bericht steht es zur Diagnose. */
+  /** Das WIRKSAME `sizes` (null = keins) — bei <picture> das des zutreffenden
+   *  <source>, sonst das des <img>; siehe `rohdatenAlle`. Die deklarierte
+   *  Breite unten ist daraus abgeleitet; im Bericht steht es zur Diagnose. */
   sizes: string | null;
   /**
    * Die Breite, die `sizes` dem Browser FÜR DIESES Vorkommen erklärt — in
@@ -149,6 +150,56 @@ function dateiSchluessel(current: string): string {
  * LÄUFT IM BROWSER (page.evaluate). Keine Bezüge nach außen — Playwright
  * serialisiert nur die Funktion selbst.
  */
+/**
+ * Rohdaten je <img> — läuft IM Browser (`page.$$eval`), deshalb eine
+ * eigenständige Funktion ohne Bezüge nach außen. Ein Rumpf für die Messung
+ * UND die Fixtures unten; eine zweite Abschrift hätte wieder zwei Rechnungen.
+ *
+ * `sizes` ist das WIRKSAME sizes: Steht das Bild in einem <picture>, gilt das
+ * `sizes` des ersten <source>, dessen `media` zutrifft (ohne `media`: immer),
+ * sonst das des <img>. Ein <source> mit `type` wählt der Browser nach
+ * Formatunterstützung — das ist hier nicht modelliert und meldet sich LAUT,
+ * statt still das falsche Attribut zu lesen (Veto SOTA-A, PR #143).
+ */
+function rohdatenAlle(imgs: Element[]) {
+  const wirksamesSizes = (img: Element): string | null => {
+    const eltern = img.parentElement;
+    if (eltern && eltern.tagName === "PICTURE") {
+      for (const kind of Array.from(eltern.children)) {
+        if (kind === img) break;
+        if (kind.tagName !== "SOURCE") continue;
+        if (kind.hasAttribute("type")) {
+          throw new Error(
+            "<source type=…> wird von der sizes-Messung nicht modelliert — " +
+              "bitte die Auswertung erweitern, statt sie zu umgehen",
+          );
+        }
+        const media = kind.getAttribute("media");
+        if (!media || window.matchMedia(media).matches) {
+          return kind.getAttribute("sizes");
+        }
+      }
+    }
+    return img.getAttribute("sizes");
+  };
+  return imgs.map((el) => {
+    const img = el as HTMLImageElement;
+    return {
+      current: img.currentSrc,
+      srcset: img.getAttribute("srcset") ?? "",
+      breite: img.getBoundingClientRect().width,
+      naturalWidth: img.naturalWidth,
+      naturalHeight: img.naturalHeight,
+      sizes: wirksamesSizes(img),
+      // Diagnose: Ein Ausreißer ist fast immer ein `sizes`, das für DIESE
+      // Stelle nicht stimmt. Die Klassen sagen einem, WO man suchen muss.
+      klassen:
+        `${img.className || "—"}` +
+        (img.parentElement ? ` | Eltern: ${img.parentElement.className || "—"}` : ""),
+    };
+  });
+}
+
 function deklarierteBreiteImBrowser(sizes: string | null): number {
   const laengeInPx = (l: string): number => {
     const d = document.createElement("div");
@@ -170,8 +221,29 @@ function deklarierteBreiteImBrowser(sizes: string | null): number {
     if (schnitt < 0) return [null, eintrag];
     return [eintrag.slice(0, schnitt).trim(), eintrag.slice(schnitt + 1).trim()];
   };
+  // Kommas trennen Einträge — aber nur auf Klammertiefe 0. In `min()`,
+  // `max()` und `clamp()` stehen ebenfalls Kommas, und die Lightbox liefert
+  // genau so ein sizes aus (`min(calc(100vw - 2rem), calc(88vh * …))`). Ein
+  // nackter split(",") machte daraus eine ungültige Länge, Breite 0 — und die
+  // Prüfung wäre für dieses Bild für immer grün (Veto SOTA-A, PR #143).
+  const teileAnKommas = (text: string): string[] => {
+    const teile: string[] = [];
+    let tiefe = 0;
+    let start = 0;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (c === "(") tiefe++;
+      else if (c === ")") tiefe--;
+      else if (c === "," && tiefe === 0) {
+        teile.push(text.slice(start, i));
+        start = i + 1;
+      }
+    }
+    teile.push(text.slice(start));
+    return teile;
+  };
   if (!sizes) return window.innerWidth;
-  for (const eintrag of sizes.split(",").map((e) => e.trim()).filter(Boolean)) {
+  for (const eintrag of teileAnKommas(sizes).map((e) => e.trim()).filter(Boolean)) {
     const [bedingung, laenge] = trenne(eintrag);
     if (bedingung === null) return laengeInPx(laenge);
     if (window.matchMedia(bedingung).matches) return laengeInPx(laenge);
@@ -256,23 +328,8 @@ async function messeSeite(
       `vergleichbar.`,
   ).toBeGreaterThanOrEqual(3);
 
-  const roh = await page.evaluate(() =>
-    Array.from(document.querySelectorAll("img"))
-      .map((img) => ({
-        current: img.currentSrc,
-        srcset: img.getAttribute("srcset") ?? "",
-        breite: img.getBoundingClientRect().width,
-        naturalWidth: img.naturalWidth,
-        naturalHeight: img.naturalHeight,
-        // Diagnose: Ein Ausreißer ist fast immer ein `sizes`, das für DIESE
-        // Stelle nicht stimmt. Ohne die Angabe muss man sie im Quelltext
-        // suchen — und die Klassen sagen einem, WO man suchen muss.
-        sizes: img.getAttribute("sizes"),
-        klassen:
-          `${img.className || "—"}` +
-          (img.parentElement ? ` | Eltern: ${img.parentElement.className || "—"}` : ""),
-      }))
-      .filter((d) => d.current.includes("/uploads/") && d.breite > 0),
+  const roh = (await page.$$eval("img", rohdatenAlle)).filter(
+    (d) => d.current.includes("/uploads/") && d.breite > 0,
   );
   // Die deklarierte Breite je EINDEUTIGEM sizes-String — im Browser, mit
   // derselben Funktion, die unten gegen Fixtures geprüft wird.
@@ -305,6 +362,11 @@ test.describe("sizes-Auswertung: erklärt, was der Browser liest", () => {
     ["(min-width: 1000px) and (max-width: 2000px) 500px, 100px", 100, 500],
     ["100vw", 360, 1440],
     [null, 360, 1440],
+    // Kommas IN Funktionen (Veto SOTA-A): das Beispiel des Panels und das
+    // echte sizes der Lightbox (Seitenverhältnis 1,5; Viewport-Höhe 800).
+    ["max(480px, 1280px)", 1280, 1280],
+    ["min(calc(100vw - 2rem), calc(88vh * 1.5000))", 328, 1056],
+    ["(max-width: 640px) min(100vw, 300px), clamp(200px, 50vw, 900px)", 300, 720],
     ["2000px", 2000, 2000],
   ];
   for (const [breite, spalte] of [[360, 1], [1440, 2]] as const) {
@@ -320,6 +382,27 @@ test.describe("sizes-Auswertung: erklärt, was der Browser liest", () => {
       // Die Lüge muss über der Toleranz liegen, sonst wäre die Prüfung stumm.
       const luege = await page.evaluate(deklarierteBreiteImBrowser, "2000px");
       expect(luege).toBeGreaterThan(300 * BEDARFS_TOLERANZ);
+
+      // <picture>: Das wirksame sizes ist das des zutreffenden <source>, nicht
+      // das des <img> — sonst prüfte man den kleinen img-Slot, während der
+      // Browser den großen Source-Slot lädt (Veto SOTA-A).
+      await page.evaluate(() => {
+        const wrap = document.createElement("div");
+        wrap.id = "pw-fixture";
+        wrap.innerHTML =
+          `<picture><source media="(min-width: 800px)" sizes="1200px" srcset="/uploads/fixture/w1200.webp 1200w">` +
+          `<img src="/uploads/fixture/w100.webp" sizes="100px" srcset="/uploads/fixture/w100.webp 100w" alt=""></picture>` +
+          `<picture><source type="image/avif" sizes="900px" srcset="/uploads/fixture/x.avif 900w">` +
+          `<img src="/uploads/fixture/w100.webp" sizes="100px" alt=""></picture>`;
+        document.body.appendChild(wrap);
+      });
+      const [mitMedia] = await page.$$eval("#pw-fixture picture:first-child img", rohdatenAlle);
+      expect(mitMedia.sizes, `<picture> bei ${breite}px`).toBe(breite >= 800 ? "1200px" : "100px");
+      // Ein <source type> ist nicht modelliert — und sagt das, statt still
+      // das <img>-Attribut zu nehmen.
+      await expect(
+        page.$$eval("#pw-fixture picture:last-child img", rohdatenAlle),
+      ).rejects.toThrow(/source type/);
       await context.close();
     });
   }
