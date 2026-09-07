@@ -307,23 +307,38 @@ describe("Journal-Gate", () => {
   });
 
   it("hält das echte Journal gegen den ausgelieferten Stand für sauber", () => {
-    // Läuft nur, wenn der Bezugspunkt lesbar ist; ohne ihn ist das Ergebnis
-    // dieser Prüfung keine Aussage über das Journal.
-    let basisDa = true;
-    try {
-      execFileSync("git", ["show", "origin/main:drizzle/meta/_journal.json"], {
-        cwd: WURZEL,
-        stdio: "ignore",
-      });
-    } catch {
-      basisDa = false;
-    }
-    if (!basisDa) return;
-
+    // Hier stand `if (!basisDa) return;` — ein stiller Durchmarsch, wenn
+    // origin/main nicht lesbar war. Das Skript wählt seinen Bezugspunkt jetzt
+    // selbst und meldet einen Befund, wenn es keinen gibt; dieser Test lässt
+    // ihn durchschlagen statt ihn zu verschweigen.
     const ausgabe = execFileSync("node", ["scripts/regime/migrations-order.mjs"], {
       cwd: WURZEL,
       encoding: "utf8",
+      env: { ...process.env, MIGRATIONS_BASIS: "" },
     });
+    expect(ausgabe).toContain("Bezugspunkt");
     expect(ausgabe).toContain("Grün");
+  });
+
+  it("verweigert einen Bezugspunkt, der auf den geprüften Stand selbst zeigt (B30)", () => {
+    // So stand das Gate vom 21.08. bis 07.09. auf jedem Push nach main: das
+    // Journal gegen sich selbst — grün, ohne etwas zu prüfen.
+    let status = 0;
+    let stderr = "";
+    try {
+      execFileSync("node", ["scripts/regime/migrations-order.mjs"], {
+        cwd: WURZEL,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+        env: { ...process.env, MIGRATIONS_BASIS: "HEAD" },
+      });
+    } catch (e) {
+      const f = e as { status?: number; stderr?: string };
+      status = f.status ?? -1;
+      stderr = f.stderr ?? "";
+    }
+    expect(status).toBe(1);
+    expect(stderr).toContain("mit sich");
+    expect(stderr).toContain("kein Grün");
   });
 });

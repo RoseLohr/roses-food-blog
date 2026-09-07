@@ -52,7 +52,76 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const DRIZZLE = path.join(ROOT, "drizzle");
-const BASIS = "origin/main";
+/**
+ * DER BEZUGSPUNKT — der ausgelieferte Stand, gegen den das Journal geprüft wird.
+ *
+ * Bis 07.09.2026 stand hier fest `origin/main`. Das war auf jedem Push nach
+ * main WIRKUNGSLOS (B30): actions/checkout setzt `refs/remotes/origin/main`
+ * bereits auf den geprüften Commit, und der Nachhol-Fetch holte dasselbe
+ * noch einmal. Das Journal wurde also mit sich selbst verglichen — ein
+ * committeter Verstoß auf main ging grün durch, derselbe Verstoß gegen den
+ * Stand VOR dem Push wurde gefangen. Gemessen, in beide Richtungen.
+ *
+ * Deshalb wählt `waehleBasis` jetzt, und zwar fail-closed:
+ *   - `MIGRATIONS_BASIS` gesetzt → genau dieser Commit-ish.
+ *   - sonst `origin/main`, solange das ein ANDERER Commit als HEAD ist
+ *     (Pull Request, Push auf einen anderen Zweig, örtlicher Lauf).
+ *   - zeigt `origin/main` auf HEAD selbst (Push auf main) → `HEAD^1`, der
+ *     Stand vor diesem Push. Auf main ist jeder Commit ein Merge, dessen
+ *     erster Elter die vorige Spitze ist.
+ *   - zeigt der gewählte Bezugspunkt auf HEAD, ist er nicht vorhanden oder
+ *     nicht auflösbar → BEFUND, kein Durchwinken.
+ */
+let BASIS = "origin/main";
+
+/**
+ * Reine Wahl des Bezugspunkts — ohne git, damit der Selbsttest jede Abzweigung
+ * einzeln treffen kann.
+ * @param {{vorgabe: string|null, vorgabeSha: string|null, originMain: string|null, head: string|null, elter: string|null}} p
+ *   Commit-SHAs (null = nicht auflösbar); `elter` ist HEAD^1.
+ * @returns {{basis: string, grund: string}|{fehler: string}}
+ */
+export function waehleBasis({ vorgabe, vorgabeSha, originMain, head, elter }) {
+  if (!head) return { fehler: "HEAD ist nicht auflösbar — kein Git-Arbeitsbaum?" };
+  if (vorgabe) {
+    if (!vorgabeSha) {
+      return { fehler: `MIGRATIONS_BASIS=„${vorgabe}" ist nicht auflösbar. Abhilfe: den Commit holen (git fetch).` };
+    }
+    if (vorgabeSha === head) {
+      return {
+        fehler:
+          `MIGRATIONS_BASIS=„${vorgabe}" zeigt auf den geprüften Stand selbst. Ein Journal, das mit sich ` +
+          "selbst verglichen wird, besteht jede Prüfung — das ist kein Bezugspunkt.",
+      };
+    }
+    return { basis: vorgabe, grund: "MIGRATIONS_BASIS" };
+  }
+  if (!originMain) {
+    return { fehler: "origin/main ist nicht vorhanden — ohne ausgelieferten Stand ist nichts zu vergleichen. Abhilfe: git fetch origin main." };
+  }
+  if (originMain !== head) return { basis: "origin/main", grund: "origin/main ist ein anderer Commit als HEAD" };
+  if (elter) {
+    return { basis: "HEAD^1", grund: "origin/main zeigt auf HEAD (Push auf main) — geprüft wird gegen den Stand vor diesem Push" };
+  }
+  return {
+    fehler:
+      "origin/main zeigt auf HEAD selbst, und HEAD^1 ist nicht vorhanden (flacher Checkout?). Ein Journal, das mit sich " +
+      "selbst verglichen wird, besteht jede Prüfung. Abhilfe: git fetch --depth=2 origin <HEAD>.",
+  };
+}
+
+/** SHA eines Commit-ish; null, wenn nicht auflösbar. */
+function shaVon(ref) {
+  try {
+    return execFileSync("git", ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`], {
+      cwd: ROOT,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim() || null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * @param {{entries?: Array<{idx:number, tag:string, when:number}>}} journal
@@ -428,11 +497,53 @@ if (direktAufgerufen && process.argv.includes("--selftest")) {
     console.error(`   ✗ Selbsttest: sauberes Journal faelschlich beanstandet: ${JSON.stringify(sauber)}`);
     process.exit(1);
   }
-  console.log(`   ✓ Selbsttest: ${faelle.length} Fehlerbilder gefangen, sauberes Journal durchgelassen.`);
+  // Die Wahl des Bezugspunkts — jede Abzweigung einzeln, vor allem die, die
+  // vom 21.08. bis 07.09. offen stand: Bezugspunkt == HEAD ist ein Befund.
+  const H = "h".repeat(40), M = "m".repeat(40), E = "e".repeat(40);
+  const wahlFaelle = [
+    ["PR/Zweig: origin/main ist ein anderer Commit", { vorgabe: null, vorgabeSha: null, originMain: M, head: H, elter: E }, { basis: "origin/main" }],
+    ["Push auf main: origin/main == HEAD → HEAD^1", { vorgabe: null, vorgabeSha: null, originMain: H, head: H, elter: E }, { basis: "HEAD^1" }],
+    ["Push auf main, aber flach: kein HEAD^1", { vorgabe: null, vorgabeSha: null, originMain: H, head: H, elter: null }, { fehler: "mit sich" }],
+    ["kein origin/main", { vorgabe: null, vorgabeSha: null, originMain: null, head: H, elter: E }, { fehler: "origin/main ist nicht vorhanden" }],
+    ["Vorgabe gilt", { vorgabe: "abc", vorgabeSha: M, originMain: H, head: H, elter: E }, { basis: "abc" }],
+    ["Vorgabe zeigt auf HEAD", { vorgabe: "HEAD", vorgabeSha: H, originMain: M, head: H, elter: E }, { fehler: "mit sich" }],
+    ["Vorgabe nicht auflösbar", { vorgabe: "gibt-es-nicht", vorgabeSha: null, originMain: M, head: H, elter: E }, { fehler: "nicht auflösbar" }],
+    ["kein HEAD", { vorgabe: null, vorgabeSha: null, originMain: M, head: null, elter: null }, { fehler: "HEAD" }],
+  ];
+  for (const [name, eingabe, erwartet] of wahlFaelle) {
+    const wahl = waehleBasis(eingabe);
+    const ok =
+      "basis" in erwartet
+        ? "basis" in wahl && wahl.basis === erwartet.basis
+        : "fehler" in wahl && wahl.fehler.includes(erwartet.fehler);
+    if (!ok) {
+      console.error(`   ✗ Selbsttest Bezugspunkt: „${name}" — erwartet ${JSON.stringify(erwartet)}, bekommen ${JSON.stringify(wahl)}`);
+      process.exit(1);
+    }
+  }
+  console.log(
+    `   ✓ Selbsttest: ${faelle.length} Fehlerbilder gefangen, sauberes Journal durchgelassen, ` +
+      `${wahlFaelle.length} Abzweigungen der Bezugspunkt-Wahl getroffen.`,
+  );
   process.exit(0);
 }
 
 if (direktAufgerufen) {
+const vorgabe = process.env.MIGRATIONS_BASIS || null;
+const wahl = waehleBasis({
+  vorgabe,
+  vorgabeSha: vorgabe ? shaVon(vorgabe) : null,
+  originMain: shaVon("origin/main"),
+  head: shaVon("HEAD"),
+  elter: shaVon("HEAD^1"),
+});
+if ("fehler" in wahl) {
+  console.error(`   ✗ ${wahl.fehler}`);
+  console.error("\n⛔ Migrations-Journal nicht prüfbar — ohne Bezugspunkt gibt es kein Grün.");
+  process.exit(1);
+}
+BASIS = wahl.basis;
+console.log(`[migrations-order] Bezugspunkt ${BASIS} — ${wahl.grund}.`);
 const journal = JSON.parse(fs.readFileSync(path.join(DRIZZLE, "meta", "_journal.json"), "utf8"));
 const dateien = fs
   .readdirSync(DRIZZLE)

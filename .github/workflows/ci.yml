@@ -29,13 +29,27 @@ jobs:
       - run: npm ci --no-audit --no-fund
       # Das Migrations-Gate vergleicht das Journal gegen den AUSGELIEFERTEN
       # Stand — ohne diesen Bezugspunkt prüft es nur den Anstieg im Journal und
-      # ließe genau den chronologisch aufgelösten Merge-Konflikt durch. Der
-      # Checkout holt nur den PR-Stand, also wird `origin/main` hier nachgeholt.
-      # Ist er unlesbar, ist das ein Befund, kein Durchwinken — deshalb kein
-      # `|| true`. `--depth=1` genügt: gelesen wird eine einzige Datei an der
-      # Spitze von main.
-      - name: Bezugspunkt für das Migrations-Gate holen (origin/main)
-        run: git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
+      # ließe genau den chronologisch aufgelösten Merge-Konflikt durch.
+      #
+      # WELCHER Stand das ist, hängt vom Ereignis ab (B30):
+      #   - Pull Request oder Push auf einen anderen Zweig: die Spitze von main.
+      #     Der Checkout holt sie nicht, also wird sie hier nachgeholt.
+      #   - Push auf main: der Checkout setzt `origin/main` BEREITS auf den
+      #     geprüften Commit. Bis 07.09. holte dieser Schritt dann main noch
+      #     einmal in denselben Ref — das Journal wurde mit sich selbst
+      #     verglichen (grün, ohne zu prüfen), und sobald zwei Merges kurz
+      #     hintereinander landeten, war es ein Non-Fast-Forward (rot, ohne
+      #     Grund). Der ausgelieferte Stand VOR diesem Push ist HEAD^1; dafür
+      #     braucht der flache Checkout eine Tiefe von zwei.
+      # Das Skript wählt den Bezugspunkt selbst und verweigert einen, der auf
+      # HEAD zeigt. Ist nichts lesbar, ist das ein Befund — deshalb kein `|| true`.
+      - name: Bezugspunkt für das Migrations-Gate bereitstellen
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF_NAME" = main ]; then
+            git fetch --no-tags --depth=2 origin "$GITHUB_SHA"
+          else
+            git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
+          fi
       - name: Typecheck (tsc --noEmit)
         run: npm run typecheck
       - name: Lint (Standards + Barrierefreiheit, blockierend)

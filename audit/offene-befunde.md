@@ -1760,3 +1760,68 @@ Der nächste Ausschlag nennt damit seinen Ort, statt nur seine Höhe.
 Den Deckel anheben. Er steht bei 34 %, weil vier Punkte Abstand die
 Rasterungsunterschiede zu CI abdecken (B9); ihn dem Messrauschen nachzuziehen
 hieße, die Kontrolle dem Fehler anzupassen, statt den Fehler zu suchen.
+
+---
+
+## B30 — Das Migrations-Gate verglich das Journal auf `main` mit sich selbst — GEMESSEN 09/2026, behoben
+
+**Beobachtet** am 07.09. in den `main`-Läufen 34068054565, 34068061976 und
+34068979346 (Merges #136, #137, #139, jeweils Sekunden nacheinander): der Job
+`gate` rot im Schritt „Bezugspunkt für das Migrations-Gate holen":
+
+```
+ ! [rejected] main -> origin/main  (non-fast-forward)
+```
+
+**Das Rote war der kleinere Befund.** `actions/checkout` legt bei einem Push
+auf `main` eine flache Kopie an und setzt `refs/remotes/origin/main` auf den
+geprüften Commit. Der Nachhol-Fetch (`ci.yml`, seit 7ad470f am 21.08.) holte
+`main` dann noch einmal in denselben Ref. Rückt `main` in den Sekunden
+dazwischen weiter, ist das ein Non-Fast-Forward und der Lauf ist rot — ohne
+dass am Journal etwas wäre. Rückt es nicht weiter, holt der Fetch dasselbe
+noch einmal, und `scripts/regime/migrations-order.mjs` vergleicht das Journal
+**mit sich selbst**. Jede Prüfung besteht dann.
+
+**Gemessen, in beide Richtungen**, in einem Arbeitsbaum auf `aac4b39` mit
+einem committeten Verstoß (`when` des ausgelieferten Eintrags
+`0015_bildunterschrift` um eins erhöht — das Fehlerbild, das (B) fangen soll):
+
+| Bezugspunkt | Ergebnis |
+|---|---|
+| `origin/main == HEAD` (so stand CI auf jedem Push nach `main`) | **Grün.** „alles bereits Ausgelieferte unverändert" |
+| `HEAD^1` — der Stand vor diesem Push | ✗ „0015_bildunterschrift ist mit when=… ausgeliefert, hier steht when=…" |
+| `origin/main` = echte Spitze, Kopf daneben (der PR-Pfad) | ✗ derselbe Befund |
+
+Der PR-Pfad hat also immer geprüft; der Push-Pfad auf `main` vom 21.08. bis
+07.09. nie. Gefährlich ist das, weil `main` der Stand ist, den `deploy.sh`
+ausliefert — eine Änderung, die im PR-Lauf noch gegen die alte Spitze grün
+war und erst durch den Merge mit einem anderen PR ein Fehlerbild ergibt,
+kam ungeprüft durch.
+
+**Erster Reflex, verworfen:** ein Force-Refspec (`+main:refs/remotes/origin/main`).
+Das macht das Rot weg und das Grün falsch: `origin/main` zeigt dann auf eine
+*spätere* Spitze als der geprüfte Commit, das Gate vergleicht gegen die
+Zukunft und kann falsch rot werden — ein Workaround, keine Wurzel.
+
+**Behoben an der Wurzel, im Skript, nicht nur im Workflow:**
+
+* `migrations-order.mjs` wählt den Bezugspunkt selbst (`waehleBasis`, reine
+  Funktion, jede Abzweigung im Selbsttest): `MIGRATIONS_BASIS`, wenn gesetzt;
+  sonst `origin/main`, solange das ein anderer Commit als `HEAD` ist; zeigt
+  `origin/main` auf `HEAD` (Push auf `main`), dann `HEAD^1`. Ein Bezugspunkt,
+  der auf `HEAD` zeigt, nicht vorhanden oder nicht auflösbar ist, ist ein
+  **Befund** — kein Grün ohne Vergleich.
+* `ci.yml` stellt nur noch die nötigen Commits bereit: bei einem Push auf
+  `main` `--depth=2` des geprüften Commits (damit `HEAD^1` da ist), sonst wie
+  bisher die Spitze von `main`. Es wird nichts mehr in einen Ref gepresst,
+  den der Checkout schon gesetzt hat.
+* `tests/migrationen-reihenfolge.test.ts`: der Test „hält das echte Journal
+  … für sauber" hatte `if (!basisDa) return;` — einen stillen Durchmarsch,
+  wenn `origin/main` fehlte. Weg. Neu: mit `MIGRATIONS_BASIS=HEAD` muss das
+  Skript mit Status 1 verweigern; an der alten Fassung war derselbe Aufruf
+  grün (Gegenprobe).
+
+**Was daraus folgt:** Ein Bezugspunkt, den ein Werkzeug „schon gesetzt hat",
+ist keiner. Wer eine Kontrolle gegen einen Vergleichsstand baut, prüft zuerst,
+dass der Vergleichsstand ein anderer ist als das Geprüfte — sonst ist die
+Kontrolle ein Spiegel.
