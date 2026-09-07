@@ -1811,15 +1811,33 @@ Zukunft und kann falsch rot werden — ein Workaround, keine Wurzel.
   `origin/main` auf `HEAD` (Push auf `main`), dann `HEAD^1`. Ein Bezugspunkt,
   der auf `HEAD` zeigt, nicht vorhanden oder nicht auflösbar ist, ist ein
   **Befund** — kein Grün ohne Vergleich.
-* `ci.yml` stellt nur noch die nötigen Commits bereit: bei einem Push auf
-  `main` `--depth=2` des geprüften Commits (damit `HEAD^1` da ist), sonst wie
-  bisher die Spitze von `main`. Es wird nichts mehr in einen Ref gepresst,
-  den der Checkout schon gesetzt hat.
+* `ci.yml` nennt dem Skript bei einem Push auf `main` den Stand davor —
+  `github.event.before`, geholt mit `--depth=1` — und holt sonst wie bisher
+  die Spitze von `main`. Es wird nichts mehr in einen Ref gepresst, den der
+  Checkout schon gesetzt hat.
+
+**Runde zwei — das Panel hat den ersten Anlauf widerlegt, zu Recht.** Der
+erste Fix nahm bei einem Push auf `main` `HEAD^1` als Stand davor: „auf main
+ist jeder Commit ein Merge, dessen erster Elter die vorige Spitze ist". Das
+gilt für „Merge commit" — nicht für „Rebase and merge" oder einen Push
+mehrerer Commits. Nachgemessen mit einer Kette A→B→C (B fasst das Journal
+an, C ist beliebig), `origin/main == C`:
+
+| Bezugspunkt | Ergebnis |
+|---|---|
+| `HEAD^1` = B (erster Anlauf) | **Grün** — C gegen B, B gegen A nie verglichen |
+| `github.event.before` = A | ✗ „0015_bildunterschrift ist mit when=… ausgeliefert, hier steht when=…" |
+
+Deshalb rät das Skript jetzt gar nicht mehr: Zeigt `origin/main` auf `HEAD`
+und ist kein Bezugspunkt genannt, ist das ein Befund mit der Ansage, was zu
+nennen ist. Eine Heuristik im Gate ist eine zweite Fehlerquelle — der Push
+weiß, was vor ihm war; nur er.
 * `tests/migrationen-reihenfolge.test.ts`: der Test „hält das echte Journal
   … für sauber" hatte `if (!basisDa) return;` — einen stillen Durchmarsch,
-  wenn `origin/main` fehlte. Weg. Neu: mit `MIGRATIONS_BASIS=HEAD` muss das
-  Skript mit Status 1 verweigern; an der alten Fassung war derselbe Aufruf
-  grün (Gegenprobe).
+  wenn `origin/main` fehlte. Weg; er nennt den Bezugspunkt jetzt selbst
+  (in CI den vom Workflow gesetzten). Neu: mit `MIGRATIONS_BASIS=HEAD` muss
+  das Skript mit Status 1 verweigern; an der alten Fassung war derselbe
+  Aufruf grün (Gegenprobe).
 
 **Was daraus folgt:** Ein Bezugspunkt, den ein Werkzeug „schon gesetzt hat",
 ist keiner. Wer eine Kontrolle gegen einen Vergleichsstand baut, prüft zuerst,

@@ -308,15 +308,27 @@ describe("Journal-Gate", () => {
 
   it("hält das echte Journal gegen den ausgelieferten Stand für sauber", () => {
     // Hier stand `if (!basisDa) return;` — ein stiller Durchmarsch, wenn
-    // origin/main nicht lesbar war. Das Skript wählt seinen Bezugspunkt jetzt
-    // selbst und meldet einen Befund, wenn es keinen gibt; dieser Test lässt
-    // ihn durchschlagen statt ihn zu verschweigen.
+    // origin/main nicht lesbar war. Jetzt nennt dieser Test den Bezugspunkt
+    // ausdrücklich: in CI den, den der Workflow aus github.event.before
+    // gesetzt hat (Push auf main); sonst origin/main, wenn das ein anderer
+    // Commit als HEAD ist; auf einer örtlichen main-Spitze HEAD^1 — das ist
+    // hier, anders als im Gate, nur die Frage „ist der letzte Commit sauber",
+    // keine Zusage über einen Push. Gibt es keinen, schlägt das Skript durch.
+    const sha = (ref: string) =>
+      execFileSync("git", ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`], {
+        cwd: WURZEL,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+      }).trim();
+    const basis =
+      process.env.MIGRATIONS_BASIS ||
+      (sha("origin/main") !== sha("HEAD") ? "origin/main" : "HEAD^1");
     const ausgabe = execFileSync("node", ["scripts/regime/migrations-order.mjs"], {
       cwd: WURZEL,
       encoding: "utf8",
-      env: { ...process.env, MIGRATIONS_BASIS: "" },
+      env: { ...process.env, MIGRATIONS_BASIS: basis },
     });
-    expect(ausgabe).toContain("Bezugspunkt");
+    expect(ausgabe).toContain(`Bezugspunkt ${basis}`);
     expect(ausgabe).toContain("Grün");
   });
 

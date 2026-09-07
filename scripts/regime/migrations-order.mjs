@@ -66,9 +66,14 @@ const DRIZZLE = path.join(ROOT, "drizzle");
  *   - `MIGRATIONS_BASIS` gesetzt → genau dieser Commit-ish.
  *   - sonst `origin/main`, solange das ein ANDERER Commit als HEAD ist
  *     (Pull Request, Push auf einen anderen Zweig, örtlicher Lauf).
- *   - zeigt `origin/main` auf HEAD selbst (Push auf main) → `HEAD^1`, der
- *     Stand vor diesem Push. Auf main ist jeder Commit ein Merge, dessen
- *     erster Elter die vorige Spitze ist.
+ *   - zeigt `origin/main` auf HEAD selbst (Push auf main), dann RÄT das
+ *     Skript NICHT: Der Aufrufer muss den Stand vor dem Push nennen. Der
+ *     erste Anlauf nahm hier `HEAD^1` — und das Fremd-Vendor-Panel hat es
+ *     widerlegt, nachgemessen: Bei einem Push A→B→C (etwa „Rebase and
+ *     merge") ist HEAD^1 = B; ändert B das Journal, vergleicht das Gate C mit
+ *     B und ist grün, obwohl gegenüber dem ausgelieferten A ein Verstoß
+ *     vorliegt. Den richtigen Stand kennt nur der Push selbst
+ *     (`github.event.before`), und den reicht ci.yml als MIGRATIONS_BASIS.
  *   - zeigt der gewählte Bezugspunkt auf HEAD, ist er nicht vorhanden oder
  *     nicht auflösbar → BEFUND, kein Durchwinken.
  */
@@ -77,11 +82,11 @@ let BASIS = "origin/main";
 /**
  * Reine Wahl des Bezugspunkts — ohne git, damit der Selbsttest jede Abzweigung
  * einzeln treffen kann.
- * @param {{vorgabe: string|null, vorgabeSha: string|null, originMain: string|null, head: string|null, elter: string|null}} p
- *   Commit-SHAs (null = nicht auflösbar); `elter` ist HEAD^1.
+ * @param {{vorgabe: string|null, vorgabeSha: string|null, originMain: string|null, head: string|null}} p
+ *   Commit-SHAs (null = nicht auflösbar).
  * @returns {{basis: string, grund: string}|{fehler: string}}
  */
-export function waehleBasis({ vorgabe, vorgabeSha, originMain, head, elter }) {
+export function waehleBasis({ vorgabe, vorgabeSha, originMain, head }) {
   if (!head) return { fehler: "HEAD ist nicht auflösbar — kein Git-Arbeitsbaum?" };
   if (vorgabe) {
     if (!vorgabeSha) {
@@ -100,13 +105,11 @@ export function waehleBasis({ vorgabe, vorgabeSha, originMain, head, elter }) {
     return { fehler: "origin/main ist nicht vorhanden — ohne ausgelieferten Stand ist nichts zu vergleichen. Abhilfe: git fetch origin main." };
   }
   if (originMain !== head) return { basis: "origin/main", grund: "origin/main ist ein anderer Commit als HEAD" };
-  if (elter) {
-    return { basis: "HEAD^1", grund: "origin/main zeigt auf HEAD (Push auf main) — geprüft wird gegen den Stand vor diesem Push" };
-  }
   return {
     fehler:
-      "origin/main zeigt auf HEAD selbst, und HEAD^1 ist nicht vorhanden (flacher Checkout?). Ein Journal, das mit sich " +
-      "selbst verglichen wird, besteht jede Prüfung. Abhilfe: git fetch --depth=2 origin <HEAD>.",
+      "origin/main zeigt auf HEAD selbst — ein Journal, das mit sich selbst verglichen wird, besteht jede Prüfung. " +
+      "Der Stand VOR diesem Push muss genannt werden: MIGRATIONS_BASIS=<Commit> (in CI aus github.event.before; " +
+      "HEAD^1 ist KEIN Ersatz, bei einem Push mehrerer Commits liegt der Verstoß davor).",
   };
 }
 
@@ -499,16 +502,17 @@ if (direktAufgerufen && process.argv.includes("--selftest")) {
   }
   // Die Wahl des Bezugspunkts — jede Abzweigung einzeln, vor allem die, die
   // vom 21.08. bis 07.09. offen stand: Bezugspunkt == HEAD ist ein Befund.
-  const H = "h".repeat(40), M = "m".repeat(40), E = "e".repeat(40);
+  const H = "h".repeat(40), M = "m".repeat(40);
   const wahlFaelle = [
-    ["PR/Zweig: origin/main ist ein anderer Commit", { vorgabe: null, vorgabeSha: null, originMain: M, head: H, elter: E }, { basis: "origin/main" }],
-    ["Push auf main: origin/main == HEAD → HEAD^1", { vorgabe: null, vorgabeSha: null, originMain: H, head: H, elter: E }, { basis: "HEAD^1" }],
-    ["Push auf main, aber flach: kein HEAD^1", { vorgabe: null, vorgabeSha: null, originMain: H, head: H, elter: null }, { fehler: "mit sich" }],
-    ["kein origin/main", { vorgabe: null, vorgabeSha: null, originMain: null, head: H, elter: E }, { fehler: "origin/main ist nicht vorhanden" }],
-    ["Vorgabe gilt", { vorgabe: "abc", vorgabeSha: M, originMain: H, head: H, elter: E }, { basis: "abc" }],
-    ["Vorgabe zeigt auf HEAD", { vorgabe: "HEAD", vorgabeSha: H, originMain: M, head: H, elter: E }, { fehler: "mit sich" }],
-    ["Vorgabe nicht auflösbar", { vorgabe: "gibt-es-nicht", vorgabeSha: null, originMain: M, head: H, elter: E }, { fehler: "nicht auflösbar" }],
-    ["kein HEAD", { vorgabe: null, vorgabeSha: null, originMain: M, head: null, elter: null }, { fehler: "HEAD" }],
+    ["PR/Zweig: origin/main ist ein anderer Commit", { vorgabe: null, vorgabeSha: null, originMain: M, head: H }, { basis: "origin/main" }],
+    // Der Fall, der vom 21.08. bis 07.09. grün durchlief — und der, den das
+    // Panel in Runde zwei gegen HEAD^1 gewonnen hat: hier wird NICHT geraten.
+    ["Push auf main ohne Vorgabe: origin/main == HEAD → Befund, kein HEAD^1", { vorgabe: null, vorgabeSha: null, originMain: H, head: H }, { fehler: "HEAD^1 ist KEIN Ersatz" }],
+    ["kein origin/main", { vorgabe: null, vorgabeSha: null, originMain: null, head: H }, { fehler: "origin/main ist nicht vorhanden" }],
+    ["Vorgabe gilt (github.event.before)", { vorgabe: "abc", vorgabeSha: M, originMain: H, head: H }, { basis: "abc" }],
+    ["Vorgabe zeigt auf HEAD", { vorgabe: "HEAD", vorgabeSha: H, originMain: M, head: H }, { fehler: "mit sich" }],
+    ["Vorgabe nicht auflösbar", { vorgabe: "gibt-es-nicht", vorgabeSha: null, originMain: M, head: H }, { fehler: "nicht auflösbar" }],
+    ["kein HEAD", { vorgabe: null, vorgabeSha: null, originMain: M, head: null }, { fehler: "HEAD" }],
   ];
   for (const [name, eingabe, erwartet] of wahlFaelle) {
     const wahl = waehleBasis(eingabe);
@@ -535,7 +539,6 @@ const wahl = waehleBasis({
   vorgabeSha: vorgabe ? shaVon(vorgabe) : null,
   originMain: shaVon("origin/main"),
   head: shaVon("HEAD"),
-  elter: shaVon("HEAD^1"),
 });
 if ("fehler" in wahl) {
   console.error(`   ✗ ${wahl.fehler}`);
