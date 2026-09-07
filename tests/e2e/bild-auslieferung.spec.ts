@@ -87,6 +87,15 @@ interface Messung {
   naturalHeight: number;
   /** Nur für die Diagnose eines Ausreißers — nicht für die Bewertung. */
   sizes: string;
+  /**
+   * Die Breite, die `sizes` dem Browser FÜR DIESES Vorkommen erklärt — in
+   * CSS-Pixeln, aufgelöst wie der Browser es tut (erste zutreffende
+   * Medienbedingung, Längen inkl. vw/calc über ein Messelement). Ohne
+   * `sizes` gilt 100vw. Gegen `breite` gehalten ist das die direkte Prüfung
+   * auf eine sizes-Lüge — je Vorkommen, unabhängig davon, ob die Datei auf
+   * der Seite noch woanders steht (Veto des Fremd-Vendor-Panels auf PR #143).
+   */
+  deklariert: number;
   /** dito: die Klassen des Bildes und seines Elternelements. */
   klassen: string;
 }
@@ -118,6 +127,55 @@ function leiterstufe(leiter: number[], bedarf: number): number | undefined {
 /** Was eine Datei `/uploads/<key>/w<Breite>.webp` eindeutig macht. */
 function dateiSchluessel(current: string): string {
   return /\/uploads\/([^/]+)\//.exec(current)?.[1] ?? "";
+}
+
+/**
+ * Liest ein `sizes`-Attribut so, wie der Browser es liest, und gibt die
+ * Breite in CSS-Pixeln zurück, die es DIESEM Viewport erklärt: Einträge an
+ * Kommas getrennt, je Eintrag „Medienbedingung Länge", die erste zutreffende
+ * Bedingung gewinnt, ein Eintrag ohne Bedingung ist der Rückfall, ohne
+ * `sizes` gilt 100vw. Die Länge (px, vw, calc, …) löst ein Messelement auf —
+ * kein eigener Parser für CSS-Längen.
+ *
+ * Bedingung und Länge trennt die letzte Lücke auf Klammertiefe 0. Ein Regex
+ * wie /^(\(.*\))\s+(.*)$/ scheitert an
+ * `(max-width: 767px) calc((100vw - 5rem) * 1)`: Das gierige `.*` frisst bis
+ * in die verschachtelte Klammer, die Bedingung wird ungültig, `matchMedia`
+ * sagt nein, und der Rückfall greift — die erste Messung hat genau das als
+ * „sizes-Lüge" gemeldet. Deshalb steht diese Funktion für sich und hat unten
+ * einen eigenen Test mit Fixtures.
+ *
+ * LÄUFT IM BROWSER (page.evaluate). Keine Bezüge nach außen — Playwright
+ * serialisiert nur die Funktion selbst.
+ */
+function deklarierteBreiteImBrowser(sizes: string | null): number {
+  const laengeInPx = (l: string): number => {
+    const d = document.createElement("div");
+    d.style.cssText = `position:absolute;visibility:hidden;height:0;width:${l}`;
+    document.body.appendChild(d);
+    const w = d.getBoundingClientRect().width;
+    d.remove();
+    return w;
+  };
+  const trenne = (eintrag: string): [string | null, string] => {
+    let tiefe = 0;
+    let schnitt = -1;
+    for (let i = 0; i < eintrag.length; i++) {
+      const c = eintrag[i];
+      if (c === "(") tiefe++;
+      else if (c === ")") tiefe--;
+      else if (tiefe === 0 && /\s/.test(c)) schnitt = i;
+    }
+    if (schnitt < 0) return [null, eintrag];
+    return [eintrag.slice(0, schnitt).trim(), eintrag.slice(schnitt + 1).trim()];
+  };
+  if (!sizes) return window.innerWidth;
+  for (const eintrag of sizes.split(",").map((e) => e.trim()).filter(Boolean)) {
+    const [bedingung, laenge] = trenne(eintrag);
+    if (bedingung === null) return laengeInPx(laenge);
+    if (window.matchMedia(bedingung).matches) return laengeInPx(laenge);
+  }
+  return window.innerWidth;
 }
 
 async function messeSeite(
@@ -197,10 +255,11 @@ async function messeSeite(
       `vergleichbar.`,
   ).toBeGreaterThanOrEqual(3);
 
-  const daten = await page.evaluate(() =>
+  const roh = await page.evaluate(() =>
     Array.from(document.querySelectorAll("img"))
       .map((img) => ({
         current: img.currentSrc,
+        sizesRoh: img.getAttribute("sizes"),
         srcset: img.getAttribute("srcset") ?? "",
         breite: img.getBoundingClientRect().width,
         naturalWidth: img.naturalWidth,
@@ -215,9 +274,54 @@ async function messeSeite(
       }))
       .filter((d) => d.current.includes("/uploads/") && d.breite > 0),
   );
+  // Die deklarierte Breite je EINDEUTIGEM sizes-String — im Browser, mit
+  // derselben Funktion, die unten gegen Fixtures geprüft wird.
+  const deklariertJeSizes = new Map<string | null, number>();
+  for (const sizesRoh of new Set(roh.map((d) => d.sizesRoh))) {
+    deklariertJeSizes.set(
+      sizesRoh,
+      await page.evaluate(deklarierteBreiteImBrowser, sizesRoh),
+    );
+  }
+  const daten: Messung[] = roh.map(({ sizesRoh, ...d }) => ({
+    ...d,
+    deklariert: deklariertJeSizes.get(sizesRoh)!,
+  }));
   await context.close();
   return daten;
 }
+
+test.describe("sizes-Auswertung: erklärt, was der Browser liest", () => {
+  // Fixtures: [sizes, Breite bei 360 px, Breite bei 1440 px]. Der erste ist
+  // das echte sizes des Reiseberichts — mit calc() IN der Medienbedingung,
+  // woran der frühere Regex scheiterte. Der letzte ist eine Lüge: 2000 px
+  // erklärt für ein Bild, das nie so breit ist — die Prüfung unten MUSS sie
+  // als „zu groß" lesen, sonst prüft sie nichts (fail-closed).
+  const FIXTURES: Array<[string | null, number, number]> = [
+    ["(max-width: 767px) calc((100vw - 5rem - 0px) * 1), (max-width: 928px) calc((100vw - 7rem - 0px) * 1), 816px", 280, 816],
+    ["(max-width: 640px) 22vw, 208px", 79.2, 208],
+    ["(min-width: 1000px) and (max-width: 2000px) 500px, 100px", 100, 500],
+    ["100vw", 360, 1440],
+    [null, 360, 1440],
+    ["2000px", 2000, 2000],
+  ];
+  for (const [breite, spalte] of [[360, 1], [1440, 2]] as const) {
+    test(`bei ${breite} px Viewport`, async ({ browser }) => {
+      const context = await browser.newContext({ viewport: { width: breite, height: 800 } });
+      const page = await context.newPage();
+      await page.goto("/");
+      for (const fixture of FIXTURES) {
+        const erwartet = fixture[spalte];
+        const gelesen = await page.evaluate(deklarierteBreiteImBrowser, fixture[0]);
+        expect(gelesen, `sizes=${JSON.stringify(fixture[0])} bei ${breite}px`).toBeCloseTo(erwartet, 0);
+      }
+      // Die Lüge muss über der Toleranz liegen, sonst wäre die Prüfung stumm.
+      const luege = await page.evaluate(deklarierteBreiteImBrowser, "2000px");
+      expect(luege).toBeGreaterThan(300 * BEDARFS_TOLERANZ);
+      await context.close();
+    });
+  }
+});
 
 test.describe("Bild-Auslieferung: gewählte Variante passt zur Rendergröße", () => {
   for (const kontext of KONTEXTE) {
@@ -262,12 +366,23 @@ test.describe("Bild-Auslieferung: gewählte Variante passt zur Rendergröße", (
           expect(e.naturalWidth, `LÄDT NICHT (404/defekt?): ${info}`)
             .toBeGreaterThan(0);
           // Obergrenze: keine Variante größer als der größte legitime Bedarf
-          // dieser Datei (+ Toleranz) — fängt eine sizes-Lüge an jedem
-          // Vorkommen, dessen Datei auf der Seite kein größeres legitimes
-          // Vorkommen hat. An einem Nebenvorkommen einer GETEILTEN Datei kann
-          // sie sich hinter der Zulage verstecken: Restlücke, benannt in B28
-          // („Was damit akzeptiert ist").
+          // dieser Datei (+ Toleranz). Die Zulage je Datei ist nötig, weil
+          // Chrome wiederverwendet — sie ließe aber eine sizes-Lüge an einem
+          // Nebenvorkommen einer GETEILTEN Datei durch. Deshalb prüft
+          // „SIZES ZU GROSS" unten die Erklärung selbst, je Vorkommen.
           expect(e.gewaehlt, `ZU GROSS: ${info}`).toBeLessThanOrEqual(erlaubt);
+          // sizes-Lüge, DIREKT und je Vorkommen: Was `sizes` dem Browser
+          // erklärt, darf die gerenderte Breite nicht um mehr als die
+          // Toleranz übersteigen. Das braucht keine Zulage je Datei — es
+          // vergleicht nicht die gewählte Variante, sondern die Erklärung mit
+          // der Wirklichkeit. Damit fängt es auch die Lüge an einem
+          // Nebenvorkommen einer geteilten Datei, die sich hinter dem
+          // Maximum-Deckel oben verstecken könnte (Veto SOTA-A, PR #143).
+          expect(
+            e.deklariert,
+            `SIZES ZU GROSS: ${info} · sizes erklärt ${Math.round(e.deklariert)}px ` +
+              `CSS für ${Math.round(e.breite)}px gerendert (sizes="${e.sizes}")`,
+          ).toBeLessThanOrEqual(e.breite * BEDARFS_TOLERANZ);
           // Untergrenze: nicht sichtbar weich — außer es gibt nichts Größeres.
           if (e.gewaehlt < e.bedarf * SCHAERFE_MINIMUM) {
             expect(e.gewaehlt, `ZU KLEIN (weich): ${info}`).toBe(
@@ -412,10 +527,12 @@ test.describe("Bild-Auslieferung: gewählte Variante passt zur Rendergröße", (
  * Rechnung hängt damit allein an Leiter und Layout; welches Vorkommen ein
  * Laderennen gewinnt, kann sie nicht mehr bewegen.
  *
- * Preis, bewusst akzeptiert: Eine sizes-Lüge fällt in der SUMME nicht mehr
- * auf — die Summe sieht `sizes` gar nicht. Sie bleibt Sache der
- * Einzelbild-Prüfung oben, mit deren Restlücke an Nebenvorkommen geteilter
- * Dateien (B28, „Was damit akzeptiert ist"). Verworfen: je DATEI statt je
+ * Preis: Eine sizes-Lüge fällt in der SUMME nicht mehr auf — die Summe sieht
+ * `sizes` gar nicht. Sie ist Sache der Einzelbild-Prüfung oben. Deren Zulage
+ * je Datei hätte eine Lüge an einem Nebenvorkommen einer geteilten Datei
+ * durchgelassen — das Fremd-Vendor-Panel hat genau daran refutiert (PR #143),
+ * zu Recht. Seitdem prüft „SIZES ZU GROSS" die Erklärung selbst, je
+ * Vorkommen, mit `deklarierteBreiteImBrowser`. Verworfen: je DATEI statt je
  * Vorkommen rechnen — näher an den Bytes, aber es ändert die Grundgesamtheit
  * und macht jede bisherige Zahl unvergleichbar.
  *

@@ -1806,20 +1806,29 @@ Budget-Test starb am Fail-closed-Wächter (`0 gemessen`). Das ist kein Signal
 vollen Werkzeugen auf demselben Arbeitsbaum wie eine laufende Messung). Der
 Lauf wurde allein auf der Maschine wiederholt — das ist Lauf 4.
 
-### Was damit akzeptiert ist
+### Was damit akzeptiert ist — und was das Panel NICHT akzeptiert hat
 
 * **Eine `sizes`-Lüge fällt in der Summe nicht mehr auf** — die Summe sieht
-  `sizes` gar nicht mehr. Sie bleibt Sache der Einzelbild-Prüfung, die sie an
-  jedem Vorkommen fängt, dessen Datei auf der Seite kein größeres legitimes
-  Vorkommen hat.
-* **Restlücke der Einzelbild-Prüfung, unverändert durch den Umbau:** An einem
-  *Nebenvorkommen* einer geteilten Datei kann sich eine `sizes`-Lüge hinter
-  der Zulage je Datei verstecken (der Deckel ist das Maximum aller Vorkommen).
-  Trennbar wäre das nur, wenn je Vorkommen zusätzlich die *deklarierte*
-  Breite gemessen würde (`sizes` so auswerten, wie der Browser es tut). Das
-  ist ein eigener Umbau und nicht Teil von B28. Vom Panel unbestätigt (die
-  Widerleger fielen aus), am Code nachvollzogen; die Kommentare an der
-  Obergrenze versprechen seither nicht mehr „jede" Lüge.
+  `sizes` gar nicht mehr. Sie ist Sache der Einzelbild-Prüfung.
+* **Die Restlücke der Einzelbild-Prüfung ist geschlossen — nach einem Veto.**
+  An einem *Nebenvorkommen* einer geteilten Datei konnte sich eine
+  `sizes`-Lüge hinter der Zulage je Datei verstecken (der Deckel ist das
+  Maximum aller Vorkommen). Der erste Stand dieses Umbaus trug das als
+  „Restlücke, akzeptiert" ein. Das Fremd-Vendor-Panel hat genau daran
+  refutiert (`combo/SOTA-A`, PR #143): Vorher zählte das Budget eine solche
+  Lüge wenigstens verrauscht mit, mit dem Leitersprung sähe sie keine der
+  beiden Prüfungen — eine Kontrolle darf keine Abdeckung verlieren, auch
+  keine verrauschte. Das Veto war richtig, meine Gewichtung falsch.
+
+  Geschlossen ist die Lücke so, wie es beide Blickwinkel (Panel und der
+  eigene Prüf-Workflow) genannt haben: Die Messung liest je Vorkommen die
+  **deklarierte** Breite — `sizes` ausgewertet wie im Browser (erste
+  zutreffende Medienbedingung; Längen inkl. `vw`/`calc` löst ein Messelement
+  auf; ohne `sizes` gilt 100vw) — und die Einzelbild-Prüfung hält sie gegen
+  die gerenderte Breite: `SIZES ZU GROSS`, wenn die Erklärung die
+  Wirklichkeit um mehr als die Toleranz übersteigt. Das vergleicht nicht die
+  gewählte Variante, sondern die Erklärung selbst; die Zulage je Datei kann
+  es nicht verdecken. Erste Messung auf dem heutigen Stand: keine `sizes`-Lüge in 141 Vorkommen. Die Kontrolle fing zuerst ihren eigenen Parser — ein gieriger Regex an `calc()` in der Medienbedingung meldete das korrekte `sizes` des Reiseberichts als Lüge; das war ihr Rot vor Grün. Die Auswertung steht seither als eigene Funktion mit Fixture-Test (360 und 1440 px, darunter der `calc()`-Fall und eine deklarierte Lüge, die erkannt werden muss).
 
 ### Der Deckel
 
