@@ -85,8 +85,9 @@ interface Messung {
   naturalWidth: number;
   /** Für die Flächengewichtung im Budget: echtes Seitenverhältnis der Datei. */
   naturalHeight: number;
-  /** Nur für die Diagnose eines Ausreißers — nicht für die Bewertung. */
-  sizes: string;
+  /** Das `sizes`-Attribut, roh (null = keins). Die deklarierte Breite unten
+   *  ist daraus abgeleitet; im Bericht steht es zur Diagnose. */
+  sizes: string | null;
   /**
    * Die Breite, die `sizes` dem Browser FÜR DIESES Vorkommen erklärt — in
    * CSS-Pixeln, aufgelöst wie der Browser es tut (erste zutreffende
@@ -259,7 +260,6 @@ async function messeSeite(
     Array.from(document.querySelectorAll("img"))
       .map((img) => ({
         current: img.currentSrc,
-        sizesRoh: img.getAttribute("sizes"),
         srcset: img.getAttribute("srcset") ?? "",
         breite: img.getBoundingClientRect().width,
         naturalWidth: img.naturalWidth,
@@ -267,7 +267,7 @@ async function messeSeite(
         // Diagnose: Ein Ausreißer ist fast immer ein `sizes`, das für DIESE
         // Stelle nicht stimmt. Ohne die Angabe muss man sie im Quelltext
         // suchen — und die Klassen sagen einem, WO man suchen muss.
-        sizes: img.getAttribute("sizes") ?? "(kein sizes)",
+        sizes: img.getAttribute("sizes"),
         klassen:
           `${img.className || "—"}` +
           (img.parentElement ? ` | Eltern: ${img.parentElement.className || "—"}` : ""),
@@ -277,15 +277,17 @@ async function messeSeite(
   // Die deklarierte Breite je EINDEUTIGEM sizes-String — im Browser, mit
   // derselben Funktion, die unten gegen Fixtures geprüft wird.
   const deklariertJeSizes = new Map<string | null, number>();
-  for (const sizesRoh of new Set(roh.map((d) => d.sizesRoh))) {
+  for (const sizes of new Set(roh.map((d) => d.sizes))) {
     deklariertJeSizes.set(
-      sizesRoh,
-      await page.evaluate(deklarierteBreiteImBrowser, sizesRoh),
+      sizes,
+      await page.evaluate(deklarierteBreiteImBrowser, sizes),
     );
   }
-  const daten: Messung[] = roh.map(({ sizesRoh, ...d }) => ({
+  // Nichts wird abgestreift: jedes Feld der Messung bleibt, `deklariert`
+  // kommt dazu.
+  const daten: Messung[] = roh.map((d) => ({
     ...d,
-    deklariert: deklariertJeSizes.get(sizesRoh)!,
+    deklariert: deklariertJeSizes.get(d.sizes)!,
   }));
   await context.close();
   return daten;
@@ -381,7 +383,7 @@ test.describe("Bild-Auslieferung: gewählte Variante passt zur Rendergröße", (
           expect(
             e.deklariert,
             `SIZES ZU GROSS: ${info} · sizes erklärt ${Math.round(e.deklariert)}px ` +
-              `CSS für ${Math.round(e.breite)}px gerendert (sizes="${e.sizes}")`,
+              `CSS für ${Math.round(e.breite)}px gerendert (sizes=${e.sizes === null ? "keins" : `"${e.sizes}"`})`,
           ).toBeLessThanOrEqual(e.breite * BEDARFS_TOLERANZ);
           // Untergrenze: nicht sichtbar weich — außer es gibt nichts Größeres.
           if (e.gewaehlt < e.bedarf * SCHAERFE_MINIMUM) {
@@ -623,7 +625,7 @@ test.describe("Bild-Auslieferung: Budget über alle Seiten", () => {
                 : gewaehlt < stufe
                   ? ` (gezeigt w${gewaehlt} — kleiner: Layoutbreite über dem sizes-Wert)`
                   : "") +
-              `\n        sizes:   ${m.sizes}\n` +
+              `\n        sizes:   ${m.sizes ?? "(kein sizes)"}\n` +
               `        Klassen: ${m.klassen}`,
           });
         }
