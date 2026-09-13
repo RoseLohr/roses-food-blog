@@ -342,11 +342,19 @@ async function readGeo(
 /**
  * Verarbeitet einen Bild-Buffer: Validierung, Neuverarbeitung, Varianten.
  * Wirft Error mit deutscher Meldung bei ungültigen Daten.
+ *
+ * `createdAt` ist der Hochladezeitpunkt, der im Admin als „Hochgeladen am"
+ * steht. Ein Upload nimmt die Uhr — die Saat NICHT: Sie übergibt ihren festen
+ * Zeitpunkt, sonst hinge die Medienbibliothek jeder Referenzaufnahme am Tag
+ * des Laufs (Begründung in scripts/seed.ts). Der Wert ist ein Parameter und
+ * kein zweiter Schreibpfad, damit Upload und Saat dieselben Varianten, dieselbe
+ * Prüfung und dasselbe Manifest bekommen.
  */
 export async function storeImage(
   buffer: Buffer,
   originalName: string,
   altText = "",
+  createdAt: Date = new Date(),
 ): Promise<StoredImage> {
   if (buffer.length > MAX_UPLOAD_BYTES) {
     throw new Error("Datei zu groß (maximal 15 MB).");
@@ -412,7 +420,7 @@ export async function storeImage(
           sizeBytes: buffer.length,
           lat,
           lng,
-          createdAt: new Date(),
+          createdAt,
         })
         .returning()
         .get();
