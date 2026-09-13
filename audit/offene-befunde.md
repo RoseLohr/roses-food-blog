@@ -2016,3 +2016,35 @@ selben Tag beweisen genau das nicht.
 darum keine rote Aufnahme; die Datenbank-Kontrolle sieht nur, was die Saat
 selbst anlegt. Und: Ab dem 10. eines Monats bricht „Hochgeladen am“ in der
 Kachel immer um — das ist ein Layout-Befund der Kachel, kein Test-Befund.
+
+## B32 — Die Nightly-Kadenz fuhr das Journal-Gate ohne Bezugspunkt — GEMESSEN 13.09.2026, behoben
+
+**Beobachtet** in den Nightly-Läufen 34577007531 (11.09.) und 34681854687
+(12.09.), gemeldet als Issue #145: Schritt „Tests (Bootstrap-Verify)“ rot mit
+
+```
+FAIL tests/migrationen-reihenfolge.test.ts > Journal-Gate > hält das echte Journal gegen den ausgelieferten Stand für sauber
+   ✗ MIGRATIONS_BASIS=„HEAD^1" ist nicht auflösbar. Abhilfe: den Commit holen (git fetch).
+```
+
+**Ursache:** B30 (#144) hat dem Test den stillen Durchmarsch genommen
+(`if (!basisDa) return;`) und den Bezugspunkt in `ci.yml` als Shell-Schritt
+bereitgestellt — NUR dort. `nightly.yml` fährt dasselbe `npm test` aus einem
+flachen Checkout: `origin/main` zeigt auf HEAD, `HEAD^1` ist nicht geholt. Vor
+#144 war der Test dort still grün, ohne je zu prüfen; seit #144 ehrlich rot.
+Ein Schritt, der nur in einem von zwei Workflows steht, ist eine Kopie, die
+fehlt.
+
+**Behoben:** Die Ableitung des Ausgangspunkts steht im Skript
+(`scripts/regime/gate-bezugspunkt.sh --aus-ereignis`), beide Workflows rufen
+dieselbe Zeile. Für `schedule`/`workflow_dispatch` auf `main` ist der
+Ausgangspunkt der ELTERNTEIL der Spitze — die Spitze selbst hat ihr Gate
+bestanden und wäre als Bezugspunkt ein Spiegel (B30). Die Kadenz wiederholt
+so die Aussage des Push-Gates. Gemessen: in einem echten flachen Klon
+(`--depth=1`, `HEAD^1` nicht auflösbar) liefert `schedule/main` den Elternteil
+3d3d112 von dda93f4; ohne `+` im Refspec scheiterte der zweite Aufruf im selben
+Baum mit Non-Fast-Forward, deshalb steht es drin. Selbsttest: 14 Fälle, davon
+acht für den Ausgangspunkt je Ereignis; eine Mutation „schedule → Spitze statt
+Elternteil“ wird gefangen. `nightly.yml` bekommt `checks: read` (lesend).
+`ci.yml`: die Zuweisung steht auf einer eigenen Zeile — `echo "…=$(…)"` hätte
+einen Fehlschlag des Skripts verschluckt.
