@@ -2048,3 +2048,49 @@ acht für den Ausgangspunkt je Ereignis; eine Mutation „schedule → Spitze st
 Elternteil“ wird gefangen. `nightly.yml` bekommt `checks: read` (lesend).
 `ci.yml`: die Zuweisung steht auf einer eigenen Zeile — `echo "…=$(…)"` hätte
 einen Fehlschlag des Skripts verschluckt.
+
+## B33 — Fällt die Modell-Liste des Gateways aus, ersetzt der Verifier das ganze Panel — GEMESSEN 11.–13.09.2026, behoben
+
+**Beobachtet:** Seit dem 11.09. 09:16 (vier Dependabot-PRs, Läufe 34583317501
+ff.) und am 13.09. zweimal auf #150 (Lauf 34745464291, Erstlauf und der eine
+erlaubte Neustart) endet jedes Fremd-Vendor-Panel nach Sekunden, bevor eine
+Stimme den Diff gesehen hat:
+
+```
+[independent-verify] /v1/models nicht verfügbar → Fallback-Modell gpt-4o-2024-08-06 für alle Stimmen.
+  Verifier 1/3 … 3/3 (gpt-4o-2024-08-06): Responses-API 400: The 'gpt-4o-2024-08-06' model is not supported …
+⛔ Pflicht-Approver-Gate: Pflicht-Approver „combo/SOTA-A" nicht im Panel aufgelöst → fail-closed
+```
+
+Am 09.09. (#144, Lauf 34147459644) hatte dasselbe Gateway `combo/SOTA-A/B/C`
+über `GET /v1/models` als exakte IDs geliefert und das Panel stimmte mit drei
+echten Begründungen ab. Dazwischen ist die LISTE ausgefallen — warum, sagt das
+Log nicht: `fetchModelIds` verschluckte Status und Fehlerklasse.
+
+**Zwei Fehler im Verifier, ein Ausfall im Gateway:**
+1. Bei fehlender Liste ersetzte `resolvePanelModels` das ausdrücklich
+   konfigurierte Panel (`VERIFIER_PANEL_MODELS`) durch EIN Fallback-Modell für
+   alle Stimmen. Der Pflicht-Approver ist eine der konfigurierten IDs; mit dem
+   Fallback-Panel kann er nie zustimmen — ein Dauerblock, der wie ein
+   inhaltliches Veto aussieht. Dass das Gateway das Fallback-Modell obendrein
+   ablehnt, ist zweitrangig: Auch ein angenommenes Fallback hätte fail-closed
+   geendet, nur mit drei sinnlosen Stimmen.
+2. Der Grund des Listenausfalls fehlte im Log.
+3. Das Gateway hinter `VERIFIER_BASE_URL` beantwortet `/v1/models` seit dem
+   11.09. nicht — das ist NICHT im Repository zu lösen und bleibt offen, bis
+   es dort geprüft ist.
+
+**Behoben (1 und 2):** `panelOhneListe(konfiguriert, ausdruecklich, n)` —
+ein ausdrücklich konfiguriertes Panel bleibt bei fehlender Liste stehen und
+wird ungeprüft versucht; lehnt das Gateway die IDs ab, ist das ein 400 je
+Stimme, das die tatsächliche ID nennt, und das Panel bleibt fail-closed. Ohne
+ausdrückliches Panel greift das Fallback wie bisher. `fetchModelIds` gibt den
+Grund mit (`HTTP <status>` oder die Fehlerklasse — keine Meldungstexte, die den
+Endpunkt nennen könnten). Selbsttest: sechs Fälle, darunter die Gegenprobe
+„mit dem Fallback-Panel kann der Pflicht-Approver nie zustimmen — genau der
+Dauerblock"; die Mutation „immer Fallback" wird gefangen.
+
+**Gemessen werden kann der Fix erst gegen das echte Gateway:** Das Panel
+checkt `main` aus und liest den Kandidaten nur als `refs/candidate`, der
+Verifier läuft also immer in der Fassung von `main`. Bis dieser Eintrag dort
+liegt, blockt jedes Panel — auch das dieses PR.
