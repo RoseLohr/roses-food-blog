@@ -294,6 +294,32 @@ neu (B6, 08/2026):
   Aktivität, `subscribe_pr_activity`) und dranbleiben, bis er gemergt/geschlossen
   ist — Fehlschläge autonom an der Wurzel fixen (kein Workaround) und Review-
   Kommentare beantworten, sobald sie eintreffen. Nicht abwarten, bis jemand fragt.
+  **Dranbleiben heißt nicht Abfragen** — wie, steht in der Regel darunter.
+- **Schleifen sparsam (angeordnet 2026-09-16, verbindlich):** Jede
+  wiederkehrende Tätigkeit — PR-Beobachtung, Check-ins, Warten auf CI oder
+  einen Hintergrundjob — kostet bei JEDEM Durchlauf Token, auch wenn sich
+  nichts geändert hat. Am 13./14.09. liefen zwölf Check-ins im Stundentakt
+  gegen zwei PRs, deren Zustand nur ein Mensch ändern konnte; jeder brachte
+  dieselbe Antwort. Deshalb:
+  1. **Ereignisse statt Abfragen.** Die PR-Subscription liefert Merge, Reviews
+     und rote Checks von selbst. Was als Ereignis kommt, wird nicht abgefragt.
+  2. **Check-in ist Rückfall, nicht Takt:** höchstens alle 6 Stunden. Hängt
+     der Zustand nur noch an einem Menschen (Merge, Freigabe, ein Gateway
+     außerhalb des Repos), höchstens alle 24 Stunden. Kein Stundentakt.
+  3. **Ein Check-in = ein Aufruf:** die PR-Liste mit minimalen Feldern. Logs,
+     Check-Runs oder Workflow-Läufe nur, wenn sich Kopf, Basis oder ein
+     Ergebnis geändert hat. Ein bekanntes Fehlerbild (gleiche Signatur) wird
+     nicht erneut gelesen — es ist dokumentiert, das reicht.
+  4. **Nichts geändert → nichts schreiben.** Still neu armieren, dem Nutzer
+     eine Zeile, nicht mehr. Kein Zwischenbericht, der nur wiederholt.
+  5. **Warten ist kein Polling.** Kein `sleep`-Loop, kein wiederholtes Lesen
+     einer Ausgabedatei: Hintergrundjobs melden ihr Ende selbst, und bis dahin
+     wird anderes getan oder der Turn beendet.
+  6. **Höchstens ein Neustart je PR** (B29), das örtliche Gate einmal je Push
+     und nicht je Sonde — als EIN Hintergrundlauf, dessen Ende gemeldet wird,
+     nicht als Folge einzeln abgefragter Schritte.
+  7. **Wer nur noch auf einen Menschen wartet, sagt das EINMAL** — im PR und
+     dem Nutzer — behält die Subscription und hört mit dem Takt auf.
 
 ## Betrieb (Kurzüberblick)
 - Next.js 16 standalone in podman; Deploy: `./deploy.sh` auf dem Server
