@@ -1964,3 +1964,133 @@ bricht ab, und eine Abfrage, die nicht nach `gate` fragt, wird verweigert.
 ist keiner. Wer eine Kontrolle gegen einen Vergleichsstand baut, prüft zuerst,
 dass der Vergleichsstand ein anderer ist als das Geprüfte — sonst ist die
 Kontrolle ein Spiegel.
+
+## B31 — Der feste Saat-Zeitpunkt galt für alles außer den Bildern — GEMESSEN 13.09.2026, behoben
+
+**Beobachtet** am 13.09. im örtlichen Referenzlauf (`npx playwright test
+--project=referenz`) auf reinem `origin/main` (dda93f4): dieselben drei
+Aufnahmen rot wie am 03.09. (B-Eintrag in 62aec34), ohne dass jemand etwas
+geändert hätte — `admin-medien` @ handy-390 und desktop-1280,
+`admin-medien-liste` @ handy-390. Desktop: erwartet 1280×2805, bekommen
+1280×2922 (+117 px, Anteil 0,13). Ein Blick auf Soll und Ist: In jeder Kachel
+bricht „Hochgeladen am <Maske>“ in eine zweite Zeile um; alles darunter rückt
+mit.
+
+**Ursache, nachgemessen an einer frisch gesäten Datenbank:** `scripts/seed.ts`
+schreibt seit 62aec34 `NOW` (15.01.2026) in `createdAt` — aber die 38 Bilder
+der Medienbibliothek schreibt nicht die Saat, sondern `storeImage` in
+`src/lib/media.ts`, und das nahm `new Date()`. Alle anderen Tabellen trugen
+NOW, `media_image.created_at` das Datum des Laufs:
+
+| Lauf | Datum in der Kachel | Zeichen | Zeile | Aufnahme |
+|---|---|---|---|---|
+| Neuaufnahme 03.09. (62aec34) | „3.9.2026“ | 8 | passt | Basis |
+| ab 10.09. | „10.9.2026“ | 9 | bricht um | rot |
+| 13.09. (dieser Befund) | „13.9.2026“ | 9 | bricht um | rot, +117 px |
+| jeder Merge-Commit von main seit 07fa8ad, heute gefahren | „13.9.2026“ | 9 | bricht um | rot |
+
+Die Halbierung über die Merge-Commits (07fa8ad rot) hat es bestätigt: Die
+Aufnahmen hingen nie am Code, sondern am Kalender. Die Kontrolle aus 62aec34
+(`tests/saat-zeitpunkt.test.ts`) las nur den QUELLTEXT der Saat — sie konnte
+den Umweg über `storeImage` nicht sehen und war grün, während die Basis vom
+Aufnahmetag abhing. „Zwei volle Referenzläufe hintereinander, je 120 grün“ am
+selben Tag beweisen genau das nicht.
+
+**Behoben:**
+* `storeImage(buffer, name, altText, createdAt = new Date())` — der Zeitpunkt
+  ist ein Parameter; die Saat übergibt `NOW`. Ein Upload nimmt weiter die Uhr.
+* `tests/saat-zeitpunkt.test.ts` misst jetzt an der DATENBANK: sät in ein
+  frisches Verzeichnis und prüft jede dabei entstandene Zeile jeder Tabelle mit
+  `…_at`-Spalten gegen NOW (Mindestzahl 30 Zeilen, sonst wäre eine leere Saat
+  grün). Zuerst rot gefahren: 38 Abweichungen, alle `media_image.created_at`.
+  Die Quelltext-Kontrollen bleiben daneben.
+* Genau drei Aufnahmen neu, vorher benannt: die drei roten. Mit NOW steht dort
+  „15.1.2026“ (neun Zeichen, bricht um — und tut das jetzt an jedem Tag gleich).
+  Die übrigen drei `admin-medien`-Aufnahmen (ipad-834, liste desktop/ipad)
+  blieben byte-gleich: dort entscheidet die Datumsbreite nichts. Danach zwei
+  volle Referenzläufe: 120 / 120 grün.
+
+**Bleibt (nicht dieser Eintrag):** `migrate.mjs` legt die geschützten Seiten
+`ueber-mich` und `ernaehrungsformen` mit `Date.now()` an — VOR der Saat, deren
+`onConflictDoNothing` sie stehen lässt. Kein Admin-Bild zeigt dieses Datum,
+darum keine rote Aufnahme; die Datenbank-Kontrolle sieht nur, was die Saat
+selbst anlegt. Und: Ab dem 10. eines Monats bricht „Hochgeladen am“ in der
+Kachel immer um — das ist ein Layout-Befund der Kachel, kein Test-Befund.
+
+## B32 — Die Nightly-Kadenz fuhr das Journal-Gate ohne Bezugspunkt — GEMESSEN 13.09.2026, behoben
+
+**Beobachtet** in den Nightly-Läufen 34577007531 (11.09.) und 34681854687
+(12.09.), gemeldet als Issue #145: Schritt „Tests (Bootstrap-Verify)“ rot mit
+
+```
+FAIL tests/migrationen-reihenfolge.test.ts > Journal-Gate > hält das echte Journal gegen den ausgelieferten Stand für sauber
+   ✗ MIGRATIONS_BASIS=„HEAD^1" ist nicht auflösbar. Abhilfe: den Commit holen (git fetch).
+```
+
+**Ursache:** B30 (#144) hat dem Test den stillen Durchmarsch genommen
+(`if (!basisDa) return;`) und den Bezugspunkt in `ci.yml` als Shell-Schritt
+bereitgestellt — NUR dort. `nightly.yml` fährt dasselbe `npm test` aus einem
+flachen Checkout: `origin/main` zeigt auf HEAD, `HEAD^1` ist nicht geholt. Vor
+#144 war der Test dort still grün, ohne je zu prüfen; seit #144 ehrlich rot.
+Ein Schritt, der nur in einem von zwei Workflows steht, ist eine Kopie, die
+fehlt.
+
+**Behoben:** Die Ableitung des Ausgangspunkts steht im Skript
+(`scripts/regime/gate-bezugspunkt.sh --aus-ereignis`), beide Workflows rufen
+dieselbe Zeile. Für `schedule`/`workflow_dispatch` auf `main` ist der
+Ausgangspunkt der ELTERNTEIL der Spitze — die Spitze selbst hat ihr Gate
+bestanden und wäre als Bezugspunkt ein Spiegel (B30). Die Kadenz wiederholt
+so die Aussage des Push-Gates. Gemessen: in einem echten flachen Klon
+(`--depth=1`, `HEAD^1` nicht auflösbar) liefert `schedule/main` den Elternteil
+3d3d112 von dda93f4; ohne `+` im Refspec scheiterte der zweite Aufruf im selben
+Baum mit Non-Fast-Forward, deshalb steht es drin. Selbsttest: 14 Fälle, davon
+acht für den Ausgangspunkt je Ereignis; eine Mutation „schedule → Spitze statt
+Elternteil“ wird gefangen. `nightly.yml` bekommt `checks: read` (lesend).
+`ci.yml`: die Zuweisung steht auf einer eigenen Zeile — `echo "…=$(…)"` hätte
+einen Fehlschlag des Skripts verschluckt.
+
+## B33 — Fällt die Modell-Liste des Gateways aus, ersetzt der Verifier das ganze Panel — GEMESSEN 11.–13.09.2026, behoben
+
+**Beobachtet:** Seit dem 11.09. 09:16 (vier Dependabot-PRs, Läufe 34583317501
+ff.) und am 13.09. zweimal auf #150 (Lauf 34745464291, Erstlauf und der eine
+erlaubte Neustart) endet jedes Fremd-Vendor-Panel nach Sekunden, bevor eine
+Stimme den Diff gesehen hat:
+
+```
+[independent-verify] /v1/models nicht verfügbar → Fallback-Modell gpt-4o-2024-08-06 für alle Stimmen.
+  Verifier 1/3 … 3/3 (gpt-4o-2024-08-06): Responses-API 400: The 'gpt-4o-2024-08-06' model is not supported …
+⛔ Pflicht-Approver-Gate: Pflicht-Approver „combo/SOTA-A" nicht im Panel aufgelöst → fail-closed
+```
+
+Am 09.09. (#144, Lauf 34147459644) hatte dasselbe Gateway `combo/SOTA-A/B/C`
+über `GET /v1/models` als exakte IDs geliefert und das Panel stimmte mit drei
+echten Begründungen ab. Dazwischen ist die LISTE ausgefallen — warum, sagt das
+Log nicht: `fetchModelIds` verschluckte Status und Fehlerklasse.
+
+**Zwei Fehler im Verifier, ein Ausfall im Gateway:**
+1. Bei fehlender Liste ersetzte `resolvePanelModels` das ausdrücklich
+   konfigurierte Panel (`VERIFIER_PANEL_MODELS`) durch EIN Fallback-Modell für
+   alle Stimmen. Der Pflicht-Approver ist eine der konfigurierten IDs; mit dem
+   Fallback-Panel kann er nie zustimmen — ein Dauerblock, der wie ein
+   inhaltliches Veto aussieht. Dass das Gateway das Fallback-Modell obendrein
+   ablehnt, ist zweitrangig: Auch ein angenommenes Fallback hätte fail-closed
+   geendet, nur mit drei sinnlosen Stimmen.
+2. Der Grund des Listenausfalls fehlte im Log.
+3. Das Gateway hinter `VERIFIER_BASE_URL` beantwortet `/v1/models` seit dem
+   11.09. nicht — das ist NICHT im Repository zu lösen und bleibt offen, bis
+   es dort geprüft ist.
+
+**Behoben (1 und 2):** `panelOhneListe(konfiguriert, ausdruecklich, n)` —
+ein ausdrücklich konfiguriertes Panel bleibt bei fehlender Liste stehen und
+wird ungeprüft versucht; lehnt das Gateway die IDs ab, ist das ein 400 je
+Stimme, das die tatsächliche ID nennt, und das Panel bleibt fail-closed. Ohne
+ausdrückliches Panel greift das Fallback wie bisher. `fetchModelIds` gibt den
+Grund mit (`HTTP <status>` oder die Fehlerklasse — keine Meldungstexte, die den
+Endpunkt nennen könnten). Selbsttest: sechs Fälle, darunter die Gegenprobe
+„mit dem Fallback-Panel kann der Pflicht-Approver nie zustimmen — genau der
+Dauerblock"; die Mutation „immer Fallback" wird gefangen.
+
+**Gemessen werden kann der Fix erst gegen das echte Gateway:** Das Panel
+checkt `main` aus und liest den Kandidaten nur als `refs/candidate`, der
+Verifier läuft also immer in der Fassung von `main`. Bis dieser Eintrag dort
+liegt, blockt jedes Panel — auch das dieses PR.

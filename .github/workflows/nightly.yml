@@ -10,6 +10,7 @@ on:
 permissions:
   contents: read
   issues: write # Meldepfad: Fehlschlag wird als Issue sichtbar
+  checks: read # Bezugspunkt des Migrations-Gates (B30/B32), nur lesend
 
 jobs:
   cadence:
@@ -27,6 +28,19 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - name: Kalibrierung fortlaufend (A-36, --strict — fängt jeden aktiven Seed)
         run: node scripts/regime/calibration/inject.mjs --strict
+      # `npm test` enthält das Migrations-Gate gegen den AUSGELIEFERTEN Stand
+      # (tests/migrationen-reihenfolge.test.ts). Aus einem flachen Checkout
+      # gibt es diesen Stand nicht — `origin/main` zeigt auf HEAD, `HEAD^1`
+      # ist nicht geholt — und seit #144 den stillen Durchmarsch des Tests
+      # entfernt hat, war die Kadenz jede Nacht rot (B32). Derselbe Schritt wie
+      # im Gate von ci.yml; die Kadenz nimmt den Elternteil der Spitze, denn
+      # die Spitze selbst wäre ein Spiegel (B30).
+      - name: Bezugspunkt für das Migrations-Gate bereitstellen
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          basis="$(bash scripts/regime/gate-bezugspunkt.sh --aus-ereignis)"
+          echo "MIGRATIONS_BASIS=$basis" >> "$GITHUB_ENV"
       - name: Tests (Bootstrap-Verify)
         run: npm test
       - name: Build (Bootstrap-Verify)
