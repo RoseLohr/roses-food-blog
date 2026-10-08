@@ -50,6 +50,22 @@ const SCHRITTE = [
 /** Nach einem Klick auf den unteren Pfeil des ERSTEN Schritts. */
 const GETAUSCHT = [SCHRITTE[1], SCHRITTE[0], SCHRITTE[2]];
 
+/**
+ * Markdown, das den Umweg über HTML NICHT übersteht.
+ *
+ * Genau daran ist die erste Fassung dieser Pfeile zerbrochen: Der Schritt-Text
+ * lebt in einem contentEditable, das sich bei geändertem `initialMarkdown` neu
+ * befüllt. Der MutationObserver des Editors hielt dieses Befüllen für eine
+ * Eingabe, las den Text aus dem DOM nach Markdown zurück und gab ihn nach
+ * außen — md → HTML → md. Dabei fiel das Bild ganz heraus und die
+ * verschachtelte Liste wurde flach, und das versteckte Feld trug den Verlust
+ * ins Speichern.
+ *
+ * Ein harmloser Satz hätte das nie gezeigt: Er ist rundlauf-invariant. Deshalb
+ * stehen hier zwei Formen, die es nachweislich nicht sind.
+ */
+const REICH = "Teig kneten.\n\n![Teig](/uploads/teig.jpg)\n\n- Teig\n  - Mehl\n  - Wasser";
+
 let recipeId: number | null = null;
 
 test.beforeEach(async ({ context }) => {
@@ -138,6 +154,102 @@ test("das öffentliche Rezept zeigt dieselbe Reihenfolge", async ({ page }) => {
   const stellen = GETAUSCHT.map((s) => seite.indexOf(s.replace(/\s+/g, " ")));
   expect(stellen.every((i) => i >= 0), "Ein Schritt fehlt in der Vorschau").toBe(true);
   expect(stellen).toEqual([...stellen].sort((a, b) => a - b));
+});
+
+test("der obere Pfeil tut dasselbe in die andere Richtung", async ({ page }) => {
+  // Bis hierher war nur ↓ geklickt. Ein Pfeil, der nie gedrückt wird, ist
+  // keine zugesagte Bedienung — und die Richtung ist das Einzige, worin sich
+  // die beiden unterscheiden.
+  await page.goto(`/admin/rezepte/${recipeId}`);
+  expect(await texte(page)).toEqual(GETAUSCHT);
+  await page
+    .getByRole("button", { name: new RegExp(`^${d.stepUp}`) })
+    .nth(1)
+    .click();
+  expect(await texte(page)).toEqual(SCHRITTE);
+});
+
+test("verschieben lässt reiches Markdown unangetastet", async ({ page }) => {
+  // DER BLOCKER. Der Text wird direkt in die Datenbank geschrieben, damit er
+  // unverfälscht im Editor ankommt — über die Oberfläche getippt wäre er schon
+  // vor der Messung durch den Editor gelaufen.
+  const db = new Database(path.resolve(process.cwd(), ".pw-data/app.db"));
+  const [erste] = db
+    .prepare(
+      "SELECT st.id AS id FROM recipe_step st JOIN recipe_section se ON se.id = st.section_id WHERE se.recipe_id = ? ORDER BY st.sort_order LIMIT 1",
+    )
+    .all(recipeId) as Array<{ id: number }>;
+  db.prepare("UPDATE recipe_step SET text = ? WHERE id = ?").run(REICH, erste.id);
+  db.close();
+
+  await page.goto(`/admin/rezepte/${recipeId}`);
+  const feld = page.locator('input[name="abschnitte"]');
+  const vorher = JSON.parse(await feld.inputValue());
+  expect(vorher[0].steps[0].text, "Der Editor lädt den Text unverfälscht").toBe(REICH);
+
+  await page
+    .getByRole("button", { name: new RegExp(`^${d.stepDown}`) })
+    .first()
+    .click();
+
+  const nachher = JSON.parse(await feld.inputValue());
+  // Der Text ist jetzt an Stelle 2 — und MUSS Zeichen für Zeichen derselbe
+  // sein. Ein Vergleich auf „enthält" würde den Verlust nicht sehen: Beim
+  // Flachmachen der Liste bleibt „Teig" ja stehen.
+  expect(nachher[0].steps[1].text).toBe(REICH);
+});
+
+test("auch im zweiten Abschnitt wird der richtige Schritt bewegt", async ({
+  page,
+}) => {
+  // `verschiebeSchritt` bekommt den Abschnitt als ersten Index. Mit nur einem
+  // Abschnitt ist der immer 0 — ein Vertauschen von `si` und `sti` wäre bis
+  // hierher unsichtbar geblieben.
+  const db = new Database(path.resolve(process.cwd(), ".pw-data/app.db"));
+  const [{ n }] = db
+    .prepare("SELECT COUNT(*) AS n FROM recipe_section WHERE recipe_id = ?")
+    .all(recipeId) as Array<{ n: number }>;
+  const info = db
+    .prepare(
+      "INSERT INTO recipe_section (recipe_id, name, sort_order) VALUES (?, ?, ?)",
+    )
+    .run(recipeId, "Zweiter Abschnitt", n);
+  const sid = Number(info.lastInsertRowid);
+  const einfuegen = db.prepare(
+    "INSERT INTO recipe_step (section_id, text, sort_order) VALUES (?, ?, ?)",
+  );
+  einfuegen.run(sid, "Zweiter Abschnitt, Schritt A.", 0);
+  einfuegen.run(sid, "Zweiter Abschnitt, Schritt B.", 1);
+  db.close();
+
+  await page.goto(`/admin/rezepte/${recipeId}`);
+  const feld = page.locator('input[name="abschnitte"]');
+  const vorher = JSON.parse(await feld.inputValue());
+  expect(vorher[1].steps.map((x: { text: string }) => x.text)).toEqual([
+    "Zweiter Abschnitt, Schritt A.",
+    "Zweiter Abschnitt, Schritt B.",
+  ]);
+
+  // Der erste ↓-Knopf DES ZWEITEN Abschnitts.
+  const abschnitte = page.locator("ol", {
+    has: page.getByRole("button", { name: new RegExp(`^${d.stepUp}`) }),
+  });
+  await abschnitte
+    .nth(1)
+    .getByRole("button", { name: new RegExp(`^${d.stepDown}`) })
+    .first()
+    .click();
+
+  const nachher = JSON.parse(await feld.inputValue());
+  expect(nachher[1].steps.map((x: { text: string }) => x.text)).toEqual([
+    "Zweiter Abschnitt, Schritt B.",
+    "Zweiter Abschnitt, Schritt A.",
+  ]);
+  // Gegenprobe: Der ERSTE Abschnitt blieb unberührt. Ohne sie wäre der Test
+  // auch dann grün, wenn beide Abschnitte umsortiert würden.
+  expect(nachher[0].steps.map((x: { text: string }) => x.text)).toEqual(
+    vorher[0].steps.map((x: { text: string }) => x.text),
+  );
 });
 
 /**
