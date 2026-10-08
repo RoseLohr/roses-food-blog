@@ -265,6 +265,22 @@ export function RecipeEditor({
       }),
     );
 
+  /**
+   * Dasselbe für einen Zubereitungsschritt. Bewusst eine ZWEITE, gleich
+   * gebaute Funktion statt einer, die sich das Feld übergeben lässt: Zutaten
+   * und Schritte sind verschiedene Typen, und eine gemeinsame Fassung käme
+   * ohne eine Typ-Zusicherung nicht aus. Die Rechnung selbst steht nur einmal
+   * — in `verschoben`.
+   */
+  const verschiebeSchritt = (si: number, sti: number, richtung: Richtung) =>
+    setSections((prev) =>
+      prev.map((s, idx) => {
+        if (idx !== si) return s;
+        const next = verschoben(s.steps, sti, richtung);
+        return next === s.steps ? s : { ...s, steps: [...next] };
+      }),
+    );
+
   // KI-Entwurf ins Formular übernehmen. WICHTIG: Es wird NICHTS in der
   // Datenbank angelegt. Vorgeschlagene Taxonomie-Namen werden nur gegen die
   // bereits vorhandenen Optionen gematcht — Treffer werden angehakt, alles
@@ -661,18 +677,40 @@ export function RecipeEditor({
                       <span className="text-sm font-medium text-ink-soft">
                         {d.steps} {sti + 1}
                       </span>
-                      <button
-                        type="button"
-                        aria-label={`${d.steps} ${sti + 1} ${d.remove}`}
-                        onClick={() =>
-                          updateSection(si, {
-                            steps: section.steps.filter((_, idx) => idx !== sti),
-                          })
-                        }
-                        className={btnSecondary}
-                      >
-                        ×
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => verschiebeSchritt(si, sti, -1)}
+                          disabled={sti === 0}
+                          aria-label={`${d.stepUp} (${sti + 1})`}
+                          title={d.stepUp}
+                          className={`${btnSecondary} px-2 py-0.5 disabled:opacity-40`}
+                        >
+                          ↑
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => verschiebeSchritt(si, sti, 1)}
+                          disabled={sti === section.steps.length - 1}
+                          aria-label={`${d.stepDown} (${sti + 1})`}
+                          title={d.stepDown}
+                          className={`${btnSecondary} px-2 py-0.5 disabled:opacity-40`}
+                        >
+                          ↓
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`${d.steps} ${sti + 1} ${d.remove}`}
+                          onClick={() =>
+                            updateSection(si, {
+                              steps: section.steps.filter((_, idx) => idx !== sti),
+                            })
+                          }
+                          className={btnSecondary}
+                        >
+                          ×
+                        </button>
+                      </div>
                     </div>
                     <RichTextEditor
                       initialMarkdown={step.text}
