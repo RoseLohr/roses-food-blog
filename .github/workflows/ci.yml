@@ -219,7 +219,7 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: E2E (Playwright gegen Produktions-Build — Bild-Auslieferung, Slider, Galerie, axe-A11y)
         run: npm run test:e2e
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: failure()
         with:
           name: playwright-traces
@@ -303,7 +303,7 @@ jobs:
         run: node scripts/regime/license-scan.mjs
       - name: Lizenz-Selbsttest (A-36)
         run: node scripts/regime/license-scan.mjs --selftest
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: sbom
           path: sbom.json
