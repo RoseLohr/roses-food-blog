@@ -12,6 +12,26 @@ import { createSession } from "../src/lib/auth-core";
 import { saveRecipeFromForm } from "../src/lib/recipe-save";
 import { saveTravelFromForm } from "../src/lib/travel-save";
 
+/**
+ * Derselbe feste Zeitpunkt wie in scripts/seed.ts — nicht die Uhr.
+ *
+ * Das Editier-Rezept steht in der Admin-Rezeptliste unter „Zuletzt
+ * bearbeitet". Dort trägt die Zelle zwar `data-referenz-maske`, aber eine Maske
+ * deckt die PIXEL ab, nicht die BREITE (B31). Am 10.10.2026 war das Datum zum
+ * ersten Mal seit Aufnahme der Basis zweistellig in Tag UND Monat, die Spalte
+ * wurde breiter, „Aktionen" rutschte nach rechts — admin-rezepte und
+ * admin-rezepte-meldung @ ipad-834 waren rot, ohne dass jemand die Seite
+ * angefasst hatte.
+ *
+ * Die Saat war längst festgenagelt; dieser Weg nicht, weil er über die
+ * PRODUKTIONS-Speicherfunktionen geht, und die nehmen zu Recht die Uhr. Sie
+ * bekommen den Zeitpunkt deshalb als Parameter, wie `storeImage`.
+ *
+ * Gleichheit mit der Saat misst tests/saat-zeitpunkt.test.ts an der Datenbank:
+ * Läuft dieser Wert auseinander, wird die Kontrolle rot.
+ */
+const NOW = new Date("2026-01-15T12:00:00");
+
 async function main() {
   const [admin] = await db
     .insert(schema.adminUser)
@@ -19,7 +39,7 @@ async function main() {
       email: "e2e@rose.de",
       passwordHash: "x",
       name: "E2E",
-      createdAt: new Date(),
+      createdAt: NOW,
     })
     .returning();
 
@@ -35,7 +55,7 @@ async function main() {
     ]),
   );
   fd.set("notizen", "[]");
-  const res = await saveRecipeFromForm(fd, admin.id);
+  const res = await saveRecipeFromForm(fd, admin.id, NOW);
   if (!("recipeId" in res)) throw new Error("E2E: Rezept-Anlage fehlgeschlagen");
 
   // Editier-Reisebericht mit drei Bildblöcken: zwei Nachbarn (= eine Reihe)
@@ -65,9 +85,11 @@ async function main() {
       { type: "bild", imageId: bilder[2].id, gruppe: 1 },
     ]),
   );
-  const travelRes = await saveTravelFromForm(tfd, admin.id);
+  const travelRes = await saveTravelFromForm(tfd, admin.id, NOW);
   if (!("travelId" in travelRes)) throw new Error("E2E: Reise-Anlage fehlgeschlagen");
 
+  // Die Sitzung behält bewusst die Uhr: Ihr Ablauf ist kein angezeigter Wert,
+  // sondern Gültigkeit — mit dem Saat-Zeitpunkt wäre sie seit Februar abgelaufen.
   const token = await createSession(admin.id);
   const dataDir = process.env.DATA_DIR ?? "./data";
   fs.writeFileSync(

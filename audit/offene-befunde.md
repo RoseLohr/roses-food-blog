@@ -2017,6 +2017,36 @@ darum keine rote Aufnahme; die Datenbank-Kontrolle sieht nur, was die Saat
 selbst anlegt. Und: Ab dem 10. eines Monats bricht „Hochgeladen am“ in der
 Kachel immer um — das ist ein Layout-Befund der Kachel, kein Test-Befund.
 
+**Nachtrag 10.10.2026 — der dritte Weg, der die Uhr nahm.** Rot im örtlichen
+Lauf: `admin-rezepte` und `admin-rezepte-meldung` @ ipad-834, je 2 253 Pixel,
+auf einem Zweig, der keine Zeile Admin-Code geändert hatte. Ursache: Die
+E2E-Vorbereitung `scripts/e2e-admin.ts` legt ihr Editier-Rezept und ihre
+Editier-Reise über `saveRecipeFromForm` / `saveTravelFromForm` an — und die
+nahmen `new Date()`. Die Zeile „E2E Editor-Rezept“ trug also das Tagesdatum,
+am 10.10. erstmals zweistellig in Tag UND Monat; „Zuletzt bearbeitet“ wurde
+breiter, „Aktionen“ rückte nach rechts. Die Kontrolle sah das nicht: Sie sät
+nur, die E2E-Vorbereitung läuft danach.
+
+**Behoben** nach dem Muster von `storeImage`: beide Speicherfunktionen nehmen
+`jetzt = new Date()` als Parameter (im Betrieb weiter die Uhr), die
+E2E-Vorbereitung reicht den Saat-Zeitpunkt herein, für den Admin-Nutzer
+ebenso. Die SITZUNG behält bewusst die Uhr — ihr Ablauf ist Gültigkeit, kein
+angezeigter Wert; mit dem Saat-Zeitpunkt wäre sie seit Februar abgelaufen.
+`tests/saat-zeitpunkt.test.ts` hat einen vierten Fall: Er fährt die
+E2E-Vorbereitung nach der Saat im selben Verzeichnis und prüft jede dabei
+entstandene Zeile gegen den Saat-Zeitpunkt, `session` ausgenommen. Zuerst rot
+gefahren: genau fünf Abweichungen (`admin_user.created_at`,
+`recipe.created_at/updated_at`, `travel_post.created_at/updated_at`).
+
+**Im selben Lauf, andere Ursache:** `reise-detail` @ desktop-1280 — „Failed to
+take two consecutive stable screenshots". Der erste Abdruck zeigte die
+Bildfläche „Hafen" reinweiß, der letzte deckte sich Pixel für Pixel mit der
+Basis (ganze Seite 0,025 % bei 0,2 % Toleranz). `bilderFertig()` wartete auf
+`complete` — GELADEN, nicht GEMALT; Chromium dekodiert danach asynchron, und
+der fullPage-Abdruck rastert Bereiche weit unterhalb des Viewports. Behoben in
+`tests/e2e/bilder-fertig.ts`: Nach dem Laden wartet sie auf `decode()`; nicht
+dekodierbare Bilder fallen weiter unter `kaputt`, statt das Warten abzubrechen.
+
 ## B32 — Die Nightly-Kadenz fuhr das Journal-Gate ohne Bezugspunkt — GEMESSEN 13.09.2026, behoben
 
 **Beobachtet** in den Nightly-Läufen 34577007531 (11.09.) und 34681854687
