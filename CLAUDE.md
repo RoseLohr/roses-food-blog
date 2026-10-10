@@ -92,6 +92,50 @@ diesem Repository arbeitet. Sie ist Teil des Governance-Regimes (A-32/A-33/A-37)
   eigenständig, damit `tests/e2e/mocks/einzelbild.html` sie LÄDT statt sie
   abzuschreiben. Die Abschrift dort hatte die Handy-Regel nie mitbekommen: ein
   Prüfstand, der grün war für etwas, das die Seite gar nicht auslieferte.
+- **Zutaten gegen Zubereitung im Rezept-Editor (10/2026): eine FLÄCHE, und sie
+  muss farbig sein.** Der Abschnittskasten hat zwei Hälften: die Zutaten
+  bleiben auf der Kartenfläche, die Zubereitung trägt `bg-leaf/30`. Das `p-4`
+  steht in den HÄLFTEN, nicht im Kasten — sonst müsste die getönte Hälfte es
+  mit `-mx-4` wieder herausrechnen und hinge an einem Wert, der woanders steht.
+  Die Überschrift steht INNERHALB der Tönung; eine Fläche, die oberhalb ihrer
+  eigenen Beschriftung beginnt, trennt die falsche Stelle.
+  **Warum kein Neutralton:** Nach unten ist im Nachtmodus bei 1,213:1 Schluss
+  — das erreicht reines Schwarz gegen die Karte `#1a1a20`. Die Gegenrichtung,
+  ein hellerer Schleier (`bg-white/20`, dunkel 1,898:1), ist im Hellen über
+  Weiß wirkungslos (1,000:1). Ein Neutralton bräuchte also zwei Werte für die
+  zwei Modi; `bg-leaf/30` trägt beide mit einem (hell 1,513:1, dunkel 1,970:1).
+  Dass das geht, liegt an der TEIL-Deckkraft: `[data-theme="dark"] .bg-leaf`
+  greift nur bei der VOLLEN Klasse, `bg-leaf/30` löst über das Token auf.
+  **Auf der Tönung steht nur Text — jedes Bedienelement bekommt eine eigene
+  Fläche.** `btnSecondary` ist durchsichtig; auf der Karte ist sein Rand die
+  einzige Kante weit und breit und liest sich als Knopf, im getönten Band steht
+  er neben weißen Karten mit 1,513:1 Sprung und verliert den Vergleich. Am Rand
+  liegt es NICHT (1,512:1 auf der Tönung gegen 1,552:1 auf der Karte) — es
+  fehlt die Fläche. „+ Schritt hinzufügen" ist deshalb ein gestrichelter Platz
+  über die volle Breite (`border-dashed border-ink/30 bg-white`, wie die
+  Vorschau-Karte in
+  `src/app/admin/(protected)/rezepte/[id]/vorschau/page.tsx`). Ein Petrol-GEFÜLLTER Knopf wäre
+  die andere naheliegende Wahl und fällt aus: `bg-leaf` ist dunkel `#1f6c63`
+  und trägt auf der Tönung nur 1,416:1. Weil nun kein fokussierbares Element
+  mehr auf der Tönung steht, deckelt auch der Fokusring (3:1, WCAG 1.4.11) die
+  Tonstärke nicht mehr; es deckelt nur noch `text-ink` der Überschrift.
+  **Die Schrittnummer ist die Kugel aus der Rezeptansicht** und trägt
+  `aria-hidden` — daneben steht der Name unsichtbar (`sr-only`), und der
+  Textkasten bekommt `ariaLabel`: Er hat kein `label` und hätte sonst gar
+  keinen Namen. Das frühere `bg-cream/30` am Schritt trug 1,025:1 und war
+  damit nicht schwach, sondern nicht vorhanden.
+  **Eine Falle für später:** Den Rahmen des Abschnitts zu VERSTÄRKEN, damit
+  mehrere Abschnitte sich besser abheben, ist der naheliegende und falsche
+  Griff — `border-ink/20` liegt bei /30 fast genau auf der Helligkeit der
+  Tönung und verschwindet dort (1,025:1 hell), während das schwächere
+  `border-ink/10` daneben 1,226:1 trägt. Die Gliederung der Abschnitte kommt
+  über Abstand und eine sichtbare Überschrift, nicht über eine stärkere Linie.
+  Gemessen wird das alles in `tests/e2e/zubereitung-flaeche.spec.ts` — über den
+  im Browser aufgelösten Farbwert, nicht über `getComputedStyle` allein: das
+  liefert die Farbe der DEKLARATION, bei `color-mix`/Alpha sogar als
+  oklab-Zeichenkette. **`npm run test:a11y` und `nachtmodus.spec.ts` sehen
+  diese Seite nicht** (sieben öffentliche Adressen bzw. nur `/admin/rezepte`
+  und `/admin/einstellungen`).
 - **Nachtmodus (08/2026): ein TOKEN-Tausch unter `[data-theme="dark"]`.** Jede
   Tailwind-Farb-Utility löst auf eine CSS-Variable auf
   (`.bg-cream{background-color:var(--color-cream)}`); wer die Variablen unter
@@ -114,8 +158,8 @@ diesem Repository arbeitet. Sie ist Teil des Governance-Regimes (A-32/A-33/A-37)
   von außen überschreibbar machen will, braucht `@utility`. Siehe
   `audit/offene-befunde.md` B7.
 - **Vor und nach jedem Layout- oder Struktur-Umbau die Referenzaufnahmen
-  fahren:** `npx playwright test seiten-referenz admin-referenz` (117
-  Aufnahmen: elf öffentliche Seitentypen und 28 Admin-Seiten × drei Breiten).
+  fahren:** `npx playwright test seiten-referenz admin-referenz` (120
+  Aufnahmen: elf öffentliche Seitentypen und 29 Admin-Seiten × drei Breiten).
   Was sich ändern DARF, wird vorher benannt und danach gezielt neu aufgenommen —
   nie pauschal mit `--update-snapshots`.
   **Ändert ein Umbau eine Seite, die noch keine Aufnahme hat, wird sie ZUERST
