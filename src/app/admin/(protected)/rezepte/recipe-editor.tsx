@@ -514,206 +514,264 @@ export function RecipeEditor({
 
         <div className="flex flex-col gap-6">
           {sections.map((section, si) => (
-            <div key={si} className="border border-ink/10 p-4">
-              <div className="mb-3 flex items-end gap-2">
-                <div className="grow">
-                  <label className={labelCls} htmlFor={`sek-name-${si}`}>
-                    {d.sectionName}
-                  </label>
-                  <input
-                    id={`sek-name-${si}`}
-                    value={section.name}
-                    onChange={(e) => updateSection(si, { name: e.target.value })}
-                    className={inputCls}
-                  />
+            // Zwei Hälften statt einer Fläche: Die Zutaten bleiben auf der
+            // Kartenfläche, die Zubereitung bekommt eine eigene. Das `p-4`
+            // wandert dafür aus dem Kasten in die beiden Hälften — sonst
+            // müsste die getönte Hälfte es mit `-mx-4` wieder herausrechnen
+            // und hinge an einem Wert, der woanders steht.
+            <div key={si} className="border border-ink/10">
+              <div className="p-4">
+                <div className="mb-3 flex items-end gap-2">
+                  <div className="grow">
+                    <label className={labelCls} htmlFor={`sek-name-${si}`}>
+                      {d.sectionName}
+                    </label>
+                    <input
+                      id={`sek-name-${si}`}
+                      value={section.name}
+                      onChange={(e) => updateSection(si, { name: e.target.value })}
+                      className={inputCls}
+                    />
+                  </div>
+                  {sections.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSections((prev) => prev.filter((_, idx) => idx !== si))
+                      }
+                      className={btnSecondary}
+                    >
+                      {d.removeSection}
+                    </button>
+                  )}
                 </div>
-                {sections.length > 1 && (
+
+                <h3 className="mb-2 text-sm font-semibold">{d.ingredients}</h3>
+                <div className="flex flex-col gap-2">
+                  {section.ingredients.map((ing, ii) => (
+                    <div key={ii} className="zutat-row">
+                      <input
+                        aria-label={d.amount}
+                        value={ing.amount}
+                        inputMode="decimal"
+                        onChange={(e) =>
+                          updateSection(si, {
+                            ingredients: section.ingredients.map((x, idx) =>
+                              idx === ii ? { ...x, amount: e.target.value } : x,
+                            ),
+                          })
+                        }
+                        placeholder={d.amount}
+                        className={inputCls}
+                      />
+                      <input
+                        aria-label={d.unit}
+                        list="einheiten-liste"
+                        value={ing.unit}
+                        onChange={(e) =>
+                          updateSection(si, {
+                            ingredients: section.ingredients.map((x, idx) =>
+                              idx === ii ? { ...x, unit: e.target.value } : x,
+                            ),
+                          })
+                        }
+                        placeholder={d.unit}
+                        className={inputCls}
+                      />
+                      <input
+                        aria-label={d.ingredientName}
+                        list="zutaten-liste"
+                        value={ing.name}
+                        onChange={(e) =>
+                          updateSection(si, {
+                            ingredients: section.ingredients.map((x, idx) =>
+                              idx === ii ? { ...x, name: e.target.value } : x,
+                            ),
+                          })
+                        }
+                        placeholder={d.ingredientName}
+                        className={`${inputCls} zutat-name`}
+                      />
+                      <input
+                        aria-label={d.ingredientNote}
+                        value={ing.note}
+                        onChange={(e) =>
+                          updateSection(si, {
+                            ingredients: section.ingredients.map((x, idx) =>
+                              idx === ii ? { ...x, note: e.target.value } : x,
+                            ),
+                          })
+                        }
+                        placeholder={d.ingredientNote}
+                        className={`${inputCls} zutat-note`}
+                      />
+                      {/* Reihenfolge und Entfernen zusammen in EINER Zelle —
+                          dieselben zwei Pfeile wie an den Reise-Blöcken. Die
+                          Reihenfolge der Zutaten ist eine Aussage (Mengen zuerst,
+                          Gewürze zuletzt) und stand bisher fest in der
+                          Eingabereihenfolge. */}
+                      <div className="zutat-tasten">
+                        <button
+                          type="button"
+                          onClick={() => verschiebeZutat(si, ii, -1)}
+                          disabled={ii === 0}
+                          aria-label={`${d.ingredientUp} (${ii + 1})`}
+                          title={d.ingredientUp}
+                          className={`${btnSecondary} px-2 py-0.5 disabled:opacity-40`}
+                        >
+                          ↑
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => verschiebeZutat(si, ii, 1)}
+                          disabled={ii === section.ingredients.length - 1}
+                          aria-label={`${d.ingredientDown} (${ii + 1})`}
+                          title={d.ingredientDown}
+                          className={`${btnSecondary} px-2 py-0.5 disabled:opacity-40`}
+                        >
+                          ↓
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`${d.ingredientName} ${ii + 1} ${d.remove}`}
+                          onClick={() =>
+                            updateSection(si, {
+                              ingredients: section.ingredients.filter((_, idx) => idx !== ii),
+                            })
+                          }
+                          className={`${btnSecondary} zutat-remove`}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                   <button
                     type="button"
                     onClick={() =>
-                      setSections((prev) => prev.filter((_, idx) => idx !== si))
+                      updateSection(si, {
+                        ingredients: [...section.ingredients, emptyIngredient()],
+                      })
                     }
-                    className={btnSecondary}
+                    className={`${btnSecondary} self-start`}
                   >
-                    {d.removeSection}
+                    + {d.addIngredient}
                   </button>
-                )}
+                </div>
               </div>
 
-              <h3 className="mb-2 text-sm font-semibold">{d.ingredients}</h3>
-              <div className="flex flex-col gap-2">
-                {section.ingredients.map((ing, ii) => (
-                  <div key={ii} className="zutat-row">
-                    <input
-                      aria-label={d.amount}
-                      value={ing.amount}
-                      inputMode="decimal"
-                      onChange={(e) =>
-                        updateSection(si, {
-                          ingredients: section.ingredients.map((x, idx) =>
-                            idx === ii ? { ...x, amount: e.target.value } : x,
-                          ),
-                        })
-                      }
-                      placeholder={d.amount}
-                      className={inputCls}
-                    />
-                    <input
-                      aria-label={d.unit}
-                      list="einheiten-liste"
-                      value={ing.unit}
-                      onChange={(e) =>
-                        updateSection(si, {
-                          ingredients: section.ingredients.map((x, idx) =>
-                            idx === ii ? { ...x, unit: e.target.value } : x,
-                          ),
-                        })
-                      }
-                      placeholder={d.unit}
-                      className={inputCls}
-                    />
-                    <input
-                      aria-label={d.ingredientName}
-                      list="zutaten-liste"
-                      value={ing.name}
-                      onChange={(e) =>
-                        updateSection(si, {
-                          ingredients: section.ingredients.map((x, idx) =>
-                            idx === ii ? { ...x, name: e.target.value } : x,
-                          ),
-                        })
-                      }
-                      placeholder={d.ingredientName}
-                      className={`${inputCls} zutat-name`}
-                    />
-                    <input
-                      aria-label={d.ingredientNote}
-                      value={ing.note}
-                      onChange={(e) =>
-                        updateSection(si, {
-                          ingredients: section.ingredients.map((x, idx) =>
-                            idx === ii ? { ...x, note: e.target.value } : x,
-                          ),
-                        })
-                      }
-                      placeholder={d.ingredientNote}
-                      className={`${inputCls} zutat-note`}
-                    />
-                    {/* Reihenfolge und Entfernen zusammen in EINER Zelle —
-                        dieselben zwei Pfeile wie an den Reise-Blöcken. Die
-                        Reihenfolge der Zutaten ist eine Aussage (Mengen zuerst,
-                        Gewürze zuletzt) und stand bisher fest in der
-                        Eingabereihenfolge. */}
-                    <div className="zutat-tasten">
-                      <button
-                        type="button"
-                        onClick={() => verschiebeZutat(si, ii, -1)}
-                        disabled={ii === 0}
-                        aria-label={`${d.ingredientUp} (${ii + 1})`}
-                        title={d.ingredientUp}
-                        className={`${btnSecondary} px-2 py-0.5 disabled:opacity-40`}
-                      >
-                        ↑
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => verschiebeZutat(si, ii, 1)}
-                        disabled={ii === section.ingredients.length - 1}
-                        aria-label={`${d.ingredientDown} (${ii + 1})`}
-                        title={d.ingredientDown}
-                        className={`${btnSecondary} px-2 py-0.5 disabled:opacity-40`}
-                      >
-                        ↓
-                      </button>
-                      <button
-                        type="button"
-                        aria-label={`${d.ingredientName} ${ii + 1} ${d.remove}`}
-                        onClick={() =>
-                          updateSection(si, {
-                            ingredients: section.ingredients.filter((_, idx) => idx !== ii),
-                          })
-                        }
-                        className={`${btnSecondary} zutat-remove`}
-                      >
-                        ×
-                      </button>
-                    </div>
-                  </div>
-                ))}
-                <button
-                  type="button"
-                  onClick={() =>
-                    updateSection(si, {
-                      ingredients: [...section.ingredients, emptyIngredient()],
-                    })
-                  }
-                  className={`${btnSecondary} self-start`}
-                >
-                  + {d.addIngredient}
-                </button>
-              </div>
-
-              <h3 className="mb-2 mt-4 text-sm font-semibold">{d.steps}</h3>
-              <ol className="flex flex-col gap-3">
-                {section.steps.map((step, sti) => (
-                  <li key={sti} className="border border-ink/10 bg-cream/30 p-3">
-                    <div className="mb-2 flex items-center justify-between">
-                      <span className="text-sm font-medium text-ink-soft">
-                        {d.steps} {sti + 1}
-                      </span>
-                      <button
-                        type="button"
-                        aria-label={`${d.steps} ${sti + 1} ${d.remove}`}
-                        onClick={() =>
-                          updateSection(si, {
-                            steps: section.steps.filter((_, idx) => idx !== sti),
-                          })
-                        }
-                        className={btnSecondary}
-                      >
-                        ×
-                      </button>
-                    </div>
-                    <RichTextEditor
-                      initialMarkdown={step.text}
-                      minHeightClass="min-h-20"
-                      onChange={(md) =>
-                        updateSection(si, {
-                          steps: section.steps.map((x, idx) =>
-                            idx === sti ? { ...x, text: md } : x,
-                          ),
-                        })
-                      }
-                    />
-                    <div className="mt-2">
-                      <ImagePicker
-                        legend={d.stepImage}
-                        options={images}
-                        multiple={false}
-                        value={step.imageId ? [step.imageId] : []}
-                        onChange={(ids) =>
+              {/* Die getönte Hälfte. `bg-leaf/30` ist eine TEIL-Deckkraft und
+                  wird von der Flächenregel `[data-theme="dark"] .bg-leaf`
+                  absichtlich NICHT erfasst — sie löst über das Token auf und
+                  trägt damit in beiden Modi: hell 1,513:1 gegen die Karte,
+                  dunkel 1,970:1. Ein NEUTRALER Ton kann das nicht: nach unten
+                  ist im Nachtmodus bei 1,213:1 Schluss (reines Schwarz gegen
+                  die Karte), und ein hellerer Schleier wäre im Hellen über
+                  Weiß wirkungslos.
+                  Die Überschrift steht INNERHALB der Fläche — eine Fläche, die
+                  oberhalb ihrer eigenen Beschriftung beginnt, trennt die
+                  falsche Stelle. */}
+              <div className="border-t border-ink/10 bg-leaf/30 p-4">
+                <h3 className="mb-2 text-sm font-semibold">{d.steps}</h3>
+                <ol className="flex flex-col gap-3">
+                  {section.steps.map((step, sti) => (
+                    // Weiße Karte auf der Tönung. Das frühere `bg-cream/30` trug
+                    // 1,025:1 gegen die Karte — kein schwacher Unterschied,
+                    // sondern keiner. Der Sprung Karte↔Tönung ist zugleich der
+                    // EINZIGE Vergleich, der auf dem Handy im Bild bleibt: der
+                    // Kasten ist dort mehrere Bildschirme hoch, die Kante
+                    // zwischen den Hälften sieht man nur auf einem davon.
+                    <li key={sti} className="border border-ink/10 bg-white p-3">
+                      <div className="mb-2 flex items-center justify-between">
+                        {/* Dieselbe Kugel wie in der Rezeptansicht. Sie trägt
+                            `aria-hidden`, deshalb steht der Name daneben
+                            unsichtbar: Der Textkasten des Schritts bekommt kein
+                            `label` und hätte sonst gar keinen. */}
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-leaf text-base font-semibold text-white" aria-hidden="true">
+                          {sti + 1}
+                        </span>
+                        <span className="sr-only">
+                          {d.step} {sti + 1}
+                        </span>
+                        <button
+                          type="button"
+                          aria-label={`${d.step} ${sti + 1} ${d.remove}`}
+                          onClick={() =>
+                            updateSection(si, {
+                              steps: section.steps.filter((_, idx) => idx !== sti),
+                            })
+                          }
+                          className={btnSecondary}
+                        >
+                          ×
+                        </button>
+                      </div>
+                      <RichTextEditor
+                        initialMarkdown={step.text}
+                        ariaLabel={`${d.step} ${sti + 1}`}
+                        minHeightClass="min-h-20"
+                        onChange={(md) =>
                           updateSection(si, {
                             steps: section.steps.map((x, idx) =>
-                              idx === sti
-                                ? { ...x, imageId: ids[0] ?? null }
-                                : x,
+                              idx === sti ? { ...x, text: md } : x,
                             ),
                           })
                         }
                       />
-                    </div>
-                  </li>
-                ))}
-              </ol>
-              <button
-                type="button"
-                onClick={() =>
-                  updateSection(si, { steps: [...section.steps, emptyStep()] })
-                }
-                className={`${btnSecondary} mt-2`}
-              >
-                + {d.addStep}
-              </button>
+                      <div className="mt-2">
+                        <ImagePicker
+                          legend={d.stepImage}
+                          options={images}
+                          multiple={false}
+                          value={step.imageId ? [step.imageId] : []}
+                          onChange={(ids) =>
+                            updateSection(si, {
+                              steps: section.steps.map((x, idx) =>
+                                idx === sti
+                                  ? { ...x, imageId: ids[0] ?? null }
+                                  : x,
+                              ),
+                            })
+                          }
+                        />
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+                {/* Auf der Tönung steht nur Text — jedes Bedienelement bekommt
+                    eine eigene Fläche. `btnSecondary` ist durchsichtig: auf der
+                    Karte ist sein Rand die einzige Kante weit und breit und
+                    liest sich als Knopf, im getönten Band steht er neben weißen
+                    Karten mit 1,513:1 Sprung und verliert diesen Vergleich. Am
+                    Rand liegt es nicht (1,512:1 auf der Tönung gegen 1,552:1 auf
+                    der Karte) — es fehlt die Fläche.
+                    Gestrichelt und über die volle Breite wie die Vorschau-Karte
+                    in `src/app/admin/(protected)/rezepte/[id]/vorschau/page.tsx`
+                    — so liest sich der Platz als die nächste, noch leere
+                    Schrittkarte. Ein Petrol-GEFÜLLTER Knopf
+                    wäre die andere naheliegende Wahl und fällt aus: `bg-leaf`
+                    ist im Nachtmodus #1f6c63 und trägt auf der Tönung nur
+                    1,416:1 — er verschwände genau dort wieder.
+                    Weil hier nun KEIN fokussierbares Element mehr auf der Tönung
+                    steht, deckelt auch der Fokusring (3:1, WCAG 1.4.11) die
+                    Tonstärke nicht mehr; es deckelt nur noch `text-ink` der
+                    Überschrift. */}
+                <button
+                  type="button"
+                  onClick={() =>
+                    updateSection(si, { steps: [...section.steps, emptyStep()] })
+                  }
+                  className="mt-3 flex w-full items-center gap-3 border border-dashed border-ink/30 bg-white p-3 text-left text-sm font-medium"
+                >
+                  <span
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-dashed border-ink/30 text-base font-semibold"
+                    aria-hidden="true"
+                  >
+                    +
+                  </span>
+                  {d.addStep}
+                </button>
+              </div>
             </div>
           ))}
           <button

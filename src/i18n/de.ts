@@ -880,6 +880,9 @@ export const de = {
       ingredientDown: "Zutat nach unten",
       remove: "Entfernen",
       steps: "Zubereitungsschritte",
+      /** Einzahl — die Nummernkugel trägt `aria-hidden`, der Schritt braucht
+       *  daneben einen eigenen Namen (sonst hat der Textkasten gar keinen). */
+      step: "Zubereitungsschritt",
       stepImage: "Bild zum Schritt (optional)",
       addStep: "Schritt hinzufügen",
       notes: "Notizen",
