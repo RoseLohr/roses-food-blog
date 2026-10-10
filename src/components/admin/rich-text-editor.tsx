@@ -20,6 +20,7 @@ export function RichTextEditor({
   name,
   initialMarkdown,
   label,
+  ariaLabel,
   readOnly = false,
   minHeightClass = "min-h-40",
   onChange,
@@ -28,6 +29,12 @@ export function RichTextEditor({
   name?: string;
   initialMarkdown: string;
   label?: string;
+  /** Zugänglicher Name OHNE sichtbare Beschriftung. `label` rendert eine
+   *  sichtbare Zeile; wo die Überschrift schon daneben steht (Schrittkarte im
+   *  Rezept-Editor), braucht der Textkasten trotzdem einen Namen — sonst hat
+   *  er gar keinen. Vorgabe ist `label`, damit sich an den bisherigen
+   *  Aufrufstellen nichts ändert. */
+  ariaLabel?: string;
   readOnly?: boolean;
   minHeightClass?: string;
   /** Kontrollierte Nutzung: Markdown bei jeder Änderung nach außen geben. */
@@ -164,7 +171,7 @@ export function RichTextEditor({
         suppressContentEditableWarning
         role="textbox"
         aria-multiline="true"
-        aria-label={label}
+        aria-label={ariaLabel ?? label}
         onInput={sync}
         onBlur={sync}
         onPaste={handlePaste}
