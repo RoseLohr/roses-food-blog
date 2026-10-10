@@ -111,10 +111,15 @@ diesem Repository arbeitet. Sie ist Teil des Governance-Regimes (A-32/A-33/A-37)
   einzige Kante weit und breit und liest sich als Knopf, im getönten Band steht
   er neben weißen Karten mit 1,513:1 Sprung und verliert den Vergleich. Am Rand
   liegt es NICHT (1,512:1 auf der Tönung gegen 1,552:1 auf der Karte) — es
-  fehlt die Fläche. „+ Schritt hinzufügen" ist deshalb ein gestrichelter Platz
-  über die volle Breite (`border-dashed border-ink/30 bg-white`, wie die
+  fehlt die Fläche. „+ Schritt hinzufügen" trägt deshalb die Kartenfläche und
+  einen gestrichelten Rand (`border-dashed border-ink/30 bg-white`, wie die
   Vorschau-Karte in
-  `src/app/admin/(protected)/rezepte/[id]/vorschau/page.tsx`). Ein Petrol-GEFÜLLTER Knopf wäre
+  `src/app/admin/(protected)/rezepte/[id]/vorschau/page.tsx`), bleibt aber
+  KNOPFGROSS — Maße von `btnSecondary`. Der erste Anlauf gab ihm die volle
+  Breite und die Nummernkugel als Platzhalter; an der echten Oberfläche las er
+  sich dann als LEERE Schrittkarte: gleiche Fläche, gleiche Größe, Kugel an
+  derselben Stelle. Ein Bedienelement, das das Objekt nachmacht, das es
+  erzeugt, ist kein Bedienelement mehr. Ein Petrol-GEFÜLLTER Knopf wäre
   die andere naheliegende Wahl und fällt aus: `bg-leaf` ist dunkel `#1f6c63`
   und trägt auf der Tönung nur 1,416:1. Weil nun kein fokussierbares Element
   mehr auf der Tönung steht, deckelt auch der Fokusring (3:1, WCAG 1.4.11) die

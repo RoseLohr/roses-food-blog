@@ -745,13 +745,20 @@ export function RecipeEditor({
                     Karten mit 1,513:1 Sprung und verliert diesen Vergleich. Am
                     Rand liegt es nicht (1,512:1 auf der Tönung gegen 1,552:1 auf
                     der Karte) — es fehlt die Fläche.
-                    Gestrichelt und über die volle Breite wie die Vorschau-Karte
-                    in `src/app/admin/(protected)/rezepte/[id]/vorschau/page.tsx`
-                    — so liest sich der Platz als die nächste, noch leere
-                    Schrittkarte. Ein Petrol-GEFÜLLTER Knopf
-                    wäre die andere naheliegende Wahl und fällt aus: `bg-leaf`
-                    ist im Nachtmodus #1f6c63 und trägt auf der Tönung nur
-                    1,416:1 — er verschwände genau dort wieder.
+                    Gestrichelt wie die Vorschau-Karte in
+                    `src/app/admin/(protected)/rezepte/[id]/vorschau/page.tsx`,
+                    aber KNOPFGROSS. Der erste Anlauf gab ihm die volle Breite
+                    und die Nummernkugel als Platzhalter — an der echten
+                    Oberfläche abgenommen las er sich dann als LEERE
+                    Schrittkarte: gleiche Fläche, gleiche Größe, Kugel an
+                    derselben Stelle. Ein Bedienelement, das das Objekt
+                    nachmacht, das es erzeugt, ist kein Bedienelement mehr.
+                    Die Fläche bleibt (sonst verschwindet er wieder), die
+                    Maße sind die von `btnSecondary`.
+                    Ein Petrol-GEFÜLLTER Knopf wäre die andere naheliegende
+                    Wahl und fällt aus: `bg-leaf` ist im Nachtmodus #1f6c63
+                    und trägt auf der Tönung nur 1,416:1 — er verschwände
+                    genau dort wieder.
                     Weil hier nun KEIN fokussierbares Element mehr auf der Tönung
                     steht, deckelt auch der Fokusring (3:1, WCAG 1.4.11) die
                     Tonstärke nicht mehr; es deckelt nur noch `text-ink` der
@@ -761,15 +768,9 @@ export function RecipeEditor({
                   onClick={() =>
                     updateSection(si, { steps: [...section.steps, emptyStep()] })
                   }
-                  className="mt-3 flex w-full items-center gap-3 border border-dashed border-ink/30 bg-white p-3 text-left text-sm font-medium"
+                  className="mt-3 rounded-lg border border-dashed border-ink/30 bg-white px-3 py-1.5 text-sm font-medium hover:bg-cream"
                 >
-                  <span
-                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-dashed border-ink/30 text-base font-semibold"
-                    aria-hidden="true"
-                  >
-                    +
-                  </span>
-                  {d.addStep}
+                  + {d.addStep}
                 </button>
               </div>
             </div>
