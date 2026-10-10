@@ -298,7 +298,14 @@ html {
   align-items: start;
   grid-template-columns: 5rem 1fr; /* Handy: Menge | Einheit */
   padding-bottom: 0.75rem;
-  border-bottom: 1px solid rgb(17 17 17 / 0.1);
+  /* Token statt Hartwert. Mit `rgb(17 17 17 / 0.1)` trug diese Linie im
+     Nachtmodus 1,010:1 gegen die Kartenfläche — sie existierte dort nicht,
+     und sie ist unter 640 px die EINZIGE Gliederung der Zutaten. Über
+     `--color-ink` dreht sie mit: dunkel #303035 = 1,315:1. Hell ist das
+     bitgleich wie vorher (0,1·17 + 0,9·255 = 231,2 → #e7e7e7), die
+     Referenzaufnahmen ändern sich dadurch also nicht. */
+  border-bottom: 1px solid
+    color-mix(in oklab, var(--color-ink) 10%, transparent);
 }
 .zutat-row > .zutat-name,
 .zutat-row > .zutat-note,
