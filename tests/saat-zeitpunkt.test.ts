@@ -72,6 +72,62 @@ function vorhandeneZeilen(db: Database.Database, tabelle: string): Set<number> {
   return new Set(zeilen.map((z) => z.id));
 }
 
+/**
+ * Fährt ein Skript gegen das Wegwerf-Verzeichnis und liefert jede Zeile, die
+ * DABEI entstanden ist und einen Zeitstempel trägt, der nicht `erwartet` ist.
+ * Zeilen, die vorher schon da waren, zählen nicht — so misst jeder Lauf nur
+ * sich selbst.
+ */
+function zeitstempelEinesLaufs(
+  skript: string,
+  erwartet: number,
+  ausgenommen: ReadonlySet<string> = new Set(),
+): { neueZeilen: number; abweichungen: string[] } {
+  const dbPfad = path.join(tmp, "app.db");
+  const vorher = new Database(dbPfad, { readonly: true });
+  const tabellen = zeitspalten(vorher).filter((t) => !ausgenommen.has(t.tabelle));
+  const bestand = new Map(tabellen.map((t) => [t.tabelle, vorhandeneZeilen(vorher, t.tabelle)]));
+  vorher.close();
+
+  execFileSync("npx", ["tsx", skript], {
+    cwd: process.cwd(),
+    env: { ...process.env, DATA_DIR: tmp },
+    stdio: "pipe",
+  });
+
+  const nachher = new Database(dbPfad, { readonly: true });
+  const abweichungen: string[] = [];
+  let neueZeilen = 0;
+  for (const { tabelle, spalten } of tabellen) {
+    const alt = bestand.get(tabelle) ?? new Set<number>();
+    const zeilen = nachher
+      .prepare(`SELECT rowid AS id, ${spalten.map((s) => `"${s}"`).join(", ")} FROM "${tabelle}"`)
+      .all() as Array<Record<string, number | null>>;
+    for (const zeile of zeilen) {
+      if (alt.has(zeile.id as number)) continue; // von einem früheren Lauf
+      neueZeilen++;
+      for (const spalte of spalten) {
+        const wert = zeile[spalte];
+        // NULL ist erlaubt (z. B. `published_at` eines Entwurfs) — ein
+        // Zeitpunkt, der fehlt, hängt an keiner Uhr.
+        if (wert !== null && wert !== erwartet) {
+          abweichungen.push(`${tabelle}.${spalte} (rowid ${zeile.id}): ${new Date(wert).toISOString()}`);
+        }
+      }
+    }
+  }
+  nachher.close();
+  return { neueZeilen, abweichungen };
+}
+
+/** Der feste Zeitpunkt der Saat, aus ihrem Quelltext gelesen, als ms-Wert. */
+function saatZeitpunkt(): number {
+  const zeitpunkt = codeZeilen().join("\n").match(FESTER_ZEITPUNKT)?.[1];
+  expect(zeitpunkt, "der feste Zeitpunkt muss aus dem Quelltext lesbar sein").toBeTruthy();
+  // Wie in der Saat ohne Zeitzone geschrieben, also wie dort als Ortszeit gelesen.
+  return new Date(zeitpunkt as string).getTime();
+}
+
 // Die Saat kodiert rund vierzig Platzhalterbilder in mehreren Breiten: örtlich
 // gut 20 s, auf dem 2-Kern-Läufer entsprechend länger.
 const SAATLAUF = 240_000;
@@ -103,47 +159,10 @@ describe("Saat-Zeitpunkt", () => {
     "und jede Zeile, die die Saat anlegt, trägt ihn — auch die über storeImage geschriebenen Bilder",
     { timeout: SAATLAUF },
     () => {
-      const zeitpunkt = codeZeilen().join("\n").match(FESTER_ZEITPUNKT)?.[1];
-      expect(zeitpunkt, "der feste Zeitpunkt muss aus dem Quelltext lesbar sein").toBeTruthy();
-      // Wie in der Saat ohne Zeitzone geschrieben, also wie dort als Ortszeit gelesen.
-      const erwartet = new Date(zeitpunkt as string).getTime();
-
-      const dbPfad = path.join(tmp, "app.db");
-      const vorher = new Database(dbPfad, { readonly: true });
-      const tabellen = zeitspalten(vorher);
-      const bestand = new Map(tabellen.map((t) => [t.tabelle, vorhandeneZeilen(vorher, t.tabelle)]));
-      vorher.close();
-
-      execFileSync("npx", ["tsx", "scripts/seed.ts"], {
-        cwd: process.cwd(),
-        env: { ...process.env, DATA_DIR: tmp },
-        stdio: "pipe",
-      });
-
-      const nachher = new Database(dbPfad, { readonly: true });
-      const abweichungen: string[] = [];
-      let gesaeteZeilen = 0;
-      for (const { tabelle, spalten } of tabellen) {
-        const alt = bestand.get(tabelle) ?? new Set<number>();
-        const zeilen = nachher
-          .prepare(`SELECT rowid AS id, ${spalten.map((s) => `"${s}"`).join(", ")} FROM "${tabelle}"`)
-          .all() as Array<Record<string, number | null>>;
-        for (const zeile of zeilen) {
-          if (alt.has(zeile.id as number)) continue; // von der Migration, nicht von der Saat
-          gesaeteZeilen++;
-          for (const spalte of spalten) {
-            const wert = zeile[spalte];
-            // NULL ist erlaubt (z. B. `published_at` eines Entwurfs) — ein
-            // Zeitpunkt, der fehlt, hängt an keiner Uhr.
-            if (wert !== null && wert !== erwartet) {
-              abweichungen.push(
-                `${tabelle}.${spalte} (rowid ${zeile.id}): ${new Date(wert).toISOString()}`,
-              );
-            }
-          }
-        }
-      }
-      nachher.close();
+      const { neueZeilen: gesaeteZeilen, abweichungen } = zeitstempelEinesLaufs(
+        "scripts/seed.ts",
+        saatZeitpunkt(),
+      );
 
       // Ohne Mindestzahl wäre der Test auch an einer leeren Saat grün.
       expect(gesaeteZeilen, "die Saat muss Zeilen mit Zeitstempeln anlegen").toBeGreaterThan(30);
@@ -152,6 +171,38 @@ describe("Saat-Zeitpunkt", () => {
         "Zeitstempel, die die Saat NICHT mit NOW geschrieben hat — hier nimmt " +
           "ein Umweg (z. B. storeImage) die Uhr, und die Referenzaufnahmen hängen " +
           "wieder am Tag des Laufs.",
+      ).toEqual([]);
+    },
+  );
+
+  it(
+    "und die E2E-Vorbereitung trägt denselben — nur die Sitzung nicht",
+    { timeout: SAATLAUF },
+    () => {
+      // Läuft NACH der Saat oben, im selben Verzeichnis — wie in
+      // tests/e2e/server-mit-frischer-db.sh. Sie legt ihr Editier-Rezept und
+      // ihre Editier-Reise über die PRODUKTIONS-Speicherfunktionen an, und
+      // genau dieser Umweg nahm bis zum 10.10.2026 die Uhr: An dem Tag war das
+      // Datum zweistellig in Tag UND Monat, „Zuletzt bearbeitet" wurde breiter,
+      // und admin-rezepte @ ipad-834 war rot, ohne dass sich etwas geändert
+      // hätte. Die Kontrolle darüber sah das nicht — sie sät nur.
+      //
+      // Ausgenommen ist allein `session`: Deren Ablauf ist Gültigkeit, kein
+      // angezeigter Wert. Mit dem Saat-Zeitpunkt wäre sie seit Februar
+      // abgelaufen und jeder Admin-Test liefe in die Anmeldung.
+      const { neueZeilen, abweichungen } = zeitstempelEinesLaufs(
+        "scripts/e2e-admin.ts",
+        saatZeitpunkt(),
+        new Set(["session"]),
+      );
+
+      // Admin, Rezept, Reise — mindestens. Ohne die Untergrenze wäre der Test
+      // auch grün, wenn die Vorbereitung gar nichts mehr anlegte.
+      expect(neueZeilen, "die E2E-Vorbereitung muss Zeilen mit Zeitstempeln anlegen").toBeGreaterThanOrEqual(3);
+      expect(
+        abweichungen,
+        "Zeitstempel, die die E2E-Vorbereitung NICHT mit dem Saat-Zeitpunkt " +
+          "geschrieben hat — dann hängen Admin-Referenzaufnahmen am Tag des Laufs.",
       ).toEqual([]);
     },
   );
