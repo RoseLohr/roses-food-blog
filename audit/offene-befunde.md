@@ -1964,3 +1964,60 @@ bricht ab, und eine Abfrage, die nicht nach `gate` fragt, wird verweigert.
 ist keiner. Wer eine Kontrolle gegen einen Vergleichsstand baut, prüft zuerst,
 dass der Vergleichsstand ein anderer ist als das Geprüfte — sonst ist die
 Kontrolle ein Spiegel.
+
+---
+
+## B31 — Eine Maske friert die Bildpunkte ein, nicht die Geometrie — GEMESSEN 10/2026, offen
+
+**Beobachtet beim Referenzlauf VOR dem Umbau der Zubereitungsfläche**, auf
+unverändertem `main` (`dda93f4`). Fünf Basisbilder sind rot, ohne dass jemand
+etwas geändert hätte:
+
+```
+admin-rezepte @ ipad-834          2 253 Punkte (0,01)
+admin-rezepte-meldung @ ipad-834  2 253 Punkte (0,01)
+admin-medien @ handy-390          7 527 Punkte (0,01)
+admin-medien @ desktop-1280
+admin-medien-liste @ handy-390
+```
+
+**Im Differenzbild sitzt der Unterschied bei JEDER Kachel an derselben
+Stelle:** am maskierten Hochladedatum. Nicht im Inhalt der Kachel — am Rand
+des Maskenrechtecks.
+
+**Die Ursache ist die Maske selbst.** `data-referenz-maske` färbt den Bereich
+eines Elements ein; die GRÖSSE dieses Bereichs bestimmt weiterhin der Inhalt.
+Das Datum kommt bei Medien aus `new Date()` zum Hochladezeitpunkt
+(`src/app/admin/(protected)/medien/page.tsx`, Zeilen 150 und 225 — der
+Kommentar dort sagt es selbst), und
+`alsDatum`/`alsZeitpunkt` liefern je nach Tag verschieden BREITE Zeichenketten
+(„1.10.2026" gegen „10.10.2026"). Die Maske deckt den Text zu, das Rechteck
+wandert trotzdem. Die Aufnahme ist damit kalendarisch: an einstelligen Tagen
+grün, an zweistelligen rot.
+
+**Neu aufnehmen wäre hier ein Workaround, kein Fix** — das Bild wäre heute
+grün und am nächsten Monatsersten wieder rot. Deshalb ist es nicht geschehen.
+
+**Zwei Wurzel-Lösungen, beide noch nicht gebaut:**
+1. Dem maskierten Element eine vom Inhalt unabhängige Breite geben
+   (`inline-block` plus feste `ch`-Breite, dazu `tabular-nums`). Ändert das
+   Layout der vier betroffenen Admin-Seiten und zieht eigene Neuaufnahmen nach
+   sich — darum nicht nebenbei.
+2. Den Zeitpunkt der Medien aus der Saat festnageln, wie es
+   `62aec34` für den Rest schon getan hat. Dann steht dort immer dieselbe
+   Zeichenkette und die Maske braucht keine feste Breite. Betrifft nur
+   `scripts/seed.ts`, ändert aber den SICHTBAREN Text und damit ebenfalls die
+   Basis.
+
+**Die Mechanik, die das melden sollte, hat recht behalten:** Seit B5 prüft der
+Lauf, dass eine angemeldete Maske auch etwas trifft. Sie trifft — sie reicht
+nur nicht. „Maskiert" heißt bis heute „die Punkte darin zählen nicht", nicht
+„die Stelle bleibt gleich groß".
+
+**Nebenbefund zur Herkunft:** Die Basis von `admin-rezepte` stammt aus
+`e8838c3`, die Seite hat sich danach in `bf04605` (gemeinsames
+Löschen-Formular, Statuschip) und `844a79c` (Entwürfe) geändert; die
+Medien-Basis stammt aus `62aec34`, die Seite danach aus `4e2031d` und
+`5ffdde2`. Ein Teil der 0,01 ist also echte, nie nachgezogene Drift. Welcher
+Teil, lässt sich erst sagen, wenn die Maskengeometrie steht — sonst mischt man
+zwei Ursachen in einem Bild.
