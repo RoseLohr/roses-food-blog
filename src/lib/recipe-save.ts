@@ -120,6 +120,13 @@ export type SaveRecipeResult = { recipeId: number } | { error: string };
 export async function saveRecipeFromForm(
   formData: FormData,
   adminId: number,
+  /**
+   * Zeitpunkt des Speicherns. Im Betrieb die Uhr — ein echtes Speichern
+   * geschieht wirklich jetzt. Nur die E2E-Vorbereitung reicht den festen
+   * Saat-Zeitpunkt herein, damit ihre Zeilen nicht am Tag des Laufs hängen
+   * (dieselbe Lösung wie `storeImage`, audit/offene-befunde.md B31).
+   */
+  jetzt: Date = new Date(),
 ): Promise<SaveRecipeResult> {
   const id = formData.get("id") ? Number(formData.get("id")) : null;
   const title = String(formData.get("titel") ?? "").trim();
@@ -236,7 +243,7 @@ export async function saveRecipeFromForm(
     sections.flatMap((s) => s.ingredients.map((i) => i.name)),
   );
 
-  const now = new Date();
+  const now = jetzt;
   const base = {
     title,
     slug,

@@ -16,6 +16,14 @@ import { t } from "@/i18n/de";
 
 const rt = t().richtext;
 
+/** Was beobachtet wird. Einmal benannt, damit Anhalten und Wieder-Anhängen
+ *  nicht auseinanderlaufen können. */
+const BEOBACHTET: MutationObserverInit = {
+  childList: true,
+  subtree: true,
+  characterData: true,
+};
+
 export function RichTextEditor({
   name,
   initialMarkdown,
@@ -43,6 +51,9 @@ export function RichTextEditor({
   // onChange stabil halten, damit der Beobachter unten [] als Deps nutzen kann.
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
+  // Der Beobachter in einer Ref, damit der Füll-Effekt ihn anhalten kann —
+  // siehe die Begründung an jenem Effekt.
+  const beobachterRef = useRef<MutationObserver | null>(null);
 
   // Editor-Inhalt → Markdown → Hidden-Feld (+ onChange). Rein imperativ.
   const sync = useCallback(() => {
@@ -55,25 +66,53 @@ export function RichTextEditor({
   // Editor aus dem Markdown befüllen — aber NICHT, während der Nutzer darin
   // tippt (sonst springt der Cursor bei kontrollierter Nutzung, z. B.
   // Schritt-Editoren). Beim (Neu-)Mounten ist der Editor nicht fokussiert.
+  //
+  // DER BEOBACHTER WIRD DABEI ANGEHALTEN — und das ist kein Feinschliff:
+  //
+  // Beim Mounten laufen die Effekte der Reihe nach, dieser hier ZUERST. Das
+  // Befüllen passiert also, bevor unten `observe()` steht, und bleibt
+  // unbemerkt. Bei jedem SPÄTEREN Wechsel von `initialMarkdown` ist der
+  // Beobachter aber längst angehängt (seine Abhängigkeit `sync` ist stabil, er
+  // wird nie neu aufgesetzt). Er meldet das Befüllen dann als Inhaltsänderung,
+  // `sync()` liest den Text aus dem DOM ZURÜCK nach Markdown und reicht ihn
+  // über `onChange` nach außen — der Aufrufer speichert also nicht mehr das,
+  // was er hereingegeben hat, sondern das Ergebnis eines Umwegs md → HTML → md.
+  // Dieser Umweg ist NICHT verlustfrei: Gemessen an echtem Chromium
+  // verschwindet ein `![alt](url)` im Text vollständig, und aus einer
+  // verschachtelten Liste wird eine flache. Beim Rezept-Editor landete das
+  // über das versteckte Feld in der Datenbank — stiller Inhaltsverlust, ohne
+  // dass jemand den Text angefasst hätte.
+  //
+  // `disconnect()` leert auch die noch nicht zugestellten Einträge; deshalb
+  // genügt Anhalten → schreiben → wieder anhängen, ohne Merker und ohne
+  // `takeRecords()`.
   useEffect(() => {
     if (!ref.current) return;
     if (typeof document !== "undefined" && document.activeElement === ref.current)
       return;
     const html = renderMarkdown(initialMarkdown).trim();
+    beobachterRef.current?.disconnect();
     ref.current.innerHTML = html || "<p><br></p>";
     if (hiddenRef.current) hiddenRef.current.value = initialMarkdown;
+    if (beobachterRef.current) beobachterRef.current.observe(ref.current, BEOBACHTET);
   }, [initialMarkdown]);
 
   // Kern des Fixes: ein MutationObserver spiegelt JEDE Inhaltsänderung des Editors
   // (Tippen, Formatieren, Einfügen, auch programmatisch) sofort ins Hidden-Feld —
   // unabhängig davon, ob input/blur feuern oder React neu rendert. Das macht den
   // abgeschickten Wert robust gegen das Event-/Flush-Timing (u. a. iOS/Safari).
+  // Ausgenommen ist allein das Befüllen oben: Das ist keine Eingabe, sondern
+  // dieser Editor, der seine eigene Vorgabe übernimmt.
   useEffect(() => {
     const el = ref.current;
     if (!el || typeof MutationObserver === "undefined") return;
     const obs = new MutationObserver(() => sync());
-    obs.observe(el, { childList: true, subtree: true, characterData: true });
-    return () => obs.disconnect();
+    beobachterRef.current = obs;
+    obs.observe(el, BEOBACHTET);
+    return () => {
+      obs.disconnect();
+      beobachterRef.current = null;
+    };
   }, [sync]);
 
   // Zusätzliches Sicherheitsnetz: unmittelbar vor dem Absenden erneut

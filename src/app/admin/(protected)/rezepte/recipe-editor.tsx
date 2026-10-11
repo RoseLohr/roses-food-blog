@@ -33,6 +33,61 @@ export interface EditorSection {
   ingredients: EditorIngredient[];
   steps: EditorStep[];
 }
+
+/**
+ * Ein Schritt, wie ihn der EDITOR hält: zusätzlich mit einer stabilen
+ * Identität.
+ *
+ * Warum das sein muss, seit die Schritte verschiebbar sind: In einer Karte
+ * stecken Kinder mit EIGENEM Zustand — der `RichTextEditor` hält seinen Text
+ * im DOM (contentEditable), der `ImagePicker` seine Bibliotheksliste in
+ * `useState`. Verschlüsselt man die Karten über ihren Index, bleiben diese
+ * Instanzen beim Tausch STEHEN und bekommen nur andere Werte gereicht. Drei
+ * Dinge gehen dann schief, und alle drei sind gemessen:
+ *
+ *  1. Der `RichTextEditor` befüllt sich aus dem geänderten `initialMarkdown`
+ *     neu — ein Umweg über HTML, der nicht verlustfrei ist (ein Bild im Text
+ *     verschwand, eine verschachtelte Liste wurde flach).
+ *  2. Ein eben erst hochgeladenes Bild kennt nur DER Picker, der es
+ *     hochgeladen hat. Wandert die Bild-Id zum Nachbarn, findet der sie in
+ *     seiner Liste nicht und zeigt „Kein Bild ausgewählt" — obwohl sie gesetzt
+ *     ist.
+ *  3. Der Tastaturfokus bliebe an der POSITION hängen statt am Schritt: Zweimal
+ *     „nach unten" hätte denselben Schritt hin- und zurückgeschoben.
+ *
+ * Mit einer stabilen Identität verschiebt React die Karte samt ihrer Kinder.
+ * Der Text wird gar nicht erst neu befüllt, das Bild bleibt dem Picker
+ * bekannt, und der Fokus wandert mit, weil es DASSELBE DOM-Element bleibt.
+ *
+ * Der Schlüssel gehört dem Editor und verlässt ihn nicht: `ohneSchluessel()`
+ * nimmt ihn vor dem Absenden wieder heraus, damit das Formularfeld exakt die
+ * Gestalt behält, die `recipe-save.ts` kennt.
+ */
+interface KartenSchritt extends EditorStep {
+  schluessel: string;
+}
+interface KartenAbschnitt extends Omit<EditorSection, "steps"> {
+  steps: KartenSchritt[];
+}
+
+let schrittZaehler = 0;
+const neuerSchrittSchluessel = () => `schritt-${(schrittZaehler += 1)}`;
+
+/** Eingehende Schritte bekommen ihre Identität beim Einzug in den Editor. */
+function mitSchluesseln(abschnitte: EditorSection[]): KartenAbschnitt[] {
+  return abschnitte.map((a) => ({
+    ...a,
+    steps: a.steps.map((st) => ({ ...st, schluessel: neuerSchrittSchluessel() })),
+  }));
+}
+
+/** … und verlieren sie wieder, bevor das Formular abgeschickt wird. */
+function ohneSchluessel(abschnitte: KartenAbschnitt[]): EditorSection[] {
+  return abschnitte.map((a) => ({
+    ...a,
+    steps: a.steps.map(({ schluessel: _schluessel, ...rest }) => rest),
+  }));
+}
 export interface EditorNote {
   text: string;
   isPublic: boolean;
@@ -103,11 +158,11 @@ const labelCls = "mb-1 block text-sm font-medium";
 const btnSecondary =
   "rounded-lg border border-ink/20 px-3 py-1.5 text-sm hover:bg-cream";
 
-function emptySection(): EditorSection {
+function emptySection(): KartenAbschnitt {
   return { name: "", ingredients: [emptyIngredient()], steps: [emptyStep()] };
 }
-function emptyStep(): EditorStep {
-  return { text: "", imageId: null };
+function emptyStep(): KartenSchritt {
+  return { text: "", imageId: null, schluessel: neuerSchrittSchluessel() };
 }
 function emptyIngredient(): EditorIngredient {
   return { name: "", amount: "", unit: "", note: "" };
@@ -241,12 +296,12 @@ export function RecipeEditor({
     Record<string, string[]>
   >({});
   const [formKey, setFormKey] = useState(0);
-  const [sections, setSections] = useState<EditorSection[]>(
-    form.sections.length ? form.sections : [emptySection()],
+  const [sections, setSections] = useState<KartenAbschnitt[]>(() =>
+    form.sections.length ? mitSchluesseln(form.sections) : [emptySection()],
   );
   const [notes, setNotes] = useState<EditorNote[]>(form.notes);
 
-  const updateSection = (i: number, patch: Partial<EditorSection>) =>
+  const updateSection = (i: number, patch: Partial<KartenAbschnitt>) =>
     setSections((prev) => prev.map((s, idx) => (idx === i ? { ...s, ...patch } : s)));
 
   /**
@@ -262,6 +317,22 @@ export function RecipeEditor({
         if (idx !== si) return s;
         const next = verschoben(s.ingredients, ii, richtung);
         return next === s.ingredients ? s : { ...s, ingredients: [...next] };
+      }),
+    );
+
+  /**
+   * Dasselbe für einen Zubereitungsschritt. Bewusst eine ZWEITE, gleich
+   * gebaute Funktion statt einer, die sich das Feld übergeben lässt: Zutaten
+   * und Schritte sind verschiedene Typen, und eine gemeinsame Fassung käme
+   * ohne eine Typ-Zusicherung nicht aus. Die Rechnung selbst steht nur einmal
+   * — in `verschoben`.
+   */
+  const verschiebeSchritt = (si: number, sti: number, richtung: Richtung) =>
+    setSections((prev) =>
+      prev.map((s, idx) => {
+        if (idx !== si) return s;
+        const next = verschoben(s.steps, sti, richtung);
+        return next === s.steps ? s : { ...s, steps: [...next] };
       }),
     );
 
@@ -328,7 +399,11 @@ export function RecipeEditor({
             name: s.name,
             ingredients: s.ingredients.length ? s.ingredients : [emptyIngredient()],
             steps: s.steps.length
-              ? s.steps.map((text) => ({ text, imageId: null }))
+              ? s.steps.map((text) => ({
+                  text,
+                  imageId: null,
+                  schluessel: neuerSchrittSchluessel(),
+                }))
               : [emptyStep()],
           }))
         : [emptySection()],
@@ -343,7 +418,11 @@ export function RecipeEditor({
       {initial.id === null && <RecipeAiAssistant onApply={applyDraft} />}
       <form key={formKey} action={formAction} className="flex flex-col gap-6">
       {form.id !== null && <input type="hidden" name="id" value={form.id} />}
-      <input type="hidden" name="abschnitte" value={JSON.stringify(sections)} />
+      <input
+        type="hidden"
+        name="abschnitte"
+        value={JSON.stringify(ohneSchluessel(sections))}
+      />
       <input type="hidden" name="notizen" value={JSON.stringify(notes)} />
 
       {(message || state.error) && (
@@ -656,23 +735,55 @@ export function RecipeEditor({
               <h3 className="mb-2 mt-4 text-sm font-semibold">{d.steps}</h3>
               <ol className="flex flex-col gap-3">
                 {section.steps.map((step, sti) => (
-                  <li key={sti} className="border border-ink/10 bg-cream/30 p-3">
-                    <div className="mb-2 flex items-center justify-between">
+                  <li
+                    key={step.schluessel}
+                    className="border border-ink/10 bg-cream/30 p-3"
+                  >
+                    {/* Die Knopfgruppe bekommt unter 640 px eine EIGENE,
+                        rechtsbündige Zeile — dieselbe Anordnung, die
+                        `.zutat-tasten` den Zutaten-Pfeilen über das Raster
+                        gibt (globals.css). Ohne sie teilte sie sich die Zeile
+                        mit der Überschrift, und „Zubereitungsschritte 1" brach
+                        auf dem Handy zweizeilig um (gemessen: Kopfzeile 34 →
+                        40 px bei 390 px Breite). */}
+                    <div className="mb-2 flex flex-wrap items-center justify-between gap-y-1">
                       <span className="text-sm font-medium text-ink-soft">
                         {d.steps} {sti + 1}
                       </span>
-                      <button
-                        type="button"
-                        aria-label={`${d.steps} ${sti + 1} ${d.remove}`}
-                        onClick={() =>
-                          updateSection(si, {
-                            steps: section.steps.filter((_, idx) => idx !== sti),
-                          })
-                        }
-                        className={btnSecondary}
-                      >
-                        ×
-                      </button>
+                      <div className="flex w-full items-center justify-end gap-1 sm:w-auto">
+                        <button
+                          type="button"
+                          onClick={() => verschiebeSchritt(si, sti, -1)}
+                          disabled={sti === 0}
+                          aria-label={`${d.stepUp} (${sti + 1})`}
+                          title={d.stepUp}
+                          className={`${btnSecondary} px-2 py-0.5 disabled:opacity-40`}
+                        >
+                          ↑
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => verschiebeSchritt(si, sti, 1)}
+                          disabled={sti === section.steps.length - 1}
+                          aria-label={`${d.stepDown} (${sti + 1})`}
+                          title={d.stepDown}
+                          className={`${btnSecondary} px-2 py-0.5 disabled:opacity-40`}
+                        >
+                          ↓
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`${d.steps} ${sti + 1} ${d.remove}`}
+                          onClick={() =>
+                            updateSection(si, {
+                              steps: section.steps.filter((_, idx) => idx !== sti),
+                            })
+                          }
+                          className={btnSecondary}
+                        >
+                          ×
+                        </button>
+                      </div>
                     </div>
                     <RichTextEditor
                       initialMarkdown={step.text}
