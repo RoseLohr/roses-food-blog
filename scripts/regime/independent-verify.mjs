@@ -163,16 +163,24 @@ function pickForPref(ids, p) {
   return dated.length ? dated[dated.length - 1] : null;
 }
 
-/** Verfügbare Modell-IDs des Accounts (GET /v1/models). null bei Nichtverfügbarkeit. */
+/**
+ * Verfügbare Modell-IDs des Accounts (GET /v1/models).
+ * `{ ids }` bei Erfolg, `{ ids: null, grund }` bei Nichtverfügbarkeit — der
+ * GRUND wird mitgegeben, nicht verschluckt: Vom 11. bis 13.09. scheiterte jedes
+ * Panel an dieser Abfrage, und das Log sagte nur „nicht verfügbar" (B33).
+ */
 async function fetchModelIds() {
   try {
     const res = await fetch(`${BASE}/models`, { headers: AUTH });
     if (res.ok) {
       const data = await res.json();
-      return (data?.data || []).map((m) => m?.id).filter(Boolean);
+      return { ids: (data?.data || []).map((m) => m?.id).filter(Boolean) };
     }
-  } catch { /* Netz-/Parsefehler → null */ }
-  return null;
+    return { ids: null, grund: `HTTP ${res.status}` };
+  } catch (e) {
+    // Nur die Fehlerklasse, keine Details: die Meldung könnte den Endpunkt nennen.
+    return { ids: null, grund: `Netz-/Parsefehler (${e?.name || "Error"})` };
+  }
 }
 
 // BREIT verfügbares, gepinntes Fallback-Modell (NICHT das knappste/neueste — das
@@ -192,20 +200,46 @@ const _envPanelModels = (process.env.VERIFIER_PANEL_MODELS || "")
 const PANEL_MODELS_RAW = _envPanelModels.length ? _envPanelModels : DEFAULT_PANEL_MODELS;
 
 /**
+ * Panel, wenn /v1/models NICHT antwortet (B33): Wurde das Panel ausdrücklich
+ * konfiguriert (VERIFIER_PANEL_MODELS), stehen die IDs so, wie der Betreiber sie
+ * gesetzt hat — sie werden UNGEPRÜFT versucht. Lehnt das Gateway sie ab, ist das
+ * ein 400 je Stimme, das die tatsächliche ID nennt, und das Panel bleibt
+ * fail-closed. Ohne ausdrückliches Panel greift das Fallback-Modell wie bisher.
+ *
+ * Warum nicht immer Fallback: Vom 11. bis 13.09. fiel nur die LISTE aus. Der
+ * Verifier ersetzte daraufhin das ganze konfigurierte Panel durch ein
+ * Fallback-Modell, das dasselbe Gateway ablehnt — und der Pflicht-Approver
+ * (eine konfigurierte ID) konnte gar nicht erst zustimmen. Jeder PR stand,
+ * ohne dass eine Stimme den Diff gesehen hätte, und das Log nannte weder den
+ * Grund des Listenausfalls noch das ersetzte Panel als Ursache.
+ */
+export function panelOhneListe(konfiguriert, ausdruecklich, panelSize, fallback = FALLBACK_MODEL) {
+  if (ausdruecklich && konfiguriert.length) return [...konfiguriert];
+  return Array.from({ length: panelSize }, () => fallback);
+}
+
+/**
  * Löst die Panelisten-Modelle auf (ein Modell pro Stimme):
  *  - VERIFIER_MODEL gesetzt → dieses eine Modell für alle Stimmen.
  *  - sonst jede gewünschte ID gegen /v1/models auflösen (exakt/datierter Snapshot);
  *    nicht auflösbar → sichtbare WARNUNG + Fallback auf das neueste verfügbare
  *    Präferenz-Modell (statt hartem 404, das die Kontrolle dauerhaft blockte).
- *  - /models gar nicht verfügbar → Fallback-Modell für alle.
+ *  - /models gar nicht verfügbar → konfiguriertes Panel ungeprüft, sonst
+ *    Fallback-Modell für alle (panelOhneListe).
  */
 async function resolvePanelModels(panelSize) {
   if (process.env.VERIFIER_MODEL)
     return Array.from({ length: panelSize }, () => process.env.VERIFIER_MODEL);
-  const ids = await fetchModelIds();
+  const { ids, grund } = await fetchModelIds();
   if (!ids) {
-    console.log(`[independent-verify] /v1/models nicht verfügbar → Fallback-Modell ${FALLBACK_MODEL} für alle Stimmen.`);
-    return Array.from({ length: panelSize }, () => FALLBACK_MODEL);
+    const panel = panelOhneListe(PANEL_MODELS_RAW, _envPanelModels.length > 0, panelSize);
+    console.log(
+      `[independent-verify] /v1/models nicht verfügbar (${grund}) → ` +
+      (_envPanelModels.length
+        ? `konfiguriertes Panel ungeprüft versucht: ${panel.join(", ")}.`
+        : `Fallback-Modell ${FALLBACK_MODEL} für alle Stimmen.`),
+    );
+    return panel;
   }
   let newest = FALLBACK_MODEL;
   for (const p of MODEL_PREFERENCE) { const h = pickForPref(ids, p); if (h) { newest = h; break; } }
@@ -920,7 +954,24 @@ if (process.argv.includes("--selftest")) {
   const dochNoch = await stimmeHolen(folgen({ ok: true, v: {} }, A), 3, sofort);
   expect(dochNoch === A, "wer im zweiten Versuch antwortet, hat abgestimmt.");
 
-  console.log("   ✓ Selbsttest: decide() + modelMatches() + requireApprovals() (Pflicht-Approver Sol + Korroboration) + attestReasons() + attestProof() + validateRangeInputs() + normalizeBase() + authHeader() + strictAnyRefutation() + mdInline() + renderStepSummary() korrekt.");
+  // panelOhneListe() (B33): Fällt /v1/models aus, bleibt ein AUSDRÜCKLICH
+  // konfiguriertes Panel stehen — der Pflicht-Approver ist eine dieser IDs und
+  // kann nur so überhaupt zustimmen. Ohne ausdrückliches Panel: Fallback.
+  const KONF = ["combo/SOTA-A", "combo/SOTA-B", "combo/SOTA-C"];
+  expect(JSON.stringify(panelOhneListe(KONF, true, 3, "fb")) === JSON.stringify(KONF),
+    "ohne Liste bleibt das konfigurierte Panel stehen (ungeprüft versucht).");
+  expect(panelOhneListe(KONF, true, 3, "fb") !== KONF,
+    "und ist eine Kopie, kein Verweis auf die Konfiguration.");
+  expect(JSON.stringify(panelOhneListe(["gpt-5.3-codex", "gpt-5.6-sol", "gpt-4.1-mini"], false, 3, "fb")) === JSON.stringify(["fb", "fb", "fb"]),
+    "ohne ausdrückliches Panel greift das Fallback-Modell für alle Stimmen.");
+  expect(JSON.stringify(panelOhneListe([], true, 2, "fb")) === JSON.stringify(["fb", "fb"]),
+    "eine leere Konfiguration ist keine — Fallback, nie ein leeres Panel.");
+  expect(requireApprovals([A, A2, A], panelOhneListe(KONF, true, 3, "fb"), "combo/SOTA-A", 1).block === false,
+    "mit dem stehen gebliebenen Panel KANN der Pflicht-Approver zustimmen.");
+  expect(requireApprovals([A, A2, A], panelOhneListe(KONF, false, 3, "fb"), "combo/SOTA-A", 1).block === true,
+    "mit dem Fallback-Panel kann er es nie — genau der Dauerblock vom 11.–13.09.");
+
+  console.log("   ✓ Selbsttest: decide() + modelMatches() + requireApprovals() (Pflicht-Approver Sol + Korroboration) + attestReasons() + attestProof() + validateRangeInputs() + normalizeBase() + authHeader() + strictAnyRefutation() + mdInline() + renderStepSummary() + panelOhneListe() korrekt.");
   process.exit(0);
 }
 

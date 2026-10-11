@@ -45,9 +45,39 @@ gegen die Struktur.
 | `media-thumb.tsx` (Bild) | `no-noninteractive…`, `click-events-have-key-events` | onClick verhindert nur Schließen beim Bildklick; keine eigenständige Interaktion |
 | `site-header.tsx` | `no-autofocus` | Fokus nur, weil der Nutzer das Suchpanel bewusst öffnete — erwartet |
 
-## F5 — Dev-only npm-audit-Findings ohne Upstream-Fix (ratifiziert 2026-07-26; GESCHLOSSEN 2026-08-06)
+## F5 — Dev-only npm-audit-Findings ohne Upstream-Fix (ratifiziert 2026-07-26; geschlossen 2026-08-06; WIEDERERÖFFNET 2026-10-10)
 
-**Status: geschlossen.** Der Auto-Tripwire hat am 2026-08-06 ausgelöst:
+**Status: offen, mit genau EINEM Eintrag.** Ratifiziert 2026-10-10 durch die
+Inhaberin, nachdem die drei Wege (ratifizieren / ESLint-Plugin entfernen /
+warten) einzeln vorgelegt waren.
+
+| Advisory (allowgelistet) | Kette | Warum kein Root-Fix möglich |
+|---|---|---|
+| `GHSA-vfj7-8cjw-p6xm` — `braces`, Stack-Exhaustion-DoS über tief verschachtelte Muster (HIGH) | `@next/eslint-plugin-next` → `fast-glob` → `micromatch` → `braces` (nur devDependencies) | Das Advisory trägt `range: *`; 3.0.3 ist die neueste veröffentlichte Fassung (zuletzt 2024-09-18). Es gibt keine heile Version. Auch die Kette ist zu: `fast-glob@3.3.3` (neueste) verlangt `micromatch@^4.0.8`, das verlangt `braces@^3.0.3`. Empirisch nachgesehen, nicht vermutet. |
+
+**Warum vertretbar:** `npm ls braces --omit=dev` ist LEER — das Paket ist im
+ausgelieferten Baum nicht enthalten, der Produktions-Audit
+(`npm audit --omit=dev`, ohne Allowlist) meldet 0. Getroffen ist allein das
+Datei-Globbing von ESLint zur Lint-Zeit, und dessen Muster stammen aus der
+eigenen Konfiguration, nicht aus fremder Eingabe.
+
+**Verworfene Alternative:** `@next/eslint-plugin-next` entfernen. Es liefert
+das gesamte `recommended`-Regelwerk von Next (`eslint.config.mjs`); Lint-Regeln
+abzuschaffen, um ein Audit still zu bekommen, wäre der schlechtere Tausch.
+
+**Im selben Zug an der Wurzel gefixt, NICHT allowgelistet:** `next` 16.4.0
+(u. a. GHSA-vcvr-r3jv-pc5j, kritisch, RCE), `sharp` 0.35.5, und über
+`overrides` `source-map-js` 1.2.2, `tinypool` 2.1.2, `fast-uri` 3.1.8,
+`brace-expansion@1` 1.1.21 / `@5` 5.0.12.
+
+**Tripwire:** unverändert der automatische unten — verschwindet
+`GHSA-vfj7-8cjw-p6xm` aus dem Audit, wird CI ROT, bis Eintrag und dieser
+Abschnitt entfernt sind.
+
+---
+
+**Vorgeschichte (nachrichtlich).** Erste Fassung, geschlossen 2026-08-06 —
+der Auto-Tripwire hatte ausgelöst:
 Upstream hat `brace-expansion` gefixt (1.1.18 bzw. 5.0.9, via `npm audit fix`
 eingespielt — ESLint/jsx-a11y laufen damit nachweislich grün, die frühere
 Bruch-Begründung ist durch die Patch-Releases hinfällig). Die Allowlist in

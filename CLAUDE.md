@@ -121,9 +121,13 @@ diesem Repository arbeitet. Sie ist Teil des Governance-Regimes (A-32/A-33/A-37)
   derselben Stelle. Ein Bedienelement, das das Objekt nachmacht, das es
   erzeugt, ist kein Bedienelement mehr. Ein Petrol-GEFÜLLTER Knopf wäre
   die andere naheliegende Wahl und fällt aus: `bg-leaf` ist dunkel `#1f6c63`
-  und trägt auf der Tönung nur 1,416:1. Weil nun kein fokussierbares Element
-  mehr auf der Tönung steht, deckelt auch der Fokusring (3:1, WCAG 1.4.11) die
-  Tonstärke nicht mehr; es deckelt nur noch `text-ink` der Überschrift.
+  und trägt auf der Tönung nur 1,416:1.
+  **Der Fokusring deckelt die Tonstärke weiterhin, und zwar bei etwa /35.**
+  `:focus-visible` zeichnet `outline` mit `outline-offset: 2px`, also AUSSERHALB
+  des Elements — der Ring liegt auf der Tönung, auch wenn der Knopf selbst eine
+  eigene Fläche hat. Gemessen gegen die Tönung: /30 3,381:1, /35 3,137:1,
+  /40 2,905:1 — dort fällt er unter die 3:1 aus WCAG 1.4.11. Eine eigene Fläche
+  macht ein Bedienelement SICHTBAR, sie nimmt dem Ring nicht seinen Untergrund.
   **Die Schrittnummer ist die Kugel aus der Rezeptansicht** und trägt
   `aria-hidden` — daneben steht der Name unsichtbar (`sr-only`), und der
   Textkasten bekommt `ariaLabel`: Er hat kein `label` und hätte sonst gar
@@ -343,6 +347,32 @@ neu (B6, 08/2026):
   Aktivität, `subscribe_pr_activity`) und dranbleiben, bis er gemergt/geschlossen
   ist — Fehlschläge autonom an der Wurzel fixen (kein Workaround) und Review-
   Kommentare beantworten, sobald sie eintreffen. Nicht abwarten, bis jemand fragt.
+  **Dranbleiben heißt nicht Abfragen** — wie, steht in der Regel darunter.
+- **Schleifen sparsam (angeordnet 2026-09-16, verbindlich):** Jede
+  wiederkehrende Tätigkeit — PR-Beobachtung, Check-ins, Warten auf CI oder
+  einen Hintergrundjob — kostet bei JEDEM Durchlauf Token, auch wenn sich
+  nichts geändert hat. Am 13./14.09. liefen zwölf Check-ins im Stundentakt
+  gegen zwei PRs, deren Zustand nur ein Mensch ändern konnte; jeder brachte
+  dieselbe Antwort. Deshalb:
+  1. **Ereignisse statt Abfragen.** Die PR-Subscription liefert Merge, Reviews
+     und rote Checks von selbst. Was als Ereignis kommt, wird nicht abgefragt.
+  2. **Check-in ist Rückfall, nicht Takt:** höchstens alle 6 Stunden. Hängt
+     der Zustand nur noch an einem Menschen (Merge, Freigabe, ein Gateway
+     außerhalb des Repos), höchstens alle 24 Stunden. Kein Stundentakt.
+  3. **Ein Check-in = ein Aufruf:** die PR-Liste mit minimalen Feldern. Logs,
+     Check-Runs oder Workflow-Läufe nur, wenn sich Kopf, Basis oder ein
+     Ergebnis geändert hat. Ein bekanntes Fehlerbild (gleiche Signatur) wird
+     nicht erneut gelesen — es ist dokumentiert, das reicht.
+  4. **Nichts geändert → nichts schreiben.** Still neu armieren, dem Nutzer
+     eine Zeile, nicht mehr. Kein Zwischenbericht, der nur wiederholt.
+  5. **Warten ist kein Polling.** Kein `sleep`-Loop, kein wiederholtes Lesen
+     einer Ausgabedatei: Hintergrundjobs melden ihr Ende selbst, und bis dahin
+     wird anderes getan oder der Turn beendet.
+  6. **Höchstens ein Neustart je PR** (B29), das örtliche Gate einmal je Push
+     und nicht je Sonde — als EIN Hintergrundlauf, dessen Ende gemeldet wird,
+     nicht als Folge einzeln abgefragter Schritte.
+  7. **Wer nur noch auf einen Menschen wartet, sagt das EINMAL** — im PR und
+     dem Nutzer — behält die Subscription und hört mit dem Takt auf.
 
 ## Betrieb (Kurzüberblick)
 - Next.js 16 standalone in podman; Deploy: `./deploy.sh` auf dem Server

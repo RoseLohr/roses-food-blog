@@ -41,6 +41,17 @@ import { storeImage } from "../src/lib/media";
  * Datumszelle statt nur für die drei, die gerade aufgefallen sind. Die Masken
  * bleiben trotzdem: Sie halten fest, dass der Wert nicht zur Basis gehört.
  *
+ * NACHTRAG (13.09.): Genau die drei Aufnahmen waren zehn Tage später wieder
+ * rot — mit „13.9.2026" (neun Zeichen) bricht die Zeile um, mit „3.9.2026"
+ * (acht) nicht. Der feste Zeitpunkt galt nämlich für alles AUSSER den Bildern:
+ * Die schreibt nicht diese Datei, sondern `storeImage` in src/lib/media.ts,
+ * und das nahm die Uhr. Die Kontrolle in tests/saat-zeitpunkt.test.ts las nur
+ * diesen Quelltext und konnte den Umweg nicht sehen; die Aufnahmen vom 03.09.
+ * waren mit dem Tagesdatum entstanden und hielten bis zum 10.09. Seitdem
+ * bekommt `storeImage` den Zeitpunkt als Parameter, und die Kontrolle misst an
+ * einer frisch gesäten Datenbank statt am Quelltext (audit/offene-befunde.md
+ * B31).
+ *
  * Mittags gewählt, damit keine Zeitzone den Tag über Mitternacht schiebt.
  */
 const NOW = new Date("2026-01-15T12:00:00");
@@ -53,7 +64,8 @@ async function placeholder(label: string, color: string, w = 1280, h = 850) {
       font-size="64" fill="#ffffff">${label}</text>
   </svg>`;
   const buf = await sharp(Buffer.from(svg)).png().toBuffer();
-  const img = await storeImage(buf, `${slugify(label)}.png`, label);
+  // NOW auch hier — ohne den vierten Parameter nähme storeImage die Uhr.
+  const img = await storeImage(buf, `${slugify(label)}.png`, label, NOW);
   return img.id;
 }
 

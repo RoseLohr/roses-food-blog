@@ -59,27 +59,18 @@ jobs:
       # die Spitze von main — in einer eigens geholten Historie, nicht in einem
       # Ref, den der Checkout schon gesetzt hat. Das Skript verweigert einen
       # Bezugspunkt, der auf HEAD zeigt. Ohne Nachweis kein Grün — kein `|| true`.
+      #
+      # Die Ableitung des Ausgangspunkts steht IM SKRIPT, nicht hier (B32): Als
+      # sie hier als Shell stand, fehlte sie der Nightly-Kadenz, die dasselbe
+      # `npm test` fährt — und die war jede Nacht rot. Die Zuweisung steht auf
+      # einer eigenen Zeile: `echo "…=$(…)"` verschluckte einen Fehlschlag.
       - name: Bezugspunkt für das Migrations-Gate bereitstellen
         env:
           GH_TOKEN: ${{ github.token }}
           VORHER: ${{ github.event.before }}
           PR_BASIS: ${{ github.event.pull_request.base.sha }}
         run: |
-          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
-            start="$PR_BASIS"
-          elif [ "$GITHUB_REF_NAME" = main ]; then
-            start="$VORHER"
-          else
-            start="$(git ls-remote --exit-code origin refs/heads/main | cut -f1)"
-          fi
-          case "$start" in
-            ""|0000000000000000000000000000000000000000)
-              echo "::error::kein Ausgangspunkt für den Bezugspunkt des Migrations-Gates (Ereignis $GITHUB_EVENT_NAME)."
-              exit 1 ;;
-          esac
-          git fetch --no-tags --depth=60 origin "$start:refs/remotes/pruef/verlauf"
-          basis="$(bash scripts/regime/gate-bezugspunkt.sh refs/remotes/pruef/verlauf)"
-          echo "Bezugspunkt: $basis (letzter main-Commit mit bestandenem Gate ab ${start:0:7})"
+          basis="$(bash scripts/regime/gate-bezugspunkt.sh --aus-ereignis)"
           echo "MIGRATIONS_BASIS=$basis" >> "$GITHUB_ENV"
       - name: Bezugspunkt-Selbsttest (B30 — erster Nachweis gewinnt, ohne Nachweis kein Bezugspunkt)
         run: bash scripts/regime/gate-bezugspunkt.sh --selftest

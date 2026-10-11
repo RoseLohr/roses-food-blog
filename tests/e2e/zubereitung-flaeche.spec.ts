@@ -205,6 +205,36 @@ for (const modus of ["hell", "dunkel"] as const) {
     ).toBeGreaterThanOrEqual(4.5);
   });
 
+  test(`${modus}: der Fokusring hält 3:1 gegen die Tönung`, async ({ page }) => {
+    setzeModus(modus);
+    await page.goto(EDITOR);
+
+    // Die Schranke, die beim Anheben der Tonstärke zuerst reißt — und sie
+    // bleibt bestehen, OBWOHL kein Bedienelement mehr ohne eigene Fläche auf
+    // der Tönung steht: `:focus-visible` (globals.css) zeichnet `outline` mit
+    // `outline-offset: 2px`, also AUSSERHALB des Elements. Der Ring liegt
+    // damit auf der Tönung, auch beim Hinzufügen-Knopf mit `bg-white`.
+    // Gemessen: /30 3,381:1, /35 3,137:1, /40 2,905:1 — dort fällt er unter
+    // die 3:1 aus WCAG 1.4.11.
+    const toenung = await gemalt(page, toenungVon(page), "background-color");
+    const ring = await toenungVon(page).evaluate((el) =>
+      getComputedStyle(el).getPropertyValue("--color-rose-primary").trim(),
+    );
+    const ringRgb = await page.evaluate((wert) => {
+      const c = document.createElement("canvas").getContext("2d");
+      if (!c) throw new Error("kein 2d-Kontext");
+      c.fillStyle = wert;
+      c.fillRect(0, 0, 1, 1);
+      const d = c.getImageData(0, 0, 1, 1).data;
+      return [d[0], d[1], d[2]] as [number, number, number];
+    }, ring);
+
+    expect(
+      kontrast(ringRgb, toenung),
+      `Ring ${alsText(ringRgb)} auf ${alsText(toenung)}`,
+    ).toBeGreaterThanOrEqual(3);
+  });
+
   test(`${modus}: auf der Tönung steht kein Bedienelement ohne eigene Fläche`, async ({
     page,
   }) => {
