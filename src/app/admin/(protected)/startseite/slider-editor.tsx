@@ -3,9 +3,25 @@
 /**
  * Slider-Editor: Liste der Slides (Bild, verlinktes Rezept, Unterschrift,
  * Reihenfolge per Hoch/Runter), serialisiert als JSON in ein Hidden-Field.
+ *
+ * Bis 10/2026 trug er eine EIGENE Abschrift der Tausch-Rechnung, seine Pfeile
+ * waren am Rand nicht abgeschaltet, und die Folien waren über den Index
+ * verschlüsselt UND beschrieben. Jede Folie hat einen Bild-Picker — ein
+ * Upload, der erst nach einem Verschieben zurückkam, setzte das Bild in die
+ * Folie, die inzwischen an der alten Stelle stand (tests/e2e/slider-reihenfolge
+ * .spec.ts). Jetzt: dieselben Helfer und Pfeile wie im übrigen Admin.
  */
 import { useState } from "react";
 import { ImagePicker, type ImageChoice } from "@/components/admin/image-picker";
+import { Verschiebeknoepfe } from "@/components/admin/verschiebeknoepfe";
+import { btnSecondary } from "@/components/admin/knopf-stil";
+import {
+  geaendertNach,
+  neuerSchluessel,
+  ohneEintrag,
+  schluessellos,
+  verschobenNach,
+} from "@/lib/reihenfolge";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -17,9 +33,14 @@ export interface SlideRow {
   caption: string;
 }
 
+/** Eine Folie im Editor — mit Identität, die das Formular nie verlässt. */
+interface KartenFolie extends SlideRow {
+  schluessel: string;
+}
+
+const alsKarte = (f: SlideRow): KartenFolie => ({ ...f, schluessel: neuerSchluessel("folie") });
+
 const inputCls = "w-full border border-ink-soft/30 px-3 py-2 text-sm";
-const btnSecondary =
-  "rounded-lg border border-ink/20 px-3 py-1.5 text-sm hover:bg-cream";
 
 export function SliderEditor({
   initial,
@@ -30,32 +51,27 @@ export function SliderEditor({
   images: ImageChoice[];
   recipes: Array<{ id: number; title: string }>;
 }) {
-  const [slides, setSlides] = useState<SlideRow[]>(initial);
+  const [slides, setSlides] = useState<KartenFolie[]>(() => initial.map(alsKarte));
 
-  const update = (i: number, patch: Partial<SlideRow>) =>
-    setSlides((prev) => prev.map((s, idx) => (idx === i ? { ...s, ...patch } : s)));
-
-  const move = (i: number, dir: -1 | 1) =>
-    setSlides((prev) => {
-      const j = i + dir;
-      if (j < 0 || j >= prev.length) return prev;
-      const copy = [...prev];
-      [copy[i], copy[j]] = [copy[j], copy[i]];
-      return copy;
-    });
+  /** Eine Folie ändern — über ihren Schlüssel, aus dem aktuellen Stand. */
+  const aendere = (fKey: string, aendern: (f: KartenFolie) => KartenFolie) =>
+    setSlides((prev) => geaendertNach(prev, fKey, aendern));
 
   return (
     <div className="flex flex-col gap-3">
-      <input type="hidden" name="slides" value={JSON.stringify(slides)} />
-      {slides.map((s, i) => (
-        <div key={i} className="flex flex-col gap-3 border border-ink/10 p-3">
+      <input type="hidden" name="slides" value={JSON.stringify(slides.map(schluessellos))} />
+      {slides.map((s, i) => {
+        const fKey = s.schluessel;
+        return (
+        <div key={fKey} className="flex flex-col gap-3 border border-ink/10 p-3">
           <ImagePicker
             legend={d.sliderImage}
             options={images}
             value={s.imageId ? [s.imageId] : []}
-            onChange={(ids) =>
-              ids[0] !== undefined && update(i, { imageId: ids[0] })
-            }
+            onChange={(ids) => {
+              const imageId = ids[0];
+              if (imageId !== undefined) aendere(fKey, (f) => ({ ...f, imageId }));
+            }}
             multiple={false}
             clearable={false}
           />
@@ -67,11 +83,10 @@ export function SliderEditor({
               <select
                 id={`slide-rezept-${i}`}
                 value={s.recipeId ?? ""}
-                onChange={(e) =>
-                  update(i, {
-                    recipeId: e.target.value ? Number(e.target.value) : null,
-                  })
-                }
+                onChange={(e) => {
+                  const recipeId = e.target.value ? Number(e.target.value) : null;
+                  aendere(fKey, (f) => ({ ...f, recipeId }));
+                }}
                 className={inputCls}
               >
                 <option value="">{d.sliderNoRecipe}</option>
@@ -97,20 +112,24 @@ export function SliderEditor({
               <input
                 id={`slide-text-${i}`}
                 value={s.caption}
-                onChange={(e) => update(i, { caption: e.target.value })}
+                onChange={(e) => {
+                  const caption = e.target.value;
+                  aendere(fKey, (f) => ({ ...f, caption }));
+                }}
                 className={inputCls}
               />
             </div>
             <div className="flex items-end gap-1">
-              <button type="button" onClick={() => move(i, -1)} aria-label={`${d.moveUp} ${i + 1}`} className={btnSecondary}>
-                ↑
-              </button>
-              <button type="button" onClick={() => move(i, 1)} aria-label={`${d.moveDown} ${i + 1}`} className={btnSecondary}>
-                ↓
-              </button>
+              <Verschiebeknoepfe
+                stelle={i}
+                anzahl={slides.length}
+                verschiebe={(r) => setSlides((prev) => verschobenNach(prev, fKey, r))}
+                nachOben={d.moveUp}
+                nachUnten={d.moveDown}
+              />
               <button
                 type="button"
-                onClick={() => setSlides((prev) => prev.filter((_, idx) => idx !== i))}
+                onClick={() => setSlides((prev) => ohneEintrag(prev, fKey))}
                 aria-label={`${dict.common.delete} ${i + 1}`}
                 className={btnSecondary}
               >
@@ -119,13 +138,14 @@ export function SliderEditor({
             </div>
           </div>
         </div>
-      ))}
+        );
+      })}
       <button
         type="button"
         onClick={() =>
           setSlides((prev) => [
             ...prev,
-            { imageId: images[0]?.id ?? 0, recipeId: null, caption: "" },
+            alsKarte({ imageId: images[0]?.id ?? 0, recipeId: null, caption: "" }),
           ])
         }
         className={`${btnSecondary} self-start`}

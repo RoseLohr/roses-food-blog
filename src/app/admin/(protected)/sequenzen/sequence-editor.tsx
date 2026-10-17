@@ -6,6 +6,7 @@
  */
 import { useState } from "react";
 import { t } from "@/i18n/de";
+import { btnSecondary } from "@/components/admin/knopf-stil";
 
 const dict = t();
 const d = dict.admin.sequences;
@@ -17,8 +18,6 @@ export interface StepRow {
 }
 
 const inputCls = "w-full border border-ink-soft/30 px-3 py-2 text-sm";
-const btnSecondary =
-  "rounded-lg border border-ink/20 px-3 py-1.5 text-sm hover:bg-cream";
 
 export function SequenceEditor({
   id,

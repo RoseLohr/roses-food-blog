@@ -87,6 +87,18 @@ function schrittKaesten(page: Page): Locator {
   });
 }
 
+/**
+ * Wartet, bis die Schritt-Kästen GENAU diese Texte zeigen.
+ *
+ * Der Text-Editor füllt sich erst in einem Effekt nach der Hydration. Ein
+ * einmaliges Lesen direkt nach `goto` fand dort gelegentlich `["", "", ""]`
+ * (10/2026, ein Lauf von vier) — und ein Vergleich zweier solcher Lesungen
+ * wäre sogar grün gewesen, ohne etwas gemessen zu haben.
+ */
+async function zeigt(page: Page, erwartet: string[]) {
+  await expect(schrittKaesten(page).locator('[role="textbox"]')).toHaveText(erwartet);
+}
+
 /** Was in den Schritt-Kästen WIRKLICH zu lesen ist. */
 async function texte(page: Page): Promise<string[]> {
   return schrittKaesten(page)
@@ -144,7 +156,7 @@ test("drei Schritte anlegen und einen davon verschieben", async ({ page }) => {
 
 test("die neue Reihenfolge übersteht das Speichern", async ({ page }) => {
   await page.goto(`/admin/rezepte/${recipeId}`);
-  expect(await texte(page)).toEqual(GETAUSCHT);
+  await zeigt(page, GETAUSCHT);
 });
 
 test("das öffentliche Rezept zeigt dieselbe Reihenfolge", async ({ page }) => {
@@ -161,7 +173,7 @@ test("der obere Pfeil tut dasselbe in die andere Richtung", async ({ page }) => 
   // keine zugesagte Bedienung — und die Richtung ist das Einzige, worin sich
   // die beiden unterscheiden.
   await page.goto(`/admin/rezepte/${recipeId}`);
-  expect(await texte(page)).toEqual(GETAUSCHT);
+  await zeigt(page, GETAUSCHT);
   await page
     .getByRole("button", { name: new RegExp(`^${d.stepUp}`) })
     .nth(1)
@@ -250,6 +262,30 @@ test("auch im zweiten Abschnitt wird der richtige Schritt bewegt", async ({
   expect(nachher[0].steps.map((x: { text: string }) => x.text)).toEqual(
     vorher[0].steps.map((x: { text: string }) => x.text),
   );
+});
+
+test("am Rand bleibt der Fokus auf dem Pfeil, und ein Druck zu viel tut nichts", async ({
+  page,
+}) => {
+  // Ein abgeschalteter Knopf verlor den Fokus an <body>. Die erste Abhilfe gab
+  // ihn an den anderen Pfeil weiter — dann schob ein Druck zu viel den Schritt
+  // wieder zurück. Jetzt ist der Rand-Pfeil `aria-disabled`: fokussierbar,
+  // aber wirkungslos.
+  await page.goto(`/admin/rezepte/${recipeId}`);
+  // Erst wenn alle Kästen gefüllt sind, sagt der Vergleich unten etwas.
+  await expect.poll(async () => (await texte(page)).includes("")).toBe(false);
+  await page
+    .getByRole("button", { name: `${d.stepDown} (2)`, exact: true })
+    .first()
+    .focus();
+  await page.keyboard.press("Enter");
+  const fokus = page.locator(":focus");
+  await expect(fokus).toHaveAttribute("aria-label", `${d.stepDown} (3)`);
+  await expect(fokus).toBeDisabled();
+  const vorher = await texte(page);
+  await page.keyboard.press("Enter");
+  await zeigt(page, vorher);
+  await expect(fokus).toHaveAttribute("aria-label", `${d.stepDown} (3)`);
 });
 
 /**

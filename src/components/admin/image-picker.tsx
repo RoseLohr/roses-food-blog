@@ -11,7 +11,7 @@
  * - Unkontrolliert: `name` + `selectedIds` → versteckte Felder je Auswahl.
  * - Kontrolliert: `value` + `onChange` (keine Hidden-Felder).
  */
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { FocusPointEditor } from "@/components/admin/focus-point-editor";
 import { fokusStil } from "@/lib/media-url";
@@ -102,6 +102,30 @@ export function ImagePicker({
   const [internalSel, setInternalSel] = useState<number[]>(selectedIds ?? []);
   const selected = controlled ? (value ?? []) : internalSel;
   const [open, setOpen] = useState(false);
+  /** Voll: Weitere Bilder lassen sich nicht mehr dazunehmen. */
+  const voll = multiple && max !== undefined && selected.length >= max;
+
+  /**
+   * Der Stand des LETZTEN Renderns — für alles, was später zurückkommt als
+   * der Klick, der es ausgelöst hat.
+   *
+   * Ein Upload läuft Sekunden. Sein Abschluss rief bis 10/2026 die Funktionen
+   * aus dem Rendern beim Upload-BEGINN auf und rechnete mit deren `selected`,
+   * `voll` und `onChange`. Wurde in der Zwischenzeit umgestellt, entfernt
+   * oder aufgefüllt, rechnete er mit der alten Auswahl: In einer Bildgruppe
+   * des Reiseberichts war eine Umstellung damit rückgängig gemacht und eine
+   * eben gesetzte Bildunterschrift verloren
+   * (tests/e2e/reise-bloecke-reihenfolge.spec.ts); ein entferntes Foto kam
+   * zurück, und bei voller Auswahl ersetzte das neue still das zuletzt
+   * gewählte (tests/e2e/reise-restaurants-schluessel.spec.ts).
+   *
+   * Jede Änderung der Auswahl rechnet deshalb von HIER aus. Für einen Klick
+   * ist das derselbe Stand wie im Rendern; für den späten Upload ist es der
+   * einzige, der noch stimmt. (Dasselbe Muster wie `onChangeRef` im
+   * RichTextEditor und `schliessenRef` im AdminDialog.)
+   */
+  const jetzt = useRef({ selected, voll, onChange });
+  jetzt.current = { selected, voll, onChange };
 
   /**
    * Jede Änderung der Auswahl als HERKUNFTSLISTE: je Eintrag entweder die
@@ -122,15 +146,13 @@ export function ImagePicker({
    */
   type Schritt = { von: number } | { neu: number };
   function setzeAuswahl(schritte: Schritt[]) {
-    const ids = schritte.map((s) => ("von" in s ? selected[s.von] : s.neu));
-    if (controlled) onChange(ids, schritte.map((s) => ("von" in s ? s.von : null)));
+    const { selected: stand, onChange: melden } = jetzt.current;
+    const ids = schritte.map((s) => ("von" in s ? stand[s.von] : s.neu));
+    if (melden) melden(ids, schritte.map((s) => ("von" in s ? s.von : null)));
     else setInternalSel(ids);
   }
   /** Die jetzige Auswahl als Herkunftsliste — Ausgangspunkt jeder Änderung. */
-  const bisher = (): Schritt[] => selected.map((_, i) => ({ von: i }));
-
-  /** Voll: Weitere Bilder lassen sich nicht mehr dazunehmen. */
-  const voll = multiple && max !== undefined && selected.length >= max;
+  const bisher = (): Schritt[] => jetzt.current.selected.map((_, i) => ({ von: i }));
 
   function pick(id: number) {
     if (multiple) {
@@ -302,8 +324,10 @@ export function ImagePicker({
             if (multiple) {
               // Bei erreichter Höchstzahl landet das frisch hochgeladene Bild
               // in der BIBLIOTHEK (oben), aber nicht in der Auswahl — sonst
-              // fiele ein anderes still heraus.
-              if (!selected.includes(img.id) && !voll)
+              // fiele ein anderes still heraus. Gefragt wird der Stand von
+              // JETZT, nicht der vom Upload-Beginn (siehe `jetzt`).
+              const { selected: stand, voll: istVoll } = jetzt.current;
+              if (!stand.includes(img.id) && !istVoll)
                 setzeAuswahl([...bisher(), { neu: img.id }]);
             } else {
               setzeAuswahl([{ neu: img.id }]);
