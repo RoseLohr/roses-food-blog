@@ -15,9 +15,22 @@
  *    erzeugten Stylesheet, nicht die im Attribut. Hier steht nur noch, was
  *    tatsächlich gilt.
  *  - Wurde ein Eintrag an den Rand geschoben, schaltete sich genau der
- *    gedrückte Pfeil ab, und der Browser setzte den Fokus auf `<body>`. Bei
- *    zwei Abschnitten nach JEDEM Zug: Wer mit der Tastatur arbeitete, verlor
- *    seine Stelle im Formular. Jetzt geht der Fokus auf den anderen Pfeil.
+ *    gedrückte Pfeil ab (`disabled`), und der Browser setzte den Fokus auf
+ *    `<body>`. Bei zwei Abschnitten nach JEDEM Zug: Wer mit der Tastatur
+ *    arbeitete, verlor seine Stelle im Formular.
+ *
+ * Am Rand ist ein Pfeil deshalb `aria-disabled` statt `disabled`: Er bleibt
+ * fokussierbar, wird als nicht verfügbar angesagt, und ein Druck tut nichts.
+ * Die erste Abhilfe gab den Fokus stattdessen an den ANDEREN Pfeil weiter —
+ * dann schob genau der eine Druck zu viel den Eintrag wieder zurück, und
+ * gehaltenes Enter ließ ihn zwischen den Rändern pendeln (Gegenlesen 10/2026).
+ *
+ * Und nach JEDEM Zug, nicht nur am Rand, bekommt der gedrückte Pfeil den
+ * Fokus zurück, wenn er ihn hatte. React verschiebt den Eintrag dafür im DOM,
+ * und ob ein fokussierter Knoten das übersteht, ist nicht in jedem Browser
+ * gleich. Gemessen ist nur Chromium (das einzige Playwright-Projekt): Dort
+ * bleibt der Fokus stehen, und das erneute `focus()` ist wirkungslos. Für
+ * die übrigen Browser ist es die Absicherung, nicht gemessen.
  *
  * VORAUSSETZUNG an der Aufrufstelle: Die Liste trägt STABILE Schlüssel. Nur
  * dann wandert diese Komponente mit ihrem Eintrag, und nur dann geht der
@@ -33,7 +46,7 @@ import { useEffect, useRef } from "react";
 import type { Richtung } from "@/lib/reihenfolge";
 import { btnSecondary } from "./knopf-stil";
 
-const PFEIL = `${btnSecondary} disabled:opacity-40`;
+const PFEIL = `${btnSecondary} aria-disabled:opacity-40`;
 
 export function Verschiebeknoepfe({
   stelle,
@@ -51,56 +64,50 @@ export function Verschiebeknoepfe({
   nachOben: string;
   nachUnten: string;
 }) {
-  const oben = useRef<HTMLButtonElement>(null);
-  const unten = useRef<HTMLButtonElement>(null);
-  /** Welcher Pfeil nach dem nächsten Zug den Fokus übernimmt — falls nötig. */
-  const fokusNach = useRef<"oben" | "unten" | null>(null);
+  /** Welcher Pfeil nach dem Zug den Fokus zurückbekommt — falls er ihn hatte. */
+  const fokusNach = useRef<HTMLButtonElement | null>(null);
 
-  // Läuft, nachdem der Eintrag seine neue Stelle bezogen hat. Erst dann ist
-  // der gedrückte Pfeil abgeschaltet und der Fokus verloren; jetzt kann der
-  // Nachbar ihn übernehmen.
+  // Läuft, nachdem der Eintrag seine neue Stelle bezogen hat. Ein Zug ändert
+  // `stelle` immer — ein Druck, der nichts verschiebt, setzt `fokusNach` gar
+  // nicht erst (siehe `zug`); es bleibt also nichts liegen, das ein späterer
+  // Zug fälschlich auslöste.
   useEffect(() => {
     const ziel = fokusNach.current;
-    if (ziel === null) return;
     fokusNach.current = null;
-    (ziel === "oben" ? oben : unten).current?.focus();
+    ziel?.focus();
   }, [stelle]);
 
   const zug = (richtung: Richtung, gedrueckt: HTMLButtonElement) => {
     const neu = stelle + richtung;
-    const amRand = richtung === -1 ? neu === 0 : neu === anzahl - 1;
-    // Nur einen Fokus retten, den es gibt — ein Mausklick in Safari fokussiert
-    // den Knopf gar nicht, dann bleibt alles, wie es ist.
-    if (amRand && document.activeElement === gedrueckt) {
-      fokusNach.current = richtung === -1 ? "unten" : "oben";
-    }
+    // Am Rand: `aria-disabled` hält den Knopf nicht vom Klicken ab.
+    if (neu < 0 || neu >= anzahl) return;
+    // Nur einen Fokus zurückgeben, den es gab — ein Mausklick in Safari
+    // fokussiert den Knopf gar nicht, dann bleibt alles, wie es ist.
+    if (document.activeElement === gedrueckt) fokusNach.current = gedrueckt;
     verschiebe(richtung);
+  };
+
+  const pfeil = (richtung: Richtung) => {
+    const amRand = richtung === -1 ? stelle === 0 : stelle === anzahl - 1;
+    const text = richtung === -1 ? nachOben : nachUnten;
+    return (
+      <button
+        type="button"
+        onClick={(e) => zug(richtung, e.currentTarget)}
+        aria-disabled={amRand}
+        aria-label={`${text} (${stelle + 1})`}
+        title={text}
+        className={PFEIL}
+      >
+        {richtung === -1 ? "↑" : "↓"}
+      </button>
+    );
   };
 
   return (
     <>
-      <button
-        ref={oben}
-        type="button"
-        onClick={(e) => zug(-1, e.currentTarget)}
-        disabled={stelle === 0}
-        aria-label={`${nachOben} (${stelle + 1})`}
-        title={nachOben}
-        className={PFEIL}
-      >
-        ↑
-      </button>
-      <button
-        ref={unten}
-        type="button"
-        onClick={(e) => zug(1, e.currentTarget)}
-        disabled={stelle === anzahl - 1}
-        aria-label={`${nachUnten} (${stelle + 1})`}
-        title={nachUnten}
-        className={PFEIL}
-      >
-        ↓
-      </button>
+      {pfeil(-1)}
+      {pfeil(1)}
     </>
   );
 }
