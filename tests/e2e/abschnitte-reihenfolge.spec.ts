@@ -350,6 +350,28 @@ test("am Rand bleibt der Fokus auf dem Pfeil, und ein Druck zu viel tut nichts",
 });
 
 /**
+ * Im Kontrastmodus (Windows, `forced-colors: active`) ersetzt der Browser
+ * Schrift- und Randfarben durch Systemfarben. Ein `disabled`-Knopf bekommt
+ * dort `GrayText` vom Browser, ein `aria-disabled` nicht — und das Abblenden
+ * des Rand-Pfeils steckt seit 10/2026 in Farben statt in `opacity` (die den
+ * Fokusring mit abblendete). Ohne eigene Regel sähe der Rand-Pfeil in diesem
+ * Modus aus wie ein aktiver (Gegenlesen 10/2026).
+ */
+test("im Kontrastmodus ist der Rand-Pfeil als inaktiv zu erkennen", async ({ page }) => {
+  abschnitteSetzen([ABSCHNITTE[0], ABSCHNITTE[1]]);
+  await page.emulateMedia({ forcedColors: "active" });
+  await page.goto(`/admin/rezepte/${recipeId}`);
+  const farben = async (nr: 1 | 2) =>
+    pfeil(page, "oben", nr).evaluate((el) => {
+      const stil = getComputedStyle(el);
+      return { schrift: stil.color, rand: stil.borderTopColor };
+    });
+  const [amRand, aktiv] = [await farben(1), await farben(2)];
+  expect(amRand.schrift, "Schrift").not.toBe(aktiv.schrift);
+  expect(amRand.rand, "Rand").not.toBe(aktiv.rand);
+});
+
+/**
  * DER WETTLAUF (Gegenlesen 10/2026, in echtem Chromium nachgestellt).
  *
  * Ein Bild-Upload im Schritt läuft; die Redakteurin schließt den Dialog und

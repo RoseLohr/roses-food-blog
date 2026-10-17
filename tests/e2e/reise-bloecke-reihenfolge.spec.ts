@@ -111,8 +111,8 @@ test("ein Upload, der nach dem Verschieben zurückkommt, trifft seine eigene Gru
  * Gefunden im Gegenlesen 10/2026: Der Bild-Picker rechnete die Auswahl nach
  * dem Upload aus dem Rendern beim Upload-BEGINN — `[1, 2, 3, neu]`. Der
  * Editor fand damit zwar den richtigen Block, setzte aber die alte Folge
- * wieder ein: Die Umstellung war rückgängig gemacht, und die Unterschrift
- * hing am falschen Foto.
+ * wieder ein: Die Umstellung war rückgängig gemacht, und die eben gesetzte
+ * Unterschrift ging verloren.
  */
 test("ein Upload in der Gruppe behält, was dort inzwischen geändert wurde", async ({ page }) => {
   await page.goto(`/admin/reisen/${session.travelId}`);

@@ -112,9 +112,11 @@ test("ein Upload im zweiten Gericht bleibt dort, wenn das erste entfernt wird", 
 /**
  * Der Bild-Picker selbst: Ein Upload, der erst zurückkommt, nachdem die
  * Auswahl kürzer oder voll geworden ist. Der Abschluss rechnete bis 10/2026
- * mit der Auswahl vom Upload-BEGINN — ein entferntes Foto hinterließ eine
- * Lücke (`imageIds: [null, …]`), und `max` galt nicht. Gemessen am
- * Restaurant, dem einzigen Picker mit Höchstzahl (zwei Fotos).
+ * mit der Auswahl vom Upload-BEGINN — ein entferntes Foto kam zurück, und bei
+ * voller Auswahl ersetzte das neue still das zuletzt gewählte. Wer nur halb
+ * auf den neuen Stand umstellt, hinterlässt stattdessen eine Lücke
+ * (`imageIds: [null, …]`) oder ein drittes Foto. Gemessen am Restaurant, dem
+ * einzigen Picker mit Höchstzahl (zwei Fotos).
  */
 async function fotoWaehlen(page: Page, picker: Locator) {
   await picker.getByRole("button", { name: dict.imagePicker.chooseMultiple }).click();
@@ -161,12 +163,19 @@ test("ist die Auswahl während des Uploads voll geworden, bleibt das Foto drauß
   expect(voll).toHaveLength(2);
   freigeben();
 
+  // Erst abwarten, dass die Antwort VERARBEITET ist: Sie legt das Foto in die
+  // Bibliothek dieses Pickers — im selben Aufruf, in dem sie über die Auswahl
+  // entscheidet. Ohne diesen Haltepunkt prüfte der Test den Stand VOR der
+  // Antwort und wäre auch mit dem Fehler grün (Gegenlesen 10/2026).
+  await fotos.getByRole("button", { name: dict.imagePicker.chooseMultiple }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByRole("img", { name: "E2E Upload" })).toBeVisible();
+  await dialog.getByRole("button", { name: dict.imagePicker.done }).click();
+
   // Die Antwort landet in der Bibliothek, nicht in der Auswahl — und nimmt
   // dabei auch keins der beiden gewählten wieder heraus.
+  expect((await restaurants(page))[0].imageIds).toEqual(voll);
   await expect(fotos.locator("img")).toHaveCount(2);
-  await expect
-    .poll(async () => (await restaurants(page))[0].imageIds, { timeout: 10_000 })
-    .toEqual(voll);
 });
 
 /**
