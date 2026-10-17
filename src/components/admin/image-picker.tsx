@@ -112,11 +112,12 @@ export function ImagePicker({
    * Ein Upload läuft Sekunden. Sein Abschluss rief bis 10/2026 die Funktionen
    * aus dem Rendern beim Upload-BEGINN auf und rechnete mit deren `selected`,
    * `voll` und `onChange`. Wurde in der Zwischenzeit umgestellt, entfernt
-   * oder aufgefüllt, setzte er die alte Auswahl wieder ein: In einer
-   * Bildgruppe des Reiseberichts war eine Umstellung damit rückgängig
-   * gemacht, eine eben gesetzte Bildunterschrift hing am falschen Foto, ein
-   * entferntes Bild kam zurück, und `max` galt nicht
-   * (tests/e2e/reise-bloecke-reihenfolge.spec.ts).
+   * oder aufgefüllt, rechnete er mit der alten Auswahl: In einer Bildgruppe
+   * des Reiseberichts war eine Umstellung damit rückgängig gemacht und eine
+   * eben gesetzte Bildunterschrift hing am falschen Foto
+   * (tests/e2e/reise-bloecke-reihenfolge.spec.ts); ein entferntes Foto
+   * hinterließ eine Lücke, und `max` galt nicht
+   * (tests/e2e/reise-restaurants-schluessel.spec.ts).
    *
    * Jede Änderung der Auswahl rechnet deshalb von HIER aus. Für einen Klick
    * ist das derselbe Stand wie im Rendern; für den späten Upload ist es der
