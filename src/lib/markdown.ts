@@ -9,7 +9,7 @@
  * Reiseberichte dorthin springen kann. extractHeadings() liefert
  * dieselben IDs in Dokumentreihenfolge.
  */
-import { Marked, type Tokens } from "marked";
+import { Marked, Renderer, type Tokens } from "marked";
 import { slugify } from "@/lib/slug";
 
 const SAFE_HREF = /^(https?:\/\/|mailto:|\/|#)/i;
@@ -28,11 +28,15 @@ const marked = new Marked({
   gfm: true,
   breaks: true,
   renderer: {
+    // Hier steht nur die REGEL — welche Adressen erlaubt sind. Das Element
+    // schreibt der Standard-Renderer von marked, denn der maskiert Adresse
+    // und Titel für das Attribut. Bis 10/2026 stand hier ein selbst gebautes
+    // `<a href="${…}" title="${…}">` ohne Maskierung: Ein Anführungszeichen
+    // im Titel oder in der Adresse brach aus dem Attribut aus, und die CSP
+    // lässt Inline-Handler zu (tests/markdown-links.test.ts).
     link(token: Tokens.Link) {
       const href = SAFE_HREF.test(token.href) ? token.href : "#";
-      const text = this.parser.parseInline(token.tokens);
-      const title = token.title ? ` title="${token.title}"` : "";
-      return `<a href="${href}"${title}>${text}</a>`;
+      return Renderer.prototype.link.call(this, { ...token, href });
     },
     heading(token: Tokens.Heading) {
       const inline = this.parser.parseInline(token.tokens);
