@@ -39,6 +39,12 @@
  *    (Tinte × 0,4 → `/40`, Rand `ink/20` × 0,4 → `/8`). Über Token, also auch
  *    im Nachtmodus.
  *
+ * Im Kontrastmodus (`forced-colors: active`) ersetzt der Browser genau diese
+ * Farben durch Systemfarben. Einem `disabled`-Knopf gibt er dort `GrayText`,
+ * einem `aria-disabled` nicht — ohne die `forced-colors:`-Regeln unten sähe
+ * der Rand-Pfeil dort aus wie ein aktiver. Eine Systemfarbe, die die Seite
+ * selbst angibt, lässt der Browser stehen.
+ *
  * VORAUSSETZUNG an der Aufrufstelle: Die Liste trägt STABILE Schlüssel. Nur
  * dann wandert diese Komponente mit ihrem Eintrag, und nur dann geht der
  * Fokus mit — bei Index-Schlüsseln bliebe er an der Stelle hängen, und ein
@@ -52,7 +58,11 @@
 import type { Richtung } from "@/lib/reihenfolge";
 import { btnSecondary } from "./knopf-stil";
 
-const PFEIL = `${btnSecondary} aria-disabled:border-ink/8 aria-disabled:text-ink/40 aria-disabled:hover:bg-transparent`;
+const PFEIL = [
+  btnSecondary,
+  "aria-disabled:border-ink/8 aria-disabled:text-ink/40 aria-disabled:hover:bg-transparent",
+  "forced-colors:aria-disabled:border-[GrayText] forced-colors:aria-disabled:text-[GrayText]",
+].join(" ");
 
 export function Verschiebeknoepfe({
   stelle,

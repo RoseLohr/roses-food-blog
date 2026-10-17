@@ -114,10 +114,10 @@ export function ImagePicker({
    * `voll` und `onChange`. Wurde in der Zwischenzeit umgestellt, entfernt
    * oder aufgefüllt, rechnete er mit der alten Auswahl: In einer Bildgruppe
    * des Reiseberichts war eine Umstellung damit rückgängig gemacht und eine
-   * eben gesetzte Bildunterschrift hing am falschen Foto
-   * (tests/e2e/reise-bloecke-reihenfolge.spec.ts); ein entferntes Foto
-   * hinterließ eine Lücke, und `max` galt nicht
-   * (tests/e2e/reise-restaurants-schluessel.spec.ts).
+   * eben gesetzte Bildunterschrift verloren
+   * (tests/e2e/reise-bloecke-reihenfolge.spec.ts); ein entferntes Foto kam
+   * zurück, und bei voller Auswahl ersetzte das neue still das zuletzt
+   * gewählte (tests/e2e/reise-restaurants-schluessel.spec.ts).
    *
    * Jede Änderung der Auswahl rechnet deshalb von HIER aus. Für einen Klick
    * ist das derselbe Stand wie im Rendern; für den späten Upload ist es der
