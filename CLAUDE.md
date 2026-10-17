@@ -167,8 +167,8 @@ diesem Repository arbeitet. Sie ist Teil des Governance-Regimes (A-32/A-33/A-37)
   von außen überschreibbar machen will, braucht `@utility`. Siehe
   `audit/offene-befunde.md` B7.
 - **Vor und nach jedem Layout- oder Struktur-Umbau die Referenzaufnahmen
-  fahren:** `npx playwright test seiten-referenz admin-referenz` (120
-  Aufnahmen: elf öffentliche Seitentypen und 29 Admin-Seiten × drei Breiten).
+  fahren:** `npx playwright test seiten-referenz admin-referenz` (123
+  Aufnahmen: elf öffentliche Seitentypen und 30 Admin-Seiten × drei Breiten).
   Was sich ändern DARF, wird vorher benannt und danach gezielt neu aufgenommen —
   nie pauschal mit `--update-snapshots`.
   **Ändert ein Umbau eine Seite, die noch keine Aufnahme hat, wird sie ZUERST

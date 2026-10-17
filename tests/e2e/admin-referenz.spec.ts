@@ -99,7 +99,7 @@ async function saatReiseId(page: Page) {
  * `admin-rezept-neu` und `admin-rezept-bearbeiten` zeigen je genau einen
  * Abschnitt — die Kopfzeile mit „Abschnitt entfernen" und den Pfeilen der
  * Abschnitte stand damit in keiner Aufnahme. Gefunden im Gegenlesen 10/2026:
- * Ein Umbau dieser Kopfzeile wäre in allen 117 Aufnahmen unsichtbar geblieben.
+ * Ein Umbau dieser Kopfzeile wäre in allen 120 Aufnahmen unsichtbar geblieben.
  * Die Linsen-Bolognese der Saat hat zwei Abschnitte.
  */
 async function saatRezeptMitAbschnitten(page: Page) {
