@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Locator, type Page } from "@playwright/test";
 import fs from "node:fs";
 import path from "node:path";
 import { t } from "../../src/i18n/de";
@@ -40,7 +40,7 @@ test.beforeEach(async ({ context }) => {
   ]);
 });
 
-type Gericht = { name: string; imageIds: number[] };
+type Gericht = { name: string; imageIds: number[]; dietTypeIds: number[] };
 type Restaurant = { name: string; imageIds: number[]; dishes: Gericht[] };
 
 async function restaurants(page: Page): Promise<Restaurant[]> {
@@ -107,4 +107,95 @@ test("ein Upload im zweiten Gericht bleibt dort, wenn das erste entfernt wird", 
     .poll(async () => (await restaurants(page))[0]?.dishes, { timeout: 10_000 })
     .toEqual([expect.objectContaining({ name: "E2E Zweites Gericht", imageIds: [bild.id] })]);
   await expect(fotos.first().locator("img")).toHaveCount(1);
+});
+
+/**
+ * Der Bild-Picker selbst: Ein Upload, der erst zurückkommt, nachdem die
+ * Auswahl kürzer oder voll geworden ist. Der Abschluss rechnete bis 10/2026
+ * mit der Auswahl vom Upload-BEGINN — ein entferntes Foto hinterließ eine
+ * Lücke (`imageIds: [null, …]`), und `max` galt nicht. Gemessen am
+ * Restaurant, dem einzigen Picker mit Höchstzahl (zwei Fotos).
+ */
+async function fotoWaehlen(page: Page, picker: Locator) {
+  await picker.getByRole("button", { name: dict.imagePicker.chooseMultiple }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.locator('button[aria-pressed="false"]:not([disabled])').first().click();
+  await dialog.getByRole("button", { name: dict.imagePicker.done }).click();
+  await expect(dialog).toBeHidden();
+}
+
+test("ein Foto, das während des Uploads entfernt wird, hinterlässt keine Lücke", async ({
+  page,
+}) => {
+  const bild = unbekanntesBild();
+  const { freigeben } = await uploadZurueckhalten(page, bild);
+  await page.goto(`/admin/reisen/${session.travelId}`);
+  await restaurantsAnlegen(page, ["E2E Fotos"]);
+  const fotos = page.getByRole("group", { name: d.restaurantImage, exact: true });
+  await fotoWaehlen(page, fotos);
+  expect((await restaurants(page))[0].imageIds).toHaveLength(1);
+
+  await hochladenUndSchliessen(page, fotos);
+  await fotos.getByRole("button", { name: dict.imagePicker.remove, exact: true }).click();
+  freigeben();
+
+  await expect
+    .poll(async () => (await restaurants(page))[0].imageIds, { timeout: 10_000 })
+    .toEqual([bild.id]);
+});
+
+test("ist die Auswahl während des Uploads voll geworden, bleibt das Foto draußen", async ({
+  page,
+}) => {
+  const bild = unbekanntesBild();
+  const { freigeben } = await uploadZurueckhalten(page, bild);
+  await page.goto(`/admin/reisen/${session.travelId}`);
+  await restaurantsAnlegen(page, ["E2E Voll"]);
+  const fotos = page.getByRole("group", { name: d.restaurantImage, exact: true });
+  await fotoWaehlen(page, fotos);
+
+  await hochladenUndSchliessen(page, fotos);
+  // Das zweite Foto — damit ist die Höchstzahl erreicht.
+  await fotoWaehlen(page, fotos);
+  const voll = (await restaurants(page))[0].imageIds;
+  expect(voll).toHaveLength(2);
+  freigeben();
+
+  // Die Antwort landet in der Bibliothek, nicht in der Auswahl — und nimmt
+  // dabei auch keins der beiden gewählten wieder heraus.
+  await expect(fotos.locator("img")).toHaveCount(2);
+  await expect
+    .poll(async () => (await restaurants(page))[0].imageIds, { timeout: 10_000 })
+    .toEqual(voll);
+});
+
+/**
+ * Dieselbe Fehlerklasse in der Sofort-Anlage von Taxonomien am Gericht: Die
+ * Antwort schrieb `onChange([...value, neu])` mit `value` vom Klick. Ein
+ * Häkchen, das während der Anfrage gesetzt wurde, verschwand still wieder.
+ */
+test("ein Häkchen, das während einer Sofort-Anlage gesetzt wird, bleibt", async ({ page }) => {
+  const NEU = { id: 999_998, name: "E2E Neu" };
+  let freigeben!: () => void;
+  const gehalten = new Promise<void>((weiter) => (freigeben = weiter));
+  await page.route("**/api/admin/quick-add", async (route) => {
+    await gehalten;
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(NEU) });
+  });
+  await page.goto(`/admin/reisen/${session.travelId}`);
+  await restaurantsAnlegen(page, ["E2E Taxonomie"]);
+  await page.getByText(d.dishTaxonomies).click();
+  const gruppe = page.getByRole("group", { name: dict.admin.recipes.dietTypes, exact: true });
+
+  await gruppe.getByLabel(dict.quickAdd.addNew).fill(NEU.name);
+  await gruppe.getByRole("button", { name: `+ ${dict.quickAdd.add}` }).click();
+  await expect(gruppe.getByText(dict.quickAdd.adding)).toBeVisible();
+  await gruppe.getByRole("checkbox", { name: "Vegan", exact: true }).check();
+  const vegan = (await restaurants(page))[0].dishes[0].dietTypeIds;
+  expect(vegan).toHaveLength(1);
+  freigeben();
+
+  await expect
+    .poll(async () => (await restaurants(page))[0].dishes[0].dietTypeIds, { timeout: 10_000 })
+    .toEqual([...vegan, NEU.id]);
 });

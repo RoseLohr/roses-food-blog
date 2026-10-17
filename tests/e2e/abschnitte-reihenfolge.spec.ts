@@ -242,7 +242,11 @@ test("die Vorschau zeigt die Zubereitung in derselben Reihenfolge", async ({ pag
  * bleiben 422 px — weniger, als Feld (`basis-48`) und Gruppe zusammen
  * brauchen. Die zweite Fassung des Umbaus hatte die Basis verloren; dann
  * zählte die Länge des Labels, und die Gruppe stand von 768 bis gut 1000 px
- * LINKS unter dem Feld. Deshalb wird überall auch die rechte Kante gemessen.
+ * LINKS unter dem Feld. Deshalb wird überall auch die rechte Kante gemessen —
+ * die des letzten KNOPFS, nicht die des Behälters: Der ist unter 640 px
+ * `w-full` und reicht immer bis an den Rand, auch wenn die Knöpfe darin links
+ * stehen (Gegenlesen 10/2026: so war die Prüfung zuerst gebaut und konnte
+ * nicht rot werden).
  */
 const BREITEN = [
   [360, "darunter"],
@@ -283,10 +287,10 @@ for (const [breite, gruppe] of BREITEN) {
     abschnitteSetzen(ABSCHNITTE);
     await page.goto(`/admin/rezepte/${recipeId}`);
     const pfeilOben = pfeil(page, "unten", 1);
-    const [feldBox, pfeilBox, gruppeBox, kopfBox] = await Promise.all([
+    const [feldBox, pfeilBox, entfernenBox, kopfBox] = await Promise.all([
       page.locator("#sek-name-0").boundingBox(),
       pfeilOben.boundingBox(),
-      pfeilOben.locator("xpath=..").boundingBox(),
+      page.getByRole("button", { name: d.removeSection }).first().boundingBox(),
       kopf.boundingBox(),
     ]);
     if (gruppe === "darunter") {
@@ -295,7 +299,7 @@ for (const [breite, gruppe] of BREITEN) {
     } else {
       expect(pfeilBox!.y, "Pfeile neben dem Feld").toBeLessThan(feldBox!.y + feldBox!.height);
     }
-    expect(gruppeBox!.x + gruppeBox!.width, "Knopfgruppe rechtsbündig").toBeCloseTo(
+    expect(entfernenBox!.x + entfernenBox!.width, "Knopfgruppe rechtsbündig").toBeCloseTo(
       kopfBox!.x + kopfBox!.width,
       0,
     );
@@ -325,6 +329,20 @@ test("am Rand bleibt der Fokus auf dem Pfeil, und ein Druck zu viel tut nichts",
   await expect(fokus).toBeDisabled();
   await page.keyboard.press("Enter");
   await expect(fokus).toHaveAttribute("aria-label", `${d.sectionDown} (2)`);
+  // Und der Ring um den Pfeil ist SICHTBAR. Die erste Fassung blendete den
+  // Rand-Pfeil mit `opacity-40` ab — `opacity` gilt für das ganze Element samt
+  // `outline`, der Ring stand dann mit 1,76:1 auf der Karte statt 5,1:1
+  // (Gegenlesen 10/2026). Solange ein abgeschalteter Knopf nie den Fokus
+  // bekam, fiel das nicht auf.
+  const sicht = await fokus.evaluate((el) => {
+    let deckkraft = 1;
+    for (let k: Element | null = el; k; k = k.parentElement) {
+      deckkraft *= Number(getComputedStyle(k).opacity);
+    }
+    const stil = getComputedStyle(el);
+    return { deckkraft, ring: stil.outlineStyle, breite: stil.outlineWidth };
+  });
+  expect(sicht).toEqual({ deckkraft: 1, ring: "solid", breite: "3px" });
   expect((await formularstand(page)).map((a) => a.name)).toEqual([
     ABSCHNITTE[1].name,
     ABSCHNITTE[0].name,
