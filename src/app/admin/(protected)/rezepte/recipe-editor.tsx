@@ -9,7 +9,15 @@ import { useActionState, useState } from "react";
 import { saveRecipeAction, type RecipeFormState } from "./actions";
 import { QuickAddCheckboxes } from "@/components/admin/quick-add-checkboxes";
 import { ImagePicker, type ImageChoice } from "@/components/admin/image-picker";
-import { verschoben, type Richtung } from "@/lib/reihenfolge";
+import {
+  geaendertNach,
+  neuerSchluessel,
+  ohneEintrag,
+  schluessellos,
+  verschobenNach,
+} from "@/lib/reihenfolge";
+import { Verschiebeknoepfe } from "@/components/admin/verschiebeknoepfe";
+import { btnSecondary } from "@/components/admin/knopf-stil";
 import { RichTextEditor } from "@/components/admin/rich-text-editor";
 import { RecipeAiAssistant } from "@/components/admin/recipe-ai-assistant";
 import type { RecipeDraft } from "@/lib/ai-recipe";
@@ -70,32 +78,44 @@ export interface EditorSection {
  * nimmt ihn vor dem Absenden wieder heraus, damit das Formularfeld exakt die
  * Gestalt behält, die `recipe-save.ts` kennt.
  */
+interface KartenZutat extends EditorIngredient {
+  schluessel: string;
+}
 interface KartenSchritt extends EditorStep {
   schluessel: string;
 }
-interface KartenAbschnitt extends Omit<EditorSection, "steps"> {
+interface KartenAbschnitt extends Omit<EditorSection, "ingredients" | "steps"> {
   schluessel: string;
+  ingredients: KartenZutat[];
   steps: KartenSchritt[];
 }
 
-let kartenZaehler = 0;
-const neuerSchrittSchluessel = () => `schritt-${(kartenZaehler += 1)}`;
-const neuerAbschnittSchluessel = () => `abschnitt-${(kartenZaehler += 1)}`;
+const mitSchluessel = <T,>(eintrag: T, art: string) => ({
+  ...eintrag,
+  schluessel: neuerSchluessel(art),
+});
 
-/** Eingehende Schritte bekommen ihre Identität beim Einzug in den Editor. */
+/**
+ * Eingehende Abschnitte, Zutaten und Schritte bekommen ihre Identität beim
+ * Einzug in den Editor — alle drei Ebenen. Auch die Zutaten, obwohl ihre Felder
+ * keinen eigenen Zustand tragen: Erst mit Schlüssel geht der Fokus mit der
+ * verschobenen Zutat, und erst dann gibt es im ganzen Editor keine Stelle mehr,
+ * die über den Index schreibt.
+ */
 function mitSchluesseln(abschnitte: EditorSection[]): KartenAbschnitt[] {
   return abschnitte.map((a) => ({
-    ...a,
-    schluessel: neuerAbschnittSchluessel(),
-    steps: a.steps.map((st) => ({ ...st, schluessel: neuerSchrittSchluessel() })),
+    ...mitSchluessel(a, "abschnitt"),
+    ingredients: a.ingredients.map((z) => mitSchluessel(z, "zutat")),
+    steps: a.steps.map((st) => mitSchluessel(st, "schritt")),
   }));
 }
 
 /** … und verlieren sie wieder, bevor das Formular abgeschickt wird. */
 function ohneSchluessel(abschnitte: KartenAbschnitt[]): EditorSection[] {
-  return abschnitte.map(({ schluessel: _abschnitt, ...a }) => ({
-    ...a,
-    steps: a.steps.map(({ schluessel: _schritt, ...rest }) => rest),
+  return abschnitte.map((a) => ({
+    ...schluessellos(a),
+    ingredients: a.ingredients.map(schluessellos),
+    steps: a.steps.map(schluessellos),
   }));
 }
 export interface EditorNote {
@@ -165,22 +185,19 @@ const TAXONOMY_FIELDS: Array<[string, string, string]> = [
 const inputCls =
   "w-full min-w-0 border border-ink-soft/30 px-3 py-2 text-sm";
 const labelCls = "mb-1 block text-sm font-medium";
-const btnSecondary =
-  "rounded-lg border border-ink/20 px-3 py-1.5 text-sm hover:bg-cream";
-
 function emptySection(): KartenAbschnitt {
   return {
     name: "",
     ingredients: [emptyIngredient()],
     steps: [emptyStep()],
-    schluessel: neuerAbschnittSchluessel(),
+    schluessel: neuerSchluessel("abschnitt"),
   };
 }
 function emptyStep(): KartenSchritt {
-  return { text: "", imageId: null, schluessel: neuerSchrittSchluessel() };
+  return mitSchluessel({ text: "", imageId: null }, "schritt");
 }
-function emptyIngredient(): EditorIngredient {
-  return { name: "", amount: "", unit: "", note: "" };
+function emptyIngredient(): KartenZutat {
+  return mitSchluessel({ name: "", amount: "", unit: "", note: "" }, "zutat");
 }
 
 /**
@@ -316,51 +333,35 @@ export function RecipeEditor({
   );
   const [notes, setNotes] = useState<EditorNote[]>(form.notes);
 
-  const updateSection = (i: number, patch: Partial<KartenAbschnitt>) =>
-    setSections((prev) => prev.map((s, idx) => (idx === i ? { ...s, ...patch } : s)));
-
   /**
-   * Eine Zutat innerhalb ihres Abschnitts um einen Platz verschieben. Die
-   * Reihenfolge der Zutaten ist eine Aussage — genau so steht sie auf der
-   * Rezeptseite — und war bisher die Reihenfolge, in der jemand sie eingetippt
-   * hatte. Am Rand passiert nichts; dann kommt dieselbe Liste zurück und der
-   * Abschnitt wird gar nicht erst neu gesetzt.
+   * ALLE Schreibzugriffe auf Abschnitte, Zutaten und Schritte gehen hier durch
+   * — adressiert über den SCHLÜSSEL, gerechnet aus dem AKTUELLEN Stand
+   * (`setSections(prev => …)`).
+   *
+   * Bis 10/2026 hieß das `updateSection(si, { steps: section.steps.map(…) })`:
+   * Index plus eine beim Rendern eingefangene Kopie. Ein Bild-Upload, der erst
+   * zurückkam, nachdem der Abschnitt seinen Platz gewechselt hatte, schrieb
+   * damit die Schritte des alten Abschnitts an die Stelle des neuen — „Belag"
+   * trug danach den Schritt von „Teig", der eigene war weg, und so wurde
+   * gespeichert. Dasselbe drohte bei jedem späten Schreiber: Upload, der
+   * Beobachter des Text-Editors, ein Löschen davor.
+   *
+   * Ist der Eintrag inzwischen fort, schreiben die Helfer NICHTS, statt einen
+   * fremden zu treffen. Und sie ersetzen nebenbei die drei Verschiebe-Hüllen,
+   * die hier vorher standen.
    */
-  const verschiebeZutat = (si: number, ii: number, richtung: Richtung) =>
-    setSections((prev) =>
-      prev.map((s, idx) => {
-        if (idx !== si) return s;
-        const next = verschoben(s.ingredients, ii, richtung);
-        return next === s.ingredients ? s : { ...s, ingredients: [...next] };
-      }),
-    );
+  const aendereAbschnitt = (aKey: string, aendern: (a: KartenAbschnitt) => KartenAbschnitt) =>
+    setSections((prev) => geaendertNach(prev, aKey, aendern));
 
-  /**
-   * Dasselbe für einen Zubereitungsschritt. Bewusst eine ZWEITE, gleich
-   * gebaute Funktion statt einer, die sich das Feld übergeben lässt: Zutaten
-   * und Schritte sind verschiedene Typen, und eine gemeinsame Fassung käme
-   * ohne eine Typ-Zusicherung nicht aus. Die Rechnung selbst steht nur einmal
-   * — in `verschoben`.
-   */
-  const verschiebeSchritt = (si: number, sti: number, richtung: Richtung) =>
-    setSections((prev) =>
-      prev.map((s, idx) => {
-        if (idx !== si) return s;
-        const next = verschoben(s.steps, sti, richtung);
-        return next === s.steps ? s : { ...s, steps: [...next] };
-      }),
-    );
-
-  /**
-   * Und einen ganzen Abschnitt — samt Namen, Zutaten und Schritten. Die
-   * Reihenfolge der Abschnitte steht so auf der Rezeptseite (gespeichert als
-   * `sort_order` = Position). Am Rand kommt dieselbe Liste zurück, und der
-   * Zustand wird gar nicht erst neu gesetzt.
-   */
-  const verschiebeAbschnitt = (si: number, richtung: Richtung) =>
-    setSections((prev) => {
-      const next = verschoben(prev, si, richtung);
-      return next === prev ? prev : [...next];
+  /** Die Zutaten- oder Schrittliste EINES Abschnitts ändern. */
+  const aendereListe = <F extends "ingredients" | "steps">(
+    aKey: string,
+    feld: F,
+    aendern: (liste: KartenAbschnitt[F]) => KartenAbschnitt[F],
+  ) =>
+    aendereAbschnitt(aKey, (a) => {
+      const neu = aendern(a[feld]);
+      return neu === a[feld] ? a : { ...a, [feld]: neu };
     });
 
   // KI-Entwurf ins Formular übernehmen. WICHTIG: Es wird NICHTS in der
@@ -423,15 +424,13 @@ export function RecipeEditor({
     setSections(
       draft.sections.length
         ? draft.sections.map((s) => ({
-            schluessel: neuerAbschnittSchluessel(),
+            schluessel: neuerSchluessel("abschnitt"),
             name: s.name,
-            ingredients: s.ingredients.length ? s.ingredients : [emptyIngredient()],
+            ingredients: s.ingredients.length
+              ? s.ingredients.map((z) => mitSchluessel(z, "zutat"))
+              : [emptyIngredient()],
             steps: s.steps.length
-              ? s.steps.map((text) => ({
-                  text,
-                  imageId: null,
-                  schluessel: neuerSchrittSchluessel(),
-                }))
+              ? s.steps.map((text) => mitSchluessel({ text, imageId: null }, "schritt"))
               : [emptyStep()],
           }))
         : [emptySection()],
@@ -620,7 +619,9 @@ export function RecipeEditor({
         </datalist>
 
         <div className="flex flex-col gap-6">
-          {sections.map((section, si) => (
+          {sections.map((section, si) => {
+            const aKey = section.schluessel;
+            return (
             // Zwei Hälften statt einer Fläche: Die Zutaten bleiben auf der
             // Kartenfläche, die Zubereitung bekommt eine eigene. Das `p-4`
             // wandert dafür aus dem Kasten in die beiden Hälften — sonst
@@ -628,10 +629,22 @@ export function RecipeEditor({
             // und hinge an einem Wert, der woanders steht.
             <div key={section.schluessel} className="border border-ink/10">
               <div className="p-4">
-                {/* Name links, Knöpfe rechts. `flex-wrap` + `basis-48`: Wird es
-                    eng, rutscht die Knopfgruppe unter das Feld, statt das Feld
-                    zusammenzudrücken — dieselbe Absicht wie `.zutat-tasten` und
-                    die Schritt-Kopfzeile auf dem Handy. */}
+                {/* Name links, Knöpfe rechts — und Knöpfe NUR, wenn es mehr als
+                    einen Abschnitt gibt. Bei einem wären beide Pfeile
+                    abgeschaltet, und „Abschnitt entfernen" fehlt dann ohnehin.
+                    Gemessen im Gegenlesen 10/2026: Zwei nutzlose Pfeile
+                    drückten das Namensfeld zwischen 386 und 639 px um bis zu
+                    31 % zusammen — im Normalfall jedes neuen Rezepts.
+                    Unter 640 px steht die Gruppe in einer EIGENEN,
+                    rechtsbündigen Zeile (`w-full justify-end`): Pfeile und
+                    „Abschnitt entfernen" sind zusammen rund 230 px breit und
+                    ließen dem Feld daneben auf dem Handy nichts.
+                    Darüber daneben — solange das Feld `basis-48` behält.
+                    Ohne diese Basis zählte die Länge des LABELS (416 px), und
+                    mit Seitenleiste (Spalte 422–656 px) brach die Gruppe von
+                    768 bis gut 1000 px um. Wird es trotzdem eng, rückt sie
+                    mit `ml-auto` rechtsbündig in die nächste Zeile, wie auf
+                    dem Handy — nicht links unter das Feld. */}
                 <div className="mb-3 flex flex-wrap items-end gap-2">
                   <div className="min-w-0 grow basis-48">
                     <label className={labelCls} htmlFor={`sek-name-${si}`}>
@@ -640,62 +653,48 @@ export function RecipeEditor({
                     <input
                       id={`sek-name-${si}`}
                       value={section.name}
-                      onChange={(e) => updateSection(si, { name: e.target.value })}
+                      onChange={(e) => {
+                        const name = e.target.value;
+                        aendereAbschnitt(aKey, (a) => ({ ...a, name }));
+                      }}
                       className={inputCls}
                     />
                   </div>
-                  {/* `ml-auto`: Bricht die Gruppe auf dem Handy um, steht sie
-                      rechtsbündig — wie die Pfeile von Zutaten und Schritten. */}
-                  <div className="ml-auto flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => verschiebeAbschnitt(si, -1)}
-                      disabled={si === 0}
-                      aria-label={`${d.sectionUp} (${si + 1})`}
-                      title={d.sectionUp}
-                      className={`${btnSecondary} px-2 py-0.5 disabled:opacity-40`}
-                    >
-                      ↑
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => verschiebeAbschnitt(si, 1)}
-                      disabled={si === sections.length - 1}
-                      aria-label={`${d.sectionDown} (${si + 1})`}
-                      title={d.sectionDown}
-                      className={`${btnSecondary} px-2 py-0.5 disabled:opacity-40`}
-                    >
-                      ↓
-                    </button>
-                    {sections.length > 1 && (
+                  {sections.length > 1 && (
+                    <div className="ml-auto flex w-full items-center justify-end gap-1 sm:w-auto">
+                      <Verschiebeknoepfe
+                        stelle={si}
+                        anzahl={sections.length}
+                        verschiebe={(r) => setSections((prev) => verschobenNach(prev, aKey, r))}
+                        nachOben={d.sectionUp}
+                        nachUnten={d.sectionDown}
+                      />
                       <button
                         type="button"
-                        onClick={() =>
-                          setSections((prev) => prev.filter((_, idx) => idx !== si))
-                        }
+                        onClick={() => setSections((prev) => ohneEintrag(prev, aKey))}
                         className={btnSecondary}
                       >
                         {d.removeSection}
                       </button>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
 
                 <h3 className="mb-2 text-sm font-semibold">{d.ingredients}</h3>
                 <div className="flex flex-col gap-2">
-                  {section.ingredients.map((ing, ii) => (
-                    <div key={ii} className="zutat-row">
+                  {section.ingredients.map((ing, ii) => {
+                    const zKey = ing.schluessel;
+                    const setze = (feld: keyof EditorIngredient, wert: string) =>
+                      aendereListe(aKey, "ingredients", (z) =>
+                        geaendertNach(z, zKey, (x) => ({ ...x, [feld]: wert })),
+                      );
+                    return (
+                    <div key={zKey} className="zutat-row">
                       <input
                         aria-label={d.amount}
                         value={ing.amount}
                         inputMode="decimal"
-                        onChange={(e) =>
-                          updateSection(si, {
-                            ingredients: section.ingredients.map((x, idx) =>
-                              idx === ii ? { ...x, amount: e.target.value } : x,
-                            ),
-                          })
-                        }
+                        onChange={(e) => setze("amount", e.target.value)}
                         placeholder={d.amount}
                         className={inputCls}
                       />
@@ -703,13 +702,7 @@ export function RecipeEditor({
                         aria-label={d.unit}
                         list="einheiten-liste"
                         value={ing.unit}
-                        onChange={(e) =>
-                          updateSection(si, {
-                            ingredients: section.ingredients.map((x, idx) =>
-                              idx === ii ? { ...x, unit: e.target.value } : x,
-                            ),
-                          })
-                        }
+                        onChange={(e) => setze("unit", e.target.value)}
                         placeholder={d.unit}
                         className={inputCls}
                       />
@@ -717,26 +710,14 @@ export function RecipeEditor({
                         aria-label={d.ingredientName}
                         list="zutaten-liste"
                         value={ing.name}
-                        onChange={(e) =>
-                          updateSection(si, {
-                            ingredients: section.ingredients.map((x, idx) =>
-                              idx === ii ? { ...x, name: e.target.value } : x,
-                            ),
-                          })
-                        }
+                        onChange={(e) => setze("name", e.target.value)}
                         placeholder={d.ingredientName}
                         className={`${inputCls} zutat-name`}
                       />
                       <input
                         aria-label={d.ingredientNote}
                         value={ing.note}
-                        onChange={(e) =>
-                          updateSection(si, {
-                            ingredients: section.ingredients.map((x, idx) =>
-                              idx === ii ? { ...x, note: e.target.value } : x,
-                            ),
-                          })
-                        }
+                        onChange={(e) => setze("note", e.target.value)}
                         placeholder={d.ingredientNote}
                         className={`${inputCls} zutat-note`}
                       />
@@ -746,33 +727,20 @@ export function RecipeEditor({
                           Gewürze zuletzt) und stand bisher fest in der
                           Eingabereihenfolge. */}
                       <div className="zutat-tasten">
-                        <button
-                          type="button"
-                          onClick={() => verschiebeZutat(si, ii, -1)}
-                          disabled={ii === 0}
-                          aria-label={`${d.ingredientUp} (${ii + 1})`}
-                          title={d.ingredientUp}
-                          className={`${btnSecondary} px-2 py-0.5 disabled:opacity-40`}
-                        >
-                          ↑
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => verschiebeZutat(si, ii, 1)}
-                          disabled={ii === section.ingredients.length - 1}
-                          aria-label={`${d.ingredientDown} (${ii + 1})`}
-                          title={d.ingredientDown}
-                          className={`${btnSecondary} px-2 py-0.5 disabled:opacity-40`}
-                        >
-                          ↓
-                        </button>
+                        <Verschiebeknoepfe
+                          stelle={ii}
+                          anzahl={section.ingredients.length}
+                          verschiebe={(r) =>
+                            aendereListe(aKey, "ingredients", (z) => verschobenNach(z, zKey, r))
+                          }
+                          nachOben={d.ingredientUp}
+                          nachUnten={d.ingredientDown}
+                        />
                         <button
                           type="button"
                           aria-label={`${d.ingredientName} ${ii + 1} ${d.remove}`}
                           onClick={() =>
-                            updateSection(si, {
-                              ingredients: section.ingredients.filter((_, idx) => idx !== ii),
-                            })
+                            aendereListe(aKey, "ingredients", (z) => ohneEintrag(z, zKey))
                           }
                           className={`${btnSecondary} zutat-remove`}
                         >
@@ -780,13 +748,12 @@ export function RecipeEditor({
                         </button>
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                   <button
                     type="button"
                     onClick={() =>
-                      updateSection(si, {
-                        ingredients: [...section.ingredients, emptyIngredient()],
-                      })
+                      aendereListe(aKey, "ingredients", (z) => [...z, emptyIngredient()])
                     }
                     className={`${btnSecondary} self-start`}
                   >
@@ -809,7 +776,11 @@ export function RecipeEditor({
               <div className="border-t border-ink/10 bg-leaf/30 p-4">
                 <h3 className="mb-2 text-sm font-semibold">{d.steps}</h3>
                 <ol className="flex flex-col gap-3">
-                  {section.steps.map((step, sti) => (
+                  {section.steps.map((step, sti) => {
+                    const sKey = step.schluessel;
+                    const aendereSchritt = (aendern: (x: KartenSchritt) => KartenSchritt) =>
+                      aendereListe(aKey, "steps", (st) => geaendertNach(st, sKey, aendern));
+                    return (
                     // Weiße Karte auf der Tönung. Das frühere `bg-cream/30` trug
                     // 1,025:1 gegen die Karte — kein schwacher Unterschied,
                     // sondern keiner. Der Sprung Karte↔Tönung ist zugleich der
@@ -842,33 +813,20 @@ export function RecipeEditor({
                           {d.step} {sti + 1}
                         </span>
                         <div className="flex items-center justify-end gap-1">
-                          <button
-                            type="button"
-                            onClick={() => verschiebeSchritt(si, sti, -1)}
-                            disabled={sti === 0}
-                            aria-label={`${d.stepUp} (${sti + 1})`}
-                            title={d.stepUp}
-                            className={`${btnSecondary} px-2 py-0.5 disabled:opacity-40`}
-                          >
-                            ↑
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => verschiebeSchritt(si, sti, 1)}
-                            disabled={sti === section.steps.length - 1}
-                            aria-label={`${d.stepDown} (${sti + 1})`}
-                            title={d.stepDown}
-                            className={`${btnSecondary} px-2 py-0.5 disabled:opacity-40`}
-                          >
-                            ↓
-                          </button>
+                          <Verschiebeknoepfe
+                            stelle={sti}
+                            anzahl={section.steps.length}
+                            verschiebe={(r) =>
+                              aendereListe(aKey, "steps", (st) => verschobenNach(st, sKey, r))
+                            }
+                            nachOben={d.stepUp}
+                            nachUnten={d.stepDown}
+                          />
                           <button
                             type="button"
                             aria-label={`${d.step} ${sti + 1} ${d.remove}`}
                             onClick={() =>
-                              updateSection(si, {
-                                steps: section.steps.filter((_, idx) => idx !== sti),
-                              })
+                              aendereListe(aKey, "steps", (st) => ohneEintrag(st, sKey))
                             }
                             className={btnSecondary}
                           >
@@ -881,11 +839,7 @@ export function RecipeEditor({
                         ariaLabel={`${d.step} ${sti + 1}`}
                         minHeightClass="min-h-20"
                         onChange={(md) =>
-                          updateSection(si, {
-                            steps: section.steps.map((x, idx) =>
-                              idx === sti ? { ...x, text: md } : x,
-                            ),
-                          })
+                          aendereSchritt((x) => (x.text === md ? x : { ...x, text: md }))
                         }
                       />
                       <div className="mt-2">
@@ -895,18 +849,13 @@ export function RecipeEditor({
                           multiple={false}
                           value={step.imageId ? [step.imageId] : []}
                           onChange={(ids) =>
-                            updateSection(si, {
-                              steps: section.steps.map((x, idx) =>
-                                idx === sti
-                                  ? { ...x, imageId: ids[0] ?? null }
-                                  : x,
-                              ),
-                            })
+                            aendereSchritt((x) => ({ ...x, imageId: ids[0] ?? null }))
                           }
                         />
                       </div>
                     </li>
-                  ))}
+                    );
+                  })}
                 </ol>
                 {/* Auf der Tönung steht nur Text — jedes Bedienelement bekommt
                     eine eigene Fläche. `btnSecondary` ist durchsichtig: auf der
@@ -935,16 +884,15 @@ export function RecipeEditor({
                     WCAG 1.4.11. Gemessen in zubereitung-flaeche.spec.ts. */}
                 <button
                   type="button"
-                  onClick={() =>
-                    updateSection(si, { steps: [...section.steps, emptyStep()] })
-                  }
+                  onClick={() => aendereListe(aKey, "steps", (st) => [...st, emptyStep()])}
                   className="mt-3 rounded-lg border border-dashed border-ink/30 bg-white px-3 py-1.5 text-sm font-medium hover:bg-cream"
                 >
                   + {d.addStep}
                 </button>
               </div>
             </div>
-          ))}
+            );
+          })}
           <button
             type="button"
             onClick={() => setSections((prev) => [...prev, emptySection()])}
