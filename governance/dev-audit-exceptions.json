@@ -1,4 +1,14 @@
 {
   "_comment": "Ratifizierte Dev-Audit-Ausnahmen (Ledger F5, audit/10-exceptions-ledger.md). Jeder Eintrag ist EIN konkretes Advisory (GHSA), nie ein Paket pauschal. scripts/regime/dev-audit-gate.mjs blockiert jedes nicht gelistete HIGH/CRITICAL-Advisory fail-closed UND schlägt fehl, sobald ein gelistetes Advisory aus dem Audit verschwindet (Auto-Tripwire: Ausnahme obsolet → F5 bereinigen, Gate wieder ohne Ausnahme).",
-  "exceptions": []
+  "exceptions": [
+    {
+      "ghsa": "GHSA-vfj7-8cjw-p6xm",
+      "paket": "braces",
+      "schwere": "high",
+      "ratifiziert": "2026-10-10",
+      "kette": "@next/eslint-plugin-next → fast-glob → micromatch → braces",
+      "warum_kein_root_fix": "Das Advisory trägt range '*', und 3.0.3 ist die neueste veröffentlichte Fassung (Stand 2026-10-10, zuletzt publiziert 2024-09-18): Es gibt keine heile Version zum Hochziehen. Auch der Weg über die Kette ist zu: fast-glob@3.3.3 verlangt micromatch@^4.0.8, micromatch@4.0.8 verlangt braces@^3.0.3.",
+      "warum_vertretbar": "Reines Werkzeug der Lint-Zeit. @next/eslint-plugin-next steht in devDependencies, und `npm ls braces --omit=dev` ist leer — das Paket ist im ausgelieferten Baum nicht enthalten. Die Lücke ist ein DoS über tief verschachtelte Glob-Muster; die Muster stammen aus der eigenen ESLint-Konfiguration, nicht aus fremder Eingabe."
+    }
+  ]
 }

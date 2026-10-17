@@ -5,7 +5,8 @@ export const BILD_FRIST_MS = 15_000;
 
 /**
  * Wartet, bis alle Bilder der Seite ABGESCHLOSSEN sind — geladen ODER
- * fehlgeschlagen — und meldet zurück, was nicht geklappt hat.
+ * fehlgeschlagen —, die geladenen zusätzlich DEKODIERT (siehe unten: geladen
+ * ist nicht gemalt), und meldet zurück, was nicht geklappt hat.
  *
  * Warum nicht einfach auf „load" warten (Befund gpt-5.6-sol, PR #58): ein Bild,
  * das 404t, feuert `error` statt `load`; ein `loading="lazy"`-Bild unterhalb
@@ -38,9 +39,35 @@ export async function bilderFertig(page: Page) {
           }),
     );
 
+    // GELADEN ist nicht GEMALT. `complete` heißt nur, dass die Bytes da sind;
+    // Chromium dekodiert danach asynchron. Beim fullPage-Abdruck werden auch
+    // Bereiche weit unterhalb des Viewports gerastert — ist ein Bild dort noch
+    // nicht dekodiert, steht an seiner Stelle der Seitenhintergrund.
+    //
+    // Gemessen am 2026-10-10, reise-detail @ desktop-1280 (9646 px hoch): Der
+    // ERSTE Abdruck zeigte die Bildfläche „Hafen" reinweiß (255,255,255), der
+    // letzte deckte sich Pixel für Pixel mit der Basis (gesamte Seite 0,025 %
+    // Abweichung bei 0,2 % Toleranz). Playwright fand in 10 s keine zwei
+    // gleichen Abdrücke in Folge und brach ab — ein Fehlschlag ohne jeden
+    // Inhaltsunterschied, der nur unter Last auftrat.
+    //
+    // `decode()` löst erst auf, wenn das Bild dekodiert und malbereit ist. Ein
+    // Bild, das nicht dekodierbar ist (404, defekt, ohne Quelle), lehnt ab —
+    // das ist hier KEIN Fehler, den das Warten melden müsste: Solche Bilder
+    // stehen unten ohnehin unter `kaputt` (naturalWidth 0). Deshalb wird die
+    // Ablehnung in ein Auflösen umgewandelt, statt das Warten abzubrechen.
+    const gemalt = abgeschlossen.map((fertig, i) =>
+      fertig.then(() =>
+        bilder[i].decode().then(
+          () => undefined,
+          () => undefined, // nicht dekodierbar → fällt unten unter `kaputt`
+        ),
+      ),
+    );
+
     let uhr = 0;
     await Promise.race([
-      Promise.all(abgeschlossen),
+      Promise.all(gemalt),
       new Promise<void>((ablauf) => {
         uhr = window.setTimeout(ablauf, frist);
       }),

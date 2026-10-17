@@ -868,6 +868,10 @@ export const de = {
       sectionName: "Abschnittsname (z. B. Teig, Belag — leer bei nur einem Abschnitt)",
       addSection: "Abschnitt hinzufügen",
       removeSection: "Abschnitt entfernen",
+      /** Ganze Abschnitte umstellen (z. B. erst „Teig", dann „Belag") —
+       *  dieselben zwei Pfeile wie an Zutaten und Schritten. */
+      sectionUp: "Abschnitt nach oben",
+      sectionDown: "Abschnitt nach unten",
       ingredients: "Zutaten",
       ingredientName: "Zutat",
       amount: "Menge",
@@ -880,6 +884,13 @@ export const de = {
       ingredientDown: "Zutat nach unten",
       remove: "Entfernen",
       steps: "Zubereitungsschritte",
+      /** Einzahl — die Nummernkugel trägt `aria-hidden`, der Schritt braucht
+       *  daneben einen eigenen Namen (sonst hat der Textkasten gar keinen). */
+      step: "Zubereitungsschritt",
+      /** Ein Schritt sagt, WANN etwas getan wird — die Reihenfolge ist hier
+       *  noch mehr Aussage als bei den Zutaten. Dieselben zwei Pfeile. */
+      stepUp: "Schritt nach oben",
+      stepDown: "Schritt nach unten",
       stepImage: "Bild zum Schritt (optional)",
       addStep: "Schritt hinzufügen",
       notes: "Notizen",
