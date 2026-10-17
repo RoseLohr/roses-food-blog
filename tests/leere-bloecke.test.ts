@@ -420,6 +420,10 @@ describe("Annahmen über den Renderer, auf denen das Prädikat ruht", () => {
       "<video controls></video>",
       "<hr>",
       "<script>alert(1)</script>",
+      // Seit marked 18.1 löst der Renderer numerische Zeichenreferenzen SELBST
+      // auf. Ein so geschriebenes `<` muss dabei wieder maskiert werden.
+      "&#60;img src=/a.jpg&#62;",
+      "&#x3C;hr&#x3E;",
     ]) {
       const html = renderMarkdown(md);
       expect(html, `„${md}" darf kein Element erzeugen`).not.toMatch(
@@ -437,10 +441,18 @@ describe("Annahmen über den Renderer, auf denen das Prädikat ruht", () => {
       expect(renderMarkdown(md), `„${md}" muss maskiert werden`).toContain("&amp;");
       expect(hatSichtbarenInhalt(md), `„${md}" zeigt Text`).toBe(true);
     }
-    // Mit Semikolon dagegen bleibt die Entität stehen und der Browser löst sie
-    // auf — dann ist der Block leer.
-    expect(renderMarkdown("&#8203;")).toContain("&#8203;");
-    expect(hatSichtbarenInhalt("&#8203;")).toBe(false);
+    // Mit Semikolon ist es eine Entität, und der Block ist leer. WER sie
+    // auflöst, hängt an der Art: Eine NUMERISCHE Zeichenreferenz löst der
+    // Renderer seit marked 18.1 selbst auf (so verlangt es CommonMark), eine
+    // BENANNTE lässt er stehen — die löst erst der Browser, im Speicherweg
+    // `decodeHTML`. Bis 18.0 blieb auch die numerische stehen; mit dem Update
+    // ist dieser Test gebrochen, wie er sollte (10/2026).
+    expect(renderMarkdown("&#8203;")).toContain("\u200B");
+    expect(renderMarkdown("&#8203;")).not.toContain("&#8203;");
+    expect(renderMarkdown("&zwnj;")).toContain("&zwnj;");
+    for (const md of ["&#8203;", "&#x200B;", "&zwnj;", "&nbsp;"]) {
+      expect(hatSichtbarenInhalt(md), `„${md}" zeigt nichts`).toBe(false);
+    }
   });
 
   it("erkennt Bild und Trenner unabhängig von der Schreibweise", () => {
