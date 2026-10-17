@@ -12,7 +12,7 @@
  * - Kontrolliert (value + onChange): Auswahl lebt im State des Aufrufers
  *   (z. B. Reise-Editor, der Gerichte als JSON serialisiert).
  */
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -84,6 +84,18 @@ export function QuickAddCheckboxes({
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const uid = useId();
+  /**
+   * Auswahl und Rückmeldung des LETZTEN Renderns — für die Antwort der
+   * Sofort-Anlage, die erst nach dem `await` kommt.
+   *
+   * Bis 10/2026 schrieb sie `onChange([...value, neu])` mit `value` vom Klick.
+   * Während der Anfrage bleiben die Häkchen bedienbar; eins, das in dieser
+   * Zeit gesetzt wurde, verschwand mit der Antwort still wieder
+   * (tests/e2e/reise-restaurants-schluessel.spec.ts). Dasselbe Muster wie
+   * `jetzt` im ImagePicker.
+   */
+  const jetzt = useRef({ value, onChange });
+  jetzt.current = { value, onChange };
 
   const isChecked = (id: number) =>
     controlled ? value.includes(id) : checked.has(id);
@@ -149,8 +161,9 @@ export function QuickAddCheckboxes({
               a.name.localeCompare(b.name, "de"),
             ),
       );
-      if (controlled) {
-        if (!value.includes(entry.id)) onChange([...value, entry.id]);
+      const { value: stand, onChange: melden } = jetzt.current;
+      if (stand !== undefined && melden !== undefined) {
+        if (!stand.includes(entry.id)) melden([...stand, entry.id]);
       } else {
         setChecked((prev) => new Set(prev).add(entry.id));
       }

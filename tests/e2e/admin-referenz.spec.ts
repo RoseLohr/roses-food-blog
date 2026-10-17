@@ -93,6 +93,26 @@ async function saatReiseId(page: Page) {
   return href;
 }
 
+/**
+ * Der Editor eines GESEEDETEN Rezepts mit ZWEI Abschnitten.
+ *
+ * `admin-rezept-neu` und `admin-rezept-bearbeiten` zeigen je genau einen
+ * Abschnitt — die Kopfzeile mit „Abschnitt entfernen" und den Pfeilen der
+ * Abschnitte stand damit in keiner Aufnahme. Gefunden im Gegenlesen 10/2026:
+ * Ein Umbau dieser Kopfzeile wäre in allen 120 Aufnahmen unsichtbar geblieben.
+ * Die Linsen-Bolognese der Saat hat zwei Abschnitte.
+ */
+async function saatRezeptMitAbschnitten(page: Page) {
+  await page.goto("/admin/rezepte");
+  const zeile = page
+    .locator("a[href^='/admin/rezepte/']")
+    .filter({ hasText: "Linsen-Bolognese" })
+    .first();
+  const href = await zeile.getAttribute("href");
+  if (!href) throw new Error("Die geseedete Linsen-Bolognese steht nicht in /admin/rezepte");
+  return href;
+}
+
 const SEITEN: Seitentyp[] = [
   {
     // Ohne Sitzung: Die Anmeldemaske ist der einzige Admin-Zustand, den ein
@@ -118,6 +138,7 @@ const SEITEN: Seitentyp[] = [
   },
   { name: "admin-rezept-neu", ziel: async () => "/admin/rezepte/neu" },
   { name: "admin-rezept-bearbeiten", ziel: async () => `/admin/rezepte/${session.recipeId}` },
+  { name: "admin-rezept-abschnitte", ziel: saatRezeptMitAbschnitten },
   {
     name: "admin-rezept-vorschau",
     ziel: async () => `/admin/rezepte/${session.recipeId}/vorschau`,

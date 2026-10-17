@@ -109,6 +109,31 @@ test("das öffentliche Rezept zeigt dieselbe Reihenfolge", async ({ page }) => {
   expect(reihenfolge).toEqual(["Basilikum", "Aubergine", "Canestrato"]);
 });
 
+test("der Fokus geht mit der Zutat — und bleibt am Rand, wo er ist", async ({ page }) => {
+  // Zwei Zusagen des gemeinsamen Pfeil-Bausteins, hier an den Zutaten:
+  // 1. Der Fokus folgt dem EINTRAG. Das setzt einen stabilen Schlüssel voraus
+  //    — mit Index-Schlüssel bliebe er an Stelle 1 stehen, und ein zweites
+  //    Enter schöbe die Zutat, die jetzt dort steht.
+  // 2. Am Rand BEHÄLT der gedrückte Pfeil den Fokus, und ein Druck zu viel tut
+  //    nichts. Siehe den Kopf von verschiebeknoepfe.tsx: Ein abgeschalteter
+  //    Knopf verlor den Fokus an <body>; die erste Abhilfe gab ihn an den
+  //    anderen Pfeil — dann schob genau dieser Druck zu viel die Zutat zurück.
+  await page.goto(`/admin/rezepte/${recipeId}`);
+  expect(await namen(page)).toEqual(["Basilikum", "Aubergine", "Canestrato"]);
+  await page.getByRole("button", { name: `${d.ingredientDown} (1)`, exact: true }).focus();
+  await page.keyboard.press("Enter");
+  await expect(page.locator(":focus")).toHaveAttribute("aria-label", `${d.ingredientDown} (2)`);
+  await page.keyboard.press("Enter");
+  expect(await namen(page)).toEqual(["Aubergine", "Canestrato", "Basilikum"]);
+  const fokus = page.locator(":focus");
+  await expect(fokus).toHaveAttribute("aria-label", `${d.ingredientDown} (3)`);
+  await expect(fokus).toBeDisabled();
+  // Der Druck zu viel.
+  await page.keyboard.press("Enter");
+  expect(await namen(page)).toEqual(["Aubergine", "Canestrato", "Basilikum"]);
+  await expect(fokus).toHaveAttribute("aria-label", `${d.ingredientDown} (3)`);
+});
+
 /**
  * Aufräumen (B8): Das angelegte Rezept verschwindet wieder — sonst sähe es
  * jeder spätere Lauf, und /admin/rezepte wäre eine Zeile länger als beim
