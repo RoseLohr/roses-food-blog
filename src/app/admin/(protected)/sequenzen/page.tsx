@@ -12,6 +12,7 @@ import { SequenceEditor } from "./sequence-editor";
 import { Meldung, meldungAus } from "@/components/admin/meldung";
 import { Statuschip } from "@/components/statuschip";
 import { LoeschForm } from "@/components/admin/loesch-form";
+import { btnSecondary } from "@/components/admin/knopf-stil";
 
 const dict = t();
 const d = dict.admin.sequences;
@@ -52,7 +53,7 @@ export default async function SequencesPage(props: {
                   <input type="hidden" name="id" value={seq.id} />
                   <button
                     type="submit"
-                    className="rounded-lg border border-ink/20 px-3 py-1.5 text-sm hover:bg-cream"
+                    className={btnSecondary}
                   >
                     {seq.active ? d.pause : d.activate}
                   </button>
