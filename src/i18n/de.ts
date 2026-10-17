@@ -868,6 +868,10 @@ export const de = {
       sectionName: "Abschnittsname (z. B. Teig, Belag — leer bei nur einem Abschnitt)",
       addSection: "Abschnitt hinzufügen",
       removeSection: "Abschnitt entfernen",
+      /** Ganze Abschnitte umstellen (z. B. erst „Teig", dann „Belag") —
+       *  dieselben zwei Pfeile wie an Zutaten und Schritten. */
+      sectionUp: "Abschnitt nach oben",
+      sectionDown: "Abschnitt nach unten",
       ingredients: "Zutaten",
       ingredientName: "Zutat",
       amount: "Menge",
