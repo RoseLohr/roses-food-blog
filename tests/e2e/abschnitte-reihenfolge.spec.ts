@@ -236,10 +236,27 @@ test("die Vorschau zeigt die Zubereitung in derselben Reihenfolge", async ({ pag
  * nutzlose Pfeile neben dem Feld und drückten es zwischen 386 und 639 px um
  * bis zu 31 % zusammen — das Layout wurde schmaler, je breiter das Gerät.
  */
-const BREITEN = [360, 390, 430, 639, 834, 1280];
+/**
+ * Und wo die Knopfgruppe bei MEHREREN Abschnitten steht. 768 px ist die
+ * schmalste Spalte überhaupt: Dort kommt die Seitenleiste dazu, dem Kopf
+ * bleiben 422 px — weniger, als Feld (`basis-48`) und Gruppe zusammen
+ * brauchen. Die zweite Fassung des Umbaus hatte die Basis verloren; dann
+ * zählte die Länge des Labels, und die Gruppe stand von 768 bis gut 1000 px
+ * LINKS unter dem Feld. Deshalb wird überall auch die rechte Kante gemessen.
+ */
+const BREITEN = [
+  [360, "darunter"],
+  [390, "darunter"],
+  [430, "darunter"],
+  [639, "darunter"],
+  [640, "daneben"],
+  [768, "darunter"],
+  [834, "daneben"],
+  [1280, "daneben"],
+] as const;
 
-for (const breite of BREITEN) {
-  test(`Kopfzeile bei ${breite} px: ein Abschnitt ohne Pfeile, mehrere mit eigener Zeile auf dem Handy`, async ({
+for (const [breite, gruppe] of BREITEN) {
+  test(`Kopfzeile bei ${breite} px: ein Abschnitt ohne Pfeile, bei mehreren Knöpfe ${gruppe}`, async ({
     page,
   }) => {
     await page.setViewportSize({ width: breite, height: 900 });
@@ -266,17 +283,22 @@ for (const breite of BREITEN) {
     abschnitteSetzen(ABSCHNITTE);
     await page.goto(`/admin/rezepte/${recipeId}`);
     const pfeilOben = pfeil(page, "unten", 1);
-    const [feldBox, pfeilBox, kopfBox] = await Promise.all([
+    const [feldBox, pfeilBox, gruppeBox, kopfBox] = await Promise.all([
       page.locator("#sek-name-0").boundingBox(),
       pfeilOben.boundingBox(),
+      pfeilOben.locator("xpath=..").boundingBox(),
       kopf.boundingBox(),
     ]);
-    if (breite < 640) {
+    if (gruppe === "darunter") {
       expect(pfeilBox!.y, "Pfeile unter dem Feld").toBeGreaterThanOrEqual(feldBox!.y + feldBox!.height);
       expect(feldBox!.width, "Feld über die ganze Zeile").toBeCloseTo(kopfBox!.width, 0);
     } else {
       expect(pfeilBox!.y, "Pfeile neben dem Feld").toBeLessThan(feldBox!.y + feldBox!.height);
     }
+    expect(gruppeBox!.x + gruppeBox!.width, "Knopfgruppe rechtsbündig").toBeCloseTo(
+      kopfBox!.x + kopfBox!.width,
+      0,
+    );
     // Und nichts ragt über den Abschnitt hinaus.
     const ueberstand = await page.locator("#sek-name-0").evaluate((el) => {
       const kasten = el.closest("div.border") as HTMLElement;

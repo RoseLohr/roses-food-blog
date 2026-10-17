@@ -25,13 +25,25 @@ const PNG_1x1 = Buffer.from(
   "base64",
 );
 
-/** Ein Bild aus der Saat — die Antwort, die der zurückgehaltene Upload gibt. */
-export function vorhandenesBild(): { id: number; key: string } {
+/**
+ * Ein Bild aus der Saat — die Antwort, die der zurückgehaltene Upload gibt.
+ *
+ * `ausser`: Bilder, die im Picker schon gewählt sind. Ein Mehrfach-Picker
+ * übernimmt ein Bild, das er schon führt, NICHT ein zweites Mal — der Upload
+ * käme dann zurück, ohne irgendwo anzukommen, und ein Test auf „landet in der
+ * richtigen Gruppe" wäre rot, ohne etwas über den Wettlauf zu sagen.
+ */
+export function vorhandenesBild(ausser: number[] = []): { id: number; key: string } {
   const db = new Database(DB_PFAD, { readonly: true });
   const bild = db
-    .prepare("SELECT id, file_key AS key FROM media_image ORDER BY id LIMIT 1")
-    .get() as { id: number; key: string };
+    .prepare(
+      `SELECT id, file_key AS key FROM media_image
+       WHERE id NOT IN (${ausser.map(() => "?").join(",")})
+       ORDER BY id LIMIT 1`,
+    )
+    .get(...ausser) as { id: number; key: string } | undefined;
   db.close();
+  if (!bild) throw new Error("E2E: kein Bild außerhalb der Auswahl in der Saat");
   return bild;
 }
 

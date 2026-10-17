@@ -72,12 +72,14 @@ test("am Rand geht der Fokus auf den anderen Pfeil, nicht auf die Seite", async 
 test("ein Upload, der nach dem Verschieben zurückkommt, trifft seine eigene Gruppe", async ({
   page,
 }) => {
-  const bild = vorhandenesBild();
-  const { freigeben } = await uploadZurueckhalten(page, bild);
   await page.goto(`/admin/reisen/${session.travelId}`);
   const vorher = await bloecke(page);
   const text = vorher[0];
   const gruppe = vorher.slice(1);
+  // Ein Bild, das NICHT schon in der Gruppe steht — sonst übernähme der
+  // Picker es gar nicht.
+  const bild = vorhandenesBild(gruppe.map((b) => b.imageId ?? 0));
+  const { freigeben } = await uploadZurueckhalten(page, bild);
 
   await hochladenUndSchliessen(page, page.getByRole("group", { name: d.blockBildgruppe }));
   // Die Gruppe (Karte 2) nach oben — VOR den Text.
