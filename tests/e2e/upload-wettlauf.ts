@@ -7,11 +7,13 @@ import { t } from "../../src/i18n/de";
  * Der Upload-Wettlauf, gemeinsam für alle Editoren mit verschiebbaren Listen.
  *
  * Ein Bild-Upload läuft; währenddessen wird der Dialog geschlossen und der
- * Eintrag verschoben; ERST DANN kommt die Antwort. Wer über den Index schreibt
- * oder mit Daten aus dem Rendern beim Upload-Beginn rechnet, trifft dann den
- * Eintrag, der inzwischen an der alten Stelle steht. Gefunden im Gegenlesen
- * 10/2026 am Rezept-Editor (der Schritt von „Teig" landete in „Belag"); der
- * Slider und der Reise-Editor schrieben genauso.
+ * Eintrag verschoben; ERST DANN kommt die Antwort. Wer über den Index
+ * schreibt, trifft dann den Eintrag, der inzwischen an der alten Stelle steht;
+ * wer mit dem Stand vom Upload-Beginn rechnet, nimmt zurück, was seitdem
+ * geändert wurde. Die Specs ändern deshalb zwischen Upload und Antwort auch
+ * DENSELBEN Eintrag. Gefunden im Gegenlesen 10/2026 am Rezept-Editor (der
+ * Schritt von „Teig" landete in „Belag"); Slider, Reise-Editor und der
+ * Bild-Picker selbst rechneten genauso.
  *
  * Die Antwort wird zurückgehalten und erst auf Zuruf freigegeben — mit einem
  * VORHANDENEN Bild, damit kein Testbild in der Mediathek liegen bleibt (sie

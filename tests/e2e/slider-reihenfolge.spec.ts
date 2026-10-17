@@ -62,19 +62,23 @@ test("am Rand sind die Pfeile abgeschaltet, statt still nichts zu tun", async ({
   await expect(pfeile(page, "unten").last()).toBeDisabled();
 });
 
-test("der Fokus geht mit der Folie — und am Rand auf den anderen Pfeil", async ({ page }) => {
+test("der Fokus geht mit der Folie — und bleibt am Rand, wo er ist", async ({ page }) => {
   await page.goto("/admin/startseite");
   const anzahl = (await folien(page)).length;
   await pfeile(page, "unten").first().focus();
   await page.keyboard.press("Enter");
   // Mit Index-Schlüssel bliebe der Fokus auf Stelle 1 — auf einer anderen Folie.
   await expect(page.locator(":focus")).toHaveAttribute("aria-label", new RegExp("\\(2\\)$"));
-  // Bis ans Ende schieben: Dort übernimmt der obere Pfeil derselben Folie.
+  // Bis ans Ende schieben: Dort bleibt der Fokus auf dem Pfeil, und ein Druck
+  // zu viel schiebt die Folie NICHT zurück.
   for (let i = 2; i < anzahl; i++) await page.keyboard.press("Enter");
-  await expect(page.locator(":focus")).toHaveAttribute(
-    "aria-label",
-    `${d.moveUp} (${anzahl})`,
-  );
+  const fokus = page.locator(":focus");
+  await expect(fokus).toHaveAttribute("aria-label", `${d.moveDown} (${anzahl})`);
+  await expect(fokus).toBeDisabled();
+  const amEnde = await folien(page);
+  await page.keyboard.press("Enter");
+  expect(await folien(page)).toEqual(amEnde);
+  await expect(fokus).toHaveAttribute("aria-label", `${d.moveDown} (${anzahl})`);
 });
 
 test("ein Upload, der nach dem Verschieben zurückkommt, trifft seine eigene Folie", async ({
@@ -89,13 +93,17 @@ test("ein Upload, der nach dem Verschieben zurückkommt, trifft seine eigene Fol
   // Der Picker der ERSTEN Folie.
   await hochladenUndSchliessen(page, slider(page).getByRole("group", { name: d.sliderImage }).first());
   await pfeile(page, "unten").first().click();
+  // Dieselbe Folie bekommt noch eine neue Unterschrift, bevor die Antwort
+  // kommt: Ein Schreiber, der mit dem Stand vom Upload-Beginn rechnete, nähme
+  // sie wieder weg — der Index allein fiele dabei nicht auf.
+  await slider(page).getByLabel(d.sliderCaption).nth(1).fill("E2E Nachtrag");
   freigeben();
 
   await expect
     .poll(() => folien(page), { timeout: 10_000 })
     .toEqual([
       vorher[1], // unberührt — trägt weiter ihr eigenes Bild
-      { ...vorher[0], imageId: bild.id }, // die Folie, in der hochgeladen wurde
+      { ...vorher[0], imageId: bild.id, caption: "E2E Nachtrag" }, // die Folie, in der hochgeladen wurde
       ...vorher.slice(2),
     ]);
 });

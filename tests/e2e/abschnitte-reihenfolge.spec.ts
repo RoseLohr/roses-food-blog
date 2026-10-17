@@ -308,22 +308,26 @@ for (const [breite, gruppe] of BREITEN) {
   });
 }
 
-test("am Rand geht der Fokus auf den anderen Pfeil, nicht auf die Seite", async ({ page }) => {
-  // Bei zwei Abschnitten endet JEDER Zug am Rand: Der gedrückte Pfeil schaltet
-  // sich ab, und der Browser setzte den Fokus bisher auf <body> — wer mit der
-  // Tastatur arbeitete, verlor seine Stelle im Formular.
+test("am Rand bleibt der Fokus auf dem Pfeil, und ein Druck zu viel tut nichts", async ({
+  page,
+}) => {
+  // Bei zwei Abschnitten endet JEDER Zug am Rand. Ein abgeschalteter Pfeil
+  // verlor den Fokus an <body> — wer mit der Tastatur arbeitete, verlor seine
+  // Stelle im Formular. Die erste Abhilfe gab ihn an den anderen Pfeil weiter;
+  // dann schob ein Druck zu viel den Abschnitt zurück, und gehaltenes Enter
+  // ließ ihn zwischen den Rändern pendeln.
   abschnitteSetzen([ABSCHNITTE[0], ABSCHNITTE[1]]);
   await page.goto(`/admin/rezepte/${recipeId}`);
   await pfeil(page, "unten", 1).focus();
   await page.keyboard.press("Enter");
-  await expect(page.locator(":focus")).toHaveAttribute("aria-label", `${d.sectionUp} (2)`);
-  // Ein Enter auf DIESEM Pfeil schiebt denselben Abschnitt zurück — und am
-  // oberen Rand übernimmt wieder der andere.
+  const fokus = page.locator(":focus");
+  await expect(fokus).toHaveAttribute("aria-label", `${d.sectionDown} (2)`);
+  await expect(fokus).toBeDisabled();
   await page.keyboard.press("Enter");
-  await expect(page.locator(":focus")).toHaveAttribute("aria-label", `${d.sectionDown} (1)`);
+  await expect(fokus).toHaveAttribute("aria-label", `${d.sectionDown} (2)`);
   expect((await formularstand(page)).map((a) => a.name)).toEqual([
-    ABSCHNITTE[0].name,
     ABSCHNITTE[1].name,
+    ABSCHNITTE[0].name,
   ]);
 });
 
@@ -339,6 +343,14 @@ test("am Rand geht der Fokus auf den anderen Pfeil, nicht auf die Seite", async 
  *
  * Die Antwort wird zurückgehalten und erst nach dem Zug freigegeben — mit
  * einem VORHANDENEN Bild, damit nichts in der Mediathek liegen bleibt.
+ *
+ * Und bevor sie kommt, wird DERSELBE Schritt noch geändert. Der Index ist nur
+ * die eine Hälfte des Fehlers; die andere ist der Stand, mit dem der späte
+ * Schreiber rechnet. Rechnete er mit dem vom Upload-BEGINN, nähme er den
+ * Nachtrag wieder weg — ohne diese Änderung bliebe der Test dabei grün.
+ * Abgewehrt wird das zweimal: Der Bild-Picker reicht das Ergebnis an das
+ * AKTUELLE `onChange`, und der Editor rechnet aus `prev`. Rot wird der Test,
+ * wenn beides fällt (gemessen 10/2026).
  */
 test("ein Upload, der nach dem Verschieben zurückkommt, trifft seinen eigenen Schritt", async ({
   page,
@@ -355,6 +367,12 @@ test("ein Upload, der nach dem Verschieben zurückkommt, trifft seinen eigenen S
   await hochladenUndSchliessen(page, page.getByRole("group", { name: d.stepImage }).first());
 
   await pfeil(page, "unten", 1).click();
+  const teigSchritt = page
+    .getByRole("textbox", { name: `${d.step} 1`, exact: true })
+    .filter({ hasText: TEIG.schritt });
+  await teigSchritt.click();
+  await page.keyboard.press("End");
+  await teigSchritt.pressSequentially(" Nachtrag.");
   freigeben();
 
   const feld = page.locator('input[name="abschnitte"]');
@@ -367,7 +385,7 @@ test("ein Upload, der nach dem Verschieben zurückkommt, trifft seinen eigenen S
       }),
       expect.objectContaining({
         name: TEIG.name,
-        steps: [expect.objectContaining({ text: TEIG.schritt, imageId: bild.id })],
+        steps: [expect.objectContaining({ text: `${TEIG.schritt} Nachtrag.`, imageId: bild.id })],
       }),
     ]);
 });

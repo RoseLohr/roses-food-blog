@@ -252,18 +252,26 @@ test("auch im zweiten Abschnitt wird der richtige Schritt bewegt", async ({
   );
 });
 
-test("am Rand geht der Fokus auf den anderen Pfeil, nicht auf die Seite", async ({
+test("am Rand bleibt der Fokus auf dem Pfeil, und ein Druck zu viel tut nichts", async ({
   page,
 }) => {
-  // Der gedrückte Pfeil schaltet sich am Rand ab; der Browser setzte den Fokus
-  // bisher auf <body>. Jetzt übernimmt der andere Pfeil desselben Schritts.
+  // Ein abgeschalteter Knopf verlor den Fokus an <body>. Die erste Abhilfe gab
+  // ihn an den anderen Pfeil weiter — dann schob ein Druck zu viel den Schritt
+  // wieder zurück. Jetzt ist der Rand-Pfeil `aria-disabled`: fokussierbar,
+  // aber wirkungslos.
   await page.goto(`/admin/rezepte/${recipeId}`);
   await page
     .getByRole("button", { name: `${d.stepDown} (2)`, exact: true })
     .first()
     .focus();
   await page.keyboard.press("Enter");
-  await expect(page.locator(":focus")).toHaveAttribute("aria-label", `${d.stepUp} (3)`);
+  const fokus = page.locator(":focus");
+  await expect(fokus).toHaveAttribute("aria-label", `${d.stepDown} (3)`);
+  await expect(fokus).toBeDisabled();
+  const vorher = await texte(page);
+  await page.keyboard.press("Enter");
+  expect(await texte(page)).toEqual(vorher);
+  await expect(fokus).toHaveAttribute("aria-label", `${d.stepDown} (3)`);
 });
 
 /**

@@ -61,12 +61,20 @@ test("am Rand sind die Pfeile abgeschaltet", async ({ page }) => {
   await expect(pfeile(page, "unten").last()).toBeDisabled();
 });
 
-test("am Rand geht der Fokus auf den anderen Pfeil, nicht auf die Seite", async ({ page }) => {
+test("am Rand bleibt der Fokus auf dem Pfeil, und ein Druck zu viel tut nichts", async ({
+  page,
+}) => {
   await page.goto(`/admin/reisen/${session.travelId}`);
   await pfeile(page, "unten").first().focus();
   await page.keyboard.press("Enter");
-  // Zwei Karten: Der Zug endet am Rand, der gedrückte Pfeil schaltet sich ab.
-  await expect(page.locator(":focus")).toHaveAttribute("aria-label", `${d.blockUp} (2)`);
+  // Zwei Karten: Der Zug endet am Rand.
+  const fokus = page.locator(":focus");
+  await expect(fokus).toHaveAttribute("aria-label", `${d.blockDown} (2)`);
+  await expect(fokus).toBeDisabled();
+  const amRand = await bloecke(page);
+  await page.keyboard.press("Enter");
+  expect(await bloecke(page)).toEqual(amRand);
+  await expect(fokus).toHaveAttribute("aria-label", `${d.blockDown} (2)`);
 });
 
 test("ein Upload, der nach dem Verschieben zurückkommt, trifft seine eigene Gruppe", async ({
@@ -92,5 +100,47 @@ test("ein Upload, der nach dem Verschieben zurückkommt, trifft seine eigene Gru
       ...gruppe,
       expect.objectContaining({ type: "bild", imageId: bild.id }),
       text, // unberührt — bleibt ein Textblock
+    ]);
+});
+
+/**
+ * Die andere Hälfte des Wettlaufs: nicht WELCHER Block getroffen wird,
+ * sondern WOMIT. Während der Upload läuft, wird in derselben Gruppe
+ * umgestellt und eine Unterschrift gesetzt.
+ *
+ * Gefunden im Gegenlesen 10/2026: Der Bild-Picker rechnete die Auswahl nach
+ * dem Upload aus dem Rendern beim Upload-BEGINN — `[1, 2, 3, neu]`. Der
+ * Editor fand damit zwar den richtigen Block, setzte aber die alte Folge
+ * wieder ein: Die Umstellung war rückgängig gemacht, und die Unterschrift
+ * hing am falschen Foto.
+ */
+test("ein Upload in der Gruppe behält, was dort inzwischen geändert wurde", async ({ page }) => {
+  await page.goto(`/admin/reisen/${session.travelId}`);
+  const vorher = await bloecke(page);
+  const [text, ...gruppe] = vorher;
+  const [eins, zwei, drei] = gruppe.map((b) => b.imageId ?? 0);
+  const bild = vorhandenesBild([eins, zwei, drei]);
+  const { freigeben } = await uploadZurueckhalten(page, bild);
+
+  const picker = page.getByRole("group", { name: d.blockBildgruppe });
+  await hochladenUndSchliessen(page, picker);
+  // Das zweite Foto nach vorn …
+  await picker
+    .getByRole("button", { name: `${dict.imagePicker.moveEarlier} — ${dict.imagePicker.position(2, 3)}` })
+    .click();
+  // … und unter dem jetzt ersten seine Unterschrift einschalten.
+  await picker.getByRole("checkbox", { name: d.blockBildunterschrift }).first().check();
+  freigeben();
+
+  const foto = (imageId: number, bildunterschrift: boolean) =>
+    expect.objectContaining({ type: "bild", imageId, bildunterschrift });
+  await expect
+    .poll(() => bloecke(page), { timeout: 10_000 })
+    .toEqual([
+      text,
+      foto(zwei, true),
+      foto(eins, false),
+      foto(drei, false),
+      foto(bild.id, false),
     ]);
 });
