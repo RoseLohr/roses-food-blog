@@ -84,6 +84,31 @@ interface EditorRestaurant {
  */
 type Eintrag = EditorItem & MitSchluessel;
 
+/**
+ * Restaurants und Gerichte im Editor — ebenfalls mit Identität, die das
+ * Formular nie verlässt (`serialized` nennt seine Felder einzeln).
+ *
+ * Bis 10/2026 waren beide über den INDEX verschlüsselt und wurden über den
+ * Index beschrieben. Entfernte man das erste Restaurant, während im zweiten
+ * ein Foto hochlud, traf die Antwort das DRITTE; und das zweite wurde ab da
+ * vom Bild-Picker des entfernten ersten gezeichnet, dessen Bibliothek das
+ * eben hochgeladene Foto nicht kannte — die Vorschau blieb leer
+ * (tests/e2e/reise-restaurants-schluessel.spec.ts).
+ */
+interface KartenGericht extends EditorDish, MitSchluessel {}
+interface KartenRestaurant extends Omit<EditorRestaurant, "dishes">, MitSchluessel {
+  dishes: KartenGericht[];
+}
+const alsGericht = (g: EditorDish): KartenGericht => ({
+  ...g,
+  schluessel: neuerSchluessel("gericht"),
+});
+const alsRestaurant = (r: EditorRestaurant): KartenRestaurant => ({
+  ...r,
+  schluessel: neuerSchluessel("restaurant"),
+  dishes: r.dishes.map(alsGericht),
+});
+
 export interface TravelEditorProps {
   initial: {
     id: number | null;
@@ -194,8 +219,8 @@ export function TravelEditor({
     saveTravelAction,
     {},
   );
-  const [restaurants, setRestaurants] = useState<EditorRestaurant[]>(
-    initial.restaurants.length ? initial.restaurants : [],
+  const [restaurants, setRestaurants] = useState<KartenRestaurant[]>(() =>
+    initial.restaurants.map(alsRestaurant),
   );
   const [eintraege, setEintraege] = useState<Eintrag[]>(() =>
     // Aus der gespeicherten Blockfolge werden hier die KARTEN, die der
@@ -241,6 +266,12 @@ export function TravelEditor({
 
   // Restaurant entfernen: Einträge auf spätere Restaurants nachziehen,
   // Einträge auf das entfernte Restaurant mit entfernen.
+  //
+  // Hier bleibt die STELLE der Maßstab, und zwar mit Grund: Ein Restaurant-
+  // Block verweist über die Stelle auf sein Restaurant (`index`, so wird er
+  // auch gespeichert), das Nachziehen ist also eine Rechnung über Stellen.
+  // Gerufen wird nur aus dem Klick auf „Restaurant entfernen" — synchron, mit
+  // der Stelle aus genau dem Stand, der in dem Moment angezeigt wird.
   const removeRestaurant = (ri: number) => {
     setRestaurants((prev) => prev.filter((_, idx) => idx !== ri));
     setEintraege((prev) =>
@@ -294,10 +325,11 @@ export function TravelEditor({
     })),
   );
 
-  const updateRestaurant = (i: number, patch: Partial<EditorRestaurant>) =>
-    setRestaurants((prev) =>
-      prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)),
-    );
+  /** Ein Restaurant ändern — über seinen Schlüssel, aus dem aktuellen Stand. */
+  const updateRestaurant = (
+    rKey: string,
+    patch: Partial<Omit<EditorRestaurant, "dishes">>,
+  ) => setRestaurants((prev) => geaendertNach(prev, rKey, (r) => ({ ...r, ...patch })));
   /**
    * Die Gerichte EINES Restaurants ändern.
    *
@@ -305,21 +337,22 @@ export function TravelEditor({
    * Zustands-Aktualisierer, nicht aus dem Renderdurchlauf. Sechs Stellen
    * bauten bis 08/2026 ihre neue Liste aus dem gerenderten `r.dishes`. Fallen
    * zwei Änderungen in dieselbe Stapelverarbeitung, rechnet die zweite auf dem
-   * Stand VOR der ersten und macht sie zunichte.
+   * Stand VOR der ersten und macht sie zunichte. Seit 10/2026 sind auch
+   * Restaurant und Gericht über ihren Schlüssel adressiert, nicht über die
+   * Stelle — siehe `KartenRestaurant`.
    */
   const updateDishes = (
-    ri: number,
-    aendern: (dishes: EditorDish[]) => EditorDish[],
+    rKey: string,
+    aendern: (dishes: KartenGericht[]) => KartenGericht[],
   ) =>
     setRestaurants((prev) =>
-      prev.map((r, idx) =>
-        idx === ri ? { ...r, dishes: aendern(r.dishes) } : r,
-      ),
+      geaendertNach(prev, rKey, (r) => {
+        const neu = aendern(r.dishes);
+        return neu === r.dishes ? r : { ...r, dishes: neu };
+      }),
     );
-  const updateDish = (ri: number, di: number, patch: Partial<EditorDish>) =>
-    updateDishes(ri, (dishes) =>
-      dishes.map((x, dIdx) => (dIdx === di ? { ...x, ...patch } : x)),
-    );
+  const updateDish = (rKey: string, gKey: string, patch: Partial<EditorDish>) =>
+    updateDishes(rKey, (dishes) => geaendertNach(dishes, gKey, (x) => ({ ...x, ...patch })));
 
   return (
     <form action={formAction} className="flex max-w-4xl flex-col gap-6">
@@ -659,8 +692,10 @@ export function TravelEditor({
       <section className="bg-white p-5 shadow-sm">
         <h2 className="mb-4 text-lg font-semibold">{d.restaurants}</h2>
         <div className="flex flex-col gap-6">
-          {restaurants.map((r, ri) => (
-            <div key={ri} className="border border-ink/10 p-4">
+          {restaurants.map((r, ri) => {
+            const rKey = r.schluessel;
+            return (
+            <div key={rKey} className="border border-ink/10 p-4">
               <div className="grid gap-3 md:grid-cols-2">
                 <div>
                   <label className={labelCls} htmlFor={`r-name-${ri}`}>
@@ -669,7 +704,7 @@ export function TravelEditor({
                   <input
                     id={`r-name-${ri}`}
                     value={r.name}
-                    onChange={(e) => updateRestaurant(ri, { name: e.target.value })}
+                    onChange={(e) => updateRestaurant(rKey, { name: e.target.value })}
                     className={inputCls}
                   />
                 </div>
@@ -680,7 +715,7 @@ export function TravelEditor({
                   <input
                     id={`r-ort-${ri}`}
                     value={r.city}
-                    onChange={(e) => updateRestaurant(ri, { city: e.target.value })}
+                    onChange={(e) => updateRestaurant(rKey, { city: e.target.value })}
                     className={inputCls}
                   />
                 </div>
@@ -694,7 +729,7 @@ export function TravelEditor({
                       value={r.lat}
                       inputMode="decimal"
                       placeholder="z. B. 38,1157"
-                      onChange={(e) => updateRestaurant(ri, { lat: e.target.value })}
+                      onChange={(e) => updateRestaurant(rKey, { lat: e.target.value })}
                       className={inputCls}
                     />
                   </div>
@@ -707,7 +742,7 @@ export function TravelEditor({
                       value={r.lng}
                       inputMode="decimal"
                       placeholder="z. B. 13,3615"
-                      onChange={(e) => updateRestaurant(ri, { lng: e.target.value })}
+                      onChange={(e) => updateRestaurant(rKey, { lng: e.target.value })}
                       className={inputCls}
                     />
                   </div>
@@ -721,7 +756,7 @@ export function TravelEditor({
                     initialMarkdown={r.description}
                     minHeightClass="min-h-20"
                     onChange={(md) =>
-                      updateRestaurant(ri, { description: md })
+                      updateRestaurant(rKey, { description: md })
                     }
                   />
                 </div>
@@ -732,7 +767,7 @@ export function TravelEditor({
                     multiple
                     max={RESTAURANT_FOTOS_MAX}
                     value={r.imageIds}
-                    onChange={(ids) => updateRestaurant(ri, { imageIds: ids })}
+                    onChange={(ids) => updateRestaurant(rKey, { imageIds: ids })}
                   />
                   <p className="mt-1 text-xs text-ink-soft">
                     {d.restaurantImageHint}
@@ -742,15 +777,17 @@ export function TravelEditor({
 
               <h3 className="mb-2 mt-4 text-sm font-semibold">{d.dishes}</h3>
               <div className="flex flex-col gap-4">
-                {r.dishes.map((dish, di) => (
-                  <div key={di} className="bg-cream/60 p-3">
+                {r.dishes.map((dish) => {
+                  const gKey = dish.schluessel;
+                  return (
+                  <div key={gKey} className="bg-cream/60 p-3">
                     <div className="grid gap-2 md:grid-cols-2">
                       <input
                         aria-label={d.dishName}
                         placeholder={d.dishName}
                         value={dish.name}
                         onChange={(e) =>
-                          updateDish(ri, di, { name: e.target.value })
+                          updateDish(rKey, gKey, { name: e.target.value })
                         }
                         className={inputCls}
                       />
@@ -759,7 +796,7 @@ export function TravelEditor({
                         placeholder={d.dishIngredients}
                         value={dish.ingredientsText}
                         onChange={(e) =>
-                          updateDish(ri, di, { ingredientsText: e.target.value })
+                          updateDish(rKey, gKey, { ingredientsText: e.target.value })
                         }
                         className={inputCls}
                       />
@@ -769,7 +806,7 @@ export function TravelEditor({
                           initialMarkdown={dish.description}
                           minHeightClass="min-h-20"
                           onChange={(md) =>
-                            updateDish(ri, di, { description: md })
+                            updateDish(rKey, gKey, { description: md })
                           }
                         />
                       </div>
@@ -778,7 +815,7 @@ export function TravelEditor({
                         options={images}
                         value={dish.imageIds}
                         onChange={(ids) =>
-                          updateDish(ri, di, { imageIds: ids })
+                          updateDish(rKey, gKey, { imageIds: ids })
                         }
                         multiple
                       />
@@ -803,7 +840,7 @@ export function TravelEditor({
                             type="kategorie"
                             value={dish.categoryIds}
                             onChange={(ids) =>
-                              updateDish(ri, di, { categoryIds: ids })
+                              updateDish(rKey, gKey, { categoryIds: ids })
                             }
                           />
                           <QuickAddCheckboxes
@@ -813,7 +850,7 @@ export function TravelEditor({
                             type="ernaehrungsform"
                             value={dish.dietTypeIds}
                             onChange={(ids) =>
-                              updateDish(ri, di, { dietTypeIds: ids })
+                              updateDish(rKey, gKey, { dietTypeIds: ids })
                             }
                           />
                           <QuickAddCheckboxes
@@ -823,7 +860,7 @@ export function TravelEditor({
                             type="kueche"
                             value={dish.cuisineIds}
                             onChange={(ids) =>
-                              updateDish(ri, di, { cuisineIds: ids })
+                              updateDish(rKey, gKey, { cuisineIds: ids })
                             }
                           />
                           <QuickAddCheckboxes
@@ -833,7 +870,7 @@ export function TravelEditor({
                             type="schlagwort"
                             value={dish.tagIds}
                             onChange={(ids) =>
-                              updateDish(ri, di, { tagIds: ids })
+                              updateDish(rKey, gKey, { tagIds: ids })
                             }
                           />
                         </div>
@@ -841,21 +878,18 @@ export function TravelEditor({
                     </div>
                     <button
                       type="button"
-                      onClick={() =>
-                        updateDishes(ri, (dishes) =>
-                          dishes.filter((_, idx) => idx !== di),
-                        )
-                      }
+                      onClick={() => updateDishes(rKey, (dishes) => ohneEintrag(dishes, gKey))}
                       className={`${btnSecondary} mt-2`}
                     >
                       × {dict.admin.recipes.remove}
                     </button>
                   </div>
-                ))}
+                  );
+                })}
                 <button
                   type="button"
                   onClick={() =>
-                    updateDishes(ri, (dishes) => [...dishes, emptyDish()])
+                    updateDishes(rKey, (dishes) => [...dishes, alsGericht(emptyDish())])
                   }
                   className={`${btnSecondary} self-start`}
                 >
@@ -871,10 +905,13 @@ export function TravelEditor({
                 {d.removeRestaurant}
               </button>
             </div>
-          ))}
+            );
+          })}
           <button
             type="button"
-            onClick={() => setRestaurants((prev) => [...prev, emptyRestaurant()])}
+            onClick={() =>
+              setRestaurants((prev) => [...prev, alsRestaurant(emptyRestaurant())])
+            }
             className={`${btnSecondary} self-start`}
           >
             + {d.addRestaurant}
