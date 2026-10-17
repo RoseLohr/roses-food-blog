@@ -8,7 +8,15 @@
 import { useActionState, useMemo, useState } from "react";
 import { saveTravelAction, type TravelFormState } from "./actions";
 import { ImagePicker, type ImageChoice } from "@/components/admin/image-picker";
-import { verschoben, type Richtung } from "@/lib/reihenfolge";
+import {
+  geaendertNach,
+  neuerSchluessel,
+  ohneEintrag,
+  verschobenNach,
+  type MitSchluessel,
+} from "@/lib/reihenfolge";
+import { Verschiebeknoepfe } from "@/components/admin/verschiebeknoepfe";
+import { btnSecondary } from "@/components/admin/knopf-stil";
 import {
   QuickAddCheckboxes,
   type Option as TaxonomyOption,
@@ -74,7 +82,7 @@ interface EditorRestaurant {
  * Karte auf dem Bildschirm steht, und darf deshalb weder gespeichert noch
  * abgesendet werden.
  */
-type Eintrag = EditorItem & { key: string };
+type Eintrag = EditorItem & MitSchluessel;
 
 export interface TravelEditorProps {
   initial: {
@@ -105,13 +113,8 @@ export interface TravelEditorProps {
   message?: string | null;
 }
 
-let eintragUid = 0;
-const naechsterSchluessel = () => `eintrag-${++eintragUid}`;
-
 const inputCls = "w-full border border-ink-soft/30 px-3 py-2 text-sm";
 const labelCls = "mb-1 block text-sm font-medium";
-const btnSecondary =
-  "rounded-lg border border-ink/20 px-3 py-1.5 text-sm hover:bg-cream";
 
 /**
  * Die Überschrift einer Karte. Vier Arten, vier Wörter — und „Bildgruppe" ist
@@ -204,7 +207,7 @@ export function TravelEditor({
     (initial.blocks.length
       ? zuItems(initial.blocks)
       : [{ art: "text", markdown: "" } as EditorItem]
-    ).map((e) => ({ ...e, key: naechsterSchluessel() })),
+    ).map((e) => ({ ...e, schluessel: neuerSchluessel("eintrag") })),
   );
 
   /** Bild nach ID — gebraucht, um zu einem Foto den Alt-Text zu finden. */
@@ -220,16 +223,21 @@ export function TravelEditor({
   );
   const wirksamSet = new Set(wirksam);
 
-  const aendere = (i: number, patch: Partial<EditorItem>) =>
-    setEintraege((prev) =>
-      prev.map((e, idx) => (idx === i ? ({ ...e, ...patch } as Eintrag) : e)),
-    );
-  const verschiebe = (i: number, richtung: Richtung) =>
-    setEintraege((prev) => verschoben(prev, i, richtung) as Eintrag[]);
-  const entferne = (i: number) =>
-    setEintraege((prev) => prev.filter((_, idx) => idx !== i));
+  /**
+   * Einen Block ändern — über seinen SCHLÜSSEL, gerechnet aus dem AKTUELLEN
+   * Eintrag. Bis 10/2026 schrieb `aendere(i, mitBildern(e, …))` über den
+   * Index und mit dem beim Rendern eingefangenen Eintrag `e`: Kam ein Upload
+   * in einer Bildgruppe erst zurück, nachdem die Gruppe ihren Platz gewechselt
+   * hatte, landete er in dem Block, der inzwischen an der alten Stelle stand —
+   * und verschwand (tests/e2e/reise-bloecke-reihenfolge.spec.ts).
+   */
+  const aendere = (k: string, aendern: (e: Eintrag) => Eintrag) =>
+    setEintraege((prev) => geaendertNach(prev, k, aendern));
+  /** Felder setzen, deren Wert aus dem EREIGNIS kommt, nicht aus dem Eintrag. */
+  const setze = (k: string, patch: Partial<EditorItem>) =>
+    aendere(k, (e) => ({ ...e, ...patch }) as Eintrag);
   const fuegeAn = (e: EditorItem) =>
-    setEintraege((prev) => [...prev, { ...e, key: naechsterSchluessel() }]);
+    setEintraege((prev) => [...prev, { ...e, schluessel: neuerSchluessel("eintrag") }]);
 
   // Restaurant entfernen: Einträge auf spätere Restaurants nachziehen,
   // Einträge auf das entfernte Restaurant mit entfernen.
@@ -425,9 +433,11 @@ export function TravelEditor({
             <span className={labelCls}>{d.fieldContent}</span>
             <p className="mb-2 text-xs text-ink-soft">{d.blocksHint}</p>
             <div className="flex flex-col gap-3">
-              {eintraege.map((e, i) => (
+              {eintraege.map((e, i) => {
+                const k = e.schluessel;
+                return (
                 <div
-                  key={e.key}
+                  key={k}
                   className={`border border-ink/10 p-3 ${
                     wirksamSet.has(i) ? "" : "border-dashed bg-cream/40"
                   }`}
@@ -442,32 +452,19 @@ export function TravelEditor({
                       </span>
                     )}
                     <div className="ml-auto flex gap-1">
+                      <Verschiebeknoepfe
+                        stelle={i}
+                        anzahl={eintraege.length}
+                        verschiebe={(r) => setEintraege((prev) => verschobenNach(prev, k, r))}
+                        nachOben={d.blockUp}
+                        nachUnten={d.blockDown}
+                      />
                       <button
                         type="button"
-                        onClick={() => verschiebe(i, -1)}
-                        disabled={i === 0}
-                        aria-label={d.blockUp}
-                        title={d.blockUp}
-                        className={`${btnSecondary} px-2 py-0.5 disabled:opacity-40`}
-                      >
-                        ↑
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => verschiebe(i, 1)}
-                        disabled={i === eintraege.length - 1}
-                        aria-label={d.blockDown}
-                        title={d.blockDown}
-                        className={`${btnSecondary} px-2 py-0.5 disabled:opacity-40`}
-                      >
-                        ↓
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => entferne(i)}
+                        onClick={() => setEintraege((prev) => ohneEintrag(prev, k))}
                         aria-label={dict.admin.recipes.remove}
                         title={dict.admin.recipes.remove}
-                        className={`${btnSecondary} px-2 py-0.5`}
+                        className={btnSecondary}
                       >
                         ×
                       </button>
@@ -477,7 +474,7 @@ export function TravelEditor({
                     <RichTextEditor
                       initialMarkdown={e.markdown}
                       minHeightClass="min-h-32"
-                      onChange={(md) => aendere(i, { markdown: md })}
+                      onChange={(md) => setze(k, { markdown: md })}
                     />
                   )}
 
@@ -500,7 +497,9 @@ export function TravelEditor({
                         // Stelle gehört — die ID allein kann das nicht,
                         // sobald ein Foto zweimal vorkommt.
                         onChange={(ids, herkunft) =>
-                          aendere(i, mitBildern(e, ids, herkunft))
+                          aendere(k, (a) =>
+                            a.art === "bildgruppe" ? { ...a, ...mitBildern(a, ids, herkunft) } : a,
+                          )
                         }
                         // Angesprochen wird die STELLE, nicht die Bild-ID:
                         // Dasselbe Foto darf zweimal in einer Gruppe stehen,
@@ -510,7 +509,9 @@ export function TravelEditor({
                             an={unterschriftAn(e, pos)}
                             altText={bildById.get(id)?.altText ?? ""}
                             onChange={(an) =>
-                              aendere(i, mitUnterschrift(e, pos, an))
+                              aendere(k, (a) =>
+                                a.art === "bildgruppe" ? { ...a, ...mitUnterschrift(a, pos, an) } : a,
+                              )
                             }
                           />
                         )}
@@ -533,12 +534,16 @@ export function TravelEditor({
                         // `mitFoto` statt nur die ID zu setzen: Das Häkchen
                         // gehört zum Alt-Text DIESES Fotos. Ein Ersatzbild
                         // erbt es nicht.
-                        onChange={(ids) => aendere(i, mitFoto(e, ids[0] ?? 0))}
+                        onChange={(ids) =>
+                          aendere(k, (a) =>
+                            a.art === "einzelbild" ? { ...a, ...mitFoto(a, ids[0] ?? 0) } : a,
+                          )
+                        }
                         proBild={(id) => (
                           <UnterschriftHaken
                             an={e.bildunterschrift}
                             altText={bildById.get(id)?.altText ?? ""}
-                            onChange={(an) => aendere(i, { bildunterschrift: an })}
+                            onChange={(an) => setze(k, { bildunterschrift: an })}
                           />
                         )}
                       />
@@ -548,9 +553,7 @@ export function TravelEditor({
                           <select
                             value={e.groesse}
                             onChange={(ev) =>
-                              aendere(i, {
-                                groesse: ev.target.value as Bildgroesse,
-                              })
+                              setze(k, { groesse: ev.target.value as Bildgroesse })
                             }
                             className={inputCls}
                           >
@@ -566,9 +569,7 @@ export function TravelEditor({
                           <select
                             value={e.ausrichtung}
                             onChange={(ev) =>
-                              aendere(i, {
-                                ausrichtung: ev.target.value as Ausrichtung,
-                              })
+                              setze(k, { ausrichtung: ev.target.value as Ausrichtung })
                             }
                             className={inputCls}
                           >
@@ -604,9 +605,7 @@ export function TravelEditor({
                       <select
                         aria-label={d.blockRestaurant}
                         value={e.index}
-                        onChange={(ev) =>
-                          aendere(i, { index: Number(ev.target.value) })
-                        }
+                        onChange={(ev) => setze(k, { index: Number(ev.target.value) })}
                         className={inputCls}
                       >
                         {restaurants.map((r, ri) => (
@@ -617,7 +616,8 @@ export function TravelEditor({
                       </select>
                     ))}
                 </div>
-              ))}
+                );
+              })}
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
