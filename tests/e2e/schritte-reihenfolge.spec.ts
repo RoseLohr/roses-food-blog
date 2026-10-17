@@ -252,6 +252,20 @@ test("auch im zweiten Abschnitt wird der richtige Schritt bewegt", async ({
   );
 });
 
+test("am Rand geht der Fokus auf den anderen Pfeil, nicht auf die Seite", async ({
+  page,
+}) => {
+  // Der gedrückte Pfeil schaltet sich am Rand ab; der Browser setzte den Fokus
+  // bisher auf <body>. Jetzt übernimmt der andere Pfeil desselben Schritts.
+  await page.goto(`/admin/rezepte/${recipeId}`);
+  await page
+    .getByRole("button", { name: `${d.stepDown} (2)`, exact: true })
+    .first()
+    .focus();
+  await page.keyboard.press("Enter");
+  await expect(page.locator(":focus")).toHaveAttribute("aria-label", `${d.stepUp} (3)`);
+});
+
 /**
  * Aufräumen (B8): Das angelegte Rezept verschwindet wieder — sonst sähe es
  * jeder spätere Lauf, und /admin/rezepte wäre eine Zeile länger als beim

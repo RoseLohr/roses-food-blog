@@ -3,6 +3,7 @@ import Database from "better-sqlite3";
 import fs from "node:fs";
 import path from "node:path";
 import { t } from "../../src/i18n/de";
+import { hochladenUndSchliessen, uploadZurueckhalten, vorhandenesBild } from "./upload-wettlauf";
 
 /**
  * Ganze Abschnitte eines Rezepts lassen sich umstellen — mit denselben zwei
@@ -56,6 +57,38 @@ const GETAUSCHT = [ABSCHNITTE[1], ABSCHNITTE[0], ABSCHNITTE[2]];
 
 let recipeId: number | null = null;
 
+type Abschnitt = { name: string; zutat: string; schritt: string };
+
+/**
+ * Die Abschnitte des Rezepts direkt in der Datenbank setzen — über die
+ * Oberfläche getippt, wäre reiches Markdown schon vor der Messung durch den
+ * Editor gelaufen. Jeder Test, der einen bestimmten Ausgangsstand braucht,
+ * stellt ihn so selbst her, statt vom vorigen Test abzuhängen.
+ */
+function abschnitteSetzen(abschnitte: readonly Abschnitt[]) {
+  const db = new Database(DB_PFAD);
+  db.pragma("foreign_keys = ON");
+  db.prepare("DELETE FROM recipe_section WHERE recipe_id = ?").run(recipeId);
+  const zutatId = db.prepare("SELECT id FROM ingredient WHERE name = ?");
+  abschnitte.forEach((a, i) => {
+    const sid = Number(
+      db
+        .prepare("INSERT INTO recipe_section (recipe_id, name, sort_order) VALUES (?, ?, ?)")
+        .run(recipeId, a.name, i).lastInsertRowid,
+    );
+    const zutat = zutatId.get(a.zutat) as { id: number } | undefined;
+    if (!zutat) throw new Error(`Seed-Zutat ${a.zutat} fehlt`);
+    db.prepare(
+      "INSERT INTO recipe_ingredient (section_id, ingredient_id, amount, unit, note, sort_order) VALUES (?, ?, 1, '', '', 0)",
+    ).run(sid, zutat.id);
+    db.prepare("INSERT INTO recipe_step (section_id, text, sort_order) VALUES (?, ?, 0)").run(
+      sid,
+      a.schritt,
+    );
+  });
+  db.close();
+}
+
 test.describe.configure({ mode: "serial" });
 
 test.beforeEach(async ({ context }) => {
@@ -67,7 +100,7 @@ test.beforeEach(async ({ context }) => {
 type Gespeichert = Array<{
   name: string;
   ingredients: Array<{ name: string }>;
-  steps: Array<{ text: string }>;
+  steps: Array<{ text: string; imageId: number | null }>;
 }>;
 
 /** Was das Formular abschicken WÜRDE — Name, Zutaten und Schritte je Abschnitt. */
@@ -103,29 +136,7 @@ test("Rezept mit drei Abschnitten anlegen", async ({ page }) => {
   recipeId = Number(/\/admin\/rezepte\/(\d+)/.exec(page.url())?.[1]);
   expect(recipeId).toBeGreaterThan(0);
 
-  // Die drei Abschnitte direkt in die Datenbank — über die Oberfläche getippt,
-  // wäre das reiche Markdown schon vor der Messung durch den Editor gelaufen.
-  const db = new Database(DB_PFAD);
-  db.pragma("foreign_keys = ON");
-  db.prepare("DELETE FROM recipe_section WHERE recipe_id = ?").run(recipeId);
-  const zutatId = db.prepare("SELECT id FROM ingredient WHERE name = ?");
-  ABSCHNITTE.forEach((a, i) => {
-    const sid = Number(
-      db
-        .prepare("INSERT INTO recipe_section (recipe_id, name, sort_order) VALUES (?, ?, ?)")
-        .run(recipeId, a.name, i).lastInsertRowid,
-    );
-    const zutat = zutatId.get(a.zutat) as { id: number } | undefined;
-    expect(zutat, `Seed-Zutat ${a.zutat} fehlt`).toBeDefined();
-    db.prepare(
-      "INSERT INTO recipe_ingredient (section_id, ingredient_id, amount, unit, note, sort_order) VALUES (?, ?, 1, '', '', 0)",
-    ).run(sid, zutat!.id);
-    db.prepare("INSERT INTO recipe_step (section_id, text, sort_order) VALUES (?, ?, 0)").run(
-      sid,
-      a.schritt,
-    );
-  });
-  db.close();
+  abschnitteSetzen(ABSCHNITTE);
 
   await page.goto(`/admin/rezepte/${recipeId}`);
   expect(await formularstand(page), "Der Editor lädt die drei Abschnitte unverfälscht").toEqual(
@@ -201,31 +212,142 @@ test("die neue Reihenfolge übersteht das Speichern", async ({ page }) => {
   expect(zeilen).toEqual(GETAUSCHT.map((a) => ({ name: a.name, text: a.schritt })));
 });
 
-test("die Vorschau zeigt die Abschnitte in derselben Reihenfolge", async ({ page }) => {
-  // Der Zweck der Pfeile: Was der Redakteur ordnet, liest der Besucher.
+test("die Vorschau zeigt die Zubereitung in derselben Reihenfolge", async ({ page }) => {
+  // Der Zweck der Pfeile: Was der Redakteur ordnet, liest der Besucher beim
+  // Kochen. Gemessen wird an den SCHRITT-Texten, nicht an den Namen: Jeder
+  // Abschnittsname steht zweimal auf der Seite (Zutaten- und
+  // Zubereitungsspalte), und `indexOf` träfe immer nur die Zutaten.
+  // Nachgestellt im Gegenlesen: Mit umgekehrter Zubereitung blieb der alte
+  // Test grün.
   await page.goto(`/admin/rezepte/${recipeId}/vorschau`);
   const text = (await page.locator("main").innerText()).replace(/\s+/g, " ");
-  const stellen = GETAUSCHT.map((a) => text.indexOf(a.name));
-  expect(stellen.every((i) => i >= 0), "Ein Abschnittsname fehlt in der Vorschau").toBe(true);
+  const stellen = GETAUSCHT.map((a) => text.indexOf(a.schritt.split("\n")[0]));
+  expect(stellen.every((i) => i >= 0), "Ein Schritt fehlt in der Vorschau").toBe(true);
   expect(stellen).toEqual([...stellen].sort((a, b) => a - b));
 });
 
-test("auf dem Handy drückt die Knopfgruppe das Namensfeld nicht zusammen", async ({
+/**
+ * Die Kopfzeile eines Abschnitts in allen Breiten, in denen sie umschalten
+ * könnte — mit EINEM Abschnitt (dem Normalfall jedes neuen Rezepts) und mit
+ * mehreren.
+ *
+ * Die erste Fassung maß nur 390 px und nur drei Abschnitte. Das Gegenlesen
+ * fand den Fall daneben: Bei einem Abschnitt standen zwei abgeschaltete,
+ * nutzlose Pfeile neben dem Feld und drückten es zwischen 386 und 639 px um
+ * bis zu 31 % zusammen — das Layout wurde schmaler, je breiter das Gerät.
+ */
+const BREITEN = [360, 390, 430, 639, 834, 1280];
+
+for (const breite of BREITEN) {
+  test(`Kopfzeile bei ${breite} px: ein Abschnitt ohne Pfeile, mehrere mit eigener Zeile auf dem Handy`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: breite, height: 900 });
+
+    // EIN Abschnitt: Pfeile wären beide abgeschaltet — sie stehen gar nicht
+    // erst da, wie „Abschnitt entfernen" in derselben Zeile.
+    abschnitteSetzen([ABSCHNITTE[0]]);
+    await page.goto(`/admin/rezepte/${recipeId}`);
+    await expect(page.getByRole("button", { name: new RegExp(`^${d.sectionUp}`) })).toHaveCount(0);
+    const feld = page.locator("#sek-name-0");
+    const kopf = feld.locator("xpath=ancestor::div[contains(@class,'mb-3')][1]");
+    const [feldBreite, kopfBreite] = await Promise.all([
+      feld.evaluate((el) => el.getBoundingClientRect().width),
+      kopf.evaluate((el) => el.getBoundingClientRect().width),
+    ]);
+    expect(feldBreite, "Ein einziger Abschnitt: Das Namensfeld nimmt die ganze Zeile").toBeCloseTo(
+      kopfBreite,
+      0,
+    );
+
+    // MEHRERE Abschnitte: Unter 640 px steht die Knopfgruppe in einer eigenen
+    // Zeile UNTER dem Feld, rechtsbündig — wie die Pfeile von Zutaten und
+    // Schritten. Ab 640 px daneben.
+    abschnitteSetzen(ABSCHNITTE);
+    await page.goto(`/admin/rezepte/${recipeId}`);
+    const pfeilOben = pfeil(page, "unten", 1);
+    const [feldBox, pfeilBox, kopfBox] = await Promise.all([
+      page.locator("#sek-name-0").boundingBox(),
+      pfeilOben.boundingBox(),
+      kopf.boundingBox(),
+    ]);
+    if (breite < 640) {
+      expect(pfeilBox!.y, "Pfeile unter dem Feld").toBeGreaterThanOrEqual(feldBox!.y + feldBox!.height);
+      expect(feldBox!.width, "Feld über die ganze Zeile").toBeCloseTo(kopfBox!.width, 0);
+    } else {
+      expect(pfeilBox!.y, "Pfeile neben dem Feld").toBeLessThan(feldBox!.y + feldBox!.height);
+    }
+    // Und nichts ragt über den Abschnitt hinaus.
+    const ueberstand = await page.locator("#sek-name-0").evaluate((el) => {
+      const kasten = el.closest("div.border") as HTMLElement;
+      return kasten.scrollWidth - kasten.clientWidth;
+    });
+    expect(ueberstand).toBe(0);
+  });
+}
+
+test("am Rand geht der Fokus auf den anderen Pfeil, nicht auf die Seite", async ({ page }) => {
+  // Bei zwei Abschnitten endet JEDER Zug am Rand: Der gedrückte Pfeil schaltet
+  // sich ab, und der Browser setzte den Fokus bisher auf <body> — wer mit der
+  // Tastatur arbeitete, verlor seine Stelle im Formular.
+  abschnitteSetzen([ABSCHNITTE[0], ABSCHNITTE[1]]);
+  await page.goto(`/admin/rezepte/${recipeId}`);
+  await pfeil(page, "unten", 1).focus();
+  await page.keyboard.press("Enter");
+  await expect(page.locator(":focus")).toHaveAttribute("aria-label", `${d.sectionUp} (2)`);
+  // Ein Enter auf DIESEM Pfeil schiebt denselben Abschnitt zurück — und am
+  // oberen Rand übernimmt wieder der andere.
+  await page.keyboard.press("Enter");
+  await expect(page.locator(":focus")).toHaveAttribute("aria-label", `${d.sectionDown} (1)`);
+  expect((await formularstand(page)).map((a) => a.name)).toEqual([
+    ABSCHNITTE[0].name,
+    ABSCHNITTE[1].name,
+  ]);
+});
+
+/**
+ * DER WETTLAUF (Gegenlesen 10/2026, in echtem Chromium nachgestellt).
+ *
+ * Ein Bild-Upload im Schritt läuft; die Redakteurin schließt den Dialog und
+ * schiebt den Abschnitt nach unten; DANN kommt die Antwort. Der Editor schrieb
+ * über den INDEX mit Daten aus dem Rendern beim Upload-Beginn — also die
+ * Schritte des alten Abschnitts an die Stelle, an der jetzt der ANDERE stand.
+ * Gemessen vorher: „Belag" trug danach den Schritt von „Teig" samt Bild, sein
+ * eigener war weg, und „Teig" hatte kein Bild.
+ *
+ * Die Antwort wird zurückgehalten und erst nach dem Zug freigegeben — mit
+ * einem VORHANDENEN Bild, damit nichts in der Mediathek liegen bleibt.
+ */
+test("ein Upload, der nach dem Verschieben zurückkommt, trifft seinen eigenen Schritt", async ({
   page,
 }) => {
-  await page.setViewportSize({ width: 390, height: 900 });
+  const TEIG = { name: "E2E Teig", zutat: "Tomate", schritt: "Schritt von Teig." };
+  const BELAG = { name: "E2E Belag", zutat: "Zwiebel", schritt: "Schritt von Belag." };
+  abschnitteSetzen([TEIG, BELAG]);
+
+  const bild = vorhandenesBild();
+  const { freigeben } = await uploadZurueckhalten(page, bild);
+
   await page.goto(`/admin/rezepte/${recipeId}`);
-  const feld = page.locator("#sek-name-0");
-  const breite = (await feld.boundingBox())!.width;
-  // Mit drei Knöpfen in derselben Zeile blieben dem Feld bei 390 px nur
-  // wenige Zentimeter. `flex-wrap` + `basis-48` schiebt die Gruppe darunter.
-  expect(breite, `Namensfeld nur ${breite} px breit`).toBeGreaterThanOrEqual(192);
-  // Und nichts ragt über den Abschnitt hinaus.
-  const ueberstand = await feld.evaluate((el) => {
-    const kasten = el.closest("div.border") as HTMLElement;
-    return kasten.scrollWidth - kasten.clientWidth;
-  });
-  expect(ueberstand).toBe(0);
+  // Der Bild-Picker im Schritt des ERSTEN Abschnitts.
+  await hochladenUndSchliessen(page, page.getByRole("group", { name: d.stepImage }).first());
+
+  await pfeil(page, "unten", 1).click();
+  freigeben();
+
+  const feld = page.locator('input[name="abschnitte"]');
+  await expect
+    .poll(async () => JSON.parse(await feld.inputValue()) as Gespeichert, { timeout: 10_000 })
+    .toEqual([
+      expect.objectContaining({
+        name: BELAG.name,
+        steps: [expect.objectContaining({ text: BELAG.schritt, imageId: null })],
+      }),
+      expect.objectContaining({
+        name: TEIG.name,
+        steps: [expect.objectContaining({ text: TEIG.schritt, imageId: bild.id })],
+      }),
+    ]);
 });
 
 test.afterAll(() => {
