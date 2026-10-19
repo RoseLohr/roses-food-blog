@@ -42,8 +42,10 @@ import { renderMarkdown } from "@/lib/markdown";
 import { sichtbar, textAusHtml } from "@/lib/sichtbarkeit.mjs";
 
 export function hatSichtbarenInhalt(markdown: string): boolean {
-  // Entitäten auflösen, BEVOR gezählt wird: `&#8203;` sind acht Zeichen im
+  // Entitäten auflösen, BEVOR gezählt wird: `&zwnj;` sind sechs Zeichen im
   // Quelltext und nichts auf dem Schirm. Die vollständige Tabelle kommt aus
-  // `entities` — eine Handliste war schon zweimal unvollständig.
+  // `entities` — eine Handliste war schon zweimal unvollständig. (Numerische
+  // wie `&#8203;` hat seit marked 18.1 schon der Renderer aufgelöst; benannte
+  // lässt er stehen.)
   return sichtbar(decodeHTML(textAusHtml(renderMarkdown(markdown))));
 }

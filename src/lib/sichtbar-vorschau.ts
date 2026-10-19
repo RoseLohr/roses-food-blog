@@ -11,13 +11,15 @@
  *
  * Beide bauen den Bericht und sehen nach — das ist derselbe Weg und dieselbe
  * Funktion (`textAusHtml`). Der Unterschied ist EINE Zeile: Der Server löst
- * zusätzlich HTML-Entitäten auf, damit ein Block aus `&#8203;` als leer gilt.
+ * zusätzlich BENANNTE HTML-Entitäten auf, damit ein Block aus `&zwnj;` als
+ * leer gilt. (Numerische wie `&#8203;` löst seit marked 18.1 schon der
+ * Renderer auf — für die sind beide Fassungen einig.)
  * Dafür braucht er die vollständige Entitäten-Tabelle (`entities`, rund 25 KiB)
  * — und die Route des Reise-Editors hat davon keine 25 KiB übrig
  * (`scripts/regime/bundle-budget.mjs`: 239,6 von 240,0 KiB, gemessen).
  *
  * Der Unterschied kostet nichts, was zählt: Er betrifft nur Altbestand, in dem
- * ein unsichtbares Zeichen als Entität geschrieben steht — der Editor erzeugt
+ * ein unsichtbares Zeichen als benannte Entität geschrieben steht — der Editor erzeugt
  * so etwas nicht. Und wenn er zuschlägt, zeigt der Editor eine Bildzeile
  * getrennt, die das Speichern wieder zusammensetzt. Ärgerlich, aber nichts geht
  * verloren. Die frühere Näherung (`markdown.trim()`) war deutlich gröber: Sie

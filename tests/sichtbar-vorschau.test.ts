@@ -9,9 +9,11 @@
  *
  * Beide bauen den Bericht und sehen nach; sie teilen sich denselben Schritt
  * (`textAusHtml`). Der Unterschied ist EINE Zeile: Der Speicherweg löst
- * zusätzlich HTML-Entitäten auf. Dafür braucht er die vollständige Tabelle
- * (`entities`, rund 25 KiB) — und die passt nicht mehr ins JS-Budget der
- * Editor-Route.
+ * zusätzlich BENANNTE HTML-Entitäten auf (`&zwnj;`, `&nbsp;` …). Dafür braucht
+ * er die vollständige Tabelle (`entities`, rund 25 KiB) — und die passt nicht
+ * mehr ins JS-Budget der Editor-Route. Numerische Zeichenreferenzen
+ * (`&#8203;`) löst seit marked 18.1 schon der Renderer auf; für die sind beide
+ * Fassungen einig.
  *
  * Der Unterschied darf nur dort auftreten und nur in EINE Richtung: Der Editor
  * hält etwas für sichtbar, das der Bericht nicht zeigt. Dann steht im Editor
@@ -33,6 +35,11 @@ describe("Editor-Vorschau und Speicherweg", () => {
     ["-", false],
     ["1.", false],
     ["​", false], // Nullbreiten-Leerzeichen, direkt
+    // … und als numerische Zeichenreferenz: Die löst seit marked 18.1 der
+    // Renderer selbst auf (10/2026). Bis dahin standen sie unten bei der
+    // erlaubten Abweichung.
+    ["&#8203;", false],
+    ["&#x200b;", false],
     ["```\n\n```", false],
     ["Ein Absatz.", true],
     ["## Überschrift", true],
@@ -53,10 +60,10 @@ describe("Editor-Vorschau und Speicherweg", () => {
 
   /**
    * Die eine erlaubte Abweichung, ausgeschrieben: unsichtbare Zeichen, die als
-   * Entität geschrieben sind. Der Editor erzeugt so etwas nicht — das ist
-   * Altbestand oder kommt über die Schnittstelle.
+   * BENANNTE Entität geschrieben sind. Der Editor erzeugt so etwas nicht — das
+   * ist Altbestand oder kommt über die Schnittstelle.
    */
-  it.each(["&#8203;", "&#x200b;", "&nbsp;", "&Tab;", "&zwnj;"])(
+  it.each(["&nbsp;", "&Tab;", "&zwnj;"])(
     "%j: Speicherweg sieht nichts, die Vorschau schon",
     (md) => {
       expect(hatSichtbarenInhalt(md), "Speicherweg").toBe(false);
