@@ -317,27 +317,56 @@ export function RecipeView({
           </section>
         </div>
 
-        {/* Notizen / Tipps */}
-        {(recipe.tips || full.publicNotes.length > 0) && (
+        {/* Tipps & Varianten.
+            Der Kasten hieß bis 10/2026 „Notizen" und enthielt BEIDES — den
+            Tipp-Text und die Notizen, letztere als nackte Liste darunter.
+            Damit stand die Notiz optisch im selben Bereich wie der Fließtext
+            davor und war von ihm nicht zu unterscheiden. Jetzt trägt der
+            Kasten den Namen seines Inhalts; `r.tips` gab es längst. */}
+        {recipe.tips && (
           <section className="mt-10 bg-cream-deep/60 p-6 md:p-8">
-            <h2 className="font-display text-2xl font-bold">
-              {r.notes}
-            </h2>
-            {recipe.tips && (
-              <div
-                className="prose-content mt-3"
-                dangerouslySetInnerHTML={{ __html: renderMarkdown(recipe.tips) }}
-              />
-            )}
-            {full.publicNotes.length > 0 && (
-              <ul className="mt-3 flex flex-col gap-2">
-                {full.publicNotes.map((n) => (
-                  <li key={n.id} className="leading-relaxed">
-                    {n.text}
-                  </li>
-                ))}
-              </ul>
-            )}
+            <h2 className="font-display text-2xl font-bold">{r.tips}</h2>
+            <div
+              className="prose-content mt-3"
+              dangerouslySetInnerHTML={{ __html: renderMarkdown(recipe.tips) }}
+            />
+          </section>
+        )}
+
+        {/* Notizen — je ein angehefteter Zettel UNTER dem Kasten.
+            Jede Notiz ist ein eigenes Objekt mit eigener Fläche statt einer
+            Zeile im Fließtext. Dass sie auffällt, trägt NICHT die Fläche: die
+            Karte ist weiß auf weißem Grund (1,000:1). Es tragen der Rahmen
+            (`border-ink/10` = 1,237:1), der Schatten und vor allem das
+            Klebeband (`bg-leaf/30` über Weiß = 1,513:1) — die einzige kräftige
+            Marke und der Grund, warum der Zettel als angeheftet gelesen wird.
+            Die Breite ist gedeckelt: über die volle Spalte liest sich die
+            Karte als Abschnitt, nicht als Zettel.
+            Das Band ist Zierde und trägt `aria-hidden` — im Namensbaum steht
+            nur der Notiztext.
+            Im DRUCK fällt es weg: Hintergrundfarben druckt der Browser
+            standardmäßig nicht, ein Band ohne Farbe wäre nur eine Lücke.
+            Öffentlich gibt es keinen Nachtmodus (`data-theme` setzt allein
+            `admin/(protected)/layout.tsx`); in der Admin-Vorschau, die diese
+            Ansicht mitbenutzt, tragen die Token ihn mit: Karte #1a1a20,
+            Band darüber #2e5051 = 1,970:1. */}
+        {full.publicNotes.length > 0 && (
+          <section className="mt-10">
+            <h2 className="mb-6 font-display text-2xl font-bold">{r.notes}</h2>
+            <ul className="flex flex-col gap-6">
+              {full.publicNotes.map((n) => (
+                <li
+                  key={n.id}
+                  className="relative max-w-md border border-ink/10 bg-white px-6 pb-5 pt-7 shadow-[0_8px_22px_-14px_rgba(17,17,17,0.6)] print:pt-5 print:shadow-none"
+                >
+                  <span
+                    aria-hidden
+                    className="absolute -top-3 left-1/2 h-6 w-28 -translate-x-1/2 -rotate-3 bg-leaf/30 shadow-[0_1px_3px_rgba(17,17,17,0.14)] print:hidden"
+                  />
+                  <p className="leading-relaxed">{n.text}</p>
+                </li>
+              ))}
+            </ul>
           </section>
         )}
 
