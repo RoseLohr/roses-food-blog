@@ -19,7 +19,7 @@ import { describe, expect, it } from "vitest";
 import {
   SITZUNG_DAUER_MS,
   SITZUNG_HOECHSTDAUER_MS,
-  SITZUNG_VERLAENGERN_UNTER_MS,
+  SITZUNG_SCHREIBABSTAND_MS,
   neuesAblaufdatum,
   sichererRueckweg,
   sitzungsCookieOptionen,
@@ -31,25 +31,43 @@ const JETZT = new Date("2026-10-22T16:30:00Z");
 const vor = (tage: number) => new Date(JETZT.getTime() - tage * TAG);
 const in_ = (tage: number) => new Date(JETZT.getTime() + tage * TAG);
 
+const STUNDE = 60 * 60 * 1000;
+const inMs = (ms: number) => new Date(JETZT.getTime() + ms);
+
 describe("Konstanten", () => {
-  it("14 Tage gleitend, Verlängerung unter 7 Tagen Rest, höchstens 90 Tage ab Login", () => {
+  it("14 Tage gleitend, Schreibabstand eine Stunde, höchstens 90 Tage ab Login", () => {
     expect(SITZUNG_DAUER_MS).toBe(14 * TAG);
-    expect(SITZUNG_VERLAENGERN_UNTER_MS).toBe(7 * TAG);
+    expect(SITZUNG_SCHREIBABSTAND_MS).toBe(STUNDE);
     expect(SITZUNG_HOECHSTDAUER_MS).toBe(90 * TAG);
   });
 });
 
 describe("sitzungsZustand", () => {
-  it("gültig, solange mehr als 7 Tage übrig sind", () => {
-    expect(sitzungsZustand({ createdAt: vor(1), expiresAt: in_(13) }, JETZT)).toBe("gueltig");
-    expect(sitzungsZustand({ createdAt: vor(7), expiresAt: in_(7.001) }, JETZT)).toBe("gueltig");
+  it("gültig, solange die Zeile dem Cookie auf eine Stunde folgt — dann wird nicht geschrieben", () => {
+    // Das Cookie gleitet bei JEDER Admin-Anfrage auf 14 Tage ab jetzt. Die
+    // Zeile folgt ihm nach derselben Regel, aber nicht bei jedem Klick: Erst
+    // wenn sie eine Stunde oder mehr hinter dem Cookie läge, wird geschrieben.
+    // So steht sie nie mehr als eine Stunde hinter dem Cookie, und die
+    // Datenbank sieht höchstens einen Schreibzugriff pro Stunde und Sitzung.
+    expect(sitzungsZustand({ createdAt: vor(1), expiresAt: in_(14) }, JETZT)).toBe("gueltig");
+    expect(sitzungsZustand({ createdAt: vor(1), expiresAt: inMs(14 * TAG - 59 * 60 * 1000) }, JETZT)).toBe(
+      "gueltig",
+    );
+    expect(sitzungsZustand({ createdAt: vor(1), expiresAt: inMs(14 * TAG - STUNDE + 1) }, JETZT)).toBe(
+      "gueltig",
+    );
   });
 
-  it("verlängern, sobald weniger als 7 Tage übrig sind", () => {
+  it("verlängern, sobald die Zeile eine Stunde oder mehr hinter 14 Tagen ab jetzt liegt", () => {
+    expect(sitzungsZustand({ createdAt: vor(1), expiresAt: inMs(14 * TAG - STUNDE) }, JETZT)).toBe(
+      "verlaengern",
+    );
+    expect(sitzungsZustand({ createdAt: vor(1), expiresAt: in_(13) }, JETZT)).toBe("verlaengern");
+    // Der Fall, der bis 10/2026 NICHT verlängerte: eine Anfrage mit mehr als
+    // 7 Tagen Rest. Die Zeile wäre am Tag 14 gestorben, das Cookie hätte bis
+    // Tag 20 gereicht — Logout nach 8 Tagen Pause trotz zugesagter 14.
+    expect(sitzungsZustand({ createdAt: vor(6), expiresAt: in_(8) }, JETZT)).toBe("verlaengern");
     expect(sitzungsZustand({ createdAt: vor(8), expiresAt: in_(6) }, JETZT)).toBe("verlaengern");
-    expect(sitzungsZustand({ createdAt: vor(8), expiresAt: in_(6.999) }, JETZT)).toBe("verlaengern");
-    // Genau 7 Tage sind NICHT „weniger als 7 Tage".
-    expect(sitzungsZustand({ createdAt: vor(7), expiresAt: in_(7) }, JETZT)).toBe("gueltig");
   });
 
   it("abgelaufen, wenn das Ablaufdatum erreicht ist — auch genau jetzt", () => {
@@ -65,13 +83,20 @@ describe("sitzungsZustand", () => {
     expect(sitzungsZustand({ createdAt: vor(89.999), expiresAt: in_(13) }, JETZT)).toBe("gueltig");
   });
 
-  it("gültig statt verlängern, wenn die Zeile schon an der Höchstdauer steht", () => {
-    // Sonst schriebe jede Admin-Anfrage der letzten sieben Tage denselben
-    // Wert noch einmal in die Datenbank — ein Schreibzugriff ohne Wirkung.
+  it("an der Höchstdauer: verlängern nur, was die Kappe noch hergibt", () => {
     const login = vor(85);
     const kappe = new Date(login.getTime() + 90 * TAG);
+    // Steht die Zeile an der Kappe, gibt es nichts zu verlängern — sonst
+    // schriebe jede Anfrage der letzten Tage denselben Wert noch einmal.
     expect(sitzungsZustand({ createdAt: login, expiresAt: kappe }, JETZT)).toBe("gueltig");
-    // Liegt die Zeile darunter, gibt es noch etwas zu verlängern — bis zur Kappe.
+    // Weniger als eine Stunde unter der Kappe: der Gewinn lohnt keinen Schreibzugriff.
+    expect(
+      sitzungsZustand({ createdAt: login, expiresAt: new Date(kappe.getTime() - 30 * 60 * 1000) }, JETZT),
+    ).toBe("gueltig");
+    // Eine Stunde und mehr: verlängern — bis zur Kappe, nicht auf 14 Tage.
+    expect(
+      sitzungsZustand({ createdAt: login, expiresAt: new Date(kappe.getTime() - STUNDE) }, JETZT),
+    ).toBe("verlaengern");
     expect(sitzungsZustand({ createdAt: login, expiresAt: in_(4) }, JETZT)).toBe("verlaengern");
   });
 });
@@ -131,6 +156,8 @@ describe("sichererRueckweg", () => {
       "",
       "/",
       "/rezepte/linsen",
+      "/rezepte/admin/x",
+      "/x/admin",
       "/adminx",
       "/admin/login",
       "/admin/login/",
@@ -174,6 +201,18 @@ describe("sichererRueckweg", () => {
       "//[",
     ]) {
       expect(sichererRueckweg(wert), JSON.stringify(wert)).toBeNull();
+    }
+  });
+
+  it("verwirft einen Rückweg, in dem sich die Meldung hinter Prozentkodierung versteckt", () => {
+    // Next liest Parameternamen dekodiert: `%6deldung` kommt als `meldung` an
+    // und zeigte die Meldung. Kanonisch oder nichts gilt auch für den Namen.
+    for (const wert of [
+      "/admin/rezepte?%6deldung=x",
+      "/admin/rezepte?m%65ldung=x",
+      "/admin/rezepte?seite=2&%6Deldung=x",
+    ]) {
+      expect(sichererRueckweg(wert), wert).toBeNull();
     }
   });
 });

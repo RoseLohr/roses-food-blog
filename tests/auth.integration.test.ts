@@ -68,9 +68,17 @@ describe("Auth", () => {
     expect(await validateSessionToken(abgelaufen)).toBeNull();
     expect(zeile(abgelaufen)).toBeUndefined();
 
-    // Weniger als 7 Tage übrig: gültig, und die Zeile gleitet auf 14 Tage ab jetzt.
+    // Frisch angelegt (14 Tage ab jetzt): nichts zu schreiben, die Zeile bleibt.
+    const frisch = await createSession(user.id);
+    const vorher = zeile(frisch)!.expiresAt.getTime();
+    expect(await validateSessionToken(frisch)).not.toBeNull();
+    expect(zeile(frisch)!.expiresAt.getTime()).toBe(vorher);
+
+    // Eine Stunde oder mehr hinter 14 Tagen ab jetzt — auch mit 8 Tagen Rest:
+    // gleitet auf 14 Tage ab jetzt, wie das Cookie. (Bis 10/2026 erst unter
+    // 7 Tagen Rest; dazwischen starb die Zeile vor dem Cookie.)
     const gleitend = await createSession(user.id);
-    setze(gleitend, { expiresAt: new Date(Date.now() + 6 * TAG) });
+    setze(gleitend, { expiresAt: new Date(Date.now() + 8 * TAG) });
     expect(await validateSessionToken(gleitend)).not.toBeNull();
     const neu = zeile(gleitend)!.expiresAt.getTime();
     expect(Math.abs(neu - (Date.now() + 14 * TAG))).toBeLessThan(5000);
