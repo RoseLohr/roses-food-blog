@@ -1,7 +1,8 @@
 /**
  * Rezept-Karte im Tiny-Salt-Stil: Hero mit runden Aktions-Buttons,
  * Serifen-Titel, Icon-Meta-Zeile, zweispaltig Equipment/Zutaten mit
- * grünen Häkchen, nummerierte Schritte (grüne Kreise), Notizen-Box
+ * grünen Häkchen, nummerierte Schritte (grüne Kreise), Tipps-Kasten und
+ * Notizzetteln
  * und Tag-Zeile. Mengen werden serverseitig für die Originalportionen
  * gerendert; der Portionsrechner (Client) skaliert über data-Attribute.
  */
@@ -337,9 +338,15 @@ export function RecipeView({
             Jede Notiz ist ein eigenes Objekt mit eigener Fläche statt einer
             Zeile im Fließtext. Dass sie auffällt, trägt NICHT die Fläche: die
             Karte ist weiß auf weißem Grund (1,000:1). Es tragen der Rahmen
-            (`border-ink/10` = 1,237:1), der Schatten und vor allem das
-            Klebeband (`bg-leaf/30` über Weiß = 1,513:1) — die einzige kräftige
-            Marke und der Grund, warum der Zettel als angeheftet gelesen wird.
+            (`border-ink/10` = 1,237:1) und vor allem das Klebeband
+            (`bg-leaf/30` über Weiß = 1,513:1) — die einzige kräftige Marke und
+            der Grund, warum der Zettel als angeheftet gelesen wird.
+            Der Schatten ist eine HART geschriebene Farbe und damit absichtlich
+            aus dem Token-System heraus, wie der Amber-Ton des
+            Entwurfs-Hinweises: Ein Schlagschatten ist eine Hell-Angabe. Im
+            Nachtmodus der Admin-Vorschau trägt er praktisch nichts
+            (schwarz auf #1a1a20); dort trägt das Band. Er wird deshalb
+            nirgends als Nachtmodus-Träger geführt.
             Die Breite ist gedeckelt: über die volle Spalte liest sich die
             Karte als Abschnitt, nicht als Zettel.
             Das Band ist Zierde und trägt `aria-hidden` — im Namensbaum steht
@@ -349,7 +356,9 @@ export function RecipeView({
             Öffentlich gibt es keinen Nachtmodus (`data-theme` setzt allein
             `admin/(protected)/layout.tsx`); in der Admin-Vorschau, die diese
             Ansicht mitbenutzt, tragen die Token ihn mit: Karte #1a1a20,
-            Band darüber #2e5051 = 1,970:1. */}
+            Band darüber #2e5051 = 1,970:1 — GERECHNET, nicht gemessen. Kein
+            Test deckt das ab, weil das E2E-Rezept der Vorschau keine
+            öffentliche Notiz hat. */}
         {full.publicNotes.length > 0 && (
           <section className="mt-10">
             <h2 className="mb-6 font-display text-2xl font-bold">{r.notes}</h2>
