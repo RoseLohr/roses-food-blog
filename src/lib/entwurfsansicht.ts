@@ -82,7 +82,9 @@ export type Sichtbarkeit = "nur-veroeffentlicht" | "auch-entwuerfe";
  * beeinflussen.
  */
 export async function sichtbarkeitFuerBesucher(): Promise<Sichtbarkeit> {
-  return (await getCurrentAdmin()) ? "auch-entwuerfe" : "nur-veroeffentlicht";
+  // Nur nachsehen: Eine öffentliche Seite lässt die Sitzung nicht gleiten —
+  // der Proxy erneuert das Cookie hier nicht, und die Zeile folgt dem Cookie.
+  return (await getCurrentAdmin("nur-nachsehen")) ? "auch-entwuerfe" : "nur-veroeffentlicht";
 }
 
 /**

@@ -21,7 +21,7 @@ export async function POST(req: Request) {
   if (!isSameOriginRequest(req)) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
-  if (!(await getCurrentAdmin())) {
+  if (!(await getCurrentAdmin("admin-anfrage"))) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 

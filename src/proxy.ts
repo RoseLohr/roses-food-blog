@@ -25,7 +25,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { PFAD_KOPF, SITZUNGS_COOKIE, sitzungsCookieOptionen } from "@/lib/sitzung";
 
-export const config = { matcher: ["/admin/:path*"] };
+// Beides sind Admin-Anfragen: Unter /api/admin lässt getCurrentAdmin die
+// Zeile gleiten, also muss dort auch das Cookie gleiten — dieselben Auslöser
+// für beide Hälften (src/lib/sitzung.ts, SitzungsAnlass).
+export const config = { matcher: ["/admin/:path*", "/api/admin/:path*"] };
 
 export default function proxy(request: NextRequest): NextResponse {
   const kopf = new Headers(request.headers);

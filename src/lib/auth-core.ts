@@ -6,7 +6,12 @@ import { argon2id, argon2Verify } from "hash-wasm";
 import crypto from "node:crypto";
 import { eq, lt } from "drizzle-orm";
 import { db, schema } from "@/db";
-import { SITZUNG_DAUER_MS, neuesAblaufdatum, sitzungsZustand } from "@/lib/sitzung";
+import {
+  SITZUNG_DAUER_MS,
+  neuesAblaufdatum,
+  sitzungsZustand,
+  type SitzungsAnlass,
+} from "@/lib/sitzung";
 
 // argon2id via hash-wasm (WebAssembly). Bewusst NICHT @node-rs/argon2: dessen
 // native Binärdatei nutzt CPU-Befehle (SIMD), die auf alten CPUs ohne SSE4.2
@@ -65,6 +70,7 @@ export type AdminUser = typeof schema.adminUser.$inferSelect;
 
 export async function validateSessionToken(
   token: string,
+  anlass: SitzungsAnlass,
 ): Promise<AdminUser | null> {
   const rows = await db
     .select({ session: schema.session, user: schema.adminUser })
@@ -79,14 +85,16 @@ export async function validateSessionToken(
   if (!row) return null;
   // Die Regeln stehen in src/lib/sitzung.ts — auch die Höchstdauer ab Login,
   // die eine gleitende Sitzung begrenzt. Das Browser-Cookie erneuert der
-  // Proxy (src/proxy.ts); hier geht es nur um die Zeile.
+  // Proxy (src/proxy.ts); hier geht es nur um die Zeile. Abgelaufen ist
+  // abgelaufen, egal aus welchem Anlass gelesen wird; GLEITEN darf die Zeile
+  // nur bei einer Admin-Anfrage — dort, wo auch das Cookie gleitet.
   const jetzt = new Date();
   const zustand = sitzungsZustand(row.session, jetzt);
   if (zustand === "abgelaufen") {
     await db.delete(schema.session).where(eq(schema.session.id, row.session.id));
     return null;
   }
-  if (zustand === "verlaengern") {
+  if (zustand === "verlaengern" && anlass === "admin-anfrage") {
     await db
       .update(schema.session)
       .set({ expiresAt: neuesAblaufdatum(row.session.createdAt, jetzt) })

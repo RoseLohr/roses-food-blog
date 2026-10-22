@@ -28,8 +28,10 @@ Annahmen, die während der Umsetzung getroffen wurden:
 - **B7 — Sessions in der DB:** Admin-Sessions liegen in der Tabelle `session`
   (Token-Hash). Gleitend: 14 Tage ab der letzten Admin-Anfrage, nach EINER
   Regel für beide Hälften — das Cookie erneuert `src/proxy.ts` bei jeder
-  Admin-Anfrage, die Zeile folgt ihm in `auth-core` auf höchstens eine Stunde
-  genau (geschrieben wird erst ab einer Stunde Abstand). Bis 10/2026 gleitete
+  Admin-Anfrage (`/admin`, `/api/admin`), die Zeile folgt ihm in `auth-core`
+  auf höchstens eine Stunde genau (geschrieben wird erst ab einer Stunde
+  Abstand) und nur aus demselben Anlass: Öffentliche Seiten und die
+  Login-Seite sehen nur nach (`SitzungsAnlass`). Bis 10/2026 gleitete
   nur die Zeile, und das erst unter 7 Tagen Rest; das Cookie lief 14 Tage nach
   dem Login ab. Höchstens 90 Tage ab Login, gleiten hin oder her
   (`src/lib/sitzung.ts`).

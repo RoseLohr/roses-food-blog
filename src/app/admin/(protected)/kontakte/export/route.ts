@@ -9,7 +9,7 @@ import { contactsToCsv } from "@/lib/contacts";
 import { contactIdsForSegment } from "@/lib/segments";
 
 export async function GET(req: Request) {
-  const admin = await getCurrentAdmin();
+  const admin = await getCurrentAdmin("admin-anfrage");
   if (!admin) return new Response("Nicht angemeldet", { status: 401 });
 
   const url = new URL(req.url);

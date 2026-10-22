@@ -289,12 +289,20 @@ ab Login**. Die Regeln stehen EINMAL in `src/lib/sitzung.ts` (rein, im
 Mutations-Scope); angewendet werden sie dreimal:
 - **Datenbankzeile** (`auth-core.ts`): folgt dem Cookie nach DERSELBEN Regel
   — 14 Tage ab jetzt, nie über die Höchstdauer hinaus —, geschrieben wird
-  aber erst, wenn sie eine Stunde oder mehr dahinter läge (höchstens ein
-  Schreibzugriff pro Stunde und Sitzung). Abgelaufen heißt gelöscht. **Zwei
-  Gleitregeln sind der Fehler, nicht die Lösung:** Der erste Anlauf ließ die
-  Zeile bei der alten Regel (erst unter 7 Tagen Rest); nach einer Anfrage am
-  Tag 6 starb sie am Tag 14, das Cookie versprach bis Tag 20 — Logout nach
-  8 Tagen Pause trotz zugesagter 14.
+  aber erst, wenn sie eine Stunde oder mehr dahinter läge (etwa ein
+  Schreibzugriff pro Stunde und Sitzung; parallele Anfragen derselben
+  Sitzung können im Übergang doppelt schreiben, mit demselben Wert).
+  Abgelaufen heißt gelöscht. **Zwei Gleitregeln sind der Fehler, nicht die
+  Lösung:** Der erste Anlauf ließ die Zeile bei der alten Regel (erst unter
+  7 Tagen Rest); nach einer Anfrage am Tag 6 starb sie am Tag 14, das Cookie
+  versprach bis Tag 20 — Logout nach 8 Tagen Pause trotz zugesagter 14.
+  **Und dieselben AUSLÖSER:** `getCurrentAdmin(anlass)` verlangt ein Wort,
+  ohne Vorgabe. `"admin-anfrage"` (alles unter `/admin` und `/api/admin`,
+  beides im Proxy-Matcher) lässt die Zeile gleiten; `"nur-nachsehen"`
+  (öffentliche Seiten über `sichtbarkeitFuerBesucher`, die Login-Seite) lässt
+  sie, wie sie ist. Sonst gleitet die Zeile dort, wo das Cookie nicht
+  gleitet, und lebt bis zu 13 Tage länger als es — unsichtbar, aber mit
+  gültigem Token.
 - **Browser-Cookie** (`src/proxy.ts`): bei jeder Anfrage unter `/admin` —
   außer auf `/admin/login` selbst — wird das vorhandene Cookie mit frischen
   14 Tagen zurückgegeben. **Nur dort geht das** — `cookies().set` ist in

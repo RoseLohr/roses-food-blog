@@ -18,6 +18,7 @@ import {
   SITZUNGS_COOKIE,
   sichererRueckweg,
   sitzungsCookieOptionen,
+  type SitzungsAnlass,
 } from "./sitzung";
 
 export {
@@ -46,10 +47,15 @@ export async function clearSessionCookie(): Promise<void> {
 }
 
 /** Angemeldeten Admin ermitteln (oder null). */
-export async function getCurrentAdmin(): Promise<AdminUser | null> {
+/**
+ * Der angemeldete Admin — oder null. Der Anlass entscheidet, ob die Sitzung
+ * dabei gleitet (`src/lib/sitzung.ts`, `SitzungsAnlass`): Admin-Anfragen ja,
+ * öffentliche Seiten und die Login-Seite sehen nur nach.
+ */
+export async function getCurrentAdmin(anlass: SitzungsAnlass): Promise<AdminUser | null> {
   const token = (await cookies()).get(SITZUNGS_COOKIE)?.value;
   if (!token) return null;
-  return validateSessionToken(token);
+  return validateSessionToken(token, anlass);
 }
 
 /**
@@ -58,7 +64,7 @@ export async function getCurrentAdmin(): Promise<AdminUser | null> {
  * (oder mit einem, der nicht in den Admin zeigt) landet der Login auf /admin.
  */
 export async function requireAdmin(): Promise<AdminUser> {
-  const admin = await getCurrentAdmin();
+  const admin = await getCurrentAdmin("admin-anfrage");
   if (!admin) {
     const zurueck = sichererRueckweg((await headers()).get(PFAD_KOPF));
     redirect(zurueck ? `/admin/login?zurueck=${encodeURIComponent(zurueck)}` : "/admin/login");

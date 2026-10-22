@@ -16,8 +16,12 @@
  * Jetzt gleiten beide NACH DERSELBEN REGEL: 14 Tage ab der letzten
  * Admin-Anfrage. Der Proxy gibt das Cookie bei jeder Anfrage mit frischen
  * 14 Tagen zurück; die Zeile folgt ihm, geschrieben wird aber erst, wenn sie
- * eine Stunde oder mehr hinter dem Cookie läge — höchstens ein Schreibzugriff
- * pro Stunde und Sitzung, und nie mehr als eine Stunde Abstand. Der erste
+ * eine Stunde oder mehr hinter dem Cookie läge — etwa ein Schreibzugriff pro
+ * Stunde und Sitzung (parallele Anfragen derselben Sitzung können es im
+ * Übergang doppelt schreiben, mit demselben Wert), und nie mehr als eine
+ * Stunde Abstand. Und dieselben AUSLÖSER: Nur eine Admin-Anfrage (`/admin`,
+ * `/api/admin`) lässt beide gleiten; eine öffentliche Seite und die
+ * Login-Seite sehen nur nach (`SitzungsAnlass`). Der erste
  * Anlauf ließ die Zeile bei der alten Regel (erst unter 7 Tagen Rest): Dann
  * starb sie nach einer Anfrage am Tag 6 am Tag 14, während das Cookie bis
  * Tag 20 versprach — Logout nach 8 Tagen Pause trotz zugesagter 14. Zwei
@@ -53,6 +57,18 @@ export const SITZUNG_SCHREIBABSTAND_MS = 60 * 60 * 1000;
 export const SITZUNG_HOECHSTDAUER_MS = 90 * TAG_MS;
 
 export const SITZUNGS_COOKIE = "session";
+
+/**
+ * Warum die Sitzung gelesen wird — und damit, ob sie gleiten darf. Eine
+ * Admin-Anfrage (alles unter `/admin` und `/api/admin`) lässt Zeile UND
+ * Cookie gleiten. Eine öffentliche Seite, die nur wissen will, ob ein Admin
+ * mitliest, und die Login-Seite sehen NUR NACH: Dort erneuert der Proxy das
+ * Cookie nicht — gleitete die Zeile trotzdem, lebte sie bis zu 13 Tage
+ * länger als das Cookie, unsichtbar, aber mit gültigem Token. Zwei Hälften,
+ * eine Regel, dieselben Auslöser. Kein Vorgabewert: Jede Aufrufstelle sagt,
+ * was sie ist.
+ */
+export type SitzungsAnlass = "admin-anfrage" | "nur-nachsehen";
 
 /**
  * Der Kopf, in dem der Proxy dem Guard sagt, welche Seite angefragt war —

@@ -48,7 +48,7 @@ describe("sitzungsZustand", () => {
     // Zeile folgt ihm nach derselben Regel, aber nicht bei jedem Klick: Erst
     // wenn sie eine Stunde oder mehr hinter dem Cookie läge, wird geschrieben.
     // So steht sie nie mehr als eine Stunde hinter dem Cookie, und die
-    // Datenbank sieht höchstens einen Schreibzugriff pro Stunde und Sitzung.
+    // Datenbank sieht etwa einen Schreibzugriff pro Stunde und Sitzung.
     expect(sitzungsZustand({ createdAt: vor(1), expiresAt: in_(14) }, JETZT)).toBe("gueltig");
     expect(sitzungsZustand({ createdAt: vor(1), expiresAt: inMs(14 * TAG - 59 * 60 * 1000) }, JETZT)).toBe(
       "gueltig",

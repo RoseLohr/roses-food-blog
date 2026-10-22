@@ -20,7 +20,9 @@ export default async function LoginPage(props: {
   // ausläuft (src/lib/auth.ts). Geprüft wird hier UND in der Action — das
   // Feld geht durch den Browser und ist dort Nutzereingabe.
   const zurueck = sichererRueckweg((await props.searchParams).zurueck);
-  const admin = await getCurrentAdmin();
+  // Nur nachsehen: Auf der Login-Seite gleitet nichts (auch der Proxy erneuert
+  // hier nicht) — sie leitet den Angemeldeten nur weiter.
+  const admin = await getCurrentAdmin("nur-nachsehen");
   if (admin) redirect(zurueck ?? "/admin");
 
   return (

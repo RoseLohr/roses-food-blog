@@ -15,7 +15,7 @@ import {
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  if (!(await getCurrentAdmin())) {
+  if (!(await getCurrentAdmin("admin-anfrage"))) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   return NextResponse.json({
