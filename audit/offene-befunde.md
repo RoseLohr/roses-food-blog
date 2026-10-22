@@ -419,8 +419,9 @@ weil anderer Browser" statt 114 rätselhafter Pixelabweichungen.
 **NACHTRAG 10/2026 — der Restschritt, von der anderen Seite gemessen.** Der
 Stempel bewacht den BROWSER-BUILD, nicht die Rasterung. Am 20.10.2026 liefen in
 einem neuen Container 38 von 123 Aufnahmen rot, auf unverändertem Baum: dieselbe
-Chromium-Kennung (141.0.7390.37, Revision 1194), derselbe Code, zwei Turns zuvor
-noch alle 120 grün. Im Differenzbild der Seite `/datenschutz` — reiner Text,
+Chromium-Kennung (141.0.7390.37, Revision 1194), derselbe Code, kurz zuvor noch
+alle grün (damals 120 Aufnahmen; main hat seither drei hinzubekommen, daher
+die 123). Im Differenzbild der Seite `/datenschutz` — reiner Text,
 kein einziges Bild — unterscheidet sich JEDES Zeichen, ohne dass eine Zeile
 verrutscht: Kantenglättung, nicht Inhalt. Der Container hatte gewechselt
 (`Linux …-v114` → `…-v139`), die Schriftdateien liegen im Repo, der Unterschied
