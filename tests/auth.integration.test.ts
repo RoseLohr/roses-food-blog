@@ -41,4 +41,51 @@ describe("Auth", () => {
     expect(await validateSessionToken(token)).toBeNull();
     expect(await validateSessionToken("f".repeat(64))).toBeNull();
   });
+
+  /**
+   * Der Lebenszyklus gegen die echte Tabelle — jede Regel aus
+   * src/lib/sitzung.ts einmal mit Zeilen, deren Zeitstempel direkt gesetzt
+   * sind. Bis 10/2026 war davon nichts gepinnt.
+   */
+  it("Session: Ablauf, Verlängerung, Höchstdauer", async () => {
+    const { createSession, validateSessionToken, tokenHash, hashPassword } =
+      await import("@/lib/auth-core");
+    const { db, schema } = await import("@/db");
+    const { eq } = await import("drizzle-orm");
+    const user = await adminAnlegen({
+      email: "zeit@example.de",
+      passwordHash: await hashPassword("streng-geheim-123"),
+    });
+    const TAG = 24 * 60 * 60 * 1000;
+    const zeile = (token: string) =>
+      db.select().from(schema.session).where(eq(schema.session.id, tokenHash(token))).get();
+    const setze = (token: string, werte: { createdAt?: Date; expiresAt?: Date }) =>
+      db.update(schema.session).set(werte).where(eq(schema.session.id, tokenHash(token))).run();
+
+    // Abgelaufen: ungültig, und die Zeile ist weg.
+    const abgelaufen = await createSession(user.id);
+    setze(abgelaufen, { expiresAt: new Date(Date.now() - 1000) });
+    expect(await validateSessionToken(abgelaufen)).toBeNull();
+    expect(zeile(abgelaufen)).toBeUndefined();
+
+    // Weniger als 7 Tage übrig: gültig, und die Zeile gleitet auf 14 Tage ab jetzt.
+    const gleitend = await createSession(user.id);
+    setze(gleitend, { expiresAt: new Date(Date.now() + 6 * TAG) });
+    expect(await validateSessionToken(gleitend)).not.toBeNull();
+    const neu = zeile(gleitend)!.expiresAt.getTime();
+    expect(Math.abs(neu - (Date.now() + 14 * TAG))).toBeLessThan(5000);
+
+    // Älter als die Höchstdauer: ungültig, auch wenn das Ablaufdatum noch trüge.
+    const uralt = await createSession(user.id);
+    setze(uralt, { createdAt: new Date(Date.now() - 91 * TAG), expiresAt: new Date(Date.now() + TAG) });
+    expect(await validateSessionToken(uralt)).toBeNull();
+    expect(zeile(uralt)).toBeUndefined();
+
+    // Kurz vor der Höchstdauer: Die Verlängerung endet dort, nicht 14 Tage später.
+    const spaet = await createSession(user.id);
+    const login = new Date(Date.now() - 85 * TAG);
+    setze(spaet, { createdAt: login, expiresAt: new Date(Date.now() + TAG) });
+    expect(await validateSessionToken(spaet)).not.toBeNull();
+    expect(zeile(spaet)!.expiresAt.getTime()).toBe(login.getTime() + 90 * TAG);
+  });
 });
