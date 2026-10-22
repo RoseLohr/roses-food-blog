@@ -15,8 +15,11 @@ import type { Locator, Page } from "@playwright/test";
  * was der Bildpunkt zeigt. Genau so rechnet auch der Browser beim Malen.
  *
  * Lag bis 10/2026 in `zubereitung-flaeche.spec.ts`. Weggezogen, als der zweite
- * Spec dieselbe Messung brauchte (Notizzettel) — abgeschrieben wäre sie an
- * zwei Stellen gepflegt worden, und die Duplikationsschranke zählt mit.
+ * Spec dieselbe Messung brauchte (Notizzettel): abgeschrieben wäre sie an zwei
+ * Stellen zu pflegen, und eine Messvorschrift, die zweimal dasteht, driftet.
+ * NICHT wegen der Duplikationsschranke — `.jscpd.json` setzt `path: ["src"]`
+ * und sieht `tests/` gar nicht an. (Die erste Fassung dieses Kommentars und
+ * die Commit-Nachricht behaupteten das; es war falsch.)
  */
 export type RGB = [number, number, number];
 
@@ -86,6 +89,10 @@ export async function gemalt(
  * Ein benannter Token, wie er in der Umgebung des Elements gilt — aufgelöst
  * zum echten sRGB-Tripel. Für Farben, die nicht als Fläche eines Elements
  * dastehen (z. B. der Fokusring, den `outline` erst beim Fokus zeichnet).
+ *
+ * NUR FÜR DECKENDE TOKEN. Der Wert wird über Weiß gelegt; ein durchsichtiger
+ * Token käme damit still als sein Weiß-Komposit heraus statt als das, was er
+ * an seinem echten Ort zeigt. Für eine Fläche nimmt man `gemalt()`.
  */
 export async function tokenFarbe(
   page: Page,
