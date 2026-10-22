@@ -289,9 +289,10 @@ ab Login**. Die Regeln stehen EINMAL in `src/lib/sitzung.ts` (rein, im
 Mutations-Scope); angewendet werden sie dreimal:
 - **Datenbankzeile** (`auth-core.ts`): unter 7 Tagen Rest wird auf 14 Tage
   verlängert, nie über die Höchstdauer hinaus; abgelaufen heißt gelöscht.
-- **Browser-Cookie** (`src/proxy.ts`): bei jeder Anfrage unter `/admin` wird
-  das vorhandene Cookie mit frischen 14 Tagen zurückgegeben. **Nur dort geht
-  das** — `cookies().set` ist in Layouts und Seiten verboten. Bis 10/2026
+- **Browser-Cookie** (`src/proxy.ts`): bei jeder Anfrage unter `/admin` —
+  außer auf `/admin/login` selbst — wird das vorhandene Cookie mit frischen
+  14 Tagen zurückgegeben. **Nur dort geht das** — `cookies().set` ist in
+  Layouts und Seiten verboten. Bis 10/2026
   bekam das Cookie sein Ablaufdatum allein beim Login und verschwand 14 Tage
   später, mitten im Editor; die Datenbank hatte längst verlängert.
   `docs/ASSUMPTIONS.md` B7 nannte das „Sliding Expiration".

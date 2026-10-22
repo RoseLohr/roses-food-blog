@@ -16,11 +16,12 @@ import path from "node:path";
  *     Tagen ab Login.
  *  2. Öffentliche Seiten erneuern nichts: Dort hat der Proxy nichts verloren.
  *  3. Ohne Sitzung führt der Weg zum Login MIT Rückweg, und der Login trägt
- *     ihn — aber nur, wenn er in den Admin zeigt.
+ *     ihn — aber nur, wenn er in den Admin zeigt — und springt nach dem
+ *     Anmelden dorthin.
  */
 const session = JSON.parse(
   fs.readFileSync(path.resolve(process.cwd(), ".pw-data/e2e-session.json"), "utf8"),
-) as { token: string; recipeId: number };
+) as { token: string; recipeId: number; email: string; passwort: string };
 
 const MAX_AGE_14_TAGE = 14 * 24 * 60 * 60;
 
@@ -80,13 +81,30 @@ test("die Login-Seite trägt den Rückweg — nur in den Admin, nur kanonisch", 
   await page.goto(`/admin/login?zurueck=${encodeURIComponent(pfad)}`);
   await expect(page.locator('input[name="zurueck"]')).toHaveValue(pfad);
 
-  // Ein Rückweg nach draußen wird gar nicht erst ins Formular übernommen.
+  // Ein Rückweg nach draußen wird gar nicht erst ins Formular übernommen —
+  // und das Formular steht noch da (sonst wäre „kein Feld" auch ein Absturz).
   await page.goto(`/admin/login?zurueck=${encodeURIComponent("https://example.org/")}`);
+  await expect(page.locator('input[name="email"]')).toBeVisible();
   await expect(page.locator('input[name="zurueck"]')).toHaveCount(0);
 
   // Auch keiner, der erst im Browser aufgelöst würde — und dann draußen läge.
   await page.goto(`/admin/login?zurueck=${encodeURIComponent("/admin/../rezepte/linsen")}`);
+  await expect(page.locator('input[name="email"]')).toBeVisible();
   await expect(page.locator('input[name="zurueck"]')).toHaveCount(0);
+});
+
+test("nach dem Anmelden geht es dorthin zurück, wo die Sitzung ablief", async ({ page }) => {
+  const pfad = `/admin/rezepte/${session.recipeId}`;
+  // Mit `?meldung=`: Der Login-Seite reicht der Guard genau das, und sie
+  // trägt nur den Ort weiter.
+  await page.goto(`/admin/login?zurueck=${encodeURIComponent(`${pfad}?meldung=x`)}`);
+  await expect(page.locator('input[name="zurueck"]')).toHaveValue(pfad);
+  await page.fill('input[name="email"]', session.email);
+  await page.fill('input[name="password"]', session.passwort);
+  await page.click('button[type="submit"]');
+  await expect(page).toHaveURL(new RegExp(`${pfad.replace(/\//g, "\\/")}$`));
+  // Und ohne die Meldung „x" — die war der Augenblick, nicht der Ort.
+  await expect(page.locator('[role="status"]', { hasText: "x" })).toHaveCount(0);
 });
 
 test("angemeldet: ein unbrauchbarer Rückweg führt in den Admin, nicht auf einen Fehler", async ({
