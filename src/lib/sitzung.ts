@@ -13,9 +13,17 @@
  * Admin war, auch mitten im Rezept-Editor. docs/ASSUMPTIONS.md nannte das
  * „Sliding Expiration"; es galt nur für die Hälfte, die niemand sieht.
  *
- * Jetzt gleiten beide: Der Proxy gibt das Cookie bei jeder Admin-Anfrage mit
- * frischen 14 Tagen zurück, die Datenbank verlängert wie gehabt. Schluss ist
- * nach 14 Tagen OHNE Admin-Besuch — und spätestens 90 Tage nach dem Login.
+ * Jetzt gleiten beide NACH DERSELBEN REGEL: 14 Tage ab der letzten
+ * Admin-Anfrage. Der Proxy gibt das Cookie bei jeder Anfrage mit frischen
+ * 14 Tagen zurück; die Zeile folgt ihm, geschrieben wird aber erst, wenn sie
+ * eine Stunde oder mehr hinter dem Cookie läge — höchstens ein Schreibzugriff
+ * pro Stunde und Sitzung, und nie mehr als eine Stunde Abstand. Der erste
+ * Anlauf ließ die Zeile bei der alten Regel (erst unter 7 Tagen Rest): Dann
+ * starb sie nach einer Anfrage am Tag 6 am Tag 14, während das Cookie bis
+ * Tag 20 versprach — Logout nach 8 Tagen Pause trotz zugesagter 14. Zwei
+ * Gleitregeln sind genau die Asymmetrie, die diese Datei beseitigen soll.
+ * Schluss ist nach 14 Tagen OHNE Admin-Besuch — und spätestens 90 Tage nach
+ * dem Login.
  * Diese HÖCHSTDAUER ist kein Schmuck: Ein gleitendes Cookie verlängert auch
  * das Fenster eines gestohlenen Cookies. Verfassung Art. XIV verlangt für
  * jede Lockerung eine Ersatzkontrolle; das ist sie. Sie gilt im Code, nicht
@@ -35,8 +43,12 @@ const TAG_MS = 24 * 60 * 60 * 1000;
 
 /** Gleitende Dauer: so lange lebt die Sitzung ab der letzten Admin-Anfrage. */
 export const SITZUNG_DAUER_MS = 14 * TAG_MS;
-/** Unter diesem Rest verlängert die Datenbank ihre Zeile. */
-export const SITZUNG_VERLAENGERN_UNTER_MS = 7 * TAG_MS;
+/**
+ * Die Zeile folgt dem Cookie — geschrieben wird erst, wenn sie so weit hinter
+ * ihm läge. Kleiner wäre genauer und teurer, größer würde die Zusage „14 Tage
+ * ab der letzten Anfrage" wieder um Tage verfehlen.
+ */
+export const SITZUNG_SCHREIBABSTAND_MS = 60 * 60 * 1000;
 /** Spätestens dann ist Schluss, gleiten hin oder her — gerechnet ab Login. */
 export const SITZUNG_HOECHSTDAUER_MS = 90 * TAG_MS;
 
@@ -62,15 +74,11 @@ export function sitzungsZustand(
   const t = jetzt.getTime();
   if (sitzung.expiresAt.getTime() <= t) return "abgelaufen";
   if (t - sitzung.createdAt.getTime() >= SITZUNG_HOECHSTDAUER_MS) return "abgelaufen";
-  // Verlängern nur, wenn es etwas zu verlängern gibt: Steht die Zeile schon
-  // an der Höchstdauer, schriebe jede Admin-Anfrage der letzten sieben Tage
-  // denselben Wert noch einmal — ein Schreibzugriff ohne Wirkung.
-  if (
-    sitzung.expiresAt.getTime() - t < SITZUNG_VERLAENGERN_UNTER_MS &&
-    neuesAblaufdatum(sitzung.createdAt, jetzt).getTime() > sitzung.expiresAt.getTime()
-  ) {
-    return "verlaengern";
-  }
+  // Dieselbe Regel wie das Cookie: 14 Tage ab jetzt, gedeckelt. Geschrieben
+  // wird erst ab einer Stunde Abstand — und damit auch nie, wenn die Zeile
+  // schon an der Höchstdauer steht (dort wäre jeder Schreibzugriff wirkungslos).
+  const neu = neuesAblaufdatum(sitzung.createdAt, jetzt).getTime();
+  if (neu - sitzung.expiresAt.getTime() >= SITZUNG_SCHREIBABSTAND_MS) return "verlaengern";
   return "gueltig";
 }
 
@@ -120,7 +128,12 @@ export function sichererRueckweg(wert: unknown): string | null {
   if (url.pathname + url.search !== wert) return null;
   if (!/^\/admin(?:$|\/)/.test(url.pathname)) return null;
   if (url.pathname.startsWith("/admin/login")) return null;
-  return ohneMeldung(wert);
+  const ohne = ohneMeldung(wert);
+  // Kanonisch oder nichts gilt auch für den NAMEN: Der Suchteil bleibt bei der
+  // Kanonisierung prozentkodiert, Next liest die Namen aber dekodiert —
+  // `%6deldung` käme als `meldung` an und zeigte die Meldung doch.
+  if (new URL(ohne, RUECKWEG_BASIS).searchParams.has(MELDUNG_PARAM)) return null;
+  return ohne;
 }
 
 /** Streicht `?meldung=` aus einem kanonischen Pfad — die übrigen Parameter bleiben, wie sie sind. */

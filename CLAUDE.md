@@ -287,8 +287,14 @@ nicht. Die Regel steht EINMAL, in `src/lib/entwurfsansicht.ts`.
 Die Sitzung lebt **14 Tage ab der letzten Admin-Anfrage**, höchstens **90 Tage
 ab Login**. Die Regeln stehen EINMAL in `src/lib/sitzung.ts` (rein, im
 Mutations-Scope); angewendet werden sie dreimal:
-- **Datenbankzeile** (`auth-core.ts`): unter 7 Tagen Rest wird auf 14 Tage
-  verlängert, nie über die Höchstdauer hinaus; abgelaufen heißt gelöscht.
+- **Datenbankzeile** (`auth-core.ts`): folgt dem Cookie nach DERSELBEN Regel
+  — 14 Tage ab jetzt, nie über die Höchstdauer hinaus —, geschrieben wird
+  aber erst, wenn sie eine Stunde oder mehr dahinter läge (höchstens ein
+  Schreibzugriff pro Stunde und Sitzung). Abgelaufen heißt gelöscht. **Zwei
+  Gleitregeln sind der Fehler, nicht die Lösung:** Der erste Anlauf ließ die
+  Zeile bei der alten Regel (erst unter 7 Tagen Rest); nach einer Anfrage am
+  Tag 6 starb sie am Tag 14, das Cookie versprach bis Tag 20 — Logout nach
+  8 Tagen Pause trotz zugesagter 14.
 - **Browser-Cookie** (`src/proxy.ts`): bei jeder Anfrage unter `/admin` —
   außer auf `/admin/login` selbst — wird das vorhandene Cookie mit frischen
   14 Tagen zurückgegeben. **Nur dort geht das** — `cookies().set` ist in
@@ -307,8 +313,10 @@ Mutations-Scope); angewendet werden sie dreimal:
   immer. **Und der Rückweg trägt `?meldung=` nicht mit:** Die Einmal-
   Statusmeldung gehört zum Augenblick, nicht zum Ort; nach dem Wiederanmelden
   stünde sonst „Rezept gespeichert." über einer Seite, auf der gerade nicht
-  gespeichert wurde. Der Name des Parameters steht einmal in
-  `src/lib/meldung.ts` (rein, damit der Proxy keine Komponente lädt).
+  gespeichert wurde. Versteckt sie sich hinter Prozentkodierung im Namen
+  (`%6deldung` — Next liest Namen dekodiert), wird der ganze Rückweg
+  verworfen. Der Name des Parameters steht einmal in `src/lib/meldung.ts`
+  (rein, damit der Proxy keine Komponente lädt).
 **Die Höchstdauer ist die Ersatzkontrolle** für das gleitende Cookie
 (Verfassung Art. XIV): Ein gestohlenes Cookie lebt sonst, solange es benutzt
 wird. Wer sie entfernt oder anhebt, lockert ohne Gegengewicht. Gemessen in

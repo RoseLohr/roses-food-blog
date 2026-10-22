@@ -1,8 +1,9 @@
 /**
  * E2E-Vorbereitung: legt einen Admin, eine Session, ein Editier-Rezept und
  * einen Editier-Reisebericht (beide Entwurf, damit die öffentlichen E2E-Tests
- * unberührt bleiben) an und schreibt { token, recipeId, travelId } nach
- * $DATA_DIR/e2e-session.json. Wird nach dem Seed aufgerufen. Nur für E2E.
+ * unberührt bleiben) an und schreibt { token, email, passwort, recipeId,
+ * travelId } nach $DATA_DIR/e2e-session.json. Wird nach dem Seed aufgerufen.
+ * Nur für E2E.
  */
 import fs from "node:fs";
 import path from "node:path";
