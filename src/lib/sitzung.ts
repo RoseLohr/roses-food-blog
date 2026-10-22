@@ -26,9 +26,10 @@
  *
  * Diese Entscheidungen stehen im Mutations-Scope (stryker.config.json) und
  * werden mit fester Uhr geprüft (tests/sitzung.test.ts). Die Datei importiert
- * nichts — der Proxy lädt sie, und der soll weder die Datenbank noch
- * `next/headers` mitziehen.
+ * nur den Namen des Meldungs-Parameters — der Proxy lädt sie, und der soll
+ * weder die Datenbank noch `next/headers` noch eine Komponente mitziehen.
  */
+import { MELDUNG_PARAM } from "@/lib/meldung";
 
 const TAG_MS = 24 * 60 * 60 * 1000;
 
@@ -61,7 +62,15 @@ export function sitzungsZustand(
   const t = jetzt.getTime();
   if (sitzung.expiresAt.getTime() <= t) return "abgelaufen";
   if (t - sitzung.createdAt.getTime() >= SITZUNG_HOECHSTDAUER_MS) return "abgelaufen";
-  if (sitzung.expiresAt.getTime() - t < SITZUNG_VERLAENGERN_UNTER_MS) return "verlaengern";
+  // Verlängern nur, wenn es etwas zu verlängern gibt: Steht die Zeile schon
+  // an der Höchstdauer, schriebe jede Admin-Anfrage der letzten sieben Tage
+  // denselben Wert noch einmal — ein Schreibzugriff ohne Wirkung.
+  if (
+    sitzung.expiresAt.getTime() - t < SITZUNG_VERLAENGERN_UNTER_MS &&
+    neuesAblaufdatum(sitzung.createdAt, jetzt).getTime() > sitzung.expiresAt.getTime()
+  ) {
+    return "verlaengern";
+  }
   return "gueltig";
 }
 
@@ -75,20 +84,57 @@ export function neuesAblaufdatum(createdAt: Date, jetzt: Date): Date {
   );
 }
 
+/** Platzhalter-Ursprung, gegen den ein Rückweg aufgelöst wird — nur für die Prüfung. */
+const RUECKWEG_BASIS = "http://admin.invalid";
+
 /**
  * Wohin der Login nach dem Anmelden zurückspringen darf: nur auf einen Pfad
  * INNERHALB des Admins, und nie auf den Login selbst (sonst drehte sich der
- * Rückweg im Kreis). Alles andere — fremde Adressen, `//host`, Backslashes,
- * Steuerzeichen — ist ein offener Redirect und wird verworfen, nicht
- * repariert. Der Wert kommt aus einem Suchparameter oder Formularfeld; er ist
- * Nutzereingabe.
+ * Rückweg im Kreis). Der Wert kommt aus einem Suchparameter oder Formularfeld;
+ * er ist Nutzereingabe.
+ *
+ * Geprüft wird die KANONISCHE Form (WHATWG-URL), nicht die Zeichenkette:
+ * Browser und Router lösen Punkt-Segmente (`/admin/../rezepte/x`,
+ * `%2e%2e`), Backslashes und Steuerzeichen erst NACH dieser Prüfung auf — ein
+ * Wert, der hier bestand, konnte so aus dem Admin hinausführen oder roh im
+ * Location-Kopf landen (Node verweigert den Kopf, Antwort 500). Was nicht
+ * schon kanonisch ist, wird verworfen, nicht repariert: Ein reparierter Wert
+ * wäre einer, den niemand so hingeschrieben hat. Ein echter Rückweg ist immer
+ * kanonisch, denn er stammt aus `nextUrl` (selbst eine WHATWG-URL). Dass die
+ * kanonische Form dem Wert gleicht, schließt auch fremde Ursprünge aus —
+ * `//host` und `https:` kämen nie unverändert heraus.
+ *
+ * Und der Rückweg ist ein ORT, kein Augenblick: Die Einmal-Statusmeldung
+ * (`?meldung=`) bleibt zurück. Sonst stünde nach dem Wiederanmelden „Rezept
+ * gespeichert." über einer Seite, auf der gerade nicht gespeichert wurde.
  */
 export function sichererRueckweg(wert: unknown): string | null {
   if (typeof wert !== "string") return null;
-  if (!/^\/admin(?:$|[/?#])/.test(wert)) return null;
-  if (/[\\\s]/.test(wert)) return null;
-  if (wert.startsWith("/admin/login")) return null;
-  return wert;
+  let url: URL;
+  try {
+    url = new URL(wert, RUECKWEG_BASIS);
+  } catch {
+    // Kein auflösbarer Bezug (`//[`) — dann auch kein Rückweg.
+    return null;
+  }
+  if (url.pathname + url.search !== wert) return null;
+  if (!/^\/admin(?:$|\/)/.test(url.pathname)) return null;
+  if (url.pathname.startsWith("/admin/login")) return null;
+  return ohneMeldung(wert);
+}
+
+/** Streicht `?meldung=` aus einem kanonischen Pfad — die übrigen Parameter bleiben, wie sie sind. */
+function ohneMeldung(pfad: string): string {
+  const frage = pfad.indexOf("?");
+  if (frage < 0) return pfad;
+  const reste = pfad
+    .slice(frage + 1)
+    .split("&")
+    .filter(
+      (eintrag) =>
+        eintrag !== "" && eintrag !== MELDUNG_PARAM && !eintrag.startsWith(`${MELDUNG_PARAM}=`),
+    );
+  return reste.length ? `${pfad.slice(0, frage)}?${reste.join("&")}` : pfad.slice(0, frage);
 }
 
 /**

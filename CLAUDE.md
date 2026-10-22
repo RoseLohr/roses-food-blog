@@ -298,7 +298,16 @@ Mutations-Scope); angewendet werden sie dreimal:
 - **Rückweg** (`auth.ts`, Login): Der Proxy setzt `x-pfad` — immer, nie
   übernommen —, der Guard leitet mit `?zurueck=` um, der Login springt dorthin.
   Was `sichererRueckweg` nicht durchlässt (alles außerhalb `/admin`, der Login
-  selbst), wird verworfen, nicht repariert.
+  selbst), wird verworfen, nicht repariert. **Geprüft wird die kanonische Form
+  (WHATWG-URL), nicht die Zeichenkette:** `/admin/../rezepte/x` bestand eine
+  Präfix-Prüfung und führte nach dem Login aus dem Admin hinaus, ein
+  Steuerzeichen landete roh im Location-Kopf (500). Was nicht schon kanonisch
+  ist, kommt nicht durch — ein echter Rückweg stammt aus `nextUrl` und ist es
+  immer. **Und der Rückweg trägt `?meldung=` nicht mit:** Die Einmal-
+  Statusmeldung gehört zum Augenblick, nicht zum Ort; nach dem Wiederanmelden
+  stünde sonst „Rezept gespeichert." über einer Seite, auf der gerade nicht
+  gespeichert wurde. Der Name des Parameters steht einmal in
+  `src/lib/meldung.ts` (rein, damit der Proxy keine Komponente lädt).
 **Die Höchstdauer ist die Ersatzkontrolle** für das gleitende Cookie
 (Verfassung Art. XIV): Ein gestohlenes Cookie lebt sonst, solange es benutzt
 wird. Wer sie entfernt oder anhebt, lockert ohne Gegengewicht. Gemessen in

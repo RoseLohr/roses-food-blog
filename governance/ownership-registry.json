@@ -81,7 +81,8 @@
       "src/lib/bildreihen",
       "src/lib/reihenfolge",
       "src/lib/daemmerung",
-      "src/lib/zeitpunkt"
+      "src/lib/zeitpunkt",
+      "src/lib/meldung.ts"
     ],
     "platform-ops": [
       "src/server",
