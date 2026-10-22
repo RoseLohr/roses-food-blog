@@ -64,6 +64,16 @@ describe("sitzungsZustand", () => {
     expect(sitzungsZustand({ createdAt: vor(91), expiresAt: in_(1) }, JETZT)).toBe("abgelaufen");
     expect(sitzungsZustand({ createdAt: vor(89.999), expiresAt: in_(13) }, JETZT)).toBe("gueltig");
   });
+
+  it("gültig statt verlängern, wenn die Zeile schon an der Höchstdauer steht", () => {
+    // Sonst schriebe jede Admin-Anfrage der letzten sieben Tage denselben
+    // Wert noch einmal in die Datenbank — ein Schreibzugriff ohne Wirkung.
+    const login = vor(85);
+    const kappe = new Date(login.getTime() + 90 * TAG);
+    expect(sitzungsZustand({ createdAt: login, expiresAt: kappe }, JETZT)).toBe("gueltig");
+    // Liegt die Zeile darunter, gibt es noch etwas zu verlängern — bis zur Kappe.
+    expect(sitzungsZustand({ createdAt: login, expiresAt: in_(4) }, JETZT)).toBe("verlaengern");
+  });
 });
 
 describe("neuesAblaufdatum", () => {
@@ -83,11 +93,34 @@ describe("sichererRueckweg", () => {
   it("lässt nur Pfade innerhalb des Admins durch — so, wie sie sind", () => {
     for (const pfad of [
       "/admin",
+      "/admin/",
       "/admin/rezepte/3",
-      "/admin/rezepte/3?meldung=Rezept%20gespeichert.",
+      "/admin/rezepte?seite=2&suche=a%20b",
+      "/admin/rezepte/foo%20bar",
       "/admin/reisen/7/vorschau",
     ]) {
       expect(sichererRueckweg(pfad), pfad).toBe(pfad);
+    }
+  });
+
+  it("trägt die Einmal-Statusmeldung nicht mit: der Rückweg ist ein Ort, kein Augenblick", () => {
+    // Sonst stünde nach dem Wiederanmelden „Rezept gespeichert." über einer
+    // Seite, auf der gerade NICHT gespeichert wurde — der Vorgang war an der
+    // abgelaufenen Sitzung gescheitert.
+    const faelle: Array<[string, string]> = [
+      ["/admin/rezepte/3?meldung=Rezept%20gespeichert.", "/admin/rezepte/3"],
+      ["/admin/rezepte?seite=2&meldung=x&suche=a", "/admin/rezepte?seite=2&suche=a"],
+      ["/admin/rezepte?meldung", "/admin/rezepte"],
+      ["/admin/rezepte?&meldung=x", "/admin/rezepte"],
+      // Nur der Parameter dieses Namens, nicht alles mit derselben Vorsilbe.
+      ["/admin/rezepte?meldungen=1", "/admin/rezepte?meldungen=1"],
+    ];
+    for (const [eingabe, erwartet] of faelle) {
+      const ergebnis = sichererRueckweg(eingabe);
+      expect(ergebnis, eingabe).toBe(erwartet);
+      // Was herauskommt, geht unverändert wieder hinein: Der Login prüft
+      // denselben Wert ein zweites Mal.
+      expect(sichererRueckweg(ergebnis), `${eingabe} → ${ergebnis}`).toBe(erwartet);
     }
   });
 
@@ -100,6 +133,7 @@ describe("sichererRueckweg", () => {
       "/rezepte/linsen",
       "/adminx",
       "/admin/login",
+      "/admin/login/",
       "/admin/login?zurueck=%2Fadmin",
       "https://example.org/admin",
       "//example.org/admin",
@@ -111,6 +145,33 @@ describe("sichererRueckweg", () => {
       " /admin",
       42,
       ["/admin"],
+    ]) {
+      expect(sichererRueckweg(wert), JSON.stringify(wert)).toBeNull();
+    }
+  });
+
+  it("verwirft jede Schreibweise, die erst der Browser auflösen würde — statt sie zu reparieren", () => {
+    // Browser und Router lösen Punkt-Segmente, Backslashes und Steuerzeichen
+    // NACH dieser Prüfung auf; `/admin/../rezepte/x` bestand die Prüfung und
+    // führte dann aus dem Admin hinaus, ein Steuerzeichen landete roh im
+    // Location-Kopf (500). Geprüft wird darum die kanonische Form (WHATWG-URL),
+    // und was nicht schon kanonisch ist, kommt nicht durch: Ein reparierter
+    // Wert wäre einer, den niemand so hingeschrieben hat.
+    for (const wert of [
+      "/admin/..",
+      "/admin/../rezepte/linsen",
+      "/admin/%2e%2e/rezepte",
+      "/admin/./login",
+      "/admin/login/../rezepte",
+      "/admin\\rezepte",
+      "/admin/\u0001",
+      "/admin/x\u0001y",
+      "/admin/€",
+      "/admin/rezepte/foo bar",
+      "/admin/rezepte#oben",
+      "/admin/rezepte?",
+      "http://admin.invalid/admin/y",
+      "//[",
     ]) {
       expect(sichererRueckweg(wert), JSON.stringify(wert)).toBeNull();
     }

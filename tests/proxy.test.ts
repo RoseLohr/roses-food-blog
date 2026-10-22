@@ -65,7 +65,8 @@ describe("proxy", () => {
     // `x-middleware-request-<name>` in der Antwort des Proxys. Der Guard
     // verlässt sich auf diesen Wert; ein vom Client gesetzter `x-pfad`
     // darf ihn nie erreichen (sonst zeigte der Rückweg, wohin ein Fremder
-    // will).
+    // will). Der Proxy meldet, was angefragt war — samt Suchteil, auch
+    // `?meldung=`; was der Rückweg davon trägt, entscheidet sichererRueckweg.
     const antwort = proxy(
       anfrage("/admin/rezepte/3?meldung=x", { "x-pfad": "/admin/benutzer" }),
     );

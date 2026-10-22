@@ -53,16 +53,29 @@ test("eine öffentliche Seite erneuert nichts", async ({ request }) => {
   expect(sitzungsCookie(alle)).toBeUndefined();
 });
 
-test("ohne Sitzung: Umleitung zum Login — mit dem Weg zurück", async ({ request }) => {
+test("ohne Sitzung: Umleitung zum Login — mit dem Weg zurück, ohne die Statusmeldung", async ({
+  request,
+}) => {
   const pfad = `/admin/rezepte/${session.recipeId}`;
   const antwort = await request.get(pfad, { maxRedirects: 0 });
   expect(antwort.status()).toBe(307);
   expect(antwort.headers()["location"]).toContain(
     `/admin/login?zurueck=${encodeURIComponent(pfad)}`,
   );
+
+  // Die Einmal-Statusmeldung bleibt zurück — sonst stünde nach dem
+  // Wiederanmelden „Rezept gespeichert." über einer Seite, auf der gerade
+  // nicht gespeichert wurde. Andere Parameter kommen mit.
+  const mitMeldung = await request.get(`${pfad}?meldung=Rezept%20gespeichert.&tab=2`, {
+    maxRedirects: 0,
+  });
+  expect(mitMeldung.status()).toBe(307);
+  const ziel = mitMeldung.headers()["location"];
+  expect(ziel).toContain(`/admin/login?zurueck=${encodeURIComponent(`${pfad}?tab=2`)}`);
+  expect(ziel).not.toContain("meldung");
 });
 
-test("die Login-Seite trägt den Rückweg — nur in den Admin", async ({ page }) => {
+test("die Login-Seite trägt den Rückweg — nur in den Admin, nur kanonisch", async ({ page }) => {
   const pfad = `/admin/rezepte/${session.recipeId}`;
   await page.goto(`/admin/login?zurueck=${encodeURIComponent(pfad)}`);
   await expect(page.locator('input[name="zurueck"]')).toHaveValue(pfad);
@@ -70,4 +83,21 @@ test("die Login-Seite trägt den Rückweg — nur in den Admin", async ({ page }
   // Ein Rückweg nach draußen wird gar nicht erst ins Formular übernommen.
   await page.goto(`/admin/login?zurueck=${encodeURIComponent("https://example.org/")}`);
   await expect(page.locator('input[name="zurueck"]')).toHaveCount(0);
+
+  // Auch keiner, der erst im Browser aufgelöst würde — und dann draußen läge.
+  await page.goto(`/admin/login?zurueck=${encodeURIComponent("/admin/../rezepte/linsen")}`);
+  await expect(page.locator('input[name="zurueck"]')).toHaveCount(0);
+});
+
+test("angemeldet: ein unbrauchbarer Rückweg führt in den Admin, nicht auf einen Fehler", async ({
+  request,
+}) => {
+  // Ein Steuerzeichen im Rückweg landete vor der Prüfung der kanonischen Form
+  // roh im Location-Kopf; Node verweigert den Kopf, die Antwort war ein 500.
+  const antwort = await request.get("/admin/login?zurueck=%2Fadmin%2F%01", {
+    headers: { cookie: `session=${session.token}` },
+    maxRedirects: 0,
+  });
+  expect(antwort.status()).toBe(307);
+  expect(antwort.headers()["location"]).toMatch(/\/admin$/);
 });
