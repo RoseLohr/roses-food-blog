@@ -26,7 +26,10 @@ Annahmen, die während der Umsetzung getroffen wurden:
   `email_queue` geschrieben; ein Cron-Job im App-Prozess versendet mit
   konfigurierbarer Rate (`EMAIL_RATE_PER_MINUTE`, Default 30/min).
 - **B7 — Sessions in der DB:** Admin-Sessions liegen in der Tabelle `session`
-  (Token-Hash), Lebensdauer 14 Tage, Sliding Expiration.
+  (Token-Hash). Gleitend: 14 Tage ab der letzten Admin-Anfrage — die Zeile
+  verlängert `auth-core`, das Cookie erneuert `src/proxy.ts` (bis 10/2026 nur
+  die Zeile; das Cookie lief 14 Tage nach dem Login ab). Höchstens 90 Tage ab
+  Login, gleiten hin oder her (`src/lib/sitzung.ts`).
 - **B8 — CSRF-Schutz:** Server Actions prüfen Origin (Next-eingebaut); eigene
   POST-Route-Handler (Likes, Tracking-Beacon, Newsletter) prüfen zusätzlich den
   `Origin`/`Sec-Fetch-Site`-Header. Session-Cookie ist `SameSite=Lax`.

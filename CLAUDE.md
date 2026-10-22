@@ -283,6 +283,29 @@ nicht. Die Regel steht EINMAL, in `src/lib/entwurfsansicht.ts`.
   (jede Adresse einmal mit und einmal ohne Sitzung). Wer hier etwas ändert,
   fährt diesen Spec.
 
+## Admin-Sitzung (10/2026) — zwei Hälften, die zusammen gleiten
+Die Sitzung lebt **14 Tage ab der letzten Admin-Anfrage**, höchstens **90 Tage
+ab Login**. Die Regeln stehen EINMAL in `src/lib/sitzung.ts` (rein, im
+Mutations-Scope); angewendet werden sie dreimal:
+- **Datenbankzeile** (`auth-core.ts`): unter 7 Tagen Rest wird auf 14 Tage
+  verlängert, nie über die Höchstdauer hinaus; abgelaufen heißt gelöscht.
+- **Browser-Cookie** (`src/proxy.ts`): bei jeder Anfrage unter `/admin` wird
+  das vorhandene Cookie mit frischen 14 Tagen zurückgegeben. **Nur dort geht
+  das** — `cookies().set` ist in Layouts und Seiten verboten. Bis 10/2026
+  bekam das Cookie sein Ablaufdatum allein beim Login und verschwand 14 Tage
+  später, mitten im Editor; die Datenbank hatte längst verlängert.
+  `docs/ASSUMPTIONS.md` B7 nannte das „Sliding Expiration".
+- **Rückweg** (`auth.ts`, Login): Der Proxy setzt `x-pfad` — immer, nie
+  übernommen —, der Guard leitet mit `?zurueck=` um, der Login springt dorthin.
+  Was `sichererRueckweg` nicht durchlässt (alles außerhalb `/admin`, der Login
+  selbst), wird verworfen, nicht repariert.
+**Die Höchstdauer ist die Ersatzkontrolle** für das gleitende Cookie
+(Verfassung Art. XIV): Ein gestohlenes Cookie lebt sonst, solange es benutzt
+wird. Wer sie entfernt oder anhebt, lockert ohne Gegengewicht. Gemessen in
+`tests/sitzung.test.ts` (Uhr injiziert), `tests/auth.integration.test.ts`
+(echte Zeilen), `tests/proxy.test.ts` und `tests/e2e/sitzung-verlaengerung.spec.ts`
+(`Set-Cookie`-Kopf und Umleitung am laufenden Server).
+
 ## Gemeinsame Bausteine — benutzen statt abschreiben
 Wer im Admin eine Seite anlegt oder ändert, nimmt diese und schreibt sie nicht
 neu (B6, 08/2026):
