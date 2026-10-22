@@ -96,8 +96,13 @@ test("das Klebeband ist die kräftige Marke — und bleibt aus dem Namensbaum", 
     `Band ${alsText(bandFarbe)} auf Karte ${alsText(karte)}`,
   ).toBeGreaterThan(1.4);
 
-  // Zierde, kein Inhalt: Der Zettel heißt im Namensbaum nach seinem Text.
-  await expect(zettel(page).first()).toHaveAccessibleName("");
+  // Zierde, kein Inhalt. Hier stand bis zur Durchsicht
+  // `toHaveAccessibleName("")` am `<li>` — das ist TRIVIAL erfüllt: Die Rolle
+  // `listitem` bezieht ihren Namen nicht aus dem Inhalt, die Zusicherung wäre
+  // auch mit einem beschrifteten Band grün gewesen. Gemessen wird jetzt, was
+  // gemeint war: Im Text des Zettels steht die Notiz und sonst nichts.
+  await expect(zettel(page).first()).toHaveText(NOTIZ);
+  await expect(band).toHaveText("");
   await expect(band).toHaveAttribute("aria-hidden", "true");
 });
 
