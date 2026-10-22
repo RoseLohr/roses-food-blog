@@ -1,4 +1,6 @@
 import { test, expect } from "@playwright/test";
+import Database from "better-sqlite3";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -27,6 +29,25 @@ const MAX_AGE_14_TAGE = 14 * 24 * 60 * 60;
 
 function sitzungsCookie(setCookie: string[]): string | undefined {
   return setCookie.find((wert) => wert.startsWith("session="));
+}
+
+const TAG = 24 * 60 * 60 * 1000;
+
+/**
+ * Die Sitzungszeile direkt aus der E2E-Datenbank: Der Server hält sie im
+ * WAL-Modus offen, Lesen und ein gezieltes UPDATE von außen sind erlaubt. Nur
+ * so lässt sich messen, ob die ZEILE gleitet — der Server zeigt sie nirgends.
+ */
+function sitzungszeile() {
+  const db = new Database(path.resolve(process.cwd(), ".pw-data/app.db"));
+  const id = crypto.createHash("sha256").update(session.token).digest("hex");
+  return {
+    ablauf: () =>
+      (db.prepare("SELECT expires_at FROM session WHERE id = ?").get(id) as { expires_at: number })
+        .expires_at,
+    setzen: (ms: number) => db.prepare("UPDATE session SET expires_at = ? WHERE id = ?").run(ms, id),
+    schliessen: () => db.close(),
+  };
 }
 
 test("eine Admin-Anfrage mit Sitzung bekommt das Cookie mit vollen 14 Tagen zurück", async ({
@@ -118,4 +139,52 @@ test("angemeldet: ein unbrauchbarer Rückweg führt in den Admin, nicht auf eine
   });
   expect(antwort.status()).toBe(307);
   expect(antwort.headers()["location"]).toMatch(/\/admin$/);
+});
+
+test("die Zeile folgt nur Admin-Anfragen — eine öffentliche Seite lässt sie, wie sie ist", async ({
+  request,
+}) => {
+  // Beide Hälften nach EINER Regel heißt auch: dieselben Auslöser. Gleitet die
+  // Zeile auf öffentlichen Seiten (wo der Proxy das Cookie nicht erneuert),
+  // lebt sie bis zu 13 Tage länger als das Cookie — unsichtbar, aber da.
+  const zeile = sitzungszeile();
+  try {
+    const zurueckgesetzt = Date.now() + 8 * TAG;
+    zeile.setzen(zurueckgesetzt);
+
+    const oeffentlich = await request.get("/", {
+      headers: { cookie: `session=${session.token}` },
+    });
+    expect(oeffentlich.status()).toBe(200);
+    expect(zeile.ablauf()).toBe(zurueckgesetzt);
+
+    // Eine Admin-Anfrage: die Zeile gleitet auf 14 Tage ab jetzt — wie das Cookie.
+    const admin = await request.get("/admin/rezepte", {
+      headers: { cookie: `session=${session.token}` },
+      maxRedirects: 0,
+    });
+    expect(admin.status()).toBe(200);
+    expect(Math.abs(zeile.ablauf() - (Date.now() + 14 * TAG))).toBeLessThan(10_000);
+  } finally {
+    zeile.schliessen();
+  }
+});
+
+test("auch /api/admin ist eine Admin-Anfrage: Cookie und Zeile gleiten", async ({ request }) => {
+  const zeile = sitzungszeile();
+  try {
+    zeile.setzen(Date.now() + 8 * TAG);
+    const antwort = await request.get("/api/admin/deploy/status", {
+      headers: { cookie: `session=${session.token}` },
+    });
+    expect(antwort.status()).toBe(200);
+    const alle = antwort
+      .headersArray()
+      .filter((h) => h.name.toLowerCase() === "set-cookie")
+      .map((h) => h.value);
+    expect(sitzungsCookie(alle)).toMatch(new RegExp(`max-age=${MAX_AGE_14_TAGE}`, "i"));
+    expect(Math.abs(zeile.ablauf() - (Date.now() + 14 * TAG))).toBeLessThan(10_000);
+  } finally {
+    zeile.schliessen();
+  }
 });

@@ -29,7 +29,9 @@ function sitzungsCookie(antwort: Response): string | undefined {
 
 describe("proxy", () => {
   it("greift nur im Admin", () => {
-    expect(config.matcher).toEqual(["/admin/:path*"]);
+    // Beides sind Admin-Anfragen: Was unter /api/admin getCurrentAdmin() ruft,
+    // lässt die Zeile gleiten — dann muss auch das Cookie dort gleiten.
+    expect(config.matcher).toEqual(["/admin/:path*", "/api/admin/:path*"]);
   });
 
   it("erneuert ein vorhandenes Sitzungs-Cookie mit vollen 14 Tagen", () => {
