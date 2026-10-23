@@ -3,9 +3,6 @@
 import { redirect } from "next/navigation";
 import { requireAdmin } from "@/lib/auth";
 import { deleteRecipeById, saveRecipeFromForm } from "@/lib/recipe-save";
-import { istNeuSchluessel } from "@/lib/recipe-zwischenstand";
-import { zwischenstandVerwerfen } from "@/lib/recipe-zwischenstand-store";
-import { sichererRueckweg } from "@/lib/sitzung";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -47,21 +44,9 @@ export async function deleteRecipeAction(formData: FormData): Promise<void> {
   );
 }
 
-// Die SICHERUNG alle drei Minuten ist bewusst KEINE Action, sondern der
-// Route-Handler src/app/api/admin/rezepte/zwischenstand/route.ts: Nach einer
-// Action rendert Next die Seite neu, und bei abgelaufener Sitzung würde der
-// Redirect des Layouts zur Antwort — der Browser verließe den Editor samt
-// Inhalt. Verwerfen darf navigieren, Sichern nie.
-
-/** „Verwerfen" im Hinweis: löscht die Zeile und kehrt auf die Seite zurück, von der es kam. */
-export async function zwischenstandVerwerfenAction(formData: FormData): Promise<void> {
-  await requireAdmin();
-  const schluessel = String(formData.get("schluessel") ?? "");
-  if (istNeuSchluessel(schluessel) || /^rezept:[1-9]\d*$/.test(schluessel)) {
-    await zwischenstandVerwerfen(schluessel);
-  }
-  // Der Rückweg ist Nutzereingabe aus einem versteckten Feld — dieselbe
-  // Prüfung wie beim Login: nur in den Admin, nur kanonisch.
-  const zurueck = sichererRueckweg(formData.get("zurueck")) ?? "/admin/rezepte";
-  redirect(`${zurueck}?meldung=${encodeURIComponent(dict.admin.recipes.zwischenstandVerworfen)}`);
-}
+// Sichern (alle drei Minuten) und Verwerfen des Zwischenstands sind bewusst
+// KEINE Actions, sondern der Route-Handler
+// src/app/api/admin/rezepte/zwischenstand/route.ts: Nach einer Action rendert
+// Next die Seite neu, bei abgelaufener Sitzung würde der Redirect des Layouts
+// zur Antwort, und ein Redirect aus der Action hängt die Seite komplett neu
+// ein — der Editor verlöre, was seit der letzten Sicherung getippt wurde.

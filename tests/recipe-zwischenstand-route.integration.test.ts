@@ -41,6 +41,13 @@ async function sichern(fd: FormData): Promise<Response> {
   return POST(new Request("http://localhost/api/admin/rezepte/zwischenstand", { method: "POST", body: fd }));
 }
 
+async function verwerfen(fd: FormData | null, init: RequestInit = {}): Promise<Response> {
+  const { DELETE } = await import("@/app/api/admin/rezepte/zwischenstand/route");
+  return DELETE(
+    new Request("http://localhost/api/admin/rezepte/zwischenstand", { method: "DELETE", body: fd ?? undefined, ...init }),
+  );
+}
+
 async function zeile(schluessel: string) {
   const { db, schema } = await import("@/db");
   const { eq } = await import("drizzle-orm");
@@ -120,6 +127,49 @@ describe("Sicherung über den Route-Handler", () => {
     expect(weg.status).toBe(400);
     expect(await weg.json()).toEqual({ fehler: "ungueltig" });
     expect(await zeile("rezept:999999")).toBeUndefined();
+  });
+
+  it("Verwerfen ohne Sitzung oder von fremder Herkunft: 401/403, die Zeile bleibt", async () => {
+    expect(await zeile(NEU)).toBeDefined();
+    schalter.admin = null;
+    try {
+      const res = await verwerfen(formular({ schluessel: NEU }));
+      expect(res.status).toBe(401);
+      expect(await res.json()).toEqual({ fehler: "sitzung" });
+    } finally {
+      schalter.admin = { id: 1, email: "e2e@rose.de" };
+    }
+    schalter.gleicheHerkunft = false;
+    try {
+      expect((await verwerfen(formular({ schluessel: NEU }))).status).toBe(403);
+    } finally {
+      schalter.gleicheHerkunft = true;
+    }
+    expect(await zeile(NEU)).toBeDefined();
+  });
+
+  it("Verwerfen mit einem Schlüssel, der keiner ist: 400 — nichts wird gelöscht", async () => {
+    for (const schluessel of ["rezept:0", "neu:kurz", "", "rezept:5 OR 1=1"]) {
+      const res = await verwerfen(formular({ schluessel }));
+      expect(res.status, schluessel).toBe(400);
+      expect(await res.json()).toEqual({ fehler: "ungueltig" });
+    }
+    expect((await verwerfen(formular({ titel: "ohne Schlüssel" }))).status).toBe(400);
+    expect((await verwerfen(null, { headers: { "content-type": "application/json" }, body: "{}" })).status).toBe(400);
+    expect(await zeile(NEU)).toBeDefined();
+  });
+
+  it("Verwerfen löscht genau diese Zeile und antwortet „verworfen“ — auch beim zweiten Mal", async () => {
+    const andere = "neu:0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4e";
+    expect((await sichern(formular({ zwischenstandSchluessel: andere, titel: "Bleibt" }))).status).toBe(200);
+
+    const res = await verwerfen(formular({ schluessel: NEU }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ verworfen: true });
+    expect(await zeile(NEU)).toBeUndefined();
+    expect(await zeile(andere)).toBeDefined();
+    // Idempotent: Was schon weg ist, ist weg — kein Fehler für den Editor.
+    expect((await verwerfen(formular({ schluessel: NEU }))).status).toBe(200);
   });
 
   it("kein Formular im Körper: 400, kein Absturz", async () => {

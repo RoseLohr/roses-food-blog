@@ -19,6 +19,7 @@ import {
   fingerabdruck,
   formularAlsDaten,
   istNeuSchluessel,
+  istZwischenstandSchluessel,
   nichtAelterAls,
   schluesselAus,
   schluesselFuerNeu,
@@ -139,6 +140,25 @@ describe("Schlüssel", () => {
       expect(schluesselAus(daten), JSON.stringify(daten)).toBeNull();
     }
   });
+
+  it("die Ränder: Nummer 0 ist kein Rezept, eine Kennung mit Anhang oder Vorsatz keine Kennung", () => {
+    // Genau die Stellen, an denen ein verrutschter Anker oder ein `0` statt `1`
+    // im Muster still durchließe, was keine Zeile bekommen darf.
+    expect(schluesselAus({ id: ["0"] })).toBeNull();
+    expect(schluesselAus({ id: ["5"] })).toBe("rezept:5");
+    expect(schluesselAus({ id: ["05"] })).toBeNull();
+    expect(istNeuSchluessel("neu:3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5bx")).toBe(false);
+    expect(istNeuSchluessel("xneu:3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b")).toBe(false);
+    expect(istNeuSchluessel(["neu:3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b"])).toBe(false);
+  });
+
+  it("ein Schlüssel zum Verwerfen ist genau einer der beiden Formen — sonst nichts", () => {
+    expect(istZwischenstandSchluessel("rezept:5")).toBe(true);
+    expect(istZwischenstandSchluessel("neu:3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b")).toBe(true);
+    for (const wert of ["rezept:0", "rezept:05", "rezept:", "rezept:5x", "neu:kurz", "", 5, null, undefined]) {
+      expect(istZwischenstandSchluessel(wert), String(wert)).toBe(false);
+    }
+  });
 });
 
 describe("editorAusDaten — das Formular zurück in die Anfangswerte", () => {
@@ -210,10 +230,113 @@ describe("editorAusDaten — das Formular zurück in die Anfangswerte", () => {
     expect(ergebnis!.taxonomiePending).toEqual({ kategorien: ["Suppe"] });
   });
 
-  it("fehlende Felder behalten den Wert der Basis; die Rezeptnummer kommt immer aus der Basis", () => {
+  it("fehlende Felder, die der Editor immer schickt, behalten die Basis; die Rezeptnummer kommt immer aus der Basis", () => {
     const ergebnis = editorAusDaten({ titel: ["Nur Titel"] }, { ...BASIS, id: 5, servings: 2 }, ERLAUBT);
     expect(ergebnis!.initial).toEqual({ ...BASIS, id: 5, servings: 2, title: "Nur Titel" });
     expect(ergebnis!.taxonomiePending).toEqual({});
+  });
+
+  /**
+   * Eine Basis MIT Werten — gegen die leere Basis oben sind „Basis bleibt" und
+   * „geleert → null/0" nicht zu unterscheiden (alles null). Hier schon.
+   */
+  const GESPEICHERT: EditorAnfangswerte = {
+    ...BASIS,
+    id: 12,
+    heroImageId: 7,
+    prepMinutes: 15,
+    cookMinutes: 40,
+    servings: 6,
+    kcal: 300,
+    isSeasonal: true,
+    seasonStartWeek: 12,
+    seasonEndWeek: 20,
+  };
+
+  it("Felder, die der Editor nur BEDINGT schickt, bedeuten beim Fehlen, was Speichern daraus machte: kein Bild, Saison aus", () => {
+    // Der ImagePicker schreibt für „kein Bild" KEIN verstecktes Feld; die
+    // Saisonwochen stehen nur im Formular, wenn der Schalter an ist. Fehlt das
+    // Feld, hat der Redakteur das Bild entfernt bzw. die Saison abgeschaltet —
+    // die Basis zurückzuholen machte seine Entscheidung still rückgängig.
+    const ohne = editorAusDaten({ titel: ["x"] }, GESPEICHERT, ERLAUBT)!.initial;
+    expect(ohne.heroImageId).toBeNull();
+    expect(ohne.isSeasonal).toBe(false);
+    expect(ohne.seasonStartWeek).toBeNull();
+    expect(ohne.seasonEndWeek).toBeNull();
+    // Immer geschickte Felder behalten dagegen die Basis.
+    expect(ohne.kcal).toBe(300);
+    expect(ohne.prepMinutes).toBe(15);
+
+    const mit = editorAusDaten(
+      { titelbild: ["7"], saisonal: ["ja"], saisonVon: ["5"] },
+      GESPEICHERT,
+      ERLAUBT,
+    )!.initial;
+    expect(mit.heroImageId).toBe(7);
+    expect(mit.isSeasonal).toBe(true);
+    expect(mit.seasonStartWeek).toBe(5);
+    expect(mit.seasonEndWeek).toBeNull();
+    expect(editorAusDaten({ titelbild: [""] }, GESPEICHERT, ERLAUBT)!.initial.heroImageId).toBeNull();
+  });
+
+  it("Zahlen: geleert ist, was Speichern daraus machte (0 bzw. null); Unsinn bleibt die Basis", () => {
+    const geleert = editorAusDaten(
+      { vorbereitung: [""], kochzeit: [""], portionen: [""], kcal: [""], saisonal: ["ja"], saisonVon: [""] },
+      GESPEICHERT,
+      ERLAUBT,
+    )!.initial;
+    expect(geleert.prepMinutes).toBe(0);
+    expect(geleert.cookMinutes).toBe(0);
+    expect(geleert.servings).toBe(0);
+    expect(geleert.kcal).toBeNull();
+    expect(geleert.seasonStartWeek).toBeNull();
+
+    const unsinn = editorAusDaten(
+      { vorbereitung: ["abc"], kochzeit: ["-5"], portionen: ["1.5"], kcal: ["viel"], saisonal: ["ja"], saisonVon: ["x"] },
+      GESPEICHERT,
+      ERLAUBT,
+    )!.initial;
+    expect(unsinn.prepMinutes).toBe(15);
+    expect(unsinn.cookMinutes).toBe(40);
+    expect(unsinn.servings).toBe(6);
+    expect(unsinn.kcal).toBe(300);
+    expect(unsinn.seasonStartWeek).toBe(12);
+  });
+
+  it("ein Schritt ohne Foto ist der Regelfall und bleibt ein Schritt; die Form wird genau geprüft", () => {
+    const ergebnis = editorAusDaten(
+      {
+        abschnitte: [
+          JSON.stringify([
+            {
+              name: "",
+              ingredients: [{ name: "Mehl", amount: "1", unit: "kg", note: "" }],
+              steps: [
+                { text: "Rühren.", imageId: null },
+                { text: "Backen.", imageId: 9 },
+              ],
+            },
+          ]),
+        ],
+      },
+      BASIS,
+      ERLAUBT,
+    );
+    expect(ergebnis).not.toBeNull();
+    expect(ergebnis!.initial.sections[0].steps.map((s) => s.imageId)).toEqual([null, 9]);
+
+    // Eine Zutat ohne `note`, ein Schritt mit Text als Bildnummer: nicht die
+    // Form des Editors — der Stand ist unbrauchbar, nicht „fast richtig".
+    for (const abschnitt of [
+      { name: "", ingredients: [{ name: "Mehl", amount: "1", unit: "kg" }], steps: [] },
+      { name: "", ingredients: [], steps: [{ text: "x", imageId: "9" }] },
+      { name: "", ingredients: [], steps: [{ text: 5, imageId: null }] },
+    ]) {
+      expect(
+        editorAusDaten({ abschnitte: [JSON.stringify([abschnitt])] }, BASIS, ERLAUBT),
+        JSON.stringify(abschnitt),
+      ).toBeNull();
+    }
   });
 
   it("deutet nichts: unsinnige Zahlen bleiben, wie die Basis sie hatte, Text bleibt ungetrimmt", () => {

@@ -6,17 +6,20 @@
  * der beim Absenden als JSON in Hidden-Fields serialisiert wird.
  */
 import { useActionState, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { saveRecipeAction, type RecipeFormState } from "./actions";
 import {
   SCHLUESSEL_FELD,
   STAND_FELD,
   ZWISCHENSTAND_PFAD,
   ZWISCHENSTAND_TAKT_MS,
+  type VerwerfenAntwort,
   type ZwischenstandAntwort,
   fingerabdruck,
   formularAlsDaten,
   schluesselFuerNeu,
 } from "@/lib/recipe-zwischenstand";
+import { MELDUNG_PARAM } from "@/lib/meldung";
 import { ZwischenstandHinweis } from "./zwischenstand-hinweis";
 import { QuickAddCheckboxes } from "@/components/admin/quick-add-checkboxes";
 import { ImagePicker, type ImageChoice } from "@/components/admin/image-picker";
@@ -176,12 +179,19 @@ export interface RecipeEditorProps {
    * gewürfelter Schlüssel wäre dann jedes Mal ein anderer.
    */
   zwischenstandSchluessel?: string;
-  /** Der Stand (ms) der Zeile, die beim Laden lag — 0, wenn keine. */
+  /**
+   * Der Stand (ms) der Zeile, die dieser Editor GELADEN hat — 0, wenn er
+   * keine geladen hat, auch wenn eine angeboten wird. Der Server lässt eine
+   * Zeile nur überschreiben, wenn der Editor ihren Stand kennt.
+   */
   zwischenstandStand?: number;
-  /** Beim Öffnen liegt ein Zwischenstand: anbieten, nicht aufdrängen. */
-  zwischenstandAngebot?: ZwischenstandHinweisDaten & { wiederherstellen: string };
-  /** Der Editor zeigt einen wiederhergestellten Zwischenstand. */
-  zwischenstandWiederhergestellt?: ZwischenstandHinweisDaten;
+  /**
+   * Beim Öffnen liegt ein Zwischenstand: anbieten, nicht aufdrängen — und
+   * solange er unentschieden ist, nicht in seine Zeile sichern.
+   */
+  zwischenstandAngebot?: ZwischenstandHinweisDaten & { stand: number; wiederherstellen: string };
+  /** Der Editor zeigt einen wiederhergestellten Zwischenstand; `zurueck` ist die Adresse ohne ihn. */
+  zwischenstandWiederhergestellt?: ZwischenstandHinweisDaten & { zurueck: string };
   /** Begonnene neue Rezepte zum Fortsetzen (/admin/rezepte/neu); der eigene wird herausgefiltert. */
   offeneZwischenstaende?: Array<ZwischenstandHinweisDaten & { titel: string; wiederherstellen: string }>;
 }
@@ -190,8 +200,6 @@ export interface ZwischenstandHinweisDaten {
   /** „12:03" */
   zeit: string;
   schluessel: string;
-  /** Wohin „Verwerfen" zurückführt. */
-  zurueck: string;
 }
 
 const UNIT_SUGGESTIONS = [
@@ -353,15 +361,26 @@ export function RecipeEditor({
     saveRecipeAction,
     {},
   );
+  const router = useRouter();
   /**
-   * Was beim Einhängen galt, bleibt: Nach jeder Server-Action (Speichern mit
-   * Fehler, Verwerfen) rendert Next die Seite neu und reicht frische Props —
-   * der Server sieht dann den inzwischen gesicherten Stand und böte ihn als
-   * Zwischenstand an. Das Angebot, der Hinweis „wiederhergestellt" und der
-   * bekannte Stand werden deshalb einmal gelesen, nicht bei jedem Rendern.
+   * Angebot und Hinweise kommen aus den PROPS, nicht aus eingefrorenem Zustand:
+   * Scheitert eine Sicherung (Netz, Sitzung), hat sich an der angebotenen Zeile
+   * nichts geändert, und der Weg zu ihr muss stehen bleiben. Zwei Dinge
+   * verändern das Angebot im Browser: Nach einer Server-Action (Speichern mit
+   * Fehler) rendert Next die Seite neu, und der Server böte dann die Zeile an,
+   * die dieser Editor SELBST gesichert hat — erkennbar am Stand, den er von
+   * seiner Sicherung zurückbekam. Und Verworfenes bleibt verworfen, bis die
+   * Seite neu geladen wird — die Props wissen davon nichts.
    */
-  const [angebot] = useState(zwischenstandAngebot);
-  const [wiederhergestellt] = useState(zwischenstandWiederhergestellt);
+  const [eigenerStand, setEigenerStand] = useState(0);
+  const [verworfene, setVerworfene] = useState<string[]>([]);
+  const angebot =
+    zwischenstandAngebot &&
+    zwischenstandAngebot.stand !== eigenerStand &&
+    !verworfene.includes(zwischenstandAngebot.schluessel)
+      ? zwischenstandAngebot
+      : null;
+  const wiederhergestellt = zwischenstandWiederhergestellt;
   const [eigenerSchluessel] = useState(() =>
     initial.id === null ? (zwischenstandSchluessel ?? schluesselFuerNeu(crypto.randomUUID())) : null,
   );
@@ -375,17 +394,27 @@ export function RecipeEditor({
   const formRef = useRef<HTMLFormElement>(null);
   const letzterAbdruck = useRef<string | null>(null);
   const standRef = useRef(zwischenstandStand);
-  const laeuft = useRef(false);
+  /** Die gerade laufende Sicherung — damit „Speichern" auf sie wartet. */
+  const laufend = useRef<Promise<void> | null>(null);
   const pendingRef = useRef(false);
+  /** Gesetzt im Submit, bevor React `pending` kennt: Kein Tick dazwischen. */
+  const absendenRef = useRef(false);
+  /** Das offene Angebot für den Tick (der Effekt sieht nur den Stand vom Einhängen). */
+  const angebotRef = useRef(angebot);
+  angebotRef.current = angebot;
   const [sicherung, setSicherung] = useState<
     | { art: "gesichert"; zeit: string }
+    | { art: "angebot-offen"; zeit: string }
     | { art: "fremd"; zeit: string }
     | { art: "sitzung"; zeit: string | null }
     | { art: "fehler" }
+    | { art: "verworfen" }
+    | { art: "verwerfen-fehler" }
     | null
   >(null);
   useEffect(() => {
     pendingRef.current = pending;
+    if (!pending) absendenRef.current = false;
   }, [pending]);
   useEffect(() => {
     const abdruckJetzt = () =>
@@ -393,14 +422,7 @@ export function RecipeEditor({
     // Der Maßstab ist das Formular, wie es geladen wurde — ein wiederhergestellter
     // Zwischenstand wird nicht sofort noch einmal gesichert.
     letzterAbdruck.current = abdruckJetzt();
-    const tick = async () => {
-      // Während „Speichern" läuft, nichts sichern: Die Antwort käme sonst
-      // nach dem Löschen durch das Speichern an und hinterließe eine Zeile.
-      if (pendingRef.current || laeuft.current || !formRef.current) return;
-      const abdruck = abdruckJetzt();
-      if (abdruck === null || abdruck === letzterAbdruck.current) return;
-      laeuft.current = true;
-      const fd = new FormData(formRef.current);
+    const sichern = async (abdruck: string, fd: FormData) => {
       fd.append(STAND_FELD, String(standRef.current));
       try {
         // fetch an einen Route-Handler, keine Server-Action: Nach einer Action
@@ -413,6 +435,7 @@ export function RecipeEditor({
         if ("gesichert" in antwort) {
           letzterAbdruck.current = abdruck;
           standRef.current = antwort.stand;
+          setEigenerStand(antwort.stand);
           setSicherung({ art: "gesichert", zeit: antwort.gesichert });
         } else if (antwort.fehler === "fremd") {
           setSicherung({ art: "fremd", zeit: antwort.zeit });
@@ -430,11 +453,28 @@ export function RecipeEditor({
         // gesichert wird.
         console.error("[zwischenstand] Sichern fehlgeschlagen:", err);
         setSicherung({ art: "fehler" });
-      } finally {
-        laeuft.current = false;
       }
     };
-    const timer = setInterval(() => void tick(), ZWISCHENSTAND_TAKT_MS);
+    const tick = () => {
+      // Während „Speichern" läuft (oder gerade abgeschickt wird), nichts
+      // sichern: Die Antwort käme sonst nach dem Löschen durch das Speichern
+      // an und hinterließe eine Zeile.
+      if (pendingRef.current || absendenRef.current || laufend.current || !formRef.current) return;
+      const abdruck = abdruckJetzt();
+      if (abdruck === null || abdruck === letzterAbdruck.current) return;
+      // Ein angebotener, unentschiedener Zwischenstand liegt in GENAU der
+      // Zeile, in die gesichert würde. Anbieten heißt nicht überschreiben:
+      // Der Redakteur entscheidet, nicht der Timer — bis dahin sagt die
+      // Statuszeile, dass gerade nicht gesichert wird.
+      if (angebotRef.current) {
+        setSicherung({ art: "angebot-offen", zeit: angebotRef.current.zeit });
+        return;
+      }
+      laufend.current = sichern(abdruck, new FormData(formRef.current)).finally(() => {
+        laufend.current = null;
+      });
+    };
+    const timer = setInterval(tick, ZWISCHENSTAND_TAKT_MS);
     return () => clearInterval(timer);
     // Nur beim Einhängen: Der Fingerabdruck-Maßstab darf beim Neu-Mounten des
     // Formulars (KI-Übernahme) NICHT zurückgesetzt werden — genau diese
@@ -567,27 +607,74 @@ export function RecipeEditor({
     setFormKey((k) => k + 1);
   }
 
-  const fremdeOffene = offeneZwischenstaende.filter((z) => z.schluessel !== eigenerSchluessel);
+  /**
+   * „Verwerfen": DELETE an den Route-Handler, keine Action — eine Action mit
+   * Redirect hängte die Seite neu ein, und was seit der letzten Sicherung
+   * getippt wurde, wäre weg. Danach gilt: Ein ANGEBOTENER Stand ist einfach
+   * weg, der Editor bleibt, wie er ist, und sichert ab jetzt wieder (die Zeile
+   * ist frei). Ein WIEDERHERGESTELLTER Stand steht aber im Editor selbst —
+   * dann wechselt er auf die Adresse ohne ihn (`zurueck`), die Seite baut ihn
+   * mit dem gespeicherten Stand neu auf, und die Meldung geht wie überall im
+   * Admin über `?meldung=` mit.
+   */
+  const verwerfen = async (schluessel: string, zurueck: string | null) => {
+    const fd = new FormData();
+    fd.set("schluessel", schluessel);
+    try {
+      const res = await fetch(ZWISCHENSTAND_PFAD, { method: "DELETE", body: fd });
+      const antwort = (await res.json()) as VerwerfenAntwort;
+      if (!("verworfen" in antwort)) {
+        setSicherung(antwort.fehler === "sitzung" ? { art: "sitzung", zeit: null } : { art: "verwerfen-fehler" });
+        return;
+      }
+    } catch (err) {
+      console.error("[zwischenstand] Verwerfen fehlgeschlagen:", err);
+      setSicherung({ art: "verwerfen-fehler" });
+      return;
+    }
+    if (zurueck !== null) {
+      router.replace(`${zurueck}?${MELDUNG_PARAM}=${encodeURIComponent(d.zwischenstandVerworfen)}`);
+      return;
+    }
+    setVerworfene((v) => [...v, schluessel]);
+    setSicherung({ art: "verworfen" });
+  };
+
+  /**
+   * Ist beim Klick auf „Speichern" eine Sicherung unterwegs, wird erst sie
+   * abgewartet: Verarbeitete der Server das Speichern zuerst, löschte dessen
+   * Transaktion die Zeile — und die danach eintreffende Sicherung legte sie
+   * neu an, über einem Rezept ohne ungespeicherte Änderung. `preventDefault`
+   * hält die Action zurück; danach wird mit demselben Knopf erneut abgeschickt.
+   */
+  const beimAbsenden = (e: React.FormEvent<HTMLFormElement>) => {
+    absendenRef.current = true;
+    const unterwegs = laufend.current;
+    if (!unterwegs) return;
+    e.preventDefault();
+    const knopf = (e.nativeEvent as SubmitEvent).submitter;
+    void unterwegs.then(() => formRef.current?.requestSubmit(knopf instanceof HTMLElement ? knopf : undefined));
+  };
+
+  const fremdeOffene = offeneZwischenstaende.filter(
+    (z) => z.schluessel !== eigenerSchluessel && !verworfene.includes(z.schluessel),
+  );
 
   return (
     <div className="flex max-w-4xl flex-col gap-6">
-      {/* Das Angebot verschwindet, sobald dieser Editor selbst gesichert hat:
-          Dann ist die Zeile sein eigener Stand, nicht mehr ein fremder. */}
-      {angebot && sicherung === null && (
+      {angebot && (
         <ZwischenstandHinweis
           zeit={angebot.zeit}
-          schluessel={angebot.schluessel}
-          zurueck={angebot.zurueck}
           wiederherstellen={angebot.wiederherstellen}
           live
+          onVerwerfen={() => void verwerfen(angebot.schluessel, null)}
         />
       )}
       {wiederhergestellt && (
         <ZwischenstandHinweis
           zeit={wiederhergestellt.zeit}
-          schluessel={wiederhergestellt.schluessel}
-          zurueck={wiederhergestellt.zurueck}
           live
+          onVerwerfen={() => void verwerfen(wiederhergestellt.schluessel, wiederhergestellt.zurueck)}
         />
       )}
       {fremdeOffene.length > 0 && (
@@ -597,10 +684,9 @@ export function RecipeEditor({
             <ZwischenstandHinweis
               key={z.schluessel}
               zeit={z.zeit}
-              schluessel={z.schluessel}
-              zurueck={z.zurueck}
               wiederherstellen={z.wiederherstellen}
               titel={z.titel}
+              onVerwerfen={() => void verwerfen(z.schluessel, null)}
             />
           ))}
         </section>
@@ -608,7 +694,7 @@ export function RecipeEditor({
       {/* KI-Assistent nur beim ANLEGEN neuer Rezepte (initial.id === null).
           Bei bestehenden Rezepten ausgeblendet — dort wird nicht neu importiert. */}
       {initial.id === null && <RecipeAiAssistant onApply={applyDraft} />}
-      <form key={formKey} ref={formRef} action={formAction} className="flex flex-col gap-6">
+      <form key={formKey} ref={formRef} action={formAction} onSubmit={beimAbsenden} className="flex flex-col gap-6">
       {form.id !== null && <input type="hidden" name="id" value={form.id} />}
       {eigenerSchluessel && <input type="hidden" name={SCHLUESSEL_FELD} value={eigenerSchluessel} />}
       <input
@@ -1206,18 +1292,21 @@ export function RecipeEditor({
         // Lauf-abhängig (Uhrzeit) → Referenzmaske. Erscheint erst nach der
         // ersten Sicherung, also auf keiner Aufnahme des frischen Editors.
         <p
-          role={sicherung.art === "gesichert" ? "status" : "alert"}
+          role={sicherung.art === "gesichert" || sicherung.art === "verworfen" ? "status" : "alert"}
           className={
-            sicherung.art === "gesichert"
+            sicherung.art === "gesichert" || sicherung.art === "verworfen"
               ? "text-sm text-ink-soft"
               : "bg-amber-50 p-3 text-sm text-amber-900"
           }
           data-referenz-maske="true"
         >
           {sicherung.art === "gesichert" && d.zwischenstandGesichert(sicherung.zeit)}
+          {sicherung.art === "angebot-offen" && d.zwischenstandAngebotOffen(sicherung.zeit)}
           {sicherung.art === "fremd" && d.zwischenstandFremd(sicherung.zeit)}
           {sicherung.art === "sitzung" && d.zwischenstandSitzung(sicherung.zeit)}
           {sicherung.art === "fehler" && d.zwischenstandFehler}
+          {sicherung.art === "verworfen" && d.zwischenstandVerworfen}
+          {sicherung.art === "verwerfen-fehler" && d.zwischenstandVerwerfenFehler}
         </p>
       )}
       </form>

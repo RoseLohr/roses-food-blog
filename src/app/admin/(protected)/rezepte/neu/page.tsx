@@ -30,19 +30,22 @@ export default async function NewRecipePage(props: {
   const wieder = fortgesetzt
     ? editorAusDaten(fortgesetzt.daten, basis.initial, erlaubteVerweise(basis))
     : null;
+  // Die Liste begonnener Rezepte ist kein Angebot für DIESEN Editor (andere
+  // Schlüssel); er sichert daneben normal. Verwirft der Redakteur einen
+  // Eintrag, nimmt der Editor ihn aus der Liste, ohne die Seite zu verlassen.
   const offene = (await offeneNeueZwischenstaende()).map((z) => ({
     schluessel: z.schluessel,
     titel: z.titel,
     zeit: alsUhrzeit(z.gespeichertAm),
-    zurueck: PFAD,
     wiederherstellen: `${PFAD}?zwischenstand=${encodeURIComponent(z.schluessel)}`,
   }));
 
   return (
     <>
       <h1 className="mb-6 text-2xl font-bold">{dict.admin.recipes.newRecipe}</h1>
-      {/* `key` je Zustand: Nach „Verwerfen" (weiche Umleitung) wird der Editor
-          neu aufgebaut statt den verworfenen Inhalt zu behalten. */}
+      {/* `key` je Zustand: Verwirft der Editor den FORTGESETZTEN Stand, wechselt
+          er auf die Adresse ohne `?zwischenstand=`, und der Editor wird leer neu
+          aufgebaut statt den verworfenen Inhalt zu behalten. */}
       {fortgesetzt && wieder ? (
         <RecipeEditor
           key={fortgesetzt.schluessel}

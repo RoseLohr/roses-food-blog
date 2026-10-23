@@ -67,6 +67,9 @@ export type ZwischenstandAntwort =
   | { fehler: "fremd"; zeit: string; stand: number }
   | { fehler: "ungueltig" };
 
+/** Antwort auf „Verwerfen" (DELETE auf denselben Pfad, Feld `schluessel`). */
+export type VerwerfenAntwort = { verworfen: true } | { fehler: "sitzung" } | { fehler: "ungueltig" };
+
 /** Die Taxonomie-Felder des Editors — dieselben Namen wie in recipe-save.ts. */
 const TAXONOMIE_FELDER = ["kategorien", "schlagwoerter", "ernaehrungsformen", "kuechen", "geraete"];
 
@@ -103,10 +106,19 @@ export function schluesselFuerNeu(kennung: string): string {
 }
 
 const NEU_SCHLUESSEL = /^neu:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const REZEPT_SCHLUESSEL = /^rezept:[1-9]\d*$/;
 
-/** Ein Schlüssel eines neuen Rezepts, genau in der Form, die der Server vergibt. */
+/** Ein Schlüssel eines neuen Rezepts, genau in der Form, die der Editor vergibt. */
 export function istNeuSchluessel(wert: unknown): wert is string {
   return typeof wert === "string" && NEU_SCHLUESSEL.test(wert);
+}
+
+/**
+ * Ein Schlüssel, wie ihn „Verwerfen" schickt — eine der beiden Formen, sonst
+ * nichts. Nutzereingabe aus dem Browser; was nicht genau passt, löscht nichts.
+ */
+export function istZwischenstandSchluessel(wert: unknown): wert is string {
+  return typeof wert === "string" && (REZEPT_SCHLUESSEL.test(wert) || NEU_SCHLUESSEL.test(wert));
 }
 
 /**
@@ -181,6 +193,19 @@ export interface WiederhergestellterEditor {
  * Das Formular zurück in die Anfangswerte des Editors — über die Basis gelegt
  * (das gespeicherte Rezept bzw. das leere Formular). Die Rezeptnummer kommt
  * immer aus der Basis, nie aus dem Zwischenstand.
+ *
+ * Was ein FEHLENDES Feld heißt, hängt davon ab, ob der Editor es immer schickt:
+ * - Titelbild, Saisonwochen, der Saison-Schalter und die Häkchen stehen nur
+ *   im Formular, wenn etwas gewählt ist (der ImagePicker schreibt für „kein
+ *   Bild" KEIN verstecktes Feld). Fehlen sie, hat der Redakteur sich so
+ *   entschieden — und das Ergebnis ist, was Speichern daraus machte: kein
+ *   Bild, Saison aus, nichts angehakt. Die Basis zurückzuholen machte die
+ *   Entscheidung still rückgängig.
+ * - Alles andere schickt der Editor immer. Fehlt es, stammt das Formular
+ *   nicht aus diesem Editor; dann bleibt die Basis.
+ * Ein GELEERTES Zahlenfeld ist, was Speichern daraus machte (`intOr("")` = 0
+ * bzw. null bei kcal/Saison); Unsinn in einem Zahlenfeld lässt sich nicht
+ * darstellen und bleibt die Basis.
  */
 export function editorAusDaten(
   daten: ZwischenstandDaten,
@@ -193,16 +218,24 @@ export function editorAusDaten(
 
   const bilder = new Set(erlaubt.bildIds);
   const text = (feld: string, sonst: string) => daten[feld]?.[0] ?? sonst;
-  /** Fehlt das Feld oder ist der Wert keine Zahl, bleibt die Basis. */
+  /** Immer geschickt: fehlt es, bleibt die Basis; geleert ist 0 (wie `intOr`); Unsinn bleibt die Basis. */
   const zahl = (feld: string, sonst: number) => {
     const w = daten[feld]?.[0];
-    return w !== undefined && /^\d+$/.test(w) ? Number(w) : sonst;
+    if (w === undefined) return sonst;
+    if (w === "") return 0;
+    return /^\d+$/.test(w) ? Number(w) : sonst;
   };
-  /** Ein geleertes Feld ist eine Entscheidung (null); Unsinn bleibt die Basis. */
+  /** Immer geschickt, darf leer sein: geleert ist null; Unsinn bleibt die Basis. */
   const zahlOderLeer = (feld: string, sonst: number | null) => {
     const w = daten[feld]?.[0];
     if (w === undefined) return sonst;
     if (w === "") return null;
+    return /^\d+$/.test(w) ? Number(w) : sonst;
+  };
+  /** Nur bedingt geschickt: fehlt es oder ist es leer, ist nichts gewählt (null). */
+  const zahlOderKeins = (feld: string, sonst: number | null) => {
+    const w = daten[feld]?.[0];
+    if (w === undefined || w === "") return null;
     return /^\d+$/.test(w) ? Number(w) : sonst;
   };
   const bild = (id: number | null) => (id !== null && bilder.has(id) ? id : null);
@@ -228,7 +261,7 @@ export function editorAusDaten(
       title: text("titel", basis.title),
       slug: text("slug", basis.slug),
       teaser: text("teaser", basis.teaser),
-      heroImageId: bild(zahlOderLeer("titelbild", basis.heroImageId)),
+      heroImageId: bild(zahlOderKeins("titelbild", basis.heroImageId)),
       prepMinutes: zahl("vorbereitung", basis.prepMinutes),
       cookMinutes: zahl("kochzeit", basis.cookMinutes),
       servings: zahl("portionen", basis.servings),
@@ -237,8 +270,8 @@ export function editorAusDaten(
       // Das Formular schickt `saisonal=ja` nur, wenn der Schalter an ist —
       // fehlt das Feld, war er aus.
       isSeasonal: daten.saisonal?.[0] === "ja",
-      seasonStartWeek: zahlOderLeer("saisonVon", basis.seasonStartWeek),
-      seasonEndWeek: zahlOderLeer("saisonBis", basis.seasonEndWeek),
+      seasonStartWeek: zahlOderKeins("saisonVon", basis.seasonStartWeek),
+      seasonEndWeek: zahlOderKeins("saisonBis", basis.seasonEndWeek),
       tips: text("tipps", basis.tips),
       seoTitle: text("seoTitel", basis.seoTitle),
       seoDescription: text("seoBeschreibung", basis.seoDescription),

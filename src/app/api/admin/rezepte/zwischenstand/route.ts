@@ -16,6 +16,13 @@
  * und `getCurrentAdmin("admin-anfrage")` lässt die Zeile gleiten — dieselben
  * Auslöser für beide Hälften (src/lib/sitzung.ts). Same-Origin wie jeder
  * eigene POST-Handler (src/lib/csrf.ts, Annahme B8).
+ *
+ * „Verwerfen" (DELETE) aus demselben Grund hier und nicht als Action: Der
+ * Redakteur, der im Editor einen angebotenen Zwischenstand verwirft, hat oft
+ * schon weitergetippt — eine Action würde nach dem Redirect die ganze Seite
+ * neu einhängen (RedirectBoundary), und das Getippte wäre weg. Der Editor
+ * entscheidet selbst, ob er danach bleibt oder (nach dem Verwerfen eines
+ * WIEDERHERGESTELLTEN Stands) auf den gespeicherten Stand wechselt.
  */
 import { NextResponse } from "next/server";
 import { getCurrentAdmin } from "@/lib/auth";
@@ -23,17 +30,30 @@ import { isSameOriginRequest } from "@/lib/csrf";
 import {
   STAND_FELD,
   formularAlsDaten,
+  istZwischenstandSchluessel,
   schluesselAus,
+  type VerwerfenAntwort,
   type ZwischenstandAntwort,
   type ZwischenstandDaten,
 } from "@/lib/recipe-zwischenstand";
-import { zwischenstandSichern } from "@/lib/recipe-zwischenstand-store";
+import { zwischenstandSichern, zwischenstandVerwerfen } from "@/lib/recipe-zwischenstand-store";
 import { alsUhrzeit } from "@/lib/zeitpunkt";
 
 export const dynamic = "force-dynamic";
 
-function antwort(body: ZwischenstandAntwort, status: number): NextResponse {
+function antwort(body: ZwischenstandAntwort | VerwerfenAntwort, status: number): NextResponse {
   return NextResponse.json(body, { status });
+}
+
+/** Der Formularkörper — oder nichts, wenn keiner geschickt wurde. */
+async function formularAus(req: Request): Promise<ZwischenstandDaten | null> {
+  try {
+    return formularAlsDaten(await req.formData());
+  } catch (err) {
+    // Kein Formular im Körper — der Editor schickt immer eines.
+    console.error("[zwischenstand] Körper ist kein Formular:", err);
+    return null;
+  }
 }
 
 export async function POST(req: Request): Promise<NextResponse> {
@@ -42,14 +62,8 @@ export async function POST(req: Request): Promise<NextResponse> {
   }
   if (!(await getCurrentAdmin("admin-anfrage"))) return antwort({ fehler: "sitzung" }, 401);
 
-  let daten: ZwischenstandDaten;
-  try {
-    daten = formularAlsDaten(await req.formData());
-  } catch (err) {
-    // Kein Formular im Körper — der Editor schickt immer eines.
-    console.error("[zwischenstand] Körper ist kein Formular:", err);
-    return antwort({ fehler: "ungueltig" }, 400);
-  }
+  const daten = await formularAus(req);
+  if (!daten) return antwort({ fehler: "ungueltig" }, 400);
   const schluessel = schluesselAus(daten);
   if (!schluessel) return antwort({ fehler: "ungueltig" }, 400);
 
@@ -82,4 +96,19 @@ export async function POST(req: Request): Promise<NextResponse> {
     );
   }
   return antwort({ gesichert: alsUhrzeit(ergebnis.gespeichertAm), stand: ergebnis.gespeichertAm.getTime() }, 200);
+}
+
+export async function DELETE(req: Request): Promise<NextResponse> {
+  if (!isSameOriginRequest(req)) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
+  if (!(await getCurrentAdmin("admin-anfrage"))) return antwort({ fehler: "sitzung" }, 401);
+
+  const daten = await formularAus(req);
+  const schluessel = daten?.schluessel?.[0];
+  // Nutzereingabe aus dem Browser: nur eine der beiden Formen löscht etwas.
+  if (!istZwischenstandSchluessel(schluessel)) return antwort({ fehler: "ungueltig" }, 400);
+  await zwischenstandVerwerfen(schluessel);
+  // Idempotent: Was schon weg ist, ist weg — für den Editor kein Fehler.
+  return antwort({ verworfen: true }, 200);
 }

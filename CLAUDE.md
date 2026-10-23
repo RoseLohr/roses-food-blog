@@ -359,18 +359,77 @@ ungedeutet in `rezept_zwischenstand` ablegt — eine Zeile je Schlüssel (`rezep
   (`src/lib/csrf.ts`). Der Pfad steht einmal (`ZWISCHENSTAND_PFAD`), und
   `tests/recipe-zwischenstand-route.integration.test.ts` misst, dass dort eine
   Route liegt. Verwerfen bleibt eine Action: Es darf navigieren.
+- **Anbieten heißt nicht überschreiben.** Liegt beim Öffnen ein Zwischenstand,
+  zeigt der Editor den GESPEICHERTEN Stand und bietet den anderen an
+  („Wiederherstellen · Verwerfen"). Solange das unentschieden ist, sichert er
+  NICHT — die Zeile ist genau die, in die er sichern würde, und ein Timer
+  darf nicht drei Minuten nach dem Öffnen überschreiben, was dem Redakteur
+  gerade zur Entscheidung vorliegt (30 Minuten Arbeit nach einem Absturz,
+  weg wegen eines korrigierten Tippfehlers). Tippt er trotzdem, sagt die
+  Statuszeile, dass gerade nicht gesichert wird. Der erste Anlauf gab dem
+  Editor den Stand der angebotenen Zeile mit, damit die erste eigene Sicherung
+  nicht als „fremd" galt — und genau damit überschrieb sie. Deshalb bekommt
+  der Editor den Stand (`zwischenstandStand`) nur, wenn er die Zeile auch
+  GELADEN hat; sonst 0, und der Server hielte sie für fremd.
 - **Nur bei Änderung, nie während „Speichern":** Der Editor vergleicht den
   Fingerabdruck des Formulars mit dem der letzten Sicherung (bzw. des geladenen
   Stands) und sichert nur dann; läuft gerade die Speichern-Action, sichert er
   nicht — sonst käme die Antwort nach dem Löschen durch das Speichern an und
-  hinterließe eine Zeile. Das Speichern löscht den Zwischenstand in DERSELBEN
-  Transaktion wie das Rezept (`recipe-save.ts`).
+  hinterließe eine Zeile. Und UMGEKEHRT: Ist beim Klick auf „Speichern" eine
+  Sicherung unterwegs, wartet das Formular auf ihre Antwort (`onSubmit`,
+  `preventDefault`, dann `requestSubmit`) — verarbeitete der Server das
+  Speichern zuerst, legte die danach eintreffende Sicherung die eben gelöschte
+  Zeile neu an: ein Geister-Zwischenstand über einem Rezept ohne ungespeicherte
+  Änderung. Das Speichern löscht den Zwischenstand in DERSELBEN Transaktion
+  wie das Rezept (`recipe-save.ts`).
+- **Ein Blick ins Feld ist keine Änderung.** `RichTextEditor` schrieb beim
+  Verlassen des Feldes (`onBlur`) die Rückübersetzung HTML → Markdown ins
+  Formular — auch ohne Tastendruck. Der Umweg ist nicht die Identität
+  (Autolinks bekommen Klammern, `_kursiv_` wird `*kursiv*`, ein `![…]`
+  verschwindet); der Fingerabdruck sah eine Änderung, die niemand gemacht
+  hatte, und bot beim nächsten Öffnen einen „Zwischenstand" an, der sich vom
+  Gespeicherten unterschied. Jetzt bleibt die VORGABE der Wert, solange der
+  Inhalt dem Befüllten entspricht (`src/components/admin/rich-text-editor.tsx`).
+  Dass der Umweg selbst verlustbehaftet ist, ist ein eigener, älterer Befund
+  (dort im Kopfkommentar); er gilt für jedes Speichern nach einer echten
+  Eingabe und ist hier nicht behoben.
 - **Zwei Tabs:** Jeder Editor schickt den Stand mit, den er zuletzt gesichert
   oder geladen hat. Liegt in der Zeile ein jüngerer, antwortet der Server
   `fremd` und überschreibt nicht.
+- **Verwerfen ist ein DELETE am selben Route-Handler, keine Action.** Ein
+  `redirect()` aus einer Formular-Action stellt Next nicht als stille
+  Navigation zu, sondern als Fehler, den die RedirectBoundary des Segments
+  fängt — sie hängt die ganze Seite neu ein, und was seit der letzten
+  Sicherung getippt wurde, ist weg. Beim Verwerfen eines ANGEBOTENEN Stands
+  hat der Redakteur aber oft schon weitergetippt (und wegen des offenen
+  Angebots wurde nichts gesichert). Der Editor löscht deshalb per `fetch`,
+  bleibt stehen, nimmt das Angebot heraus und sichert ab dann wieder. Nur
+  beim Verwerfen eines WIEDERHERGESTELLTEN Stands — der steht ja im Editor —
+  wechselt er auf die Adresse ohne `?zwischenstand=` (`router.replace`, mit
+  `?meldung=` wie überall im Admin), und der `key` der Seite baut ihn mit dem
+  gespeicherten Stand neu auf. Die Liste auf `/admin/rezepte/neu` genauso:
+  Einen FREMDEN Eintrag zu verwerfen lässt den eigenen Editor stehen. Jeder
+  Knopf und Link nennt im zugänglichen Namen, WAS er verwirft oder fortsetzt
+  („Verwerfen: Fremder Anfang") — die Liste hat sonst drei gleiche „Verwerfen".
+- **Angebot und Hinweise kommen aus den Props, nicht aus eingefrorenem
+  Zustand.** Scheitert eine Sicherung (Netz, Sitzung), hat sich an der
+  angebotenen Zeile nichts geändert — der Weg zu ihr bleibt stehen. Was der
+  Editor SELBST gesichert hat, erkennt er am Stand, den er zurückbekam: Rendert
+  Next nach einer Action (Speichern mit Fehler) neu und der Server bietet
+  diese Zeile an, ist das kein Angebot. Der erste Anlauf blendete das Angebot
+  aus, sobald irgendeine Antwort kam — auch ein 401.
 - **Wiederherstellen deutet nicht, aber es prüft:** `editorAusDaten` legt das
   Formular über die Anfangswerte; Text bleibt ungetrimmt, Zahlen nur, wenn sie
-  welche sind. Verweise auf gelöschte Bilder und Taxonomien werden verworfen
+  welche sind. Was ein FEHLENDES Feld heißt, hängt davon ab, ob der Editor es
+  immer schickt: Titelbild, Saisonwochen, Saison-Schalter und Häkchen stehen
+  nur im Formular, wenn etwas gewählt ist (der `ImagePicker` schreibt für
+  „kein Bild" KEIN Feld) — fehlen sie, hat der Redakteur sich so entschieden,
+  und das Ergebnis ist, was Speichern daraus machte: kein Bild, Saison aus.
+  Die Basis zurückzuholen machte seine Entscheidung still rückgängig (so kam
+  im ersten Anlauf ein entferntes Titelbild zurück). Alles andere schickt der
+  Editor immer; fehlt es, stammt das Formular nicht von ihm, und die Basis
+  bleibt. Ein geleertes Zahlenfeld ist, was Speichern daraus machte (0 bzw.
+  null). Verweise auf gelöschte Bilder und Taxonomien werden verworfen
   (sonst bräche beim Speichern der Fremdschlüssel), unbrauchbares JSON macht
   den ganzen Stand unbrauchbar — er wird dann gar nicht angeboten. Angeboten
   wird nur, was nicht älter ist als das gespeicherte Rezept.
@@ -382,13 +441,21 @@ ungedeutet in `rezept_zwischenstand` ablegt — eine Zeile je Schlüssel (`rezep
 - **Referenzaufnahmen:** Die Statuszeile „Zwischenstand gesichert um 12:03"
   erscheint erst nach der ersten Sicherung — auf keiner Aufnahme des frischen
   Editors, darum tragen `admin-rezept-neu`/`-bearbeiten` KEINE Maske. Der
-  Hinweis beim Öffnen und der wiederhergestellte Editor haben eigene Aufnahmen
-  (`admin-rezept-zwischenstand`, `admin-rezept-wiederhergestellt`, maskiert) an
-  einem Saat-Rezept, das `scripts/e2e-admin.ts` dafür vorbereitet.
-  Gemessen in `tests/recipe-zwischenstand.test.ts`,
-  `tests/recipe-zwischenstand.integration.test.ts` und
+  Hinweis beim Öffnen und der wiederhergestellte Editor sind als eigene
+  Seitentypen ANGEMELDET (`admin-rezept-zwischenstand`,
+  `admin-rezept-wiederhergestellt`, maskiert) an einem Saat-Rezept, das
+  `scripts/e2e-admin.ts` dafür vorbereitet. **Ihre Basis steht noch aus:**
+  Sie muss auf dem gepinnten Build aufgenommen und angesehen werden
+  (`npx playwright test admin-referenz`, B9) — in der Sandbox, in der dieses
+  Paket entstand, rastert Chromium anders, dort ist keine Basis zu gewinnen.
+  Bis dahin schreibt Playwright beim ersten örtlichen Lauf das Ist als Basis;
+  wer es ansieht, nimmt es ab. Gemessen in `tests/recipe-zwischenstand.test.ts`,
+  `tests/recipe-zwischenstand.integration.test.ts`,
+  `tests/recipe-zwischenstand-route.integration.test.ts` und
   `tests/e2e/rezept-zwischenstand.spec.ts` (gefälschte Browser-Uhr per
-  `page.clock`, die Zeile direkt in `.pw-data/app.db`).
+  `page.clock`, die Zeile direkt in `.pw-data/app.db`; „nicht gesichert" wird
+  an gezählten Anfragen gemessen, verankert am nächsten Ereignis — nie an
+  einer sofortigen Datenbank-Lesung, die gegen eine laufende Anfrage rennt).
 
 ## Gemeinsame Bausteine — benutzen statt abschreiben
 Wer im Admin eine Seite anlegt oder ändert, nimmt diese und schreibt sie nicht

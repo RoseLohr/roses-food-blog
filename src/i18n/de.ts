@@ -916,6 +916,11 @@ export const de = {
           ? `Die Sitzung ist abgelaufen. Der Zwischenstand von ${zeit} ist gesichert; in einem neuen Tab anmelden, dann hier weiterarbeiten.`
           : "Die Sitzung ist abgelaufen. In einem neuen Tab anmelden, dann hier weiterarbeiten — der Inhalt bleibt stehen.",
       zwischenstandFehler: "Der Zwischenstand konnte nicht gesichert werden; der Inhalt bleibt stehen.",
+      zwischenstandAngebotOffen: (zeit: string) =>
+        `Nicht gesichert — der Zwischenstand von ${zeit} wartet noch auf eine Entscheidung: „Wiederherstellen“ ersetzt, was hier steht; „Verwerfen“ behält es, und ab dann wird wieder gesichert.`,
+      zwischenstandVerwerfenFehler: "Der Zwischenstand konnte nicht verworfen werden.",
+      zwischenstandVerwerfenName: (was: string) => `Verwerfen: ${was}`,
+      zwischenstandFortsetzenName: (titel: string) => `Fortsetzen: ${titel}`,
       zwischenstandVon: "Zwischenstand von",
       zwischenstandWiederhergestellt: "wiederhergestellt — noch nicht gespeichert.",
       zwischenstandWiederherstellen: "Wiederherstellen",
