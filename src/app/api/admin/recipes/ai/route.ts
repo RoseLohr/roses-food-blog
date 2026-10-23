@@ -45,7 +45,7 @@ export async function POST(req: Request) {
   if (!isSameOriginRequest(req)) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
-  if (!(await getCurrentAdmin())) {
+  if (!(await getCurrentAdmin("admin-anfrage"))) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
@@ -95,7 +95,7 @@ export async function POST(req: Request) {
 }
 
 export async function GET(req: Request) {
-  if (!(await getCurrentAdmin())) {
+  if (!(await getCurrentAdmin("admin-anfrage"))) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   const id = new URL(req.url).searchParams.get("job");
