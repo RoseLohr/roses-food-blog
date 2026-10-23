@@ -3,7 +3,7 @@
  * Guards für Admin-Seiten. Kernlogik in auth-core.ts (testbar).
  */
 import "server-only";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import {
   createSession,
@@ -11,9 +11,15 @@ import {
   hashPassword,
   validateSessionToken,
   verifyPassword,
-  SESSION_LIFETIME_MS,
   type AdminUser,
 } from "./auth-core";
+import {
+  PFAD_KOPF,
+  SITZUNGS_COOKIE,
+  sichererRueckweg,
+  sitzungsCookieOptionen,
+  type SitzungsAnlass,
+} from "./sitzung";
 
 export {
   createSession,
@@ -24,38 +30,50 @@ export {
 };
 export type { AdminUser };
 
-const SESSION_COOKIE = "session";
-
+/**
+ * Beim Login gesetzt — und seit 10/2026 bei jeder Admin-Anfrage vom Proxy
+ * erneuert (src/proxy.ts), mit denselben Attributen aus src/lib/sitzung.ts.
+ */
 export async function setSessionCookie(token: string): Promise<void> {
-  (await cookies()).set(SESSION_COOKIE, token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: SESSION_LIFETIME_MS / 1000,
-  });
+  (await cookies()).set(
+    SITZUNGS_COOKIE,
+    token,
+    sitzungsCookieOptionen(process.env.NODE_ENV === "production"),
+  );
 }
 
 export async function clearSessionCookie(): Promise<void> {
-  (await cookies()).delete(SESSION_COOKIE);
+  (await cookies()).delete(SITZUNGS_COOKIE);
 }
 
 /** Angemeldeten Admin ermitteln (oder null). */
-export async function getCurrentAdmin(): Promise<AdminUser | null> {
-  const token = (await cookies()).get(SESSION_COOKIE)?.value;
+/**
+ * Der angemeldete Admin — oder null. Der Anlass entscheidet, ob die Sitzung
+ * dabei gleitet (`src/lib/sitzung.ts`, `SitzungsAnlass`): Admin-Anfragen ja,
+ * öffentliche Seiten und die Login-Seite sehen nur nach.
+ */
+export async function getCurrentAdmin(anlass: SitzungsAnlass): Promise<AdminUser | null> {
+  const token = (await cookies()).get(SITZUNGS_COOKIE)?.value;
   if (!token) return null;
-  return validateSessionToken(token);
+  return validateSessionToken(token, anlass);
 }
 
-/** Für Admin-Seiten: leitet ohne gültige Session zum Login um. */
+/**
+ * Für Admin-Seiten: leitet ohne gültige Session zum Login um — mit dem Weg
+ * zurück. Den angefragten Pfad liefert der Proxy im Kopf `x-pfad`; ohne ihn
+ * (oder mit einem, der nicht in den Admin zeigt) landet der Login auf /admin.
+ */
 export async function requireAdmin(): Promise<AdminUser> {
-  const admin = await getCurrentAdmin();
-  if (!admin) redirect("/admin/login");
+  const admin = await getCurrentAdmin("admin-anfrage");
+  if (!admin) {
+    const zurueck = sichererRueckweg((await headers()).get(PFAD_KOPF));
+    redirect(zurueck ? `/admin/login?zurueck=${encodeURIComponent(zurueck)}` : "/admin/login");
+  }
   return admin;
 }
 
 export async function logoutCurrentSession(): Promise<void> {
-  const token = (await cookies()).get(SESSION_COOKIE)?.value;
+  const token = (await cookies()).get(SITZUNGS_COOKIE)?.value;
   if (token) await destroySession(token);
   await clearSessionCookie();
 }

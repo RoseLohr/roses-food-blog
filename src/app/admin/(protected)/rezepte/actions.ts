@@ -43,3 +43,10 @@ export async function deleteRecipeAction(formData: FormData): Promise<void> {
     `/admin/rezepte?meldung=${encodeURIComponent(dict.admin.recipes.deleted)}`,
   );
 }
+
+// Sichern (alle drei Minuten) und Verwerfen des Zwischenstands sind bewusst
+// KEINE Actions, sondern der Route-Handler
+// src/app/api/admin/rezepte/zwischenstand/route.ts: Nach einer Action rendert
+// Next die Seite neu, bei abgelaufener Sitzung würde der Redirect des Layouts
+// zur Antwort, und ein Redirect aus der Action hängt die Seite komplett neu
+// ein — der Editor verlöre, was seit der letzten Sicherung getippt wurde.

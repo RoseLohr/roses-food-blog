@@ -7,6 +7,7 @@
 import { eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db, schema } from "@/db";
+import { istNeuSchluessel, schluesselFuerRezept } from "@/lib/recipe-zwischenstand";
 import { slugify, uniqueSlug } from "@/lib/slug";
 import { findOrCreateTaxonomy, type TaxonomyType } from "@/lib/taxonomies";
 import { t } from "@/i18n/de";
@@ -369,6 +370,18 @@ export async function saveRecipeFromForm(
         .values(taxonomyRows.map((r) => ({ recipeId: rid, ...r })))
         .run();
     }
+
+    // Mit dem Speichern ist der Zwischenstand erledigt — in DERSELBEN
+    // Transaktion, damit kein Tick dazwischen eine Zeile hinterlässt, die
+    // „jünger als das Rezept" aussähe. Ein neues Rezept trägt die Kennung
+    // seines Zwischenstands im Formular mit; sie ist Nutzereingabe und wird
+    // nur in der gültigen Form berücksichtigt.
+    const zwischenstaende = [schluesselFuerRezept(rid)];
+    const neuSchluessel = formData.get("zwischenstandSchluessel");
+    if (istNeuSchluessel(neuSchluessel)) zwischenstaende.push(neuSchluessel);
+    tx.delete(schema.rezeptZwischenstand)
+      .where(inArray(schema.rezeptZwischenstand.schluessel, zwischenstaende))
+      .run();
 
     return rid;
     });

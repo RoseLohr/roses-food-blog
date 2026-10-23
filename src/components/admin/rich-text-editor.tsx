@@ -62,10 +62,25 @@ export function RichTextEditor({
   // siehe die Begründung an jenem Effekt.
   const beobachterRef = useRef<MutationObserver | null>(null);
 
+  // Was der Editor beim Befüllen bekam: die Vorgabe und ihr HTML, so wie der
+  // Browser es hält. Entspricht der Inhalt noch dem Befüllten, bleibt die
+  // VORGABE der Wert — nicht ihre Rückübersetzung. Denn der Umweg Markdown →
+  // HTML → Markdown ist nicht die Identität (Autolinks bekommen eckige
+  // Klammern, `_kursiv_` wird `*kursiv*`, Sonderzeichen werden maskiert, ein
+  // `![alt](url)` verschwindet). `onBlur={sync}` lief ihn bislang bei jedem
+  // Verlassen des Feldes — ein Klick hinein und ein Tab hinaus änderten das
+  // versteckte Feld, ohne dass jemand getippt hätte. Der Zwischenstand des
+  // Rezept-Editors (10/2026) sah darin eine Änderung und bot beim nächsten
+  // Öffnen einen „Zwischenstand" an, der sich vom Gespeicherten unterschied;
+  // Speichern hätte denselben verlustbehafteten Text geschrieben.
+  const vorgabeRef = useRef(initialMarkdown);
+  const befuelltRef = useRef<string | null>(null);
+
   // Editor-Inhalt → Markdown → Hidden-Feld (+ onChange). Rein imperativ.
   const sync = useCallback(() => {
     if (!ref.current) return;
-    const md = htmlToMarkdown(ref.current);
+    const md =
+      ref.current.innerHTML === befuelltRef.current ? vorgabeRef.current : htmlToMarkdown(ref.current);
     if (hiddenRef.current) hiddenRef.current.value = md;
     onChangeRef.current?.(md);
   }, []);
@@ -100,6 +115,10 @@ export function RichTextEditor({
     const html = renderMarkdown(initialMarkdown).trim();
     beobachterRef.current?.disconnect();
     ref.current.innerHTML = html || "<p><br></p>";
+    // Gelesen, nicht gemerkt: Der Browser normalisiert beim Setzen (Attribut-
+    // reihenfolge, Entitäten); verglichen wird später mit DEM, was er hält.
+    vorgabeRef.current = initialMarkdown;
+    befuelltRef.current = ref.current.innerHTML;
     if (hiddenRef.current) hiddenRef.current.value = initialMarkdown;
     if (beobachterRef.current) beobachterRef.current.observe(ref.current, BEOBACHTET);
   }, [initialMarkdown]);

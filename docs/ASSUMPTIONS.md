@@ -26,7 +26,15 @@ Annahmen, die während der Umsetzung getroffen wurden:
   `email_queue` geschrieben; ein Cron-Job im App-Prozess versendet mit
   konfigurierbarer Rate (`EMAIL_RATE_PER_MINUTE`, Default 30/min).
 - **B7 — Sessions in der DB:** Admin-Sessions liegen in der Tabelle `session`
-  (Token-Hash), Lebensdauer 14 Tage, Sliding Expiration.
+  (Token-Hash). Gleitend: 14 Tage ab der letzten Admin-Anfrage, nach EINER
+  Regel für beide Hälften — das Cookie erneuert `src/proxy.ts` bei jeder
+  Admin-Anfrage (`/admin`, `/api/admin`), die Zeile folgt ihm in `auth-core`
+  auf höchstens eine Stunde genau (geschrieben wird erst ab einer Stunde
+  Abstand) und nur aus demselben Anlass: Öffentliche Seiten und die
+  Login-Seite sehen nur nach (`SitzungsAnlass`). Bis 10/2026 gleitete
+  nur die Zeile, und das erst unter 7 Tagen Rest; das Cookie lief 14 Tage nach
+  dem Login ab. Höchstens 90 Tage ab Login, gleiten hin oder her
+  (`src/lib/sitzung.ts`).
 - **B8 — CSRF-Schutz:** Server Actions prüfen Origin (Next-eingebaut); eigene
   POST-Route-Handler (Likes, Tracking-Beacon, Newsletter) prüfen zusätzlich den
   `Origin`/`Sec-Fetch-Site`-Header. Session-Cookie ist `SameSite=Lax`.
@@ -160,3 +168,13 @@ Annahmen, die während der Umsetzung getroffen wurden:
   das Panel-Protokoll ist die Evidenz dieses Gates — als Secret stünde dort
   `Panel (3 Stimmen): ***, ***, ***`, und die `1` aus
   `VERIFIER_MIN_OTHER_APPROVERS` schwärzte jede `1` im gesamten Log.
+- **B26 — Zwischenstand im Rezept-Editor (10/2026):** Alle drei Minuten
+  sichert der Editor das rohe Formular als JSON in `rezept_zwischenstand`
+  (eine Zeile je Rezept bzw. begonnenem neuen Rezept), ohne zu speichern;
+  Speichern/Verwerfen löschen die Zeile, Rezept löschen räumt per Cascade,
+  der Scheduler entsorgt nach 30 Tagen. Nicht im Daten-Export enthalten —
+  flüchtig, wie ein Browser-Puffer (`src/lib/recipe-zwischenstand.ts`).
+  Sichern und Verwerfen laufen über einen Route-Handler unter `/api/admin`
+  (keine Server-Action: die würde die Seite neu einhängen und das Getippte
+  verlieren); ein beim Öffnen ANGEBOTENER Zwischenstand wird nicht vom Timer
+  überschrieben — erst Wiederherstellen oder Verwerfen gibt die Zeile frei.

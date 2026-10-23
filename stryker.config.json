@@ -6,6 +6,7 @@
   "_comment_daemmerung": "08/2026: src/lib/daemmerung.ts kam hinzu — Sonnenauf-/-untergang und die Frage, ob gerade Nacht ist. Reine Arithmetik ohne Uhr und ohne Datenbank, also genau die Sorte Kernlogik, die hier mutiert wird. Wichtig sind die AUSNAHMEN: Polartag und Polarnacht (der Kosinus des Stundenwinkels verlaesst [-1,1]) und der Tageswechsel um Mitternacht. Wer die wegkuerzt, bekommt NaN und daraus einen Vergleich, der immer false ist — die Seite bliebe still fuer immer hell.",
   "_comment_entwurf": "08/2026: src/lib/entwurfsansicht.ts kam hinzu — die Regel, wer einen Entwurf sehen darf. Vier Zeilen Logik, aber die Stelle, an der ein verdrehtes Vergleichszeichen aus \"nur der angemeldete Admin\" ein \"jeder\" macht; beim Ansehen der eigenen, angemeldeten Sitzung faellt so ein Fehler nie auf. Deshalb mutiert.",
   "_comment_seo": "08/2026: src/lib/seo/model.ts kam hinzu (reine Ableitungen der SEO-Inhalte). NICHT aufgenommen sind src/lib/seo/artifacts.ts und src/lib/base-url.ts — beide tragen ihre Kernwerte in Konstanten auf Modulebene (AI_USER_AGENTS, SITE_ORIGIN, Regexe). Stryker stuft die als STATIC mutants ein und fährt für jeden einen kompletten Testlauf: gemessen 229 statische von 885 Mutanten, geschätzte Laufzeit ~2 h 45 min statt Minuten. Ein Gate, das eine CI-Stunde frisst, wird abgeschaltet statt beachtet. Beide Module sind stattdessen über tests/seo.test.ts (Byte-genau am erzeugten Text), tests/seo.integration.test.ts und tests/e2e/seo.spec.ts abgedeckt; die Struktur-Invarianten hält scripts/regime/seo-gate.mjs.",
+  "_comment_zwischenstand": "10/2026: src/lib/recipe-zwischenstand.ts kam hinzu — die Regeln des Zwischenstands im Rezept-Editor: Formular → Daten → Anfangswerte des Editors (ohne zu deuten, aber ohne Verweise auf Geloeschtes), der Fingerabdruck fuer 'hat sich etwas geaendert?', der Schluessel aus dem Formular (Nutzereingabe!), 'nicht aelter als das Rezept' und die 30-Tage-Grenze. Ein verdrehtes Vergleichszeichen liesse einen ueberholten Zwischenstand still ueber den gespeicherten Stand legen oder einen frischen aufraeumen — beim Klicken im eigenen Editor faellt so etwas nie auf. Rein, Uhr injiziert, wie sitzung.ts.",
   "packageManager": "npm",
   "testRunner": "vitest",
   "reporters": [
@@ -23,7 +24,9 @@
     "src/lib/reihenfolge.ts",
     "src/lib/zeitpunkt.ts",
     "src/lib/daemmerung.ts",
-    "src/lib/seo/model.ts"
+    "src/lib/seo/model.ts",
+    "src/lib/sitzung.ts",
+    "src/lib/recipe-zwischenstand.ts"
   ],
   "concurrency": 2,
   "timeoutMS": 20000,

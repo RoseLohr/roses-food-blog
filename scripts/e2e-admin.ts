@@ -1,14 +1,15 @@
 /**
  * E2E-Vorbereitung: legt einen Admin, eine Session, ein Editier-Rezept und
  * einen Editier-Reisebericht (beide Entwurf, damit die öffentlichen E2E-Tests
- * unberührt bleiben) an und schreibt { token, recipeId, travelId } nach
- * $DATA_DIR/e2e-session.json. Wird nach dem Seed aufgerufen. Nur für E2E.
+ * unberührt bleiben) an und schreibt { token, email, passwort, recipeId,
+ * travelId } nach $DATA_DIR/e2e-session.json. Wird nach dem Seed aufgerufen.
+ * Nur für E2E.
  */
 import fs from "node:fs";
 import path from "node:path";
-import { asc } from "drizzle-orm";
+import { and, asc, desc, ne } from "drizzle-orm";
 import { db, schema } from "../src/db";
-import { createSession } from "../src/lib/auth-core";
+import { createSession, hashPassword } from "../src/lib/auth-core";
 import { saveRecipeFromForm } from "../src/lib/recipe-save";
 import { saveTravelFromForm } from "../src/lib/travel-save";
 
@@ -32,12 +33,20 @@ import { saveTravelFromForm } from "../src/lib/travel-save";
  */
 const NOW = new Date("2026-01-15T12:00:00");
 
+/**
+ * Ein ECHTES Passwort, damit ein Spec den Formular-Login durchlaufen kann
+ * (tests/e2e/sitzung-verlaengerung.spec.ts: der Rückweg nach dem Login). Nur
+ * in der E2E-Datenbank unter .pw-data; die Saat selbst kennt es nicht.
+ */
+const E2E_EMAIL = "e2e@rose.de";
+const E2E_PASSWORT = "e2e-zugang-roses-blog";
+
 async function main() {
   const [admin] = await db
     .insert(schema.adminUser)
     .values({
-      email: "e2e@rose.de",
-      passwordHash: "x",
+      email: E2E_EMAIL,
+      passwordHash: await hashPassword(E2E_PASSWORT),
       name: "E2E",
       createdAt: NOW,
     })
@@ -88,6 +97,35 @@ async function main() {
   const travelRes = await saveTravelFromForm(tfd, admin.id, NOW);
   if (!("travelId" in travelRes)) throw new Error("E2E: Reise-Anlage fehlgeschlagen");
 
+  // Ein Zwischenstand (10/2026) an einem Saat-Rezept, das sonst keine
+  // Aufnahme zeigt — nicht die Linsen-Bolognese (admin-rezept-abschnitte),
+  // nicht das Editier-Rezept (admin-rezept-bearbeiten). Daran hängen die
+  // Aufnahmen admin-rezept-zwischenstand (der Hinweis beim Öffnen) und
+  // admin-rezept-wiederhergestellt (?zwischenstand=1). Gleicher Zeitpunkt wie
+  // das Rezept: „nicht älter als" schließt den gleichen Augenblick ein.
+  const [saatRezept] = await db
+    .select({ id: schema.recipe.id, title: schema.recipe.title })
+    .from(schema.recipe)
+    .where(and(ne(schema.recipe.title, "Linsen-Bolognese"), ne(schema.recipe.id, res.recipeId)))
+    .orderBy(desc(schema.recipe.id))
+    .limit(1);
+  if (!saatRezept) throw new Error("E2E: kein Saat-Rezept für den Zwischenstand");
+  await db.insert(schema.rezeptZwischenstand).values({
+    schluessel: `rezept:${saatRezept.id}`,
+    recipeId: saatRezept.id,
+    formular: JSON.stringify({
+      id: [String(saatRezept.id)],
+      titel: [`${saatRezept.title} (Zwischenstand)`],
+      teaser: ["Ein Teaser, der noch nicht gespeichert ist."],
+      portionen: ["6"],
+      status: ["entwurf"],
+      abschnitte: [JSON.stringify([{ name: "", ingredients: [], steps: [{ text: "Noch ein Schritt.", imageId: null }] }])],
+      notizen: ["[]"],
+    }),
+    createdAt: NOW,
+    updatedAt: NOW,
+  });
+
   // Die Sitzung behält bewusst die Uhr: Ihr Ablauf ist kein angezeigter Wert,
   // sondern Gültigkeit — mit dem Saat-Zeitpunkt wäre sie seit Februar abgelaufen.
   const token = await createSession(admin.id);
@@ -96,8 +134,11 @@ async function main() {
     path.join(dataDir, "e2e-session.json"),
     JSON.stringify({
       token,
+      email: E2E_EMAIL,
+      passwort: E2E_PASSWORT,
       recipeId: res.recipeId,
       travelId: travelRes.travelId,
+      zwischenstandRecipeId: saatRezept.id,
     }),
   );
 }

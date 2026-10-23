@@ -2,9 +2,12 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { requireAdmin } from "@/lib/auth";
 import { t } from "@/i18n/de";
-import { buildEditorProps } from "../editor-data";
+import { buildEditorProps, erlaubteVerweise, rezeptGespeichertAm } from "../editor-data";
 import { RecipeEditor } from "../recipe-editor";
 import { meldungAus } from "@/components/admin/meldung";
+import { editorAusDaten, nichtAelterAls, schluesselFuerRezept } from "@/lib/recipe-zwischenstand";
+import { zwischenstandLaden } from "@/lib/recipe-zwischenstand-store";
+import { alsUhrzeit } from "@/lib/zeitpunkt";
 
 const dict = t();
 
@@ -24,13 +27,63 @@ export default async function EditRecipePage(props: {
   if (!editorProps) notFound();
 
   const message = meldungAus(searchParams);
+  const pfad = `/admin/rezepte/${recipeId}`;
+
+  // Liegt ein Zwischenstand, der nicht älter ist als das gespeicherte Rezept,
+  // wird er angeboten — oder, mit `?zwischenstand=1`, in den Editor gelegt.
+  // Was sich nicht in Anfangswerte übersetzen lässt, wird nicht angeboten.
+  //
+  // Angeboten heißt NICHT übernommen: Den Stand der Zeile bekommt der Editor
+  // nur, wenn er sie auch geladen hat (`zwischenstandStand`). Solange das
+  // Angebot unentschieden ist, sichert der Editor nicht in diese Zeile — ein
+  // Timer würde sonst drei Minuten nach dem Öffnen überschreiben, was dem
+  // Redakteur gerade zur Entscheidung vorliegt. Bekäme er den Stand trotzdem,
+  // hielte der Server die Zeile für seine eigene und ließe ihn.
+  const schluessel = schluesselFuerRezept(recipeId);
+  const zwischenstand = await zwischenstandLaden(schluessel);
+  const angeboten =
+    zwischenstand && nichtAelterAls(zwischenstand.gespeichertAm, await rezeptGespeichertAm(recipeId))
+      ? editorAusDaten(zwischenstand.daten, editorProps.initial, erlaubteVerweise(editorProps))
+      : null;
+  // Die IDENTITÄT des Editors hängt allein an der Adresse, nie an der Zeile:
+  // Nach einer Server-Action (Speichern mit Fehler) rendert diese Seite neu,
+  // und wäre die Zeile inzwischen weg (ein anderer Tab hat verworfen oder
+  // gespeichert), kippte ein zeilenabhängiger `key` — React baute den Editor
+  // mit dem gespeicherten Rezept neu auf, und das seit dem Wiederherstellen
+  // Getippte wäre weg, samt der Zeile, aus der es zurückkäme. Was als
+  // Anfangswerte gereicht wird, darf von der Zeile abhängen; der Editor liest
+  // sie nur beim Einhängen.
+  const gewuenscht = searchParams.zwischenstand === "1";
+  const wiederhergestellt = gewuenscht && angeboten !== null;
+  const stand = zwischenstand?.gespeichertAm.getTime() ?? 0;
+  const hinweis = zwischenstand ? { zeit: alsUhrzeit(zwischenstand.gespeichertAm), schluessel } : null;
 
   return (
     <>
       <h1 className="mb-6 text-2xl font-bold">
         {dict.admin.recipes.editRecipe}: {editorProps.initial.title}
       </h1>
-      <RecipeEditor {...editorProps} message={message} />
+      {/* Der `key` wechselt nur mit der ADRESSE: Verwirft der Editor einen
+          wiederhergestellten Stand, wechselt er auf die Adresse ohne
+          `?zwischenstand=1`, und React muss ihn mit dem gespeicherten Stand
+          neu aufbauen statt die Instanz samt verworfenem Inhalt zu behalten.
+          Unter derselben Adresse bleibt er stabil — ein Neu-Rendering (etwa
+          nach Speichern mit Fehler) darf den Editor nicht neu aufbauen, auch
+          wenn die Zeile inzwischen fehlt (siehe oben). */}
+      <RecipeEditor
+        key={gewuenscht ? "zwischenstand" : "gespeichert"}
+        {...editorProps}
+        initial={wiederhergestellt ? angeboten.initial : editorProps.initial}
+        taxonomiePending={wiederhergestellt ? angeboten.taxonomiePending : undefined}
+        zwischenstandStand={wiederhergestellt ? stand : 0}
+        zwischenstandAngebot={
+          angeboten && !wiederhergestellt && hinweis
+            ? { ...hinweis, stand, wiederherstellen: `${pfad}?zwischenstand=1` }
+            : undefined
+        }
+        zwischenstandWiederhergestellt={wiederhergestellt && hinweis ? { ...hinweis, zurueck: pfad } : undefined}
+        message={message}
+      />
     </>
   );
 }

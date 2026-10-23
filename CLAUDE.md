@@ -193,8 +193,10 @@ diesem Repository arbeitet. Sie ist Teil des Governance-Regimes (A-32/A-33/A-37)
   von außen überschreibbar machen will, braucht `@utility`. Siehe
   `audit/offene-befunde.md` B7.
 - **Vor und nach jedem Layout- oder Struktur-Umbau die Referenzaufnahmen
-  fahren:** `npx playwright test seiten-referenz admin-referenz` (123
-  Aufnahmen: elf öffentliche Seitentypen und 30 Admin-Seiten × drei Breiten).
+  fahren:** `npx playwright test seiten-referenz admin-referenz` (129
+  Aufnahmen: elf öffentliche Seitentypen und 32 Admin-Seiten × drei Breiten —
+  maßgeblich sind die SEITEN-Listen in `tests/e2e/seiten-referenz.spec.ts` und
+  `tests/e2e/admin-referenz.spec.ts`).
   Was sich ändern DARF, wird vorher benannt und danach gezielt neu aufgenommen —
   nie pauschal mit `--update-snapshots`.
   **Ändert ein Umbau eine Seite, die noch keine Aufnahme hat, wird sie ZUERST
@@ -308,6 +310,236 @@ nicht. Die Regel steht EINMAL, in `src/lib/entwurfsansicht.ts`.
   Kopf, statt ihn vorauszusetzen — dort steht auch die vollständige Matrix
   (jede Adresse einmal mit und einmal ohne Sitzung). Wer hier etwas ändert,
   fährt diesen Spec.
+
+## Admin-Sitzung (10/2026) — zwei Hälften, die zusammen gleiten
+Die Sitzung lebt **14 Tage ab der letzten Admin-Anfrage**, höchstens **90 Tage
+ab Login**. Die Regeln stehen EINMAL in `src/lib/sitzung.ts` (rein, im
+Mutations-Scope); angewendet werden sie dreimal:
+- **Datenbankzeile** (`auth-core.ts`): folgt dem Cookie nach DERSELBEN Regel
+  — 14 Tage ab jetzt, nie über die Höchstdauer hinaus —, geschrieben wird
+  aber erst, wenn sie eine Stunde oder mehr dahinter läge (etwa ein
+  Schreibzugriff pro Stunde und Sitzung; parallele Anfragen derselben
+  Sitzung können im Übergang doppelt schreiben, mit demselben Wert).
+  Abgelaufen heißt gelöscht. **Zwei Gleitregeln sind der Fehler, nicht die
+  Lösung:** Der erste Anlauf ließ die Zeile bei der alten Regel (erst unter
+  7 Tagen Rest); nach einer Anfrage am Tag 6 starb sie am Tag 14, das Cookie
+  versprach bis Tag 20 — Logout nach 8 Tagen Pause trotz zugesagter 14.
+  **Und dieselben AUSLÖSER:** `getCurrentAdmin(anlass)` verlangt ein Wort,
+  ohne Vorgabe. `"admin-anfrage"` (alles unter `/admin` und `/api/admin`,
+  beides im Proxy-Matcher) lässt die Zeile gleiten; `"nur-nachsehen"`
+  (öffentliche Seiten über `sichtbarkeitFuerBesucher`, die Login-Seite) lässt
+  sie, wie sie ist. Sonst gleitet die Zeile dort, wo das Cookie nicht
+  gleitet, und lebt bis zu 13 Tage länger als es — unsichtbar, aber mit
+  gültigem Token.
+- **Browser-Cookie** (`src/proxy.ts`): bei jeder Anfrage unter `/admin` —
+  außer auf `/admin/login` selbst — wird das vorhandene Cookie mit frischen
+  14 Tagen zurückgegeben. **Nur dort geht das** — `cookies().set` ist in
+  Layouts und Seiten verboten. Bis 10/2026
+  bekam das Cookie sein Ablaufdatum allein beim Login und verschwand 14 Tage
+  später, mitten im Editor; die Datenbank hatte längst verlängert.
+  `docs/ASSUMPTIONS.md` B7 nannte das „Sliding Expiration".
+- **Rückweg** (`auth.ts`, Login): Der Proxy setzt `x-pfad` — immer, nie
+  übernommen —, der Guard leitet mit `?zurueck=` um, der Login springt dorthin.
+  Was `sichererRueckweg` nicht durchlässt (alles außerhalb `/admin`, der Login
+  selbst), wird verworfen, nicht repariert. **Geprüft wird die kanonische Form
+  (WHATWG-URL), nicht die Zeichenkette:** `/admin/../rezepte/x` bestand eine
+  Präfix-Prüfung und führte nach dem Login aus dem Admin hinaus, ein
+  Steuerzeichen landete roh im Location-Kopf (500). Was nicht schon kanonisch
+  ist, kommt nicht durch — ein echter Rückweg stammt aus `nextUrl` und ist es
+  immer. **Und der Rückweg trägt `?meldung=` nicht mit:** Die Einmal-
+  Statusmeldung gehört zum Augenblick, nicht zum Ort; nach dem Wiederanmelden
+  stünde sonst „Rezept gespeichert." über einer Seite, auf der gerade nicht
+  gespeichert wurde. Versteckt sie sich hinter Prozentkodierung im Namen
+  (`%6deldung` — Next liest Namen dekodiert), wird der ganze Rückweg
+  verworfen. Der Name des Parameters steht einmal in `src/lib/meldung.ts`
+  (rein, damit der Proxy keine Komponente lädt).
+**Die Höchstdauer ist die Ersatzkontrolle** für das gleitende Cookie
+(Verfassung Art. XIV): Ein gestohlenes Cookie lebt sonst, solange es benutzt
+wird. Wer sie entfernt oder anhebt, lockert ohne Gegengewicht. Gemessen in
+`tests/sitzung.test.ts` (Uhr injiziert), `tests/auth.integration.test.ts`
+(echte Zeilen), `tests/proxy.test.ts` und `tests/e2e/sitzung-verlaengerung.spec.ts`
+(`Set-Cookie`-Kopf und Umleitung am laufenden Server).
+
+## Zwischenstand im Rezept-Editor (10/2026) — sichern ohne zu speichern
+Alle drei Minuten schickt der Editor das ROHE Formular (`new FormData(form)`
+als `Record<string, string[]>`) per `fetch` an einen Route-Handler, der es
+ungedeutet in `rezept_zwischenstand` ablegt — eine Zeile je Schlüssel (`rezept:<id>` oder
+`neu:<uuid>`), überschrieben. Die Regeln stehen EINMAL in
+`src/lib/recipe-zwischenstand.ts` (rein, im Mutations-Scope), die Ablage in
+`src/lib/recipe-zwischenstand-store.ts`.
+- **Warum nicht über den Speicherweg:** Speichern ist Veröffentlichen (Status
+  aus dem Formular), legt halbe Zutatennamen als Zutaten an, fixiert den Slug,
+  setzt `updated_at` und navigiert. Alle drei Minuten wäre das kein Sichern,
+  sondern ein Eingriff. Der Zwischenstand deutet NICHTS; gedeutet wird erst,
+  wenn der Redakteur ihn wiederherstellt und dann speichert.
+- **Die Sicherung ist ein ROUTE-HANDLER, keine Server-Action — und leitet
+  nie um** (`src/app/api/admin/rezepte/zwischenstand/route.ts`). Nach einer
+  Server-Action rendert Next die Seite neu, und das geschützte Layout ruft
+  `requireAdmin()`: Bei abgelaufener Sitzung wird dessen Redirect zum Login zur
+  Antwort der Action, der Browser verlässt den Editor samt Inhalt — ausgelöst
+  von einem Timer. Genau so endete der erste Anlauf auf der Anmeldemaske
+  (`tests/e2e/rezept-zwischenstand.spec.ts`, „läuft die Sitzung ab"). Ein
+  Route-Handler rendert nichts: `getCurrentAdmin("admin-anfrage")` statt
+  `requireAdmin()`, eine abgelaufene Sitzung ist eine Antwort (401,
+  `fehler: "sitzung"`), der Editor zeigt sie an, der Inhalt bleibt stehen, der
+  Timer läuft weiter. Unter `/api/admin` läuft die Anfrage durch den Proxy, das
+  Cookie gleitet mit; Same-Origin wie jeder eigene POST-Handler
+  (`src/lib/csrf.ts`). Der Pfad steht einmal (`ZWISCHENSTAND_PFAD`), und
+  `tests/recipe-zwischenstand-route.integration.test.ts` misst, dass dort eine
+  Route liegt.
+- **Anbieten heißt nicht überschreiben.** Liegt beim Öffnen ein Zwischenstand,
+  zeigt der Editor den GESPEICHERTEN Stand und bietet den anderen an
+  („Wiederherstellen · Verwerfen"). Solange das unentschieden ist, sichert er
+  NICHT — die Zeile ist genau die, in die er sichern würde, und ein Timer
+  darf nicht drei Minuten nach dem Öffnen überschreiben, was dem Redakteur
+  gerade zur Entscheidung vorliegt (30 Minuten Arbeit nach einem Absturz,
+  weg wegen eines korrigierten Tippfehlers). Tippt er trotzdem, sagt die
+  Statuszeile, dass gerade nicht gesichert wird. Der erste Anlauf gab dem
+  Editor den Stand der angebotenen Zeile mit, damit die erste eigene Sicherung
+  nicht als „fremd" galt — und genau damit überschrieb sie. Deshalb bekommt
+  der Editor den Stand (`zwischenstandStand`) nur, wenn er die Zeile auch
+  GELADEN hat; sonst 0, und der Server hielte sie für fremd.
+- **Nur bei Änderung, nie während „Speichern":** Der Editor vergleicht den
+  Fingerabdruck des Formulars mit dem der letzten Sicherung (bzw. des geladenen
+  Stands) und sichert nur dann; läuft gerade die Speichern-Action, sichert er
+  nicht — sonst käme die Antwort nach dem Löschen durch das Speichern an und
+  hinterließe eine Zeile. Und UMGEKEHRT: Ist beim Klick auf „Speichern" eine
+  Sicherung unterwegs, wartet `onSubmit` (nach `preventDefault`) auf ihre
+  Antwort, bevor es die Action startet — verarbeitete der Server das Speichern
+  zuerst, legte die danach eintreffende Sicherung die eben gelöschte Zeile neu
+  an: ein Geister-Zwischenstand über einem Rezept ohne ungespeicherte Änderung.
+  Das Speichern löscht den Zwischenstand in DERSELBEN Transaktion wie das
+  Rezept (`recipe-save.ts`). **Und „Speichern" startet die Action VON HAND:
+  `startTransition(() => formAction(new FormData(form)))` im `onSubmit`, nicht
+  über Reacts Formularweg und nicht per `requestSubmit`** (das wäre wieder der
+  Formularweg): React 19 setzt nach einer Formular-Action alle unkontrollierten
+  Felder zurück (`requestFormReset` in `startHostTransition`) — richtig für
+  ein Formular, das nach dem Absenden leer sein soll, falsch für einen Editor,
+  der nach „Bitte alle Pflichtfelder …" weiterbearbeitet wird: Titel, Zeiten,
+  Portionen stünden wieder auf dem Stand vom Laden. Gefunden durch den
+  E2E-Test zur Editor-Identität (unten); vorher verlor jeder fehlgeschlagene
+  Speichern-Klick die unkontrollierten Eingaben. **Die Transition ist kein
+  Beiwerk:** Nur in ihr setzt `useActionState` sein `pending`. Der erste Anlauf
+  rief `formAction(fd)` nackt — `pending` blieb für immer `false`, der Knopf
+  nie gesperrt, die Sperre `absendenRef` nie wieder frei, und nach EINEM
+  fehlgeschlagenen Speichern waren Speichern und Tick für diese Editor-Instanz
+  still tot. Gemessen: nach dem Fehler sichert der Tick, und ein zweites
+  Speichern gelingt.
+- **Ein Blick ins Feld ist keine Änderung.** `RichTextEditor` schrieb beim
+  Verlassen des Feldes (`onBlur`) die Rückübersetzung HTML → Markdown ins
+  Formular — auch ohne Tastendruck. Der Umweg ist nicht die Identität
+  (Autolinks bekommen Klammern, `_kursiv_` wird `*kursiv*`, ein `![…]`
+  verschwindet); der Fingerabdruck sah eine Änderung, die niemand gemacht
+  hatte, und bot beim nächsten Öffnen einen „Zwischenstand" an, der sich vom
+  Gespeicherten unterschied. Jetzt bleibt die VORGABE der Wert, solange der
+  Inhalt dem Befüllten entspricht (`src/components/admin/rich-text-editor.tsx`).
+  Dass der Umweg selbst verlustbehaftet ist, ist ein eigener, älterer Befund
+  (dort im Kopfkommentar); er gilt für jedes Speichern nach einer echten
+  Eingabe und ist hier nicht behoben.
+- **Zwei Tabs:** Jeder Editor schickt den Stand mit, den er zuletzt gesichert
+  oder geladen hat. Liegt in der Zeile ein jüngerer, antwortet der Server
+  `fremd` und überschreibt nicht.
+- **Verwerfen ist ein DELETE am selben Route-Handler, keine Action.** Ein
+  `redirect()` aus einer Formular-Action stellt Next nicht als stille
+  Navigation zu, sondern als Fehler, den die RedirectBoundary des Segments
+  fängt — sie hängt die ganze Seite neu ein, und was seit der letzten
+  Sicherung getippt wurde, ist weg. Beim Verwerfen eines ANGEBOTENEN Stands
+  hat der Redakteur aber oft schon weitergetippt (und wegen des offenen
+  Angebots wurde nichts gesichert). Der Editor löscht deshalb per `fetch`,
+  bleibt stehen, nimmt das Angebot heraus und sichert ab dann wieder. Nur
+  beim Verwerfen eines WIEDERHERGESTELLTEN Stands — der steht ja im Editor —
+  wechselt er auf die Adresse ohne `?zwischenstand=` (`router.replace`, mit
+  `?meldung=` wie überall im Admin), und der `key` der Seite baut ihn mit dem
+  gespeicherten Stand neu auf. Die Liste auf `/admin/rezepte/neu` genauso:
+  Einen FREMDEN Eintrag zu verwerfen lässt den eigenen Editor stehen. Jeder
+  Knopf und Link nennt im zugänglichen Namen, WAS er verwirft oder fortsetzt —
+  Titel UND Uhrzeit („Verwerfen: Fremder Anfang, Zwischenstand von 12:03"):
+  Die Liste hat sonst drei gleiche „Verwerfen", und zwei Anfänge ohne Titel
+  (der kommt oft zuletzt) hießen beide „(ohne Titel)". **Verwerfen wartet eine
+  laufende Sicherung ab und sperrt den Tick** bis zum Ende bzw. bis zum
+  Seitenwechsel: Käme eine Sicherung NACH dem DELETE an, fände sie keine Zeile
+  — also kein „fremd" — und legte die eben verworfene neu an, als frisches
+  Angebot. Und solange Verwerfen läuft — beim Seitenwechsel danach bis die
+  neue Seite steht —, wird auch nicht GESPEICHERT (Knopf gesperrt, `onSubmit`
+  kehrt um): Das Formular zeigt noch den eben verworfenen Stand, ein Enter im
+  Titel schriebe ihn ins Rezept. **Verworfen wird nur, was der Hinweis gezeigt
+  hat:** Das DELETE trägt den Stand (Angebot: der der Zeile; wiederhergestellt:
+  der zuletzt geladene oder gesicherte; Liste auf `/neu`: der beim Rendern);
+  liegt ein jüngerer, hat ein anderer Tab inzwischen gesichert, und der Server
+  antwortet `fremd` (409), ohne zu löschen — dieselbe Regel wie beim Sichern.
+  Der Stand wird dabei ERST NACH dem Abwarten der laufenden Sicherung gelesen
+  (Thunk, nicht Wert): Die eben abgewartete eigene Sicherung hat ihn gerade
+  erneuert; mit dem Stand vom Klick wäre die eigene Zeile „fremd" — genau das
+  zeigte der am Netz verankerte E2E-Test beim ersten Lauf.
+  Nach dem Verwerfen eines Angebots geht der Fokus in den Titel; der Knopf ist
+  mit dem Hinweis verschwunden, und ohne Ziel begänne der nächste Tab am
+  Seitenanfang.
+- **Die Identität des Editors (`key`) hängt allein an der ADRESSE, nie an der
+  Zeile.** Nach einer Server-Action (Speichern mit Fehler) rendert Next die
+  Seite neu — in dieser App immer, weil der Proxy das Cookie setzt. Hinge der
+  `key` an „Zeile vorhanden", kippte er, sobald ein anderer Tab die Zeile
+  verworfen oder das Rezept gespeichert hat: React baute den Editor mit dem
+  gespeicherten Rezept neu auf, das seit dem Wiederherstellen Getippte wäre
+  weg — samt der Zeile, aus der es zurückkäme. `?zwischenstand=1` bzw. der
+  `neu:`-Schlüssel in der Adresse bestimmen den `key`; was als Anfangswerte
+  gereicht wird, darf von der Zeile abhängen (der Editor liest sie nur beim
+  Einhängen). Fehlt die Zeile, verschwindet der Hinweis, der Inhalt bleibt,
+  der nächste Tick sichert ihn neu.
+- **Die Statuszeilen stehen IM klebenden Speichern-Kasten**, nicht darunter:
+  `position: sticky` hält den Kasten am unteren Rand, solange das Formular
+  darunter weitergeht — und genau darunter stand die Zeile „Nicht gesichert
+  …", also bis zum Seitenende außerhalb des Bildschirms. Beide Live-Regionen
+  (`role="status"`, `role="alert"`) sind DAUERHAFT im DOM und wechseln ihre
+  Rolle nicht — eine Region, die samt Inhalt erst eingehängt wird, kündigen
+  Screenreader nicht zuverlässig an. Leer sind sie `sr-only` (absolut, ohne
+  Platz im Flex-Fluss: der Kasten bleibt, wie er auf den Referenzaufnahmen
+  ist) und tragen die Referenzmaske NUR mit Inhalt — eine Maske ohne Treffer
+  ist auf einer Seite ohne `maskiert: true` ein Fehler (`tests/e2e/referenz.ts`).
+- **Angebot und Hinweise kommen aus den Props, nicht aus eingefrorenem
+  Zustand.** Scheitert eine Sicherung (Netz, Sitzung), hat sich an der
+  angebotenen Zeile nichts geändert — der Weg zu ihr bleibt stehen. Was der
+  Editor SELBST gesichert hat, erkennt er am Stand, den er zurückbekam: Rendert
+  Next nach einer Action (Speichern mit Fehler) neu und der Server bietet
+  diese Zeile an, ist das kein Angebot. Der erste Anlauf blendete das Angebot
+  aus, sobald irgendeine Antwort kam — auch ein 401.
+- **Wiederherstellen deutet nicht, aber es prüft:** `editorAusDaten` legt das
+  Formular über die Anfangswerte; Text bleibt ungetrimmt, Zahlen nur, wenn sie
+  welche sind. Was ein FEHLENDES Feld heißt, hängt davon ab, ob der Editor es
+  immer schickt: Titelbild, Saisonwochen, Saison-Schalter und Häkchen stehen
+  nur im Formular, wenn etwas gewählt ist (der `ImagePicker` schreibt für
+  „kein Bild" KEIN Feld) — fehlen sie, hat der Redakteur sich so entschieden,
+  und das Ergebnis ist, was Speichern daraus machte: kein Bild, Saison aus.
+  Die Basis zurückzuholen machte seine Entscheidung still rückgängig (so kam
+  im ersten Anlauf ein entferntes Titelbild zurück). Alles andere schickt der
+  Editor immer; fehlt es, stammt das Formular nicht von ihm, und die Basis
+  bleibt. Ein geleertes Zahlenfeld ist, was Speichern daraus machte (0 bzw.
+  null). Verweise auf gelöschte Bilder und Taxonomien werden verworfen
+  (sonst bräche beim Speichern der Fremdschlüssel), unbrauchbares JSON macht
+  den ganzen Stand unbrauchbar — er wird dann gar nicht angeboten. Angeboten
+  wird nur, was nicht älter ist als das gespeicherte Rezept.
+- **Eine bewusste Ausnahme von „keine IDs in JSON"** (Kopf von
+  `src/db/schema.ts`): Der Zwischenstand ist kein Datenmodell, sondern ein
+  flüchtiger Schnappschuss — nie gejoint, nie öffentlich, längstens 30 Tage
+  (Scheduler, täglich 03:10). Der Bild-Orphan-Scan sieht ihn absichtlich nicht:
+  Ein Zwischenstand hält kein Bild am Leben.
+- **Referenzaufnahmen:** Die Statuszeile „Zwischenstand gesichert um 12:03"
+  erscheint erst nach der ersten Sicherung — auf keiner Aufnahme des frischen
+  Editors, darum tragen `admin-rezept-neu`/`-bearbeiten` KEINE Maske. Der
+  Hinweis beim Öffnen und der wiederhergestellte Editor sind als eigene
+  Seitentypen ANGEMELDET (`admin-rezept-zwischenstand`,
+  `admin-rezept-wiederhergestellt`, maskiert) an einem Saat-Rezept, das
+  `scripts/e2e-admin.ts` dafür vorbereitet. **Ihre Basis steht noch aus:**
+  Sie muss auf dem gepinnten Build aufgenommen und angesehen werden
+  (`npx playwright test admin-referenz`, B9) — in der Sandbox, in der dieses
+  Paket entstand, rastert Chromium anders, dort ist keine Basis zu gewinnen.
+  Bis dahin schreibt Playwright beim ersten örtlichen Lauf das Ist als Basis;
+  wer es ansieht, nimmt es ab. Gemessen in `tests/recipe-zwischenstand.test.ts`,
+  `tests/recipe-zwischenstand.integration.test.ts`,
+  `tests/recipe-zwischenstand-route.integration.test.ts` und
+  `tests/e2e/rezept-zwischenstand.spec.ts` (gefälschte Browser-Uhr per
+  `page.clock`, die Zeile direkt in `.pw-data/app.db`; „nicht gesichert" wird
+  an gezählten Anfragen gemessen, verankert am nächsten Ereignis — nie an
+  einer sofortigen Datenbank-Lesung, die gegen eine laufende Anfrage rennt).
 
 ## Gemeinsame Bausteine — benutzen statt abschreiben
 Wer im Admin eine Seite anlegt oder ändert, nimmt diese und schreibt sie nicht

@@ -132,11 +132,14 @@ describe("sichtbarkeitFuerBesucher — die eine Stelle, die die Sitzung liest", 
   it("gibt einem ANONYMEN Besucher nur Veröffentlichtes", async () => {
     alsAdminAngemeldet(false);
     expect(await sichtbarkeitFuerBesucher()).toBe("nur-veroeffentlicht");
+    // Nur nachsehen: Eine öffentliche Seite lässt die Sitzungszeile nicht gleiten.
+    expect(getCurrentAdmin).toHaveBeenCalledWith("nur-nachsehen");
   });
 
   it("gibt dem angemeldeten Admin auch die Entwürfe", async () => {
     alsAdminAngemeldet(true);
     expect(await sichtbarkeitFuerBesucher()).toBe("auch-entwuerfe");
+    expect(getCurrentAdmin).toHaveBeenCalledWith("nur-nachsehen");
   });
 
   it("liefert immer einen der beiden bekannten Werte", async () => {

@@ -19,7 +19,7 @@ export function startScheduler(): void {
   // länger als sein Intervall (z. B. langsames/nicht erreichbares SMTP),
   // startet der nächste Tick sonst parallel und würde dieselben "wartend"-
   // Zeilen erneut versenden. Ein Flag je Job verhindert das.
-  const running = { email: false, sequence: false, monitor: false };
+  const running = { email: false, sequence: false, monitor: false, zwischenstand: false };
 
   // Nachts: Tracking-Tagesaggregation (idempotent)
   cron.schedule(
@@ -85,6 +85,27 @@ export function startScheduler(): void {
       running.monitor = false;
     }
   });
+
+  // Täglich 03:10: Zwischenstände des Rezept-Editors, die 30 Tage niemand
+  // mehr gesichert hat (src/lib/recipe-zwischenstand.ts, Aufbewahrung).
+  // Speichern und Verwerfen räumen sofort; das hier ist das Netz darunter.
+  cron.schedule(
+    "10 3 * * *",
+    async () => {
+      if (running.zwischenstand) return;
+      running.zwischenstand = true;
+      try {
+        const { zwischenstaendeAufraeumen } = await import("@/lib/recipe-zwischenstand-store");
+        const anzahl = await zwischenstaendeAufraeumen();
+        if (anzahl > 0) console.log(`[cron] ${anzahl} Zwischenstand/-stände aufgeräumt.`);
+      } catch (err) {
+        console.error("[cron] Zwischenstand-Aufräumen fehlgeschlagen:", err);
+      } finally {
+        running.zwischenstand = false;
+      }
+    },
+    { timezone: tz },
+  );
 
   console.log("[scheduler] Cron-Jobs registriert.");
 }

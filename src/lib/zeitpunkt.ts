@@ -42,9 +42,15 @@ export function alsDatum(d: Date): string {
  * auseinanderhalten will, und machen die Zeile nur länger.
  */
 export function alsZeitpunkt(d: Date): string {
-  const zeit = d.toLocaleTimeString("de-DE", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-  return `${alsDatum(d)} um ${zeit}`;
+  return `${alsDatum(d)} um ${alsUhrzeit(d)}`;
+}
+
+/**
+ * Nur die Uhrzeit: „07:48". Für eine Zeile, die mehrmals am Tag wechselt
+ * („Zwischenstand gesichert um 07:48"): Das Datum stünde dort nur im Weg, und
+ * zweistellig bleibt die Zeile gleich breit — „7:5" und „19:42" würden sie
+ * springen lassen.
+ */
+export function alsUhrzeit(d: Date): string {
+  return d.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
 }

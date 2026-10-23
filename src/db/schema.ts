@@ -362,6 +362,42 @@ export const recipeLike = sqliteTable(
   (t) => [uniqueIndex("recipe_like_dedup_idx").on(t.recipeId, t.dedupHash)],
 );
 
+/**
+ * Zwischenstand des Rezept-Editors (10/2026): das ROHE Formular, wie es der
+ * Browser alle drei Minuten schickt — `FormData` als JSON `Record<string,
+ * string[]>`, nichts gedeutet (kein Slug, keine Zutat, kein Status, kein
+ * updated_at am Rezept). Eine Zeile je Schlüssel: `rezept:<id>` für ein
+ * bestehendes Rezept, `neu:<uuid>` für ein begonnenes neues.
+ *
+ * BEWUSSTE AUSNAHME von „keine IDs in JSON" (Kopf dieser Datei): Das Formular
+ * enthält Bild- und Taxonomie-Nummern. Es ist aber kein Datenmodell, sondern
+ * ein flüchtiger Schnappschuss, der nie gejoint, nie gezählt und nie öffentlich
+ * ausgeliefert wird — er lebt bis zum Speichern oder Verwerfen, längstens 30
+ * Tage (src/lib/recipe-zwischenstand-store.ts, Scheduler). Beim Wiederherstellen
+ * werden Nummern, die es nicht mehr gibt, verworfen (editorAusDaten); der
+ * Bild-Orphan-Scan sieht diese Verweise absichtlich NICHT — ein Zwischenstand
+ * hält kein Bild am Leben. Die Regeln dazu: src/lib/recipe-zwischenstand.ts.
+ */
+export const rezeptZwischenstand = sqliteTable(
+  "rezept_zwischenstand",
+  {
+    schluessel: text("schluessel").primaryKey(),
+    /** Gesetzt bei `rezept:<id>` — dann räumt das Löschen des Rezepts mit auf. */
+    recipeId: integer("recipe_id").references(() => recipe.id, {
+      onDelete: "cascade",
+    }),
+    /** Das rohe Formular als JSON. */
+    formular: text("formular").notNull(),
+    createdAt: now(),
+    /** Zeitpunkt der letzten Sicherung — der Wert, den der Editor anzeigt. */
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    index("rezept_zwischenstand_recipe_idx").on(t.recipeId),
+    index("rezept_zwischenstand_updated_idx").on(t.updatedAt),
+  ],
+);
+
 // ---------------------------------------------------------------------------
 // Statische Seiten
 // ---------------------------------------------------------------------------
