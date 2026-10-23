@@ -168,3 +168,9 @@ Annahmen, die während der Umsetzung getroffen wurden:
   das Panel-Protokoll ist die Evidenz dieses Gates — als Secret stünde dort
   `Panel (3 Stimmen): ***, ***, ***`, und die `1` aus
   `VERIFIER_MIN_OTHER_APPROVERS` schwärzte jede `1` im gesamten Log.
+- **B26 — Zwischenstand im Rezept-Editor (10/2026):** Alle drei Minuten
+  sichert der Editor das rohe Formular als JSON in `rezept_zwischenstand`
+  (eine Zeile je Rezept bzw. begonnenem neuen Rezept), ohne zu speichern;
+  Speichern/Verwerfen löschen die Zeile, Rezept löschen räumt per Cascade,
+  der Scheduler entsorgt nach 30 Tagen. Nicht im Daten-Export enthalten —
+  flüchtig, wie ein Browser-Puffer (`src/lib/recipe-zwischenstand.ts`).

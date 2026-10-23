@@ -332,6 +332,54 @@ wird. Wer sie entfernt oder anhebt, lockert ohne Gegengewicht. Gemessen in
 (echte Zeilen), `tests/proxy.test.ts` und `tests/e2e/sitzung-verlaengerung.spec.ts`
 (`Set-Cookie`-Kopf und Umleitung am laufenden Server).
 
+## Zwischenstand im Rezept-Editor (10/2026) — sichern ohne zu speichern
+Alle drei Minuten schickt der Editor das ROHE Formular (`new FormData(form)`
+als `Record<string, string[]>`) an eine Server-Action, die es ungedeutet in
+`rezept_zwischenstand` ablegt — eine Zeile je Schlüssel (`rezept:<id>` oder
+`neu:<uuid>`), überschrieben. Die Regeln stehen EINMAL in
+`src/lib/recipe-zwischenstand.ts` (rein, im Mutations-Scope), die Ablage in
+`src/lib/recipe-zwischenstand-store.ts`.
+- **Warum nicht über den Speicherweg:** Speichern ist Veröffentlichen (Status
+  aus dem Formular), legt halbe Zutatennamen als Zutaten an, fixiert den Slug,
+  setzt `updated_at` und navigiert. Alle drei Minuten wäre das kein Sichern,
+  sondern ein Eingriff. Der Zwischenstand deutet NICHTS; gedeutet wird erst,
+  wenn der Redakteur ihn wiederherstellt und dann speichert.
+- **Die Action leitet nie um.** `zwischenstandSichernAction` ruft
+  `getCurrentAdmin("admin-anfrage")`, nicht `requireAdmin()`: Aus einem Timer
+  heraus hieße ein Redirect, der Browser verlässt den Editor samt Inhalt. Eine
+  abgelaufene Sitzung ist eine Antwort (`fehler: "sitzung"`), der Editor zeigt
+  sie an, der Inhalt bleibt stehen, der Timer läuft weiter.
+- **Nur bei Änderung, nie während „Speichern":** Der Editor vergleicht den
+  Fingerabdruck des Formulars mit dem der letzten Sicherung (bzw. des geladenen
+  Stands) und sichert nur dann; läuft gerade die Speichern-Action, sichert er
+  nicht — sonst käme die Antwort nach dem Löschen durch das Speichern an und
+  hinterließe eine Zeile. Das Speichern löscht den Zwischenstand in DERSELBEN
+  Transaktion wie das Rezept (`recipe-save.ts`).
+- **Zwei Tabs:** Jeder Editor schickt den Stand mit, den er zuletzt gesichert
+  oder geladen hat. Liegt in der Zeile ein jüngerer, antwortet der Server
+  `fremd` und überschreibt nicht.
+- **Wiederherstellen deutet nicht, aber es prüft:** `editorAusDaten` legt das
+  Formular über die Anfangswerte; Text bleibt ungetrimmt, Zahlen nur, wenn sie
+  welche sind. Verweise auf gelöschte Bilder und Taxonomien werden verworfen
+  (sonst bräche beim Speichern der Fremdschlüssel), unbrauchbares JSON macht
+  den ganzen Stand unbrauchbar — er wird dann gar nicht angeboten. Angeboten
+  wird nur, was nicht älter ist als das gespeicherte Rezept.
+- **Eine bewusste Ausnahme von „keine IDs in JSON"** (Kopf von
+  `src/db/schema.ts`): Der Zwischenstand ist kein Datenmodell, sondern ein
+  flüchtiger Schnappschuss — nie gejoint, nie öffentlich, längstens 30 Tage
+  (Scheduler, täglich 03:10). Der Bild-Orphan-Scan sieht ihn absichtlich nicht:
+  Ein Zwischenstand hält kein Bild am Leben.
+- **Referenzaufnahmen:** Die Statuszeile „Zwischenstand gesichert um 12:03"
+  erscheint erst nach der ersten Sicherung — auf keiner Aufnahme des frischen
+  Editors, darum tragen `admin-rezept-neu`/`-bearbeiten` KEINE Maske. Der
+  Hinweis beim Öffnen und der wiederhergestellte Editor haben eigene Aufnahmen
+  (`admin-rezept-zwischenstand`, `admin-rezept-wiederhergestellt`, maskiert) an
+  einem Saat-Rezept, das `scripts/e2e-admin.ts` dafür vorbereitet.
+  Gemessen in `tests/recipe-zwischenstand.test.ts`,
+  `tests/recipe-zwischenstand.integration.test.ts` und
+  `tests/e2e/rezept-zwischenstand.spec.ts` (gefälschte Browser-Uhr per
+  `page.clock`, die Zeile direkt in `.pw-data/app.db`).
+
 ## Gemeinsame Bausteine — benutzen statt abschreiben
 Wer im Admin eine Seite anlegt oder ändert, nimmt diese und schreibt sie nicht
 neu (B6, 08/2026):
