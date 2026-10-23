@@ -74,6 +74,13 @@
     "taxonomy": { "personal_data": false, "reason": "Kategorien-/Tag-Name (Inhalt, keine Person)." },
     "ingredient": { "personal_data": false, "reason": "Zutatenname (Inhalt)." },
     "recipe_section": { "personal_data": false, "reason": "Rezept-Abschnittsname (Inhalt)." },
+    "rezept_zwischenstand": {
+      "personal_data": false,
+      "reason": "Rohes Rezept-Formular des Editors (FormData als JSON) — Inhalt wie recipe, kein Betroffener; eine Zeile je Rezept bzw. je begonnenem neuen Rezept.",
+      "purpose": "Zwischenstand des Redakteurs gegen Datenverlust im Editor",
+      "retention": "bis Speichern/Verwerfen, spätestens 30 Tage (täglicher Purge im Scheduler)",
+      "erasure": "automatisch (Retention) oder Cascade beim Löschen des Rezepts"
+    },
     "page": { "personal_data": false, "reason": "Statische Seiten-Inhalte (Redaktion)." },
     "restaurant": { "personal_data": false, "reason": "Restaurant-Name im Reisebericht (öffentlicher Ort, kein Betroffener)." },
     "dish": { "personal_data": false, "reason": "Gericht-Name (Inhalt)." },
