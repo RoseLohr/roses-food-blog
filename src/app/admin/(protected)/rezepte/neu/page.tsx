@@ -25,8 +25,12 @@ export default async function NewRecipePage(props: {
   // sie rendert nach jeder Action neu und würfelte jedes Mal neu). Nur ein
   // fortgesetztes Rezept (`?zwischenstand=neu:…`) bringt seinen Schlüssel mit,
   // damit weitere Sicherungen dieselbe Zeile treffen.
+  // Die IDENTITÄT des Editors (`key`) hängt allein an der Adresse, nicht an
+  // der Zeile — siehe [id]/page.tsx: Nach einer Action rendert die Seite neu,
+  // und eine inzwischen fehlende Zeile darf den Editor nicht neu aufbauen.
   const gewuenscht = searchParams.zwischenstand;
-  const fortgesetzt = istNeuSchluessel(gewuenscht) ? await zwischenstandLaden(gewuenscht) : null;
+  const schluessel = istNeuSchluessel(gewuenscht) ? gewuenscht : null;
+  const fortgesetzt = schluessel ? await zwischenstandLaden(schluessel) : null;
   const wieder = fortgesetzt
     ? editorAusDaten(fortgesetzt.daten, basis.initial, erlaubteVerweise(basis))
     : null;
@@ -43,28 +47,25 @@ export default async function NewRecipePage(props: {
   return (
     <>
       <h1 className="mb-6 text-2xl font-bold">{dict.admin.recipes.newRecipe}</h1>
-      {/* `key` je Zustand: Verwirft der Editor den FORTGESETZTEN Stand, wechselt
+      {/* `key` je Adresse: Verwirft der Editor den FORTGESETZTEN Stand, wechselt
           er auf die Adresse ohne `?zwischenstand=`, und der Editor wird leer neu
-          aufgebaut statt den verworfenen Inhalt zu behalten. */}
-      {fortgesetzt && wieder ? (
-        <RecipeEditor
-          key={fortgesetzt.schluessel}
-          {...basis}
-          initial={wieder.initial}
-          taxonomiePending={wieder.taxonomiePending}
-          zwischenstandSchluessel={fortgesetzt.schluessel}
-          zwischenstandStand={fortgesetzt.gespeichertAm.getTime()}
-          zwischenstandWiederhergestellt={{
-            zeit: alsUhrzeit(fortgesetzt.gespeichertAm),
-            schluessel: fortgesetzt.schluessel,
-            zurueck: PFAD,
-          }}
-          offeneZwischenstaende={offene}
-          message={meldungAus(searchParams)}
-        />
-      ) : (
-        <RecipeEditor key="neu" {...basis} offeneZwischenstaende={offene} message={meldungAus(searchParams)} />
-      )}
+          aufgebaut statt den verworfenen Inhalt zu behalten. Fehlt die Zeile
+          zur Adresse, arbeitet der Editor unter demselben Schlüssel weiter. */}
+      <RecipeEditor
+        key={schluessel ?? "neu"}
+        {...basis}
+        initial={wieder?.initial ?? basis.initial}
+        taxonomiePending={wieder?.taxonomiePending}
+        zwischenstandSchluessel={schluessel ?? undefined}
+        zwischenstandStand={fortgesetzt && wieder ? fortgesetzt.gespeichertAm.getTime() : 0}
+        zwischenstandWiederhergestellt={
+          fortgesetzt && wieder
+            ? { zeit: alsUhrzeit(fortgesetzt.gespeichertAm), schluessel: fortgesetzt.schluessel, zurueck: PFAD }
+            : undefined
+        }
+        offeneZwischenstaende={offene}
+        message={meldungAus(searchParams)}
+      />
     </>
   );
 }

@@ -17,7 +17,9 @@
  *
  * Mehrere Hinweise auf einer Seite (die Liste auf /neu) tragen denselben
  * sichtbaren Knopftext; der zugängliche Name nennt deshalb, WAS verworfen oder
- * fortgesetzt wird — sonst stünden im Rotor drei gleiche „Verwerfen".
+ * fortgesetzt wird — sonst stünden im Rotor drei gleiche „Verwerfen". Und
+ * zwar Titel UND Uhrzeit: Zwei Anfänge ohne Titel (der kommt oft zuletzt)
+ * hießen sonst beide „(ohne Titel)".
  */
 import { t } from "@/i18n/de";
 
@@ -36,7 +38,8 @@ export function ZwischenstandHinweis(props: {
   onVerwerfen: () => void;
 }) {
   const fortsetzen = props.titel !== undefined;
-  const was = fortsetzen ? props.titel || d.zwischenstandOhneTitel : `${d.zwischenstandVon} ${props.zeit}`;
+  const stand = `${d.zwischenstandVon} ${props.zeit}`;
+  const was = fortsetzen ? `${props.titel || d.zwischenstandOhneTitel}, ${stand}` : stand;
   return (
     <div
       role={props.live ? "status" : undefined}

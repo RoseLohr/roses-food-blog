@@ -45,7 +45,16 @@ export default async function EditRecipePage(props: {
     zwischenstand && nichtAelterAls(zwischenstand.gespeichertAm, await rezeptGespeichertAm(recipeId))
       ? editorAusDaten(zwischenstand.daten, editorProps.initial, erlaubteVerweise(editorProps))
       : null;
-  const wiederhergestellt = angeboten !== null && searchParams.zwischenstand === "1";
+  // Die IDENTITÄT des Editors hängt allein an der Adresse, nie an der Zeile:
+  // Nach einer Server-Action (Speichern mit Fehler) rendert diese Seite neu,
+  // und wäre die Zeile inzwischen weg (ein anderer Tab hat verworfen oder
+  // gespeichert), kippte ein zeilenabhängiger `key` — React baute den Editor
+  // mit dem gespeicherten Rezept neu auf, und das seit dem Wiederherstellen
+  // Getippte wäre weg, samt der Zeile, aus der es zurückkäme. Was als
+  // Anfangswerte gereicht wird, darf von der Zeile abhängen; der Editor liest
+  // sie nur beim Einhängen.
+  const gewuenscht = searchParams.zwischenstand === "1";
+  const wiederhergestellt = gewuenscht && angeboten !== null;
   const stand = zwischenstand?.gespeichertAm.getTime() ?? 0;
   const hinweis = zwischenstand ? { zeit: alsUhrzeit(zwischenstand.gespeichertAm), schluessel } : null;
 
@@ -54,14 +63,15 @@ export default async function EditRecipePage(props: {
       <h1 className="mb-6 text-2xl font-bold">
         {dict.admin.recipes.editRecipe}: {editorProps.initial.title}
       </h1>
-      {/* Der `key` wechselt nur zwischen den ZUSTÄNDEN: Verwirft der Editor
-          einen WIEDERHERGESTELLTEN Stand, wechselt er auf die Adresse ohne
+      {/* Der `key` wechselt nur mit der ADRESSE: Verwirft der Editor einen
+          wiederhergestellten Stand, wechselt er auf die Adresse ohne
           `?zwischenstand=1`, und React muss ihn mit dem gespeicherten Stand
           neu aufbauen statt die Instanz samt verworfenem Inhalt zu behalten.
-          Innerhalb eines Zustands bleibt er stabil — ein Neu-Rendering (etwa
-          nach Speichern mit Fehler) darf den Editor nicht neu aufbauen. */}
+          Unter derselben Adresse bleibt er stabil — ein Neu-Rendering (etwa
+          nach Speichern mit Fehler) darf den Editor nicht neu aufbauen, auch
+          wenn die Zeile inzwischen fehlt (siehe oben). */}
       <RecipeEditor
-        key={wiederhergestellt ? "zwischenstand" : "gespeichert"}
+        key={gewuenscht ? "zwischenstand" : "gespeichert"}
         {...editorProps}
         initial={wiederhergestellt ? angeboten.initial : editorProps.initial}
         taxonomiePending={wiederhergestellt ? angeboten.taxonomiePending : undefined}

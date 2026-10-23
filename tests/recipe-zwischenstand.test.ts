@@ -287,7 +287,8 @@ describe("editorAusDaten — das Formular zurück in die Anfangswerte", () => {
     )!.initial;
     expect(geleert.prepMinutes).toBe(0);
     expect(geleert.cookMinutes).toBe(0);
-    expect(geleert.servings).toBe(0);
+    // Portionen: wie der Speicherweg nie unter 1 (das Feld trägt min=1).
+    expect(geleert.servings).toBe(1);
     expect(geleert.kcal).toBeNull();
     expect(geleert.seasonStartWeek).toBeNull();
 

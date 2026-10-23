@@ -1,8 +1,10 @@
 /**
  * Der Zwischenstand des Rezept-Editors — die reinen Regeln, ohne Datenbank
  * und ohne Next, mit injizierter Uhr. Angewendet in der Ablage
- * (recipe-zwischenstand-store.ts), in den Actions und Seiten des Editors
- * (src/app/admin/(protected)/rezepte) und im Editor selbst (Fingerabdruck).
+ * (recipe-zwischenstand-store.ts), im Route-Handler
+ * (src/app/api/admin/rezepte/zwischenstand/route.ts), in den Seiten des
+ * Editors (src/app/admin/(protected)/rezepte) und im Editor selbst
+ * (Fingerabdruck).
  *
  * ── WAS EIN ZWISCHENSTAND IST ──────────────────────────────────────────────
  *
@@ -203,9 +205,9 @@ export interface WiederhergestellterEditor {
  *   Entscheidung still rückgängig.
  * - Alles andere schickt der Editor immer. Fehlt es, stammt das Formular
  *   nicht aus diesem Editor; dann bleibt die Basis.
- * Ein GELEERTES Zahlenfeld ist, was Speichern daraus machte (`intOr("")` = 0
- * bzw. null bei kcal/Saison); Unsinn in einem Zahlenfeld lässt sich nicht
- * darstellen und bleibt die Basis.
+ * Ein GELEERTES Zahlenfeld ist, was Speichern daraus machte (`intOr("")` = 0,
+ * bei Portionen mindestens 1, null bei kcal/Saison); Unsinn in einem
+ * Zahlenfeld lässt sich nicht darstellen und bleibt die Basis.
  */
 export function editorAusDaten(
   daten: ZwischenstandDaten,
@@ -264,7 +266,8 @@ export function editorAusDaten(
       heroImageId: bild(zahlOderKeins("titelbild", basis.heroImageId)),
       prepMinutes: zahl("vorbereitung", basis.prepMinutes),
       cookMinutes: zahl("kochzeit", basis.cookMinutes),
-      servings: zahl("portionen", basis.servings),
+      // Wie recipe-save.ts: nie unter 1 — das Feld trägt `min={1}`.
+      servings: Math.max(1, zahl("portionen", basis.servings)),
       difficulty: text("schwierigkeit", basis.difficulty),
       kcal: zahlOderLeer("kcal", basis.kcal),
       // Das Formular schickt `saisonal=ja` nur, wenn der Schalter an ist —

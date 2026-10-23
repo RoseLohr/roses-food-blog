@@ -21,7 +21,11 @@ import { ZWISCHENSTAND_PFAD } from "../../src/lib/recipe-zwischenstand";
  *  4. Ein Blick in ein Rich-Text-Feld ohne Tastendruck ist keine Änderung.
  *  5. Ein neues Rezept bekommt eine eigene Kennung und steht zum Fortsetzen;
  *     einen FREMDEN Eintrag zu verwerfen lässt den eigenen Editor stehen.
- *  6. Läuft die Sitzung ab, meldet der Editor es — ohne Umleitung, der Inhalt
+ *  6. Speichern mit Fehler baut den wiederhergestellten Editor nicht neu auf —
+ *     auch wenn die Zeile inzwischen fehlt.
+ *  7. Verwerfen wartet eine laufende Sicherung ab; danach sichert nichts mehr
+ *     in die verworfene Zeile.
+ *  8. Läuft die Sitzung ab, meldet der Editor es — ohne Umleitung, der Inhalt
  *     bleibt stehen.
  *
  * „Es wird NICHT gesichert" wird nie an einer sofortigen Datenbank-Lesung
@@ -169,16 +173,23 @@ test("ein angebotener Zwischenstand wird nicht vom Timer überschrieben — erst
     // der Redakteur entscheidet, nicht der Timer. Die Statuszeile sagt es.
     await page.locator("#f-titel").fill("Neuer Titel");
     await page.clock.fastForward(DREI_MINUTEN);
-    await expect(page.locator('[role="alert"]', { hasText: /wartet noch auf eine Entscheidung/ })).toBeVisible();
+    const wartet = page.locator('[role="alert"]', { hasText: /wartet noch auf eine Entscheidung/ });
+    await expect(wartet).toBeVisible();
+    // Und zwar im Bild, nicht erst am Seitenende: Die Statuszeile steht im
+    // klebenden Kasten, der Blick ist oben beim Titel.
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await expect(wartet).toBeInViewport();
     expect(formularAus(t.zeile(SCHLUESSEL)!).titel).toEqual(["Alter Stand"]);
     await expect(angebot).toBeVisible();
 
-    // Verwerfen: kein Seitenwechsel, das Getippte bleibt, die Zeile ist weg.
+    // Verwerfen: kein Seitenwechsel, das Getippte bleibt, die Zeile ist weg —
+    // und der Fokus hat ein Ziel, denn der Knopf verschwindet mit dem Hinweis.
     await angebot.getByRole("button", { name: /^Verwerfen: Zwischenstand von/ }).click();
     await expect(page.locator('[role="status"]', { hasText: "Zwischenstand verworfen." })).toBeVisible();
     await expect(angebot).toHaveCount(0);
     await expect(page).toHaveURL(EDITOR_GENAU);
     await expect(page.locator("#f-titel")).toHaveValue("Neuer Titel");
+    await expect(page.locator("#f-titel")).toBeFocused();
     expect(t.zeile(SCHLUESSEL)).toBeUndefined();
 
     // Jetzt sichert der nächste Tick — und zwar zum ersten Mal überhaupt.
@@ -341,18 +352,19 @@ test("ein neues Rezept bekommt eine eigene Kennung; einen fremden Eintrag zu ver
     // Frisch geöffnet: Die Liste bietet das begonnene Rezept an — der Link
     // trägt den Titel im Namen, denn „Fortsetzen" steht hier zweimal.
     await page.goto("/admin/rezepte/neu");
-    await page.getByRole("link", { name: "Fortsetzen: Neu begonnen" }).click();
+    await page.getByRole("link", { name: /^Fortsetzen: Neu begonnen, Zwischenstand von/ }).click();
     await expect(page).toHaveURL(/zwischenstand=neu%3A/);
     await expect(page.locator("#f-titel")).toHaveValue("Neu begonnen");
 
     // Weitertippen, dann den FREMDEN Eintrag verwerfen: kein Seitenwechsel,
     // der eigene Editor bleibt samt Getipptem, der Eintrag verschwindet.
     await page.locator("#f-titel").fill("Neu begonnen und mehr");
-    await page.getByRole("button", { name: "Verwerfen: Fremder Anfang" }).click();
+    const fremdVerwerfen = page.getByRole("button", { name: /^Verwerfen: Fremder Anfang, Zwischenstand von/ });
+    await fremdVerwerfen.click();
     await expect(page.locator('[role="status"]', { hasText: "Zwischenstand verworfen." })).toBeVisible();
     await expect(page).toHaveURL(/zwischenstand=neu%3A/);
     await expect(page.locator("#f-titel")).toHaveValue("Neu begonnen und mehr");
-    await expect(page.getByRole("button", { name: "Verwerfen: Fremder Anfang" })).toHaveCount(0);
+    await expect(fremdVerwerfen).toHaveCount(0);
     expect(t.neue()).not.toContain(fremd);
     // Die nächste Sicherung trifft weiter die eigene Zeile.
     antwort = naechsteSicherung(page);
@@ -367,6 +379,73 @@ test("ein neues Rezept bekommt eine eigene Kennung; einen fremden Eintrag zu ver
     await expect(page.locator("#f-titel")).toHaveValue("");
   } finally {
     t.loeschen(fremd);
+    t.schliessen();
+  }
+});
+
+test("Speichern mit Fehler baut den wiederhergestellten Editor nicht neu auf — auch wenn die Zeile inzwischen fehlt", async ({
+  page,
+}) => {
+  const t = tabelle();
+  try {
+    t.einfuegen(
+      SCHLUESSEL,
+      session.recipeId,
+      { id: [String(session.recipeId)], titel: ["Wiederhergestellt"], abschnitte: ["[]"], notizen: ["[]"] },
+      Date.now(),
+    );
+    await anmelden(page);
+    await page.goto(`${EDITOR}?zwischenstand=1`);
+    await expect(page.locator("#f-titel")).toHaveValue("Wiederhergestellt");
+
+    // Ein Titel aus Leerzeichen besteht `required` und scheitert erst am
+    // Server; die Seite rendert mit dem Fehler neu. Inzwischen hat ein anderer
+    // Tab die Zeile verworfen — der Editor darf trotzdem nicht neu aufgebaut
+    // werden, sonst wäre das Getippte weg, und die Zeile, aus der es zurückkäme, auch.
+    await page.locator("#f-titel").fill("   ");
+    t.loeschen(SCHLUESSEL);
+    await page.getByRole("button", { name: /Speichern/i }).first().click();
+    await expect(page.locator('[role="alert"]', { hasText: /Pflichtfelder/ })).toBeVisible();
+    await expect(page).toHaveURL(/zwischenstand=1/);
+    await expect(page.locator("#f-titel")).toHaveValue("   ");
+  } finally {
+    t.schliessen();
+  }
+});
+
+test("Verwerfen wartet eine laufende Sicherung ab — danach sichert nichts mehr in die verworfene Zeile", async ({
+  page,
+}) => {
+  const t = tabelle();
+  try {
+    t.einfuegen(
+      SCHLUESSEL,
+      session.recipeId,
+      { id: [String(session.recipeId)], titel: ["Zum Verwerfen"], abschnitte: ["[]"], notizen: ["[]"] },
+      Date.now(),
+    );
+    await anmelden(page);
+    await page.clock.install();
+    // Jede Sicherung braucht eine Sekunde — so ist sie noch unterwegs, wenn
+    // „Verwerfen" klickt. Käme sie NACH dem DELETE an, fände sie keine Zeile,
+    // also kein „fremd", und legte die verworfene neu an.
+    await page.route(
+      (url) => url.pathname === ZWISCHENSTAND_PFAD,
+      async (route) => {
+        if (route.request().method() === "POST") await new Promise((r) => setTimeout(r, 1000));
+        await route.continue();
+      },
+    );
+    await page.goto(`${EDITOR}?zwischenstand=1`);
+    await expect(page.locator("#f-titel")).toHaveValue("Zum Verwerfen");
+    await page.locator("#f-titel").fill("Noch getippt");
+    await page.clock.fastForward(DREI_MINUTEN);
+    await page.getByRole("button", { name: /^Verwerfen: Zwischenstand von/ }).click();
+    await expect(page).toHaveURL(/meldung=/);
+    expect(t.zeile(SCHLUESSEL)).toBeUndefined();
+    await expect(page.locator('[role="status"]', { hasText: /Zwischenstand von \d{2}:\d{2}/ })).toHaveCount(0);
+  } finally {
+    await page.unroute(() => true);
     t.schliessen();
   }
 });

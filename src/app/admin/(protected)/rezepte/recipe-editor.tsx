@@ -402,6 +402,8 @@ export function RecipeEditor({
   /** Das offene Angebot für den Tick (der Effekt sieht nur den Stand vom Einhängen). */
   const angebotRef = useRef(angebot);
   angebotRef.current = angebot;
+  /** Gesetzt, solange „Verwerfen" läuft — und beim Seitenwechsel danach bis zum Ausbau. */
+  const verwerfenRef = useRef(false);
   const [sicherung, setSicherung] = useState<
     | { art: "gesichert"; zeit: string }
     | { art: "angebot-offen"; zeit: string }
@@ -459,7 +461,14 @@ export function RecipeEditor({
       // Während „Speichern" läuft (oder gerade abgeschickt wird), nichts
       // sichern: Die Antwort käme sonst nach dem Löschen durch das Speichern
       // an und hinterließe eine Zeile.
-      if (pendingRef.current || absendenRef.current || laufend.current || !formRef.current) return;
+      if (
+        pendingRef.current ||
+        absendenRef.current ||
+        verwerfenRef.current ||
+        laufend.current ||
+        !formRef.current
+      )
+        return;
       const abdruck = abdruckJetzt();
       if (abdruck === null || abdruck === letzterAbdruck.current) return;
       // Ein angebotener, unentschiedener Zwischenstand liegt in GENAU der
@@ -618,43 +627,92 @@ export function RecipeEditor({
    * Admin über `?meldung=` mit.
    */
   const verwerfen = async (schluessel: string, zurueck: string | null) => {
+    // Kein Tick dazwischen — weder einer, der schon unterwegs ist, noch einer,
+    // der bis zum Seitenwechsel noch fällt: Käme eine Sicherung NACH dem
+    // DELETE an, fände sie keine Zeile, also kein „fremd", und legte die eben
+    // verworfene neu an — mit dem letzten Tippstand, als frisches Angebot.
+    verwerfenRef.current = true;
     const fd = new FormData();
     fd.set("schluessel", schluessel);
     try {
+      await laufend.current;
       const res = await fetch(ZWISCHENSTAND_PFAD, { method: "DELETE", body: fd });
       const antwort = (await res.json()) as VerwerfenAntwort;
       if (!("verworfen" in antwort)) {
+        verwerfenRef.current = false;
         setSicherung(antwort.fehler === "sitzung" ? { art: "sitzung", zeit: null } : { art: "verwerfen-fehler" });
         return;
       }
     } catch (err) {
       console.error("[zwischenstand] Verwerfen fehlgeschlagen:", err);
+      verwerfenRef.current = false;
       setSicherung({ art: "verwerfen-fehler" });
       return;
     }
     if (zurueck !== null) {
+      // Gesperrt bleibt der Tick bis zum Ausbau: Diese Instanz lebt weiter,
+      // bis die neue Seite steht.
       router.replace(`${zurueck}?${MELDUNG_PARAM}=${encodeURIComponent(d.zwischenstandVerworfen)}`);
       return;
     }
+    verwerfenRef.current = false;
     setVerworfene((v) => [...v, schluessel]);
     setSicherung({ art: "verworfen" });
+    // Der Knopf verschwindet mit dem Hinweis. Ohne Ziel fiele der Fokus auf
+    // <body>, und der nächste Tab begänne am Seitenanfang — wie die
+    // Fokus-Rückgabe im AdminDialog, nur dass es hier weitergeht: im Titel.
+    formRef.current?.querySelector<HTMLElement>("#f-titel")?.focus();
   };
 
   /**
-   * Ist beim Klick auf „Speichern" eine Sicherung unterwegs, wird erst sie
-   * abgewartet: Verarbeitete der Server das Speichern zuerst, löschte dessen
-   * Transaktion die Zeile — und die danach eintreffende Sicherung legte sie
-   * neu an, über einem Rezept ohne ungespeicherte Änderung. `preventDefault`
-   * hält die Action zurück; danach wird mit demselben Knopf erneut abgeschickt.
+   * „Speichern" startet die Action VON HAND, mit dem FormData des Formulars —
+   * nicht über Reacts Formularweg. Der setzt nach einer Formular-Action alle
+   * unkontrollierten Felder zurück (`requestFormReset` in
+   * `startHostTransition`, React 19): richtig für ein Formular, das nach dem
+   * Absenden leer sein soll, falsch für einen Editor, der nach „Bitte alle
+   * Pflichtfelder …" oder einer gesperrten Datenbank weiterbearbeitet wird —
+   * Titel, Zeiten, Portionen stünden wieder auf dem Stand vom Laden, das
+   * Getippte wäre weg. Die HTML-Prüfung (`required`, `min`) läuft trotzdem
+   * zuerst: `submit` feuert erst, wenn sie bestanden ist; und der
+   * `RichTextEditor` hat seine versteckten Felder in der Capture-Phase
+   * desselben Ereignisses schon gefüllt.
+   *
+   * Ist eine Sicherung unterwegs, wird erst sie abgewartet: Verarbeitete der
+   * Server das Speichern zuerst, löschte dessen Transaktion die Zeile — und
+   * die danach eintreffende Sicherung legte sie neu an, über einem Rezept
+   * ohne ungespeicherte Änderung. Bis `pending` zurückfällt, zählt nur der
+   * erste Klick.
    */
   const beimAbsenden = (e: React.FormEvent<HTMLFormElement>) => {
-    absendenRef.current = true;
-    const unterwegs = laufend.current;
-    if (!unterwegs) return;
     e.preventDefault();
-    const knopf = (e.nativeEvent as SubmitEvent).submitter;
-    void unterwegs.then(() => formRef.current?.requestSubmit(knopf instanceof HTMLElement ? knopf : undefined));
+    if (absendenRef.current) return;
+    absendenRef.current = true;
+    const fd = new FormData(e.currentTarget);
+    const abschicken = () => formAction(fd);
+    const unterwegs = laufend.current;
+    if (unterwegs) void unterwegs.then(abschicken);
+    else abschicken();
   };
+
+  /** Was die beiden Live-Regionen im klebenden Kasten zeigen — eine Quelle, zwei Rollen. */
+  const statusText =
+    sicherung?.art === "gesichert"
+      ? d.zwischenstandGesichert(sicherung.zeit)
+      : sicherung?.art === "verworfen"
+        ? d.zwischenstandVerworfen
+        : "";
+  const alertText =
+    sicherung?.art === "angebot-offen"
+      ? d.zwischenstandAngebotOffen(sicherung.zeit)
+      : sicherung?.art === "fremd"
+        ? d.zwischenstandFremd(sicherung.zeit)
+        : sicherung?.art === "sitzung"
+          ? d.zwischenstandSitzung(sicherung.zeit)
+          : sicherung?.art === "fehler"
+            ? d.zwischenstandFehler
+            : sicherung?.art === "verwerfen-fehler"
+              ? d.zwischenstandVerwerfenFehler
+              : "";
 
   const fremdeOffene = offeneZwischenstaende.filter(
     (z) => z.schluessel !== eigenerSchluessel && !verworfene.includes(z.schluessel),
@@ -1243,6 +1301,31 @@ export function RecipeEditor({
       </section>
 
       <div className="sticky bottom-0 flex flex-col gap-3 border border-ink/10 bg-white p-4 shadow-lg sm:flex-row sm:flex-wrap sm:items-center">
+        {/* Die Statuszeilen des Zwischenstands stehen IM klebenden Kasten:
+            Unter ihm lägen sie bis zum Seitenende außerhalb des Bildschirms —
+            „gerade wird nicht gesichert" sähe dann niemand. Beide Live-Regionen
+            sind DAUERHAFT da und behalten ihre Rolle: Eine Region, die samt
+            Inhalt erst eingehängt wird oder ihre Rolle wechselt, kündigen
+            Screenreader nicht zuverlässig an. Leer sind sie `sr-only`
+            (absolut, außerhalb des Flex-Flusses, kein Abstand, keine Höhe —
+            der Kasten bleibt, wie er auf den Referenzaufnahmen ist).
+            Lauf-abhängig (Uhrzeit) → Referenzmaske, aber nur mit Inhalt: Eine
+            Maske, die nichts trifft, ist auf einer Seite ohne `maskiert: true`
+            ein Fehler (tests/e2e/referenz.ts). */}
+        <p
+          role="status"
+          className={statusText ? "w-full text-sm text-ink-soft" : "sr-only"}
+          data-referenz-maske={statusText ? "true" : undefined}
+        >
+          {statusText}
+        </p>
+        <p
+          role="alert"
+          className={alertText ? "w-full bg-amber-50 p-3 text-sm text-amber-900" : "sr-only"}
+          data-referenz-maske={alertText ? "true" : undefined}
+        >
+          {alertText}
+        </p>
         <div className="flex items-center gap-2">
           <label
             className="whitespace-nowrap text-sm font-medium"
@@ -1288,27 +1371,6 @@ export function RecipeEditor({
           </div>
         )}
       </div>
-      {sicherung && (
-        // Lauf-abhängig (Uhrzeit) → Referenzmaske. Erscheint erst nach der
-        // ersten Sicherung, also auf keiner Aufnahme des frischen Editors.
-        <p
-          role={sicherung.art === "gesichert" || sicherung.art === "verworfen" ? "status" : "alert"}
-          className={
-            sicherung.art === "gesichert" || sicherung.art === "verworfen"
-              ? "text-sm text-ink-soft"
-              : "bg-amber-50 p-3 text-sm text-amber-900"
-          }
-          data-referenz-maske="true"
-        >
-          {sicherung.art === "gesichert" && d.zwischenstandGesichert(sicherung.zeit)}
-          {sicherung.art === "angebot-offen" && d.zwischenstandAngebotOffen(sicherung.zeit)}
-          {sicherung.art === "fremd" && d.zwischenstandFremd(sicherung.zeit)}
-          {sicherung.art === "sitzung" && d.zwischenstandSitzung(sicherung.zeit)}
-          {sicherung.art === "fehler" && d.zwischenstandFehler}
-          {sicherung.art === "verworfen" && d.zwischenstandVerworfen}
-          {sicherung.art === "verwerfen-fehler" && d.zwischenstandVerwerfenFehler}
-        </p>
-      )}
       </form>
     </div>
   );

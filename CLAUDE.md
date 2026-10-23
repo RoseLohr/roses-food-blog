@@ -167,8 +167,10 @@ diesem Repository arbeitet. Sie ist Teil des Governance-Regimes (A-32/A-33/A-37)
   von außen überschreibbar machen will, braucht `@utility`. Siehe
   `audit/offene-befunde.md` B7.
 - **Vor und nach jedem Layout- oder Struktur-Umbau die Referenzaufnahmen
-  fahren:** `npx playwright test seiten-referenz admin-referenz` (123
-  Aufnahmen: elf öffentliche Seitentypen und 30 Admin-Seiten × drei Breiten).
+  fahren:** `npx playwright test seiten-referenz admin-referenz` (129
+  Aufnahmen: elf öffentliche Seitentypen und 32 Admin-Seiten × drei Breiten —
+  maßgeblich sind die SEITEN-Listen in `tests/e2e/seiten-referenz.spec.ts` und
+  `tests/e2e/admin-referenz.spec.ts`).
   Was sich ändern DARF, wird vorher benannt und danach gezielt neu aufgenommen —
   nie pauschal mit `--update-snapshots`.
   **Ändert ein Umbau eine Seite, die noch keine Aufnahme hat, wird sie ZUERST
@@ -358,7 +360,7 @@ ungedeutet in `rezept_zwischenstand` ablegt — eine Zeile je Schlüssel (`rezep
   Cookie gleitet mit; Same-Origin wie jeder eigene POST-Handler
   (`src/lib/csrf.ts`). Der Pfad steht einmal (`ZWISCHENSTAND_PFAD`), und
   `tests/recipe-zwischenstand-route.integration.test.ts` misst, dass dort eine
-  Route liegt. Verwerfen bleibt eine Action: Es darf navigieren.
+  Route liegt.
 - **Anbieten heißt nicht überschreiben.** Liegt beim Öffnen ein Zwischenstand,
   zeigt der Editor den GESPEICHERTEN Stand und bietet den anderen an
   („Wiederherstellen · Verwerfen"). Solange das unentschieden ist, sichert er
@@ -381,7 +383,15 @@ ungedeutet in `rezept_zwischenstand` ablegt — eine Zeile je Schlüssel (`rezep
   Speichern zuerst, legte die danach eintreffende Sicherung die eben gelöschte
   Zeile neu an: ein Geister-Zwischenstand über einem Rezept ohne ungespeicherte
   Änderung. Das Speichern löscht den Zwischenstand in DERSELBEN Transaktion
-  wie das Rezept (`recipe-save.ts`).
+  wie das Rezept (`recipe-save.ts`). **Und „Speichern" startet die Action VON
+  HAND** (`formAction(new FormData(form))` im `onSubmit`, nicht über Reacts
+  Formularweg): React 19 setzt nach einer Formular-Action alle unkontrollierten
+  Felder zurück (`requestFormReset` in `startHostTransition`) — richtig für
+  ein Formular, das nach dem Absenden leer sein soll, falsch für einen Editor,
+  der nach „Bitte alle Pflichtfelder …" weiterbearbeitet wird: Titel, Zeiten,
+  Portionen stünden wieder auf dem Stand vom Laden. Gefunden durch den
+  E2E-Test zur Editor-Identität (unten); vorher verlor jeder fehlgeschlagene
+  Speichern-Klick die unkontrollierten Eingaben.
 - **Ein Blick ins Feld ist keine Änderung.** `RichTextEditor` schrieb beim
   Verlassen des Feldes (`onBlur`) die Rückübersetzung HTML → Markdown ins
   Formular — auch ohne Tastendruck. Der Umweg ist nicht die Identität
@@ -409,8 +419,37 @@ ungedeutet in `rezept_zwischenstand` ablegt — eine Zeile je Schlüssel (`rezep
   `?meldung=` wie überall im Admin), und der `key` der Seite baut ihn mit dem
   gespeicherten Stand neu auf. Die Liste auf `/admin/rezepte/neu` genauso:
   Einen FREMDEN Eintrag zu verwerfen lässt den eigenen Editor stehen. Jeder
-  Knopf und Link nennt im zugänglichen Namen, WAS er verwirft oder fortsetzt
-  („Verwerfen: Fremder Anfang") — die Liste hat sonst drei gleiche „Verwerfen".
+  Knopf und Link nennt im zugänglichen Namen, WAS er verwirft oder fortsetzt —
+  Titel UND Uhrzeit („Verwerfen: Fremder Anfang, Zwischenstand von 12:03"):
+  Die Liste hat sonst drei gleiche „Verwerfen", und zwei Anfänge ohne Titel
+  (der kommt oft zuletzt) hießen beide „(ohne Titel)". **Verwerfen wartet eine
+  laufende Sicherung ab und sperrt den Tick** bis zum Ende bzw. bis zum
+  Seitenwechsel: Käme eine Sicherung NACH dem DELETE an, fände sie keine Zeile
+  — also kein „fremd" — und legte die eben verworfene neu an, als frisches
+  Angebot. Nach dem Verwerfen eines Angebots geht der Fokus in den Titel; der
+  Knopf ist mit dem Hinweis verschwunden, und ohne Ziel begänne der nächste
+  Tab am Seitenanfang.
+- **Die Identität des Editors (`key`) hängt allein an der ADRESSE, nie an der
+  Zeile.** Nach einer Server-Action (Speichern mit Fehler) rendert Next die
+  Seite neu — in dieser App immer, weil der Proxy das Cookie setzt. Hinge der
+  `key` an „Zeile vorhanden", kippte er, sobald ein anderer Tab die Zeile
+  verworfen oder das Rezept gespeichert hat: React baute den Editor mit dem
+  gespeicherten Rezept neu auf, das seit dem Wiederherstellen Getippte wäre
+  weg — samt der Zeile, aus der es zurückkäme. `?zwischenstand=1` bzw. der
+  `neu:`-Schlüssel in der Adresse bestimmen den `key`; was als Anfangswerte
+  gereicht wird, darf von der Zeile abhängen (der Editor liest sie nur beim
+  Einhängen). Fehlt die Zeile, verschwindet der Hinweis, der Inhalt bleibt,
+  der nächste Tick sichert ihn neu.
+- **Die Statuszeilen stehen IM klebenden Speichern-Kasten**, nicht darunter:
+  `position: sticky` hält den Kasten am unteren Rand, solange das Formular
+  darunter weitergeht — und genau darunter stand die Zeile „Nicht gesichert
+  …", also bis zum Seitenende außerhalb des Bildschirms. Beide Live-Regionen
+  (`role="status"`, `role="alert"`) sind DAUERHAFT im DOM und wechseln ihre
+  Rolle nicht — eine Region, die samt Inhalt erst eingehängt wird, kündigen
+  Screenreader nicht zuverlässig an. Leer sind sie `sr-only` (absolut, ohne
+  Platz im Flex-Fluss: der Kasten bleibt, wie er auf den Referenzaufnahmen
+  ist) und tragen die Referenzmaske NUR mit Inhalt — eine Maske ohne Treffer
+  ist auf einer Seite ohne `maskiert: true` ein Fehler (`tests/e2e/referenz.ts`).
 - **Angebot und Hinweise kommen aus den Props, nicht aus eingefrorenem
   Zustand.** Scheitert eine Sicherung (Netz, Sitzung), hat sich an der
   angebotenen Zeile nichts geändert — der Weg zu ihr bleibt stehen. Was der
