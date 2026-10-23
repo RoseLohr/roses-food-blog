@@ -2,7 +2,7 @@
  * Lädt die Daten für den Rezept-Editor (Taxonomien, Bilder, Zutatennamen
  * und – beim Bearbeiten – das vollständige Rezept).
  */
-import { asc } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { listImageChoices } from "@/lib/media";
 import { taxonomiesByType } from "@/lib/taxonomies";
@@ -112,5 +112,32 @@ export async function buildEditorProps(
         geraete: full.equipment.map((x) => x.id),
       },
     },
+  };
+}
+
+/** Wann das Rezept zuletzt gespeichert wurde — der Vergleich für „nicht älter als". */
+export async function rezeptGespeichertAm(recipeId: number): Promise<Date | null> {
+  const zeile = db
+    .select({ updatedAt: schema.recipe.updatedAt })
+    .from(schema.recipe)
+    .where(eq(schema.recipe.id, recipeId))
+    .get();
+  return zeile?.updatedAt ?? null;
+}
+
+/**
+ * Was ein wiederhergestellter Zwischenstand verweisen darf: die Bilder und
+ * Taxonomien, die der Editor gerade zur Auswahl hat. Alles andere ist
+ * inzwischen gelöscht und kommt nicht zurück.
+ */
+export function erlaubteVerweise(props: RecipeEditorProps): {
+  bildIds: number[];
+  taxonomieIds: Record<string, number[]>;
+} {
+  return {
+    bildIds: props.images.map((b) => b.id),
+    taxonomieIds: Object.fromEntries(
+      Object.entries(props.taxonomies).map(([feld, optionen]) => [feld, optionen.map((o) => o.id)]),
+    ),
   };
 }

@@ -5,8 +5,15 @@
  * Strukturen (Abschnitte mit Zutaten/Schritten, Notizen) als React-State,
  * der beim Absenden als JSON in Hidden-Fields serialisiert wird.
  */
-import { useActionState, useState } from "react";
-import { saveRecipeAction, type RecipeFormState } from "./actions";
+import { useActionState, useEffect, useRef, useState } from "react";
+import { saveRecipeAction, zwischenstandSichernAction, type RecipeFormState } from "./actions";
+import {
+  SCHLUESSEL_FELD,
+  STAND_FELD,
+  ZWISCHENSTAND_TAKT_MS,
+  fingerabdruck,
+  formularAlsDaten,
+} from "@/lib/recipe-zwischenstand";
 import { QuickAddCheckboxes } from "@/components/admin/quick-add-checkboxes";
 import { ImagePicker, type ImageChoice } from "@/components/admin/image-picker";
 import {
@@ -156,6 +163,12 @@ export interface RecipeEditorProps {
   images: ImageOption[];
   ingredientNames: string[];
   message?: string | null;
+  /** Vorgemerkte, noch nicht angelegte Taxonomienamen — aus einem wiederhergestellten Zwischenstand. */
+  taxonomiePending?: Record<string, string[]>;
+  /** Neues Rezept: der vom Server vergebene Schlüssel (`neu:<uuid>`) für den Zwischenstand. */
+  zwischenstandSchluessel?: string;
+  /** Der Stand (ms), den dieser Editor geladen hat — 0, wenn keiner. */
+  zwischenstandStand?: number;
 }
 
 const UNIT_SUGGESTIONS = [
@@ -306,11 +319,83 @@ export function RecipeEditor({
   images,
   ingredientNames,
   message,
+  taxonomiePending,
+  zwischenstandSchluessel,
+  zwischenstandStand = 0,
 }: RecipeEditorProps) {
   const [state, formAction, pending] = useActionState<RecipeFormState, FormData>(
     saveRecipeAction,
     {},
   );
+  /**
+   * Der Zwischenstand: alle drei Minuten das rohe Formular an den Server,
+   * aber nur, wenn sich seit dem letzten Mal etwas geändert hat. `formRef`
+   * zeigt immer auf das aktuelle Formular — auch nach dem Neu-Mounten über
+   * `formKey`, denn der Fingerabdruck des Absende-Formulars ist der Maßstab,
+   * nicht ein gemerkter React-Zustand.
+   */
+  const formRef = useRef<HTMLFormElement>(null);
+  const letzterAbdruck = useRef<string | null>(null);
+  const standRef = useRef(zwischenstandStand);
+  const laeuft = useRef(false);
+  const pendingRef = useRef(false);
+  const [sicherung, setSicherung] = useState<
+    | { art: "gesichert"; zeit: string }
+    | { art: "fremd"; zeit: string }
+    | { art: "sitzung"; zeit: string | null }
+    | { art: "fehler" }
+    | null
+  >(null);
+  useEffect(() => {
+    pendingRef.current = pending;
+  }, [pending]);
+  useEffect(() => {
+    const abdruckJetzt = () =>
+      formRef.current ? fingerabdruck(formularAlsDaten(new FormData(formRef.current))) : null;
+    // Der Maßstab ist das Formular, wie es geladen wurde — ein wiederhergestellter
+    // Zwischenstand wird nicht sofort noch einmal gesichert.
+    letzterAbdruck.current = abdruckJetzt();
+    const tick = async () => {
+      // Während „Speichern" läuft, nichts sichern: Die Antwort käme sonst
+      // nach dem Löschen durch das Speichern an und hinterließe eine Zeile.
+      if (pendingRef.current || laeuft.current || !formRef.current) return;
+      const abdruck = abdruckJetzt();
+      if (abdruck === null || abdruck === letzterAbdruck.current) return;
+      laeuft.current = true;
+      const fd = new FormData(formRef.current);
+      fd.append(STAND_FELD, String(standRef.current));
+      try {
+        const antwort = await zwischenstandSichernAction(fd);
+        if ("gesichert" in antwort) {
+          letzterAbdruck.current = abdruck;
+          standRef.current = antwort.stand;
+          setSicherung({ art: "gesichert", zeit: antwort.gesichert });
+        } else if (antwort.fehler === "fremd") {
+          setSicherung({ art: "fremd", zeit: antwort.zeit });
+        } else if (antwort.fehler === "sitzung") {
+          setSicherung((vorher) => ({
+            art: "sitzung",
+            zeit: vorher && vorher.art === "gesichert" ? vorher.zeit : null,
+          }));
+        } else {
+          setSicherung({ art: "fehler" });
+        }
+      } catch (err) {
+        // Netz weg, Server weg: Der Inhalt bleibt stehen, der nächste Tick
+        // versucht es wieder — und der Redakteur sieht, dass gerade nichts
+        // gesichert wird.
+        console.error("[zwischenstand] Sichern fehlgeschlagen:", err);
+        setSicherung({ art: "fehler" });
+      } finally {
+        laeuft.current = false;
+      }
+    };
+    const timer = setInterval(() => void tick(), ZWISCHENSTAND_TAKT_MS);
+    return () => clearInterval(timer);
+    // Nur beim Einhängen: Der Fingerabdruck-Maßstab darf beim Neu-Mounten des
+    // Formulars (KI-Übernahme) NICHT zurückgesetzt werden — genau diese
+    // Änderung soll beim nächsten Tick gesichert werden.
+  }, []);
   // Statische Felder (Titel, Zeiten, SEO … + Taxonomie-Auswahl) als State, damit
   // der KI-Assistent sie befüllen kann. Die unkontrollierten Felder lesen ihren
   // defaultValue neu, wenn das Formular via formKey neu gemountet wird.
@@ -326,7 +411,7 @@ export function RecipeEditor({
   // verworfenen KI-Vorschlägen verschmutzt.
   const [taxonomyPending, setTaxonomyPending] = useState<
     Record<string, string[]>
-  >({});
+  >(taxonomiePending ?? {});
   const [formKey, setFormKey] = useState(0);
   const [sections, setSections] = useState<KartenAbschnitt[]>(() =>
     form.sections.length ? mitSchluesseln(form.sections) : [emptySection()],
@@ -443,8 +528,11 @@ export function RecipeEditor({
       {/* KI-Assistent nur beim ANLEGEN neuer Rezepte (initial.id === null).
           Bei bestehenden Rezepten ausgeblendet — dort wird nicht neu importiert. */}
       {initial.id === null && <RecipeAiAssistant onApply={applyDraft} />}
-      <form key={formKey} action={formAction} className="flex flex-col gap-6">
+      <form key={formKey} ref={formRef} action={formAction} className="flex flex-col gap-6">
       {form.id !== null && <input type="hidden" name="id" value={form.id} />}
+      {form.id === null && zwischenstandSchluessel && (
+        <input type="hidden" name={SCHLUESSEL_FELD} value={zwischenstandSchluessel} />
+      )}
       <input
         type="hidden"
         name="abschnitte"
@@ -1036,6 +1124,24 @@ export function RecipeEditor({
           </div>
         )}
       </div>
+      {sicherung && (
+        // Lauf-abhängig (Uhrzeit) → Referenzmaske. Erscheint erst nach der
+        // ersten Sicherung, also auf keiner Aufnahme des frischen Editors.
+        <p
+          role={sicherung.art === "gesichert" ? "status" : "alert"}
+          className={
+            sicherung.art === "gesichert"
+              ? "text-sm text-ink-soft"
+              : "bg-amber-50 p-3 text-sm text-amber-900"
+          }
+          data-referenz-maske="true"
+        >
+          {sicherung.art === "gesichert" && d.zwischenstandGesichert(sicherung.zeit)}
+          {sicherung.art === "fremd" && d.zwischenstandFremd(sicherung.zeit)}
+          {sicherung.art === "sitzung" && d.zwischenstandSitzung(sicherung.zeit)}
+          {sicherung.art === "fehler" && d.zwischenstandFehler}
+        </p>
+      )}
       </form>
     </div>
   );

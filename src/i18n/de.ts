@@ -907,6 +907,23 @@ export const de = {
       saveFailed:
         "Das Rezept konnte nicht gespeichert werden (unerwarteter Fehler). Bitte erneut versuchen; besteht das Problem weiter, ist womöglich die Datenbank schreibgeschützt.",
       noImage: "Kein Bild",
+      /** Zwischenstand (10/2026): die Sicherung alle drei Minuten, ohne zu speichern. */
+      zwischenstandGesichert: (zeit: string) => `Zwischenstand gesichert um ${zeit}`,
+      zwischenstandFremd: (zeit: string) =>
+        `Ein anderer Tab hat inzwischen um ${zeit} einen neueren Zwischenstand gesichert — hier wird nicht überschrieben.`,
+      zwischenstandSitzung: (zeit: string | null) =>
+        zeit
+          ? `Die Sitzung ist abgelaufen. Der Zwischenstand von ${zeit} ist gesichert; in einem neuen Tab anmelden, dann hier weiterarbeiten.`
+          : "Die Sitzung ist abgelaufen. In einem neuen Tab anmelden, dann hier weiterarbeiten — der Inhalt bleibt stehen.",
+      zwischenstandFehler: "Der Zwischenstand konnte nicht gesichert werden; der Inhalt bleibt stehen.",
+      zwischenstandVon: "Zwischenstand von",
+      zwischenstandWiederhergestellt: "wiederhergestellt — noch nicht gespeichert.",
+      zwischenstandWiederherstellen: "Wiederherstellen",
+      zwischenstandVerwerfen: "Verwerfen",
+      zwischenstandVerworfen: "Zwischenstand verworfen.",
+      zwischenstandUnvollendet: "Begonnen und nicht gespeichert",
+      zwischenstandFortsetzen: "Fortsetzen",
+      zwischenstandOhneTitel: "(ohne Titel)",
       updatedAt: "Zuletzt bearbeitet",
       categories: "Kategorien",
       tags: "Schlagwörter",
