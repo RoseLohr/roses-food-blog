@@ -106,33 +106,48 @@ test.afterAll(() => {
 test("sichert nach drei Minuten — aber nur, wenn sich etwas geändert hat", async ({ page }) => {
   const t = tabelle();
   try {
-    t.loeschen(SCHLUESSEL);
+    // Ein Zwischenstand liegt schon (jünger als das zuletzt gespeicherte
+    // Rezept — andere Specs speichern es kurz vorher): Er wird angeboten, und
+    // der erste eigene Autosave überschreibt ihn, statt ihn für „fremd" zu halten.
+    const vorher = Date.now();
+    t.einfuegen(
+      SCHLUESSEL,
+      session.recipeId,
+      { id: [String(session.recipeId)], titel: ["Alter Stand"], abschnitte: ["[]"], notizen: ["[]"] },
+      vorher,
+    );
     await anmelden(page);
     // Vor dem Laden: Die Timer des Editors müssen die gefälschte Uhr sehen.
     await page.clock.install();
     await page.goto(EDITOR);
+    const angebot = page.locator('[role="status"]', { hasText: /Zwischenstand von \d{2}:\d{2}/ });
+    await expect(angebot).toBeVisible();
     const titel = page.locator("#f-titel");
     const bisher = await titel.inputValue();
 
     // Drei Minuten ohne Änderung: nichts zu sichern.
     await page.clock.fastForward(DREI_MINUTEN);
+    expect(t.zeile(SCHLUESSEL)!.updated_at).toBe(vorher);
 
     await titel.fill(`${bisher} · Zwischenstand`);
     await page.clock.fastForward(DREI_MINUTEN);
     await expect(
       page.locator('[role="status"]', { hasText: /Zwischenstand gesichert um \d{2}:\d{2}/ }),
     ).toBeVisible();
+    // Der eigene Stand wird nicht mehr als Zwischenstand angeboten.
+    await expect(angebot).toHaveCount(0);
 
     const zeile = t.zeile(SCHLUESSEL);
     expect(zeile, "Zeile für das Rezept").toBeDefined();
     expect(zeile!.recipe_id).toBe(session.recipeId);
+    expect(zeile!.updated_at).toBeGreaterThan(vorher);
     const formular = formularAus(zeile!);
     expect(formular.titel).toEqual([`${bisher} · Zwischenstand`]);
     expect(formular.id).toEqual([String(session.recipeId)]);
     // Der bekannte Stand ist Steuerinformation, kein Formularfeld.
     expect(formular.zwischenstandStand).toBeUndefined();
-    // Genau EINE Sicherung bisher — der Tick ohne Änderung hat nichts geschrieben.
-    expect(zeile!.created_at).toBe(zeile!.updated_at);
+    // Der Inhalt steht noch — die Seite hat sich nach der Sicherung nicht neu aufgebaut.
+    await expect(titel).toHaveValue(`${bisher} · Zwischenstand`);
 
     // Weitere drei Minuten ohne Änderung: die Zeile bleibt, wie sie ist.
     await page.clock.fastForward(DREI_MINUTEN);
@@ -220,6 +235,9 @@ test("ein neues Rezept bekommt eine eigene Kennung und steht zum Fortsetzen bere
     expect(neue).toHaveLength(1);
     expect(neue[0]).toMatch(/^neu:[0-9a-f-]{36}$/);
     expect(formularAus(t.zeile(neue[0])!).titel).toEqual(["Neu begonnen"]);
+    // Der Inhalt steht noch, und der eigene Stand erscheint NICHT in der Liste.
+    await expect(page.locator("#f-titel")).toHaveValue("Neu begonnen");
+    await expect(page.locator("section[aria-label='Begonnen und nicht gespeichert']")).toHaveCount(0);
 
     // Frisch geöffnet: Die Liste bietet das begonnene Rezept an.
     await page.goto("/admin/rezepte/neu");

@@ -4,7 +4,6 @@ import { requireAdmin } from "@/lib/auth";
 import { t } from "@/i18n/de";
 import { buildEditorProps, erlaubteVerweise, rezeptGespeichertAm } from "../editor-data";
 import { RecipeEditor } from "../recipe-editor";
-import { ZwischenstandHinweis } from "../zwischenstand-hinweis";
 import { meldungAus } from "@/components/admin/meldung";
 import { editorAusDaten, nichtAelterAls, schluesselFuerRezept } from "@/lib/recipe-zwischenstand";
 import { zwischenstandLaden } from "@/lib/recipe-zwischenstand-store";
@@ -33,6 +32,9 @@ export default async function EditRecipePage(props: {
   // Liegt ein Zwischenstand, der nicht älter ist als das gespeicherte Rezept,
   // wird er angeboten — oder, mit `?zwischenstand=1`, in den Editor gelegt.
   // Was sich nicht in Anfangswerte übersetzen lässt, wird nicht angeboten.
+  // Der Editor friert Angebot und Stand beim Einhängen ein: Nach jeder Action
+  // rendert diese Seite neu und sähe sonst den eben gesicherten Stand als
+  // „Zwischenstand von …".
   const schluessel = schluesselFuerRezept(recipeId);
   const zwischenstand = await zwischenstandLaden(schluessel);
   const angeboten =
@@ -40,37 +42,33 @@ export default async function EditRecipePage(props: {
       ? editorAusDaten(zwischenstand.daten, editorProps.initial, erlaubteVerweise(editorProps))
       : null;
   const wiederhergestellt = angeboten !== null && searchParams.zwischenstand === "1";
-  const zeit = zwischenstand ? alsUhrzeit(zwischenstand.gespeichertAm) : "";
+  const hinweis = zwischenstand
+    ? { zeit: alsUhrzeit(zwischenstand.gespeichertAm), schluessel, zurueck: pfad }
+    : null;
 
   return (
     <>
       <h1 className="mb-6 text-2xl font-bold">
         {dict.admin.recipes.editRecipe}: {editorProps.initial.title}
       </h1>
-      {angeboten && (
-        <ZwischenstandHinweis
-          zeit={zeit}
-          schluessel={schluessel}
-          zurueck={pfad}
-          wiederherstellen={wiederhergestellt ? undefined : `${pfad}?zwischenstand=1`}
-          live
-        />
-      )}
-      {/* Der `key` wechselt mit dem Zustand: „Verwerfen" und „Speichern" leiten
-          WEICH um, und React behielte sonst die Editor-Instanz samt State —
-          der verworfene Inhalt stünde weiter im Formular. */}
-      {wiederhergestellt ? (
-        <RecipeEditor
-          key={`zwischenstand-${zwischenstand!.gespeichertAm.getTime()}`}
-          {...editorProps}
-          initial={angeboten.initial}
-          taxonomiePending={angeboten.taxonomiePending}
-          zwischenstandStand={zwischenstand!.gespeichertAm.getTime()}
-          message={message}
-        />
-      ) : (
-        <RecipeEditor key="gespeichert" {...editorProps} message={message} />
-      )}
+      {/* Der `key` wechselt nur zwischen den ZUSTÄNDEN: „Verwerfen" leitet weich
+          um, und React behielte sonst die Editor-Instanz samt verworfenem
+          Inhalt. Innerhalb eines Zustands bleibt er stabil — die Neu-Renderings
+          nach jeder Sicherung dürfen den Editor nicht neu aufbauen. */}
+      <RecipeEditor
+        key={wiederhergestellt ? "zwischenstand" : "gespeichert"}
+        {...editorProps}
+        initial={wiederhergestellt ? angeboten.initial : editorProps.initial}
+        taxonomiePending={wiederhergestellt ? angeboten.taxonomiePending : undefined}
+        zwischenstandStand={zwischenstand?.gespeichertAm.getTime() ?? 0}
+        zwischenstandAngebot={
+          angeboten && !wiederhergestellt && hinweis
+            ? { ...hinweis, wiederherstellen: `${pfad}?zwischenstand=1` }
+            : undefined
+        }
+        zwischenstandWiederhergestellt={wiederhergestellt && hinweis ? hinweis : undefined}
+        message={message}
+      />
     </>
   );
 }

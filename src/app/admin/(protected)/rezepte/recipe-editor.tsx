@@ -13,7 +13,9 @@ import {
   ZWISCHENSTAND_TAKT_MS,
   fingerabdruck,
   formularAlsDaten,
+  schluesselFuerNeu,
 } from "@/lib/recipe-zwischenstand";
+import { ZwischenstandHinweis } from "./zwischenstand-hinweis";
 import { QuickAddCheckboxes } from "@/components/admin/quick-add-checkboxes";
 import { ImagePicker, type ImageChoice } from "@/components/admin/image-picker";
 import {
@@ -165,10 +167,29 @@ export interface RecipeEditorProps {
   message?: string | null;
   /** Vorgemerkte, noch nicht angelegte Taxonomienamen — aus einem wiederhergestellten Zwischenstand. */
   taxonomiePending?: Record<string, string[]>;
-  /** Neues Rezept: der vom Server vergebene Schlüssel (`neu:<uuid>`) für den Zwischenstand. */
+  /**
+   * Neues Rezept, das fortgesetzt wird: der Schlüssel seines Zwischenstands
+   * (`neu:<uuid>`). Fehlt er, vergibt der EDITOR einen — nicht der Server:
+   * Nach jeder Action rendert Next die Seite neu, und ein serverseitig
+   * gewürfelter Schlüssel wäre dann jedes Mal ein anderer.
+   */
   zwischenstandSchluessel?: string;
-  /** Der Stand (ms), den dieser Editor geladen hat — 0, wenn keiner. */
+  /** Der Stand (ms) der Zeile, die beim Laden lag — 0, wenn keine. */
   zwischenstandStand?: number;
+  /** Beim Öffnen liegt ein Zwischenstand: anbieten, nicht aufdrängen. */
+  zwischenstandAngebot?: ZwischenstandHinweisDaten & { wiederherstellen: string };
+  /** Der Editor zeigt einen wiederhergestellten Zwischenstand. */
+  zwischenstandWiederhergestellt?: ZwischenstandHinweisDaten;
+  /** Begonnene neue Rezepte zum Fortsetzen (/admin/rezepte/neu); der eigene wird herausgefiltert. */
+  offeneZwischenstaende?: Array<ZwischenstandHinweisDaten & { titel: string; wiederherstellen: string }>;
+}
+
+export interface ZwischenstandHinweisDaten {
+  /** „12:03" */
+  zeit: string;
+  schluessel: string;
+  /** Wohin „Verwerfen" zurückführt. */
+  zurueck: string;
 }
 
 const UNIT_SUGGESTIONS = [
@@ -322,10 +343,25 @@ export function RecipeEditor({
   taxonomiePending,
   zwischenstandSchluessel,
   zwischenstandStand = 0,
+  zwischenstandAngebot,
+  zwischenstandWiederhergestellt,
+  offeneZwischenstaende = [],
 }: RecipeEditorProps) {
   const [state, formAction, pending] = useActionState<RecipeFormState, FormData>(
     saveRecipeAction,
     {},
+  );
+  /**
+   * Was beim Einhängen galt, bleibt: Nach jeder Action (auch der Sicherung)
+   * rendert Next die Seite neu und reicht frische Props — der Server sieht
+   * dann den eben gesicherten Stand und böte ihn als Zwischenstand an. Das
+   * Angebot, der Hinweis „wiederhergestellt" und der bekannte Stand werden
+   * deshalb einmal gelesen, nicht bei jedem Rendern.
+   */
+  const [angebot] = useState(zwischenstandAngebot);
+  const [wiederhergestellt] = useState(zwischenstandWiederhergestellt);
+  const [eigenerSchluessel] = useState(() =>
+    initial.id === null ? (zwischenstandSchluessel ?? schluesselFuerNeu(crypto.randomUUID())) : null,
   );
   /**
    * Der Zwischenstand: alle drei Minuten das rohe Formular an den Server,
@@ -523,16 +559,50 @@ export function RecipeEditor({
     setFormKey((k) => k + 1);
   }
 
+  const fremdeOffene = offeneZwischenstaende.filter((z) => z.schluessel !== eigenerSchluessel);
+
   return (
     <div className="flex max-w-4xl flex-col gap-6">
+      {/* Das Angebot verschwindet, sobald dieser Editor selbst gesichert hat:
+          Dann ist die Zeile sein eigener Stand, nicht mehr ein fremder. */}
+      {angebot && sicherung === null && (
+        <ZwischenstandHinweis
+          zeit={angebot.zeit}
+          schluessel={angebot.schluessel}
+          zurueck={angebot.zurueck}
+          wiederherstellen={angebot.wiederherstellen}
+          live
+        />
+      )}
+      {wiederhergestellt && (
+        <ZwischenstandHinweis
+          zeit={wiederhergestellt.zeit}
+          schluessel={wiederhergestellt.schluessel}
+          zurueck={wiederhergestellt.zurueck}
+          live
+        />
+      )}
+      {fremdeOffene.length > 0 && (
+        <section aria-label={d.zwischenstandUnvollendet}>
+          <h2 className="mb-2 text-sm font-semibold text-ink-soft">{d.zwischenstandUnvollendet}</h2>
+          {fremdeOffene.map((z) => (
+            <ZwischenstandHinweis
+              key={z.schluessel}
+              zeit={z.zeit}
+              schluessel={z.schluessel}
+              zurueck={z.zurueck}
+              wiederherstellen={z.wiederherstellen}
+              titel={z.titel}
+            />
+          ))}
+        </section>
+      )}
       {/* KI-Assistent nur beim ANLEGEN neuer Rezepte (initial.id === null).
           Bei bestehenden Rezepten ausgeblendet — dort wird nicht neu importiert. */}
       {initial.id === null && <RecipeAiAssistant onApply={applyDraft} />}
       <form key={formKey} ref={formRef} action={formAction} className="flex flex-col gap-6">
       {form.id !== null && <input type="hidden" name="id" value={form.id} />}
-      {form.id === null && zwischenstandSchluessel && (
-        <input type="hidden" name={SCHLUESSEL_FELD} value={zwischenstandSchluessel} />
-      )}
+      {eigenerSchluessel && <input type="hidden" name={SCHLUESSEL_FELD} value={eigenerSchluessel} />}
       <input
         type="hidden"
         name="abschnitte"
