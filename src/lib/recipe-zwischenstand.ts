@@ -69,8 +69,16 @@ export type ZwischenstandAntwort =
   | { fehler: "fremd"; zeit: string; stand: number }
   | { fehler: "ungueltig" };
 
-/** Antwort auf „Verwerfen" (DELETE auf denselben Pfad, Feld `schluessel`). */
-export type VerwerfenAntwort = { verworfen: true } | { fehler: "sitzung" } | { fehler: "ungueltig" };
+/**
+ * Antwort auf „Verwerfen" (DELETE auf denselben Pfad, Felder `schluessel` und
+ * der bekannte Stand). `fremd`: In der Zeile liegt ein jüngerer Stand, den
+ * dieser Redakteur nie gesehen hat — nichts gelöscht.
+ */
+export type VerwerfenAntwort =
+  | { verworfen: true }
+  | { fehler: "sitzung" }
+  | { fehler: "fremd"; zeit: string; stand: number }
+  | { fehler: "ungueltig" };
 
 /** Die Taxonomie-Felder des Editors — dieselben Namen wie in recipe-save.ts. */
 const TAXONOMIE_FELDER = ["kategorien", "schlagwoerter", "ernaehrungsformen", "kuechen", "geraete"];

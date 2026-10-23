@@ -108,7 +108,16 @@ export async function DELETE(req: Request): Promise<NextResponse> {
   const schluessel = daten?.schluessel?.[0];
   // Nutzereingabe aus dem Browser: nur eine der beiden Formen löscht etwas.
   if (!istZwischenstandSchluessel(schluessel)) return antwort({ fehler: "ungueltig" }, 400);
-  await zwischenstandVerwerfen(schluessel);
+  // Verworfen wird nur, was der Hinweis gezeigt hat: Der Editor schickt den
+  // Stand mit; liegt ein jüngerer, hat ein anderer Tab inzwischen gesichert.
+  const bekannterStand = Number(daten?.[STAND_FELD]?.[0] ?? 0) || 0;
+  const ergebnis = await zwischenstandVerwerfen({ schluessel, bekannterStand });
+  if (ergebnis.ergebnis === "fremd") {
+    return antwort(
+      { fehler: "fremd", zeit: alsUhrzeit(ergebnis.gespeichertAm), stand: ergebnis.gespeichertAm.getTime() },
+      409,
+    );
+  }
   // Idempotent: Was schon weg ist, ist weg — für den Editor kein Fehler.
   return antwort({ verworfen: true }, 200);
 }

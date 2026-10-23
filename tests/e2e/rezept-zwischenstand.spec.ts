@@ -22,10 +22,13 @@ import { ZWISCHENSTAND_PFAD } from "../../src/lib/recipe-zwischenstand";
  *  5. Ein neues Rezept bekommt eine eigene Kennung und steht zum Fortsetzen;
  *     einen FREMDEN Eintrag zu verwerfen lässt den eigenen Editor stehen.
  *  6. Speichern mit Fehler baut den wiederhergestellten Editor nicht neu auf —
- *     auch wenn die Zeile inzwischen fehlt.
+ *     auch wenn die Zeile inzwischen fehlt; danach sichert der Tick weiter,
+ *     und ein zweites Speichern gelingt.
  *  7. Verwerfen wartet eine laufende Sicherung ab; danach sichert nichts mehr
  *     in die verworfene Zeile.
- *  8. Läuft die Sitzung ab, meldet der Editor es — ohne Umleitung, der Inhalt
+ *  8. Während Verwerfen läuft, speichert Enter im Titel nicht den eben
+ *     verworfenen Stand.
+ *  9. Läuft die Sitzung ab, meldet der Editor es — ohne Umleitung, der Inhalt
  *     bleibt stehen.
  *
  * „Es wird NICHT gesichert" wird nie an einer sofortigen Datenbank-Lesung
@@ -86,6 +89,8 @@ function tabelle() {
       (db.prepare("SELECT teaser FROM recipe WHERE id = ?").get(id) as { teaser: string }).teaser,
     rezeptTeaserSetzen: (id: number, teaser: string) =>
       db.prepare("UPDATE recipe SET teaser = ? WHERE id = ?").run(teaser, id),
+    rezeptTitel: (id: number) =>
+      (db.prepare("SELECT title FROM recipe WHERE id = ?").get(id) as { title: string }).title,
     adminId: () =>
       (
         db.prepare("SELECT admin_user_id FROM session WHERE id = ?").get(sha256(session.token)) as {
@@ -132,6 +137,8 @@ function naechsteSicherung(page: Page): Promise<unknown> {
 }
 
 const anfangsTeaser = { wert: null as string | null };
+/** Die Anfragen an den Route-Handler — zum Verzögern per `page.route` (ein Matcher, damit `unroute` ihn wiederfindet). */
+const verzoegert = (url: URL) => url.pathname === ZWISCHENSTAND_PFAD;
 
 test.describe.configure({ mode: "serial" });
 
@@ -394,7 +401,10 @@ test("Speichern mit Fehler baut den wiederhergestellten Editor nicht neu auf —
       { id: [String(session.recipeId)], titel: ["Wiederhergestellt"], abschnitte: ["[]"], notizen: ["[]"] },
       Date.now(),
     );
+    const titelVorher = t.rezeptTitel(session.recipeId);
     await anmelden(page);
+    await page.clock.install();
+    const gezaehlt = sicherungenZaehlen(page);
     await page.goto(`${EDITOR}?zwischenstand=1`);
     await expect(page.locator("#f-titel")).toHaveValue("Wiederhergestellt");
 
@@ -408,6 +418,19 @@ test("Speichern mit Fehler baut den wiederhergestellten Editor nicht neu auf —
     await expect(page.locator('[role="alert"]', { hasText: /Pflichtfelder/ })).toBeVisible();
     await expect(page).toHaveURL(/zwischenstand=1/);
     await expect(page.locator("#f-titel")).toHaveValue("   ");
+
+    // Nach dem Fehler lebt der Editor weiter: Der Tick sichert, und ein
+    // zweites Speichern gelingt. (Ohne Transition um den Dispatch bliebe
+    // `pending` für immer false — Speichern und Tick wären still tot.)
+    await page.locator("#f-titel").fill(titelVorher);
+    const antwort = naechsteSicherung(page);
+    await page.clock.fastForward(DREI_MINUTEN);
+    await antwort;
+    expect(gezaehlt.anzahl()).toBe(1);
+    await page.getByRole("button", { name: /Speichern/i }).first().click();
+    await page.waitForURL(/\/admin\/rezepte\/\d+\?meldung=Rezept/);
+    expect(t.zeile(SCHLUESSEL)).toBeUndefined();
+    expect(t.rezeptTitel(session.recipeId)).toBe(titelVorher);
   } finally {
     t.schliessen();
   }
@@ -428,24 +451,64 @@ test("Verwerfen wartet eine laufende Sicherung ab — danach sichert nichts mehr
     await page.clock.install();
     // Jede Sicherung braucht eine Sekunde — so ist sie noch unterwegs, wenn
     // „Verwerfen" klickt. Käme sie NACH dem DELETE an, fände sie keine Zeile,
-    // also kein „fremd", und legte die verworfene neu an.
-    await page.route(
-      (url) => url.pathname === ZWISCHENSTAND_PFAD,
-      async (route) => {
-        if (route.request().method() === "POST") await new Promise((r) => setTimeout(r, 1000));
-        await route.continue();
-      },
-    );
+    // also kein „fremd", und legte die verworfene neu an. Gemessen wird die
+    // REIHENFOLGE am Netz — eine Datenbank-Lesung vor der verspäteten Antwort
+    // sähe die Geisterzeile nie.
+    const reihenfolge: string[] = [];
+    page.on("response", (r) => {
+      if (istSicherung(r.url(), r.request().method())) reihenfolge.push("sicherung-antwort");
+    });
+    page.on("request", (r) => {
+      if (r.method() === "DELETE" && new URL(r.url()).pathname === ZWISCHENSTAND_PFAD) reihenfolge.push("verwerfen-anfrage");
+    });
+    await page.route(verzoegert, async (route) => {
+      if (route.request().method() === "POST") await new Promise((r) => setTimeout(r, 1000));
+      await route.continue();
+    });
     await page.goto(`${EDITOR}?zwischenstand=1`);
     await expect(page.locator("#f-titel")).toHaveValue("Zum Verwerfen");
     await page.locator("#f-titel").fill("Noch getippt");
+    const sicherung = naechsteSicherung(page);
     await page.clock.fastForward(DREI_MINUTEN);
     await page.getByRole("button", { name: /^Verwerfen: Zwischenstand von/ }).click();
+    await sicherung;
     await expect(page).toHaveURL(/meldung=/);
+    expect(reihenfolge).toEqual(["sicherung-antwort", "verwerfen-anfrage"]);
     expect(t.zeile(SCHLUESSEL)).toBeUndefined();
     await expect(page.locator('[role="status"]', { hasText: /Zwischenstand von \d{2}:\d{2}/ })).toHaveCount(0);
   } finally {
-    await page.unroute(() => true);
+    await page.unroute(verzoegert);
+    t.schliessen();
+  }
+});
+
+test("während Verwerfen läuft, speichert Enter im Titel nicht den eben verworfenen Stand", async ({ page }) => {
+  const t = tabelle();
+  try {
+    const titelVorher = t.rezeptTitel(session.recipeId);
+    t.einfuegen(
+      SCHLUESSEL,
+      session.recipeId,
+      { id: [String(session.recipeId)], titel: ["Verworfen, nicht gespeichert"], abschnitte: ["[]"], notizen: ["[]"] },
+      Date.now(),
+    );
+    await anmelden(page);
+    // Das Verwerfen braucht eine Sekunde; so lange zeigt das Formular noch den
+    // verworfenen Stand — und ein Enter im Titel wäre ein Speichern.
+    await page.route(verzoegert, async (route) => {
+      if (route.request().method() === "DELETE") await new Promise((r) => setTimeout(r, 1000));
+      await route.continue();
+    });
+    await page.goto(`${EDITOR}?zwischenstand=1`);
+    await expect(page.locator("#f-titel")).toHaveValue("Verworfen, nicht gespeichert");
+    await page.getByRole("button", { name: /^Verwerfen: Zwischenstand von/ }).click();
+    await expect(page.getByRole("button", { name: /Speichern/i }).first()).toBeDisabled();
+    await page.locator("#f-titel").press("Enter");
+    await expect(page).toHaveURL(/meldung=Zwischenstand/);
+    expect(t.rezeptTitel(session.recipeId)).toBe(titelVorher);
+    expect(t.zeile(SCHLUESSEL)).toBeUndefined();
+  } finally {
+    await page.unroute(verzoegert);
     t.schliessen();
   }
 });

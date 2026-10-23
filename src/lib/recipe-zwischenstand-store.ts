@@ -82,10 +82,33 @@ export async function zwischenstandLaden(schluessel: string): Promise<Zwischenst
   return zeile ? alsZwischenstand(zeile) : null;
 }
 
-export async function zwischenstandVerwerfen(schluessel: string): Promise<void> {
-  db.delete(schema.rezeptZwischenstand)
-    .where(eq(schema.rezeptZwischenstand.schluessel, schluessel))
-    .run();
+export type Verwerfung = { ergebnis: "verworfen" } | { ergebnis: "fremd"; gespeichertAm: Date };
+
+/**
+ * „Verwerfen" löscht nur, was der Redakteur gesehen hat: Liegt in der Zeile
+ * ein jüngerer Stand als der bekannte (ein anderer Tab hat inzwischen
+ * gesichert), bleibt sie — dieselbe Regel wie beim Sichern. Der Hinweis nennt
+ * eine Uhrzeit; verworfen werden darf genau dieser Stand, nicht, was gerade
+ * zufällig in der Zeile liegt. Keine Zeile: nichts zu vergleichen, nichts zu
+ * löschen — kein Fehler, „Verwerfen" ist idempotent.
+ */
+export async function zwischenstandVerwerfen(eingabe: {
+  schluessel: string;
+  bekannterStand: number;
+}): Promise<Verwerfung> {
+  const { schluessel, bekannterStand } = eingabe;
+  return db.transaction((tx): Verwerfung => {
+    const vorhanden = tx
+      .select({ updatedAt: schema.rezeptZwischenstand.updatedAt })
+      .from(schema.rezeptZwischenstand)
+      .where(eq(schema.rezeptZwischenstand.schluessel, schluessel))
+      .get();
+    if (vorhanden && vorhanden.updatedAt.getTime() > bekannterStand) {
+      return { ergebnis: "fremd", gespeichertAm: vorhanden.updatedAt };
+    }
+    tx.delete(schema.rezeptZwischenstand).where(eq(schema.rezeptZwischenstand.schluessel, schluessel)).run();
+    return { ergebnis: "verworfen" };
+  });
 }
 
 /** Begonnene NEUE Rezepte — zum Fortsetzen auf /admin/rezepte/neu, jüngste zuerst. */

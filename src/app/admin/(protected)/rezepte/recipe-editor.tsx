@@ -5,7 +5,7 @@
  * Strukturen (Abschnitte mit Zutaten/Schritten, Notizen) als React-State,
  * der beim Absenden als JSON in Hidden-Fields serialisiert wird.
  */
-import { useActionState, useEffect, useRef, useState } from "react";
+import { startTransition, useActionState, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { saveRecipeAction, type RecipeFormState } from "./actions";
 import {
@@ -193,7 +193,7 @@ export interface RecipeEditorProps {
   /** Der Editor zeigt einen wiederhergestellten Zwischenstand; `zurueck` ist die Adresse ohne ihn. */
   zwischenstandWiederhergestellt?: ZwischenstandHinweisDaten & { zurueck: string };
   /** Begonnene neue Rezepte zum Fortsetzen (/admin/rezepte/neu); der eigene wird herausgefiltert. */
-  offeneZwischenstaende?: Array<ZwischenstandHinweisDaten & { titel: string; wiederherstellen: string }>;
+  offeneZwischenstaende?: Array<ZwischenstandHinweisDaten & { stand: number; titel: string; wiederherstellen: string }>;
 }
 
 export interface ZwischenstandHinweisDaten {
@@ -374,6 +374,8 @@ export function RecipeEditor({
    */
   const [eigenerStand, setEigenerStand] = useState(0);
   const [verworfene, setVerworfene] = useState<string[]>([]);
+  /** Sichtbar für den Speichern-Knopf: Während „Verwerfen" läuft, ist er gesperrt. */
+  const [verwerfenLaeuft, setVerwerfenLaeuft] = useState(false);
   const angebot =
     zwischenstandAngebot &&
     zwischenstandAngebot.stand !== eigenerStand &&
@@ -411,6 +413,7 @@ export function RecipeEditor({
     | { art: "sitzung"; zeit: string | null }
     | { art: "fehler" }
     | { art: "verworfen" }
+    | { art: "verwerfen-fremd"; zeit: string }
     | { art: "verwerfen-fehler" }
     | null
   >(null);
@@ -626,36 +629,56 @@ export function RecipeEditor({
    * mit dem gespeicherten Stand neu auf, und die Meldung geht wie überall im
    * Admin über `?meldung=` mit.
    */
-  const verwerfen = async (schluessel: string, zurueck: string | null) => {
-    // Kein Tick dazwischen — weder einer, der schon unterwegs ist, noch einer,
-    // der bis zum Seitenwechsel noch fällt: Käme eine Sicherung NACH dem
-    // DELETE an, fände sie keine Zeile, also kein „fremd", und legte die eben
-    // verworfene neu an — mit dem letzten Tippstand, als frisches Angebot.
+  const verwerfen = async (schluessel: string, stand: () => number, zurueck: string | null) => {
+    // Kein Tick und kein Speichern dazwischen — weder, was schon unterwegs
+    // ist, noch, was bis zum Seitenwechsel noch käme: Käme eine Sicherung NACH
+    // dem DELETE an, fände sie keine Zeile, also kein „fremd", und legte die
+    // eben verworfene neu an; ein Enter im Titel schriebe den eben verworfenen
+    // Stand ins Rezept, solange das Formular ihn noch zeigt.
     verwerfenRef.current = true;
+    setVerwerfenLaeuft(true);
+    const abgebrochen = (meldung: NonNullable<typeof sicherung>) => {
+      verwerfenRef.current = false;
+      setVerwerfenLaeuft(false);
+      setSicherung(meldung);
+    };
     const fd = new FormData();
     fd.set("schluessel", schluessel);
     try {
       await laufend.current;
+      // Verworfen wird nur, was der Hinweis gezeigt hat: Hat ein anderer Tab
+      // inzwischen einen jüngeren Stand gesichert, antwortet der Server „fremd"
+      // und löscht nicht — dieselbe Regel wie beim Sichern. Der Stand wird
+      // ERST JETZT gelesen: Eine eben abgewartete eigene Sicherung hat ihn
+      // gerade erst erneuert; mit dem Stand vom Klick wäre die eigene Zeile
+      // „fremd".
+      fd.set(STAND_FELD, String(stand()));
       const res = await fetch(ZWISCHENSTAND_PFAD, { method: "DELETE", body: fd });
       const antwort = (await res.json()) as VerwerfenAntwort;
       if (!("verworfen" in antwort)) {
-        verwerfenRef.current = false;
-        setSicherung(antwort.fehler === "sitzung" ? { art: "sitzung", zeit: null } : { art: "verwerfen-fehler" });
+        abgebrochen(
+          antwort.fehler === "sitzung"
+            ? { art: "sitzung", zeit: null }
+            : antwort.fehler === "fremd"
+              ? { art: "verwerfen-fremd", zeit: antwort.zeit }
+              : { art: "verwerfen-fehler" },
+        );
         return;
       }
     } catch (err) {
       console.error("[zwischenstand] Verwerfen fehlgeschlagen:", err);
-      verwerfenRef.current = false;
-      setSicherung({ art: "verwerfen-fehler" });
+      abgebrochen({ art: "verwerfen-fehler" });
       return;
     }
     if (zurueck !== null) {
-      // Gesperrt bleibt der Tick bis zum Ausbau: Diese Instanz lebt weiter,
-      // bis die neue Seite steht.
+      // Gesperrt bleiben Tick und Speichern bis zum Ausbau: Diese Instanz
+      // lebt weiter, bis die neue Seite steht — mit dem verworfenen Stand im
+      // Formular.
       router.replace(`${zurueck}?${MELDUNG_PARAM}=${encodeURIComponent(d.zwischenstandVerworfen)}`);
       return;
     }
     verwerfenRef.current = false;
+    setVerwerfenLaeuft(false);
     setVerworfene((v) => [...v, schluessel]);
     setSicherung({ art: "verworfen" });
     // Der Knopf verschwindet mit dem Hinweis. Ohne Ziel fiele der Fokus auf
@@ -685,10 +708,17 @@ export function RecipeEditor({
    */
   const beimAbsenden = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (absendenRef.current) return;
+    // Nicht doppelt — und nicht, während „Verwerfen" läuft: Das Formular zeigt
+    // dann noch den eben verworfenen Stand, bis die neue Seite steht.
+    if (absendenRef.current || verwerfenRef.current) return;
     absendenRef.current = true;
     const fd = new FormData(e.currentTarget);
-    const abschicken = () => formAction(fd);
+    // In einer Transition — NUR dort setzt useActionState `pending`. Ohne sie
+    // bliebe `pending` für immer false: der Knopf nie gesperrt, `absendenRef`
+    // nie wieder frei, und nach EINEM fehlgeschlagenen Speichern wären
+    // Speichern und Tick für diese Instanz still tot (React sagt es im
+    // Dev-Modus: „called outside of a transition … isPending will not update").
+    const abschicken = () => startTransition(() => formAction(fd));
     const unterwegs = laufend.current;
     if (unterwegs) void unterwegs.then(abschicken);
     else abschicken();
@@ -710,9 +740,11 @@ export function RecipeEditor({
           ? d.zwischenstandSitzung(sicherung.zeit)
           : sicherung?.art === "fehler"
             ? d.zwischenstandFehler
-            : sicherung?.art === "verwerfen-fehler"
-              ? d.zwischenstandVerwerfenFehler
-              : "";
+            : sicherung?.art === "verwerfen-fremd"
+              ? d.zwischenstandVerwerfenFremd(sicherung.zeit)
+              : sicherung?.art === "verwerfen-fehler"
+                ? d.zwischenstandVerwerfenFehler
+                : "";
 
   const fremdeOffene = offeneZwischenstaende.filter(
     (z) => z.schluessel !== eigenerSchluessel && !verworfene.includes(z.schluessel),
@@ -725,14 +757,16 @@ export function RecipeEditor({
           zeit={angebot.zeit}
           wiederherstellen={angebot.wiederherstellen}
           live
-          onVerwerfen={() => void verwerfen(angebot.schluessel, null)}
+          onVerwerfen={() => void verwerfen(angebot.schluessel, () => angebot.stand, null)}
         />
       )}
       {wiederhergestellt && (
         <ZwischenstandHinweis
           zeit={wiederhergestellt.zeit}
           live
-          onVerwerfen={() => void verwerfen(wiederhergestellt.schluessel, wiederhergestellt.zurueck)}
+          onVerwerfen={() =>
+            void verwerfen(wiederhergestellt.schluessel, () => standRef.current, wiederhergestellt.zurueck)
+          }
         />
       )}
       {fremdeOffene.length > 0 && (
@@ -744,7 +778,7 @@ export function RecipeEditor({
               zeit={z.zeit}
               wiederherstellen={z.wiederherstellen}
               titel={z.titel}
-              onVerwerfen={() => void verwerfen(z.schluessel, null)}
+              onVerwerfen={() => void verwerfen(z.schluessel, () => z.stand, null)}
             />
           ))}
         </section>
@@ -1345,7 +1379,7 @@ export function RecipeEditor({
         </div>
         <button
           type="submit"
-          disabled={pending}
+          disabled={pending || verwerfenLaeuft}
           className="w-full rounded-lg bg-rose-primary px-5 py-2 font-semibold text-white hover:bg-rose-primary-dark disabled:opacity-60 sm:w-auto"
         >
           {dict.common.save}

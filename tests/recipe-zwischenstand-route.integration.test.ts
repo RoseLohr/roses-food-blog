@@ -159,16 +159,31 @@ describe("Sicherung über den Route-Handler", () => {
     expect(await zeile(NEU)).toBeDefined();
   });
 
+  it("Verwerfen mit einem älteren oder ohne Stand: 409 fremd — die Zeile eines anderen Tabs bleibt", async () => {
+    const vorher = (await zeile(NEU))!;
+    for (const fd of [formular({ schluessel: NEU }), formular({ schluessel: NEU, zwischenstandStand: String(vorher.updatedAt.getTime() - 1) })]) {
+      const res = await verwerfen(fd);
+      expect(res.status).toBe(409);
+      const antwort = (await res.json()) as { fehler: string; zeit: string; stand: number };
+      expect(antwort.fehler).toBe("fremd");
+      expect(antwort.zeit).toMatch(/^\d{2}:\d{2}$/);
+      expect(antwort.stand).toBe(vorher.updatedAt.getTime());
+    }
+    expect((await zeile(NEU))!.formular).toBe(vorher.formular);
+  });
+
   it("Verwerfen löscht genau diese Zeile und antwortet „verworfen“ — auch beim zweiten Mal", async () => {
     const andere = "neu:0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4e";
     expect((await sichern(formular({ zwischenstandSchluessel: andere, titel: "Bleibt" }))).status).toBe(200);
 
-    const res = await verwerfen(formular({ schluessel: NEU }));
+    const stand = String((await zeile(NEU))!.updatedAt.getTime());
+    const res = await verwerfen(formular({ schluessel: NEU, zwischenstandStand: stand }));
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ verworfen: true });
     expect(await zeile(NEU)).toBeUndefined();
     expect(await zeile(andere)).toBeDefined();
-    // Idempotent: Was schon weg ist, ist weg — kein Fehler für den Editor.
+    // Idempotent: Was schon weg ist, ist weg — kein Fehler für den Editor,
+    // und ohne Zeile gibt es keinen Stand zu vergleichen.
     expect((await verwerfen(formular({ schluessel: NEU }))).status).toBe(200);
   });
 

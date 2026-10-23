@@ -41,6 +41,7 @@ export default async function NewRecipePage(props: {
     schluessel: z.schluessel,
     titel: z.titel,
     zeit: alsUhrzeit(z.gespeichertAm),
+    stand: z.gespeichertAm.getTime(),
     wiederherstellen: `${PFAD}?zwischenstand=${encodeURIComponent(z.schluessel)}`,
   }));
 

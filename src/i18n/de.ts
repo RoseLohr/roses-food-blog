@@ -919,6 +919,8 @@ export const de = {
       zwischenstandAngebotOffen: (zeit: string) =>
         `Nicht gesichert — der Zwischenstand von ${zeit} wartet noch auf eine Entscheidung: „Wiederherstellen“ ersetzt, was hier steht; „Verwerfen“ behält es, und ab dann wird wieder gesichert.`,
       zwischenstandVerwerfenFehler: "Der Zwischenstand konnte nicht verworfen werden.",
+      zwischenstandVerwerfenFremd: (zeit: string) =>
+        `Nicht verworfen — ein anderer Tab hat inzwischen um ${zeit} einen neueren Zwischenstand gesichert. Die Seite neu laden, um ihn zu sehen.`,
       zwischenstandVerwerfenName: (was: string) => `Verwerfen: ${was}`,
       zwischenstandFortsetzenName: (titel: string) => `Fortsetzen: ${titel}`,
       zwischenstandVon: "Zwischenstand von",

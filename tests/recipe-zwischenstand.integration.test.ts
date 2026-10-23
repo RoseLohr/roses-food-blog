@@ -67,8 +67,33 @@ describe("Zwischenstand-Ablage", () => {
     });
     expect(await store.zwischenstandLaden("neu:00000000-0000-4000-8000-000000000000")).toBeNull();
 
-    await store.zwischenstandVerwerfen(schluessel);
+    expect(await store.zwischenstandVerwerfen({ schluessel, bekannterStand: SPAETER.getTime() })).toEqual({
+      ergebnis: "verworfen",
+    });
     expect(await store.zwischenstandLaden(schluessel)).toBeNull();
+  });
+
+  it("verwirft nur, was man gesehen hat: ein jüngerer Stand eines anderen Tabs bleibt", async () => {
+    // Der Hinweis nennt eine Uhrzeit. Hat ein anderer Tab seitdem gesichert,
+    // liegt in der Zeile etwas, das dieser Redakteur nie gesehen hat — das
+    // darf sein Klick nicht löschen. Dieselbe Regel wie beim Sichern.
+    const store = await import("@/lib/recipe-zwischenstand-store");
+    const schluessel = "neu:55555555-2222-4333-8444-555555555555";
+    await store.zwischenstandSichern({ schluessel, recipeId: null, daten: { titel: ["gesehen"] }, jetzt: NOW, bekannterStand: 0 });
+    await store.zwischenstandSichern({ schluessel, recipeId: null, daten: { titel: ["nie gesehen"] }, jetzt: SPAETER, bekannterStand: NOW.getTime() });
+
+    expect(await store.zwischenstandVerwerfen({ schluessel, bekannterStand: NOW.getTime() })).toEqual({
+      ergebnis: "fremd",
+      gespeichertAm: SPAETER,
+    });
+    expect((await store.zwischenstandLaden(schluessel))?.daten).toEqual({ titel: ["nie gesehen"] });
+
+    expect(await store.zwischenstandVerwerfen({ schluessel, bekannterStand: SPAETER.getTime() })).toEqual({
+      ergebnis: "verworfen",
+    });
+    expect(await store.zwischenstandLaden(schluessel)).toBeNull();
+    // Idempotent: ohne Zeile nichts zu vergleichen.
+    expect(await store.zwischenstandVerwerfen({ schluessel, bekannterStand: 0 })).toEqual({ ergebnis: "verworfen" });
   });
 
   it("verweigert, wenn ein anderer Tab inzwischen einen neueren Stand gesichert hat", async () => {
@@ -89,7 +114,7 @@ describe("Zwischenstand-Ablage", () => {
     });
     expect(alt).toEqual({ ergebnis: "fremd", gespeichertAm: SPAETER });
     expect((await store.zwischenstandLaden(schluessel))?.daten).toEqual({ titel: ["Tab B"] });
-    await store.zwischenstandVerwerfen(schluessel);
+    await store.zwischenstandVerwerfen({ schluessel, bekannterStand: SPAETER.getTime() });
   });
 
   it("hängt am Rezept: wird das Rezept gelöscht, verschwindet der Zwischenstand per Cascade", async () => {
@@ -151,7 +176,9 @@ describe("Zwischenstand-Ablage", () => {
       { schluessel: b, titel: "", gespeichertAm: SPAETER },
       { schluessel: a, titel: "Älter", gespeichertAm: NOW },
     ]);
-    for (const s of [a, b, `rezept:${res.recipeId}`]) await store.zwischenstandVerwerfen(s);
+    for (const s of [a, b, `rezept:${res.recipeId}`]) {
+      await store.zwischenstandVerwerfen({ schluessel: s, bekannterStand: SPAETER.getTime() });
+    }
   });
 
   it("räumt auf, was älter als 30 Tage ist — und nur das", async () => {
@@ -164,6 +191,6 @@ describe("Zwischenstand-Ablage", () => {
     expect(await store.zwischenstaendeAufraeumen(jetzt)).toBe(1);
     expect(await store.zwischenstandLaden(alt)).toBeNull();
     expect(await store.zwischenstandLaden(frisch)).not.toBeNull();
-    await store.zwischenstandVerwerfen(frisch);
+    await store.zwischenstandVerwerfen({ schluessel: frisch, bekannterStand: jetzt.getTime() });
   });
 });

@@ -378,20 +378,27 @@ ungedeutet in `rezept_zwischenstand` ablegt — eine Zeile je Schlüssel (`rezep
   Stands) und sichert nur dann; läuft gerade die Speichern-Action, sichert er
   nicht — sonst käme die Antwort nach dem Löschen durch das Speichern an und
   hinterließe eine Zeile. Und UMGEKEHRT: Ist beim Klick auf „Speichern" eine
-  Sicherung unterwegs, wartet das Formular auf ihre Antwort (`onSubmit`,
-  `preventDefault`, dann `requestSubmit`) — verarbeitete der Server das
-  Speichern zuerst, legte die danach eintreffende Sicherung die eben gelöschte
-  Zeile neu an: ein Geister-Zwischenstand über einem Rezept ohne ungespeicherte
-  Änderung. Das Speichern löscht den Zwischenstand in DERSELBEN Transaktion
-  wie das Rezept (`recipe-save.ts`). **Und „Speichern" startet die Action VON
-  HAND** (`formAction(new FormData(form))` im `onSubmit`, nicht über Reacts
+  Sicherung unterwegs, wartet `onSubmit` (nach `preventDefault`) auf ihre
+  Antwort, bevor es die Action startet — verarbeitete der Server das Speichern
+  zuerst, legte die danach eintreffende Sicherung die eben gelöschte Zeile neu
+  an: ein Geister-Zwischenstand über einem Rezept ohne ungespeicherte Änderung.
+  Das Speichern löscht den Zwischenstand in DERSELBEN Transaktion wie das
+  Rezept (`recipe-save.ts`). **Und „Speichern" startet die Action VON HAND:
+  `startTransition(() => formAction(new FormData(form)))` im `onSubmit`, nicht
+  über Reacts Formularweg und nicht per `requestSubmit`** (das wäre wieder der
   Formularweg): React 19 setzt nach einer Formular-Action alle unkontrollierten
   Felder zurück (`requestFormReset` in `startHostTransition`) — richtig für
   ein Formular, das nach dem Absenden leer sein soll, falsch für einen Editor,
   der nach „Bitte alle Pflichtfelder …" weiterbearbeitet wird: Titel, Zeiten,
   Portionen stünden wieder auf dem Stand vom Laden. Gefunden durch den
   E2E-Test zur Editor-Identität (unten); vorher verlor jeder fehlgeschlagene
-  Speichern-Klick die unkontrollierten Eingaben.
+  Speichern-Klick die unkontrollierten Eingaben. **Die Transition ist kein
+  Beiwerk:** Nur in ihr setzt `useActionState` sein `pending`. Der erste Anlauf
+  rief `formAction(fd)` nackt — `pending` blieb für immer `false`, der Knopf
+  nie gesperrt, die Sperre `absendenRef` nie wieder frei, und nach EINEM
+  fehlgeschlagenen Speichern waren Speichern und Tick für diese Editor-Instanz
+  still tot. Gemessen: nach dem Fehler sichert der Tick, und ein zweites
+  Speichern gelingt.
 - **Ein Blick ins Feld ist keine Änderung.** `RichTextEditor` schrieb beim
   Verlassen des Feldes (`onBlur`) die Rückübersetzung HTML → Markdown ins
   Formular — auch ohne Tastendruck. Der Umweg ist nicht die Identität
@@ -426,9 +433,21 @@ ungedeutet in `rezept_zwischenstand` ablegt — eine Zeile je Schlüssel (`rezep
   laufende Sicherung ab und sperrt den Tick** bis zum Ende bzw. bis zum
   Seitenwechsel: Käme eine Sicherung NACH dem DELETE an, fände sie keine Zeile
   — also kein „fremd" — und legte die eben verworfene neu an, als frisches
-  Angebot. Nach dem Verwerfen eines Angebots geht der Fokus in den Titel; der
-  Knopf ist mit dem Hinweis verschwunden, und ohne Ziel begänne der nächste
-  Tab am Seitenanfang.
+  Angebot. Und solange Verwerfen läuft — beim Seitenwechsel danach bis die
+  neue Seite steht —, wird auch nicht GESPEICHERT (Knopf gesperrt, `onSubmit`
+  kehrt um): Das Formular zeigt noch den eben verworfenen Stand, ein Enter im
+  Titel schriebe ihn ins Rezept. **Verworfen wird nur, was der Hinweis gezeigt
+  hat:** Das DELETE trägt den Stand (Angebot: der der Zeile; wiederhergestellt:
+  der zuletzt geladene oder gesicherte; Liste auf `/neu`: der beim Rendern);
+  liegt ein jüngerer, hat ein anderer Tab inzwischen gesichert, und der Server
+  antwortet `fremd` (409), ohne zu löschen — dieselbe Regel wie beim Sichern.
+  Der Stand wird dabei ERST NACH dem Abwarten der laufenden Sicherung gelesen
+  (Thunk, nicht Wert): Die eben abgewartete eigene Sicherung hat ihn gerade
+  erneuert; mit dem Stand vom Klick wäre die eigene Zeile „fremd" — genau das
+  zeigte der am Netz verankerte E2E-Test beim ersten Lauf.
+  Nach dem Verwerfen eines Angebots geht der Fokus in den Titel; der Knopf ist
+  mit dem Hinweis verschwunden, und ohne Ziel begänne der nächste Tab am
+  Seitenanfang.
 - **Die Identität des Editors (`key`) hängt allein an der ADRESSE, nie an der
   Zeile.** Nach einer Server-Action (Speichern mit Fehler) rendert Next die
   Seite neu — in dieser App immer, weil der Proxy das Cookie setzt. Hinge der
