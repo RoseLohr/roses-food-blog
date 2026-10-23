@@ -334,8 +334,8 @@ wird. Wer sie entfernt oder anhebt, lockert ohne Gegengewicht. Gemessen in
 
 ## Zwischenstand im Rezept-Editor (10/2026) — sichern ohne zu speichern
 Alle drei Minuten schickt der Editor das ROHE Formular (`new FormData(form)`
-als `Record<string, string[]>`) an eine Server-Action, die es ungedeutet in
-`rezept_zwischenstand` ablegt — eine Zeile je Schlüssel (`rezept:<id>` oder
+als `Record<string, string[]>`) per `fetch` an einen Route-Handler, der es
+ungedeutet in `rezept_zwischenstand` ablegt — eine Zeile je Schlüssel (`rezept:<id>` oder
 `neu:<uuid>`), überschrieben. Die Regeln stehen EINMAL in
 `src/lib/recipe-zwischenstand.ts` (rein, im Mutations-Scope), die Ablage in
 `src/lib/recipe-zwischenstand-store.ts`.
@@ -344,11 +344,21 @@ als `Record<string, string[]>`) an eine Server-Action, die es ungedeutet in
   setzt `updated_at` und navigiert. Alle drei Minuten wäre das kein Sichern,
   sondern ein Eingriff. Der Zwischenstand deutet NICHTS; gedeutet wird erst,
   wenn der Redakteur ihn wiederherstellt und dann speichert.
-- **Die Action leitet nie um.** `zwischenstandSichernAction` ruft
-  `getCurrentAdmin("admin-anfrage")`, nicht `requireAdmin()`: Aus einem Timer
-  heraus hieße ein Redirect, der Browser verlässt den Editor samt Inhalt. Eine
-  abgelaufene Sitzung ist eine Antwort (`fehler: "sitzung"`), der Editor zeigt
-  sie an, der Inhalt bleibt stehen, der Timer läuft weiter.
+- **Die Sicherung ist ein ROUTE-HANDLER, keine Server-Action — und leitet
+  nie um** (`src/app/api/admin/rezepte/zwischenstand/route.ts`). Nach einer
+  Server-Action rendert Next die Seite neu, und das geschützte Layout ruft
+  `requireAdmin()`: Bei abgelaufener Sitzung wird dessen Redirect zum Login zur
+  Antwort der Action, der Browser verlässt den Editor samt Inhalt — ausgelöst
+  von einem Timer. Genau so endete der erste Anlauf auf der Anmeldemaske
+  (`tests/e2e/rezept-zwischenstand.spec.ts`, „läuft die Sitzung ab"). Ein
+  Route-Handler rendert nichts: `getCurrentAdmin("admin-anfrage")` statt
+  `requireAdmin()`, eine abgelaufene Sitzung ist eine Antwort (401,
+  `fehler: "sitzung"`), der Editor zeigt sie an, der Inhalt bleibt stehen, der
+  Timer läuft weiter. Unter `/api/admin` läuft die Anfrage durch den Proxy, das
+  Cookie gleitet mit; Same-Origin wie jeder eigene POST-Handler
+  (`src/lib/csrf.ts`). Der Pfad steht einmal (`ZWISCHENSTAND_PFAD`), und
+  `tests/recipe-zwischenstand-route.integration.test.ts` misst, dass dort eine
+  Route liegt. Verwerfen bleibt eine Action: Es darf navigieren.
 - **Nur bei Änderung, nie während „Speichern":** Der Editor vergleicht den
   Fingerabdruck des Formulars mit dem der letzten Sicherung (bzw. des geladenen
   Stands) und sichert nur dann; läuft gerade die Speichern-Action, sichert er

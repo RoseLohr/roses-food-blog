@@ -6,11 +6,13 @@
  * der beim Absenden als JSON in Hidden-Fields serialisiert wird.
  */
 import { useActionState, useEffect, useRef, useState } from "react";
-import { saveRecipeAction, zwischenstandSichernAction, type RecipeFormState } from "./actions";
+import { saveRecipeAction, type RecipeFormState } from "./actions";
 import {
   SCHLUESSEL_FELD,
   STAND_FELD,
+  ZWISCHENSTAND_PFAD,
   ZWISCHENSTAND_TAKT_MS,
+  type ZwischenstandAntwort,
   fingerabdruck,
   formularAlsDaten,
   schluesselFuerNeu,
@@ -352,11 +354,11 @@ export function RecipeEditor({
     {},
   );
   /**
-   * Was beim Einhängen galt, bleibt: Nach jeder Action (auch der Sicherung)
-   * rendert Next die Seite neu und reicht frische Props — der Server sieht
-   * dann den eben gesicherten Stand und böte ihn als Zwischenstand an. Das
-   * Angebot, der Hinweis „wiederhergestellt" und der bekannte Stand werden
-   * deshalb einmal gelesen, nicht bei jedem Rendern.
+   * Was beim Einhängen galt, bleibt: Nach jeder Server-Action (Speichern mit
+   * Fehler, Verwerfen) rendert Next die Seite neu und reicht frische Props —
+   * der Server sieht dann den inzwischen gesicherten Stand und böte ihn als
+   * Zwischenstand an. Das Angebot, der Hinweis „wiederhergestellt" und der
+   * bekannte Stand werden deshalb einmal gelesen, nicht bei jedem Rendern.
    */
   const [angebot] = useState(zwischenstandAngebot);
   const [wiederhergestellt] = useState(zwischenstandWiederhergestellt);
@@ -401,7 +403,13 @@ export function RecipeEditor({
       const fd = new FormData(formRef.current);
       fd.append(STAND_FELD, String(standRef.current));
       try {
-        const antwort = await zwischenstandSichernAction(fd);
+        // fetch an einen Route-Handler, keine Server-Action: Nach einer Action
+        // rendert Next die Seite neu, und bei abgelaufener Sitzung würde der
+        // Redirect des Layouts zur Antwort — der Browser verließe den Editor
+        // samt Inhalt (siehe route.ts). Der Handler antwortet IMMER mit JSON;
+        // alles andere (Server weg, Proxy-Fehlerseite) landet im catch.
+        const res = await fetch(ZWISCHENSTAND_PFAD, { method: "POST", body: fd });
+        const antwort = (await res.json()) as ZwischenstandAntwort;
         if ("gesichert" in antwort) {
           letzterAbdruck.current = abdruck;
           standRef.current = antwort.stand;

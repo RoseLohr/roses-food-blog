@@ -49,6 +49,24 @@ export const SCHLUESSEL_FELD = "zwischenstandSchluessel";
 /** Verstecktes Feld: der Stand (ms), den dieser Editor zuletzt gesichert oder geladen hat. */
 export const STAND_FELD = "zwischenstandStand";
 
+/**
+ * Wohin der Editor sichert: ein Route-Handler unter /api/admin (Proxy, Cookie
+ * gleitet), KEINE Server-Action — warum, steht im Handler selbst
+ * (src/app/api/admin/rezepte/zwischenstand/route.ts).
+ */
+export const ZWISCHENSTAND_PFAD = "/api/admin/rezepte/zwischenstand";
+
+/**
+ * Antwort der Sicherung — KEINE Navigation, der Editor zeigt sie an.
+ * `stand` ist der Zeitpunkt der Zeile in ms; der Editor schickt ihn beim
+ * nächsten Mal als „bekannten Stand" mit (Schutz vor zwei Tabs).
+ */
+export type ZwischenstandAntwort =
+  | { gesichert: string; stand: number }
+  | { fehler: "sitzung" }
+  | { fehler: "fremd"; zeit: string; stand: number }
+  | { fehler: "ungueltig" };
+
 /** Die Taxonomie-Felder des Editors — dieselben Namen wie in recipe-save.ts. */
 const TAXONOMIE_FELDER = ["kategorien", "schlagwoerter", "ernaehrungsformen", "kuechen", "geraete"];
 
