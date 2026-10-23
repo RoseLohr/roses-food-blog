@@ -23,7 +23,7 @@ import { ZWISCHENSTAND_PFAD } from "../../src/lib/recipe-zwischenstand";
  *     einen FREMDEN Eintrag zu verwerfen lässt den eigenen Editor stehen.
  *  6. Speichern mit Fehler baut den wiederhergestellten Editor nicht neu auf —
  *     auch wenn die Zeile inzwischen fehlt; danach sichert der Tick weiter,
- *     und ein zweites Speichern gelingt.
+ *     und ein zweites Speichern erreicht den Server.
  *  7. Verwerfen wartet eine laufende Sicherung ab; danach sichert nichts mehr
  *     in die verworfene Zeile.
  *  8. Während Verwerfen läuft, speichert Enter im Titel nicht den eben
@@ -127,6 +127,15 @@ function sicherungenZaehlen(page: Page): { anzahl: () => number } {
   let n = 0;
   page.on("request", (r) => {
     if (istSicherung(r.url(), r.method())) n++;
+  });
+  return { anzahl: () => n };
+}
+
+/** Zählt die Server-Actions (Speichern: POST mit `Next-Action`-Kopf) — vor dem `goto` anhängen. */
+function actionsZaehlen(page: Page): { anzahl: () => number } {
+  let n = 0;
+  page.on("request", (r) => {
+    if (r.method() === "POST" && r.headers()["next-action"] !== undefined) n++;
   });
   return { anzahl: () => n };
 }
@@ -405,6 +414,7 @@ test("Speichern mit Fehler baut den wiederhergestellten Editor nicht neu auf —
     await anmelden(page);
     await page.clock.install();
     const gezaehlt = sicherungenZaehlen(page);
+    const actions = actionsZaehlen(page);
     await page.goto(`${EDITOR}?zwischenstand=1`);
     await expect(page.locator("#f-titel")).toHaveValue("Wiederhergestellt");
 
@@ -420,16 +430,19 @@ test("Speichern mit Fehler baut den wiederhergestellten Editor nicht neu auf —
     await expect(page.locator("#f-titel")).toHaveValue("   ");
 
     // Nach dem Fehler lebt der Editor weiter: Der Tick sichert, und ein
-    // zweites Speichern gelingt. (Ohne Transition um den Dispatch bliebe
-    // `pending` für immer false — Speichern und Tick wären still tot.)
-    await page.locator("#f-titel").fill(titelVorher);
+    // zweites Speichern erreicht den Server. (Ohne Transition um den Dispatch
+    // bliebe `pending` für immer false — Speichern und Tick wären still tot.)
+    // Das zweite Speichern scheitert ABSICHTLICH genauso: Der wiederhergestellte
+    // Stand hat leere Abschnitte; ein Erfolg schriebe das E2E-Rezept ohne
+    // Schritte und Zutaten, und die Specs danach messen an genau denen.
+    expect(actions.anzahl()).toBe(1);
     const antwort = naechsteSicherung(page);
     await page.clock.fastForward(DREI_MINUTEN);
     await antwort;
     expect(gezaehlt.anzahl()).toBe(1);
     await page.getByRole("button", { name: /Speichern/i }).first().click();
-    await page.waitForURL(/\/admin\/rezepte\/\d+\?meldung=Rezept/);
-    expect(t.zeile(SCHLUESSEL)).toBeUndefined();
+    await expect.poll(() => actions.anzahl()).toBe(2);
+    await expect(page.locator('[role="alert"]', { hasText: /Pflichtfelder/ })).toBeVisible();
     expect(t.rezeptTitel(session.recipeId)).toBe(titelVorher);
   } finally {
     t.schliessen();
