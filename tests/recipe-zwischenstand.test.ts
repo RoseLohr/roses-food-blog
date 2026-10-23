@@ -24,6 +24,7 @@ import {
   schluesselFuerNeu,
   schluesselFuerRezept,
   type EditorAnfangswerte,
+  type ZwischenstandDaten,
 } from "@/lib/recipe-zwischenstand";
 
 const TAG = 24 * 60 * 60 * 1000;
@@ -134,7 +135,7 @@ describe("Schlüssel", () => {
       { zwischenstandSchluessel: ["rezept:12"] },
       { zwischenstandSchluessel: ["neu:kurz"] },
       { zwischenstandSchluessel: ["neu:3F2A1B4C-5D6E-4F70-8A9B-0C1D2E3F4A5B"] },
-    ]) {
+    ] as ZwischenstandDaten[]) {
       expect(schluesselAus(daten), JSON.stringify(daten)).toBeNull();
     }
   });
@@ -251,7 +252,7 @@ describe("editorAusDaten — das Formular zurück in die Anfangswerte", () => {
       { abschnitte: ["[{\"name\":\"a\",\"ingredients\":[],\"steps\":[\"nur text\"]}]"] },
       { notizen: ["[{\"text\":\"a\"}]"] },
       { notizen: ["{}"] },
-    ]) {
+    ] as ZwischenstandDaten[]) {
       expect(editorAusDaten(kaputt, BASIS, ERLAUBT), JSON.stringify(kaputt)).toBeNull();
     }
   });

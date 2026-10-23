@@ -125,7 +125,7 @@ test("nach dem Anmelden geht es dorthin zurück, wo die Sitzung ablief", async (
   await page.click('button[type="submit"]');
   await expect(page).toHaveURL(new RegExp(`${pfad.replace(/\//g, "\\/")}$`));
   // Und ohne die Meldung „x" — die war der Augenblick, nicht der Ort.
-  await expect(page.locator('[role="status"]', { hasText: "x" })).toHaveCount(0);
+  await expect(page.locator('[role="status"]', { hasText: /^x$/ })).toHaveCount(0);
 });
 
 test("angemeldet: ein unbrauchbarer Rückweg führt in den Admin, nicht auf einen Fehler", async ({

@@ -51,7 +51,7 @@ import { referenzaufnahmen, type Seitentyp } from "./referenz";
  */
 const session = JSON.parse(
   fs.readFileSync(path.resolve(process.cwd(), ".pw-data/e2e-session.json"), "utf8"),
-) as { token: string; recipeId: number; travelId: number };
+) as { token: string; recipeId: number; travelId: number; zwischenstandRecipeId: number };
 
 const PORT = Number(process.env.PW_PORT ?? 3333);
 
@@ -142,6 +142,20 @@ const SEITEN: Seitentyp[] = [
   {
     name: "admin-rezept-vorschau",
     ziel: async () => `/admin/rezepte/${session.recipeId}/vorschau`,
+  },
+  {
+    // Der Hinweis beim Öffnen, wenn ein Zwischenstand liegt (10/2026) — an
+    // einem Saat-Rezept, das die E2E-Vorbereitung dafür vorbereitet. Die
+    // Uhrzeit darin ist lauf-abhängig → Maske.
+    name: "admin-rezept-zwischenstand",
+    ziel: async () => `/admin/rezepte/${session.zwischenstandRecipeId}`,
+    maskiert: true,
+  },
+  {
+    // Derselbe Editor mit wiederhergestelltem Zwischenstand.
+    name: "admin-rezept-wiederhergestellt",
+    ziel: async () => `/admin/rezepte/${session.zwischenstandRecipeId}?zwischenstand=1`,
+    maskiert: true,
   },
 
   { name: "admin-reisen", ziel: async () => "/admin/reisen", maskiert: true },
