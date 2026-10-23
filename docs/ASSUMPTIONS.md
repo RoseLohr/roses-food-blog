@@ -174,3 +174,7 @@ Annahmen, die während der Umsetzung getroffen wurden:
   Speichern/Verwerfen löschen die Zeile, Rezept löschen räumt per Cascade,
   der Scheduler entsorgt nach 30 Tagen. Nicht im Daten-Export enthalten —
   flüchtig, wie ein Browser-Puffer (`src/lib/recipe-zwischenstand.ts`).
+  Sichern und Verwerfen laufen über einen Route-Handler unter `/api/admin`
+  (keine Server-Action: die würde die Seite neu einhängen und das Getippte
+  verlieren); ein beim Öffnen ANGEBOTENER Zwischenstand wird nicht vom Timer
+  überschrieben — erst Wiederherstellen oder Verwerfen gibt die Zeile frei.
