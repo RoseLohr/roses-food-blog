@@ -416,6 +416,38 @@ weil anderer Browser" statt 114 rätselhafter Pixelabweichungen.
 
 ---
 
+**NACHTRAG 10/2026 — der Restschritt, von der anderen Seite gemessen.** Der
+Stempel bewacht den BROWSER-BUILD, nicht die Rasterung. Am 20.10.2026 liefen in
+einem neuen Container 38 von 123 Aufnahmen rot, auf unverändertem Baum: dieselbe
+Chromium-Kennung (141.0.7390.37, Revision 1194), derselbe Code, kurz zuvor noch
+alle grün (damals 120 Aufnahmen; main hat seither drei hinzubekommen, daher
+die 123). Im Differenzbild der Seite `/datenschutz` — reiner Text,
+kein einziges Bild — unterscheidet sich JEDES Zeichen, ohne dass eine Zeile
+verrutscht: Kantenglättung, nicht Inhalt. Der Container hatte gewechselt
+(`Linux …-v114` → `…-v139`), die Schriftdateien liegen im Repo, der Unterschied
+sitzt also unterhalb des Browsers (fontconfig/freetype).
+
+**Es trifft nicht nur die Referenzaufnahmen.** Im selben Lauf fielen vier
+Zusicherungen aus `tests/e2e/einzelbild-mock.spec.ts` („… lässt eine lesbare
+Textspalte"): erwartet höchstens 2 enge Zeilen, gemessen 15 bzw. 14. Der Mock
+ist eine `file://`-Seite und setzt `font: 16px/1.6 system-ui, sans-serif` — er
+fasst weder die App noch die Projektschriften an. `fc-match system-ui` nennt in
+diesem Container **Inter**; andere Zeichenbreiten, anderer Umbruch, andere
+Zeilenzahl. Dieser Spec läuft im NORMALEN Gate, nicht im örtlichen
+Referenz-Projekt: Er besteht in CI nur, weil der Läufer zufällig den
+Schriftstapel hat, gegen den die Schwellen eingestellt wurden (CI-Gate auf
+`8a7bb08` grün, derselbe Code). Eine Schwelle über Zeilenumbrüche gehört
+entweder an eine festgelegte Schrift oder sie misst die Umgebung statt das
+Layout.
+
+Daraus folgt für die Arbeit: **In einer Umgebung, deren Rasterung nicht zur
+Basis passt, darf NICHT neu aufgenommen werden** — man schriebe die Basis des
+ganzen Projekts auf den eigenen Rasterer um, und sie wäre überall sonst rot. Der
+Stempel merkt das nicht; er sagt „derselbe Browser" und meint es richtig. Die
+Wurzel-Lösung bleibt die aus B9: die Rasterungsumgebung festlegen (gepinntes
+Container-Image mit festgelegtem Schriftstapel) und erst dann den Stempel darauf
+erweitern.
+
 ## B10 — Unbenutzte Importe röten das Gate nicht — ERLEDIGT 08/2026
 
 **Befund war.** Nach dem Umbau der Brotkrume blieben VIER Importe stehen, die
