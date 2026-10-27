@@ -11,6 +11,7 @@ import {
 } from "@/lib/auth";
 import { rateLimit } from "@/lib/ratelimit";
 import { getClientIp } from "@/lib/request";
+import { sichererRueckweg } from "@/lib/sitzung";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -56,5 +57,7 @@ export async function loginAction(
 
   const token = await createSession(user.id);
   await setSessionCookie(token);
-  redirect("/admin");
+  // Zurück dorthin, wo die Sitzung ausgelaufen ist — aber nur in den Admin.
+  // Das Feld ist Nutzereingabe; die Prüfung steht einmal in sitzung.ts.
+  redirect(sichererRueckweg(formData.get("zurueck")) ?? "/admin");
 }

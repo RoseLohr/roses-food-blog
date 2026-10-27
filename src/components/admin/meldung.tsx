@@ -6,6 +6,8 @@
  * gleich; siebzehnmal hingeschrieben ist es sechzehnmal die Gelegenheit, es
  * zu vergessen.
  */
+import { MELDUNG_PARAM } from "@/lib/meldung";
+
 export function Meldung({ text }: { text?: string | null }) {
   if (!text) return null;
   return (
@@ -23,5 +25,6 @@ export function Meldung({ text }: { text?: string | null }) {
 export function meldungAus(
   searchParams: Record<string, string | string[] | undefined>,
 ): string | null {
-  return typeof searchParams.meldung === "string" ? searchParams.meldung : null;
+  const wert = searchParams[MELDUNG_PARAM];
+  return typeof wert === "string" ? wert : null;
 }

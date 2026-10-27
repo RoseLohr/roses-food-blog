@@ -45,9 +45,17 @@ gegen die Struktur.
 | `media-thumb.tsx` (Bild) | `no-noninteractive…`, `click-events-have-key-events` | onClick verhindert nur Schließen beim Bildklick; keine eigenständige Interaktion |
 | `site-header.tsx` | `no-autofocus` | Fokus nur, weil der Nutzer das Suchpanel bewusst öffnete — erwartet |
 
-## F5 — Dev-only npm-audit-Findings ohne Upstream-Fix (ratifiziert 2026-07-26; geschlossen 2026-08-06; WIEDERERÖFFNET 2026-10-10)
+## F5 — Dev-only npm-audit-Findings ohne Upstream-Fix (ratifiziert 2026-07-26; geschlossen 2026-08-06; wiedereröffnet 2026-10-10; ERNEUT GESCHLOSSEN 2026-10-23)
 
-**Status: offen, mit genau EINEM Eintrag.** Ratifiziert 2026-10-10 durch die
+**Status: geschlossen, Allowlist LEER.** Der Auto-Tripwire hat am 2026-10-23
+ausgelöst: `GHSA-vfj7-8cjw-p6xm` taucht im Audit nicht mehr auf — bei
+unverändert installiertem `braces@3.0.3` (`npm ls braces`), das Advisory wurde
+also upstream zurückgezogen oder sein Bereich korrigiert, nicht das Paket
+hochgezogen. Der Eintrag ist aus `governance/dev-audit-exceptions.json`
+entfernt, `scripts/regime/dev-audit-gate.mjs` läuft wieder ohne jede Ausnahme.
+Die Fassung vom 2026-10-10 bleibt nachrichtlich stehen:
+
+**Fassung 2026-10-10 (nachrichtlich).** Ratifiziert 2026-10-10 durch die
 Inhaberin, nachdem die drei Wege (ratifizieren / ESLint-Plugin entfernen /
 warten) einzeln vorgelegt waren.
 
@@ -72,7 +80,7 @@ abzuschaffen, um ein Audit still zu bekommen, wäre der schlechtere Tausch.
 
 **Tripwire:** unverändert der automatische unten — verschwindet
 `GHSA-vfj7-8cjw-p6xm` aus dem Audit, wird CI ROT, bis Eintrag und dieser
-Abschnitt entfernt sind.
+Abschnitt entfernt sind. (Genau so geschehen am 2026-10-23, siehe oben.)
 
 ---
 

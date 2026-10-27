@@ -6,7 +6,7 @@ import { t } from "@/i18n/de";
 
 const dict = t();
 
-export function LoginForm() {
+export function LoginForm({ zurueck }: { zurueck: string | null }) {
   const [state, formAction, pending] = useActionState<LoginState, FormData>(
     loginAction,
     {},
@@ -15,6 +15,9 @@ export function LoginForm() {
   return (
     <form action={formAction} className="flex flex-col gap-4">
       <h2 className="sr-only">{dict.auth.loginTitle}</h2>
+      {/* Wohin es nach dem Anmelden zurückgeht — nur, wenn der Guard einen
+          Admin-Pfad mitgegeben hat (src/lib/sitzung.ts prüft ihn). */}
+      {zurueck && <input type="hidden" name="zurueck" value={zurueck} />}
       {state.error && (
         <p role="alert" className="bg-red-50 p-3 text-sm text-red-800">
           {state.error}

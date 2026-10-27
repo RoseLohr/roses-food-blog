@@ -50,7 +50,7 @@ function scopeLabel(sel: ExportSelection): string {
 }
 
 export async function GET(req: Request) {
-  if (!(await getCurrentAdmin())) {
+  if (!(await getCurrentAdmin("admin-anfrage"))) {
     return new Response("unauthorized", { status: 401 });
   }
 

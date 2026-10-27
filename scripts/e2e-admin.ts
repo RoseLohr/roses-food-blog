@@ -1,14 +1,15 @@
 /**
  * E2E-Vorbereitung: legt einen Admin, eine Session, ein Editier-Rezept und
  * einen Editier-Reisebericht (beide Entwurf, damit die öffentlichen E2E-Tests
- * unberührt bleiben) an und schreibt { token, recipeId, travelId } nach
- * $DATA_DIR/e2e-session.json. Wird nach dem Seed aufgerufen. Nur für E2E.
+ * unberührt bleiben) an und schreibt { token, email, passwort, recipeId,
+ * travelId } nach $DATA_DIR/e2e-session.json. Wird nach dem Seed aufgerufen.
+ * Nur für E2E.
  */
 import fs from "node:fs";
 import path from "node:path";
 import { asc } from "drizzle-orm";
 import { db, schema } from "../src/db";
-import { createSession } from "../src/lib/auth-core";
+import { createSession, hashPassword } from "../src/lib/auth-core";
 import { saveRecipeFromForm } from "../src/lib/recipe-save";
 import { saveTravelFromForm } from "../src/lib/travel-save";
 
@@ -32,12 +33,20 @@ import { saveTravelFromForm } from "../src/lib/travel-save";
  */
 const NOW = new Date("2026-01-15T12:00:00");
 
+/**
+ * Ein ECHTES Passwort, damit ein Spec den Formular-Login durchlaufen kann
+ * (tests/e2e/sitzung-verlaengerung.spec.ts: der Rückweg nach dem Login). Nur
+ * in der E2E-Datenbank unter .pw-data; die Saat selbst kennt es nicht.
+ */
+const E2E_EMAIL = "e2e@rose.de";
+const E2E_PASSWORT = "e2e-zugang-roses-blog";
+
 async function main() {
   const [admin] = await db
     .insert(schema.adminUser)
     .values({
-      email: "e2e@rose.de",
-      passwordHash: "x",
+      email: E2E_EMAIL,
+      passwordHash: await hashPassword(E2E_PASSWORT),
       name: "E2E",
       createdAt: NOW,
     })
@@ -96,6 +105,8 @@ async function main() {
     path.join(dataDir, "e2e-session.json"),
     JSON.stringify({
       token,
+      email: E2E_EMAIL,
+      passwort: E2E_PASSWORT,
       recipeId: res.recipeId,
       travelId: travelRes.travelId,
     }),

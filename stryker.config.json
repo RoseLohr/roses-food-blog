@@ -23,7 +23,8 @@
     "src/lib/reihenfolge.ts",
     "src/lib/zeitpunkt.ts",
     "src/lib/daemmerung.ts",
-    "src/lib/seo/model.ts"
+    "src/lib/seo/model.ts",
+    "src/lib/sitzung.ts"
   ],
   "concurrency": 2,
   "timeoutMS": 20000,

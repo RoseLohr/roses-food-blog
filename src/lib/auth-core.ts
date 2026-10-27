@@ -6,9 +6,12 @@ import { argon2id, argon2Verify } from "hash-wasm";
 import crypto from "node:crypto";
 import { eq, lt } from "drizzle-orm";
 import { db, schema } from "@/db";
-
-export const SESSION_LIFETIME_MS = 14 * 24 * 60 * 60 * 1000; // 14 Tage
-export const RENEW_BELOW_MS = 7 * 24 * 60 * 60 * 1000;
+import {
+  SITZUNG_DAUER_MS,
+  neuesAblaufdatum,
+  sitzungsZustand,
+  type SitzungsAnlass,
+} from "@/lib/sitzung";
 
 // argon2id via hash-wasm (WebAssembly). Bewusst NICHT @node-rs/argon2: dessen
 // native Binärdatei nutzt CPU-Befehle (SIMD), die auf alten CPUs ohne SSE4.2
@@ -51,7 +54,7 @@ export async function createSession(adminUserId: number): Promise<string> {
   await db.insert(schema.session).values({
     id: tokenHash(token),
     adminUserId,
-    expiresAt: new Date(Date.now() + SESSION_LIFETIME_MS),
+    expiresAt: new Date(Date.now() + SITZUNG_DAUER_MS),
     createdAt: new Date(),
   });
   // Abgelaufene Sessions bei Gelegenheit aufräumen
@@ -67,6 +70,7 @@ export type AdminUser = typeof schema.adminUser.$inferSelect;
 
 export async function validateSessionToken(
   token: string,
+  anlass: SitzungsAnlass,
 ): Promise<AdminUser | null> {
   const rows = await db
     .select({ session: schema.session, user: schema.adminUser })
@@ -79,14 +83,21 @@ export async function validateSessionToken(
     .limit(1);
   const row = rows[0];
   if (!row) return null;
-  if (row.session.expiresAt.getTime() < Date.now()) {
+  // Die Regeln stehen in src/lib/sitzung.ts — auch die Höchstdauer ab Login,
+  // die eine gleitende Sitzung begrenzt. Das Browser-Cookie erneuert der
+  // Proxy (src/proxy.ts); hier geht es nur um die Zeile. Abgelaufen ist
+  // abgelaufen, egal aus welchem Anlass gelesen wird; GLEITEN darf die Zeile
+  // nur bei einer Admin-Anfrage — dort, wo auch das Cookie gleitet.
+  const jetzt = new Date();
+  const zustand = sitzungsZustand(row.session, jetzt);
+  if (zustand === "abgelaufen") {
     await db.delete(schema.session).where(eq(schema.session.id, row.session.id));
     return null;
   }
-  if (row.session.expiresAt.getTime() - Date.now() < RENEW_BELOW_MS) {
+  if (zustand === "verlaengern" && anlass === "admin-anfrage") {
     await db
       .update(schema.session)
-      .set({ expiresAt: new Date(Date.now() + SESSION_LIFETIME_MS) })
+      .set({ expiresAt: neuesAblaufdatum(row.session.createdAt, jetzt) })
       .where(eq(schema.session.id, row.session.id));
   }
   return row.user;
