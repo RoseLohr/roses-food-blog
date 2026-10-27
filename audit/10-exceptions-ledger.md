@@ -56,18 +56,22 @@ jede Ausnahme.** Der Auto-Tripwire hat am 2026-10-23 ausgelöst (CI-Lauf
 `braces@3.0.3` über dieselbe Kette (`@next/eslint-plugin-next@16.4.2` →
 `fast-glob@3.3.1` → `micromatch@4.0.8` → `braces@3.0.3`), und 3.0.3 ist
 weiterhin die neueste veröffentlichte Fassung — `npm view braces versions`
-endet dort. Upstream hat also nichts nachgelegt. Weggefallen ist die ANGABE,
-auf die sich die Ratifizierung stützte: Das Advisory trug `range: *`, womit es
-„keine heile Version zum Hochziehen" gab; diese Spanne war zu weit und ist
-korrigiert worden. Der volle Audit meldet jetzt 13 moderate Findings und KEIN
-HIGH/CRITICAL.
+endet dort. Upstream hat also nichts nachgelegt. Weggefallen ist das ADVISORY
+selbst: Am 2026-10-27 am Advisory-Endpunkt der npm-Registry gefragt
+(`POST /-/npm/v1/security/advisories/bulk`), trifft `GHSA-vfj7-8cjw-p6xm`
+keine einzige `braces`-Fassung mehr — weder 3.0.3 noch 3.0.2, 3.0.0, 2.3.2,
+2.0.0, 1.8.5 oder 0.1.5. Ein bloß VERENGTER Bereich träfe die älteren Fassungen
+weiterhin; das Advisory ist also zurückgezogen, nicht korrigiert. Für `braces`
+meldet der Endpunkt nur noch `GHSA-grv7-fg5c-xmjg` (`<3.0.3`), das die
+installierte 3.0.3 nicht trifft. Der volle Audit meldet jetzt 13 moderate
+Findings und KEIN HIGH/CRITICAL.
 
 **Folge:** Eintrag aus `governance/dev-audit-exceptions.json` entfernt, dieser
 Abschnitt geschlossen, Bestand unten nachrichtlich bewahrt. Der Tripwire hat
 damit genau das getan, wofür er da ist — eine Ausnahme, deren Grund entfallen
-ist, kann nicht stillschweigend weiterleben. Dass sie durch eine KORRIGIERTE
-Advisory-Angabe entfiel und nicht durch ein Upstream-Release, ändert daran
-nichts: Der Grund stand im Ledger, und er gilt nicht mehr.
+ist, kann nicht stillschweigend weiterleben. Dass sie durch ein ZURÜCKGEZOGENES
+Advisory entfiel und nicht durch ein Upstream-Release, ändert daran nichts: Der
+Grund stand im Ledger, und er gilt nicht mehr.
 
 ---
 

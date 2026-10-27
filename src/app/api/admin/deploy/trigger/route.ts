@@ -12,7 +12,7 @@ export async function POST(req: Request) {
   if (!isSameOriginRequest(req)) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
-  const admin = await getCurrentAdmin();
+  const admin = await getCurrentAdmin("admin-anfrage");
   if (!admin) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
