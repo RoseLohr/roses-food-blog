@@ -45,11 +45,37 @@ gegen die Struktur.
 | `media-thumb.tsx` (Bild) | `no-noninteractive…`, `click-events-have-key-events` | onClick verhindert nur Schließen beim Bildklick; keine eigenständige Interaktion |
 | `site-header.tsx` | `no-autofocus` | Fokus nur, weil der Nutzer das Suchpanel bewusst öffnete — erwartet |
 
-## F5 — Dev-only npm-audit-Findings ohne Upstream-Fix (ratifiziert 2026-07-26; geschlossen 2026-08-06; WIEDERERÖFFNET 2026-10-10)
+## F5 — Dev-only npm-audit-Findings ohne Upstream-Fix (ratifiziert 2026-07-26; geschlossen 2026-08-06; wiedereröffnet 2026-10-10; GESCHLOSSEN 2026-10-27)
 
-**Status: offen, mit genau EINEM Eintrag.** Ratifiziert 2026-10-10 durch die
-Inhaberin, nachdem die drei Wege (ratifizieren / ESLint-Plugin entfernen /
-warten) einzeln vorgelegt waren.
+**Status: geschlossen. Die Allowlist ist LEER, der Dev-Gate läuft wieder ohne
+jede Ausnahme.** Der Auto-Tripwire hat am 2026-10-23 ausgelöst (CI-Lauf
+39969077956, Job `security`, Schritt „Dev-Audit-Gate"):
+`GHSA-vfj7-8cjw-p6xm` taucht im vollen `npm audit` nicht mehr auf.
+
+**Was sich geändert hat — das PAKET nicht.** Installiert ist unverändert
+`braces@3.0.3` über dieselbe Kette (`@next/eslint-plugin-next@16.4.2` →
+`fast-glob@3.3.1` → `micromatch@4.0.8` → `braces@3.0.3`), und 3.0.3 ist
+weiterhin die neueste veröffentlichte Fassung — `npm view braces versions`
+endet dort. Upstream hat also nichts nachgelegt. Weggefallen ist die ANGABE,
+auf die sich die Ratifizierung stützte: Das Advisory trug `range: *`, womit es
+„keine heile Version zum Hochziehen" gab; diese Spanne war zu weit und ist
+korrigiert worden. Der volle Audit meldet jetzt 13 moderate Findings und KEIN
+HIGH/CRITICAL.
+
+**Folge:** Eintrag aus `governance/dev-audit-exceptions.json` entfernt, dieser
+Abschnitt geschlossen, Bestand unten nachrichtlich bewahrt. Der Tripwire hat
+damit genau das getan, wofür er da ist — eine Ausnahme, deren Grund entfallen
+ist, kann nicht stillschweigend weiterleben. Dass sie durch eine KORRIGIERTE
+Advisory-Angabe entfiel und nicht durch ein Upstream-Release, ändert daran
+nichts: Der Grund stand im Ledger, und er gilt nicht mehr.
+
+---
+
+**Vorgeschichte (nachrichtlich).**
+
+**Zweite Fassung, ratifiziert 2026-10-10, geschlossen 2026-10-27.** Ratifiziert
+durch die Inhaberin, nachdem die drei Wege (ratifizieren / ESLint-Plugin
+entfernen / warten) einzeln vorgelegt waren.
 
 | Advisory (allowgelistet) | Kette | Warum kein Root-Fix möglich |
 |---|---|---|
@@ -70,14 +96,7 @@ abzuschaffen, um ein Audit still zu bekommen, wäre der schlechtere Tausch.
 `overrides` `source-map-js` 1.2.2, `tinypool` 2.1.2, `fast-uri` 3.1.8,
 `brace-expansion@1` 1.1.21 / `@5` 5.0.12.
 
-**Tripwire:** unverändert der automatische unten — verschwindet
-`GHSA-vfj7-8cjw-p6xm` aus dem Audit, wird CI ROT, bis Eintrag und dieser
-Abschnitt entfernt sind.
-
----
-
-**Vorgeschichte (nachrichtlich).** Erste Fassung, geschlossen 2026-08-06 —
-der Auto-Tripwire hatte ausgelöst:
+**Erste Fassung, geschlossen 2026-08-06** — der Auto-Tripwire hatte ausgelöst:
 Upstream hat `brace-expansion` gefixt (1.1.18 bzw. 5.0.9, via `npm audit fix`
 eingespielt — ESLint/jsx-a11y laufen damit nachweislich grün, die frühere
 Bruch-Begründung ist durch die Patch-Releases hinfällig). Die Allowlist in
