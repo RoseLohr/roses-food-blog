@@ -145,6 +145,32 @@ diesem Repository arbeitet. Sie ist Teil des Governance-Regimes (A-32/A-33/A-37)
   oklab-Zeichenkette. **`npm run test:a11y` und `nachtmodus.spec.ts` sehen
   diese Seite nicht** (sieben öffentliche Adressen bzw. nur `/admin/rezepte`
   und `/admin/einstellungen`).
+- **Notizen am Rezept (10/2026): eigener Zettel UNTER dem Kasten, nicht darin.**
+  Bis dahin trug EIN grauer Kasten beides — den Tipp-Text und die Notizen als
+  nackte Liste darunter. Optisch war die Notiz damit derselbe Bereich wie der
+  Fließtext davor. Jetzt heißt der Kasten nach seinem Inhalt (`r.tips`, den
+  Schlüssel gab es längst) und jede Notiz steht als angehefteter Zettel
+  darunter.
+  **Was den Zettel trägt, ist NICHT seine Fläche:** Die Karte ist weiß auf
+  weißem Grund (1,000:1). Es tragen der Rahmen (`border-ink/10` = 1,237:1)
+  und vor allem das Klebeband (`bg-leaf/30` über Weiß = 1,513:1). Wer das Band
+  entfernt, nimmt dem Zettel seine einzige kräftige Marke. Der Schatten ist
+  eine HART geschriebene Farbe und damit bewusst aus dem Token-System heraus
+  (dieselbe Ausnahme wie der Amber-Ton des Entwurfs-Hinweises): Ein
+  Schlagschatten ist eine Hell-Angabe, im Nachtmodus trägt er nichts. Er zählt
+  deshalb NICHT zu den Trägern. **Die Breite ist gedeckelt** (`max-w-md`): über die volle Spalte
+  liest sich die Karte als Abschnitt statt als Zettel — am ersten Entwurf
+  gemessen und verworfen.
+  Das Band ist Zierde (`aria-hidden`) und fällt im DRUCK weg (`print:hidden`):
+  Hintergrundfarben druckt der Browser nicht, ein farbloses Band wäre nur eine
+  Lücke. Öffentlich gibt es keinen Nachtmodus — `data-theme` setzt allein
+  `src/app/admin/(protected)/layout.tsx`; in der Admin-Vorschau, die
+  `src/components/recipe-view.tsx` mitbenutzt, tragen die Token ihn mit
+  (Karte #1a1a20, Band #2e5051 = 1,970:1 — GERECHNET, nicht gemessen: Das
+  E2E-Rezept der Vorschau hat keine öffentliche Notiz, also deckt kein Test
+  diesen Zustand ab).
+  Gemessen in `tests/e2e/notizzettel.spec.ts` — Struktur und Farbe, nicht
+  Bildpunkte. Die Farbmessung steht gemeinsam in `tests/e2e/farbe.ts`.
 - **Nachtmodus (08/2026): ein TOKEN-Tausch unter `[data-theme="dark"]`.** Jede
   Tailwind-Farb-Utility löst auf eine CSS-Variable auf
   (`.bg-cream{background-color:var(--color-cream)}`); wer die Variablen unter

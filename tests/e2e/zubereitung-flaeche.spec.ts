@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { alsText, gemalt, kontrast, tokenFarbe } from "./farbe";
 import Database from "better-sqlite3";
 import fs from "node:fs";
 import path from "node:path";
@@ -83,66 +84,6 @@ test.beforeEach(async ({ context }) => {
   ]);
 });
 
-type RGB = [number, number, number];
-
-/** WCAG-Relativluminanz. */
-function luminanz([r, g, b]: RGB): number {
-  const f = (v: number) => {
-    const x = v / 255;
-    return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4);
-  };
-  return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
-}
-
-/** Kontrastverhältnis nach WCAG 2.x. */
-function kontrast(a: RGB, b: RGB): number {
-  const [x, y] = [luminanz(a), luminanz(b)];
-  return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
-}
-
-const alsText = (c: RGB) => `rgb(${c.join(" ")})`;
-
-/**
- * Die Farbe, die ein Element tatsächlich ZEIGT: seine (womöglich
- * durchsichtige) Deklaration, im Browser über den nächsten gemalten
- * Untergrund gelegt.
- */
-async function gemalt(
-  page: Page,
-  wahl: string | ReturnType<Page["locator"]>,
-  eigenschaft: "background-color" | "border-bottom-color" | "color",
-): Promise<RGB> {
-  const ort = typeof wahl === "string" ? page.locator(wahl).first() : wahl.first();
-  const werte = await ort.evaluate((el, e) => {
-    /** Der nächste Vorfahr (einschließlich el), der wirklich eine Fläche malt. */
-    function untergrund(start: Element): string {
-      let k: Element | null = start;
-      while (k) {
-        const bg = getComputedStyle(k).backgroundColor;
-        if (bg && bg !== "transparent" && !/,\s*0\s*\)$/.test(bg)) return bg;
-        k = k.parentElement;
-      }
-      return "rgb(255, 255, 255)";
-    }
-    const eigen = getComputedStyle(el).getPropertyValue(e);
-    const grund =
-      e === "background-color"
-        ? untergrund(el.parentElement ?? el)
-        : untergrund(el);
-    return [eigen, grund];
-  }, eigenschaft);
-
-  return page.evaluate(([eigen, grund]) => {
-    const c = document.createElement("canvas").getContext("2d");
-    if (!c) throw new Error("kein 2d-Kontext");
-    c.fillStyle = grund;
-    c.fillRect(0, 0, 1, 1);
-    c.fillStyle = eigen;
-    c.fillRect(0, 0, 1, 1);
-    const d = c.getImageData(0, 0, 1, 1).data;
-    return [d[0], d[1], d[2]] as [number, number, number];
-  }, werte);
-}
 
 /** Die Karte, auf der alles liegt (`<section class="bg-white …">`). */
 const karteVon = (page: Page) =>
@@ -217,17 +158,7 @@ for (const modus of ["hell", "dunkel"] as const) {
     // Gemessen: /30 3,381:1, /35 3,137:1, /40 2,905:1 — dort fällt er unter
     // die 3:1 aus WCAG 1.4.11.
     const toenung = await gemalt(page, toenungVon(page), "background-color");
-    const ring = await toenungVon(page).evaluate((el) =>
-      getComputedStyle(el).getPropertyValue("--color-rose-primary").trim(),
-    );
-    const ringRgb = await page.evaluate((wert) => {
-      const c = document.createElement("canvas").getContext("2d");
-      if (!c) throw new Error("kein 2d-Kontext");
-      c.fillStyle = wert;
-      c.fillRect(0, 0, 1, 1);
-      const d = c.getImageData(0, 0, 1, 1).data;
-      return [d[0], d[1], d[2]] as [number, number, number];
-    }, ring);
+    const ringRgb = await tokenFarbe(page, toenungVon(page), "--color-rose-primary");
 
     expect(
       kontrast(ringRgb, toenung),
