@@ -918,8 +918,19 @@ export function RecipeEditor({
             />
           </div>
           {/* Saison: Umschalter „Saisonal | Ganzjährig" + Start-/End-KW
-              nebeneinander (darf über den Jahreswechsel gehen, z. B. 44 → 8) */}
-          <div className="md:col-span-2 xl:col-span-3">
+              nebeneinander (darf über den Jahreswechsel gehen, z. B. 44 → 8)
+
+              Die Spannweite bleibt bei 2 — so weit, wie dieses Raster oben
+              Spalten deklariert. Hier stand `xl:col-span-3`, übernommen aus
+              dem Taxonomien-Raster darunter, das wirklich `xl:grid-cols-3`
+              ist. Ein Kind, das weiter spannt als sein Raster reicht, lässt
+              CSS nicht scheitern: Es legt eine IMPLIZITE dritte Spur an, und
+              die ist inhaltsbreit statt 1fr. Ab 1280 px schob die
+              automatische Platzierung dadurch „Vorbereitungszeit" neben das
+              Titelbild, mit leerer zweiter Spalte, und machte
+              „Schwierigkeitsgrad" schmaler als „Portionen" daneben.
+              Gemessen in tests/e2e/rezept-editor-raster.spec.ts. */}
+          <div className="md:col-span-2">
             <SeasonFields
               initialSeasonal={form.isSeasonal}
               initialStart={form.seasonStartWeek}
