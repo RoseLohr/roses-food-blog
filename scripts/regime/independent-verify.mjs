@@ -170,12 +170,25 @@ const AUTH = authHeader(process.env.VERIFIER_AUTH_HEADER, KEY);
  */
 export const ANFRAGE_FRIST_MS = 15 * 60 * 1000;
 
-/** Ein Netzfehler ohne Adresse: der Code (ECONNREFUSED …), nie die Socket-Meldung. */
+/** Ein Zustellfehler ohne Adresse: der Code (ECONNREFUSED …), nie die Socket-Meldung. */
 class Zustellfehler extends Error {}
-function bereinigt(err) {
+function bereinigt(err, art = "Netzfehler") {
   if (err instanceof Zustellfehler) return err;
   const code = typeof err?.code === "string" && /^[A-Z0-9_]+$/.test(err.code) ? err.code : "ohne Code";
-  return new Zustellfehler(`Netzfehler (${code})`);
+  return new Zustellfehler(`${art} (${code})`);
+}
+
+/**
+ * Kopfwerte so, wie fetch sie schickte: führender und abschließender
+ * HTTP-Leerraum (Tab, Leerzeichen, CR, LF) fällt weg — der Fetch-Standard
+ * „normalisiert" so, http.request dagegen wirft für denselben Wert. Ein
+ * Secret mit Zeilenende kam über fetch also an; ohne diese Zeile wäre JEDE
+ * Stimme gescheitert, während die Modell-Liste (weiter fetch) grün blieb.
+ * Was auch fetch ablehnt (Zeilenumbruch MITTEN im Wert), bleibt abgelehnt.
+ */
+function kopfwerte(headers) {
+  return Object.fromEntries(Object.entries(headers)
+    .map(([name, wert]) => [name, String(wert).replace(/^[\t\n\r ]+|[\t\n\r ]+$/g, "")]));
 }
 
 /**
@@ -183,6 +196,15 @@ function bereinigt(err) {
  * fetch (siehe ANFRAGE_FRIST_MS). Antwortet in der Form, die die Aufrufer von
  * fetch kennen: { ok, status, body, text(), json() }; `body` ist ein
  * asynchron iterierbarer Strom (für den SSE-Fold).
+ *
+ * Der Draht bleibt, wie das Gateway ihn kennt: dieselben Kopfwerte, dazu
+ * `User-Agent: node` und ein `Accept` für jeden Typ, die fetch von sich aus
+ * setzte — eine
+ * Schutzschicht vor dem Gateway, die Anfragen ohne User-Agent abweist, hätte
+ * sonst plötzlich jede Stimme abgelehnt. Weiterleitungen folgt anfrage()
+ * NICHT: Ein 3xx ist ein Fehlerstatus und steht so im Log. fetch folgte ihnen
+ * und nahm dabei einen Schlüssel in einem eigenen Kopf (VERIFIER_AUTH_HEADER)
+ * auch zu einem fremden Host mit — nur `Authorization` ließ es zurück.
  *
  * Fehlermeldungen tragen den Code, NIE die Adresse: Der Workflow maskiert
  * Basis-URL, Host und Hostname, eine aufgelöste IP aus einer Socket-Meldung
@@ -196,25 +218,42 @@ export function anfrage(url, { headers = {}, body = "", frist = ANFRAGE_FRIST_MS
     const modul = ziel.protocol === "https:" ? https : ziel.protocol === "http:" ? http : null;
     if (!modul) { reject(new Zustellfehler(`Protokoll nicht unterstützt: ${ziel.protocol}`)); return; }
     const daten = Buffer.from(String(body), "utf8");
+    // Erst die Anfrage, DANN die Uhr: http.request wirft für einen
+    // unzulässigen Kopfwert synchron. Stand die Uhr schon, lief sie weiter und
+    // griff nach Ablauf auf ein `req`, das es nie gab (ReferenceError,
+    // ungefangen); der Fehler selbst ging an bereinigt() vorbei.
+    let req;
+    try {
+      // agent:false — eine eigene Verbindung je Anfrage. Der Keep-Alive-Pool
+      // reichte sonst nach einem langen Versuch eine Verbindung weiter, die
+      // das Gateway inzwischen geschlossen hat, und der Wiederholungsversuch
+      // starb sofort an ECONNRESET (im Selbsttest so beobachtet; dort steht
+      // jetzt `connection: close` als Zusicherung). Wiederverwendung spart bei
+      // Anfragen, die Minuten dauern, nichts.
+      req = modul.request(ziel, {
+        method: "POST",
+        agent: false,
+        // fetch handelt Kompression selbst aus und entpackt; http.request tut
+        // beides nicht. Ohne Accept-Encoding darf ein Server jede Kodierung
+        // schicken (RFC 9110) — der SSE-Fold läse dann Binärdaten. Also
+        // ausdrücklich keine.
+        headers: {
+          "User-Agent": "node",
+          Accept: "*/*",
+          ...kopfwerte(headers),
+          "Accept-Encoding": "identity",
+          "Content-Length": daten.length,
+        },
+      });
+    } catch (err) {
+      reject(bereinigt(err, "Anfrage nicht baubar"));
+      return;
+    }
     let antwort = null;
     const uhr = setTimeout(() => {
       const err = new Zustellfehler(`Frist von ${frist / 1000} s überschritten`);
       if (antwort) antwort.destroy(err); else req.destroy(err);
     }, frist);
-    // agent:false — eine eigene Verbindung je Anfrage. Der Keep-Alive-Pool
-    // reichte sonst nach einem langen Versuch eine Verbindung weiter, die das
-    // Gateway inzwischen geschlossen hat, und der Wiederholungsversuch starb
-    // sofort an ECONNRESET (im Selbsttest so beobachtet). Wiederverwendung
-    // spart bei Anfragen, die Minuten dauern, nichts.
-    const req = modul.request(ziel, {
-      method: "POST",
-      agent: false,
-      // fetch handelt Kompression selbst aus und entpackt; http.request tut
-      // beides nicht. Ohne Accept-Encoding darf ein Server jede Kodierung
-      // schicken (RFC 9110) — der SSE-Fold läse dann Binärdaten. Also
-      // ausdrücklich keine.
-      headers: { ...headers, "Accept-Encoding": "identity", "Content-Length": daten.length },
-    });
     req.on("error", (err) => { clearTimeout(uhr); reject(bereinigt(err)); });
     req.on("response", (res) => {
       antwort = res;
@@ -1089,22 +1128,34 @@ if (process.argv.includes("--selftest")) {
   // anfrage() kennt genau EINE Grenze, die wir wählen. Geprüft wird, dass sie
   // greift, dass vorher nichts abbricht und dass der Strom wie bisher gefaltet
   // wird — 300 s abzuwarten passt in keinen Selbsttest, dafür steht die Messung.
+  //
+  // Jeder Prüfserver-Weg ENDET von selbst, auch der „stumme": Fiele die Frist
+  // weg, liefe die Probe sonst nicht rot, sondern hinge bis zum 6-h-Limit des
+  // CI-Jobs. So ergibt das Fehlen der Frist einen ANDEREN Ausgang (Abriss bzw.
+  // sauberes Ende statt Frist-Meldung), und die Zusicherung schlägt an.
   const httpPruef = await import("node:http");
+  const { readFileSync } = await import("node:fs");
+  const { fileURLToPath } = await import("node:url");
+  const serverUhren = new Set();
+  const spaeter = (fn, ms) => { const t = setTimeout(() => { serverUhren.delete(t); fn(); }, ms); serverUhren.add(t); };
   const pruefServer = httpPruef.createServer((req, res) => {
     let eingang = "";
     req.on("data", (c) => { eingang += c; });
     req.on("end", () => {
       if (req.url === "/kopf-spaet") {
-        setTimeout(() => { res.writeHead(200); res.end("da"); }, 400);
+        spaeter(() => { res.writeHead(200); res.end("da"); }, 400);
       } else if (req.url === "/kopf-nie") {
-        // antwortet nie
+        // Keine Header — nach 2 s reißt der Server die Leitung selbst ab.
+        spaeter(() => req.socket.destroy(), 2000);
       } else if (req.url === "/body-still") {
         res.writeHead(200, { "content-type": "text/event-stream" });
         res.write("data: {}\n\n");
+        // Stille — nach 2 s endet der Strom sauber.
+        spaeter(() => res.end(), 2000);
       } else if (req.url === "/sse") {
         res.writeHead(200, { "content-type": "text/event-stream" });
         res.write('event: response.output_text.delta\ndata: {"type":"response.output_text.delta","delta":"Hallo "}\n\n');
-        setTimeout(() => {
+        spaeter(() => {
           res.write('data: {"type":"response.output_text.delta","delta":"Welt"}\n\n');
           res.end('data: {"type":"response.completed","response":{"output":[]}}\n\n');
         }, 200);
@@ -1114,10 +1165,24 @@ if (process.argv.includes("--selftest")) {
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ choices: [{ message: { content: "ok" } }] }));
       } else if (req.url === "/echo") {
-        const passt = req.method === "POST" && req.headers["x-pruef"] === "ja"
-          && req.headers["content-type"] === "application/json" && eingang === '{"a":"ä"}'
-          && req.headers["accept-encoding"] === "identity";
-        res.writeHead(passt ? 200 : 400); res.end(passt ? "passt" : "falsch");
+        // Was hier ankommt, ist der Draht selbst — nicht, was der Aufrufer
+        // meinte. `connection: close` heißt agent:false (der Pool sagt
+        // „keep-alive"), ein fehlendes `sec-fetch-mode` heißt: kein fetch unter
+        // der Haube (undici setzt es immer). „ja" kommt beschnitten an, obwohl
+        // der Aufrufer „ \t ja\r\n" schickt — so wie fetch es beschnitt.
+        const h = req.headers;
+        const abweichung = [
+          req.method !== "POST" && `Methode ${req.method}`,
+          h["x-pruef"] !== "ja" && `x-pruef ${JSON.stringify(h["x-pruef"])}`,
+          h["content-type"] !== "application/json" && `content-type ${JSON.stringify(h["content-type"])}`,
+          eingang !== '{"a":"ä"}' && `Körper ${JSON.stringify(eingang)}`,
+          h["accept-encoding"] !== "identity" && `accept-encoding ${JSON.stringify(h["accept-encoding"])}`,
+          h["user-agent"] !== "node" && `user-agent ${JSON.stringify(h["user-agent"])}`,
+          h.accept !== "*/*" && `accept ${JSON.stringify(h.accept)}`,
+          h.connection !== "close" && `connection ${JSON.stringify(h.connection)}`,
+          h["sec-fetch-mode"] !== undefined && `sec-fetch-mode ${JSON.stringify(h["sec-fetch-mode"])}`,
+        ].filter(Boolean);
+        res.writeHead(abweichung.length ? 400 : 200); res.end(abweichung.length ? abweichung.join("; ") : "passt");
       } else {
         res.writeHead(404); res.end();
       }
@@ -1128,6 +1193,9 @@ if (process.argv.includes("--selftest")) {
   const ziel = (pfad) => `http://127.0.0.1:${pruefPort}${pfad}`;
   const fehlerVon = async (fn) => { try { await fn(); return null; } catch (e) { return e; } };
   const leer = async (koerper) => { for await (const _ of koerper) { /* lesen */ } };
+  // Zweite Sicherung gegen einen Hänger, den die Server-Enden nicht abfangen.
+  const waechter = setTimeout(() => expect(false,
+    "der Transport-Selbsttest läuft seit 30 s — anfrage() hängt, statt mit Frist oder Fehler zu enden."), 30_000);
   try {
     const spaet = await anfrage(ziel("/kopf-spaet"), { body: "{}", frist: 3000 });
     expect(spaet.ok && spaet.status === 200 && (await spaet.text()) === "da",
@@ -1148,17 +1216,56 @@ if (process.argv.includes("--selftest")) {
       "ein Fehlerstatus bleibt lesbar — der Fehler-Body gehört ins Log und an die Endpunkt-Weiche.");
     const js = await anfrage(ziel("/json"), { body: "{}", frist: 3000 });
     expect((await js.json()).choices[0].message.content === "ok", "JSON-Antwort (Chat-Draht) wird gelesen.");
+    // Ein Schlüssel-Secret mit Zeilenende („Bearer abc\n") ließ fetch durch —
+    // es beschneidet Kopfwerte (Fetch-Standard). http.request wirft dafür
+    // synchron, und JEDE Stimme wäre gescheitert, während /models (weiter
+    // fetch) grün blieb.
     const echo = await anfrage(ziel("/echo"), {
-      headers: { "Content-Type": "application/json", "X-Pruef": "ja" },
+      headers: { "Content-Type": "application/json", "X-Pruef": " \t ja\r\n" },
       body: JSON.stringify({ a: "ä" }),
       frist: 3000,
     });
-    expect(echo.status === 200 && (await echo.text()) === "passt",
-      "POST mit Kopfzeilen, UTF-8-Körper und Accept-Encoding: identity kommt beim Server so an, wie er gebaut wurde.");
+    const echoText = await echo.text();
+    expect(echo.status === 200 && echoText === "passt",
+      `der Draht ist der erwartete — POST, Kopfwerte beschnitten wie bei fetch, UTF-8-Körper, Accept-Encoding: identity, User-Agent und Accept wie bisher, eigene Verbindung, kein fetch (Server sah: ${echoText}).`);
+    // Ein Wert, den auch fetch ablehnt (Zeilenumbruch MITTEN im Wert), endet
+    // als Zustellfehler mit Code — ohne den Wert zu nennen und ohne eine Uhr
+    // zu hinterlassen: Die lief bisher weiter und griff nach Ablauf auf eine
+    // Anfrage zu, die es nie gab (ReferenceError, ungefangen).
+    const kaputterKopf = await fehlerVon(() => anfrage(ziel("/echo"), {
+      headers: { "X-Pruef": "geheim\nX-Boese: 1" }, body: "{}", frist: 100,
+    }));
+    expect(kaputterKopf && /ERR_INVALID_CHAR/.test(kaputterKopf.message) && !kaputterKopf.message.includes("geheim"),
+      "ein unzulässiger Kopfwert wird abgewiesen: Code ja, Wert nein.");
+    await new Promise((r) => setTimeout(r, 250)); // über die Frist hinaus: keine verwaiste Uhr
+    // Die VORGABE messen, nicht die Konstante: Welche Uhr stellt anfrage(),
+    // wenn der Aufrufer keine Frist nennt? Genau eine, und zwar
+    // ANFRAGE_FRIST_MS — eine zweite, kürzere Kappe fiele hier auf.
+    const echteUhr = globalThis.setTimeout;
+    const gestellt = [];
+    globalThis.setTimeout = (fn, ms, ...rest) => { gestellt.push(ms); return echteUhr(fn, ms, ...rest); };
+    try {
+      const vorgabe = await anfrage(ziel("/json"), { body: "{}" });
+      await vorgabe.text();
+    } finally {
+      globalThis.setTimeout = echteUhr;
+    }
+    expect(gestellt.length === 1 && gestellt[0] === ANFRAGE_FRIST_MS,
+      `ohne ausdrückliche Frist stellt anfrage() genau EINE Uhr auf ANFRAGE_FRIST_MS (gestellt: ${JSON.stringify(gestellt)}).`);
   } finally {
+    clearTimeout(waechter);
+    for (const t of serverUhren) clearTimeout(t);
     pruefServer.closeAllConnections?.();
     await new Promise((r) => pruefServer.close(r));
   }
+  // Die zwei Stimm-Drähte gehen über anfrage(), nicht über fetch — an der
+  // Quelle geprüft, weil BASE beim Laden feststeht und der Selbsttest die
+  // echten Aufrufe nicht auf den Prüfserver umlenken kann. Ein Rückbau auf
+  // fetch holte die 300-s-Grenze zurück, an der #177 viermal scheiterte.
+  const quelle = readFileSync(fileURLToPath(import.meta.url), "utf8");
+  expect(quelle.includes("anfrage(`${BASE}/responses`") && quelle.includes("anfrage(`${BASE}/chat/completions`")
+    && !/fetch\(\s*`\$\{BASE\}\/(?:responses|chat\/completions)/.test(quelle),
+    "/responses und /chat/completions laufen über anfrage(), nie über fetch.");
   // Ein Verbindungsfehler nennt den CODE, nie die Adresse: Der Workflow
   // maskiert Basis-URL, Host und Hostname — eine aufgelöste IP aus einer
   // Socket-Meldung („connect ECONNREFUSED 203.0.113.7:443") stünde unmaskiert
