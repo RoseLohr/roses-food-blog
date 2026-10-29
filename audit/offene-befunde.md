@@ -1739,9 +1739,20 @@ zwei Runden erzwungen:
   kürzerer Leerlaufgrenze verschluckte die Antwort. Örtlich nachgestellt mit
   DNAT und 90 s Leerlaufgrenze.
 
-Der `--selftest` fährt `attemptOnce()` und `chatFallback()` selbst gegen
-einen Prüfserver. Er misst dabei Uhr, Anfrage-Aufbau, Keepalive und den Draht
-am Server, an BEIDEN Drähten. Sechzehn Mutanten werden rot, keiner hängt.
+Eine Eigenschaft von fetch wurde bewusst NICHT übernommen: **Keine Anfrage
+folgt einer Weiterleitung, auch `/models` nicht.** fetch nahm einen Schlüssel
+im eigenen Kopf (`VERIFIER_AUTH_HEADER`, im Betrieb `X-OpenCodex-API-Key`) zu
+einem fremden Ursprung mit; zurück ließ es nur `Authorization`. Außerdem
+bestimmte das Ziel der Weiterleitung die Modell-Liste. Beides ist gemessen.
+Für die Stimm-Drähte stand das im ersten Entwurf. An `/models` fand es erst
+das Panel selbst, im Neustart an #178: Der Pflicht-Approver widersprach mit
+`high`.
+
+Der `--selftest` fährt `attemptOnce()`, `chatFallback()` und
+`fetchModelIds()` selbst gegen Prüfserver. Er misst dabei Uhr,
+Anfrage-Aufbau, Keepalive und den Draht am Server, an BEIDEN Drähten, und
+leitet auf einen zweiten, fremden Server um, bei dem nichts ankommen darf.
+Siebzehn Mutanten werden rot, keiner hängt.
 
 **Offen bleibt** die zweite Signatur (502 hinter dem Gateway) und jeder echte
 Ausfall des Gateways; beides liegt weiterhin im Betrieb. Ob die Läufe an #134

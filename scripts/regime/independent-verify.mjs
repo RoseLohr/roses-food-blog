@@ -80,8 +80,9 @@
  * die erste Signatur aus B29 (audit/offene-befunde.md), an #177 in vier Läufen
  * im 5-Minuten-Takt nachgemessen. Begründung und Wert: ANFRAGE_FRIST_MS.
  * Alles andere am Draht bleibt, wie fetch es hatte (beschnittene Kopfwerte,
- * User-Agent, Accept, TCP-Keepalive 60 s) — siehe anfrage(). Der --selftest
- * fährt attemptOnce()/chatFallback() selbst gegen einen Prüfserver.
+ * User-Agent, Accept, TCP-Keepalive 60 s) — siehe anfrage(). Keine Anfrage
+ * folgt einer Weiterleitung, auch /models nicht (fetchModelIds). Der --selftest
+ * fährt attemptOnce()/chatFallback()/fetchModelIds() selbst gegen Prüfserver.
  *
  * FOLD-DETAIL (live an diesem Gateway beobachtet): das terminale
  * response.completed kann ein LEERES output-Array tragen, obwohl Text erzeugt
@@ -322,11 +323,16 @@ function pickForPref(ids, p) {
  * GRUND wird mitgegeben, nicht verschluckt: Vom 11. bis 13.09. scheiterte jedes
  * Panel an dieser Abfrage, und das Log sagte nur „nicht verfügbar" (B33).
  */
-async function fetchModelIds() {
+async function fetchModelIds(basis = BASE, kopf = AUTH) {
   try {
     // fetch genügt hier: die Modell-Liste ist eine kurze Abfrage, die 300-s-
     // Grenzen von fetch (siehe ANFRAGE_FRIST_MS) treffen nur die Stimmen selbst.
-    const res = await fetch(`${BASE}/models`, { headers: AUTH });
+    // Aber KEINER Weiterleitung folgen (wie anfrage()): fetch nähme dabei einen
+    // Schlüssel im eigenen Kopf (VERIFIER_AUTH_HEADER) zu einem fremden
+    // Ursprung mit — nur `Authorization` lässt es zurück —, und das Ziel der
+    // Weiterleitung bestimmte die Modell-Liste. Ein 3xx steht als Status im Log.
+    // `basis`/`kopf` als Argument, damit der --selftest genau das prüfen kann.
+    const res = await fetch(`${basis}/models`, { headers: kopf, redirect: "manual" });
     if (res.ok) {
       const data = await res.json();
       return { ids: (data?.data || []).map((m) => m?.id).filter(Boolean) };
@@ -1181,6 +1187,13 @@ if (process.argv.includes("--selftest")) {
         res.writeHead(200, { "content-type": "text/event-stream" });
         res.write(`data: ${JSON.stringify({ type: "response.output_text.delta", delta: '{"refuted": false, "confidence": "low"}' })}\n\n`);
         res.end('data: {"type":"response.completed","response":{"output":[]}}\n\n');
+      } else if (req.url === "/weiter/models" || req.url === "/weiter/responses") {
+        res.writeHead(req.url.endsWith("models") ? 302 : 307, { location: `http://127.0.0.1:${fremdPort}${req.url.slice(7)}` });
+        res.end();
+      } else if (req.url === "/liste/models") {
+        const passt = req.headers["x-opencodex-api-key"] === "geheim";
+        res.writeHead(passt ? 200 : 401, { "content-type": "application/json" });
+        res.end(passt ? JSON.stringify({ data: [{ id: "eigen-1" }, { id: "eigen-2" }] }) : "{}");
       } else if (req.url === "/umweg/responses") {
         res.writeHead(503); res.end("Upstream überlastet");
       } else if (req.url === "/umweg/chat/completions") {
@@ -1217,6 +1230,18 @@ if (process.argv.includes("--selftest")) {
       }
     });
   });
+  // Ein FREMDER Ursprung (anderer Port), auf den /weiter/… umleitet. Was hier
+  // ankommt, hat eine Weiterleitung mitgenommen — den Schlüssel im eigenen
+  // Kopf zum Beispiel. Er antwortet mit einer untergeschobenen Modell-Liste.
+  const beimFremden = [];
+  const fremdServer = httpPruef.createServer((req, res) => {
+    beimFremden.push({ url: req.url, schluessel: req.headers["x-opencodex-api-key"] ?? null });
+    req.resume();
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ data: [{ id: "untergeschoben" }] }));
+  });
+  await new Promise((r) => fremdServer.listen(0, "127.0.0.1", r));
+  const fremdPort = fremdServer.address().port;
   await new Promise((r) => pruefServer.listen(0, "127.0.0.1", r));
   const pruefPort = pruefServer.address().port;
   const ziel = (pfad) => `http://127.0.0.1:${pruefPort}${pfad}`;
@@ -1323,11 +1348,31 @@ if (process.argv.includes("--selftest")) {
     expect(umweg.ergebnis?.ok === true && umweg.ergebnis.decision.block === true && umweg.ergebnis.v?.reason === "Lücke",
       `nach 503 erreicht chatFallback() /chat/completions über denselben Draht, und das Urteil kommt durch (Ergebnis: ${JSON.stringify(umweg.ergebnis)}).`);
     spurPasst(umweg, 2, "attemptOnce() → 503 → chatFallback()");
+
+    // ── Weiterleitungen: keine Anfrage folgt einer, auch nicht /models ──
+    // fetch folgt per Vorgabe und nimmt dabei einen Schlüssel im EIGENEN Kopf
+    // (VERIFIER_AUTH_HEADER, im Betrieb X-OpenCodex-API-Key) zu einem fremden
+    // Ursprung mit — nur `Authorization` lässt es zurück (gemessen). Und das
+    // Ziel der Weiterleitung bestimmte die Modell-Liste. Das Panel hat es an
+    // /models gefunden, nachdem die Stimm-Drähte schon dicht waren.
+    const eigeneListe = await fetchModelIds(ziel("/liste"), { "X-OpenCodex-API-Key": "geheim" });
+    expect(JSON.stringify(eigeneListe) === JSON.stringify({ ids: ["eigen-1", "eigen-2"] }),
+      `/models liest die Liste des eigenen Gateways (Ergebnis: ${JSON.stringify(eigeneListe)}).`);
+    const umgeleiteteListe = await fetchModelIds(ziel("/weiter"), { "X-OpenCodex-API-Key": "geheim" });
+    expect(umgeleiteteListe.ids === null && umgeleiteteListe.grund === "HTTP 302" && beimFremden.length === 0,
+      `/models folgt keiner Weiterleitung: Status im Log, beim fremden Ursprung kommt nichts an (Ergebnis: ${JSON.stringify(umgeleiteteListe)}, beim Fremden: ${JSON.stringify(beimFremden)}).`);
+    const umgeleiteteStimme = await attemptOnce(0, {
+      ...umgebung("/weiter"), kopf: { "Content-Type": "application/json", "X-OpenCodex-API-Key": "geheim" },
+    });
+    expect(umgeleiteteStimme?.ok === false && umgeleiteteStimme.status === 307 && beimFremden.length === 0,
+      `der Stimm-Draht folgt keiner Weiterleitung: 307 ist ein Fehlerstatus, beim fremden Ursprung kommt nichts an (Ergebnis: ${JSON.stringify(umgeleiteteStimme)}, beim Fremden: ${JSON.stringify(beimFremden)}).`);
   } finally {
     clearTimeout(waechter);
     for (const t of serverUhren) clearTimeout(t);
-    pruefServer.closeAllConnections?.();
-    await new Promise((r) => pruefServer.close(r));
+    for (const s of [pruefServer, fremdServer]) {
+      s.closeAllConnections?.();
+      await new Promise((r) => s.close(r));
+    }
   }
   // Ein Verbindungsfehler nennt den CODE, nie die Adresse: Der Workflow
   // maskiert Basis-URL, Host und Hostname — eine aufgelöste IP aus einer
