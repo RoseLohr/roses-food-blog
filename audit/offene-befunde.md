@@ -1696,6 +1696,44 @@ Repository.
 Vier Pull Requests (#136–#139) hingen dadurch drei Tage, obwohl auf jedem von
 der ersten Minute an jeder andere Check grün war.
 
+### Nachtrag 29.10.2026 — die erste Signatur hat eine Ursache IM Repository
+
+Die erste Signatur („`fetch failed`", rund 30–35 min, dann fail-closed) ist
+nicht allein Betrieb. Ein Teil steckt im Skript selbst: Jede Stimme lief über
+Nodes eingebautes `fetch`, und das bricht nach **300 s** ab — ohne dass irgendwer
+diese Grenze gesetzt hätte. Gemessen gegen einen eigenen Server mit je 310 s
+Stille (Node 22.22.0):
+
+    Header-Stille 310 s   "fetch failed"   UND_ERR_HEADERS_TIMEOUT   nach 300,8 s
+    Body-Stille   310 s   "terminated"     UND_ERR_BODY_TIMEOUT      nach 300,8 s
+
+Genau diese zwei Meldungen trug PR #177 (Zwischenstand im Rezept-Editor) in
+**vier** Panel-Läufen an drei Tagen, jedes Mal gleich: `combo/SOTA-A`
+„terminated", `combo/SOTA-B` „fetch failed" im 5-Minuten-Takt
+(22:02:31 → 22:07:32 → 22:17:34 → 22:27:37 → 22:32:38: Primär 5 min,
+Fallback 5 min, drei Versuche), `combo/SOTA-C` gab frei. #173 und #176 liefen
+in denselben Stunden durch — das Gateway war erreichbar. Der Unterschied ist
+die Denkzeit: #173 und #177 bekamen beide die vollen 50.000 Zeichen Diff
+(#173 scheiterte am 22./23.10. zweimal mit derselben Signatur), #176 nur
+11.770. Das Gateway schickt die Header erst, wenn das Modell zu schreiben
+beginnt; wer länger als fünf Minuten nachdenkt, kam nie zu Wort.
+
+**Behoben:** `anfrage()` in `scripts/regime/independent-verify.mjs` hat genau
+EINE Grenze, `ANFRAGE_FRIST_MS` = 15 min (gut doppelt über dem längsten
+gemessenen Erfolg von 458 s). Gegenprobe mit denselben 310 s Stille:
+
+    Header nach 310 s     anfrage(): Status 200        nach 310,0 s
+    Body-Stille 310 s     anfrage(): Strom vollständig nach 310,0 s
+
+Fail-closed bleibt unverändert — eine abgelaufene Frist ist ein
+Zustellfehler wie jeder andere.
+
+**Offen bleibt** die zweite Signatur (502 hinter dem Gateway) und jeder echte
+Ausfall des Gateways; beides liegt weiterhin im Betrieb. Ob die Läufe an #134
+(01.09.) ebenfalls an der 300-s-Grenze starben, lässt sich nachträglich nicht
+mehr sagen — dort fiel zusätzlich `/v1/models` aus, also war das Gateway
+mindestens teilweise weg.
+
 ## B28 — das Bild-Auslieferungsbudget verbuchte Chromes Wiederverwendung als Verschwendung
 
 **Behoben (Leitersprung je Vorkommen, 09/2026).** Der Ausschlag ist
