@@ -73,6 +73,13 @@
  * — kontinuierliche Bytes schlagen den 90-s-Idle-Timer, ganz gleich wie lange
  * das Modell denkt.
  *
+ * TRANSPORT (10/2026, Root-Cause statt Workaround): Beide Stimm-Drähte laufen
+ * über anfrage() (node:http/https) mit EINER gewählten Frist, nicht mehr über
+ * fetch. fetch (undici) bricht nach 300 s ohne Header und nach 300 s Stille im
+ * Strom ab — gemessen: „fetch failed" bzw. „terminated" nach 300,8 s. Das war
+ * die erste Signatur aus B29 (audit/offene-befunde.md), an #177 in vier Läufen
+ * im 5-Minuten-Takt nachgemessen. Begründung und Wert: ANFRAGE_FRIST_MS.
+ *
  * FOLD-DETAIL (live an diesem Gateway beobachtet): das terminale
  * response.completed kann ein LEERES output-Array tragen, obwohl Text erzeugt
  * wurde — der Text kommt über response.output_text.delta-Events. Der Fold
@@ -101,6 +108,8 @@
 import { execSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { appendFileSync } from "node:fs";
+import http from "node:http";
+import https from "node:https";
 
 const KEY = process.env.SECOND_VENDOR_API_KEY || process.env.OPENAI_API_KEY;
 /**
@@ -137,6 +146,100 @@ export function authHeader(name, key) {
 
 const AUTH = authHeader(process.env.VERIFIER_AUTH_HEADER, KEY);
 
+/**
+ * Wie lange EINE Anfrage an das Panel höchstens dauern darf — Header, Strom
+ * und Ende zusammen. Gewählt, nicht geerbt (10/2026):
+ *
+ * Bis dahin lief jede Stimme über Nodes eingebautes fetch, und das bringt zwei
+ * Grenzen mit, die niemand gesetzt hat: undici bricht nach 300 s ohne Header
+ * ab („fetch failed", UND_ERR_HEADERS_TIMEOUT) und nach 300 s Stille im Strom
+ * („terminated", UND_ERR_BODY_TIMEOUT). Gemessen an einem eigenen Server mit je
+ * 310 s Stille: beide Abbrüche bei 300 s. Genau diese zwei Meldungen standen in
+ * vier Panel-Läufen von #177 an drei Tagen, im 5-Minuten-Takt — Primär-Draht
+ * 5 min, Chat-Fallback 5 min, drei Versuche, nach 30 min fail-closed. Das
+ * Gateway schickt die Header erst, wenn das Modell zu schreiben beginnt; ein
+ * Modell, das an einem großen Diff länger als fünf Minuten nachdenkt, kam so
+ * nie zu Wort. #173 scheiterte an denselben 50.000 Zeichen zweimal genauso.
+ *
+ * 15 Minuten liegen gut doppelt über dem längsten gemessenen erfolgreichen
+ * Lauf (Betreiber-Telemetrie: 458 s) und beenden doch einen wirklich hängenden
+ * Endpunkt. Schlimmster Fall je Stimme: drei Versuche × (Primär + Fallback)
+ * = 90 min — der Panel-Job hat das GitHub-Limit von 360 min. Fail-closed
+ * bleibt fail-closed: Eine abgelaufene Frist ist ein Zustellfehler wie jeder
+ * andere und geht durch dieselbe Retry-Weiche.
+ */
+export const ANFRAGE_FRIST_MS = 15 * 60 * 1000;
+
+/** Ein Netzfehler ohne Adresse: der Code (ECONNREFUSED …), nie die Socket-Meldung. */
+class Zustellfehler extends Error {}
+function bereinigt(err) {
+  if (err instanceof Zustellfehler) return err;
+  const code = typeof err?.code === "string" && /^[A-Z0-9_]+$/.test(err.code) ? err.code : "ohne Code";
+  return new Zustellfehler(`Netzfehler (${code})`);
+}
+
+/**
+ * POST mit genau EINER Grenze, der Frist — statt der impliziten 300 s von
+ * fetch (siehe ANFRAGE_FRIST_MS). Antwortet in der Form, die die Aufrufer von
+ * fetch kennen: { ok, status, body, text(), json() }; `body` ist ein
+ * asynchron iterierbarer Strom (für den SSE-Fold).
+ *
+ * Fehlermeldungen tragen den Code, NIE die Adresse: Der Workflow maskiert
+ * Basis-URL, Host und Hostname, eine aufgelöste IP aus einer Socket-Meldung
+ * („connect ECONNREFUSED 203.0.113.7:443") stünde aber unmaskiert im
+ * öffentlichen Log. Bei fetch verdeckte „fetch failed" sie zufällig mit.
+ */
+export function anfrage(url, { headers = {}, body = "", frist = ANFRAGE_FRIST_MS } = {}) {
+  return new Promise((resolve, reject) => {
+    let ziel;
+    try { ziel = new URL(url); } catch (err) { reject(new Zustellfehler("Ungültige Adresse")); return; }
+    const modul = ziel.protocol === "https:" ? https : ziel.protocol === "http:" ? http : null;
+    if (!modul) { reject(new Zustellfehler(`Protokoll nicht unterstützt: ${ziel.protocol}`)); return; }
+    const daten = Buffer.from(String(body), "utf8");
+    let antwort = null;
+    const uhr = setTimeout(() => {
+      const err = new Zustellfehler(`Frist von ${frist / 1000} s überschritten`);
+      if (antwort) antwort.destroy(err); else req.destroy(err);
+    }, frist);
+    // agent:false — eine eigene Verbindung je Anfrage. Der Keep-Alive-Pool
+    // reichte sonst nach einem langen Versuch eine Verbindung weiter, die das
+    // Gateway inzwischen geschlossen hat, und der Wiederholungsversuch starb
+    // sofort an ECONNRESET (im Selbsttest so beobachtet). Wiederverwendung
+    // spart bei Anfragen, die Minuten dauern, nichts.
+    const req = modul.request(ziel, {
+      method: "POST",
+      agent: false,
+      // fetch handelt Kompression selbst aus und entpackt; http.request tut
+      // beides nicht. Ohne Accept-Encoding darf ein Server jede Kodierung
+      // schicken (RFC 9110) — der SSE-Fold läse dann Binärdaten. Also
+      // ausdrücklich keine.
+      headers: { ...headers, "Accept-Encoding": "identity", "Content-Length": daten.length },
+    });
+    req.on("error", (err) => { clearTimeout(uhr); reject(bereinigt(err)); });
+    req.on("response", (res) => {
+      antwort = res;
+      res.on("close", () => clearTimeout(uhr));
+      // Fehler WÄHREND des Lesens (Frist, Abriss) kommen bereinigt beim Leser an.
+      const strom = (async function* () {
+        try { for await (const stueck of res) yield stueck; } catch (err) { throw bereinigt(err); }
+      })();
+      const alsText = async () => {
+        const teile = [];
+        for await (const stueck of strom) teile.push(Buffer.from(stueck));
+        return Buffer.concat(teile).toString("utf8");
+      };
+      resolve({
+        status: res.statusCode,
+        ok: res.statusCode >= 200 && res.statusCode < 300,
+        body: strom,
+        text: alsText,
+        json: async () => JSON.parse(await alsText()),
+      });
+    });
+    req.end(daten);
+  });
+}
+
 // Präferenz-Reihenfolge (NEU → alt). Ohne explizites VERIFIER_MODEL nimmt der
 // Verifier das erste hiervon, das der Account tatsächlich FREIGESCHALTET hat.
 const MODEL_PREFERENCE = [
@@ -171,6 +274,8 @@ function pickForPref(ids, p) {
  */
 async function fetchModelIds() {
   try {
+    // fetch genügt hier: die Modell-Liste ist eine kurze Abfrage, die 300-s-
+    // Grenzen von fetch (siehe ANFRAGE_FRIST_MS) treffen nur die Stimmen selbst.
     const res = await fetch(`${BASE}/models`, { headers: AUTH });
     if (res.ok) {
       const data = await res.json();
@@ -971,7 +1076,108 @@ if (process.argv.includes("--selftest")) {
   expect(requireApprovals([A, A2, A], panelOhneListe(KONF, false, 3, "fb"), "combo/SOTA-A", 1).block === true,
     "mit dem Fallback-Panel kann er es nie — genau der Dauerblock vom 11.–13.09.");
 
-  console.log("   ✓ Selbsttest: decide() + modelMatches() + requireApprovals() (Pflicht-Approver Sol + Korroboration) + attestReasons() + attestProof() + validateRangeInputs() + normalizeBase() + authHeader() + strictAnyRefutation() + mdInline() + renderStepSummary() + panelOhneListe() korrekt.");
+  // ── TRANSPORT (10/2026): EINE gewählte Frist statt zweier impliziter 300 s ──
+  //
+  // Nodes eingebautes fetch (undici) bricht nach 300 s Stille ab: vor den
+  // Headern als „fetch failed" (UND_ERR_HEADERS_TIMEOUT), mitten im Strom als
+  // „terminated" (UND_ERR_BODY_TIMEOUT). Gemessen gegen einen eigenen Server,
+  // je 310 s Stille: beide Abbrüche nach 300 s. Genau diese zwei Meldungen
+  // standen in VIER Panel-Läufen von #177 an drei Tagen, im 5-Minuten-Takt
+  // (Primär 5 min, Fallback 5 min, drei Versuche = 30 min): Ein Modell, das an
+  // einem großen Diff länger als fünf Minuten nachdenkt, kam nie zu Wort, und
+  // das Panel war fail-closed, ohne dass ein Prüfer etwas gefunden hätte.
+  // anfrage() kennt genau EINE Grenze, die wir wählen. Geprüft wird, dass sie
+  // greift, dass vorher nichts abbricht und dass der Strom wie bisher gefaltet
+  // wird — 300 s abzuwarten passt in keinen Selbsttest, dafür steht die Messung.
+  const httpPruef = await import("node:http");
+  const pruefServer = httpPruef.createServer((req, res) => {
+    let eingang = "";
+    req.on("data", (c) => { eingang += c; });
+    req.on("end", () => {
+      if (req.url === "/kopf-spaet") {
+        setTimeout(() => { res.writeHead(200); res.end("da"); }, 400);
+      } else if (req.url === "/kopf-nie") {
+        // antwortet nie
+      } else if (req.url === "/body-still") {
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        res.write("data: {}\n\n");
+      } else if (req.url === "/sse") {
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        res.write('event: response.output_text.delta\ndata: {"type":"response.output_text.delta","delta":"Hallo "}\n\n');
+        setTimeout(() => {
+          res.write('data: {"type":"response.output_text.delta","delta":"Welt"}\n\n');
+          res.end('data: {"type":"response.completed","response":{"output":[]}}\n\n');
+        }, 200);
+      } else if (req.url === "/503") {
+        res.writeHead(503); res.end("Upstream überlastet");
+      } else if (req.url === "/json") {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ choices: [{ message: { content: "ok" } }] }));
+      } else if (req.url === "/echo") {
+        const passt = req.method === "POST" && req.headers["x-pruef"] === "ja"
+          && req.headers["content-type"] === "application/json" && eingang === '{"a":"ä"}'
+          && req.headers["accept-encoding"] === "identity";
+        res.writeHead(passt ? 200 : 400); res.end(passt ? "passt" : "falsch");
+      } else {
+        res.writeHead(404); res.end();
+      }
+    });
+  });
+  await new Promise((r) => pruefServer.listen(0, "127.0.0.1", r));
+  const pruefPort = pruefServer.address().port;
+  const ziel = (pfad) => `http://127.0.0.1:${pruefPort}${pfad}`;
+  const fehlerVon = async (fn) => { try { await fn(); return null; } catch (e) { return e; } };
+  const leer = async (koerper) => { for await (const _ of koerper) { /* lesen */ } };
+  try {
+    const spaet = await anfrage(ziel("/kopf-spaet"), { body: "{}", frist: 3000 });
+    expect(spaet.ok && spaet.status === 200 && (await spaet.text()) === "da",
+      "Header nach 0,4 s bei 3 s Frist: Die Antwort kommt an — vor der Frist bricht nichts ab.");
+    const ohneKopf = await fehlerVon(() => anfrage(ziel("/kopf-nie"), { body: "{}", frist: 150 }));
+    expect(ohneKopf && /Frist/.test(ohneKopf.message),
+      "kommen die Header nicht vor der Frist, endet die Anfrage mit einer FRIST-Meldung, nicht still.");
+    const still = await anfrage(ziel("/body-still"), { body: "{}", frist: 300 });
+    const stillFehler = await fehlerVon(() => leer(still.body));
+    expect(still.ok && stillFehler && /Frist/.test(stillFehler.message),
+      "Stille im Strom über die Frist hinaus: Das Lesen bricht mit der Frist-Meldung ab.");
+    const strom = await anfrage(ziel("/sse"), { body: "{}", frist: 3000 });
+    const { text: gefaltet } = await foldResponsesStream(strom.body);
+    expect(gefaltet === "Hallo Welt",
+      "der Responses-Strom wird über anfrage() genauso gefaltet wie bisher über fetch.");
+    const kaputt = await anfrage(ziel("/503"), { body: "{}", frist: 3000 });
+    expect(!kaputt.ok && kaputt.status === 503 && (await kaputt.text()) === "Upstream überlastet",
+      "ein Fehlerstatus bleibt lesbar — der Fehler-Body gehört ins Log und an die Endpunkt-Weiche.");
+    const js = await anfrage(ziel("/json"), { body: "{}", frist: 3000 });
+    expect((await js.json()).choices[0].message.content === "ok", "JSON-Antwort (Chat-Draht) wird gelesen.");
+    const echo = await anfrage(ziel("/echo"), {
+      headers: { "Content-Type": "application/json", "X-Pruef": "ja" },
+      body: JSON.stringify({ a: "ä" }),
+      frist: 3000,
+    });
+    expect(echo.status === 200 && (await echo.text()) === "passt",
+      "POST mit Kopfzeilen, UTF-8-Körper und Accept-Encoding: identity kommt beim Server so an, wie er gebaut wurde.");
+  } finally {
+    pruefServer.closeAllConnections?.();
+    await new Promise((r) => pruefServer.close(r));
+  }
+  // Ein Verbindungsfehler nennt den CODE, nie die Adresse: Der Workflow
+  // maskiert Basis-URL, Host und Hostname — eine aufgelöste IP aus einer
+  // Socket-Meldung („connect ECONNREFUSED 203.0.113.7:443") stünde unmaskiert
+  // im öffentlichen Log. Bisher verdeckte „fetch failed" sie zufällig mit.
+  // Ein Port, an dem nie jemand lauschte — kein Rest einer früheren Verbindung.
+  const leerServer = httpPruef.createServer();
+  await new Promise((r) => leerServer.listen(0, "127.0.0.1", r));
+  const leerPort = leerServer.address().port;
+  await new Promise((r) => leerServer.close(r));
+  const abgelehnt = await fehlerVon(() => anfrage(`http://127.0.0.1:${leerPort}/`, { body: "{}", frist: 3000 }));
+  expect(abgelehnt && /ECONNREFUSED/.test(abgelehnt.message) && !abgelehnt.message.includes("127.0.0.1")
+    && !abgelehnt.message.includes(String(leerPort)),
+    "Verbindungsfehler: Code ja, Adresse und Port nein.");
+  const ohneProtokoll = await fehlerVon(() => anfrage("ftp://x/", { body: "{}", frist: 3000 }));
+  expect(ohneProtokoll && /Protokoll/.test(ohneProtokoll.message), "nur http und https.");
+  expect(ANFRAGE_FRIST_MS >= 10 * 60 * 1000,
+    "die gewählte Frist liegt deutlich über den 300 s, an denen #177 scheiterte, und über den längsten gemessenen Läufen (458 s).");
+
+  console.log("   ✓ Selbsttest: decide() + modelMatches() + requireApprovals() (Pflicht-Approver Sol + Korroboration) + attestReasons() + attestProof() + validateRangeInputs() + normalizeBase() + authHeader() + strictAnyRefutation() + mdInline() + renderStepSummary() + panelOhneListe() + anfrage() (gewählte Frist statt impliziter 300 s) korrekt.");
   process.exit(0);
 }
 
@@ -1162,8 +1368,9 @@ async function attemptOnce(i) {
   // neuere Modelle lehnen die teils mit 400 ab.
   let res;
   try {
-    res = await fetch(`${BASE}/responses`, {
-      method: "POST",
+    // anfrage(), nicht fetch: fetch bricht nach 300 s ohne Header ab (siehe
+    // ANFRAGE_FRIST_MS) — genau so lange denkt ein Modell an einem großen Diff.
+    res = await anfrage(`${BASE}/responses`, {
       headers: H,
       body: JSON.stringify({
         model: MODELS[i],
@@ -1219,8 +1426,7 @@ async function attemptOnce(i) {
  */
 async function chatFallback(i, sys, finish, why, primaryStatus) {
   console.log(`[independent-verify] Stimme ${i + 1}: /responses nicht nutzbar (${why}) → Fallback /chat/completions.`);
-  const res = await fetch(`${BASE}/chat/completions`, {
-    method: "POST",
+  const res = await anfrage(`${BASE}/chat/completions`, {
     headers: H,
     body: JSON.stringify({
       model: MODELS[i],
