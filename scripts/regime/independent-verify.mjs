@@ -79,6 +79,9 @@
  * Strom ab — gemessen: „fetch failed" bzw. „terminated" nach 300,8 s. Das war
  * die erste Signatur aus B29 (audit/offene-befunde.md), an #177 in vier Läufen
  * im 5-Minuten-Takt nachgemessen. Begründung und Wert: ANFRAGE_FRIST_MS.
+ * Alles andere am Draht bleibt, wie fetch es hatte (beschnittene Kopfwerte,
+ * User-Agent, Accept, TCP-Keepalive 60 s) — siehe anfrage(). Der --selftest
+ * fährt attemptOnce()/chatFallback() selbst gegen einen Prüfserver.
  *
  * FOLD-DETAIL (live an diesem Gateway beobachtet): das terminale
  * response.completed kann ein LEERES output-Array tragen, obwohl Text erzeugt
@@ -249,6 +252,14 @@ export function anfrage(url, { headers = {}, body = "", frist = ANFRAGE_FRIST_MS
       reject(bereinigt(err, "Anfrage nicht baubar"));
       return;
     }
+    // TCP-Keepalive wie bei fetch (undici: 60 s). `agent: false` schaltet mit
+    // dem Pool auch das ab — und dann geht in der Header-Stille, für die die
+    // Frist gemacht ist, kein einziges Paket über die Leitung. Ein NAT oder
+    // Lastverteiler mit kürzerer Leerlaufgrenze verwirft die Zuordnung still,
+    // die Antwort erreicht den Läufer nie, und anfrage() wartet die volle
+    // Frist ab. Örtlich nachgestellt (DNAT, 90 s Leerlaufgrenze, Antwort nach
+    // 150 s): ohne diese Zeile Frist, mit ihr und mit fetch Status 200.
+    req.once("socket", (s) => s.setKeepAlive(true, 60_000));
     let antwort = null;
     const uhr = setTimeout(() => {
       const err = new Zustellfehler(`Frist von ${frist / 1000} s überschritten`);
@@ -1134,15 +1145,52 @@ if (process.argv.includes("--selftest")) {
   // CI-Jobs. So ergibt das Fehlen der Frist einen ANDEREN Ausgang (Abriss bzw.
   // sauberes Ende statt Frist-Meldung), und die Zusicherung schlägt an.
   const httpPruef = await import("node:http");
-  const { readFileSync } = await import("node:fs");
-  const { fileURLToPath } = await import("node:url");
+  const netPruef = await import("node:net");
   const serverUhren = new Set();
   const spaeter = (fn, ms) => { const t = setTimeout(() => { serverUhren.delete(t); fn(); }, ms); serverUhren.add(t); };
+  // Was an jedem Stimm-Draht ankommen muss — der Draht, den das Gateway von
+  // fetch kannte, aber ohne fetch: `connection: close` heißt agent:false (der
+  // Pool sagt „keep-alive"), ein fehlendes `sec-fetch-mode` heißt, dass kein
+  // fetch darunter steckt (undici setzt es immer). Der Schlüssel kommt
+  // beschnitten an, obwohl die Umgebung ihn mit Leerraum ringsum schickt.
+  const drahtAbweichung = (req, koerper, erwartet) => {
+    const h = req.headers;
+    const ist = (() => { try { return JSON.parse(koerper); } catch { return `kein JSON: ${koerper}`; } })();
+    return [
+      req.method !== "POST" && `Methode ${req.method}`,
+      h["content-type"] !== "application/json" && `content-type ${JSON.stringify(h["content-type"])}`,
+      h.authorization !== "Bearer pruef" && `authorization ${JSON.stringify(h.authorization)}`,
+      h["accept-encoding"] !== "identity" && `accept-encoding ${JSON.stringify(h["accept-encoding"])}`,
+      h["user-agent"] !== "node" && `user-agent ${JSON.stringify(h["user-agent"])}`,
+      h.accept !== "*/*" && `accept ${JSON.stringify(h.accept)}`,
+      h.connection !== "close" && `connection ${JSON.stringify(h.connection)}`,
+      h["sec-fetch-mode"] !== undefined && `sec-fetch-mode ${JSON.stringify(h["sec-fetch-mode"])}`,
+      JSON.stringify(ist) !== JSON.stringify(erwartet) && `Körper ${JSON.stringify(ist)}`,
+    ].filter(Boolean);
+  };
   const pruefServer = httpPruef.createServer((req, res) => {
     let eingang = "";
+    req.setEncoding("utf8");
     req.on("data", (c) => { eingang += c; });
     req.on("end", () => {
-      if (req.url === "/kopf-spaet") {
+      if (req.url === "/draht/responses") {
+        const abw = drahtAbweichung(req, eingang, {
+          model: "pruef-modell", instructions: "SYS LINSE", input: [{ role: "user", content: "DIFF ä" }], stream: true,
+        });
+        if (abw.length) { res.writeHead(400); res.end(abw.join("; ")); return; }
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        res.write(`data: ${JSON.stringify({ type: "response.output_text.delta", delta: '{"refuted": false, "confidence": "low"}' })}\n\n`);
+        res.end('data: {"type":"response.completed","response":{"output":[]}}\n\n');
+      } else if (req.url === "/umweg/responses") {
+        res.writeHead(503); res.end("Upstream überlastet");
+      } else if (req.url === "/umweg/chat/completions") {
+        const abw = drahtAbweichung(req, eingang, {
+          model: "pruef-modell", messages: [{ role: "system", content: "SYS LINSE" }, { role: "user", content: "DIFF ä" }],
+        });
+        if (abw.length) { res.writeHead(400); res.end(abw.join("; ")); return; }
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ choices: [{ message: { content: '{"refuted": true, "confidence": "high", "reason": "Lücke"}' } }] }));
+      } else if (req.url === "/kopf-spaet") {
         spaeter(() => { res.writeHead(200); res.end("da"); }, 400);
       } else if (req.url === "/kopf-nie") {
         // Keine Header — nach 2 s reißt der Server die Leitung selbst ab.
@@ -1164,25 +1212,6 @@ if (process.argv.includes("--selftest")) {
       } else if (req.url === "/json") {
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ choices: [{ message: { content: "ok" } }] }));
-      } else if (req.url === "/echo") {
-        // Was hier ankommt, ist der Draht selbst — nicht, was der Aufrufer
-        // meinte. `connection: close` heißt agent:false (der Pool sagt
-        // „keep-alive"), ein fehlendes `sec-fetch-mode` heißt: kein fetch unter
-        // der Haube (undici setzt es immer). „ja" kommt beschnitten an, obwohl
-        // der Aufrufer „ \t ja\r\n" schickt — so wie fetch es beschnitt.
-        const h = req.headers;
-        const abweichung = [
-          req.method !== "POST" && `Methode ${req.method}`,
-          h["x-pruef"] !== "ja" && `x-pruef ${JSON.stringify(h["x-pruef"])}`,
-          h["content-type"] !== "application/json" && `content-type ${JSON.stringify(h["content-type"])}`,
-          eingang !== '{"a":"ä"}' && `Körper ${JSON.stringify(eingang)}`,
-          h["accept-encoding"] !== "identity" && `accept-encoding ${JSON.stringify(h["accept-encoding"])}`,
-          h["user-agent"] !== "node" && `user-agent ${JSON.stringify(h["user-agent"])}`,
-          h.accept !== "*/*" && `accept ${JSON.stringify(h.accept)}`,
-          h.connection !== "close" && `connection ${JSON.stringify(h.connection)}`,
-          h["sec-fetch-mode"] !== undefined && `sec-fetch-mode ${JSON.stringify(h["sec-fetch-mode"])}`,
-        ].filter(Boolean);
-        res.writeHead(abweichung.length ? 400 : 200); res.end(abweichung.length ? abweichung.join("; ") : "passt");
       } else {
         res.writeHead(404); res.end();
       }
@@ -1216,56 +1245,79 @@ if (process.argv.includes("--selftest")) {
       "ein Fehlerstatus bleibt lesbar — der Fehler-Body gehört ins Log und an die Endpunkt-Weiche.");
     const js = await anfrage(ziel("/json"), { body: "{}", frist: 3000 });
     expect((await js.json()).choices[0].message.content === "ok", "JSON-Antwort (Chat-Draht) wird gelesen.");
-    // Ein Schlüssel-Secret mit Zeilenende („Bearer abc\n") ließ fetch durch —
-    // es beschneidet Kopfwerte (Fetch-Standard). http.request wirft dafür
-    // synchron, und JEDE Stimme wäre gescheitert, während /models (weiter
-    // fetch) grün blieb.
-    const echo = await anfrage(ziel("/echo"), {
-      headers: { "Content-Type": "application/json", "X-Pruef": " \t ja\r\n" },
-      body: JSON.stringify({ a: "ä" }),
-      frist: 3000,
-    });
-    const echoText = await echo.text();
-    expect(echo.status === 200 && echoText === "passt",
-      `der Draht ist der erwartete — POST, Kopfwerte beschnitten wie bei fetch, UTF-8-Körper, Accept-Encoding: identity, User-Agent und Accept wie bisher, eigene Verbindung, kein fetch (Server sah: ${echoText}).`);
     // Ein Wert, den auch fetch ablehnt (Zeilenumbruch MITTEN im Wert), endet
     // als Zustellfehler mit Code — ohne den Wert zu nennen und ohne eine Uhr
     // zu hinterlassen: Die lief bisher weiter und griff nach Ablauf auf eine
     // Anfrage zu, die es nie gab (ReferenceError, ungefangen).
-    const kaputterKopf = await fehlerVon(() => anfrage(ziel("/echo"), {
+    const kaputterKopf = await fehlerVon(() => anfrage(ziel("/json"), {
       headers: { "X-Pruef": "geheim\nX-Boese: 1" }, body: "{}", frist: 100,
     }));
     expect(kaputterKopf && /ERR_INVALID_CHAR/.test(kaputterKopf.message) && !kaputterKopf.message.includes("geheim"),
       "ein unzulässiger Kopfwert wird abgewiesen: Code ja, Wert nein.");
     await new Promise((r) => setTimeout(r, 250)); // über die Frist hinaus: keine verwaiste Uhr
-    // Die VORGABE messen, nicht die Konstante: Welche Uhr stellt anfrage(),
-    // wenn der Aufrufer keine Frist nennt? Genau eine, und zwar
-    // ANFRAGE_FRIST_MS — eine zweite, kürzere Kappe fiele hier auf.
+
+    // ── Die ECHTEN Aufrufstellen: attemptOnce() und chatFallback() ──
+    // Sie bekommen, was beim Laden feststeht (Basis, Kopf, Modelle, Prompt),
+    // als Argument — wie stimmeHolen() seine Versuche. So fährt der Selbsttest
+    // genau den Weg der Produktion gegen den Prüfserver, statt am Quelltext
+    // nach einer Schreibweise zu suchen. Der Schlüssel trägt Leerraum ringsum
+    // wie ein Secret mit Zeilenende: fetch beschnitt das (Fetch-Standard),
+    // http.request wirft dafür — jede Stimme wäre gescheitert, während
+    // /models (weiter fetch) grün blieb.
+    const umgebung = (pfad) => ({
+      basis: ziel(pfad),
+      kopf: { "Content-Type": "application/json", Authorization: "\tBearer pruef\r\n" },
+      modelle: ["pruef-modell"],
+      system: "SYS",
+      linsen: [" LINSE"],
+      user: "DIFF ä",
+    });
+    // Beim Primär-Draht mitgeschnitten, was eine zweite, stille Grenze oder
+    // ein fehlendes Keepalive verraten würde: jede gestellte Uhr, jeder
+    // Anfrage-Aufbau samt Optionen, jedes TCP-Keepalive. Dasselbe http-Objekt,
+    // über das anfrage() baut.
+    const httpObjekt = httpPruef.default;
     const echteUhr = globalThis.setTimeout;
-    const gestellt = [];
-    globalThis.setTimeout = (fn, ms, ...rest) => { gestellt.push(ms); return echteUhr(fn, ms, ...rest); };
+    const echterAufbau = httpObjekt.request;
+    const echtesKeepAlive = netPruef.Socket.prototype.setKeepAlive;
+    const uhren = [];
+    const aufbauten = [];
+    const keepAlives = [];
+    globalThis.setTimeout = (fn, ms, ...rest) => { uhren.push(ms); return echteUhr(fn, ms, ...rest); };
+    httpObjekt.request = function (...args) {
+      const anfrageObjekt = echterAufbau.apply(this, args);
+      aufbauten.push({ optionen: args.find((a) => a && typeof a === "object" && !(a instanceof URL)) ?? {}, anfrageObjekt });
+      return anfrageObjekt;
+    };
+    netPruef.Socket.prototype.setKeepAlive = function (...args) { keepAlives.push(args); return echtesKeepAlive.apply(this, args); };
+    let direkt;
     try {
-      const vorgabe = await anfrage(ziel("/json"), { body: "{}" });
-      await vorgabe.text();
+      direkt = await attemptOnce(0, umgebung("/draht"));
     } finally {
       globalThis.setTimeout = echteUhr;
+      httpObjekt.request = echterAufbau;
+      netPruef.Socket.prototype.setKeepAlive = echtesKeepAlive;
     }
-    expect(gestellt.length === 1 && gestellt[0] === ANFRAGE_FRIST_MS,
-      `ohne ausdrückliche Frist stellt anfrage() genau EINE Uhr auf ANFRAGE_FRIST_MS (gestellt: ${JSON.stringify(gestellt)}).`);
+    expect(direkt?.ok === true && direkt.decision.block === false,
+      `attemptOnce() erreicht /responses über den erwarteten Draht — POST, Kopfwerte beschnitten wie bei fetch, UTF-8-Körper, Accept-Encoding: identity, User-Agent und Accept wie bisher, eigene Verbindung, kein fetch (Ergebnis: ${JSON.stringify(direkt)}).`);
+    expect(uhren.length === 1 && uhren[0] === ANFRAGE_FRIST_MS,
+      `die echte Aufrufstelle stellt genau EINE Uhr, und zwar ANFRAGE_FRIST_MS (gestellt: ${JSON.stringify(uhren)}).`);
+    const aufbau = aufbauten[0];
+    expect(aufbauten.length === 1 && aufbau.optionen.timeout === undefined && !aufbau.optionen.signal
+      && aufbau.anfrageObjekt.timeout === undefined && aufbau.anfrageObjekt.listenerCount("timeout") === 0,
+      `genau ein Aufbau über node:http, ohne zweite Grenze über timeout, signal oder setTimeout() am Request (Aufbauten: ${aufbauten.length}).`);
+    expect(JSON.stringify(keepAlives) === JSON.stringify([[true, 60_000]]),
+      `TCP-Keepalive wie bei fetch (60 s) — sonst geht in der Header-Stille kein Paket über die Leitung (gesetzt: ${JSON.stringify(keepAlives)}).`);
+    // Und der Fallback: 503 am Primär-Draht → im selben Versuch /chat/completions.
+    const umweg = await attemptOnce(0, umgebung("/umweg"));
+    expect(umweg?.ok === true && umweg.decision.block === true && umweg.v?.reason === "Lücke",
+      `nach 503 erreicht chatFallback() /chat/completions über denselben Draht, und das Urteil kommt durch (Ergebnis: ${JSON.stringify(umweg)}).`);
   } finally {
     clearTimeout(waechter);
     for (const t of serverUhren) clearTimeout(t);
     pruefServer.closeAllConnections?.();
     await new Promise((r) => pruefServer.close(r));
   }
-  // Die zwei Stimm-Drähte gehen über anfrage(), nicht über fetch — an der
-  // Quelle geprüft, weil BASE beim Laden feststeht und der Selbsttest die
-  // echten Aufrufe nicht auf den Prüfserver umlenken kann. Ein Rückbau auf
-  // fetch holte die 300-s-Grenze zurück, an der #177 viermal scheiterte.
-  const quelle = readFileSync(fileURLToPath(import.meta.url), "utf8");
-  expect(quelle.includes("anfrage(`${BASE}/responses`") && quelle.includes("anfrage(`${BASE}/chat/completions`")
-    && !/fetch\(\s*`\$\{BASE\}\/(?:responses|chat\/completions)/.test(quelle),
-    "/responses und /chat/completions laufen über anfrage(), nie über fetch.");
   // Ein Verbindungsfehler nennt den CODE, nie die Adresse: Der Workflow
   // maskiert Basis-URL, Host und Hostname — eine aufgelöste IP aus einer
   // Socket-Meldung („connect ECONNREFUSED 203.0.113.7:443") stünde unmaskiert
@@ -1284,7 +1336,7 @@ if (process.argv.includes("--selftest")) {
   expect(ANFRAGE_FRIST_MS >= 10 * 60 * 1000,
     "die gewählte Frist liegt deutlich über den 300 s, an denen #177 scheiterte, und über den längsten gemessenen Läufen (458 s).");
 
-  console.log("   ✓ Selbsttest: decide() + modelMatches() + requireApprovals() (Pflicht-Approver Sol + Korroboration) + attestReasons() + attestProof() + validateRangeInputs() + normalizeBase() + authHeader() + strictAnyRefutation() + mdInline() + renderStepSummary() + panelOhneListe() + anfrage() (gewählte Frist statt impliziter 300 s) korrekt.");
+  console.log("   ✓ Selbsttest: decide() + modelMatches() + requireApprovals() (Pflicht-Approver Sol + Korroboration) + attestReasons() + attestProof() + validateRangeInputs() + normalizeBase() + authHeader() + strictAnyRefutation() + mdInline() + renderStepSummary() + panelOhneListe() + anfrage() (gewählte Frist statt impliziter 300 s, Draht wie bei fetch) an den echten Aufrufstellen attemptOnce()/chatFallback() korrekt.");
   process.exit(0);
 }
 
@@ -1459,8 +1511,16 @@ async function foldResponsesStream(body) {
   return { text, completed };
 }
 
-async function attemptOnce(i) {
-  const sys = system + (LENSES[i % LENSES.length] || "");
+/**
+ * Eine Stimme, ein Versuch. `u` ist, was beim Laden feststeht — Basis, Kopf,
+ * Modelle, Prompt, Linsen. Als Argument, damit der --selftest GENAU diesen Weg
+ * gegen einen Prüfserver fahren kann (wie stimmeHolen() seine Versuche): Bis
+ * 10/2026 konnte er das nicht und suchte stattdessen im Quelltext nach einer
+ * Schreibweise — eine Prüfung, die ihren eigenen Suchtext fand und einen
+ * Rückbau auf fetch in anderer Schreibweise grün durchließ.
+ */
+async function attemptOnce(i, u = { basis: BASE, kopf: H, modelle: MODELS, system, linsen: LENSES, user }) {
+  const sys = u.system + (u.linsen[i % u.linsen.length] || "");
   const finish = (content) => { const v = parseVerdict(content ?? ""); return { ok: true, v, decision: decide(v) }; };
   // PRIMÄR die Responses-API als SSE-STREAM (DRAHT-REIHENFOLGE, siehe Kopf):
   // stream:true hält während des Denkens ~2-s-Herzschlag-/Delta-Bytes auf der
@@ -1477,12 +1537,12 @@ async function attemptOnce(i) {
   try {
     // anfrage(), nicht fetch: fetch bricht nach 300 s ohne Header ab (siehe
     // ANFRAGE_FRIST_MS) — genau so lange denkt ein Modell an einem großen Diff.
-    res = await anfrage(`${BASE}/responses`, {
-      headers: H,
+    res = await anfrage(`${u.basis}/responses`, {
+      headers: u.kopf,
       body: JSON.stringify({
-        model: MODELS[i],
+        model: u.modelle[i],
         instructions: sys,
-        input: [{ role: "user", content: user }],
+        input: [{ role: "user", content: u.user }],
         stream: true,
       }),
     });
@@ -1490,7 +1550,7 @@ async function attemptOnce(i) {
     // Netzfehler am Primär-Draht → im SELBEN Versuch auf den Chat-Draht ausweichen.
     // (Wirft auch DER, greift wie bisher die Transient-Retry-Weiche in verifyOnce.)
     const why = String(err instanceof Error ? err.message : err).replace(/\s+/g, " ").slice(0, 300);
-    return chatFallback(i, sys, finish, `Netzfehler Responses-API: ${why}`);
+    return chatFallback(i, u, sys, finish, `Netzfehler Responses-API: ${why}`);
   }
   if (res.ok) {
     // 200 → Strom progressiv falten. BEWUSST außerhalb des try um fetch():
@@ -1512,14 +1572,15 @@ async function attemptOnce(i) {
   // sie träfen den Fallback genauso (gleicher Key, gleiches Modell) und laufen
   // unverändert durch die Retry-Weiche in verifyOnce.
   if (res.status === 404 || res.status === 405 || res.status >= 500) {
-    return chatFallback(i, sys, finish, primary, res.status);
+    return chatFallback(i, u, sys, finish, primary, res.status);
   }
   return { ok: false, status: res.status, reason: primary };
 }
 
 /**
  * FALLBACK-Draht: Chat Completions — nur wenn /responses nicht verfügbar ist
- * (404/405) oder im Versuch mit 5xx/Netzfehler scheitert. `why` benennt den
+ * (404/405) oder im Versuch mit 5xx/Netzfehler scheitert. `u` ist die Umgebung
+ * aus attemptOnce (Basis, Kopf, Modelle, Prompt). `why` benennt den
  * Primär-Fehler (bereits Whitespace-kollabiert und gekappt) für Log und reason;
  * `primaryStatus` ist dessen HTTP-Status (undefined bei Netzfehler).
  *
@@ -1531,13 +1592,13 @@ async function attemptOnce(i) {
  * deterministisch war (404/405 = Endpoint fehlt), klassifiziert der
  * Chat-Status. Der reason benennt IMMER beide Status.
  */
-async function chatFallback(i, sys, finish, why, primaryStatus) {
+async function chatFallback(i, u, sys, finish, why, primaryStatus) {
   console.log(`[independent-verify] Stimme ${i + 1}: /responses nicht nutzbar (${why}) → Fallback /chat/completions.`);
-  const res = await anfrage(`${BASE}/chat/completions`, {
-    headers: H,
+  const res = await anfrage(`${u.basis}/chat/completions`, {
+    headers: u.kopf,
     body: JSON.stringify({
-      model: MODELS[i],
-      messages: [{ role: "system", content: sys }, { role: "user", content: user }],
+      model: u.modelle[i],
+      messages: [{ role: "system", content: sys }, { role: "user", content: u.user }],
     }),
   });
   if (res.ok) {
