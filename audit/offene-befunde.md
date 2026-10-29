@@ -1741,7 +1741,7 @@ zwei Runden erzwungen:
 
 Der `--selftest` fährt `attemptOnce()` und `chatFallback()` selbst gegen
 einen Prüfserver. Er misst dabei Uhr, Anfrage-Aufbau, Keepalive und den Draht
-am Server. Vierzehn Mutanten werden rot, keiner hängt.
+am Server, an BEIDEN Drähten. Sechzehn Mutanten werden rot, keiner hängt.
 
 **Offen bleibt** die zweite Signatur (502 hinter dem Gateway) und jeder echte
 Ausfall des Gateways; beides liegt weiterhin im Betrieb. Ob die Läufe an #134

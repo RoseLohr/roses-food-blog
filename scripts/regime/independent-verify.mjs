@@ -1272,46 +1272,57 @@ if (process.argv.includes("--selftest")) {
       linsen: [" LINSE"],
       user: "DIFF ä",
     });
-    // Beim Primär-Draht mitgeschnitten, was eine zweite, stille Grenze oder
-    // ein fehlendes Keepalive verraten würde: jede gestellte Uhr, jeder
+    // Um BEIDE Fahrten mitgeschnitten, was eine zweite, stille Grenze oder ein
+    // fehlendes Keepalive verraten würde: jede über setTimeout gestellte Uhr,
+    // jede Socket-Uhr (auch req.setTimeout() landet dort), jeder
     // Anfrage-Aufbau samt Optionen, jedes TCP-Keepalive. Dasselbe http-Objekt,
-    // über das anfrage() baut.
+    // über das anfrage() baut. Der Fallback gehört dazu: In #177 war er die
+    // zweite Hälfte des 5-Minuten-Takts.
     const httpObjekt = httpPruef.default;
-    const echteUhr = globalThis.setTimeout;
-    const echterAufbau = httpObjekt.request;
-    const echtesKeepAlive = netPruef.Socket.prototype.setKeepAlive;
-    const uhren = [];
-    const aufbauten = [];
-    const keepAlives = [];
-    globalThis.setTimeout = (fn, ms, ...rest) => { uhren.push(ms); return echteUhr(fn, ms, ...rest); };
-    httpObjekt.request = function (...args) {
-      const anfrageObjekt = echterAufbau.apply(this, args);
-      aufbauten.push({ optionen: args.find((a) => a && typeof a === "object" && !(a instanceof URL)) ?? {}, anfrageObjekt });
-      return anfrageObjekt;
+    const sockel = netPruef.Socket.prototype;
+    const mitgeschnitten = async (fahrt) => {
+      const echt = { uhr: globalThis.setTimeout, aufbau: httpObjekt.request, keepAlive: sockel.setKeepAlive, sockelUhr: sockel.setTimeout };
+      const spur = { uhren: [], aufbauten: [], keepAlives: [], sockelUhren: [] };
+      globalThis.setTimeout = (fn, ms, ...rest) => { spur.uhren.push(ms); return echt.uhr(fn, ms, ...rest); };
+      httpObjekt.request = function (...args) {
+        const anfrageObjekt = echt.aufbau.apply(this, args);
+        spur.aufbauten.push({ optionen: args.find((a) => a && typeof a === "object" && !(a instanceof URL)) ?? {}, anfrageObjekt });
+        return anfrageObjekt;
+      };
+      sockel.setKeepAlive = function (...args) { spur.keepAlives.push(args); return echt.keepAlive.apply(this, args); };
+      sockel.setTimeout = function (...args) { spur.sockelUhren.push(args[0]); return echt.sockelUhr.apply(this, args); };
+      try {
+        return { ergebnis: await fahrt(), ...spur };
+      } finally {
+        globalThis.setTimeout = echt.uhr;
+        httpObjekt.request = echt.aufbau;
+        sockel.setKeepAlive = echt.keepAlive;
+        sockel.setTimeout = echt.sockelUhr;
+      }
     };
-    netPruef.Socket.prototype.setKeepAlive = function (...args) { keepAlives.push(args); return echtesKeepAlive.apply(this, args); };
-    let direkt;
-    try {
-      direkt = await attemptOnce(0, umgebung("/draht"));
-    } finally {
-      globalThis.setTimeout = echteUhr;
-      httpObjekt.request = echterAufbau;
-      netPruef.Socket.prototype.setKeepAlive = echtesKeepAlive;
-    }
-    expect(direkt?.ok === true && direkt.decision.block === false,
-      `attemptOnce() erreicht /responses über den erwarteten Draht — POST, Kopfwerte beschnitten wie bei fetch, UTF-8-Körper, Accept-Encoding: identity, User-Agent und Accept wie bisher, eigene Verbindung, kein fetch (Ergebnis: ${JSON.stringify(direkt)}).`);
-    expect(uhren.length === 1 && uhren[0] === ANFRAGE_FRIST_MS,
-      `die echte Aufrufstelle stellt genau EINE Uhr, und zwar ANFRAGE_FRIST_MS (gestellt: ${JSON.stringify(uhren)}).`);
-    const aufbau = aufbauten[0];
-    expect(aufbauten.length === 1 && aufbau.optionen.timeout === undefined && !aufbau.optionen.signal
-      && aufbau.anfrageObjekt.timeout === undefined && aufbau.anfrageObjekt.listenerCount("timeout") === 0,
-      `genau ein Aufbau über node:http, ohne zweite Grenze über timeout, signal oder setTimeout() am Request (Aufbauten: ${aufbauten.length}).`);
-    expect(JSON.stringify(keepAlives) === JSON.stringify([[true, 60_000]]),
-      `TCP-Keepalive wie bei fetch (60 s) — sonst geht in der Header-Stille kein Paket über die Leitung (gesetzt: ${JSON.stringify(keepAlives)}).`);
+    // n Anfragen → n Uhren auf ANFRAGE_FRIST_MS, n Aufbauten ohne zweite
+    // Grenze, n-mal Keepalive 60 s, keine Socket-Uhr.
+    const spurPasst = (spur, n, wo) => {
+      expect(spur.uhren.length === n && spur.uhren.every((ms) => ms === ANFRAGE_FRIST_MS),
+        `${wo}: genau ${n} Uhr(en), jede auf ANFRAGE_FRIST_MS (gestellt: ${JSON.stringify(spur.uhren)}).`);
+      expect(spur.aufbauten.length === n && spur.aufbauten.every(({ optionen, anfrageObjekt }) =>
+        optionen.timeout === undefined && !optionen.signal
+        && anfrageObjekt.timeout === undefined && anfrageObjekt.listenerCount("timeout") === 0),
+        `${wo}: genau ${n} Aufbau/Aufbauten über node:http, ohne zweite Grenze über timeout, signal oder setTimeout() am Request (Aufbauten: ${spur.aufbauten.length}).`);
+      expect(spur.sockelUhren.length === 0,
+        `${wo}: keine Socket-Uhr neben der Frist (gestellt: ${JSON.stringify(spur.sockelUhren)}).`);
+      expect(JSON.stringify(spur.keepAlives) === JSON.stringify(Array.from({ length: n }, () => [true, 60_000])),
+        `${wo}: TCP-Keepalive wie bei fetch (60 s) — sonst geht in der Header-Stille kein Paket über die Leitung (gesetzt: ${JSON.stringify(spur.keepAlives)}).`);
+    };
+    const direkt = await mitgeschnitten(() => attemptOnce(0, umgebung("/draht")));
+    expect(direkt.ergebnis?.ok === true && direkt.ergebnis.decision.block === false,
+      `attemptOnce() erreicht /responses über den erwarteten Draht — POST, Kopfwerte beschnitten wie bei fetch, UTF-8-Körper, Accept-Encoding: identity, User-Agent und Accept wie bisher, eigene Verbindung, kein fetch (Ergebnis: ${JSON.stringify(direkt.ergebnis)}).`);
+    spurPasst(direkt, 1, "attemptOnce() → /responses");
     // Und der Fallback: 503 am Primär-Draht → im selben Versuch /chat/completions.
-    const umweg = await attemptOnce(0, umgebung("/umweg"));
-    expect(umweg?.ok === true && umweg.decision.block === true && umweg.v?.reason === "Lücke",
-      `nach 503 erreicht chatFallback() /chat/completions über denselben Draht, und das Urteil kommt durch (Ergebnis: ${JSON.stringify(umweg)}).`);
+    const umweg = await mitgeschnitten(() => attemptOnce(0, umgebung("/umweg")));
+    expect(umweg.ergebnis?.ok === true && umweg.ergebnis.decision.block === true && umweg.ergebnis.v?.reason === "Lücke",
+      `nach 503 erreicht chatFallback() /chat/completions über denselben Draht, und das Urteil kommt durch (Ergebnis: ${JSON.stringify(umweg.ergebnis)}).`);
+    spurPasst(umweg, 2, "attemptOnce() → 503 → chatFallback()");
   } finally {
     clearTimeout(waechter);
     for (const t of serverUhren) clearTimeout(t);
