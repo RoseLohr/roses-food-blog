@@ -1728,6 +1728,21 @@ gemessenen Erfolg von 458 s). Gegenprobe mit denselben 310 s Stille:
 Fail-closed bleibt unverändert — eine abgelaufene Frist ist ein
 Zustellfehler wie jeder andere.
 
+Alles andere am Draht bleibt, wie fetch es hatte. Das hat das Gegenlesen in
+zwei Runden erzwungen:
+
+- **Beschnittene Kopfwerte.** Ein Secret mit Zeilenende wäre sonst an jeder
+  Stimme gescheitert.
+- **`User-Agent` und `Accept`.**
+- **TCP-Keepalive alle 60 s.** `agent: false` hatte es mit abgeschaltet. In
+  der Header-Stille ging dann kein Paket über die Leitung, und ein NAT mit
+  kürzerer Leerlaufgrenze verschluckte die Antwort. Örtlich nachgestellt mit
+  DNAT und 90 s Leerlaufgrenze.
+
+Der `--selftest` fährt `attemptOnce()` und `chatFallback()` selbst gegen
+einen Prüfserver. Er misst dabei Uhr, Anfrage-Aufbau, Keepalive und den Draht
+am Server. Vierzehn Mutanten werden rot, keiner hängt.
+
 **Offen bleibt** die zweite Signatur (502 hinter dem Gateway) und jeder echte
 Ausfall des Gateways; beides liegt weiterhin im Betrieb. Ob die Läufe an #134
 (01.09.) ebenfalls an der 300-s-Grenze starben, lässt sich nachträglich nicht
