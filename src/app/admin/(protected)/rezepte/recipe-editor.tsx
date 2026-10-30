@@ -5,7 +5,7 @@
  * Strukturen (Abschnitte mit Zutaten/Schritten, Notizen) als React-State,
  * der beim Absenden als JSON in Hidden-Fields serialisiert wird.
  */
-import { useActionState, useState } from "react";
+import { startTransition, useActionState, useState } from "react";
 import { saveRecipeAction, type RecipeFormState } from "./actions";
 import { QuickAddCheckboxes } from "@/components/admin/quick-add-checkboxes";
 import { ImagePicker, type ImageChoice } from "@/components/admin/image-picker";
@@ -438,12 +438,34 @@ export function RecipeEditor({
     setFormKey((k) => k + 1);
   }
 
+  /**
+   * „Speichern" startet die Action VON HAND, mit dem FormData des Formulars —
+   * nicht über Reacts Formularweg. Der setzt nach einer Formular-Action alle
+   * unkontrollierten Felder zurück (`requestFormReset` in
+   * `startHostTransition`, React 19): richtig für ein Formular, das nach dem
+   * Absenden leer sein soll, falsch für einen Editor, der nach „Bitte alle
+   * Pflichtfelder …" weiterbearbeitet wird — Titel, Zeiten, Portionen stünden
+   * wieder auf dem Stand vom Laden, das Getippte wäre weg. Die HTML-Prüfung
+   * (`required`, `min`) läuft trotzdem zuerst: `submit` feuert erst, wenn sie
+   * bestanden ist; und der `RichTextEditor` hat seine versteckten Felder in
+   * der Capture-Phase desselben Ereignisses schon gefüllt.
+   *
+   * Die Transition ist kein Beiwerk: NUR in ihr setzt useActionState
+   * `pending`. Ohne sie bliebe der Knopf während des Speicherns frei, und
+   * React meldet im Dev-Modus „called outside of a transition".
+   */
+  const beimAbsenden = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget);
+    startTransition(() => formAction(fd));
+  };
+
   return (
     <div className="flex max-w-4xl flex-col gap-6">
       {/* KI-Assistent nur beim ANLEGEN neuer Rezepte (initial.id === null).
           Bei bestehenden Rezepten ausgeblendet — dort wird nicht neu importiert. */}
       {initial.id === null && <RecipeAiAssistant onApply={applyDraft} />}
-      <form key={formKey} action={formAction} className="flex flex-col gap-6">
+      <form key={formKey} action={formAction} onSubmit={beimAbsenden} className="flex flex-col gap-6">
       {form.id !== null && <input type="hidden" name="id" value={form.id} />}
       <input
         type="hidden"
