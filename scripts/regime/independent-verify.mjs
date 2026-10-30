@@ -137,6 +137,19 @@ export function authHeader(name, key) {
 
 const AUTH = authHeader(process.env.VERIFIER_AUTH_HEADER, KEY);
 
+/**
+ * fetch für JEDE Panel-Anfrage, aber ohne Weiterleitungen (10/2026). fetch
+ * folgt per Vorgabe und nimmt dabei einen Schlüssel im eigenen Kopf
+ * (VERIFIER_AUTH_HEADER, im Betrieb X-OpenCodex-API-Key) zum fremden Ursprung
+ * mit — zurück lässt es nur `Authorization` (gemessen, Node 22). Und das Ziel
+ * der Weiterleitung bestimmte die Antwort: an /models die Modell-Liste, an
+ * den Stimm-Drähten das Urteil. Ein 3xx bleibt ein Fehlerstatus und steht im
+ * Log. Gefunden hat es der Pflicht-Approver des Panels selbst (#178).
+ */
+export function panelFetch(url, init = {}) {
+  return fetch(url, { ...init, redirect: "manual" });
+}
+
 // Präferenz-Reihenfolge (NEU → alt). Ohne explizites VERIFIER_MODEL nimmt der
 // Verifier das erste hiervon, das der Account tatsächlich FREIGESCHALTET hat.
 const MODEL_PREFERENCE = [
@@ -169,9 +182,9 @@ function pickForPref(ids, p) {
  * GRUND wird mitgegeben, nicht verschluckt: Vom 11. bis 13.09. scheiterte jedes
  * Panel an dieser Abfrage, und das Log sagte nur „nicht verfügbar" (B33).
  */
-async function fetchModelIds() {
+async function fetchModelIds(basis = BASE, kopf = AUTH) {
   try {
-    const res = await fetch(`${BASE}/models`, { headers: AUTH });
+    const res = await panelFetch(`${basis}/models`, { headers: kopf });
     if (res.ok) {
       const data = await res.json();
       return { ids: (data?.data || []).map((m) => m?.id).filter(Boolean) };
@@ -971,7 +984,41 @@ if (process.argv.includes("--selftest")) {
   expect(requireApprovals([A, A2, A], panelOhneListe(KONF, false, 3, "fb"), "combo/SOTA-A", 1).block === true,
     "mit dem Fallback-Panel kann er es nie — genau der Dauerblock vom 11.–13.09.");
 
-  console.log("   ✓ Selbsttest: decide() + modelMatches() + requireApprovals() (Pflicht-Approver Sol + Korroboration) + attestReasons() + attestProof() + validateRangeInputs() + normalizeBase() + authHeader() + strictAnyRefutation() + mdInline() + renderStepSummary() + panelOhneListe() korrekt.");
+  // ── Weiterleitungen (10/2026): keine Panel-Anfrage folgt einer ──
+  // fetch folgt per Vorgabe und nimmt dabei einen Schlüssel im EIGENEN Kopf
+  // (VERIFIER_AUTH_HEADER, im Betrieb X-OpenCodex-API-Key) zum fremden
+  // Ursprung mit — zurück lässt es nur `Authorization` (gemessen). Und das
+  // Ziel der Weiterleitung bestimmte die Antwort, an /models die Modell-Liste.
+  const httpPruef = (await import("node:http")).default;
+  const beimFremden = [];
+  const fremd = httpPruef.createServer((req, res) => {
+    beimFremden.push({ url: req.url, schluessel: req.headers["x-opencodex-api-key"] ?? null });
+    req.resume();
+    res.end(JSON.stringify({ data: [{ id: "untergeschoben" }] }));
+  });
+  const umleiter = httpPruef.createServer((req, res) => {
+    req.resume();
+    if (req.url === "/eigen/models") { res.end(JSON.stringify({ data: [{ id: "eigen" }] })); return; }
+    res.writeHead(req.method === "POST" ? 307 : 302, { location: `http://127.0.0.1:${fremd.address().port}${req.url}` });
+    res.end();
+  });
+  for (const s of [fremd, umleiter]) await new Promise((r) => s.listen(0, "127.0.0.1", r));
+  const umleitung = `http://127.0.0.1:${umleiter.address().port}`;
+  const schluessel = { "X-OpenCodex-API-Key": "geheim" };
+  try {
+    const stimme = await panelFetch(`${umleitung}/v1/responses`, { method: "POST", headers: schluessel, body: "{}" });
+    expect(stimme.status === 307 && !stimme.ok, `eine Stimme folgt keiner Weiterleitung: 307 bleibt ein Fehlerstatus (Status: ${stimme.status}).`);
+    const eigene = await fetchModelIds(`${umleitung}/eigen`, schluessel);
+    expect(JSON.stringify(eigene) === JSON.stringify({ ids: ["eigen"] }), `/models liest die Liste des eigenen Gateways (${JSON.stringify(eigene)}).`);
+    const umgeleitet = await fetchModelIds(`${umleitung}/v1`, schluessel);
+    expect(umgeleitet.ids === null && umgeleitet.grund === "HTTP 302",
+      `/models folgt keiner Weiterleitung: der Status steht als Grund im Log, die fremde Liste gilt nicht (${JSON.stringify(umgeleitet)}).`);
+    expect(beimFremden.length === 0, `beim fremden Ursprung kommt nichts an, auch kein Schlüssel (${JSON.stringify(beimFremden)}).`);
+  } finally {
+    for (const s of [fremd, umleiter]) { s.closeAllConnections(); await new Promise((r) => s.close(r)); }
+  }
+
+  console.log("   ✓ Selbsttest: decide() + modelMatches() + requireApprovals() (Pflicht-Approver Sol + Korroboration) + attestReasons() + attestProof() + validateRangeInputs() + normalizeBase() + authHeader() + strictAnyRefutation() + mdInline() + renderStepSummary() + panelOhneListe() + panelFetch()/fetchModelIds() (keine Weiterleitung) korrekt.");
   process.exit(0);
 }
 
@@ -1162,7 +1209,7 @@ async function attemptOnce(i) {
   // neuere Modelle lehnen die teils mit 400 ab.
   let res;
   try {
-    res = await fetch(`${BASE}/responses`, {
+    res = await panelFetch(`${BASE}/responses`, {
       method: "POST",
       headers: H,
       body: JSON.stringify({
@@ -1219,7 +1266,7 @@ async function attemptOnce(i) {
  */
 async function chatFallback(i, sys, finish, why, primaryStatus) {
   console.log(`[independent-verify] Stimme ${i + 1}: /responses nicht nutzbar (${why}) → Fallback /chat/completions.`);
-  const res = await fetch(`${BASE}/chat/completions`, {
+  const res = await panelFetch(`${BASE}/chat/completions`, {
     method: "POST",
     headers: H,
     body: JSON.stringify({
