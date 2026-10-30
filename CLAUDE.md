@@ -378,12 +378,14 @@ wird. Wer sie entfernt oder anhebt, lockert ohne Gegengewicht. Gemessen in
   verlustbehaftet ist, gilt weiter für jedes Speichern nach echter Eingabe.
 - Gemessen in `tests/e2e/rezept-editor-speichern.spec.ts`. Dort steht das
   GANZE Formular vor und nach dem Blick (nicht das erste `<form>` der Seite,
-  das Admin-Gerüst trägt eigene), und ein zweites Speichern nach dem Fehler
-  erreicht den Server.
+  das Admin-Gerüst trägt eigene), und nach dem Fehler wird ein zweites
+  Speichern abgeschickt (der Knopf hängt nicht).
 - **Nicht behoben:** `src/app/admin/(protected)/reisen/travel-editor.tsx` hat
   dasselbe Muster (`useActionState` + `<form action>` mit `defaultValue`-
-  Feldern). Ob dort nach einer fehlgeschlagenen Action etwas verloren geht,
-  ist ungemessen.
+  Feldern), und `saveTravelAction` antwortet bei einem Fehler mit einem
+  Zustand statt einer Umleitung. Nach demselben Mechanismus gehen dort die
+  unkontrollierten Felder verloren — HERGELEITET, nicht gemessen; es gibt
+  keinen Spec für `/admin/reisen`.
 
 ## Gemeinsame Bausteine — benutzen statt abschreiben
 Wer im Admin eine Seite anlegt oder ändert, nimmt diese und schreibt sie nicht

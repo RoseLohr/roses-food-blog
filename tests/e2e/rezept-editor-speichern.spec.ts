@@ -74,7 +74,7 @@ test("Ein Blick in die Kurzbeschreibung ändert das Formular nicht", async ({ pa
   await expect(page.locator('textarea[name="teaser"]')).not.toHaveValue(MIT_AUTOLINK);
 });
 
-test("Speichern mit Fehler behält das Getippte, und ein zweites Speichern erreicht den Server", async ({ page }) => {
+test("Speichern mit Fehler behält das Getippte, und ein zweites Speichern wird abgeschickt", async ({ page }) => {
   const db = datenbank();
   const titelVorher = (db.prepare("SELECT title FROM recipe WHERE id = ?").get(session.recipeId) as { title: string }).title;
   db.close();
