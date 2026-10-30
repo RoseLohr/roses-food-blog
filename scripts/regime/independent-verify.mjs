@@ -101,6 +101,8 @@
 import { execSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { appendFileSync } from "node:fs";
+import http from "node:http";
+import https from "node:https";
 
 const KEY = process.env.SECOND_VENDOR_API_KEY || process.env.OPENAI_API_KEY;
 /**
@@ -138,7 +140,101 @@ export function authHeader(name, key) {
 const AUTH = authHeader(process.env.VERIFIER_AUTH_HEADER, KEY);
 
 /**
- * fetch für JEDE Panel-Anfrage, aber ohne Weiterleitungen (10/2026). fetch
+ * Wie lange EINE Anfrage an das Panel höchstens dauern darf — gewählt, nicht
+ * geerbt (10/2026). Nodes fetch (undici) bricht nach 300 s ohne Header ab
+ * („fetch failed") und nach 300 s Stille im Strom („terminated"); gemessen:
+ * beide bei 300,8 s. Das Gateway schickt die Header erst, wenn das Modell zu
+ * schreiben beginnt — an großen Diffs (#173, #177) kamen Stimmen so nie zu
+ * Wort, das Panel war fail-closed ohne Befund. 900 s liegen gut doppelt über
+ * dem längsten gemessenen Erfolg (458 s); schlimmster Fall je Stimme 3 × 2 ×
+ * 900 s = 90 min, das Job-Limit ist 360 min. Eine abgelaufene Frist ist ein
+ * Zustellfehler wie jeder andere (fail-closed, dieselbe Retry-Weiche).
+ */
+export const ANFRAGE_FRIST_MS = 900 * 1000;
+
+/** Zustellfehler mit Code (ECONNREFUSED …), nie mit der Socket-Meldung: die
+ *  nennte eine aufgelöste IP, die der Workflow nicht maskiert. */
+class Zustellfehler extends Error {}
+function bereinigt(err, art = "Netzfehler") {
+  if (err instanceof Zustellfehler) return err;
+  const code = typeof err?.code === "string" && /^[A-Z0-9_]+$/.test(err.code) ? err.code : "ohne Code";
+  return new Zustellfehler(`${art} (${code})`);
+}
+
+/** Kopfwerte wie fetch: Rand-Leerraum (Tab, Leerzeichen, CR, LF) fällt weg.
+ *  http.request würfe sonst für ein Secret mit Zeilenende — jede Stimme
+ *  scheiterte, während /models (fetch) grün bliebe. */
+function kopfwerte(headers) {
+  return Object.fromEntries(Object.entries(headers)
+    .map(([name, wert]) => [name, String(wert).replace(/^[\t\n\r ]+|[\t\n\r ]+$/g, "")]));
+}
+
+/**
+ * POST mit genau EINER Grenze, der Frist. Antwortet wie fetch: { ok, status,
+ * body (async iterierbar, für den SSE-Fold), text(), json() }. Der Draht
+ * bleibt, wie das Gateway ihn von fetch kennt (User-Agent, Accept,
+ * TCP-Keepalive 60 s) — mit einer Ausnahme: Weiterleitungen folgt anfrage()
+ * NICHT, aus demselben Grund wie panelFetch(); ein 3xx steht im Log.
+ */
+export function anfrage(url, { headers = {}, body = "", frist = ANFRAGE_FRIST_MS } = {}) {
+  return new Promise((resolve, reject) => {
+    let ziel;
+    try { ziel = new URL(url); } catch (err) { reject(new Zustellfehler("Ungültige Adresse")); return; }
+    const modul = ziel.protocol === "https:" ? https : ziel.protocol === "http:" ? http : null;
+    if (!modul) { reject(new Zustellfehler(`Protokoll nicht unterstützt: ${ziel.protocol}`)); return; }
+    const daten = Buffer.from(String(body), "utf8");
+    // Erst die Anfrage, DANN die Uhr: http.request wirft für einen
+    // unzulässigen Kopfwert synchron, eine schon gestellte Uhr liefe verwaist.
+    let req;
+    try {
+      req = modul.request(ziel, {
+        method: "POST",
+        // Eigene Verbindung je Anfrage: Der Pool reichte sonst eine vom
+        // Gateway geschlossene Verbindung an den Wiederholungsversuch weiter.
+        agent: false,
+        // Keine Kompression: fetch entpackt selbst, http.request nicht.
+        headers: { "User-Agent": "node", Accept: "*/*", ...kopfwerte(headers), "Accept-Encoding": "identity", "Content-Length": daten.length },
+      });
+    } catch (err) {
+      reject(bereinigt(err, "Anfrage nicht baubar"));
+      return;
+    }
+    // TCP-Keepalive wie bei fetch; agent:false schaltet es sonst mit ab, und
+    // in der Header-Stille ginge kein Paket über die Leitung — ein NAT mit
+    // kürzerer Leerlaufgrenze verschluckte die Antwort (örtlich nachgestellt).
+    req.once("socket", (s) => s.setKeepAlive(true, 60_000));
+    let antwort = null;
+    const uhr = setTimeout(() => {
+      const err = new Zustellfehler(`Frist von ${frist / 1000} s überschritten`);
+      if (antwort) antwort.destroy(err); else req.destroy(err);
+    }, frist);
+    req.on("error", (err) => { clearTimeout(uhr); reject(bereinigt(err)); });
+    req.on("response", (res) => {
+      antwort = res;
+      res.on("close", () => clearTimeout(uhr));
+      const strom = (async function* () {
+        try { for await (const stueck of res) yield stueck; } catch (err) { throw bereinigt(err); }
+      })();
+      const alsText = async () => {
+        const teile = [];
+        for await (const stueck of strom) teile.push(Buffer.from(stueck));
+        return Buffer.concat(teile).toString("utf8");
+      };
+      resolve({
+        status: res.statusCode,
+        ok: res.statusCode >= 200 && res.statusCode < 300,
+        body: strom,
+        text: alsText,
+        json: async () => JSON.parse(await alsText()),
+      });
+    });
+    req.end(daten);
+  });
+}
+
+/**
+ * fetch für /models, aber ohne Weiterleitungen (10/2026; die Stimm-Drähte
+ * laufen über anfrage(), das ohnehin keiner folgt). fetch
  * folgt per Vorgabe und nimmt dabei einen Schlüssel im eigenen Kopf
  * (VERIFIER_AUTH_HEADER, im Betrieb X-OpenCodex-API-Key) zum fremden Ursprung
  * mit — zurück lässt es nur `Authorization` (gemessen, Node 22). Und das Ziel
@@ -1006,8 +1102,10 @@ if (process.argv.includes("--selftest")) {
   const umleitung = `http://127.0.0.1:${umleiter.address().port}`;
   const schluessel = { "X-OpenCodex-API-Key": "geheim" };
   try {
-    const stimme = await panelFetch(`${umleitung}/v1/responses`, { method: "POST", headers: schluessel, body: "{}" });
-    expect(stimme.status === 307 && !stimme.ok, `eine Stimme folgt keiner Weiterleitung: 307 bleibt ein Fehlerstatus (Status: ${stimme.status}).`);
+    const stimme = await anfrage(`${umleitung}/v1/responses`, { headers: schluessel, body: "{}", frist: 3000 });
+    expect(stimme.status === 307 && !stimme.ok, `eine Stimme (anfrage) folgt keiner Weiterleitung: 307 bleibt ein Fehlerstatus (Status: ${stimme.status}).`);
+    const liste = await panelFetch(`${umleitung}/v1/models`, { headers: schluessel });
+    expect(liste.status === 302, `panelFetch folgt keiner Weiterleitung (Status: ${liste.status}).`);
     const eigene = await fetchModelIds(`${umleitung}/eigen`, schluessel);
     expect(JSON.stringify(eigene) === JSON.stringify({ ids: ["eigen"] }), `/models liest die Liste des eigenen Gateways (${JSON.stringify(eigene)}).`);
     const umgeleitet = await fetchModelIds(`${umleitung}/v1`, schluessel);
@@ -1018,7 +1116,110 @@ if (process.argv.includes("--selftest")) {
     for (const s of [fremd, umleiter]) { s.closeAllConnections(); await new Promise((r) => s.close(r)); }
   }
 
-  console.log("   ✓ Selbsttest: decide() + modelMatches() + requireApprovals() (Pflicht-Approver Sol + Korroboration) + attestReasons() + attestProof() + validateRangeInputs() + normalizeBase() + authHeader() + strictAnyRefutation() + mdInline() + renderStepSummary() + panelOhneListe() + panelFetch()/fetchModelIds() (keine Weiterleitung) korrekt.");
+  // ── TRANSPORT (10/2026): EINE gewählte Frist (900 s) statt der 300 s von fetch ──
+  // Gegen einen Prüfserver. Jeder stumme Weg endet nach 2 s selbst: Fehlte
+  // die Frist, liefe die Probe so rot statt bis zum 6-h-Limit zu hängen.
+  const netPruef = await import("node:net");
+  const uhrenDesServers = new Set();
+  const spaeter = (fn, ms) => { const t = setTimeout(() => { uhrenDesServers.delete(t); fn(); }, ms); uhrenDesServers.add(t); };
+  const pruef = httpPruef.createServer((req, res) => {
+    let eingang = "";
+    req.setEncoding("utf8");
+    req.on("data", (c) => { eingang += c; });
+    req.on("end", () => {
+      const h = req.headers;
+      if (req.url === "/kopf-spaet") spaeter(() => res.end("da"), 400);
+      else if (req.url === "/kopf-nie") spaeter(() => req.socket.destroy(), 2000);
+      else if (req.url === "/still") { res.write("data: {}\n\n"); spaeter(() => res.end(), 2000); }
+      else if (req.url === "/sse") {
+        res.write('data: {"type":"response.output_text.delta","delta":"Hallo "}\n\n');
+        spaeter(() => res.end('data: {"type":"response.output_text.delta","delta":"Welt"}\n\ndata: {"type":"response.completed","response":{}}\n\n'), 200);
+      } else if (req.url === "/503") { res.writeHead(503); res.end("Upstream überlastet"); }
+      else if (req.url === "/draht") {
+        // Der Draht, den das Gateway von fetch kannte — aber ohne fetch:
+        // `connection: close` heißt agent:false, `sec-fetch-mode` setzt nur undici.
+        const passt = h["x-opencodex-api-key"] === "geheim" && h["user-agent"] === "node" && h.accept === "*/*"
+          && h["accept-encoding"] === "identity" && h.connection === "close" && h["sec-fetch-mode"] === undefined
+          && eingang === '{"a":"ä"}';
+        res.writeHead(passt ? 200 : 400); res.end(passt ? "passt" : JSON.stringify({ h, eingang }));
+      } else if (["/stimme/responses", "/umweg/chat/completions"].includes(req.url)) {
+        // Die echten Aufrufstellen: über anfrage() oder gar nicht (kein fetch).
+        if (h.connection !== "close" || h["sec-fetch-mode"] !== undefined) { res.writeHead(400); res.end("fetch"); return; }
+        if (req.url === "/stimme/responses") res.end(`data: ${JSON.stringify({ type: "response.output_text.delta", delta: '{"refuted": false}' })}\n\ndata: {"type":"response.completed","response":{}}\n\n`);
+        else res.end(JSON.stringify({ choices: [{ message: { content: '{"refuted": true, "confidence": "high"}' } }] }));
+      } else if (req.url === "/umweg/responses") { res.writeHead(503); res.end(); }
+      else { res.writeHead(404); res.end(); }
+    });
+  });
+  await new Promise((r) => pruef.listen(0, "127.0.0.1", r));
+  const ziel = (pfad) => `http://127.0.0.1:${pruef.address().port}${pfad}`;
+  const fehlerVon = async (fn) => { try { await fn(); return null; } catch (e) { return e; } };
+  try {
+    const spaet = await anfrage(ziel("/kopf-spaet"), { body: "{}", frist: 3000 });
+    expect((await spaet.text()) === "da", "Header nach 0,4 s bei 3 s Frist: vor der Frist bricht nichts ab.");
+    const ohneKopf = await fehlerVon(() => anfrage(ziel("/kopf-nie"), { body: "{}", frist: 150 }));
+    expect(/Frist/.test(ohneKopf?.message), "ohne Header bis zur Frist: Frist-Meldung.");
+    const still = await anfrage(ziel("/still"), { body: "{}", frist: 300 });
+    expect(/Frist/.test((await fehlerVon(() => still.text()))?.message), "Stille im Strom über die Frist: Frist-Meldung.");
+    const strom = await anfrage(ziel("/sse"), { body: "{}", frist: 3000 });
+    expect((await foldResponsesStream(strom.body)).text === "Hallo Welt", "der SSE-Strom faltet über anfrage() wie über fetch.");
+    const kaputt = await anfrage(ziel("/503"), { body: "{}", frist: 3000 });
+    expect(kaputt.status === 503 && (await kaputt.text()) === "Upstream überlastet", "ein Fehlerstatus bleibt lesbar.");
+    // Ein Secret mit Zeilenende: fetch beschnitt den Kopfwert, http.request wirft dafür.
+    // Mitgeschnitten: die Uhr der Vorgabe (genau ANFRAGE_FRIST_MS) und das
+    // TCP-Keepalive, das fetch setzte und agent:false sonst abschaltet.
+    const echt = { uhr: globalThis.setTimeout, keepAlive: netPruef.Socket.prototype.setKeepAlive };
+    const uhren = [];
+    const keepAlives = [];
+    globalThis.setTimeout = (fn, ms, ...rest) => { uhren.push(ms); return echt.uhr(fn, ms, ...rest); };
+    netPruef.Socket.prototype.setKeepAlive = function (...a) { keepAlives.push(a); return echt.keepAlive.apply(this, a); };
+    let draht;
+    try {
+      const antwort = await anfrage(ziel("/draht"), { headers: { "X-OpenCodex-API-Key": " geheim\r\n" }, body: '{"a":"ä"}' });
+      draht = await antwort.text();
+    } finally {
+      globalThis.setTimeout = echt.uhr;
+      netPruef.Socket.prototype.setKeepAlive = echt.keepAlive;
+    }
+    expect(draht === "passt", `Draht wie bei fetch, ohne fetch (Server sah: ${draht}).`);
+    expect(JSON.stringify(uhren) === JSON.stringify([ANFRAGE_FRIST_MS]), `Vorgabe: genau eine Uhr auf ANFRAGE_FRIST_MS (${JSON.stringify(uhren)}).`);
+    expect(JSON.stringify(keepAlives) === JSON.stringify([[true, 60_000]]), `TCP-Keepalive 60 s wie bei fetch (${JSON.stringify(keepAlives)}).`);
+    const ungueltig = await fehlerVon(() => anfrage(ziel("/draht"), { headers: { X: "geheim\nY: 1" }, body: "{}", frist: 100 }));
+    expect(/ERR_INVALID_CHAR/.test(ungueltig?.message) && !ungueltig.message.includes("geheim"), "unzulässiger Kopfwert: Code ja, Wert nein.");
+    await new Promise((r) => setTimeout(r, 250)); // über dessen Frist hinaus: keine verwaiste Uhr
+    // Die ECHTEN Aufrufstellen: attemptOnce() und, nach 503, chatFallback().
+    // Ihre Umgebung kommt als Argument — sonst bliebe ein Rückbau auf fetch,
+    // und damit die 300-s-Grenze, hier unbemerkt.
+    const umgebung = (pfad) => ({ basis: ziel(pfad), kopf: {}, modelle: ["m"], system: "S", linsen: [""], user: "D" });
+    const fristen = [];
+    globalThis.setTimeout = (fn, ms, ...rest) => { fristen.push(ms); return echt.uhr(fn, ms, ...rest); };
+    let direkt;
+    let umweg;
+    try {
+      direkt = await attemptOnce(0, umgebung("/stimme"));
+      umweg = await attemptOnce(0, umgebung("/umweg"));
+    } finally {
+      globalThis.setTimeout = echt.uhr;
+    }
+    expect(direkt?.ok && direkt.decision.block === false, `attemptOnce() erreicht /responses über anfrage() (${JSON.stringify(direkt)}).`);
+    expect(umweg?.ok && umweg.decision.block === true, `nach 503 erreicht chatFallback() /chat/completions über anfrage() (${JSON.stringify(umweg)}).`);
+    expect(JSON.stringify(fristen) === JSON.stringify([ANFRAGE_FRIST_MS, ANFRAGE_FRIST_MS, ANFRAGE_FRIST_MS]),
+      `jede Stimm-Anfrage mit ANFRAGE_FRIST_MS (${JSON.stringify(fristen)}).`);
+  } finally {
+    for (const t of uhrenDesServers) clearTimeout(t);
+    pruef.closeAllConnections();
+    await new Promise((r) => pruef.close(r));
+  }
+  // Ein Port, an dem nie jemand lauschte: der Code ja, die Adresse nie.
+  const leer = httpPruef.createServer();
+  await new Promise((r) => leer.listen(0, "127.0.0.1", r));
+  const leerPort = leer.address().port;
+  await new Promise((r) => leer.close(r));
+  const abgelehnt = await fehlerVon(() => anfrage(`http://127.0.0.1:${leerPort}/`, { body: "{}", frist: 3000 }));
+  expect(/ECONNREFUSED/.test(abgelehnt?.message) && !abgelehnt.message.includes("127.0.0.1") && !abgelehnt.message.includes(String(leerPort)),
+    "Verbindungsfehler: Code ja, Adresse und Port nein.");
+
+  console.log("   ✓ Selbsttest: decide() + modelMatches() + requireApprovals() (Pflicht-Approver Sol + Korroboration) + attestReasons() + attestProof() + validateRangeInputs() + normalizeBase() + authHeader() + strictAnyRefutation() + mdInline() + renderStepSummary() + panelOhneListe() + panelFetch()/fetchModelIds() (keine Weiterleitung) + anfrage() (Frist 900 s statt der 300 s von fetch) korrekt.");
   process.exit(0);
 }
 
@@ -1193,8 +1394,10 @@ async function foldResponsesStream(body) {
   return { text, completed };
 }
 
-async function attemptOnce(i) {
-  const sys = system + (LENSES[i % LENSES.length] || "");
+/** `u` ist, was beim Laden feststeht (Basis, Kopf, Modelle, Prompt) — als
+ *  Argument, damit der --selftest genau diesen Weg gegen einen Prüfserver fährt. */
+async function attemptOnce(i, u = { basis: BASE, kopf: H, modelle: MODELS, system, linsen: LENSES, user }) {
+  const sys = u.system + (u.linsen[i % u.linsen.length] || "");
   const finish = (content) => { const v = parseVerdict(content ?? ""); return { ok: true, v, decision: decide(v) }; };
   // PRIMÄR die Responses-API als SSE-STREAM (DRAHT-REIHENFOLGE, siehe Kopf):
   // stream:true hält während des Denkens ~2-s-Herzschlag-/Delta-Bytes auf der
@@ -1209,13 +1412,14 @@ async function attemptOnce(i) {
   // neuere Modelle lehnen die teils mit 400 ab.
   let res;
   try {
-    res = await panelFetch(`${BASE}/responses`, {
-      method: "POST",
-      headers: H,
+    // anfrage(), nicht fetch: fetch bricht nach 300 s ohne Header ab (siehe
+    // ANFRAGE_FRIST_MS) — so lange denkt ein Modell an einem großen Diff.
+    res = await anfrage(`${u.basis}/responses`, {
+      headers: u.kopf,
       body: JSON.stringify({
-        model: MODELS[i],
+        model: u.modelle[i],
         instructions: sys,
-        input: [{ role: "user", content: user }],
+        input: [{ role: "user", content: u.user }],
         stream: true,
       }),
     });
@@ -1223,7 +1427,7 @@ async function attemptOnce(i) {
     // Netzfehler am Primär-Draht → im SELBEN Versuch auf den Chat-Draht ausweichen.
     // (Wirft auch DER, greift wie bisher die Transient-Retry-Weiche in verifyOnce.)
     const why = String(err instanceof Error ? err.message : err).replace(/\s+/g, " ").slice(0, 300);
-    return chatFallback(i, sys, finish, `Netzfehler Responses-API: ${why}`);
+    return chatFallback(i, u, sys, finish, `Netzfehler Responses-API: ${why}`);
   }
   if (res.ok) {
     // 200 → Strom progressiv falten. BEWUSST außerhalb des try um fetch():
@@ -1245,7 +1449,7 @@ async function attemptOnce(i) {
   // sie träfen den Fallback genauso (gleicher Key, gleiches Modell) und laufen
   // unverändert durch die Retry-Weiche in verifyOnce.
   if (res.status === 404 || res.status === 405 || res.status >= 500) {
-    return chatFallback(i, sys, finish, primary, res.status);
+    return chatFallback(i, u, sys, finish, primary, res.status);
   }
   return { ok: false, status: res.status, reason: primary };
 }
@@ -1264,14 +1468,13 @@ async function attemptOnce(i) {
  * deterministisch war (404/405 = Endpoint fehlt), klassifiziert der
  * Chat-Status. Der reason benennt IMMER beide Status.
  */
-async function chatFallback(i, sys, finish, why, primaryStatus) {
+async function chatFallback(i, u, sys, finish, why, primaryStatus) {
   console.log(`[independent-verify] Stimme ${i + 1}: /responses nicht nutzbar (${why}) → Fallback /chat/completions.`);
-  const res = await panelFetch(`${BASE}/chat/completions`, {
-    method: "POST",
-    headers: H,
+  const res = await anfrage(`${u.basis}/chat/completions`, {
+    headers: u.kopf,
     body: JSON.stringify({
-      model: MODELS[i],
-      messages: [{ role: "system", content: sys }, { role: "user", content: user }],
+      model: u.modelle[i],
+      messages: [{ role: "system", content: sys }, { role: "user", content: u.user }],
     }),
   });
   if (res.ok) {
