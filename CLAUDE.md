@@ -358,6 +358,33 @@ wird. Wer sie entfernt oder anhebt, lockert ohne Gegengewicht. Gemessen in
 (echte Zeilen), `tests/proxy.test.ts` und `tests/e2e/sitzung-verlaengerung.spec.ts`
 (`Set-Cookie`-Kopf und Umleitung am laufenden Server).
 
+## Rezept-Editor: Speichern verliert nichts (10/2026)
+- **Speichern startet die Action VON HAND** (`beimAbsenden` in
+  `src/app/admin/(protected)/rezepte/recipe-editor.tsx`), mit dem FormData des
+  Formulars — nicht über Reacts Formularweg. Der setzt nach jeder
+  Formular-Action alle unkontrollierten Felder zurück (`requestFormReset`,
+  React 19); nach „Bitte alle Pflichtfelder …" standen Titel, Zeiten und
+  Portionen wieder auf dem Stand vom Laden. `action={formAction}` bleibt am
+  `<form>` stehen, `onSubmit` fängt vorher ab.
+  **Die Transition ist kein Beiwerk:** Nur in `startTransition` setzt
+  `useActionState` sein `pending`. Ohne sie bliebe der Knopf während des
+  Speicherns frei.
+- **Ein Blick ins Rich-Text-Feld ist keine Änderung**
+  (`src/components/admin/rich-text-editor.tsx`, gilt für jede Aufrufstelle).
+  Solange der Inhalt dem Befüllten entspricht, bleibt die VORGABE der Wert,
+  nicht ihre Rückübersetzung. Der Umweg Markdown → HTML → Markdown ist nicht
+  die Identität (aus `www.beispiel.de` wird `[www.beispiel.de](http://…)`),
+  und `onBlur` lief ihn bei jedem Verlassen des Feldes. Dass der Umweg selbst
+  verlustbehaftet ist, gilt weiter für jedes Speichern nach echter Eingabe.
+- Gemessen in `tests/e2e/rezept-editor-speichern.spec.ts`. Dort steht das
+  GANZE Formular vor und nach dem Blick (nicht das erste `<form>` der Seite,
+  das Admin-Gerüst trägt eigene), und ein zweites Speichern nach dem Fehler
+  erreicht den Server.
+- **Nicht behoben:** `src/app/admin/(protected)/reisen/travel-editor.tsx` hat
+  dasselbe Muster (`useActionState` + `<form action>` mit `defaultValue`-
+  Feldern). Ob dort nach einer fehlgeschlagenen Action etwas verloren geht,
+  ist ungemessen.
+
 ## Gemeinsame Bausteine — benutzen statt abschreiben
 Wer im Admin eine Seite anlegt oder ändert, nimmt diese und schreibt sie nicht
 neu (B6, 08/2026):
