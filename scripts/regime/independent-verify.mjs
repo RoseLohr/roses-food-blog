@@ -171,10 +171,10 @@ function kopfwerte(headers) {
 
 /**
  * POST mit genau EINER Grenze, der Frist. Antwortet wie fetch: { ok, status,
- * body (async iterierbar, für den SSE-Fold), text(), json() }. Der Draht
- * bleibt, wie das Gateway ihn von fetch kennt (User-Agent, Accept,
- * TCP-Keepalive 60 s) — mit einer Ausnahme: Weiterleitungen folgt anfrage()
- * NICHT, aus demselben Grund wie panelFetch(); ein 3xx steht im Log.
+ * body (async iterierbar, für den SSE-Fold), text(), json() }. Von fetch
+ * übernommen: beschnittene Kopfwerte, User-Agent, Accept, TCP-Keepalive 60 s.
+ * Bewusst anders: keine Weiterleitungen (wie panelFetch(); ein 3xx steht im
+ * Log), keine Kompression, eine Verbindung je Anfrage.
  */
 export function anfrage(url, { headers = {}, body = "", frist = ANFRAGE_FRIST_MS } = {}) {
   return new Promise((resolve, reject) => {
@@ -1191,8 +1191,20 @@ if (process.argv.includes("--selftest")) {
     // Ihre Umgebung kommt als Argument — sonst bliebe ein Rückbau auf fetch,
     // und damit die 300-s-Grenze, hier unbemerkt.
     const umgebung = (pfad) => ({ basis: ziel(pfad), kopf: {}, modelle: ["m"], system: "S", linsen: [""], user: "D" });
+    // Mitgeschnitten, was eine zweite, stille Grenze verriete: jede Uhr über
+    // setTimeout, jede Socket-Uhr (auch req.setTimeout() landet dort), jeder
+    // Anfrage-Aufbau samt Optionen (timeout, signal).
     const fristen = [];
+    const sockelUhren = [];
+    const aufbauten = [];
+    const echtAuch = { aufbau: httpPruef.request, sockelUhr: netPruef.Socket.prototype.setTimeout };
     globalThis.setTimeout = (fn, ms, ...rest) => { fristen.push(ms); return echt.uhr(fn, ms, ...rest); };
+    netPruef.Socket.prototype.setTimeout = function (...a) { sockelUhren.push(a[0]); return echtAuch.sockelUhr.apply(this, a); };
+    httpPruef.request = function (...a) {
+      const r = echtAuch.aufbau.apply(this, a);
+      aufbauten.push({ optionen: a.find((x) => x && typeof x === "object" && !(x instanceof URL)) ?? {}, r });
+      return r;
+    };
     let direkt;
     let umweg;
     try {
@@ -1200,11 +1212,16 @@ if (process.argv.includes("--selftest")) {
       umweg = await attemptOnce(0, umgebung("/umweg"));
     } finally {
       globalThis.setTimeout = echt.uhr;
+      netPruef.Socket.prototype.setTimeout = echtAuch.sockelUhr;
+      httpPruef.request = echtAuch.aufbau;
     }
     expect(direkt?.ok && direkt.decision.block === false, `attemptOnce() erreicht /responses über anfrage() (${JSON.stringify(direkt)}).`);
     expect(umweg?.ok && umweg.decision.block === true, `nach 503 erreicht chatFallback() /chat/completions über anfrage() (${JSON.stringify(umweg)}).`);
     expect(JSON.stringify(fristen) === JSON.stringify([ANFRAGE_FRIST_MS, ANFRAGE_FRIST_MS, ANFRAGE_FRIST_MS]),
       `jede Stimm-Anfrage mit ANFRAGE_FRIST_MS (${JSON.stringify(fristen)}).`);
+    expect(sockelUhren.length === 0 && aufbauten.length === 3 && aufbauten.every(({ optionen, r }) =>
+      optionen.timeout === undefined && !optionen.signal && r.timeout === undefined && r.listenerCount("timeout") === 0),
+      `keine zweite Grenze über Socket-Uhr, timeout oder signal (Socket-Uhren: ${JSON.stringify(sockelUhren)}, Aufbauten: ${aufbauten.length}).`);
   } finally {
     for (const t of uhrenDesServers) clearTimeout(t);
     pruef.closeAllConnections();
@@ -1218,6 +1235,10 @@ if (process.argv.includes("--selftest")) {
   const abgelehnt = await fehlerVon(() => anfrage(`http://127.0.0.1:${leerPort}/`, { body: "{}", frist: 3000 }));
   expect(/ECONNREFUSED/.test(abgelehnt?.message) && !abgelehnt.message.includes("127.0.0.1") && !abgelehnt.message.includes(String(leerPort)),
     "Verbindungsfehler: Code ja, Adresse und Port nein.");
+  // Der WERT, nicht nur die Konstante: alle Fristen oben vergleichen mit sich
+  // selbst. 900 s liegen über den 300 s von fetch und den 458 s des längsten
+  // gemessenen Erfolgs.
+  expect(ANFRAGE_FRIST_MS === 900_000, `die gewählte Frist ist 900 s (${ANFRAGE_FRIST_MS} ms).`);
 
   console.log("   ✓ Selbsttest: decide() + modelMatches() + requireApprovals() (Pflicht-Approver Sol + Korroboration) + attestReasons() + attestProof() + validateRangeInputs() + normalizeBase() + authHeader() + strictAnyRefutation() + mdInline() + renderStepSummary() + panelOhneListe() + panelFetch()/fetchModelIds() (keine Weiterleitung) + anfrage() (Frist 900 s statt der 300 s von fetch) korrekt.");
   process.exit(0);
@@ -1430,7 +1451,7 @@ async function attemptOnce(i, u = { basis: BASE, kopf: H, modelle: MODELS, syste
     return chatFallback(i, u, sys, finish, `Netzfehler Responses-API: ${why}`);
   }
   if (res.ok) {
-    // 200 → Strom progressiv falten. BEWUSST außerhalb des try um fetch():
+    // 200 → Strom progressiv falten. BEWUSST außerhalb des try um anfrage():
     // reißt der Strom ab (Netzfehler mittendrin, Ende ohne response.completed,
     // error-Event), wirft der Fold zu verifyOnce durch → transient, Retry des
     // Primär-Drahts. KEIN Chat-Fallback dafür: der Endpoint existiert und
