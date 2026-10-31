@@ -209,6 +209,16 @@ export function anfrage(url, { headers = {}, body = "", frist = ANFRAGE_FRIST_MS
       if (antwort) antwort.destroy(err); else req.destroy(err);
     }, frist);
     req.on("error", (err) => { clearTimeout(uhr); reject(bereinigt(err)); });
+    // Endet die Anfrage ohne Antwort und ohne Fehler — ein Protokollwechsel
+    // (101) ohne Upgrade-Handler schließt sie genau so —, endete das Promise
+    // sonst nie, und auch die Frist liefe ins Leere: `destroy` auf eine schon
+    // geschlossene Anfrage meldet nichts mehr. Die Stimme hinge, ohne
+    // Fallback und ohne Retry.
+    req.on("close", () => {
+      if (antwort) return;
+      clearTimeout(uhr);
+      reject(new Zustellfehler("Verbindung ohne Antwort beendet"));
+    });
     req.on("response", (res) => {
       antwort = res;
       res.on("close", () => clearTimeout(uhr));
@@ -1135,6 +1145,11 @@ if (process.argv.includes("--selftest")) {
         res.write('data: {"type":"response.output_text.delta","delta":"Hallo "}\n\n');
         spaeter(() => res.end('data: {"type":"response.output_text.delta","delta":"Welt"}\n\ndata: {"type":"response.completed","response":{}}\n\n'), 200);
       } else if (req.url === "/503") { res.writeHead(503); res.end("Upstream überlastet"); }
+      else if (req.url === "/wechsel") {
+        // Ein Protokollwechsel statt einer Antwort: Der Client schließt die
+        // Anfrage dann ohne `response` und ohne `error`.
+        req.socket.write("HTTP/1.1 101 Switching Protocols\r\nUpgrade: x\r\nConnection: Upgrade\r\n\r\n");
+      }
       else if (req.url === "/draht") {
         // Der Draht, den das Gateway von fetch kannte — aber ohne fetch:
         // `connection: close` heißt agent:false, `sec-fetch-mode` setzt nur undici.
@@ -1187,6 +1202,17 @@ if (process.argv.includes("--selftest")) {
     const ungueltig = await fehlerVon(() => anfrage(ziel("/draht"), { headers: { X: "geheim\nY: 1" }, body: "{}", frist: 100 }));
     expect(/ERR_INVALID_CHAR/.test(ungueltig?.message) && !ungueltig.message.includes("geheim"), "unzulässiger Kopfwert: Code ja, Wert nein.");
     await new Promise((r) => setTimeout(r, 250)); // über dessen Frist hinaus: keine verwaiste Uhr
+    // Endet die Verbindung ohne Antwort (101 ohne Upgrade-Handler), ist das
+    // ein Zustellfehler — nicht ein Promise, das nie endet. Sonst hinge die
+    // Stimme, ohne Fallback und ohne Retry (vom Pflicht-Approver an #183
+    // gefunden). Die eigene Grenze von 3 s macht einen Hänger hier rot.
+    const haengt = Symbol("hängt");
+    const wechsel = await Promise.race([
+      fehlerVon(() => anfrage(ziel("/wechsel"), { body: "{}", frist: 500 })),
+      new Promise((r) => setTimeout(() => r(haengt), 3000)),
+    ]);
+    expect(wechsel !== haengt && wechsel instanceof Error && /ohne Antwort/.test(wechsel.message),
+      `eine Verbindung, die ohne Antwort endet, lehnt die Anfrage ab (${wechsel === haengt ? "hängt" : wechsel?.message}).`);
     // Die ECHTEN Aufrufstellen: attemptOnce() und, nach 503, chatFallback().
     // Ihre Umgebung kommt als Argument — sonst bliebe ein Rückbau auf fetch,
     // und damit die 300-s-Grenze, hier unbemerkt.
