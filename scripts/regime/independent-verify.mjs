@@ -1162,7 +1162,13 @@ if (process.argv.includes("--selftest")) {
         if (h.connection !== "close" || h["sec-fetch-mode"] !== undefined) { res.writeHead(400); res.end("fetch"); return; }
         if (req.url === "/stimme/responses") res.end(`data: ${JSON.stringify({ type: "response.output_text.delta", delta: '{"refuted": false}' })}\n\ndata: {"type":"response.completed","response":{}}\n\n`);
         else res.end(JSON.stringify({ choices: [{ message: { content: '{"refuted": true, "confidence": "high"}' } }] }));
-      } else if (req.url === "/umweg/responses") { res.writeHead(503); res.end(); }
+      } else if (req.url === "/umweg/responses" || req.url === "/umweg-abriss/responses") { res.writeHead(503); res.end(); }
+      else if (req.url === "/abriss/responses" || req.url === "/umweg-abriss/chat/completions") {
+        // Ein Fehler-Körper, der mittendrin abreißt.
+        res.writeHead(req.url.includes("chat") ? 502 : 429, { "content-length": "100" });
+        res.write("teilweise");
+        spaeter(() => req.socket.destroy(), 50);
+      }
       else { res.writeHead(404); res.end(); }
     });
   });
@@ -1248,6 +1254,16 @@ if (process.argv.includes("--selftest")) {
     expect(sockelUhren.length === 0 && aufbauten.length === 3 && aufbauten.every(({ optionen, r }) =>
       optionen.timeout === undefined && !optionen.signal && r.timeout === undefined && r.listenerCount("timeout") === 0),
       `keine zweite Grenze über Socket-Uhr, timeout oder signal (Socket-Uhren: ${JSON.stringify(sockelUhren)}, Aufbauten: ${aufbauten.length}).`);
+    // Ein Fehler-Körper, der sich nicht lesen lässt, ist kein leerer: Der
+    // Grund nennt, was beim Lesen geschah (Abriss, abgelaufene Frist), statt
+    // „(kein Body)" — sonst verschwände im Log, dass eine Stimme bis zu 900 s
+    // an einem hängenden Körper verlor (dieselbe Klasse wie B33).
+    const abriss = await attemptOnce(0, umgebung("/abriss"));
+    expect(abriss?.ok === false && abriss.status === 429 && /Körper nicht lesbar: Netzfehler \(ECONNRESET\)/.test(abriss.reason),
+      `attemptOnce(): ein abgerissener Fehler-Körper steht im Grund (${JSON.stringify(abriss)}).`);
+    const umwegAbriss = await attemptOnce(0, umgebung("/umweg-abriss"));
+    expect(umwegAbriss?.ok === false && /Chat-Fallback 502: \(Körper nicht lesbar: Netzfehler \(ECONNRESET\)\)/.test(umwegAbriss.reason),
+      `chatFallback(): ein abgerissener Fehler-Körper steht im Grund (${JSON.stringify(umwegAbriss)}).`);
   } finally {
     for (const t of uhrenDesServers) clearTimeout(t);
     pruef.closeAllConnections();
@@ -1487,7 +1503,10 @@ async function attemptOnce(i, u = { basis: BASE, kopf: H, modelle: MODELS, syste
   }
   // Fehler-BODY mitschreiben (nicht nur den Status) — und daran die Endpoint-Weiche.
   let body = "";
-  try { body = await res.text(); } catch { body = ""; }
+  // Ein Körper, der sich nicht lesen lässt, ist kein leerer: Der Grund nennt,
+  // was geschah (Abriss, abgelaufene Frist — schon ohne Adresse), statt
+  // „(kein Body)". Die Status-Weichen darunter bleiben unberührt.
+  try { body = await res.text(); } catch (err) { body = `(Körper nicht lesbar: ${err instanceof Error ? err.message : String(err)})`; }
   const primary = `Responses-API ${res.status}: ${body.replace(/\s+/g, " ").slice(0, 300) || "(kein Body)"}`;
   // Nicht jedes Gateway/Modell spricht die Responses-API: 404/405 = Endpoint nicht
   // vorhanden. Dazu 5xx = Upstream-/Gateway-Fehler dieses Drahts. In BEIDEN Fällen
@@ -1529,7 +1548,10 @@ async function chatFallback(i, u, sys, finish, why, primaryStatus) {
     return finish(data.choices?.[0]?.message?.content ?? "");
   }
   let body = "";
-  try { body = await res.text(); } catch { body = ""; }
+  // Ein Körper, der sich nicht lesen lässt, ist kein leerer: Der Grund nennt,
+  // was geschah (Abriss, abgelaufene Frist — schon ohne Adresse), statt
+  // „(kein Body)". Die Status-Weichen darunter bleiben unberührt.
+  try { body = await res.text(); } catch (err) { body = `(Körper nicht lesbar: ${err instanceof Error ? err.message : String(err)})`; }
   const detail = body.replace(/\s+/g, " ").slice(0, 300) || "(kein Body)";
   // Netzfehler-Primär: primaryStatus undefined → status undefined → transient
   // (verifyOnce retryt statuslose Fehler). 5xx-Primär: 5xx → transient.
