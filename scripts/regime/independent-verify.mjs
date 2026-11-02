@@ -1124,24 +1124,20 @@ if (process.argv.includes("--selftest")) {
   pruef.unref();
   const ziel = (pfad) => `http://127.0.0.1:${pruef.address().port}${pfad}`;
   const fehler = async (fn) => { try { await fn(); return null; } catch (e) { return e; } };
-  // Uhren zählen im Takt des Aufbaus (undici stellt aus den fetch-Proben eigene).
-  // Die Frist 4242 ms feuert von Hand: kein Wettlauf mit der Wanduhr.
-  let imAufbau = false;
+  // Gezählt wird jede Uhr außer denen, die undici stellt (Keepalive der fetch-Proben
+  // davor). Die Frist 4242 ms feuert von Hand: kein Wettlauf mit der Wanduhr.
   let hand = null;
+  let haende = 0;
   globalThis.setTimeout = (fn, ms, ...r) => {
-    if (imAufbau) uhren.push(ms);
-    return ms === 4242 ? (hand = { fn, nach: 0, weg: false, refresh() { this.nach++; return this; } }) : echt.an(fn, ms, ...r);
+    if (!/node:internal\/deps\/undici\//.test(new Error().stack)) uhren.push(ms);
+    if (ms !== 4242) return echt.an(fn, ms, ...r);
+    haende++;
+    return (hand = { fn, nach: 0, weg: false, refresh() { this.nach++; return this; } });
   };
   globalThis.clearTimeout = (t) => (t && t === hand ? (hand.weg = true) : echt.ab(t));
   S.setKeepAlive = function (...a) { kas.push(a.join(":")); return echt.ka.apply(this, a); };
   S.setTimeout = function (...a) { sus.push(a[0]); return echt.su.apply(this, a); };
-  httpPruef.request = function (...a) {
-    const r = echt.auf.apply(this, a);
-    aufs.push([a[1] ?? {}, r]);
-    imAufbau = true;
-    queueMicrotask(() => { imAufbau = false; });
-    return r;
-  };
+  httpPruef.request = function (...a) { const r = echt.auf.apply(this, a); aufs.push([a[1] ?? {}, r]); return r; };
   try {
     // Direkt und über 503 in den Fallback.
     const u = (pfad) => ({ basis: ziel(pfad), kopf: { "X-K": " geheim\r\n" }, modelle: ["m"], system: "Süß", linsen: [""], user: "DIFF (Überblick …)" });
@@ -1156,11 +1152,12 @@ if (process.argv.includes("--selftest")) {
     const ohneKopf = await fehler(() => anfrage(ziel("/still"), { frist: 1 }));
     expect(/Frist/.test(ohneKopf?.message) && aufs.at(-1)[1].destroyed, "ohne Header bis zur Frist: Frist-Meldung, Anfrage abgebaut.");
     // Gesamtfrist: Sie deckt auch den Körper, ohne Neustart der Uhr mit den Headern.
+    haende = 0;
     const schweigt = await anfrage(ziel("/schweigt"), { frist: 4242 });
     const koerper = fehler(() => schweigt.text());
     if (hand && !hand.weg) hand.fn();
     echt.an(() => schweigend.destroyed || schweigend.end(), 2000).unref(); // erst danach: rot statt Hänger
-    expect(/Frist/.test((await koerper)?.message) && hand.nach === 0, "ein Körper, der schweigt, endet bei der Frist.");
+    expect(/Frist/.test((await koerper)?.message) && hand.nach === 0 && haende === 1, `ein Körper, der schweigt, endet bei der Frist (Uhren: ${haende}).`);
     let fertig = false;
     const wechsel = fehler(() => anfrage(ziel("/wechsel"))).then((e) => { fertig = true; return e; });
     await new Promise((r) => aufs.at(-1)[1].once("close", r));
