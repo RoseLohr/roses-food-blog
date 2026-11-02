@@ -1101,13 +1101,12 @@ if (process.argv.includes("--selftest")) {
     for (const s of [fremd, umleiter]) { s.closeAllConnections(); await new Promise((r) => s.close(r)); }
   }
 
-  // ── Frist (10/2026). Die Frist der Proben (H ms) löst die Probe von Hand aus,
-  // sobald der Prüfserver so weit ist: Im richtigen Ablauf entscheidet kein
-  // Wettlauf mit der Wanduhr. Jedes Warten endet auch am Ergebnis der Anfrage,
-  // stumme Wege enden selbst: Ein Rückbau wird rot, statt zu hängen.
+  // ── Frist (10/2026). Die Proben-Frist (H) feuert von Hand, wenn der Prüfserver so
+  // weit ist: kein Wettlauf mit der Wanduhr. Jedes Warten endet auch am Ergebnis.
   const netPruef = await import("node:net");
+  const httpsPruef = (await import("node:https")).default;
   const S = netPruef.Socket.prototype;
-  const echt = { an: globalThis.setTimeout, ab: globalThis.clearTimeout, ka: S.setKeepAlive, su: S.setTimeout, auf: httpPruef.request };
+  const echt = { an: globalThis.setTimeout, ab: globalThis.clearTimeout, ka: S.setKeepAlive, su: S.setTimeout, auf: httpPruef.request, aufS: httpsPruef.request };
   const [uhren, kas, sus, aufs] = [[], [], [], []];
   const H = 4242;
   let hand = null;
@@ -1117,12 +1116,17 @@ if (process.argv.includes("--selftest")) {
   const bis = (pfad, n = 1) => new Promise((r) => { da[pfad] = { n, r }; });
   const offen = new Set();
   const spaeter = (fn, ms) => { const z = setTimeout(() => { offen.delete(z); fn(); }, ms); offen.add(z); };
+  const liest = (t) => { try { return JSON.parse(t); } catch (e) { return e; } };
   const pruef = httpPruef.createServer((req, res) => {
-    req.resume();
+    let koerper = "";
+    req.setEncoding("utf8");
+    req.on("data", (t) => { koerper += t; });
     req.on("end", () => {
       const melde = () => { const w = da[req.url]; if (w && --w.n === 0) w.r(); };
-      const fetchFrei = req.headers.connection === "close" && req.headers["sec-fetch-mode"] === undefined
-        && req.headers["user-agent"] === "node" && req.headers["x-k"] === "geheim";
+      // Wie fetch, ohne fetch — und ganz: Mit Umlauten zählt Content-Length Bytes.
+      const fetchFrei = req.method === "POST" && req.headers.connection === "close" && req.headers["sec-fetch-mode"] === undefined
+        && req.headers["user-agent"] === "node" && req.headers["accept-encoding"] === "identity" && req.headers["x-k"] === "geheim"
+        && liest(koerper).model === "m";
       if (req.url === "/kopf-nie") { melde(); spaeter(() => req.socket.destroy(), 2000); }
       else if (req.url === "/tropf") {
         let n = 0;
@@ -1136,7 +1140,7 @@ if (process.argv.includes("--selftest")) {
     });
   });
   await new Promise((r) => pruef.listen(0, "127.0.0.1", r));
-  pruef.unref(); // Wartet nichts mehr außer dem Server, endet der Lauf (rot) statt zu hängen.
+  pruef.unref(); // Wartet nur noch der Server, endet der Lauf (rot), statt zu hängen.
   const ziel = (pfad) => `http://127.0.0.1:${pruef.address().port}${pfad}`;
   const fehler = async (fn) => { try { await fn(); return null; } catch (e) { return e; } };
   globalThis.setTimeout = (fn, ms, ...r) => {
@@ -1149,6 +1153,7 @@ if (process.argv.includes("--selftest")) {
   S.setKeepAlive = function (...a) { kas.push(a.join(":")); return echt.ka.apply(this, a); };
   S.setTimeout = function (...a) { sus.push(a[0]); return echt.su.apply(this, a); };
   httpPruef.request = function (...a) { const r = echt.auf.apply(this, a); aufs.push([a[1] ?? {}, r]); return r; };
+  httpsPruef.request = function (...a) { const r = echt.aufS.apply(this, a); aufs.push([a[1] ?? {}, r, "https"]); return r; };
   try {
     const kaputt = await fehler(() => anfrage(ziel("/x"), { headers: { X: "geheim\nY: 1" }, frist: H }));
     expect(/ERR_INVALID_CHAR/.test(kaputt?.message) && !kaputt.message.includes("geheim") && hand === null, "unzulässiger Kopfwert: Code ja, Wert nein, keine Uhr.");
@@ -1157,8 +1162,7 @@ if (process.argv.includes("--selftest")) {
     await Promise.race([angekommen, ohneKopf]);
     feuern();
     expect(/Frist/.test((await ohneKopf)?.message) && aufs.at(-1)[1].destroyed, "ohne Header bis zur Frist: Frist-Meldung, Anfrage abgebaut.");
-    // Gesamtfrist: Das Gateway sendet alle ~2 s Herzschlag-Bytes; eine Uhr, die
-    // bei jedem Stück oder mit den Headern neu anliefe, hätte keine Grenze.
+    // Gesamtfrist: Das Gateway sendet alle ~2 s Herzschlag-Bytes.
     const drei = bis("/tropf", 3);
     haende = 0;
     const tropf = await anfrage(ziel("/tropf"), { frist: H });
@@ -1172,21 +1176,27 @@ if (process.argv.includes("--selftest")) {
     await new Promise((r) => aufs.at(-1)[1].once("close", r));
     await new Promise((r) => setImmediate(r));
     expect(fertig && /ohne Antwort/.test((await wechsel)?.message), "101 ohne Antwort endet als Fehler, nicht nie.");
-    // Die echten Aufrufstellen, direkt und über 503 in den Fallback. Mitgeschnitten
-    // wird auch, was eine zweite Grenze verriete: Socket-Uhr, timeout, signal.
+    // Die echten Aufrufstellen, direkt und über 503 in den Fallback.
     for (const l of [uhren, kas, sus, aufs]) l.length = 0;
-    const u = (pfad) => ({ basis: ziel(pfad), kopf: { "X-K": " geheim\r\n" }, modelle: ["m"], system: "S", linsen: [""], user: "D" });
+    const u = (pfad) => ({ basis: ziel(pfad), kopf: { "X-K": " geheim\r\n" }, modelle: ["m"], system: "Süß", linsen: [""], user: "DIFF (Überblick …)" });
     const direkt = await attemptOnce(0, u("/stimme"));
     const umweg = await attemptOnce(0, u("/umweg"));
     expect(direkt?.decision?.block === false && umweg?.decision?.block === true, `beide Drähte über anfrage() (${JSON.stringify([direkt, umweg])}).`);
     expect(JSON.stringify(uhren) === JSON.stringify([ANFRAGE_FRIST_MS, ANFRAGE_FRIST_MS, ANFRAGE_FRIST_MS]) && kas.join() === "true:60000,true:60000,true:60000",
       `je Anfrage eine Uhr auf ANFRAGE_FRIST_MS und Keepalive 60 s (${JSON.stringify(uhren)}, ${kas}).`);
-    expect(sus.length === 0 && aufs.length === 3 && aufs.every(([o, r]) => o.timeout === undefined && !o.signal && r.timeout === undefined && r.listenerCount("timeout") === 0),
-      `keine zweite Grenze (Socket-Uhren ${JSON.stringify(sus)}, Aufbauten ${aufs.length}).`);
+    const ohneGrenze = ([o, r]) => o.agent === false && o.timeout === undefined && !o.signal && o.rejectUnauthorized !== false && r.timeout === undefined && r.listenerCount("timeout") === 0;
+    expect(sus.length === 0 && aufs.length === 3 && aufs.every(ohneGrenze), `keine zweite Grenze (Socket-Uhren ${JSON.stringify(sus)}, Aufbauten ${aufs.length}).`);
+    // Der https-Zweig des Betriebs: TLS gegen den http-Prüfserver scheitert (EPROTO),
+    // mitgeschnitten ist bis dahin alles.
+    for (const l of [uhren, kas, sus, aufs]) l.length = 0;
+    const tls = await fehler(() => anfrage(ziel("/tls").replace("http:", "https:")));
+    expect(/EPROTO/.test(tls?.message) && aufs.length === 1 && aufs[0][2] === "https" && aufs.every(ohneGrenze) && sus.length === 0
+      && uhren.join() === String(ANFRAGE_FRIST_MS) && kas.join() === "true:60000", `https wie http (${tls?.message}, ${aufs.length}, ${kas}, ${uhren}, ${sus}).`);
   } finally {
     Object.assign(globalThis, { setTimeout: echt.an, clearTimeout: echt.ab });
     Object.assign(S, { setKeepAlive: echt.ka, setTimeout: echt.su });
     httpPruef.request = echt.auf;
+    httpsPruef.request = echt.aufS;
     for (const z of offen) clearTimeout(z);
     pruef.closeAllConnections();
     await new Promise((r) => pruef.close(r));
