@@ -1113,7 +1113,7 @@ if (process.argv.includes("--selftest")) {
         && req.headers["accept-encoding"] === "identity" && req.headers["x-k"] === "geheim" && k.includes("Süß") && k.endsWith("}");
       if (req.url === "/still") echt.an(() => req.socket.destroy(), 2000).unref();
       else if (req.url === "/schweigt") { res.writeHead(503); res.flushHeaders(); schweigend = res; }
-      else if (req.url === "/halb") { res.write("x"); schweigend = res; }
+      else if (req.url === "/halb") { res.writeHead(200, { "Content-Type": "text/event-stream" }); res.write("x\n\n"); schweigend = res; }
       else if (req.url === "/wechsel") req.socket.write("HTTP/1.1 101 Switching Protocols\r\nUpgrade: x\r\nConnection: Upgrade\r\n\r\n");
       else if (req.url === "/umweg/responses") { res.writeHead(503); res.end(); }
       else if (!draht) { res.writeHead(400); res.end("Draht"); }
@@ -1161,8 +1161,8 @@ if (process.argv.includes("--selftest")) {
     const erstes = await halb.next();
     feuern();
     const halbRest = await fehler(async () => { while (!(await halb.next()).done); });
-    expect(erstes.value?.length === 1 && /Frist/.test(halbRest?.message) && hand.nach === 0 && haende === 1,
-      `ein 200-Strom, der nach dem ersten Stück schweigt, endet bei der Frist (Uhren: ${haende}).`);
+    expect(erstes.value?.length === 3 && /Frist/.test(halbRest?.message) && hand.nach === 0 && haende === 1,
+      `ein SSE-Strom, der nach dem ersten Ereignis schweigt, endet bei der Frist (Uhren: ${haende}).`);
     haende = 0;
     const schweigt = await anfrage(ziel("/schweigt"), { frist: 4242 });
     const koerper = fehler(() => schweigt.text());
