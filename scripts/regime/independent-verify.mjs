@@ -1102,14 +1102,16 @@ if (process.argv.includes("--selftest")) {
   }
 
   // ── Frist (10/2026). Die Frist der Proben (H ms) löst die Probe von Hand aus,
-  // sobald der Prüfserver so weit ist: Kein Wettlauf mit der Wanduhr eines
-  // ausgelasteten Läufers entscheidet. Stumme Wege enden selbst: rot statt Hänger.
+  // sobald der Prüfserver so weit ist: Im richtigen Ablauf entscheidet kein
+  // Wettlauf mit der Wanduhr. Jedes Warten endet auch am Ergebnis der Anfrage,
+  // stumme Wege enden selbst: Ein Rückbau wird rot, statt zu hängen.
   const netPruef = await import("node:net");
   const S = netPruef.Socket.prototype;
   const echt = { an: globalThis.setTimeout, ab: globalThis.clearTimeout, ka: S.setKeepAlive, su: S.setTimeout, auf: httpPruef.request };
   const [uhren, kas, sus, aufs] = [[], [], [], []];
   const H = 4242;
   let hand = null;
+  let haende = 0;
   const feuern = () => hand && !hand.weg && hand.fn();
   const da = {};
   const bis = (pfad, n = 1) => new Promise((r) => { da[pfad] = { n, r }; });
@@ -1134,11 +1136,13 @@ if (process.argv.includes("--selftest")) {
     });
   });
   await new Promise((r) => pruef.listen(0, "127.0.0.1", r));
+  pruef.unref(); // Wartet nichts mehr außer dem Server, endet der Lauf (rot) statt zu hängen.
   const ziel = (pfad) => `http://127.0.0.1:${pruef.address().port}${pfad}`;
   const fehler = async (fn) => { try { await fn(); return null; } catch (e) { return e; } };
   globalThis.setTimeout = (fn, ms, ...r) => {
     uhren.push(ms);
     if (ms !== H) return echt.an(fn, ms, ...r);
+    haende++;
     return (hand = { hand: true, fn, nach: 0, weg: false, refresh() { this.nach++; return this; } });
   };
   globalThis.clearTimeout = (t) => (t?.hand ? (t.weg = true) : echt.ab(t));
@@ -1150,17 +1154,19 @@ if (process.argv.includes("--selftest")) {
     expect(/ERR_INVALID_CHAR/.test(kaputt?.message) && !kaputt.message.includes("geheim") && hand === null, "unzulässiger Kopfwert: Code ja, Wert nein, keine Uhr.");
     const angekommen = bis("/kopf-nie");
     const ohneKopf = fehler(() => anfrage(ziel("/kopf-nie"), { frist: H }));
-    await angekommen;
+    await Promise.race([angekommen, ohneKopf]);
     feuern();
-    expect(/Frist/.test((await ohneKopf)?.message), "ohne Header bis zur Frist: Frist-Meldung.");
+    expect(/Frist/.test((await ohneKopf)?.message) && aufs.at(-1)[1].destroyed, "ohne Header bis zur Frist: Frist-Meldung, Anfrage abgebaut.");
     // Gesamtfrist: Das Gateway sendet alle ~2 s Herzschlag-Bytes; eine Uhr, die
     // bei jedem Stück oder mit den Headern neu anliefe, hätte keine Grenze.
     const drei = bis("/tropf", 3);
+    haende = 0;
     const tropf = await anfrage(ziel("/tropf"), { frist: H });
     const rest = fehler(() => tropf.text());
-    await drei;
+    await Promise.race([drei, rest]);
     feuern();
-    expect(/Frist/.test((await rest)?.message) && hand.nach === 0, `ein Strom, der weiter tröpfelt, endet bei der Frist (nachgestellt: ${hand.nach}).`);
+    expect(/Frist/.test((await rest)?.message) && hand.nach === 0 && haende === 1,
+      `ein Strom, der weiter tröpfelt, endet bei der Frist (Uhren: ${haende}, nachgestellt: ${hand.nach}).`);
     let fertig = false;
     const wechsel = fehler(() => anfrage(ziel("/wechsel"), { frist: H })).then((e) => { fertig = true; return e; });
     await new Promise((r) => aufs.at(-1)[1].once("close", r));
