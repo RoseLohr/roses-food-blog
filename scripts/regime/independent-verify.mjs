@@ -1114,6 +1114,8 @@ if (process.argv.includes("--selftest")) {
   let still = null;
   let fremdBesuche = 0;
   const feuern = () => hand && !hand.weg && hand.fn();
+  // … und beendet eine stumme Antwort nach 2 s: Greift die Frist nicht, wird die Probe rot.
+  const feuernInStille = () => { feuern(); const r = still; spaeter(() => r.destroyed || r.end(), 2000); };
   const da = {};
   const bis = (pfad, n = 1) => new Promise((r) => { da[pfad] = { n, r }; });
   const offen = new Set();
@@ -1128,14 +1130,15 @@ if (process.argv.includes("--selftest")) {
       // Wie fetch, ohne fetch — und ganz: Mit Umlauten zählt Content-Length Bytes.
       const fetchFrei = req.method === "POST" && req.headers.connection === "close" && req.headers["sec-fetch-mode"] === undefined
         && req.headers["user-agent"] === "node" && req.headers["accept-encoding"] === "identity" && req.headers["x-k"] === "geheim"
-        && liest(koerper).model === "m";
+        && liest(koerper).model === "m" && koerper.includes("Süß");
       if (req.url === "/kopf-nie") { melde(); spaeter(() => req.socket.destroy(), 2000); }
       else if (req.url === "/tropf") {
         let n = 0;
         const t = setInterval(() => { res.write("x"); if (++n === 3) clearInterval(t); }, 20);
         res.on("close", () => clearInterval(t));
         still = res;
-      } else if (req.url === "/umleitung") { res.writeHead(307, { location: ziel("/fremd") }); res.end(); }
+      } else if (req.url === "/fehler-still") { res.writeHead(503); res.flushHeaders(); still = res; }
+      else if (req.url === "/umleitung") { res.writeHead(307, { location: ziel("/fremd") }); res.end(); }
       else if (req.url === "/fremd") { fremdBesuche++; res.end(); }
       else if (req.url === "/wechsel") req.socket.write("HTTP/1.1 101 Switching Protocols\r\nUpgrade: x\r\nConnection: Upgrade\r\n\r\n");
       else if (req.url === "/umweg/responses") { res.writeHead(503); res.end(); }
@@ -1168,17 +1171,20 @@ if (process.argv.includes("--selftest")) {
     await Promise.race([angekommen, ohneKopf]);
     feuern();
     expect(/Frist/.test((await ohneKopf)?.message) && aufs.at(-1)[1].destroyed, "ohne Header bis zur Frist: Frist-Meldung, Anfrage abgebaut.");
-    // Gesamtfrist: drei Stücke gelesen, dann Stille — die Frist greift ohne ein
-    // weiteres Stück (sonst endet der Server nach 2 s, und die Probe wird rot).
+    // Gesamtfrist: drei Stücke gelesen, dann Stille — die Frist greift ohne ein weiteres Stück.
     haende = 0;
     const strom = (await anfrage(ziel("/tropf"), { frist: H })).body;
     let gelesen = 0;
     for (let teil = await strom.next(); !teil.done && (gelesen += teil.value.length) < 3; teil = await strom.next());
-    feuern();
-    spaeter(() => still.destroyed || still.end(), 2000);
+    feuernInStille();
     const rest = await fehler(async () => { while (!(await strom.next()).done); });
     expect(gelesen === 3 && /Frist/.test(rest?.message) && hand.nach === 0 && haende === 1,
       `der Strom endet bei der Frist, auch in der Stille (gelesen: ${gelesen}, Uhren: ${haende}, nachgestellt: ${hand.nach}).`);
+    // Auch beim Lesen über text() und bei einem Fehlerstatus, der danach schweigt.
+    const fehlerAntwort = await anfrage(ziel("/fehler-still"), { frist: H });
+    const fehlerKoerper = fehler(() => fehlerAntwort.text());
+    feuernInStille();
+    expect(/Frist/.test((await fehlerKoerper)?.message), "ein Fehlerkörper, der schweigt, endet bei der Frist.");
     const um = await anfrage(ziel("/umleitung"));
     expect(um.status === 307 && !um.ok && fremdBesuche === 0, `307 bleibt ein Fehlerstatus, kein Weg zum fremden Ursprung (${um.status}, ${fremdBesuche}).`);
     let fertig = false;
