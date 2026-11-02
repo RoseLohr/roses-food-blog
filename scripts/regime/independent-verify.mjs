@@ -1111,7 +1111,7 @@ if (process.argv.includes("--selftest")) {
       const fetchFrei = req.headers.connection === "close" && req.headers["sec-fetch-mode"] === undefined
         && req.headers["user-agent"] === "node" && req.headers["x-k"] === "geheim";
       if (req.url === "/kopf-nie") spaeter(() => req.socket.destroy(), 2000);
-      else if (req.url === "/still") { res.write("x"); spaeter(() => res.end(), 2000); }
+      else if (req.url === "/tropf") { const t = setInterval(() => res.write("x"), 50); res.on("close", () => clearInterval(t)); spaeter(() => res.end(), 2000); }
       else if (req.url === "/wechsel") req.socket.write("HTTP/1.1 101 Switching Protocols\r\nUpgrade: x\r\nConnection: Upgrade\r\n\r\n");
       else if (req.url === "/umweg/responses") { res.writeHead(503); res.end(); }
       else if (!fetchFrei) { res.writeHead(400); res.end("Draht"); }
@@ -1127,8 +1127,9 @@ if (process.argv.includes("--selftest")) {
     const kaputt = await fehler(() => anfrage(ziel("/x"), { headers: { X: "geheim\nY: 1" }, frist: 100 }));
     expect(/ERR_INVALID_CHAR/.test(kaputt?.message) && !kaputt.message.includes("geheim"), "unzulässiger Kopfwert: Code ja, Wert nein.");
     expect(/Frist/.test((await fehler(() => anfrage(ziel("/kopf-nie"), { frist: 150 })))?.message), "ohne Header bis zur Frist: Frist-Meldung.");
-    const still = await anfrage(ziel("/still"), { frist: 300 });
-    expect(/Frist/.test((await fehler(() => still.text()))?.message), "Stille im Strom über die Frist: Frist-Meldung.");
+    // Gesamtfrist, keine Leerlaufgrenze: Das Gateway sendet alle ~2 s Herzschlag-Bytes.
+    const tropf = await anfrage(ziel("/tropf"), { frist: 300 });
+    expect(/Frist/.test((await fehler(() => tropf.text()))?.message), "ein Strom, der weiter tröpfelt, endet bei der Frist.");
     const wechsel = await Promise.race([fehler(() => anfrage(ziel("/wechsel"), { frist: 500 })), new Promise((r) => setTimeout(() => r("hängt"), 3000))]);
     expect(/ohne Antwort/.test(wechsel?.message), `101 ohne Antwort endet als Fehler, nicht nie (${wechsel?.message ?? wechsel}).`);
     // Die echten Aufrufstellen, direkt und über 503 in den Fallback. Mitgeschnitten
@@ -1138,14 +1139,14 @@ if (process.argv.includes("--selftest")) {
     const echt = { uhr: globalThis.setTimeout, ka: S.setKeepAlive, su: S.setTimeout, auf: httpPruef.request };
     const [uhren, kas, sus, aufs] = [[], [], [], []];
     globalThis.setTimeout = (fn, ms, ...r) => { uhren.push(ms); return echt.uhr(fn, ms, ...r); };
-    S.setKeepAlive = function (...a) { kas.push(a[1]); return echt.ka.apply(this, a); };
+    S.setKeepAlive = function (...a) { kas.push(a.join(":")); return echt.ka.apply(this, a); };
     S.setTimeout = function (...a) { sus.push(a[0]); return echt.su.apply(this, a); };
     httpPruef.request = function (...a) { const r = echt.auf.apply(this, a); aufs.push([a[1] ?? {}, r]); return r; };
     let direkt, umweg;
     try { direkt = await attemptOnce(0, u("/stimme")); umweg = await attemptOnce(0, u("/umweg")); }
     finally { globalThis.setTimeout = echt.uhr; Object.assign(S, { setKeepAlive: echt.ka, setTimeout: echt.su }); httpPruef.request = echt.auf; }
     expect(direkt?.decision?.block === false && umweg?.decision?.block === true, `beide Drähte über anfrage() (${JSON.stringify([direkt, umweg])}).`);
-    expect(JSON.stringify(uhren) === JSON.stringify([ANFRAGE_FRIST_MS, ANFRAGE_FRIST_MS, ANFRAGE_FRIST_MS]) && kas.join() === "60000,60000,60000",
+    expect(JSON.stringify(uhren) === JSON.stringify([ANFRAGE_FRIST_MS, ANFRAGE_FRIST_MS, ANFRAGE_FRIST_MS]) && kas.join() === "true:60000,true:60000,true:60000",
       `je Anfrage eine Uhr auf ANFRAGE_FRIST_MS und Keepalive 60 s (${JSON.stringify(uhren)}, ${kas}).`);
     expect(sus.length === 0 && aufs.length === 3 && aufs.every(([o, r]) => o.timeout === undefined && !o.signal && r.timeout === undefined && r.listenerCount("timeout") === 0),
       `keine zweite Grenze (Socket-Uhren ${JSON.stringify(sus)}, Aufbauten ${aufs.length}).`);
