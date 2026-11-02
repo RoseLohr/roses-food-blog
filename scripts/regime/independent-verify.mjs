@@ -206,7 +206,7 @@ export function anfrage(url, { headers = {}, body = "", frist = ANFRAGE_FRIST_MS
       const alsText = async () => {
         const teile = [];
         for await (const stueck of strom) teile.push(Buffer.from(stueck));
-        return Buffer.concat(teile).toString("utf8");
+        return new TextDecoder().decode(Buffer.concat(teile)); // wie fetch: ein BOM fällt weg
       };
       resolve({
         status: res.statusCode,
@@ -1111,6 +1111,8 @@ if (process.argv.includes("--selftest")) {
   const H = 4242;
   let hand = null;
   let haende = 0;
+  let still = null;
+  let fremdBesuche = 0;
   const feuern = () => hand && !hand.weg && hand.fn();
   const da = {};
   const bis = (pfad, n = 1) => new Promise((r) => { da[pfad] = { n, r }; });
@@ -1130,13 +1132,17 @@ if (process.argv.includes("--selftest")) {
       if (req.url === "/kopf-nie") { melde(); spaeter(() => req.socket.destroy(), 2000); }
       else if (req.url === "/tropf") {
         let n = 0;
-        const t = setInterval(() => { res.write("x"); melde(); if (++n === 50) { clearInterval(t); res.end(); } }, 20);
+        const t = setInterval(() => { res.write("x"); if (++n === 3) clearInterval(t); }, 20);
         res.on("close", () => clearInterval(t));
-      } else if (req.url === "/wechsel") req.socket.write("HTTP/1.1 101 Switching Protocols\r\nUpgrade: x\r\nConnection: Upgrade\r\n\r\n");
+        still = res;
+      } else if (req.url === "/umleitung") { res.writeHead(307, { location: ziel("/fremd") }); res.end(); }
+      else if (req.url === "/fremd") { fremdBesuche++; res.end(); }
+      else if (req.url === "/wechsel") req.socket.write("HTTP/1.1 101 Switching Protocols\r\nUpgrade: x\r\nConnection: Upgrade\r\n\r\n");
       else if (req.url === "/umweg/responses") { res.writeHead(503); res.end(); }
       else if (!fetchFrei) { res.writeHead(400); res.end("Draht"); }
       else if (req.url === "/stimme/responses") res.end('data: {"type":"response.output_text.delta","delta":"{\\"refuted\\": false}"}\n\ndata: {"type":"response.completed","response":{}}\n\n');
-      else res.end(JSON.stringify({ choices: [{ message: { content: '{"refuted": true, "confidence": "high"}' } }] }));
+      // Mit BOM: fetch wirft es beim Dekodieren weg, JSON.parse nicht.
+      else res.end("\uFEFF" + JSON.stringify({ choices: [{ message: { content: '{"refuted": true, "confidence": "high"}' } }] }));
     });
   });
   await new Promise((r) => pruef.listen(0, "127.0.0.1", r));
@@ -1162,15 +1168,19 @@ if (process.argv.includes("--selftest")) {
     await Promise.race([angekommen, ohneKopf]);
     feuern();
     expect(/Frist/.test((await ohneKopf)?.message) && aufs.at(-1)[1].destroyed, "ohne Header bis zur Frist: Frist-Meldung, Anfrage abgebaut.");
-    // Gesamtfrist: Das Gateway sendet alle ~2 s Herzschlag-Bytes.
-    const drei = bis("/tropf", 3);
+    // Gesamtfrist: drei Stücke gelesen, dann Stille — die Frist greift ohne ein
+    // weiteres Stück (sonst endet der Server nach 2 s, und die Probe wird rot).
     haende = 0;
-    const tropf = await anfrage(ziel("/tropf"), { frist: H });
-    const rest = fehler(() => tropf.text());
-    await Promise.race([drei, rest]);
+    const strom = (await anfrage(ziel("/tropf"), { frist: H })).body;
+    let gelesen = 0;
+    for (let teil = await strom.next(); !teil.done && (gelesen += teil.value.length) < 3; teil = await strom.next());
     feuern();
-    expect(/Frist/.test((await rest)?.message) && hand.nach === 0 && haende === 1,
-      `ein Strom, der weiter tröpfelt, endet bei der Frist (Uhren: ${haende}, nachgestellt: ${hand.nach}).`);
+    spaeter(() => still.destroyed || still.end(), 2000);
+    const rest = await fehler(async () => { while (!(await strom.next()).done); });
+    expect(gelesen === 3 && /Frist/.test(rest?.message) && hand.nach === 0 && haende === 1,
+      `der Strom endet bei der Frist, auch in der Stille (gelesen: ${gelesen}, Uhren: ${haende}, nachgestellt: ${hand.nach}).`);
+    const um = await anfrage(ziel("/umleitung"));
+    expect(um.status === 307 && !um.ok && fremdBesuche === 0, `307 bleibt ein Fehlerstatus, kein Weg zum fremden Ursprung (${um.status}, ${fremdBesuche}).`);
     let fertig = false;
     const wechsel = fehler(() => anfrage(ziel("/wechsel"), { frist: H })).then((e) => { fertig = true; return e; });
     await new Promise((r) => aufs.at(-1)[1].once("close", r));
@@ -1184,7 +1194,9 @@ if (process.argv.includes("--selftest")) {
     expect(direkt?.decision?.block === false && umweg?.decision?.block === true, `beide Drähte über anfrage() (${JSON.stringify([direkt, umweg])}).`);
     expect(JSON.stringify(uhren) === JSON.stringify([ANFRAGE_FRIST_MS, ANFRAGE_FRIST_MS, ANFRAGE_FRIST_MS]) && kas.join() === "true:60000,true:60000,true:60000",
       `je Anfrage eine Uhr auf ANFRAGE_FRIST_MS und Keepalive 60 s (${JSON.stringify(uhren)}, ${kas}).`);
-    const ohneGrenze = ([o, r]) => o.agent === false && o.timeout === undefined && !o.signal && o.rejectUnauthorized !== false && r.timeout === undefined && r.listenerCount("timeout") === 0;
+    // Genau diese Optionen, nichts sonst: kein timeout, kein signal, kein gelockertes TLS.
+    const ohneGrenze = ([o, r]) => Object.keys(o).sort().join() === "agent,headers,method" && o.agent === false
+      && r.timeout === undefined && r.listenerCount("timeout") === 0;
     expect(sus.length === 0 && aufs.length === 3 && aufs.every(ohneGrenze), `keine zweite Grenze (Socket-Uhren ${JSON.stringify(sus)}, Aufbauten ${aufs.length}).`);
     // Der https-Zweig des Betriebs: TLS gegen den http-Prüfserver scheitert (EPROTO),
     // mitgeschnitten ist bis dahin alles.
