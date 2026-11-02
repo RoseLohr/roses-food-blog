@@ -1113,6 +1113,7 @@ if (process.argv.includes("--selftest")) {
         && req.headers["accept-encoding"] === "identity" && req.headers["x-k"] === "geheim" && k.includes("Süß") && k.endsWith("}");
       if (req.url === "/still") echt.an(() => req.socket.destroy(), 2000).unref();
       else if (req.url === "/schweigt") { res.writeHead(503); res.flushHeaders(); schweigend = res; }
+      else if (req.url === "/halb") { res.write("x"); schweigend = res; }
       else if (req.url === "/wechsel") req.socket.write("HTTP/1.1 101 Switching Protocols\r\nUpgrade: x\r\nConnection: Upgrade\r\n\r\n");
       else if (req.url === "/umweg/responses") { res.writeHead(503); res.end(); }
       else if (!draht) { res.writeHead(400); res.end("Draht"); }
@@ -1128,6 +1129,8 @@ if (process.argv.includes("--selftest")) {
   // davor). Die Frist 4242 ms feuert von Hand: kein Wettlauf mit der Wanduhr.
   let hand = null;
   let haende = 0;
+  // Frist von Hand, danach endet die stumme Antwort nach 2 s: rot statt Hänger.
+  const feuern = () => { if (hand && !hand.weg) hand.fn(); const r = schweigend; echt.an(() => r.destroyed || r.end(), 2000).unref(); };
   globalThis.setTimeout = (fn, ms, ...r) => {
     if (!/node:internal\/deps\/undici\//.test(new Error().stack)) uhren.push(ms);
     if (ms !== 4242) return echt.an(fn, ms, ...r);
@@ -1151,12 +1154,19 @@ if (process.argv.includes("--selftest")) {
     // Frist (1 ms) vor dem Wächter (2 s), auch nach einem Stillstand: frühere Uhr zuerst.
     const ohneKopf = await fehler(() => anfrage(ziel("/still"), { frist: 1 }));
     expect(/Frist/.test(ohneKopf?.message) && aufs.at(-1)[1].destroyed, "ohne Header bis zur Frist: Frist-Meldung, Anfrage abgebaut.");
-    // Gesamtfrist: Sie deckt auch den Körper, ohne Neustart der Uhr mit den Headern.
+    // Gesamtfrist: Sie deckt auch den Körper, ohne Neustart der Uhr — im 200-Strom nach
+    // dem ersten Stück wie in einem 503 über text().
+    haende = 0;
+    const halb = (await anfrage(ziel("/halb"), { frist: 4242 })).body;
+    const erstes = await halb.next();
+    feuern();
+    const halbRest = await fehler(async () => { while (!(await halb.next()).done); });
+    expect(erstes.value?.length === 1 && /Frist/.test(halbRest?.message) && hand.nach === 0 && haende === 1,
+      `ein 200-Strom, der nach dem ersten Stück schweigt, endet bei der Frist (Uhren: ${haende}).`);
     haende = 0;
     const schweigt = await anfrage(ziel("/schweigt"), { frist: 4242 });
     const koerper = fehler(() => schweigt.text());
-    if (hand && !hand.weg) hand.fn();
-    echt.an(() => schweigend.destroyed || schweigend.end(), 2000).unref(); // erst danach: rot statt Hänger
+    feuern();
     expect(/Frist/.test((await koerper)?.message) && hand.nach === 0 && haende === 1, `ein Körper, der schweigt, endet bei der Frist (Uhren: ${haende}).`);
     let fertig = false;
     const wechsel = fehler(() => anfrage(ziel("/wechsel"))).then((e) => { fertig = true; return e; });
