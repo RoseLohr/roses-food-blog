@@ -101,6 +101,8 @@
 import { execSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { appendFileSync } from "node:fs";
+import http from "node:http";
+import https from "node:https";
 
 const KEY = process.env.SECOND_VENDOR_API_KEY || process.env.OPENAI_API_KEY;
 /**
@@ -137,8 +139,85 @@ export function authHeader(name, key) {
 
 const AUTH = authHeader(process.env.VERIFIER_AUTH_HEADER, KEY);
 
+/** Frist EINER Stimm-Anfrage (10/2026), statt der 300 s von fetch (gemessen): 900 s
+ *  > 2 × 458 s (längster Erfolg); je Stimme ≤ 3 × 2 × 900 s = 90 min < 360 min. */
+export const ANFRAGE_FRIST_MS = 900 * 1000;
+
+/** Zustellfehler mit Code, nie mit Socket-Meldung (sie nennte eine IP). */
+class Zustellfehler extends Error {}
+function bereinigt(err, art = "Netzfehler") {
+  if (err instanceof Zustellfehler) return err;
+  const code = typeof err?.code === "string" && /^[A-Z0-9_]+$/.test(err.code) ? err.code : "ohne Code";
+  return new Zustellfehler(`${art} (${code})`);
+}
+
+/** Kopfwerte wie fetch: Rand-Leerraum fällt weg (http.request würfe sonst). */
+function kopfwerte(headers) {
+  return Object.fromEntries(Object.entries(headers)
+    .map(([name, wert]) => [name, String(wert).replace(/^[\t\n\r ]+|[\t\n\r ]+$/g, "")]));
+}
+
+/** POST mit genau EINER Grenze, der Frist; antwortet wie fetch. Anders als
+ *  fetch: keine Weiterleitung, keine Kompression, eine Verbindung je Anfrage. */
+export function anfrage(url, { headers = {}, body = "", frist = ANFRAGE_FRIST_MS } = {}) {
+  return new Promise((resolve, reject) => {
+    let ziel;
+    try { ziel = new URL(url); } catch (err) { reject(new Zustellfehler("Ungültige Adresse")); return; }
+    const modul = ziel.protocol === "https:" ? https : ziel.protocol === "http:" ? http : null;
+    if (!modul) { reject(new Zustellfehler(`Protokoll nicht unterstützt: ${ziel.protocol}`)); return; }
+    const daten = Buffer.from(String(body), "utf8");
+    // Erst die Anfrage, dann die Uhr: Ein unzulässiger Kopfwert wirft synchron.
+    let req;
+    try {
+      req = modul.request(ziel, {
+        method: "POST",
+        agent: false,
+        headers: { "User-Agent": "node", Accept: "*/*", ...kopfwerte(headers), "Accept-Encoding": "identity", "Content-Length": daten.length },
+      });
+    } catch (err) {
+      reject(bereinigt(err, "Anfrage nicht baubar"));
+      return;
+    }
+    // agent:false schaltet Keepalive ab; ohne es schwiege die Leitung (NAT).
+    req.once("socket", (s) => s.setKeepAlive(true, 60_000));
+    let antwort = null;
+    const uhr = setTimeout(() => {
+      const err = new Zustellfehler(`Frist von ${frist / 1000} s überschritten`);
+      if (antwort) antwort.destroy(err); else req.destroy(err);
+    }, frist);
+    req.on("error", (err) => { clearTimeout(uhr); reject(bereinigt(err)); });
+    // Ende ohne Antwort und ohne Fehler (101 ohne Upgrade-Handler): sonst
+    // endete das Promise nie (Pflicht-Approver an #183).
+    req.on("close", () => {
+      if (antwort) return;
+      clearTimeout(uhr);
+      reject(new Zustellfehler("Verbindung ohne Antwort beendet"));
+    });
+    req.on("response", (res) => {
+      antwort = res;
+      res.on("close", () => clearTimeout(uhr));
+      const strom = (async function* () {
+        try { for await (const stueck of res) yield stueck; } catch (err) { throw bereinigt(err); }
+      })();
+      const alsText = async () => {
+        const teile = [];
+        for await (const stueck of strom) teile.push(Buffer.from(stueck));
+        return new TextDecoder().decode(Buffer.concat(teile)); // wie fetch: ein BOM fällt weg
+      };
+      resolve({
+        status: res.statusCode,
+        ok: res.statusCode >= 200 && res.statusCode < 300,
+        body: strom,
+        text: alsText,
+        json: async () => JSON.parse(await alsText()),
+      });
+    });
+    req.end(daten);
+  });
+}
+
 /**
- * fetch für JEDE Panel-Anfrage, aber ohne Weiterleitungen (10/2026). fetch
+ * fetch für /models (Stimmen: anfrage()), ohne Weiterleitungen (10/2026). fetch
  * folgt per Vorgabe und nimmt dabei einen Schlüssel im eigenen Kopf
  * (VERIFIER_AUTH_HEADER, im Betrieb X-OpenCodex-API-Key) zum fremden Ursprung
  * mit — zurück lässt es nur `Authorization` (gemessen, Node 22). Und das Ziel
@@ -1018,6 +1097,90 @@ if (process.argv.includes("--selftest")) {
     for (const s of [fremd, umleiter]) { s.closeAllConnections(); await new Promise((r) => s.close(r)); }
   }
 
+  // ── Frist (10/2026): anfrage() mit genau EINER Grenze, 900 s statt der 300 s von fetch ──
+  const netPruef = await import("node:net");
+  const S = netPruef.Socket.prototype;
+  const echt = { an: globalThis.setTimeout, ab: globalThis.clearTimeout, ka: S.setKeepAlive, su: S.setTimeout, auf: httpPruef.request };
+  const [uhren, kas, sus, aufs] = [[], [], [], []];
+  let schweigend = null;
+  const pruef = httpPruef.createServer((req, res) => {
+    let k = "";
+    req.setEncoding("utf8");
+    req.on("data", (t) => { k += t; });
+    req.on("end", () => {
+      if (req.url === "/still") echt.an(() => req.socket.destroy(), 2000).unref();
+      else if (req.url === "/sse") { res.writeHead(200, { "Content-Type": "text/event-stream" }); res.write("x\n\n"); schweigend = res; }
+      else if (req.url === "/fehler") { res.writeHead(503); res.flushHeaders(); schweigend = res; }
+      else if (req.url === "/wechsel") req.socket.write("HTTP/1.1 101 Switching Protocols\r\nUpgrade: x\r\nConnection: Upgrade\r\n\r\n");
+      else {
+        // Wie fetch, ohne fetch; UTF-8 ganz (Content-Length zählt Bytes); Antwort mit BOM.
+        const draht = req.method === "POST" && req.headers.connection === "close" && req.headers["user-agent"] === "node"
+          && req.headers["accept-encoding"] === "identity" && req.headers["x-k"] === "geheim" && k === '{"s":"Süß"}';
+        res.end(draht ? '\uFEFF{"ok":true}' : "Draht");
+      }
+    });
+  });
+  await new Promise((r) => pruef.listen(0, "127.0.0.1", r));
+  pruef.unref();
+  const ziel = (pfad) => `http://127.0.0.1:${pruef.address().port}${pfad}`;
+  const fehler = async (fn) => { try { await fn(); return null; } catch (e) { return e; } };
+  // Gezählt wird jede Uhr außer denen, die undici stellt (Keepalive der fetch-Proben
+  // davor). Die Frist 4242 ms feuert von Hand: kein Wettlauf mit der Wanduhr.
+  let hand = null;
+  let haende = 0;
+  // Frist von Hand, danach endet die stumme Antwort nach 2 s: rot statt Hänger.
+  const feuern = () => { if (hand && !hand.weg) hand.fn(); const r = schweigend; echt.an(() => r.destroyed || r.end(), 2000).unref(); };
+  globalThis.setTimeout = (fn, ms, ...r) => {
+    if (!/node:internal\/deps\/undici\//.test(new Error().stack)) uhren.push(ms);
+    if (ms !== 4242) return echt.an(fn, ms, ...r);
+    haende++;
+    return (hand = { fn, nach: 0, weg: false, refresh() { this.nach++; return this; } });
+  };
+  globalThis.clearTimeout = (t) => (t && t === hand ? (hand.weg = true) : echt.ab(t));
+  S.setKeepAlive = function (...a) { kas.push(a.join(":")); return echt.ka.apply(this, a); };
+  S.setTimeout = function (...a) { sus.push(a[0]); return echt.su.apply(this, a); };
+  httpPruef.request = function (...a) { const r = echt.auf.apply(this, a); aufs.push([a[1] ?? {}, r]); return r; };
+  try {
+    const d = await anfrage(ziel("/draht"), { headers: { "X-K": " geheim\r\n" }, body: '{"s":"Süß"}' });
+    expect((await d.json()).ok === true, "Draht wie fetch, ohne fetch; JSON mit BOM lesbar.");
+    const [o, r] = aufs[0] ?? [{}, {}];
+    expect(uhren.join() === String(ANFRAGE_FRIST_MS) && kas.join() === "true:60000" && sus.length === 0 && aufs.length === 1
+      && Object.keys(o).sort().join() === "agent,headers,method" && o.agent === false && r.timeout === undefined && r.listenerCount("timeout") === 0,
+      `eine Uhr auf ANFRAGE_FRIST_MS, Keepalive 60 s, keine zweite Grenze (${uhren}; ${kas}; ${sus}; ${aufs.length}).`);
+    // Frist (1 ms) vor dem Wächter (2 s), auch nach einem Stillstand: frühere Uhr zuerst.
+    const ohneKopf = await fehler(() => anfrage(ziel("/still"), { frist: 1 }));
+    expect(/Frist/.test(ohneKopf?.message) && aufs.at(-1)[1].destroyed, "ohne Header bis zur Frist: Frist-Meldung, Anfrage abgebaut.");
+    // Gesamtfrist: auch im SSE-Strom nach dem ersten Ereignis und im 503 über text(),
+    // mit genau einer Uhr, nie nachgestellt.
+    haende = 0;
+    const sse = (await anfrage(ziel("/sse"), { frist: 4242 })).body;
+    const erstes = await sse.next();
+    feuern();
+    const rest = await fehler(async () => { while (!(await sse.next()).done); });
+    expect(erstes.value?.length === 3 && /Frist/.test(rest?.message) && hand.nach === 0 && haende === 1, `SSE-Strom endet bei der Frist (Uhren: ${haende}).`);
+    haende = 0;
+    const f = await anfrage(ziel("/fehler"), { frist: 4242 });
+    const koerper = fehler(() => f.text());
+    feuern();
+    expect(/Frist/.test((await koerper)?.message) && hand.nach === 0 && haende === 1, `ein Fehlerkörper, der schweigt, endet bei der Frist (Uhren: ${haende}).`);
+    let fertig = false;
+    const wechsel = fehler(() => anfrage(ziel("/wechsel"))).then((e) => { fertig = true; return e; });
+    await new Promise((res) => aufs.at(-1)[1].once("close", res));
+    await new Promise((res) => setImmediate(res));
+    expect(fertig && /ohne Antwort/.test((await wechsel)?.message), "101 ohne Antwort endet als Fehler, nicht nie.");
+  } finally {
+    Object.assign(globalThis, { setTimeout: echt.an, clearTimeout: echt.ab });
+    Object.assign(S, { setKeepAlive: echt.ka, setTimeout: echt.su });
+    httpPruef.request = echt.auf;
+    pruef.closeAllConnections();
+    await new Promise((res) => pruef.close(res));
+  }
+  expect(ANFRAGE_FRIST_MS === 900_000, `die Frist ist 900 s (${ANFRAGE_FRIST_MS} ms).`);
+  // Beide Stimm-Drähte über anfrage() mit der Vorgabe-Frist: fetch brächte die 300 s zurück.
+  expect([attemptOnce, chatFallback].every((f) => /\banfrage\(/.test(String(f)) && !/\b(panelFetch|fetch)\(|\bfrist\s*:/.test(String(f))),
+    "attemptOnce() und chatFallback() rufen anfrage() ohne eigene Frist, nicht fetch.");
+
+  console.log("   ✓ Selbsttest: anfrage() (Frist 900 s statt der 300 s von fetch) korrekt.");
   console.log("   ✓ Selbsttest: decide() + modelMatches() + requireApprovals() (Pflicht-Approver Sol + Korroboration) + attestReasons() + attestProof() + validateRangeInputs() + normalizeBase() + authHeader() + strictAnyRefutation() + mdInline() + renderStepSummary() + panelOhneListe() + panelFetch()/fetchModelIds() (keine Weiterleitung) korrekt.");
   process.exit(0);
 }
@@ -1209,8 +1372,8 @@ async function attemptOnce(i) {
   // neuere Modelle lehnen die teils mit 400 ab.
   let res;
   try {
-    res = await panelFetch(`${BASE}/responses`, {
-      method: "POST",
+    // anfrage(), nicht fetch: siehe ANFRAGE_FRIST_MS.
+    res = await anfrage(`${BASE}/responses`, {
       headers: H,
       body: JSON.stringify({
         model: MODELS[i],
@@ -1226,7 +1389,7 @@ async function attemptOnce(i) {
     return chatFallback(i, sys, finish, `Netzfehler Responses-API: ${why}`);
   }
   if (res.ok) {
-    // 200 → Strom progressiv falten. BEWUSST außerhalb des try um fetch():
+    // 200 → Strom progressiv falten. BEWUSST außerhalb des try um anfrage():
     // reißt der Strom ab (Netzfehler mittendrin, Ende ohne response.completed,
     // error-Event), wirft der Fold zu verifyOnce durch → transient, Retry des
     // Primär-Drahts. KEIN Chat-Fallback dafür: der Endpoint existiert und
@@ -1266,8 +1429,7 @@ async function attemptOnce(i) {
  */
 async function chatFallback(i, sys, finish, why, primaryStatus) {
   console.log(`[independent-verify] Stimme ${i + 1}: /responses nicht nutzbar (${why}) → Fallback /chat/completions.`);
-  const res = await panelFetch(`${BASE}/chat/completions`, {
-    method: "POST",
+  const res = await anfrage(`${BASE}/chat/completions`, {
     headers: H,
     body: JSON.stringify({
       model: MODELS[i],
