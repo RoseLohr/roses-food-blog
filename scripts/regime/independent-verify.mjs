@@ -1021,7 +1021,7 @@ if (process.argv.includes("--selftest")) {
   // ── Strom-Fehler und Versuche lesbar im Log (11/2026) ──
   const fehlgeschlagen = { type: "response.failed", sequence_number: 4, response: { id: "r", status: "failed", model: "m",
     output: [{ type: "reasoning", encrypted_content: "x".repeat(400) }], instructions: "GEHEIM", error: { code: "server_error", message: "Zeile 1\nZeile 2" } } };
-  const fehlerVonFold = async (teile) => { try { await foldResponsesStream(teile); return "kein Fehler"; } catch (e) { return e.message; } };
+  const fehlerVonFold = async (teile, geheim = []) => { try { await foldResponsesStream(teile, geheim); return "kein Fehler"; } catch (e) { return e.message; } };
   const sf1 = stromFehler(fehlgeschlagen);
   expect(sf1.includes("server_error") && sf1.includes("Zeile 1\\nZeile 2") && sf1.includes("Modell m") && !sf1.includes("encrypted") && !sf1.includes("GEHEIM"),
     `response.failed nennt Code, Meldung (ohne Zeilenumbruch) und Modell, nicht output oder instructions (${sf1}).`);
@@ -1042,6 +1042,16 @@ if (process.argv.includes("--selftest")) {
   expect(geschwaerzt(`echo ${geheimProbe} und ${geheimProbe}.`, [geheimProbe, "", undefined, "kurz"]) === "echo [geschwärzt] und [geschwärzt].",
     "Schlüssel und Challenge werden im Inhalt geschwärzt, kurze oder leere Werte nicht.");
   expect(/schwarz\(/.test(String(chatFallback)), "auch die Fallback-Zeile schwärzt.");
+  // Erst schwärzen, dann escapen/kürzen: Ein Schlüssel an der Schnittkante bliebe sonst bis auf ein Zeichen stehen.
+  const anDerKante = stromFehler({ type: "error", error: { message: "x".repeat(283) + geheimProbe } }, [geheimProbe]);
+  expect(!anDerKante.includes(geheimProbe.slice(0, -1)), `an der Schnittkante bleibt nichts vom Schlüssel (${anDerKante.slice(-40)}).`);
+  const imStromKante = await fehlerVonFold([Buffer.from(`data: ${JSON.stringify({ type: "error", error: { message: "y".repeat(283) + geheimProbe } })}\n\n`)], [geheimProbe]);
+  expect(!imStromKante.includes(geheimProbe.slice(0, -1)), "der Strom reicht die Geheimnisse an stromFehler() durch.");
+  expect([attemptOnce, chatFallback].every((f) => !/\bbody\.replace\(/.test(String(f)) && /schwarz\(body\)/.test(String(f)))
+    && /foldResponsesStream\(res\.body, GEHEIM\)/.test(String(attemptOnce)), "Fehler-Körper und Strom werden vor dem Kürzen geschwärzt.");
+  const anzeige = zurAnzeige({ ok: true, reason: `r ${geheimProbe}`, v: { refuted: false, confidence: geheimProbe, reason: `x ${geheimProbe}`, proof: "p" } }, [geheimProbe]);
+  expect(!JSON.stringify(anzeige).includes(geheimProbe) && anzeige.v.proof === "p" && anzeige.v.refuted === false && zurAnzeige(null, [geheimProbe]) === null,
+    `für die Anzeige: Grund, Begründung und Konfidenz geschwärzt, sonst unverändert (${JSON.stringify(anzeige)}).`);
   const endgueltig = [];
   await stimmeHolen(async () => ({ ok: false, status: 400, reason: "vier" }), 3, sofort, (a, grund) => endgueltig.push(`${a}:${grund}`));
   expect(endgueltig.join("|") === "1:vier", `auch ein endgültiger Fehlschlag wird gemeldet (${endgueltig.join("|")}).`);
@@ -1084,7 +1094,8 @@ console.log(`[independent-verify] Pflicht-Approver: „${REQUIRED_APPROVER}" mus
 // GRÜN tragende Stimme muss sie als proof „<challenge>-<tier>" zurückspiegeln (siehe
 // attestProof: schützt gegen In-Code-Kurzschluss „return grün" ohne Endpoint-Roundtrip).
 const CHALLENGE = randomBytes(9).toString("hex"); // 18 Hex-Zeichen, pro Lauf frisch
-const schwarz = (text) => geschwaerzt(text, [KEY, CHALLENGE]);
+const GEHEIM = [KEY, CHALLENGE];
+const schwarz = (text) => geschwaerzt(text, GEHEIM);
 
 // Kompakter System-Prompt: minimaler Request bei voller semantischer Schärfe.
 // Jede Grenze/Regel des Panels bleibt erhalten — nur Füllwerk/Doppelungen sind
@@ -1202,8 +1213,17 @@ export function geschwaerzt(text, geheim) {
   return t;
 }
 
-export function stromFehler(ev) {
-  const kurz = (x) => JSON.stringify(String(x)).slice(1, -1).slice(0, 300);
+/** Eine Stimme für die ANZEIGE (Summary, Log): fremder Text geschwärzt, bevor
+ *  mdInline kürzt; die Gates rechnen weiter mit dem Original. */
+export function zurAnzeige(x, geheim) {
+  if (!x) return x;
+  const s = (t) => (typeof t === "string" ? geschwaerzt(t, geheim) : t);
+  return { ...x, reason: s(x.reason), v: x.v && { ...x.v, reason: s(x.v.reason), confidence: s(x.v.confidence) } };
+}
+
+export function stromFehler(ev, geheim = []) {
+  // Erst schwärzen, dann escapen und kürzen: An der Schnittkante bliebe ein Schlüssel sonst bis auf ein Zeichen stehen.
+  const kurz = (x) => JSON.stringify(geschwaerzt(String(x), geheim)).slice(1, -1).slice(0, 300);
   const r = ev?.response ?? {};
   // Verschachtelt (error: {…}, response.error) oder, wie im dokumentierten error-Ereignis, oben.
   const e = ev?.error ?? r.error ?? (ev && "message" in ev ? { code: ev.code, message: ev.message } : null);
@@ -1214,7 +1234,7 @@ export function stromFehler(ev) {
   return `${kurz(ev?.type ?? "?")}: ${grund}${mehr ? ` (${mehr})` : ""}`;
 }
 
-async function foldResponsesStream(body) {
+async function foldResponsesStream(body, geheim = []) {
   const decoder = new TextDecoder();
   let buf = "";
   let text = "";
@@ -1233,7 +1253,7 @@ async function foldResponsesStream(body) {
     } else if (type === "response.completed") {
       completed = ev.response ?? {};
     } else if (type === "error" || type === "response.failed") {
-      throw new Error(`Responses-Stream error-Event: ${stromFehler(ev)}`);
+      throw new Error(`Responses-Stream error-Event: ${stromFehler(ev, geheim)}`);
     }
   };
   for await (const chunk of body) {
@@ -1282,7 +1302,7 @@ async function attemptOnce(i) {
   } catch (err) {
     // Netzfehler am Primär-Draht → im SELBEN Versuch auf den Chat-Draht ausweichen.
     // (Wirft auch DER, greift wie bisher die Transient-Retry-Weiche in verifyOnce.)
-    const why = String(err instanceof Error ? err.message : err).replace(/\s+/g, " ").slice(0, 300);
+    const why = schwarz(String(err instanceof Error ? err.message : err)).replace(/\s+/g, " ").slice(0, 300);
     return chatFallback(i, sys, finish, `Netzfehler Responses-API: ${why}`);
   }
   if (res.ok) {
@@ -1291,13 +1311,13 @@ async function attemptOnce(i) {
     // error-Event), wirft der Fold zu verifyOnce durch → transient, Retry des
     // Primär-Drahts. KEIN Chat-Fallback dafür: der Endpoint existiert und
     // streamt — der byte-stille Chat-Draht wäre hier der schlechtere Draht.
-    const { text, completed } = await foldResponsesStream(res.body);
+    const { text, completed } = await foldResponsesStream(res.body, GEHEIM);
     return finish(text || extractResponsesText(completed));
   }
   // Fehler-BODY mitschreiben (nicht nur den Status) — und daran die Endpoint-Weiche.
   let body = "";
   try { body = await res.text(); } catch { body = ""; }
-  const primary = `Responses-API ${res.status}: ${body.replace(/\s+/g, " ").slice(0, 300) || "(kein Body)"}`;
+  const primary = `Responses-API ${res.status}: ${schwarz(body).replace(/\s+/g, " ").slice(0, 300) || "(kein Body)"}`;
   // Nicht jedes Gateway/Modell spricht die Responses-API: 404/405 = Endpoint nicht
   // vorhanden. Dazu 5xx = Upstream-/Gateway-Fehler dieses Drahts. In BEIDEN Fällen
   // im selben Versuch auf Chat Completions ausweichen. Deterministische Client-
@@ -1340,7 +1360,7 @@ async function chatFallback(i, sys, finish, why, primaryStatus) {
   }
   let body = "";
   try { body = await res.text(); } catch { body = ""; }
-  const detail = body.replace(/\s+/g, " ").slice(0, 300) || "(kein Body)";
+  const detail = schwarz(body).replace(/\s+/g, " ").slice(0, 300) || "(kein Body)";
   // Netzfehler-Primär: primaryStatus undefined → status undefined → transient
   // (verifyOnce retryt statuslose Fehler). 5xx-Primär: 5xx → transient.
   // 404/405-Primär: der Chat-Status entscheidet (wie bisher).
@@ -1419,7 +1439,7 @@ export async function stimmeHolen(versuch, attempts = 3, warte = sleep, melde = 
 const verifyOnce = (i) => {
   let seit = 0;
   return stimmeHolen(() => { seit = Date.now(); return attemptOnce(i); }, 3, sleep, (a, grund) =>
-    console.log(`[independent-verify] Stimme ${i + 1}, Versuch ${a} nach ${((Date.now() - seit) / 1000).toFixed(1)} s: ${schwarz(String(grund).replace(/\s+/g, " ").slice(0, 400))}`));
+    console.log(`[independent-verify] Stimme ${i + 1}, Versuch ${a} nach ${((Date.now() - seit) / 1000).toFixed(1)} s: ${schwarz(String(grund)).replace(/\s+/g, " ").slice(0, 400)}`));
 };
 
 const votes = await Promise.all(Array.from({ length: PANEL }, (_, i) => verifyOnce(i)));
@@ -1441,7 +1461,7 @@ votes.forEach((x, i) => {
   // ein Modell die Anweisung ignoriert) nur "false/high" übrig und das Log ist blind.
   const raw = x.v?.reason;
   const reason = raw ? JSON.stringify(schwarz(raw)).slice(0, 1000) : '"(keine Begründung geliefert)"';
-  console.log(`  Verifier ${i + 1}/${PANEL} (${MODELS[i]}): refuted=${x.v?.refuted} confidence=${x.v?.confidence} — Begründung: ${reason}`);
+  console.log(schwarz(`  Verifier ${i + 1}/${PANEL} (${MODELS[i]}): refuted=${x.v?.refuted} confidence=${x.v?.confidence} — Begründung: ${reason}`));
 });
 /**
  * Fremder Inline-Text fuer die Zusammenfassung — IMMER als Code-Span.
@@ -1574,10 +1594,12 @@ gates.push(["Integritäts-Gate (Schein-Grün)", attestReasons(votes, PANEL)]);
 gates.push(["Proof-of-Check-Gate", attestProof(votes, CHALLENGE, PANEL)]);
 
 const blocker = gates.find(([, result]) => result.block);
-writeSummary(renderStepSummary(votes, MODELS, gates, Boolean(blocker)));
+// Ausgabe aus geschwärzten Kopien; entschieden ist oben mit den Originalen.
+writeSummary(renderStepSummary(votes.map((x) => zurAnzeige(x, GEHEIM)), MODELS,
+  gates.map(([name, r]) => [name, { ...r, reason: schwarz(r.reason) }]), Boolean(blocker)));
 if (blocker) {
-  console.error(`⛔ ${blocker[0]}: ${blocker[1].reason}`);
+  console.error(`⛔ ${blocker[0]}: ${schwarz(blocker[1].reason)}`);
   process.exit(1);
 }
-console.log(`[independent-verify] Fremd-Vendor-Panel bestätigt (${gates.map(([, r]) => r.reason).join("; ")}). Grün.`);
+console.log(schwarz(`[independent-verify] Fremd-Vendor-Panel bestätigt (${gates.map(([, r]) => r.reason).join("; ")}). Grün.`));
 process.exit(0);
