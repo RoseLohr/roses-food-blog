@@ -1037,6 +1037,11 @@ if (process.argv.includes("--selftest")) {
   const gemeldet = [];
   const versuche = [() => { throw new Error("eins"); }, () => ({ ok: false, status: 503, reason: "zwei" }), () => ({ ok: true, v: {} }), () => A];
   const nachDrei = await stimmeHolen(async (a) => versuche[a - 1](), 4, sofort, (a, grund) => gemeldet.push(`${a}:${grund}`));
+  // Fremder Text (Fehlermeldung, Begründung) kann Schlüssel oder Challenge zurückspiegeln.
+  const geheimProbe = "0123456789abcdef01";
+  expect(geschwaerzt(`echo ${geheimProbe} und ${geheimProbe}.`, [geheimProbe, "", undefined, "kurz"]) === "echo [geschwärzt] und [geschwärzt].",
+    "Schlüssel und Challenge werden im Inhalt geschwärzt, kurze oder leere Werte nicht.");
+  expect(/schwarz\(/.test(String(chatFallback)), "auch die Fallback-Zeile schwärzt.");
   const endgueltig = [];
   await stimmeHolen(async () => ({ ok: false, status: 400, reason: "vier" }), 3, sofort, (a, grund) => endgueltig.push(`${a}:${grund}`));
   expect(endgueltig.join("|") === "1:vier", `auch ein endgültiger Fehlschlag wird gemeldet (${endgueltig.join("|")}).`);
@@ -1079,6 +1084,7 @@ console.log(`[independent-verify] Pflicht-Approver: „${REQUIRED_APPROVER}" mus
 // GRÜN tragende Stimme muss sie als proof „<challenge>-<tier>" zurückspiegeln (siehe
 // attestProof: schützt gegen In-Code-Kurzschluss „return grün" ohne Endpoint-Roundtrip).
 const CHALLENGE = randomBytes(9).toString("hex"); // 18 Hex-Zeichen, pro Lauf frisch
+const schwarz = (text) => geschwaerzt(text, [KEY, CHALLENGE]);
 
 // Kompakter System-Prompt: minimaler Request bei voller semantischer Schärfe.
 // Jede Grenze/Regel des Panels bleibt erhalten — nur Füllwerk/Doppelungen sind
@@ -1184,6 +1190,18 @@ function extractResponsesText(data) {
  * Nur benannte Felder, jedes escaped und gekürzt: instructions trägt die
  * Challenge und bleibt draußen.
  */
+/**
+ * Was an fremdem Text ins ÖFFENTLICHE Log geht (Fehlermeldungen, Begründungen),
+ * ohne Schlüssel und Challenge — auch wenn ein Anbieter sie zurückspiegelt.
+ * Ein Feld-Filter reicht dafür nicht: Die Meldung selbst schreibt der Anbieter.
+ * Die Challenge ist kein GitHub-Secret; der Runner maskiert sie nicht.
+ */
+export function geschwaerzt(text, geheim) {
+  let t = String(text);
+  for (const g of geheim) if (typeof g === "string" && g.length >= 8) t = t.split(g).join("[geschwärzt]");
+  return t;
+}
+
 export function stromFehler(ev) {
   const kurz = (x) => JSON.stringify(String(x)).slice(1, -1).slice(0, 300);
   const r = ev?.response ?? {};
@@ -1307,7 +1325,7 @@ async function attemptOnce(i) {
  * Chat-Status. Der reason benennt IMMER beide Status.
  */
 async function chatFallback(i, sys, finish, why, primaryStatus) {
-  console.log(`[independent-verify] Stimme ${i + 1}: /responses nicht nutzbar (${why}) → Fallback /chat/completions.`);
+  console.log(`[independent-verify] Stimme ${i + 1}: /responses nicht nutzbar (${schwarz(why)}) → Fallback /chat/completions.`);
   const res = await panelFetch(`${BASE}/chat/completions`, {
     method: "POST",
     headers: H,
@@ -1401,13 +1419,13 @@ export async function stimmeHolen(versuch, attempts = 3, warte = sleep, melde = 
 const verifyOnce = (i) => {
   let seit = 0;
   return stimmeHolen(() => { seit = Date.now(); return attemptOnce(i); }, 3, sleep, (a, grund) =>
-    console.log(`[independent-verify] Stimme ${i + 1}, Versuch ${a} nach ${((Date.now() - seit) / 1000).toFixed(1)} s: ${String(grund).replace(/\s+/g, " ").slice(0, 400)}`));
+    console.log(`[independent-verify] Stimme ${i + 1}, Versuch ${a} nach ${((Date.now() - seit) / 1000).toFixed(1)} s: ${schwarz(String(grund).replace(/\s+/g, " ").slice(0, 400))}`));
 };
 
 const votes = await Promise.all(Array.from({ length: PANEL }, (_, i) => verifyOnce(i)));
 votes.forEach((x, i) => {
   if (!x.ok) {
-    console.log(`  Verifier ${i + 1}/${PANEL} (${MODELS[i]}): Fehler (${x.reason})`);
+    console.log(`  Verifier ${i + 1}/${PANEL} (${MODELS[i]}): Fehler (${schwarz(x.reason)})`);
     return;
   }
   // Auch die BEGRÜNDUNG mitschreiben (nicht nur refuted/confidence) — die liefert
@@ -1422,7 +1440,7 @@ votes.forEach((x, i) => {
   // Begründungs-Spalte IMMER schreiben — sonst bleibt bei leerem reason (z. B. wenn
   // ein Modell die Anweisung ignoriert) nur "false/high" übrig und das Log ist blind.
   const raw = x.v?.reason;
-  const reason = raw ? JSON.stringify(raw).slice(0, 1000) : '"(keine Begründung geliefert)"';
+  const reason = raw ? JSON.stringify(schwarz(raw)).slice(0, 1000) : '"(keine Begründung geliefert)"';
   console.log(`  Verifier ${i + 1}/${PANEL} (${MODELS[i]}): refuted=${x.v?.refuted} confidence=${x.v?.confidence} — Begründung: ${reason}`);
 });
 /**
