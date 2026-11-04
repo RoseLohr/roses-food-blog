@@ -1019,6 +1019,7 @@ if (process.argv.includes("--selftest")) {
   }
 
   // ── Strom-Fehler und Versuche lesbar im Log (11/2026) ──
+  const stueck = (text, geheim) => geheim.flatMap((g) => Array.from({ length: g.length - 7 }, (_, i) => g.slice(i, i + 8))).find((s) => text.includes(s));
   const fehlgeschlagen = { type: "response.failed", sequence_number: 4, response: { id: "r", status: "failed", model: "m",
     output: [{ type: "reasoning", encrypted_content: "x".repeat(400) }], instructions: "GEHEIM", error: { code: "server_error", message: "Zeile 1\nZeile 2" } } };
   const sf1 = stromFehler(fehlgeschlagen);
@@ -1061,6 +1062,27 @@ if (process.argv.includes("--selftest")) {
   const zeile = [stromFehler({ type: "response.failed\n", status: "1\n", response: { status: "a\n", incomplete_details: { reason: "b\n" }, model: "c\n", error: { code: "d\n", message: "e" } } }),
     stromFehler({ type: "error", response: { ["f\n::error::x"]: 1 } })].join("");
   expect(!/[\r\n]/.test(zeile), `kein Feld bricht die Log-Zeile um (${JSON.stringify(zeile)}).`);
+  // Geschwärzt wird die ENDGÜLTIGE Form: Ein Escape (\u0010 → …0) ergänzte sonst sieben rohe Zeichen zu einem Stück.
+  const P = geheimProbe, alle = [stromFehler({ type: `t ${P}`, status: `h ${P}`, response: { status: `s ${P}`, incomplete_details: { reason: `u ${P}` },
+    model: `m ${P}`, error: { code: `c ${P}`, message: `\u0010${P.slice(1, 8)} \b${P.slice(11, 18)}` } } }, [P]), stromFehler({ type: "error", response: { [`f ${P}`]: 1 } }, [P])].join("");
+  expect(!stueck(alle, [P]), `kein Feld von stromFehler() trägt ein Stück, auch nicht mit dem Escape davor (${alle}).`);
+  const voll = stromFehler({ type: "response.failed", response: { status: "incomplete", incomplete_details: { reason: "max_output_tokens" },
+    error: { type: "invalid_request_error", code: "context_length_exceeded", message: "x".repeat(5000) } } });
+  expect(voll.startsWith("response.failed: context_length_exceeded: xxx") && voll.endsWith("x (Status incomplete, unvollständig: max_output_tokens)") && voll.length < 400,
+    `Code vor Typ, Status und Grund der Unvollständigkeit, jedes Feld gekappt (${voll.slice(-80)}).`);
+  const s0 = Date.now(), alsText = [stromFehler({ type: "response.failed", response: "upstream timeout" }), stromFehler({ type: "error", error: ["Quota"] }),
+    stromFehler({ type: "error", error: 429 }), stromFehler({ type: "response.failed", response: "y".repeat(5e6) })];
+  expect(alsText[0].endsWith("ohne Code: upstream timeout") && alsText[1].endsWith('ohne Code: [\\"Quota\\"]') && alsText[2].endsWith("ohne Code: 429")
+    && alsText[3].length < 400 && Date.now() - s0 < 2000, `response als Text, error als Liste oder Zahl: der Inhalt, schnell und gekappt (${alsText.map((s) => s.slice(0, 60)).join(" | ")}).`);
+  // Die Zeile je Versuch: Leerraum erst zusammenfassen, dann schwärzen — ein Tab statt eines Leerzeichens ergäbe sonst wieder den Schlüssel.
+  const vz = versuchsZeile(1, 3, 2.44, "a\n::error::x blau wal\n42\tsonne", ["blau\twal  42 sonne"]);
+  expect(vz === "[independent-verify] Stimme 2, Versuch 3 nach 2.4 s: a ::error::x [geschwärzt]", `Stimme, Versuch, Dauer, eine Zeile, geschwärzt (${vz}).`);
+  const zitat = 'ab"cdefg"hi"jklmn"op', escaped = stromFehler({ type: "error", error: { message: `echo ${zitat}` } }, [zitat]);
+  expect(!stueck(escaped, [JSON.stringify(zitat).slice(1, -1)]), `auch die escapte Form eines Schlüssels wird geschwärzt (${escaped}).`);
+  const t0 = Date.now(), viel = `${P} `.repeat(1e6);
+  stromFehler({ type: "error", error: { message: viel } }, [P]);
+  versuchsZeile(0, 1, 0, viel, [P]);
+  expect(Date.now() - t0 < 1000, `riesige Felder werden vorher gekappt (${Date.now() - t0} ms).`);
 
   // ── Der echte Lauf gegen einen Prüfserver: Was der Anbieter auch zurückspiegelt, in den
   // NEUEN Zeilen (je Versuch, und was stromFehler() meldet) steht kein Stück (8 Zeichen)
@@ -1097,7 +1119,6 @@ if (process.argv.includes("--selftest")) {
     kind.stderr.on("data", (s) => { aus += s; });
     kind.on("close", (code) => { clearTimeout(waechter); fertig({ code, versuche: aus.split("\n").filter((z) => / Versuch \d nach |Stream error-Event/.test(z)).join("\n") }); });
   });
-  const stueck = (text, geheim) => geheim.flatMap((g) => Array.from({ length: g.length - 7 }, (_, i) => g.slice(i, i + 8))).find((s) => text.includes(s));
   const K1 = `k${randomBytes(16).toString("hex")}\n`; // wie ein Secret mit Zeilenende: fetch sendet ihn getrimmt
   let l1;
   try {
@@ -1261,19 +1282,27 @@ function extractResponsesText(data) {
  *
  * Geschwärzt wird JEDES Stück ab acht Zeichen, nicht nur der ganze Wert: fetch
  * sendet den Schlüssel getrimmt, Meldungen maskieren oder kürzen ihn, JSON escaped ihn.
+ * Und zwar in der Form, die ausgegeben wird: nach dem Escapen oder Zusammenfassen
+ * von Leerraum, denn beides kann rohe Reste zu einem Stück ergänzen. Gekürzt wird danach.
  */
 export function geschwaerzt(text, geheim) {
   const t = String(text);
   const weg = new Uint8Array(t.length);
-  for (const g of geheim) {
-    if (typeof g !== "string") continue; // fehlender Schlüssel; unter acht Zeichen läuft die Schleife nicht
-    for (let i = 0; i + 8 <= g.length; i++) {
+  // Jedes Geheimnis auch so, wie es in einer Zeile erscheint: Leerraum zusammengefasst, JSON-escaped.
+  const formen = geheim.filter((g) => typeof g === "string").flatMap((g) => [g, g.replace(/\s+/g, " "), JSON.stringify(g).slice(1, -1)]);
+  for (const g of formen) {
+    for (let i = 0; i + 8 <= g.length; i++) { // unter acht Zeichen läuft die Schleife nicht
       const stueck = g.slice(i, i + 8);
       for (let p = t.indexOf(stueck); p !== -1; p = t.indexOf(stueck, p + 1)) weg.fill(1, p, p + 8);
     }
   }
   let aus = "";
-  for (let i = 0; i < t.length; i++) if (!weg[i]) aus += t[i]; else if (!weg[i - 1]) aus += "[geschwärzt]";
+  for (let i = 0; i < t.length;) {
+    let j = i;
+    while (j < t.length && weg[j] === weg[i]) j++;
+    aus += weg[i] ? "[geschwärzt]" : t.slice(i, j);
+    i = j;
+  }
   return aus;
 }
 
@@ -1281,21 +1310,23 @@ export function geschwaerzt(text, geheim) {
  * Grund eines Strom-Fehlers fürs Log (11/2026): Code, Meldung, Status, Modell.
  * Vorher stand dort der Anfang des Rohereignisses, und der brach bei
  * response.failed im output (encrypted_content) ab, bevor das error-Feld kam.
- * Nur benannte Felder, jedes geschwärzt, escaped und gekürzt: instructions
+ * Nur benannte Felder, jedes escaped, geschwärzt und gekürzt: instructions
  * trägt die Challenge und bleibt draußen.
  */
 export function stromFehler(ev, geheim = []) {
-  // Erst schwärzen, dann escapen und kürzen.
-  const kurz = (x) => JSON.stringify(geschwaerzt(typeof x === "string" ? x : JSON.stringify(x) ?? String(x), geheim)).slice(1, -1).slice(0, 300);
-  const r = ev?.response ?? {};
-  // Verschachtelt (error: {…}, response.error) oder, wie im dokumentierten error-Ereignis, oben.
-  let e = ev?.error ?? r.error ?? (ev && "message" in ev ? { code: ev.code, message: ev.message } : null);
+  // Escapen, dann schwärzen, dann kürzen. Vorher gekappt, damit ein riesiges Feld nichts aufhält.
+  const kurz = (x) => geschwaerzt(JSON.stringify((typeof x === "string" ? x : JSON.stringify(x) ?? String(x)).slice(0, 4000)).slice(1, -1), geheim).slice(0, 300);
+  const roh = ev?.response;
+  const r = roh && typeof roh === "object" && !Array.isArray(roh) ? roh : {};
+  // Verschachtelt (error: {…}, response.error), wie im dokumentierten error-Ereignis oben,
+  // oder response selbst als Text.
+  let e = ev?.error ?? r.error ?? (ev && "message" in ev ? { code: ev.code, message: ev.message } : null) ?? (roh != null && roh !== r ? roh : null);
   if (e !== null && (typeof e !== "object" || Array.isArray(e))) e = { message: e }; // auch error: "…"
   const grund = e ? `${kurz(e.code ?? e.type ?? "ohne Code")}: ${kurz(e.message ?? "(ohne Meldung)")}`
-    : `ohne error-Feld; Felder: ${kurz(Object.keys(ev?.response ?? ev ?? {}).join(","))}`; // Namen, keine Werte
+    : `ohne error-Feld; Felder: ${kurz(Object.keys(roh ?? ev ?? {}).join(","))}`; // Namen, keine Werte
   const mehr = [r.status && `Status ${kurz(r.status)}`, r.incomplete_details?.reason && `unvollständig: ${kurz(r.incomplete_details.reason)}`,
     r.model && `Modell ${kurz(r.model)}`, ev?.status && `HTTP ${kurz(ev.status)}`].filter(Boolean).join(", ");
-  return `${kurz(ev?.type ?? "?")}: ${grund}${mehr ? ` (${mehr})` : ""}`;
+  return geschwaerzt(`${kurz(ev?.type ?? "?")}: ${grund}${mehr ? ` (${mehr})` : ""}`, geheim); // auch über die Feldgrenzen
 }
 
 async function foldResponsesStream(body, geheim = []) {
@@ -1501,8 +1532,12 @@ export async function stimmeHolen(versuch, attempts = 3, warte = sleep, melde = 
 
 // Jeder gescheiterte Versuch steht mit Dauer im Log, nicht nur der letzte:
 // So ist zu sehen, ob eine Stimme an einer Frist oder am Anbieter scheiterte.
-const verifyOnce = (i) => stimmeHolen(() => attemptOnce(i), 3, sleep, (a, grund, s) =>
-  console.log(`[independent-verify] Stimme ${i + 1}, Versuch ${a} nach ${s.toFixed(1)} s: ${geschwaerzt(String(grund), GEHEIM).replace(/\s+/g, " ").slice(0, 400)}`));
+// Leerraum zuerst zusammenfassen, dann schwärzen, dann kürzen (siehe geschwaerzt()).
+export function versuchsZeile(i, a, s, grund, geheim) {
+  const kopf = `[independent-verify] Stimme ${i + 1}, Versuch ${a} nach ${s.toFixed(1)} s: `;
+  return geschwaerzt(kopf + String(grund).slice(0, 4000).replace(/\s+/g, " "), geheim).slice(0, kopf.length + 400);
+}
+const verifyOnce = (i) => stimmeHolen(() => attemptOnce(i), 3, sleep, (a, grund, s) => console.log(versuchsZeile(i, a, s, grund, GEHEIM)));
 
 const votes = await Promise.all(Array.from({ length: PANEL }, (_, i) => verifyOnce(i)));
 votes.forEach((x, i) => {
