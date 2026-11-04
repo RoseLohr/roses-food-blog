@@ -98,7 +98,7 @@
  *                zustimmt oder kein weiterer Approver bestätigt.
  *   --selftest   übt decide()+requireApprovals()+attestReasons()+attestProof() aus.
  */
-import { execSync } from "node:child_process";
+import { execSync, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { appendFileSync } from "node:fs";
 
@@ -1021,7 +1021,6 @@ if (process.argv.includes("--selftest")) {
   // ── Strom-Fehler und Versuche lesbar im Log (11/2026) ──
   const fehlgeschlagen = { type: "response.failed", sequence_number: 4, response: { id: "r", status: "failed", model: "m",
     output: [{ type: "reasoning", encrypted_content: "x".repeat(400) }], instructions: "GEHEIM", error: { code: "server_error", message: "Zeile 1\nZeile 2" } } };
-  const fehlerVonFold = async (teile) => { try { await foldResponsesStream(teile); return "kein Fehler"; } catch (e) { return e.message; } };
   const sf1 = stromFehler(fehlgeschlagen);
   expect(sf1.includes("server_error") && sf1.includes("Zeile 1\\nZeile 2") && sf1.includes("Modell m") && !sf1.includes("encrypted") && !sf1.includes("GEHEIM"),
     `response.failed nennt Code, Meldung (ohne Zeilenumbruch) und Modell, nicht output oder instructions (${sf1}).`);
@@ -1032,8 +1031,6 @@ if (process.argv.includes("--selftest")) {
   expect(sf4.includes("rate_limit_exceeded: Rate limit reached"), `error-Ereignis mit code/message oben (${sf4}).`);
   const sf3 = stromFehler({ type: "response.failed", response: { status: "failed", instructions: "GEHEIM", output: [] } });
   expect(sf3.includes("ohne error-Feld; Felder: status,instructions,output") && !sf3.includes("GEHEIM"), `ohne error-Feld: Feldnamen, keine Werte (${sf3}).`);
-  const imStrom = await fehlerVonFold([Buffer.from(`data: ${JSON.stringify(fehlgeschlagen)}\n\n`)]);
-  expect(imStrom.includes("server_error") && !imStrom.includes("encrypted"), `der Strom meldet den Grund über stromFehler() (${imStrom}).`);
   const gemeldet = [];
   const versuche = [() => { throw new Error("eins"); }, () => ({ ok: false, status: 503, reason: "zwei" }), () => ({ ok: true, v: {} }), () => A];
   const nachDrei = await stimmeHolen(async (a) => versuche[a - 1](), 4, sofort, (a, grund) => gemeldet.push(`${a}:${grund}`));
@@ -1041,11 +1038,83 @@ if (process.argv.includes("--selftest")) {
   const geheimProbe = "0123456789abcdef01";
   expect(geschwaerzt(`echo ${geheimProbe} und ${geheimProbe}.`, [geheimProbe, "", undefined, "kurz"]) === "echo [geschwärzt] und [geschwärzt].",
     "Schlüssel und Challenge werden im Inhalt geschwärzt, kurze oder leere Werte nicht.");
-  expect(/schwarz\(/.test(String(chatFallback)), "auch die Fallback-Zeile schwärzt.");
+  const anDerKante = stromFehler({ type: "error", error: { message: "x".repeat(283) + geheimProbe } }, [geheimProbe]);
+  expect(!anDerKante.includes(geheimProbe.slice(0, 8)) && anDerKante.includes("[geschwärzt]"), `stromFehler() schwärzt vor dem Kürzen (${anDerKante.slice(-30)}).`);
+  // Kein Anbieter spiegelt genau den Wert: fetch trimmt ihn, Meldungen maskieren oder kürzen ihn,
+  // JSON escaped ihn. Geschwärzt wird deshalb jedes Stück ab acht Zeichen.
+  const bruch = geschwaerzt(`${geheimProbe.slice(0, 12)}**** ${geheimProbe.slice(3, 11)}\\/${geheimProbe.slice(11)}|${geheimProbe.slice(0, 7)}`, [` ${geheimProbe}\n`]);
+  expect(bruch === `[geschwärzt]**** [geschwärzt]\\/${geheimProbe.slice(11)}|${geheimProbe.slice(0, 7)}`, `jedes Stück ab acht Zeichen, auch vom getrimmten Wert (${bruch}).`);
   const endgueltig = [];
   await stimmeHolen(async () => ({ ok: false, status: 400, reason: "vier" }), 3, sofort, (a, grund) => endgueltig.push(`${a}:${grund}`));
   expect(endgueltig.join("|") === "1:vier", `auch ein endgültiger Fehlschlag wird gemeldet (${endgueltig.join("|")}).`);
   expect(nachDrei === A && gemeldet.join("|") === `1:eins|2:zwei|3:${NICHTANTWORT}`, `jeder gescheiterte Versuch wird gemeldet, der erfolgreiche nicht (${gemeldet.join("|")}).`);
+  let uhrzeit = 0;
+  const dauern = [];
+  const verlauf = [() => { throw new Error("x"); }, () => ({ ok: false, status: 503, reason: "t" }), () => ({ ok: true, v: {} })];
+  await stimmeHolen(async (a) => { uhrzeit += 2000; return verlauf[a - 1](); }, 3, async (ms) => { uhrzeit += ms; }, (a, g, s) => dauern.push(s), () => uhrzeit);
+  expect(dauern.join("|") === "2|2|2", `jeder Versuch misst nur sich, ohne die Wartezeit davor (${dauern.join("|")}).`);
+  const echt = [];
+  await stimmeHolen(async () => { await new Promise((r) => setTimeout(r, 60)); throw new Error("x"); }, 1, sofort, (a, g, s) => echt.push(s));
+  expect(echt[0] >= 0.04, `ohne eingesetzte Uhr misst die Wanduhr (${echt[0]} s).`);
+  expect(stromFehler({ type: "error", error: "Ratenlimit, in 20 s" }).includes("Ratenlimit, in 20 s")
+    && stromFehler({ type: "error", error: { message: { detail: "tief" } } }).includes("tief"), "auch error als Text und eine Meldung als Objekt erscheinen.");
+  const zeile = [stromFehler({ type: "response.failed\n", status: "1\n", response: { status: "a\n", incomplete_details: { reason: "b\n" }, model: "c\n", error: { code: "d\n", message: "e" } } }),
+    stromFehler({ type: "error", response: { ["f\n::error::x"]: 1 } })].join("");
+  expect(!/[\r\n]/.test(zeile), `kein Feld bricht die Log-Zeile um (${JSON.stringify(zeile)}).`);
+
+  // ── Der echte Lauf gegen einen Prüfserver: Was der Anbieter auch zurückspiegelt, in den
+  // NEUEN Zeilen (je Versuch, und was stromFehler() meldet) steht kein Stück (8 Zeichen)
+  // von Schlüssel oder Challenge. Die übrigen Zeilen zeigen fremden Text wie bisher. ──
+  const fs = await import("node:fs");
+  const ort = fs.mkdtempSync(`${(await import("node:os")).tmpdir()}/iv-lauf-`);
+  const umgebung = { PATH: process.env.PATH, HOME: ort, GIT_CONFIG_NOSYSTEM: "1" }; // kein fremdes Git-Setup (Signatur, Hooks)
+  const git = (befehl) => execSync(`git -c user.name=t -c user.email=t@t ${befehl}`, { cwd: ort, stdio: "pipe", env: umgebung }).toString().trim();
+  const challenges = new Set();
+  let chatNr = 0;
+  const stub = httpPruef.createServer(async (req, res) => {
+    let roh = "";
+    for await (const s of req) roh += s;
+    if (req.url.endsWith("/models")) { res.end(JSON.stringify({ data: [{ id: "m1" }, { id: "m2" }] })); return; }
+    const C = /EXAKT '([0-9a-f]+)-/.exec(roh)[1], K = req.headers.authorization.slice(7), { model } = JSON.parse(roh);
+    challenges.add(C);
+    if (model === "m1") {
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      res.end(`data: ${JSON.stringify({ type: "response.failed", response: { model: "m".repeat(283) + C, error: { code: "c".repeat(283) + C, message: "x".repeat(283) + K } } })}\n\n`);
+    } else if (req.url.endsWith("/responses")) { res.writeHead(500); res.end("b".repeat(283) + C); }
+    else { // 200 ohne JSON (V8 zitiert daraus, dann an der Kante), danach 502 mit maskiertem Schlüssel
+      const n = chatNr++;
+      if (n > 1) res.writeHead(502);
+      res.end([`{"echo": '${C}${K}'}`, "e".repeat(283) + C][n] ?? `${K.slice(0, 12)}****${C.slice(0, 9)}… ${"d".repeat(256)}${C}`);
+    }
+  });
+  await new Promise((r) => stub.listen(0, "127.0.0.1", r));
+  const lauf = (schluessel) => new Promise((fertig) => {
+    const kind = spawn(process.execPath, [process.argv[1]], { cwd: ort, env: { ...umgebung, SECOND_VENDOR_API_KEY: schluessel,
+      VERIFIER_BASE_URL: `http://127.0.0.1:${stub.address().port}`, VERIFIER_PANEL_MODELS: "m1,m2", VERIFIER_REQUIRED_APPROVER: "m1" } });
+    let aus = "";
+    const waechter = setTimeout(() => kind.kill(), 60_000); // ein Hänger wird rot, nicht endlos
+    kind.stdout.on("data", (s) => { aus += s; });
+    kind.stderr.on("data", (s) => { aus += s; });
+    kind.on("close", (code) => { clearTimeout(waechter); fertig({ code, versuche: aus.split("\n").filter((z) => / Versuch \d nach |Stream error-Event/.test(z)).join("\n") }); });
+  });
+  const stueck = (text, geheim) => geheim.flatMap((g) => Array.from({ length: g.length - 7 }, (_, i) => g.slice(i, i + 8))).find((s) => text.includes(s));
+  const K1 = `k${randomBytes(16).toString("hex")}\n`; // wie ein Secret mit Zeilenende: fetch sendet ihn getrimmt
+  let l1;
+  try {
+    fs.writeFileSync(`${ort}/a.txt`, "a\n");
+    git("init -q"); git("add a.txt"); git("commit -qm a"); git(`update-ref refs/remotes/origin/main ${git("rev-parse HEAD")}`);
+    fs.writeFileSync(`${ort}/a.txt`, "b\n");
+    git("commit -qam b");
+    l1 = await lauf(K1);
+  } finally {
+    stub.closeAllConnections();
+    await new Promise((r) => stub.close(r));
+    fs.rmSync(ort, { recursive: true, force: true });
+  }
+  const leck1 = stueck(l1.versuche, [K1, ...challenges]);
+  expect(l1.code === 1 && challenges.size === 1 && l1.versuche.split("\n").length === 7 && !leck1 && l1.versuche.includes("response.failed: ccc")
+    && l1.versuche.includes("is not valid JSON") && l1.versuche.includes("Chat-Fallback 502: [geschwärzt]****[geschwärzt]… ddd"),
+  `jeder Versuch mit Grund im Log, kein Stück von Schlüssel oder Challenge (Exit ${l1.code}, Leck ${JSON.stringify(leck1)}):\n${l1.versuche}`);
 
   console.log("   ✓ Selbsttest: decide() + modelMatches() + requireApprovals() (Pflicht-Approver Sol + Korroboration) + attestReasons() + attestProof() + validateRangeInputs() + normalizeBase() + authHeader() + strictAnyRefutation() + mdInline() + renderStepSummary() + panelOhneListe() + panelFetch()/fetchModelIds() (keine Weiterleitung) korrekt.");
   process.exit(0);
@@ -1084,7 +1153,8 @@ console.log(`[independent-verify] Pflicht-Approver: „${REQUIRED_APPROVER}" mus
 // GRÜN tragende Stimme muss sie als proof „<challenge>-<tier>" zurückspiegeln (siehe
 // attestProof: schützt gegen In-Code-Kurzschluss „return grün" ohne Endpoint-Roundtrip).
 const CHALLENGE = randomBytes(9).toString("hex"); // 18 Hex-Zeichen, pro Lauf frisch
-const schwarz = (text) => geschwaerzt(text, [KEY, CHALLENGE]);
+// Was ein Anbieter davon zurückspiegelt, kommt in den neuen Zeilen nicht ins Log (geschwaerzt()).
+const GEHEIM = [KEY, CHALLENGE];
 
 // Kompakter System-Prompt: minimaler Request bei voller semantischer Schärfe.
 // Jede Grenze/Regel des Panels bleibt erhalten — nur Füllwerk/Doppelungen sind
@@ -1184,29 +1254,43 @@ function extractResponsesText(data) {
  *  - Strom endet OHNE response.completed → WIRFT ebenfalls (transienter Abriss).
  */
 /**
- * Grund eines Strom-Fehlers fürs Log (11/2026): Code, Meldung, Status, Modell.
- * Vorher stand dort der Anfang des Rohereignisses, und der brach bei
- * response.failed im output (encrypted_content) ab, bevor das error-Feld kam.
- * Nur benannte Felder, jedes escaped und gekürzt: instructions trägt die
- * Challenge und bleibt draußen.
- */
-/**
  * Was an fremdem Text ins ÖFFENTLICHE Log geht (Fehlermeldungen, Begründungen),
  * ohne Schlüssel und Challenge — auch wenn ein Anbieter sie zurückspiegelt.
  * Ein Feld-Filter reicht dafür nicht: Die Meldung selbst schreibt der Anbieter.
  * Die Challenge ist kein GitHub-Secret; der Runner maskiert sie nicht.
+ *
+ * Geschwärzt wird JEDES Stück ab acht Zeichen, nicht nur der ganze Wert: fetch
+ * sendet den Schlüssel getrimmt, Meldungen maskieren oder kürzen ihn, JSON escaped ihn.
  */
 export function geschwaerzt(text, geheim) {
-  let t = String(text);
-  for (const g of geheim) if (typeof g === "string" && g.length >= 8) t = t.split(g).join("[geschwärzt]");
-  return t;
+  const t = String(text);
+  const weg = new Uint8Array(t.length);
+  for (const g of geheim) {
+    if (typeof g !== "string") continue; // fehlender Schlüssel; unter acht Zeichen läuft die Schleife nicht
+    for (let i = 0; i + 8 <= g.length; i++) {
+      const stueck = g.slice(i, i + 8);
+      for (let p = t.indexOf(stueck); p !== -1; p = t.indexOf(stueck, p + 1)) weg.fill(1, p, p + 8);
+    }
+  }
+  let aus = "";
+  for (let i = 0; i < t.length; i++) if (!weg[i]) aus += t[i]; else if (!weg[i - 1]) aus += "[geschwärzt]";
+  return aus;
 }
 
-export function stromFehler(ev) {
-  const kurz = (x) => JSON.stringify(String(x)).slice(1, -1).slice(0, 300);
+/**
+ * Grund eines Strom-Fehlers fürs Log (11/2026): Code, Meldung, Status, Modell.
+ * Vorher stand dort der Anfang des Rohereignisses, und der brach bei
+ * response.failed im output (encrypted_content) ab, bevor das error-Feld kam.
+ * Nur benannte Felder, jedes geschwärzt, escaped und gekürzt: instructions
+ * trägt die Challenge und bleibt draußen.
+ */
+export function stromFehler(ev, geheim = []) {
+  // Erst schwärzen, dann escapen und kürzen.
+  const kurz = (x) => JSON.stringify(geschwaerzt(typeof x === "string" ? x : JSON.stringify(x) ?? String(x), geheim)).slice(1, -1).slice(0, 300);
   const r = ev?.response ?? {};
   // Verschachtelt (error: {…}, response.error) oder, wie im dokumentierten error-Ereignis, oben.
-  const e = ev?.error ?? r.error ?? (ev && "message" in ev ? { code: ev.code, message: ev.message } : null);
+  let e = ev?.error ?? r.error ?? (ev && "message" in ev ? { code: ev.code, message: ev.message } : null);
+  if (e !== null && (typeof e !== "object" || Array.isArray(e))) e = { message: e }; // auch error: "…"
   const grund = e ? `${kurz(e.code ?? e.type ?? "ohne Code")}: ${kurz(e.message ?? "(ohne Meldung)")}`
     : `ohne error-Feld; Felder: ${kurz(Object.keys(ev?.response ?? ev ?? {}).join(","))}`; // Namen, keine Werte
   const mehr = [r.status && `Status ${kurz(r.status)}`, r.incomplete_details?.reason && `unvollständig: ${kurz(r.incomplete_details.reason)}`,
@@ -1214,7 +1298,7 @@ export function stromFehler(ev) {
   return `${kurz(ev?.type ?? "?")}: ${grund}${mehr ? ` (${mehr})` : ""}`;
 }
 
-async function foldResponsesStream(body) {
+async function foldResponsesStream(body, geheim = []) {
   const decoder = new TextDecoder();
   let buf = "";
   let text = "";
@@ -1233,7 +1317,7 @@ async function foldResponsesStream(body) {
     } else if (type === "response.completed") {
       completed = ev.response ?? {};
     } else if (type === "error" || type === "response.failed") {
-      throw new Error(`Responses-Stream error-Event: ${stromFehler(ev)}`);
+      throw new Error(`Responses-Stream error-Event: ${stromFehler(ev, geheim)}`);
     }
   };
   for await (const chunk of body) {
@@ -1291,7 +1375,7 @@ async function attemptOnce(i) {
     // error-Event), wirft der Fold zu verifyOnce durch → transient, Retry des
     // Primär-Drahts. KEIN Chat-Fallback dafür: der Endpoint existiert und
     // streamt — der byte-stille Chat-Draht wäre hier der schlechtere Draht.
-    const { text, completed } = await foldResponsesStream(res.body);
+    const { text, completed } = await foldResponsesStream(res.body, GEHEIM);
     return finish(text || extractResponsesText(completed));
   }
   // Fehler-BODY mitschreiben (nicht nur den Status) — und daran die Endpoint-Weiche.
@@ -1325,7 +1409,7 @@ async function attemptOnce(i) {
  * Chat-Status. Der reason benennt IMMER beide Status.
  */
 async function chatFallback(i, sys, finish, why, primaryStatus) {
-  console.log(`[independent-verify] Stimme ${i + 1}: /responses nicht nutzbar (${schwarz(why)}) → Fallback /chat/completions.`);
+  console.log(`[independent-verify] Stimme ${i + 1}: /responses nicht nutzbar (${why}) → Fallback /chat/completions.`);
   const res = await panelFetch(`${BASE}/chat/completions`, {
     method: "POST",
     headers: H,
@@ -1365,7 +1449,7 @@ async function chatFallback(i, sys, finish, why, primaryStatus) {
  * dass diese Schleife genau diesen Zustand gar nicht mehr liefert. Der Test war
  * grün für etwas, das die Produktion nicht tat.
  */
-export async function stimmeHolen(versuch, attempts = 3, warte = sleep, melde = () => {}) {
+export async function stimmeHolen(versuch, attempts = 3, warte = sleep, melde = () => {}, uhr = Date.now) {
   let last = { ok: false, reason: "kein Versuch ausgeführt" };
   /**
    * Hat dieser Endpunkt in DIESER Runde schon einmal geantwortet und nichts
@@ -1390,11 +1474,12 @@ export async function stimmeHolen(versuch, attempts = 3, warte = sleep, melde = 
    */
   let warStumm = false;
   for (let a = 1; a <= attempts; a++) {
+    const los = uhr(); // Dauer DIESES Versuchs, ohne die Wartezeit davor
     try {
       const jetzt = await versuch(a);
       const wie = zustellung(jetzt);
       if (wie === "stimme") return jetzt;
-      melde(a, jetzt.ok ? NICHTANTWORT : jetzt.reason ?? `Status ${jetzt.status}`);
+      melde(a, jetzt.ok ? NICHTANTWORT : jetzt.reason ?? `Status ${jetzt.status}`, (uhr() - los) / 1000);
       // Zugestellt, aber ohne verwertbares Urteil: geantwortet und nichts
       // gesagt. Das wird gemerkt, nicht nur in `last` abgelegt.
       if (jetzt.ok) warStumm = true;
@@ -1405,7 +1490,7 @@ export async function stimmeHolen(versuch, attempts = 3, warte = sleep, melde = 
       last = jetzt;
     } catch (err) {
       last = { ok: false, reason: err instanceof Error ? err.message : String(err) }; // Netzfehler → transient
-      melde(a, last.reason);
+      melde(a, last.reason, (uhr() - los) / 1000);
     }
     if (a < attempts) await warte(500 * a); // 0,5 s, dann 1,0 s
   }
@@ -1416,16 +1501,13 @@ export async function stimmeHolen(versuch, attempts = 3, warte = sleep, melde = 
 
 // Jeder gescheiterte Versuch steht mit Dauer im Log, nicht nur der letzte:
 // So ist zu sehen, ob eine Stimme an einer Frist oder am Anbieter scheiterte.
-const verifyOnce = (i) => {
-  let seit = 0;
-  return stimmeHolen(() => { seit = Date.now(); return attemptOnce(i); }, 3, sleep, (a, grund) =>
-    console.log(`[independent-verify] Stimme ${i + 1}, Versuch ${a} nach ${((Date.now() - seit) / 1000).toFixed(1)} s: ${schwarz(String(grund).replace(/\s+/g, " ").slice(0, 400))}`));
-};
+const verifyOnce = (i) => stimmeHolen(() => attemptOnce(i), 3, sleep, (a, grund, s) =>
+  console.log(`[independent-verify] Stimme ${i + 1}, Versuch ${a} nach ${s.toFixed(1)} s: ${geschwaerzt(String(grund), GEHEIM).replace(/\s+/g, " ").slice(0, 400)}`));
 
 const votes = await Promise.all(Array.from({ length: PANEL }, (_, i) => verifyOnce(i)));
 votes.forEach((x, i) => {
   if (!x.ok) {
-    console.log(`  Verifier ${i + 1}/${PANEL} (${MODELS[i]}): Fehler (${schwarz(x.reason)})`);
+    console.log(`  Verifier ${i + 1}/${PANEL} (${MODELS[i]}): Fehler (${x.reason})`);
     return;
   }
   // Auch die BEGRÜNDUNG mitschreiben (nicht nur refuted/confidence) — die liefert
@@ -1440,7 +1522,7 @@ votes.forEach((x, i) => {
   // Begründungs-Spalte IMMER schreiben — sonst bleibt bei leerem reason (z. B. wenn
   // ein Modell die Anweisung ignoriert) nur "false/high" übrig und das Log ist blind.
   const raw = x.v?.reason;
-  const reason = raw ? JSON.stringify(schwarz(raw)).slice(0, 1000) : '"(keine Begründung geliefert)"';
+  const reason = raw ? JSON.stringify(raw).slice(0, 1000) : '"(keine Begründung geliefert)"';
   console.log(`  Verifier ${i + 1}/${PANEL} (${MODELS[i]}): refuted=${x.v?.refuted} confidence=${x.v?.confidence} — Begründung: ${reason}`);
 });
 /**
