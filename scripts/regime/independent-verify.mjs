@@ -1040,6 +1040,10 @@ if (process.argv.includes("--selftest")) {
   expect(geschwaerzt(`echo ${geheimProbe} und ${geheimProbe}.`, [geheimProbe, "", undefined, "kurz"]) === "echo [geschwärzt] und [geschwärzt].",
     "Schlüssel und Challenge werden im Inhalt geschwärzt, kurze oder leere Werte nicht.");
   const anDerKante = stromFehler({ type: "error", error: { message: "x".repeat(283) + geheimProbe } }, [geheimProbe]);
+  // Die Zeilen schwärzen ohnehin als Ganzes; die Weitergabe schützt den Grund auch dort, wo er sonst noch steht (Summary).
+  let ausStrom = "";
+  try { await foldResponsesStream([Buffer.from(`data: ${JSON.stringify({ type: "error", error: { message: geheimProbe } })}\n\n`)], [geheimProbe]); } catch (e) { ausStrom = e.message; }
+  expect(ausStrom.includes("[geschwärzt]") && /foldResponsesStream\(res\.body, GEHEIM\)/.test(String(attemptOnce)), `der Strom reicht die Geheimnisse an stromFehler() weiter (${ausStrom}).`);
   expect(!anDerKante.includes(geheimProbe.slice(0, 8)) && anDerKante.includes("[geschwärzt]"), `stromFehler() schwärzt vor dem Kürzen (${anDerKante.slice(-30)}).`);
   // Kein Anbieter spiegelt genau den Wert: fetch trimmt ihn, Meldungen maskieren oder kürzen ihn,
   // JSON escaped ihn. Geschwärzt wird deshalb jedes Stück ab acht Zeichen.
@@ -1059,9 +1063,9 @@ if (process.argv.includes("--selftest")) {
   expect(echt[0] >= 0.04, `ohne eingesetzte Uhr misst die Wanduhr (${echt[0]} s).`);
   expect(stromFehler({ type: "error", error: "Ratenlimit, in 20 s" }).includes("Ratenlimit, in 20 s")
     && stromFehler({ type: "error", error: { message: { detail: "tief" } } }).includes("tief"), "auch error als Text und eine Meldung als Objekt erscheinen.");
-  const zeile = [stromFehler({ type: "response.failed\n", status: "1\n", response: { status: "a\n", incomplete_details: { reason: "b\n" }, model: "c\n", error: { code: "d\n", message: "e" } } }),
+  const zeile = [stromFehler({ type: "response.failed\n", status: "1\n", response: { status: "a\n", incomplete_details: { reason: "b\n" }, model: "c\n", error: { code: "d\n", message: "e\u2028f\u2029g\u00a0h" } } }),
     stromFehler({ type: "error", response: { ["f\n::error::x"]: 1 } })].join("");
-  expect(!/[\r\n]/.test(zeile), `kein Feld bricht die Log-Zeile um (${JSON.stringify(zeile)}).`);
+  expect(!/[^\S ]/.test(zeile), `kein Feld bricht die Log-Zeile um, auch nicht mit U+2028 (${JSON.stringify(zeile)}).`);
   // Geschwärzt wird die ENDGÜLTIGE Form: Ein Escape (\u0010 → …0) ergänzte sonst sieben rohe Zeichen zu einem Stück.
   const P = geheimProbe, alle = [stromFehler({ type: `t ${P}`, status: `h ${P}`, response: { status: `s ${P}`, incomplete_details: { reason: `u ${P}` },
     model: `m ${P}`, error: { code: `c ${P}`, message: `\u0010${P.slice(1, 8)} \b${P.slice(11, 18)}` } } }, [P]), stromFehler({ type: "error", response: { [`f ${P}`]: 1 } }, [P])].join("");
@@ -1092,16 +1096,17 @@ if (process.argv.includes("--selftest")) {
   const umgebung = { PATH: process.env.PATH, HOME: ort, GIT_CONFIG_NOSYSTEM: "1" }; // kein fremdes Git-Setup (Signatur, Hooks)
   const git = (befehl) => execSync(`git -c user.name=t -c user.email=t@t ${befehl}`, { cwd: ort, stdio: "pipe", env: umgebung }).toString().trim();
   const challenges = new Set();
-  let chatNr = 0;
+  let chatNr = 0, m1Nr = 0;
   const stub = httpPruef.createServer(async (req, res) => {
     let roh = "";
     for await (const s of req) roh += s;
     if (req.url.endsWith("/models")) { res.end(JSON.stringify({ data: [{ id: "m1" }, { id: "m2" }] })); return; }
     const C = /EXAKT '([0-9a-f]+)-/.exec(roh)[1], K = req.headers.authorization.slice(7), { model } = JSON.parse(roh);
     challenges.add(C);
-    if (model === "m1") {
+    if (model === "m1") { // zuletzt das dokumentierte error-Ereignis mit sieben Zeichen am Ende: Die Fehlerzeile hängt „)" an
       res.writeHead(200, { "content-type": "text/event-stream" });
-      res.end(`data: ${JSON.stringify({ type: "response.failed", response: { model: "m".repeat(283) + C, error: { code: "c".repeat(283) + C, message: "x".repeat(283) + K } } })}\n\n`);
+      res.end(`data: ${JSON.stringify(++m1Nr < 3 ? { type: "response.failed", response: { model: "m".repeat(283) + C, error: { code: "c".repeat(283) + C, message: "x".repeat(283) + K } } }
+        : { type: "error", code: "invalid_api_key", message: `provided: ${K.slice(0, 7)}` })}\n\n`);
     } else if (req.url.endsWith("/responses")) { res.writeHead(500); res.end("b".repeat(283) + C); }
     else { // 200 ohne JSON (V8 zitiert daraus, dann an der Kante), danach 502 mit maskiertem Schlüssel
       const n = chatNr++;
@@ -1119,7 +1124,7 @@ if (process.argv.includes("--selftest")) {
     kind.stderr.on("data", (s) => { aus += s; });
     kind.on("close", (code) => { clearTimeout(waechter); fertig({ code, versuche: aus.split("\n").filter((z) => / Versuch \d nach |Stream error-Event/.test(z)).join("\n") }); });
   });
-  const K1 = `k${randomBytes(16).toString("hex")}\n`; // wie ein Secret mit Zeilenende: fetch sendet ihn getrimmt
+  const K1 = `k${randomBytes(3).toString("hex")})${randomBytes(12).toString("hex")}\n`; // mit „)" und Zeilenende: fetch sendet ihn getrimmt
   let l1;
   try {
     fs.writeFileSync(`${ort}/a.txt`, "a\n");
@@ -1314,8 +1319,9 @@ export function geschwaerzt(text, geheim) {
  * trägt die Challenge und bleibt draußen.
  */
 export function stromFehler(ev, geheim = []) {
-  // Escapen, dann schwärzen, dann kürzen. Vorher gekappt, damit ein riesiges Feld nichts aufhält.
-  const kurz = (x) => geschwaerzt(JSON.stringify((typeof x === "string" ? x : JSON.stringify(x) ?? String(x)).slice(0, 4000)).slice(1, -1), geheim).slice(0, 300);
+  // Escapen und Leerraum zusammenfassen (JSON lässt U+2028 stehen), dann schwärzen, dann kürzen.
+  // Vorher gekappt, damit ein riesiges Feld nichts aufhält.
+  const kurz = (x) => geschwaerzt(JSON.stringify((typeof x === "string" ? x : JSON.stringify(x) ?? String(x)).slice(0, 4000)).slice(1, -1).replace(/\s+/g, " "), geheim).slice(0, 300);
   const roh = ev?.response;
   const r = roh && typeof roh === "object" && !Array.isArray(roh) ? roh : {};
   // Verschachtelt (error: {…}, response.error), wie im dokumentierten error-Ereignis oben,
@@ -1542,7 +1548,9 @@ const verifyOnce = (i) => stimmeHolen(() => attemptOnce(i), 3, sleep, (a, grund,
 const votes = await Promise.all(Array.from({ length: PANEL }, (_, i) => verifyOnce(i)));
 votes.forEach((x, i) => {
   if (!x.ok) {
-    console.log(`  Verifier ${i + 1}/${PANEL} (${MODELS[i]}): Fehler (${x.reason})`);
+    // Der Grund kann von stromFehler() stammen. Geschwärzt wird die GANZE Zeile: Schon die
+    // schließende Klammer kann einen Rest unter acht Zeichen zu einem Stück ergänzen.
+    console.log(geschwaerzt(`  Verifier ${i + 1}/${PANEL} (${MODELS[i]}): Fehler (${x.reason})`, GEHEIM));
     return;
   }
   // Auch die BEGRÜNDUNG mitschreiben (nicht nur refuted/confidence) — die liefert
