@@ -1018,6 +1018,24 @@ if (process.argv.includes("--selftest")) {
     for (const s of [fremd, umleiter]) { s.closeAllConnections(); await new Promise((r) => s.close(r)); }
   }
 
+  // ── Strom-Fehler und Versuche lesbar im Log (11/2026) ──
+  const fehlgeschlagen = { type: "response.failed", sequence_number: 4, response: { id: "r", status: "failed", model: "m",
+    output: [{ type: "reasoning", encrypted_content: "x".repeat(400) }], instructions: "GEHEIM", error: { code: "server_error", message: "Zeile 1\nZeile 2" } } };
+  const fehlerVonFold = async (teile) => { try { await foldResponsesStream(teile); return "kein Fehler"; } catch (e) { return e.message; } };
+  const sf1 = stromFehler(fehlgeschlagen);
+  expect(sf1.includes("server_error") && sf1.includes("Zeile 1\\nZeile 2") && sf1.includes("Modell m") && !sf1.includes("encrypted") && !sf1.includes("GEHEIM"),
+    `response.failed nennt Code, Meldung (ohne Zeilenumbruch) und Modell, nicht output oder instructions (${sf1}).`);
+  const sf2 = stromFehler({ type: "error", error: { type: "server_error", message: "kaputt" }, status: 500 });
+  expect(sf2.includes("server_error") && sf2.includes("kaputt") && sf2.includes("HTTP 500"), `error-Ereignis nennt Typ, Meldung und Status (${sf2}).`);
+  const sf3 = stromFehler({ type: "response.failed", response: { status: "failed", instructions: "GEHEIM", output: [] } });
+  expect(sf3.includes("ohne error-Feld; Felder: status,instructions,output") && !sf3.includes("GEHEIM"), `ohne error-Feld: Feldnamen, keine Werte (${sf3}).`);
+  const imStrom = await fehlerVonFold([Buffer.from(`data: ${JSON.stringify(fehlgeschlagen)}\n\n`)]);
+  expect(imStrom.includes("server_error") && !imStrom.includes("encrypted"), `der Strom meldet den Grund über stromFehler() (${imStrom}).`);
+  const gemeldet = [];
+  const versuche = [() => { throw new Error("eins"); }, () => ({ ok: false, status: 503, reason: "zwei" }), () => ({ ok: true, v: {} }), () => A];
+  const nachDrei = await stimmeHolen(async (a) => versuche[a - 1](), 4, sofort, (a, grund) => gemeldet.push(`${a}:${grund}`));
+  expect(nachDrei === A && gemeldet.join("|") === `1:eins|2:zwei|3:${NICHTANTWORT}`, `jeder gescheiterte Versuch wird gemeldet, der erfolgreiche nicht (${gemeldet.join("|")}).`);
+
   console.log("   ✓ Selbsttest: decide() + modelMatches() + requireApprovals() (Pflicht-Approver Sol + Korroboration) + attestReasons() + attestProof() + validateRangeInputs() + normalizeBase() + authHeader() + strictAnyRefutation() + mdInline() + renderStepSummary() + panelOhneListe() + panelFetch()/fetchModelIds() (keine Weiterleitung) korrekt.");
   process.exit(0);
 }
@@ -1153,6 +1171,24 @@ function extractResponsesText(data) {
  *    Retry-Weiche in verifyOnce darf es erneut versuchen.
  *  - Strom endet OHNE response.completed → WIRFT ebenfalls (transienter Abriss).
  */
+/**
+ * Grund eines Strom-Fehlers fürs Log (11/2026): Code, Meldung, Status, Modell.
+ * Vorher stand dort der Anfang des Rohereignisses, und der brach bei
+ * response.failed im output (encrypted_content) ab, bevor das error-Feld kam.
+ * Nur benannte Felder, jedes escaped und gekürzt: instructions trägt die
+ * Challenge und bleibt draußen.
+ */
+export function stromFehler(ev) {
+  const kurz = (x) => JSON.stringify(String(x)).slice(1, -1).slice(0, 300);
+  const r = ev?.response ?? {};
+  const e = ev?.error ?? r.error;
+  const grund = e ? `${kurz(e.code ?? e.type ?? "ohne Code")}: ${kurz(e.message ?? "(ohne Meldung)")}`
+    : `ohne error-Feld; Felder: ${kurz(Object.keys(ev?.response ?? ev ?? {}).join(","))}`; // Namen, keine Werte
+  const mehr = [r.status && `Status ${kurz(r.status)}`, r.incomplete_details?.reason && `unvollständig: ${kurz(r.incomplete_details.reason)}`,
+    r.model && `Modell ${kurz(r.model)}`, ev?.status && `HTTP ${kurz(ev.status)}`].filter(Boolean).join(", ");
+  return `${kurz(ev?.type ?? "?")}: ${grund}${mehr ? ` (${mehr})` : ""}`;
+}
+
 async function foldResponsesStream(body) {
   const decoder = new TextDecoder();
   let buf = "";
@@ -1172,8 +1208,7 @@ async function foldResponsesStream(body) {
     } else if (type === "response.completed") {
       completed = ev.response ?? {};
     } else if (type === "error" || type === "response.failed") {
-      const detail = JSON.stringify(ev).replace(/\s+/g, " ").slice(0, 300);
-      throw new Error(`Responses-Stream error-Event: ${detail}`);
+      throw new Error(`Responses-Stream error-Event: ${stromFehler(ev)}`);
     }
   };
   for await (const chunk of body) {
@@ -1305,7 +1340,7 @@ async function chatFallback(i, sys, finish, why, primaryStatus) {
  * dass diese Schleife genau diesen Zustand gar nicht mehr liefert. Der Test war
  * grün für etwas, das die Produktion nicht tat.
  */
-export async function stimmeHolen(versuch, attempts = 3, warte = sleep) {
+export async function stimmeHolen(versuch, attempts = 3, warte = sleep, melde = () => {}) {
   let last = { ok: false, reason: "kein Versuch ausgeführt" };
   /**
    * Hat dieser Endpunkt in DIESER Runde schon einmal geantwortet und nichts
@@ -1334,6 +1369,7 @@ export async function stimmeHolen(versuch, attempts = 3, warte = sleep) {
       const jetzt = await versuch(a);
       const wie = zustellung(jetzt);
       if (wie === "stimme") return jetzt;
+      melde(a, jetzt.ok ? NICHTANTWORT : jetzt.reason ?? `Status ${jetzt.status}`);
       // Zugestellt, aber ohne verwertbares Urteil: geantwortet und nichts
       // gesagt. Das wird gemerkt, nicht nur in `last` abgelegt.
       if (jetzt.ok) warStumm = true;
@@ -1344,6 +1380,7 @@ export async function stimmeHolen(versuch, attempts = 3, warte = sleep) {
       last = jetzt;
     } catch (err) {
       last = { ok: false, reason: err instanceof Error ? err.message : String(err) }; // Netzfehler → transient
+      melde(a, last.reason);
     }
     if (a < attempts) await warte(500 * a); // 0,5 s, dann 1,0 s
   }
@@ -1352,7 +1389,13 @@ export async function stimmeHolen(versuch, attempts = 3, warte = sleep) {
   return warStumm ? stummeStimme() : last;
 }
 
-const verifyOnce = (i) => stimmeHolen(() => attemptOnce(i));
+// Jeder gescheiterte Versuch steht mit Dauer im Log, nicht nur der letzte:
+// So ist zu sehen, ob eine Stimme an einer Frist oder am Anbieter scheiterte.
+const verifyOnce = (i) => {
+  let seit = 0;
+  return stimmeHolen(() => { seit = Date.now(); return attemptOnce(i); }, 3, sleep, (a, grund) =>
+    console.log(`[independent-verify] Stimme ${i + 1}, Versuch ${a} nach ${((Date.now() - seit) / 1000).toFixed(1)} s: ${String(grund).replace(/\s+/g, " ").slice(0, 400)}`));
+};
 
 const votes = await Promise.all(Array.from({ length: PANEL }, (_, i) => verifyOnce(i)));
 votes.forEach((x, i) => {
