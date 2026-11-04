@@ -1038,16 +1038,29 @@ if (process.argv.includes("--selftest")) {
   const geheimProbe = "0123456789abcdef01";
   expect(geschwaerzt(`echo ${geheimProbe} und ${geheimProbe}.`, [geheimProbe, "", undefined, "kurz"]) === "echo [geschwärzt] und [geschwärzt].",
     "Schlüssel und Challenge werden im Inhalt geschwärzt, kurze oder leere Werte nicht.");
+  // Kein Anbieter spiegelt genau den Wert: fetch trimmt ihn, Meldungen maskieren oder kürzen ihn,
+  // JSON escaped ihn. Geschwärzt wird deshalb jedes Stück ab acht Zeichen.
+  const bruch = geschwaerzt(`${geheimProbe.slice(0, 12)}**** ${geheimProbe.slice(3, 11)}\\/${geheimProbe.slice(11)}|${geheimProbe.slice(0, 7)}`, [` ${geheimProbe}\n`]);
+  expect(bruch === `[geschwärzt]**** [geschwärzt]\\/${geheimProbe.slice(11)}|${geheimProbe.slice(0, 7)}`, `jedes Stück ab acht Zeichen, auch vom getrimmten Wert (${bruch}).`);
   const endgueltig = [];
   await stimmeHolen(async () => ({ ok: false, status: 400, reason: "vier" }), 3, sofort, (a, grund) => endgueltig.push(`${a}:${grund}`));
   expect(endgueltig.join("|") === "1:vier", `auch ein endgültiger Fehlschlag wird gemeldet (${endgueltig.join("|")}).`);
   expect(nachDrei === A && gemeldet.join("|") === `1:eins|2:zwei|3:${NICHTANTWORT}`, `jeder gescheiterte Versuch wird gemeldet, der erfolgreiche nicht (${gemeldet.join("|")}).`);
   let uhrzeit = 0;
   const dauern = [];
-  await stimmeHolen(async () => { uhrzeit += 2000; throw new Error("x"); }, 3, async (ms) => { uhrzeit += ms; }, (a, g, s) => dauern.push(s), () => uhrzeit);
+  const verlauf = [() => { throw new Error("x"); }, () => ({ ok: false, status: 503, reason: "t" }), () => ({ ok: true, v: {} })];
+  await stimmeHolen(async (a) => { uhrzeit += 2000; return verlauf[a - 1](); }, 3, async (ms) => { uhrzeit += ms; }, (a, g, s) => dauern.push(s), () => uhrzeit);
   expect(dauern.join("|") === "2|2|2", `jeder Versuch misst nur sich, ohne die Wartezeit davor (${dauern.join("|")}).`);
+  const echt = [];
+  await stimmeHolen(async () => { await new Promise((r) => setTimeout(r, 60)); throw new Error("x"); }, 1, sofort, (a, g, s) => echt.push(s));
+  expect(echt[0] >= 0.04, `ohne eingesetzte Uhr misst die Wanduhr (${echt[0]} s).`);
   expect(stromFehler({ type: "error", error: "Ratenlimit, in 20 s" }).includes("Ratenlimit, in 20 s")
     && stromFehler({ type: "error", error: { message: { detail: "tief" } } }).includes("tief"), "auch error als Text und eine Meldung als Objekt erscheinen.");
+  const zeile = [stromFehler({ type: "response.failed\n", status: "1\n", response: { status: "a\n", incomplete_details: { reason: "b\n" }, model: "c\n", error: { code: "d\n", message: "e" } } }),
+    stromFehler({ type: "error", response: { ["f\n::error::x"]: 1 } })].join("");
+  expect(!/[\r\n]/.test(zeile), `kein Feld bricht die Log-Zeile um (${JSON.stringify(zeile)}).`);
+  const tief = JSON.parse("[".repeat(5000) + "]".repeat(5000));
+  expect(JSON.stringify(tiefGeschwaerzt({ notes: tief }, [geheimProbe])).length < 2000, "eine tief verschachtelte Antwort bricht die Anzeige-Kopie nicht ab.");
   expect(JSON.stringify(tiefGeschwaerzt({ a: [geheimProbe, 1, null], [geheimProbe]: true, b: false }, [geheimProbe]))
     === '{"a":["[geschwärzt]",1,null],"[geschwärzt]":true,"b":false}', "tiefGeschwaerzt() schwärzt Werte und Namen, Form und Typen bleiben.");
 
@@ -1055,11 +1068,8 @@ if (process.argv.includes("--selftest")) {
   // in stdout, stderr und Step-Summary steht kein Stück (8 Zeichen) von Schlüssel oder Challenge ──
   const fs = await import("node:fs");
   const ort = fs.mkdtempSync(`${(await import("node:os")).tmpdir()}/iv-lauf-`);
-  const git = (befehl) => execSync(`git -c user.name=t -c user.email=t@t ${befehl}`, { cwd: ort, stdio: "pipe", env: { PATH: process.env.PATH, HOME: ort } }).toString().trim();
-  fs.writeFileSync(`${ort}/a.txt`, "a\n");
-  git("init -q"); git("add a.txt"); git("commit -qm a"); git(`update-ref refs/remotes/origin/main ${git("rev-parse HEAD")}`);
-  fs.writeFileSync(`${ort}/a.txt`, "b\n");
-  git("commit -qam b");
+  const umgebung = { PATH: process.env.PATH, HOME: ort, GIT_CONFIG_NOSYSTEM: "1" }; // kein fremdes Git-Setup (Signatur, Hooks)
+  const git = (befehl) => execSync(`git -c user.name=t -c user.email=t@t ${befehl}`, { cwd: ort, stdio: "pipe", env: umgebung }).toString().trim();
   const challenges = new Set();
   let chatNr = 0;
   const stub = httpPruef.createServer(async (req, res) => {
@@ -1074,14 +1084,14 @@ if (process.argv.includes("--selftest")) {
     else if (model === "m2") { // 200 ohne JSON (V8 zitiert daraus, dann an der Kante), danach 502
       const n = chatNr++;
       if (n > 1) res.writeHead(502);
-      res.end([`{"echo": '${C}${K}'}`, "e".repeat(283) + C][n] ?? "d".repeat(283) + C);
+      res.end([`{"echo": '${C}${K}'}`, "e".repeat(283) + C][n] ?? `${K.slice(0, 12)}****${C.slice(0, 9)}… ${"d".repeat(256)}${C}`);
     }
     else strom({ type: "response.output_text.delta", delta: JSON.stringify({ refuted: true, confidence: [C, K], reason: ["y".repeat(982) + C, `Befund ${K}`] }) }, { type: "response.completed", response: {} });
   });
   await new Promise((r) => stub.listen(0, "127.0.0.1", r));
   const lauf = (schluessel, n) => new Promise((fertig) => {
     const summary = `${ort}/summary-${n}.md`;
-    const kind = spawn(process.execPath, [process.argv[1]], { cwd: ort, env: { PATH: process.env.PATH, HOME: ort, SECOND_VENDOR_API_KEY: schluessel,
+    const kind = spawn(process.execPath, [process.argv[1]], { cwd: ort, env: { ...umgebung, SECOND_VENDOR_API_KEY: schluessel,
       VERIFIER_BASE_URL: `http://127.0.0.1:${stub.address().port}`, VERIFIER_PANEL_MODELS: "m1,m2,m3", VERIFIER_REQUIRED_APPROVER: "m3", GITHUB_STEP_SUMMARY: summary } });
     let aus = "";
     const waechter = setTimeout(() => kind.kill(), 60_000); // ein Hänger wird rot, nicht endlos
@@ -1090,21 +1100,29 @@ if (process.argv.includes("--selftest")) {
     kind.on("close", (code) => { clearTimeout(waechter); fertig({ code, aus, summary: fs.existsSync(summary) ? fs.readFileSync(summary, "utf8") : "" }); });
   });
   const stueck = (text, geheim) => geheim.flatMap((g) => Array.from({ length: g.length - 7 }, (_, i) => g.slice(i, i + 8))).find((s) => text.includes(s));
-  const K1 = `k${randomBytes(16).toString("hex")}`, K2 = `k${randomBytes(12).toString("hex")}\n${randomBytes(12).toString("hex")}`;
+  // K1 wie ein Secret mit Zeilenende (fetch sendet ihn getrimmt), K2 mit Umbruch innen: fetch wirft und zitiert ihn getrimmt.
+  const K1 = `k${randomBytes(16).toString("hex")}\n`, K2 = ` k${randomBytes(12).toString("hex")}\n${randomBytes(12).toString("hex")}\n`;
+  let l1, l2;
   try {
-    const [l1, l2] = await Promise.all([lauf(K1, 1), lauf(K2, 2)]);
-    const leck1 = stueck(l1.aus + l1.summary, [K1, ...challenges]);
-    expect(l1.code === 1 && challenges.size === 1 && l1.summary.includes("[geschwärzt]") && !leck1,
-      `kein Stück von Schlüssel oder Challenge in Log oder Summary (Exit ${l1.code}, Leck ${JSON.stringify(leck1)}):\n${l1.aus}\n${l1.summary}`);
-    expect([1, 2].every((s) => l1.aus.includes(`Stimme ${s}, Versuch 3 nach `)) && l1.aus.includes("response.failed: ccc") && l1.aus.includes("Chat-Antwort ist kein JSON") && l1.aus.includes("Chat-Fallback 502: ddd")
-      && l1.aus.includes(`Begründung: ["y`) && l1.aus.includes("⛔ Pflicht-Approver-Gate"), `jeder Versuch, Strom- und Chat-Grund, die Begründung als JSON, der Abbruch stehen im Log:\n${l1.aus}`);
-    const leck2 = stueck(l2.aus + l2.summary, [K2]);
-    expect(l2.code === 1 && l2.aus.includes("Stimme 1, Versuch 3 nach ") && !leck2,
-      `ein Schlüssel mit Zeilenumbruch steht auch in Fehlermeldungen nicht im Log (Exit ${l2.code}, Leck ${JSON.stringify(leck2)}):\n${l2.aus}`);
+    fs.writeFileSync(`${ort}/a.txt`, "a\n");
+    git("init -q"); git("add a.txt"); git("commit -qm a"); git(`update-ref refs/remotes/origin/main ${git("rev-parse HEAD")}`);
+    fs.writeFileSync(`${ort}/a.txt`, "b\n");
+    git("commit -qam b");
+    [l1, l2] = await Promise.all([lauf(K1, 1), lauf(K2, 2)]);
   } finally {
     stub.closeAllConnections();
     await new Promise((r) => stub.close(r));
     fs.rmSync(ort, { recursive: true, force: true });
+  }
+  {
+    const leck1 = stueck(l1.aus + l1.summary, [K1, ...challenges]);
+    expect(l1.code === 1 && challenges.size === 1 && l1.summary.includes("[geschwärzt]") && !leck1,
+      `kein Stück von Schlüssel oder Challenge in Log oder Summary (Exit ${l1.code}, Leck ${JSON.stringify(leck1)}):\n${l1.aus}\n${l1.summary}`);
+    expect([1, 2].every((s) => l1.aus.includes(`Stimme ${s}, Versuch 3 nach `)) && l1.aus.includes("response.failed: ccc") && l1.aus.includes("Chat-Antwort ist kein JSON") && l1.aus.includes("Chat-Fallback 502: [geschwärzt]****[geschwärzt]… ddd")
+      && l1.aus.includes(`Begründung: ["y`) && l1.aus.includes("⛔ Pflicht-Approver-Gate"), `jeder Versuch, Strom- und Chat-Grund, die Begründung als JSON, der Abbruch stehen im Log:\n${l1.aus}`);
+    const leck2 = stueck(l2.aus + l2.summary, [K2]);
+    expect(l2.code === 1 && l2.aus.includes("Stimme 1, Versuch 3 nach ") && !leck2,
+      `ein Schlüssel mit Zeilenumbruch steht auch in Fehlermeldungen nicht im Log (Exit ${l2.code}, Leck ${JSON.stringify(leck2)}):\n${l2.aus}`);
   }
 
   console.log("   ✓ Selbsttest: decide() + modelMatches() + requireApprovals() (Pflicht-Approver Sol + Korroboration) + attestReasons() + attestProof() + validateRangeInputs() + normalizeBase() + authHeader() + strictAnyRefutation() + mdInline() + renderStepSummary() + panelOhneListe() + panelFetch()/fetchModelIds() (keine Weiterleitung) korrekt.");
@@ -1251,18 +1269,35 @@ function extractResponsesText(data) {
  * ohne Schlüssel und Challenge — auch wenn ein Anbieter sie zurückspiegelt.
  * Ein Feld-Filter reicht dafür nicht: Die Meldung selbst schreibt der Anbieter.
  * Die Challenge ist kein GitHub-Secret; der Runner maskiert sie nicht.
+ *
+ * Geschwärzt wird JEDES Stück ab acht Zeichen, nicht nur der ganze Wert: Kaum ein
+ * Anbieter spiegelt genau ihn. fetch sendet den Schlüssel getrimmt, Meldungen
+ * maskieren ihn („sk-abc12345****wxyz") oder kürzen, JSON escaped ihn („\/").
+ * Benachbarte Stücke werden eine Schwärzung.
  */
 export function geschwaerzt(text, geheim) {
-  let t = String(text);
-  for (const g of geheim) if (typeof g === "string" && g.length >= 8) t = t.split(g).join("[geschwärzt]");
-  return t;
+  const t = String(text);
+  const weg = new Uint8Array(t.length);
+  for (const g of geheim) {
+    if (typeof g !== "string" || g.length < 8) continue;
+    for (let i = 0; i + 8 <= g.length; i++) {
+      const stueck = g.slice(i, i + 8);
+      for (let p = t.indexOf(stueck); p !== -1; p = t.indexOf(stueck, p + 1)) weg.fill(1, p, p + 8);
+    }
+  }
+  let aus = "";
+  for (let i = 0; i < t.length; i++) if (!weg[i]) aus += t[i]; else if (!weg[i - 1]) aus += "[geschwärzt]";
+  return aus;
 }
 
-/** Wie geschwaerzt(), aber durch Felder und Listen hindurch; Form und Typen bleiben. */
-export function tiefGeschwaerzt(x, geheim) {
+/** Wie geschwaerzt(), aber durch Felder und Listen hindurch; Form und Typen bleiben.
+ *  Ab Tiefe 20 nur noch ein Platzhalter: Die Kopie ist für die Anzeige, und eine
+ *  tief verschachtelte Modellantwort darf sie nicht am Stapel scheitern lassen. */
+export function tiefGeschwaerzt(x, geheim, tiefe = 0) {
   if (typeof x === "string") return geschwaerzt(x, geheim);
-  if (Array.isArray(x)) return x.map((y) => tiefGeschwaerzt(y, geheim));
-  if (x && typeof x === "object") return Object.fromEntries(Object.entries(x).map(([k, y]) => [geschwaerzt(k, geheim), tiefGeschwaerzt(y, geheim)]));
+  if (x && typeof x === "object" && tiefe >= 20) return "[zu tief]";
+  if (Array.isArray(x)) return x.map((y) => tiefGeschwaerzt(y, geheim, tiefe + 1));
+  if (x && typeof x === "object") return Object.fromEntries(Object.entries(x).map(([k, y]) => [geschwaerzt(k, geheim), tiefGeschwaerzt(y, geheim, tiefe + 1)]));
   return x;
 }
 
