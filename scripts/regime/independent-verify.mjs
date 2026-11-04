@@ -1027,6 +1027,9 @@ if (process.argv.includes("--selftest")) {
     `response.failed nennt Code, Meldung (ohne Zeilenumbruch) und Modell, nicht output oder instructions (${sf1}).`);
   const sf2 = stromFehler({ type: "error", error: { type: "server_error", message: "kaputt" }, status: 500 });
   expect(sf2.includes("server_error") && sf2.includes("kaputt") && sf2.includes("HTTP 500"), `error-Ereignis nennt Typ, Meldung und Status (${sf2}).`);
+  // Das dokumentierte error-Ereignis der Responses-API trägt code/message oben, nicht unter error.
+  const sf4 = stromFehler({ type: "error", code: "rate_limit_exceeded", message: "Rate limit reached", param: null, sequence_number: 3 });
+  expect(sf4.includes("rate_limit_exceeded: Rate limit reached"), `error-Ereignis mit code/message oben (${sf4}).`);
   const sf3 = stromFehler({ type: "response.failed", response: { status: "failed", instructions: "GEHEIM", output: [] } });
   expect(sf3.includes("ohne error-Feld; Felder: status,instructions,output") && !sf3.includes("GEHEIM"), `ohne error-Feld: Feldnamen, keine Werte (${sf3}).`);
   const imStrom = await fehlerVonFold([Buffer.from(`data: ${JSON.stringify(fehlgeschlagen)}\n\n`)]);
@@ -1034,6 +1037,9 @@ if (process.argv.includes("--selftest")) {
   const gemeldet = [];
   const versuche = [() => { throw new Error("eins"); }, () => ({ ok: false, status: 503, reason: "zwei" }), () => ({ ok: true, v: {} }), () => A];
   const nachDrei = await stimmeHolen(async (a) => versuche[a - 1](), 4, sofort, (a, grund) => gemeldet.push(`${a}:${grund}`));
+  const endgueltig = [];
+  await stimmeHolen(async () => ({ ok: false, status: 400, reason: "vier" }), 3, sofort, (a, grund) => endgueltig.push(`${a}:${grund}`));
+  expect(endgueltig.join("|") === "1:vier", `auch ein endgültiger Fehlschlag wird gemeldet (${endgueltig.join("|")}).`);
   expect(nachDrei === A && gemeldet.join("|") === `1:eins|2:zwei|3:${NICHTANTWORT}`, `jeder gescheiterte Versuch wird gemeldet, der erfolgreiche nicht (${gemeldet.join("|")}).`);
 
   console.log("   ✓ Selbsttest: decide() + modelMatches() + requireApprovals() (Pflicht-Approver Sol + Korroboration) + attestReasons() + attestProof() + validateRangeInputs() + normalizeBase() + authHeader() + strictAnyRefutation() + mdInline() + renderStepSummary() + panelOhneListe() + panelFetch()/fetchModelIds() (keine Weiterleitung) korrekt.");
@@ -1181,7 +1187,8 @@ function extractResponsesText(data) {
 export function stromFehler(ev) {
   const kurz = (x) => JSON.stringify(String(x)).slice(1, -1).slice(0, 300);
   const r = ev?.response ?? {};
-  const e = ev?.error ?? r.error;
+  // Verschachtelt (error: {…}, response.error) oder, wie im dokumentierten error-Ereignis, oben.
+  const e = ev?.error ?? r.error ?? (ev && "message" in ev ? { code: ev.code, message: ev.message } : null);
   const grund = e ? `${kurz(e.code ?? e.type ?? "ohne Code")}: ${kurz(e.message ?? "(ohne Meldung)")}`
     : `ohne error-Feld; Felder: ${kurz(Object.keys(ev?.response ?? ev ?? {}).join(","))}`; // Namen, keine Werte
   const mehr = [r.status && `Status ${kurz(r.status)}`, r.incomplete_details?.reason && `unvollständig: ${kurz(r.incomplete_details.reason)}`,
