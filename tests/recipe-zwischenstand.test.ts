@@ -125,7 +125,9 @@ describe("Schlüssel", () => {
   it("ein Schlüssel zum Verwerfen ist genau einer der beiden Formen — sonst nichts", () => {
     expect(istZwischenstandSchluessel("rezept:5")).toBe(true);
     expect(istZwischenstandSchluessel("neu:3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b")).toBe(true);
-    for (const wert of ["rezept:0", "rezept:05", "rezept:", "rezept:5x", "neu:kurz", "", 5, null, undefined]) {
+    // „xrezept:5" und die Liste: Ohne Anker am Anfang bzw. ohne Typprüfung gingen beide durch —
+    // eine Liste wird beim Mustervergleich still zu ihrem einzigen Eintrag.
+    for (const wert of ["rezept:0", "rezept:05", "rezept:", "rezept:5x", "xrezept:5", ["rezept:5"], "neu:kurz", "", 5, null, undefined]) {
       expect(istZwischenstandSchluessel(wert), String(wert)).toBe(false);
     }
   });
