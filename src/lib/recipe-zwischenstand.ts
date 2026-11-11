@@ -16,6 +16,10 @@
  * werden mit fester Uhr geprüft (tests/recipe-zwischenstand.test.ts). Die
  * Datei importiert nichts: Der Editor im Browser soll sie für den
  * Fingerabdruck laden können, ohne die Datenbank oder zod mitzuziehen.
+ *
+ * Noch ruft nichts diese Regeln auf: Ablage, Endpunkt und Editor folgen in
+ * eigenen Schritten. Was die Kommentare unten über sie sagen, ist die Vorgabe
+ * für sie, noch kein Verhalten.
  */
 
 /** Das rohe Formular: je Feldname die Werte in Formularreihenfolge. */
@@ -65,7 +69,10 @@ export function schluesselFuerNeu(kennung: string): string {
 }
 
 const NEU_SCHLUESSEL = /^neu:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-const REZEPT_SCHLUESSEL = /^rezept:[1-9]\d*$/;
+// Höchstens 15 Stellen: Bis dahin ist jede Ziffernfolge als Zahl exakt (2^53
+// hat 16). Darüber rundet `Number`, ab 22 Stellen schreibt es sich mit
+// Exponent — aus geprüftem Text würde die Nummer eines anderen Rezepts.
+const REZEPT_SCHLUESSEL = /^rezept:[1-9]\d{0,14}$/;
 
 /** Ein Schlüssel eines neuen Rezepts, genau in der Form, die der Editor vergibt. */
 export function istNeuSchluessel(wert: unknown): wert is string {
@@ -87,7 +94,12 @@ export function istZwischenstandSchluessel(wert: unknown): wert is string {
  */
 export function schluesselAus(daten: ZwischenstandDaten): string | null {
   const id = daten.id?.[0];
-  if (id !== undefined) return /^[1-9]\d*$/.test(id) ? schluesselFuerRezept(Number(id)) : null;
+  if (id !== undefined) {
+    // Der Schlüssel trägt genau die geprüften Ziffern — nicht ihre Rückschrift
+    // aus einer Zahl. Ein Muster entscheidet, hier wie beim Verwerfen.
+    const schluessel = `rezept:${id}`;
+    return REZEPT_SCHLUESSEL.test(schluessel) ? schluessel : null;
+  }
   const neu = daten[SCHLUESSEL_FELD]?.[0];
   return istNeuSchluessel(neu) ? neu : null;
 }

@@ -78,6 +78,20 @@ describe("formularAlsDaten", () => {
   it("behält auch den leeren Wert — ein geleertes Feld ist eine Änderung", () => {
     expect(formularAlsDaten(formular([["slug", ""]]))).toEqual({ slug: [""] });
   });
+
+  it("lässt den Text, wie er ist — Leerraum am Rand ist Inhalt", () => {
+    // Der Speicherweg trimmt jedes Textfeld; der Zwischenstand darf das nicht nachmachen.
+    // Zwei Leerzeichen am Zeilenende sind in Markdown ein Umbruch, und ein nur um ein
+    // Leerzeichen geändertes Feld ist für den Fingerabdruck eine Änderung.
+    const daten = formularAlsDaten(
+      formular([
+        ["titel", " Linsen "],
+        ["tipps", "  Rand  \n"],
+      ]),
+    );
+    expect(daten).toEqual({ titel: [" Linsen "], tipps: ["  Rand  \n"] });
+    expect(fingerabdruck(daten)).not.toBe(fingerabdruck({ titel: ["Linsen"], tipps: ["Rand"] }));
+  });
 });
 
 describe("fingerabdruck", () => {
@@ -118,6 +132,8 @@ describe("Schlüssel", () => {
       { id: ["abc"] },
       { id: ["1.5"] },
       { id: ["-3"] },
+      // Eine ungültige Nummer fällt nicht auf die Kennung zurück: Das Formular meint ein Rezept.
+      { id: ["abc"], zwischenstandSchluessel: ["neu:3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b"] },
       { zwischenstandSchluessel: ["rezept:12"] },
       { zwischenstandSchluessel: ["neu:kurz"] },
       { zwischenstandSchluessel: ["neu:3F2A1B4C-5D6E-4F70-8A9B-0C1D2E3F4A5B"] },
@@ -135,6 +151,18 @@ describe("Schlüssel", () => {
     expect(istNeuSchluessel("neu:3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5bx")).toBe(false);
     expect(istNeuSchluessel("xneu:3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b")).toBe(false);
     expect(istNeuSchluessel(["neu:3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b"])).toBe(false);
+  });
+
+  it("die Rezeptnummer hat höchstens 15 Stellen — bis dahin ist sie als Zahl exakt", () => {
+    // Geprüft wird Text, gerechnet wird später mit einer Zahl. Ab 2^53 (16 Stellen) rundet
+    // die, ab 22 Stellen schreibt sie sich mit Exponent: Aus der geprüften Ziffernfolge würde
+    // der Schlüssel eines ANDEREN Rezepts oder eine Zeichenkette, die gar kein Schlüssel ist.
+    expect(schluesselAus({ id: ["999999999999999"] })).toBe("rezept:999999999999999");
+    expect(istZwischenstandSchluessel("rezept:999999999999999")).toBe(true);
+    for (const nummer of ["1000000000000000", "9007199254740993", "1000000000000000000000", "1" + "0".repeat(400)]) {
+      expect(schluesselAus({ id: [nummer] }), nummer.slice(0, 24)).toBeNull();
+      expect(istZwischenstandSchluessel(`rezept:${nummer}`), nummer.slice(0, 24)).toBe(false);
+    }
   });
 
   it("ein Schlüssel zum Verwerfen ist genau einer der beiden Formen — sonst nichts", () => {
