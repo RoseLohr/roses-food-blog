@@ -387,6 +387,47 @@ wird. Wer sie entfernt oder anhebt, lockert ohne Gegengewicht. Gemessen in
   unkontrollierten Felder verloren — HERGELEITET, nicht gemessen; es gibt
   keinen Spec für `/admin/reisen`.
 
+## Zwischenstand im Rezept-Editor (11/2026) — sichern ohne zu speichern
+Die Regeln, nach denen ein Zwischenstand des Editors (das ROHE Formular als
+`Record<string, string[]>`, eine Zeile je Schlüssel `rezept:<id>` oder
+`neu:<uuid>`) gelesen, verglichen und wiederhergestellt wird, stehen EINMAL in
+`src/lib/recipe-zwischenstand.ts` (rein, im Mutations-Scope). **Noch ruft sie
+nichts auf:** Ablage, Endpunkt und Editor folgen in eigenen Schritten. Bis
+dahin beschreibt dieser Abschnitt Regeln, kein Verhalten der Oberfläche.
+
+- **Wiederherstellen deutet nicht, aber es prüft:** `editorAusDaten` legt das
+  Formular über die Anfangswerte; Text bleibt ungetrimmt, Zahlen nur, wenn sie
+  welche sind. Was ein FEHLENDES Feld heißt, hängt davon ab, ob der Editor es
+  immer schickt: Titelbild, Saisonwochen, Saison-Schalter und Häkchen stehen
+  nur im Formular, wenn etwas gewählt ist (der `ImagePicker` schreibt für
+  „kein Bild" KEIN Feld) — fehlen sie, hat der Redakteur sich so entschieden,
+  und das Ergebnis ist, was Speichern daraus machte: kein Bild, Saison aus.
+  Die Basis zurückzuholen machte seine Entscheidung still rückgängig (so kam
+  im ersten Anlauf ein entferntes Titelbild zurück). Alles andere schickt der
+  Editor immer; fehlt es, stammt das Formular nicht von ihm, und die Basis
+  bleibt. Ein geleertes Zahlenfeld ist, was Speichern daraus machte (0 bzw.
+  null). Verweise auf gelöschte Bilder und Taxonomien werden verworfen
+  (sonst bräche beim Speichern der Fremdschlüssel), unbrauchbares JSON macht
+  den ganzen Stand unbrauchbar — er wird dann gar nicht angeboten. Angeboten
+  wird nur, was nicht älter ist als das gespeicherte Rezept.
+- **Geprüft wird Text, gerechnet wird mit Zahlen.** Eine NUMMER (Rezept im
+  Schlüssel, Bild, Häkchen) ist eine reine Ziffernfolge mit höchstens 15
+  Stellen: `Number()` rundet ab 2^53 und schreibt sich ab 22 Stellen mit
+  Exponent — aus der geprüften Folge `9007199254740993` wurde im ersten Anlauf
+  der Schlüssel des Rezepts `…992`. Ein ZAHLENFELD (Zeiten, Portionen, kcal,
+  Saisonwochen) kommt dagegen zurück, wie der Browser es hielt, auch `412.5`
+  oder eine vertippte `-5`: Zurückweisen und Runden ist Sache des Speicherns.
+  Stünde stattdessen der gespeicherte Wert da, sähe der Redakteur eine Zahl,
+  die er nicht getippt hat. Nur was kein Zahlenfeld halten kann (`abc`,
+  ` 5 `, `0x10`, unendlich), bleibt die Basis.
+- **Übernommen werden nur die geprüften Felder.** Abschnitte und Notizen
+  werden Feld für Feld neu gebaut; was das JSON sonst noch mitbringt, kam im
+  ersten Anlauf ungeprüft in die Anfangswerte, und ein tief verschachtelter
+  Fremdwert ließ die Seite beim Ausliefern scheitern.
+- **Feldnamen sind Nutzereingabe.** `formularAlsDaten` sammelt in ein Objekt
+  OHNE Prototyp; auf einem gewöhnlichen träfe `__proto__` oder `constructor`
+  eine geerbte Eigenschaft, und das Sammeln würfe.
+
 ## Gemeinsame Bausteine — benutzen statt abschreiben
 Wer im Admin eine Seite anlegt oder ändert, nimmt diese und schreibt sie nicht
 neu (B6, 08/2026):

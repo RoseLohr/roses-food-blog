@@ -225,6 +225,16 @@ describe("editorAusDaten — das Formular zurück in die Anfangswerte", () => {
     seoTitel: ["Linsen"],
     seoBeschreibung: ["Beschreibung"],
     status: ["veroeffentlicht"],
+    abschnitte: [
+      JSON.stringify([
+        {
+          name: "Sugo",
+          ingredients: [{ name: "Linsen", amount: "250", unit: "g", note: "" }],
+          steps: [{ text: "Köcheln.", imageId: 9 }],
+        },
+      ]),
+    ],
+    notizen: [JSON.stringify([{ text: "Intern", isPublic: false }])],
     kategorien: ["2", "1"],
     schlagwoerter: ["10"],
     ernaehrungsformen: ["4"],
@@ -235,7 +245,7 @@ describe("editorAusDaten — das Formular zurück in die Anfangswerte", () => {
     zwischenstandSchluessel: ["rezept:12"],
   };
 
-  it("bildet jedes Feld ab — Zahlen als Zahlen, Häkchen als Listen", () => {
+  it("bildet jedes Feld ab — Zahlen als Zahlen, Häkchen als Listen, Abschnitte und Notizen aus dem JSON", () => {
     const ergebnis = editorAusDaten(daten, { ...BASIS, id: 12 }, ERLAUBT);
     expect(ergebnis).not.toBeNull();
     expect(ergebnis!.initial).toEqual({
@@ -256,8 +266,14 @@ describe("editorAusDaten — das Formular zurück in die Anfangswerte", () => {
       seoTitle: "Linsen",
       seoDescription: "Beschreibung",
       status: "veroeffentlicht",
-      sections: [],
-      notes: [],
+      sections: [
+        {
+          name: "Sugo",
+          ingredients: [{ name: "Linsen", amount: "250", unit: "g", note: "" }],
+          steps: [{ text: "Köcheln.", imageId: 9 }],
+        },
+      ],
+      notes: [{ text: "Intern", isPublic: false }],
       taxonomySelections: { kategorien: [2, 1], schlagwoerter: [10], ernaehrungsformen: [4], kuechen: [5], geraete: [6] },
     });
     expect(ergebnis!.taxonomiePending).toEqual({ kategorien: ["Suppe"], geraete: ["Wok"] });
@@ -307,13 +323,15 @@ describe("editorAusDaten — das Formular zurück in die Anfangswerte", () => {
     expect(editorAusDaten({ id: ["99"] }, BASIS, ERLAUBT)!.initial.id).toBeNull();
   });
 
-  it("geleert ist geleert: ein leeres Textfeld bleibt leer — die Basis kommt nicht zurück", () => {
+  it("geleert ist geleert: ein leeres Textfeld, keine Notiz, kein Abschnitt — die Basis kommt nicht zurück", () => {
     const leer = editorAusDaten(
-      { titel: [""], slug: [""], teaser: [""], tipps: [""], seoTitel: [""], seoBeschreibung: [""] },
+      { titel: [""], slug: [""], teaser: [""], tipps: [""], seoTitel: [""], seoBeschreibung: [""], abschnitte: ["[]"], notizen: ["[]"] },
       GESPEICHERT,
       ERLAUBT,
     )!.initial;
     expect([leer.title, leer.slug, leer.teaser, leer.tips, leer.seoTitle, leer.seoDescription]).toEqual(["", "", "", "", "", ""]);
+    expect(leer.sections).toEqual([]);
+    expect(leer.notes).toEqual([]);
   });
 
   it("ein vorgemerkter neuer Name zählt auch ohne ein Häkchen im selben Feld", () => {
@@ -397,6 +415,42 @@ describe("editorAusDaten — das Formular zurück in die Anfangswerte", () => {
     }
   });
 
+  it("ein Schritt ohne Foto ist der Regelfall und bleibt ein Schritt; die Form wird genau geprüft", () => {
+    const ergebnis = editorAusDaten(
+      {
+        abschnitte: [
+          JSON.stringify([
+            {
+              name: "",
+              ingredients: [{ name: "Mehl", amount: "1", unit: "kg", note: "" }],
+              steps: [
+                { text: "Rühren.", imageId: null },
+                { text: "Backen.", imageId: 9 },
+              ],
+            },
+          ]),
+        ],
+      },
+      BASIS,
+      ERLAUBT,
+    );
+    expect(ergebnis).not.toBeNull();
+    expect(ergebnis!.initial.sections[0].steps.map((s) => s.imageId)).toEqual([null, 9]);
+
+    // Eine Zutat ohne `note`, ein Schritt mit Text als Bildnummer: nicht die
+    // Form des Editors — der Stand ist unbrauchbar, nicht „fast richtig".
+    for (const abschnitt of [
+      { name: "", ingredients: [{ name: "Mehl", amount: "1", unit: "kg" }], steps: [] },
+      { name: "", ingredients: [], steps: [{ text: "x", imageId: "9" }] },
+      { name: "", ingredients: [], steps: [{ text: 5, imageId: null }] },
+    ]) {
+      expect(
+        editorAusDaten({ abschnitte: [JSON.stringify([abschnitt])] }, BASIS, ERLAUBT),
+        JSON.stringify(abschnitt),
+      ).toBeNull();
+    }
+  });
+
   it("deutet nichts: Text bleibt ungetrimmt, und der Saison-Schalter ist nur mit genau `ja` an", () => {
     const ergebnis = editorAusDaten({ titel: ["  Rand  "], portionen: ["viele"], saisonal: ["nein"] }, BASIS, ERLAUBT);
     expect(ergebnis!.initial.title).toBe("  Rand  ");
@@ -405,9 +459,101 @@ describe("editorAusDaten — das Formular zurück in die Anfangswerte", () => {
   });
 
   it("lässt nur Bilder und Taxonomien durch, die es noch gibt — ein gelöschtes Bild darf nicht zurückkehren", () => {
-    const ergebnis = editorAusDaten({ titelbild: ["99"], kategorien: ["1", "77"] }, BASIS, ERLAUBT);
+    const ergebnis = editorAusDaten(
+      {
+        titelbild: ["99"],
+        kategorien: ["1", "77"],
+        abschnitte: [JSON.stringify([{ name: "", ingredients: [], steps: [{ text: "x", imageId: 99 }] }])],
+      },
+      BASIS,
+      ERLAUBT,
+    );
     expect(ergebnis!.initial.heroImageId).toBeNull();
     expect(ergebnis!.initial.taxonomySelections).toEqual({ kategorien: [1] });
+    expect(ergebnis!.initial.sections[0].steps[0].imageId).toBeNull();
+  });
+
+  it("prüft jede Stelle der Form einzeln — ein einziger falscher Eintrag macht den Stand unbrauchbar", () => {
+    const zutat = { name: "Mehl", amount: "1", unit: "kg", note: "" };
+    const schritt = { text: "Rühren.", imageId: null };
+    const abschnitt = (teil: object) => [{ name: "a", ingredients: [zutat], steps: [schritt], ...teil }];
+    // Gegenprobe: Die unveränderte Vorlage ist brauchbar — sonst wäre jede Zeile unten grundlos grün.
+    expect(editorAusDaten({ abschnitte: [JSON.stringify(abschnitt({}))] }, BASIS, ERLAUBT)).not.toBeNull();
+    expect(editorAusDaten({ notizen: [JSON.stringify([{ text: "a", isPublic: true }])] }, BASIS, ERLAUBT)).not.toBeNull();
+
+    const abschnitte: unknown[] = [
+      null,
+      "kein Array",
+      {},
+      [null],
+      ["text"],
+      [5],
+      // Der Abschnitt selbst: je ein Feld fehlt oder hat die falsche Art.
+      [{ ingredients: [], steps: [] }],
+      [{ name: "a", ingredients: "x", steps: [] }],
+      [{ name: "a", ingredients: [], steps: "x" }],
+      [{ name: "a", steps: [] }],
+      [{ name: "a", ingredients: [] }],
+      // Die Zutat: je ein Feld fehlt; ein leerer Platz in der Liste.
+      abschnitt({ ingredients: [{ ...zutat, name: undefined }] }),
+      abschnitt({ ingredients: [{ ...zutat, amount: undefined }] }),
+      abschnitt({ ingredients: [{ ...zutat, unit: undefined }] }),
+      abschnitt({ ingredients: [{ ...zutat, note: undefined }] }),
+      abschnitt({ ingredients: [zutat, null] }),
+      // Falsche ART statt Fehlen: eine Menge als Zahl, ein Name als Zahl, `null` als Einheit.
+      abschnitt({ ingredients: [{ ...zutat, name: 5 }] }),
+      abschnitt({ ingredients: [{ ...zutat, amount: 250 }] }),
+      abschnitt({ ingredients: [{ ...zutat, unit: null }] }),
+      abschnitt({ ingredients: [{ ...zutat, note: 0 }] }),
+      abschnitt({ name: 5 }),
+      // Der Schritt: ohne Bildfeld, ohne Text, ein leerer Platz — und EIN falscher unter richtigen.
+      abschnitt({ steps: [{ text: "x" }] }),
+      abschnitt({ steps: [{ imageId: null }] }),
+      abschnitt({ steps: [null] }),
+      abschnitt({ steps: [schritt, { text: 5, imageId: null }] }),
+      // Ein richtiger Abschnitt neben einem falschen.
+      [...abschnitt({}), { name: 1 }],
+    ];
+    for (const wert of abschnitte) {
+      const roh = JSON.stringify(wert);
+      expect(editorAusDaten({ abschnitte: [roh] }, BASIS, ERLAUBT), roh).toBeNull();
+    }
+
+    const notizen: unknown[] = [
+      null,
+      [null],
+      ["text"],
+      [{ isPublic: true }],
+      [{ text: 5, isPublic: true }],
+      [{ text: "a", isPublic: "ja" }],
+      [{ text: "a", isPublic: true }, { text: "b" }],
+    ];
+    for (const wert of notizen) {
+      const roh = JSON.stringify(wert);
+      expect(editorAusDaten({ notizen: [roh] }, BASIS, ERLAUBT), roh).toBeNull();
+    }
+  });
+
+  it("übernimmt nur die geprüften Felder — was das Formular sonst noch mitbringt, kommt nicht in den Editor", () => {
+    // Geprüft sind genau die Felder des Editors. Alles andere reichte der erste Anlauf ungeprüft
+    // durch; ein tief verschachtelter Fremdwert ließ dann die Seite beim Ausliefern scheitern.
+    const tief = JSON.parse("[".repeat(3000) + "]".repeat(3000));
+    const ergebnis = editorAusDaten(
+      {
+        abschnitte: [
+          JSON.stringify([
+            { name: "a", fremd: tief, ingredients: [{ name: "Mehl", amount: "1", unit: "kg", note: "", fremd: tief }], steps: [{ text: "x", imageId: 9, fremd: tief }] },
+          ]),
+        ],
+        notizen: [JSON.stringify([{ text: "n", isPublic: true, fremd: tief }])],
+      },
+      BASIS,
+      ERLAUBT,
+    )!.initial;
+    expect(ergebnis.sections).toStrictEqual([
+      { name: "a", ingredients: [{ name: "Mehl", amount: "1", unit: "kg", note: "" }], steps: [{ text: "x", imageId: 9 }] },
+    ]);
+    expect(ergebnis.notes).toStrictEqual([{ text: "n", isPublic: true }]);
   });
 
   it("ein Häkchen zählt nur als reine Ziffernfolge — was `Number()` sonst noch als Zahl läse, nicht", () => {
@@ -424,6 +570,19 @@ describe("editorAusDaten — das Formular zurück in die Anfangswerte", () => {
   it("ein Häkchen-Feld, für das es keine Liste erlaubter Nummern gibt, lässt nichts durch", () => {
     const ergebnis = editorAusDaten({ kuechen: ["5"] }, BASIS, { bildIds: [], taxonomieIds: {} });
     expect(ergebnis!.initial.taxonomySelections).toEqual({ kuechen: [] });
+  });
+
+  it("ist unbrauchbar (null), wenn Abschnitte oder Notizen kein gültiges JSON der erwarteten Form sind", () => {
+    for (const kaputt of [
+      { abschnitte: ["{nicht json"] },
+      { abschnitte: ["[{\"name\":1}]"] },
+      { abschnitte: ["[{\"name\":\"a\",\"ingredients\":[{\"name\":\"x\"}],\"steps\":[]}]"] },
+      { abschnitte: ["[{\"name\":\"a\",\"ingredients\":[],\"steps\":[\"nur text\"]}]"] },
+      { notizen: ["[{\"text\":\"a\"}]"] },
+      { notizen: ["{}"] },
+    ] as ZwischenstandDaten[]) {
+      expect(editorAusDaten(kaputt, BASIS, ERLAUBT), JSON.stringify(kaputt)).toBeNull();
+    }
   });
 });
 

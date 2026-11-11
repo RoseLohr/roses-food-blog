@@ -14,11 +14,12 @@
  *
  * `editorAusDaten` legt das Formular über die Anfangswerte des Editors. Text
  * bleibt, wie er war (ungetrimmt), Zahlen werden nur übernommen, wenn sie
- * welche sind, sonst bleibt der Wert der Basis. Verworfen werden Verweise auf
- * Bilder und Taxonomien, die es nicht mehr gibt: Ein gelöschtes Bild darf
- * durch einen Zwischenstand nicht zurückkehren — beim Speichern bräche sonst
- * der Fremdschlüssel. Abschnitte und Notizen folgen im nächsten Schritt; bis
- * dahin bleiben es die der Basis.
+ * welche sind, sonst bleibt der Wert der Basis. Zwei Dinge werden verworfen:
+ * Verweise auf Bilder und Taxonomien, die es nicht mehr gibt (ein gelöschtes
+ * Bild darf durch einen Zwischenstand nicht zurückkehren — beim Speichern
+ * bräche sonst der Fremdschlüssel), und Abschnitte/Notizen, deren JSON nicht
+ * die Form hat, die der Editor erwartet — dann ist der ganze Zwischenstand
+ * unbrauchbar (null) und wird gar nicht erst angeboten.
  *
  * ── WARUM REIN ─────────────────────────────────────────────────────────────
  *
@@ -34,6 +35,8 @@
 import type { RecipeEditorProps } from "@/app/admin/(protected)/rezepte/recipe-editor";
 
 export type EditorAnfangswerte = RecipeEditorProps["initial"];
+type Abschnitt = EditorAnfangswerte["sections"][number];
+type Notiz = EditorAnfangswerte["notes"][number];
 
 /** Das rohe Formular: je Feldname die Werte in Formularreihenfolge. */
 export type ZwischenstandDaten = Record<string, string[]>;
@@ -120,6 +123,62 @@ export function schluesselAus(daten: ZwischenstandDaten): string | null {
   return istNeuSchluessel(neu) ? neu : null;
 }
 
+function istText(x: unknown): x is string {
+  return typeof x === "string";
+}
+
+/**
+ * Die Felder eines Werts aus JSON zum Nachsehen. Was kein Objekt ist, hat
+ * keine: Ein leerer Platz (`null`) bekommt ein leeres Objekt, an Text oder
+ * Zahl findet sich unter keinem der geprüften Namen etwas — jede Prüfung
+ * darauf fällt durch, ohne dass hier nach der Art gefragt werden müsste.
+ */
+function felder(x: unknown): Record<string, unknown> {
+  return (x ?? {}) as Record<string, unknown>;
+}
+
+function istZutat(x: unknown): x is Abschnitt["ingredients"][number] {
+  const z = felder(x);
+  return istText(z.name) && istText(z.amount) && istText(z.unit) && istText(z.note);
+}
+
+function istSchritt(x: unknown): x is Abschnitt["steps"][number] {
+  const s = felder(x);
+  return istText(s.text) && (s.imageId === null || typeof s.imageId === "number");
+}
+
+function istAbschnitt(x: unknown): x is Abschnitt {
+  const a = felder(x);
+  return (
+    istText(a.name) &&
+    Array.isArray(a.ingredients) &&
+    a.ingredients.every(istZutat) &&
+    Array.isArray(a.steps) &&
+    a.steps.every(istSchritt)
+  );
+}
+
+function istNotiz(x: unknown): x is Notiz {
+  const n = felder(x);
+  return istText(n.text) && typeof n.isPublic === "boolean";
+}
+
+/**
+ * Eine JSON-Liste aus einem Feld — `undefined`, wenn das Feld fehlt (dann
+ * gilt die Basis), `null`, wenn es da ist, aber nicht die erwartete Form hat.
+ */
+function listeAus<T>(roh: string | undefined, passt: (x: unknown) => x is T): T[] | null | undefined {
+  if (roh === undefined) return undefined;
+  let wert: unknown;
+  try {
+    wert = JSON.parse(roh);
+  } catch {
+    // Kein JSON — der Zwischenstand ist unbrauchbar, nicht reparierbar.
+    return null;
+  }
+  return Array.isArray(wert) && wert.every(passt) ? wert : null;
+}
+
 /**
  * Eine NUMMER (Bild, Häkchen): reine Ziffernfolge, höchstens 15 Stellen — aus
  * demselben Grund wie beim Schlüssel: Bis dahin ist sie als Zahl exakt.
@@ -172,16 +231,16 @@ export interface WiederhergestellterEditor {
  * hielt, kommt als Zahl zurück, auch 412.5 oder -5: Sonst stünde nach dem
  * Wiederherstellen still der gespeicherte Wert da, den niemand getippt hat.
  * Nur was kein Zahlenfeld halten kann, bleibt die Basis.
- *
- * `null` heißt: Der Zwischenstand ist unbrauchbar und wird nicht angeboten.
- * Dazu führen erst Abschnitte oder Notizen in falscher Form — die liest der
- * nächste Schritt; bis dahin kommt hier immer ein Ergebnis zurück.
  */
 export function editorAusDaten(
   daten: ZwischenstandDaten,
   basis: EditorAnfangswerte,
   erlaubt: { bildIds: Iterable<number>; taxonomieIds: Record<string, number[]> },
 ): WiederhergestellterEditor | null {
+  const abschnitte = listeAus(daten.abschnitte?.[0], istAbschnitt);
+  const notizen = listeAus(daten.notizen?.[0], istNotiz);
+  if (abschnitte === null || notizen === null) return null;
+
   // Mit `null` im Typ: „kein Bild" ist nie in der Menge und bleibt, was es ist.
   const bilder = new Set<number | null>(erlaubt.bildIds);
   const feld = (name: string) => daten[name]?.[0];
@@ -236,10 +295,14 @@ export function editorAusDaten(
       seoTitle: text("seoTitel", basis.seoTitle),
       seoDescription: text("seoBeschreibung", basis.seoDescription),
       status: text("status", basis.status),
-      // Abschnitte und Notizen stehen als JSON im Formular; ihre Prüfung
-      // folgt im nächsten Schritt. Bis dahin bleiben es die der Basis.
-      sections: basis.sections,
-      notes: basis.notes,
+      // Feld für Feld neu gebaut: Geprüft sind genau diese Felder. Was das
+      // JSON sonst noch mitbringt, käme ungeprüft in die Anfangswerte.
+      sections: (abschnitte ?? basis.sections).map((a) => ({
+        name: a.name,
+        ingredients: a.ingredients.map((z) => ({ name: z.name, amount: z.amount, unit: z.unit, note: z.note })),
+        steps: a.steps.map((s) => ({ text: s.text, imageId: bild(s.imageId) })),
+      })),
+      notes: (notizen ?? basis.notes).map((n) => ({ text: n.text, isPublic: n.isPublic })),
       taxonomySelections,
     },
     taxonomiePending,
