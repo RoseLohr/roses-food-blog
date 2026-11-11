@@ -60,6 +60,21 @@ describe("formularAlsDaten", () => {
     expect(formularAlsDaten(fd)).toEqual({ titel: ["x"] });
   });
 
+  it("nimmt jeden Feldnamen als bloßen Namen — auch einen, den jedes Objekt schon erbt", () => {
+    // Feldnamen sind Nutzereingabe aus dem Browser. Auf einem gewöhnlichen Objekt träfe
+    // `__proto__` oder `constructor` eine geerbte Eigenschaft, und das Sammeln würfe.
+    const daten = formularAlsDaten(
+      formular([
+        ["__proto__", "a"],
+        ["constructor", "b"],
+        ["titel", "x"],
+      ]),
+    );
+    expect(fingerabdruck(daten)).toBe('[["__proto__",["a"]],["constructor",["b"]],["titel",["x"]]]');
+    // Auch nach dem Weg durch JSON, so wie die Ablage ihn zurückgibt.
+    expect(fingerabdruck(JSON.parse(JSON.stringify(daten)))).toBe(fingerabdruck(daten));
+  });
+
   it("behält auch den leeren Wert — ein geleertes Feld ist eine Änderung", () => {
     expect(formularAlsDaten(formular([["slug", ""]]))).toEqual({ slug: [""] });
   });

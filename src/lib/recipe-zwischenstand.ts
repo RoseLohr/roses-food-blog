@@ -30,7 +30,10 @@ export const ZWISCHENSTAND_AUFBEWAHRUNG_MS = 30 * 24 * 60 * 60 * 1000;
 export const SCHLUESSEL_FELD = "zwischenstandSchluessel";
 
 export function formularAlsDaten(fd: FormData): ZwischenstandDaten {
-  const daten: ZwischenstandDaten = {};
+  // Ohne Prototyp: Feldnamen sind Nutzereingabe, und auf einem gewöhnlichen
+  // Objekt träfe `__proto__` oder `constructor` eine geerbte Eigenschaft —
+  // das Sammeln würfe, statt den Namen als bloßen Namen zu nehmen.
+  const daten: ZwischenstandDaten = Object.create(null);
   for (const [name, wert] of fd.entries()) {
     // Dateien gehören nicht in den Zwischenstand — Bilder gehen ohnehin über
     // die Medienbibliothek und stehen hier nur als Nummer.
