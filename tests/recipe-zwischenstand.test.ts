@@ -15,12 +15,16 @@ import {
   ZWISCHENSTAND_AUFBEWAHRUNG_MS,
   ZWISCHENSTAND_TAKT_MS,
   aufbewahrungsgrenze,
+  datenAusJson,
   editorAusDaten,
   fingerabdruck,
   formularAlsDaten,
+  istFremderStand,
   istNeuSchluessel,
   istZwischenstandSchluessel,
+  naechsterStand,
   nichtAelterAls,
+  rezeptnummerAus,
   schluesselAus,
   schluesselFuerNeu,
   schluesselFuerRezept,
@@ -121,6 +125,45 @@ describe("formularAlsDaten", () => {
     );
     expect(daten).toEqual({ titel: [" Linsen "], tipps: ["  Rand  \n"] });
     expect(fingerabdruck(daten)).not.toBe(fingerabdruck({ titel: ["Linsen"], tipps: ["Rand"] }));
+  });
+});
+
+describe("datenAusJson — das Formular zurück aus der Ablage", () => {
+  it("liest, was formularAlsDaten geschrieben hat — auch Feldnamen, die jedes Objekt erbt", () => {
+    const daten = formularAlsDaten(
+      formular([
+        ["titel", " Linsen "],
+        ["kategorien", "2"],
+        ["kategorien", "1"],
+        ["__proto__", "a"],
+        ["slug", ""],
+      ]),
+    );
+    const gelesen = datenAusJson(JSON.stringify(daten));
+    expect(gelesen).not.toBeNull();
+    expect(fingerabdruck(gelesen!)).toBe(fingerabdruck(daten));
+    expect(datenAusJson("{}")).toEqual({});
+    expect(datenAusJson('{"leer":[]}')).toEqual({ leer: [] });
+  });
+
+  it("ist null für alles, was nicht diese Form hat: je Feld eine Liste von Texten", () => {
+    for (const roh of [
+      "{kein json",
+      "",
+      "null",
+      "5",
+      '"Suppe"',
+      "[]",
+      '[["titel",["x"]]]',
+      '{"titel":"Suppe"}',
+      '{"titel":null}',
+      '{"titel":{"0":"x"}}',
+      '{"titel":[5]}',
+      '{"titel":["x",null]}',
+      '{"titel":["x"],"slug":"y"}',
+    ]) {
+      expect(datenAusJson(roh), roh).toBeNull();
+    }
   });
 });
 
@@ -593,6 +636,39 @@ describe("editorAusDaten — das Formular zurück in die Anfangswerte", () => {
       { notizen: ["{}"] },
     ] as ZwischenstandDaten[]) {
       expect(editorAusDaten(kaputt, BASIS, ERLAUBT), JSON.stringify(kaputt)).toBeNull();
+    }
+  });
+});
+
+describe("der Stand einer Zeile — der Schutz vor zwei Tabs", () => {
+  const t = new Date("2026-10-23T12:00:00Z");
+
+  it("bekannt ist genau der Stand, den die Zeile trägt — alles andere ist fremd", () => {
+    expect(istFremderStand(t, t.getTime())).toBe(false);
+    expect(istFremderStand(t, t.getTime() - 1)).toBe(true);
+    expect(istFremderStand(t, 0)).toBe(true);
+    // Auch ein JÜNGERER bekannter Stand: Er gehört zu einer Zeile, die es nicht mehr gibt. Wurde
+    // sie verworfen und bei zurückgestellter Uhr neu angelegt, trägt die neue den älteren Stand.
+    expect(istFremderStand(t, t.getTime() + 1)).toBe(true);
+    // Keine Zahl und keine endliche: kein „kennt alles".
+    expect(istFremderStand(t, NaN)).toBe(true);
+    expect(istFremderStand(t, Infinity)).toBe(true);
+  });
+
+  it("der nächste Stand ist jetzt — aber immer jünger als der, den er ersetzt", () => {
+    expect(naechsterStand(t, null)).toEqual(t);
+    // Fünf Sekunden älter, nicht eine Millisekunde: Sonst ergäbe „immer eine hinter der Zeile" zufällig dasselbe.
+    expect(naechsterStand(t, new Date(t.getTime() - 5000))).toEqual(t);
+    // Dieselbe Millisekunde oder eine zurückgestellte Uhr: eine Millisekunde hinter der Zeile.
+    expect(naechsterStand(t, t)).toEqual(new Date(t.getTime() + 1));
+    expect(naechsterStand(t, new Date(t.getTime() + 7000))).toEqual(new Date(t.getTime() + 7001));
+  });
+
+  it("die Rezeptnummer steht im Schlüssel — ein neues Rezept hat keine", () => {
+    expect(rezeptnummerAus("rezept:12")).toBe(12);
+    expect(rezeptnummerAus("rezept:999999999999999")).toBe(999999999999999);
+    for (const schluessel of ["neu:3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b", "rezept:05", "rezept:", "xrezept:5", "rezept:1000000000000000", ""]) {
+      expect(rezeptnummerAus(schluessel), schluessel).toBeNull();
     }
   });
 });

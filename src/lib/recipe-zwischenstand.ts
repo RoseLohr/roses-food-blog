@@ -28,9 +28,10 @@
  * Datei importiert nur einen Typ: Der Editor im Browser soll sie für den
  * Fingerabdruck laden können, ohne die Datenbank oder zod mitzuziehen.
  *
- * Noch ruft nichts diese Regeln auf: Ablage, Endpunkt und Editor folgen in
- * eigenen Schritten. Was die Kommentare unten über sie sagen, ist die Vorgabe
- * für sie, noch kein Verhalten.
+ * Angewendet im Speicherweg (recipe-save.ts räumt den Zwischenstand ab). Noch
+ * sichert nichts: Ablage, Endpunkt und Editor folgen in eigenen Schritten. Was
+ * die Kommentare unten über sie sagen, ist die Vorgabe für sie, noch kein
+ * Verhalten.
  */
 import type { RecipeEditorProps } from "@/app/admin/(protected)/rezepte/recipe-editor";
 
@@ -77,6 +78,30 @@ export function fingerabdruck(daten: ZwischenstandDaten): string {
       .sort()
       .map((name) => [name, daten[name]]),
   );
+}
+
+/** JSON lesen. Was keins ist, ist `undefined` — das kommt in JSON selbst nicht vor. */
+function jsonAus(roh: string): unknown {
+  try {
+    return JSON.parse(roh);
+  } catch {
+    // Kein JSON: unbrauchbar, nicht reparierbar. Der Aufrufer entscheidet, was das heißt.
+    return undefined;
+  }
+}
+
+/**
+ * Das Formular zurück aus der Ablage — oder null, wenn die Zeile nicht trägt,
+ * was `formularAlsDaten` schreibt: ein Objekt, je Feld eine Liste von Texten.
+ * Die Ablage schreibt nichts anderes; eine andere Zeile kommt von außen
+ * (Wiederherstellung, Handgriff an der Datei). Ohne die Prüfung ließe `null`
+ * jeden Leser werfen, und aus dem Text "Suppe" würde der Titel "S".
+ */
+export function datenAusJson(roh: string): ZwischenstandDaten | null {
+  const wert = jsonAus(roh);
+  if (typeof wert !== "object" || wert === null || Array.isArray(wert)) return null;
+  const listen: unknown[] = Object.values(wert);
+  return listen.every((liste) => Array.isArray(liste) && liste.every(istText)) ? (wert as ZwischenstandDaten) : null;
 }
 
 export function schluesselFuerRezept(id: number): string {
@@ -169,13 +194,7 @@ function istNotiz(x: unknown): x is Notiz {
  */
 function listeAus<T>(roh: string | undefined, passt: (x: unknown) => x is T): T[] | null | undefined {
   if (roh === undefined) return undefined;
-  let wert: unknown;
-  try {
-    wert = JSON.parse(roh);
-  } catch {
-    // Kein JSON — der Zwischenstand ist unbrauchbar, nicht reparierbar.
-    return null;
-  }
+  const wert = jsonAus(roh);
   return Array.isArray(wert) && wert.every(passt) ? wert : null;
 }
 
@@ -314,6 +333,41 @@ export function editorAusDaten(
     },
     taxonomiePending,
   };
+}
+
+/**
+ * Die Rezeptnummer eines Schlüssels `rezept:<nummer>` — null für ein neues
+ * Rezept und für alles, was kein Schlüssel ist. Woran eine Zeile hängt, sagt
+ * allein ihr Schlüssel; die Ablage führt dafür keinen zweiten Wert, der
+ * abweichen könnte.
+ */
+export function rezeptnummerAus(schluessel: string): number | null {
+  return REZEPT_SCHLUESSEL.test(schluessel) ? Number(schluessel.slice("rezept:".length)) : null;
+}
+
+/**
+ * Der Schutz vor zwei Tabs: Liegt in der Zeile ein Stand, den dieser Editor
+ * nicht kennt? Bekannt ist GENAU der Stand, den die Zeile trägt — alles andere
+ * ist fremd, auch ein jüngerer bekannter Stand: Der gehört zu einer Zeile,
+ * die es nicht mehr gibt (verworfen oder mit dem Rezept gespeichert und bei
+ * zurückgestellter Uhr neu angelegt). Mit „nicht jünger als bekannt" hätte
+ * ein Tab die neue Zeile für seine gehalten; mit `zeile > bekannt` kannte ein
+ * Editor, der keine Zahl nannte, sogar alles.
+ */
+export function istFremderStand(zeile: Date, bekannterStand: number): boolean {
+  return zeile.getTime() !== bekannterStand;
+}
+
+/**
+ * Der Stand, unter dem gesichert wird: jetzt — aber immer jünger als der, den
+ * er ersetzt. Der Stand ist die Versionsnummer der Zeile; solange sie lebt,
+ * darf sich keiner wiederholen. Bliebe er in derselben Millisekunde stehen
+ * oder kehrte er mit einer zurückgestellten Uhr auf einen früheren Wert
+ * zurück, sähe ein zweiter Tab seinen bekannten Stand und überschriebe, was
+ * im ersten getippt wurde.
+ */
+export function naechsterStand(jetzt: Date, vorhanden: Date | null): Date {
+  return vorhanden !== null && vorhanden.getTime() >= jetzt.getTime() ? new Date(vorhanden.getTime() + 1) : jetzt;
 }
 
 /**
