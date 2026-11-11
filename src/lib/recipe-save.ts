@@ -7,7 +7,6 @@
 import { eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db, schema } from "@/db";
-import { SCHLUESSEL_FELD, istNeuSchluessel, schluesselFuerRezept } from "@/lib/recipe-zwischenstand";
 import { slugify, uniqueSlug } from "@/lib/slug";
 import { findOrCreateTaxonomy, type TaxonomyType } from "@/lib/taxonomies";
 import { t } from "@/i18n/de";
@@ -273,7 +272,6 @@ export async function saveRecipeFromForm(
   try {
     recipeId = db.transaction((tx): number | null => {
     let rid: number;
-    let neuAngelegt = false;
     if (id !== null && Number.isInteger(id)) {
       const current = tx
         .select()
@@ -304,7 +302,6 @@ export async function saveRecipeFromForm(
         .returning()
         .get();
       rid = created.id;
-      neuAngelegt = true;
     }
 
     // Abschnitte ersetzen — Schritte und Zutatenzeilen hängen per
@@ -372,21 +369,6 @@ export async function saveRecipeFromForm(
         .values(taxonomyRows.map((r) => ({ recipeId: rid, ...r })))
         .run();
     }
-
-    // Mit dem Speichern ist der Zwischenstand erledigt — in DERSELBEN
-    // Transaktion, damit kein Tick dazwischen eine Zeile hinterlässt, die
-    // „jünger als das Rezept" aussähe. Ein NEUES Rezept trägt die Kennung
-    // seines Zwischenstands im Formular mit; sie ist Nutzereingabe und gilt
-    // nur in der gültigen Form — und nur dort: Ein bestehendes Rezept räumt
-    // nicht den begonnenen Entwurf eines anderen ab. Ob es neu ist, sagt, ob
-    // oben angelegt wurde; die `id` aus dem Formular noch einmal zu befragen,
-    // wäre eine zweite Entscheidung, die von der ersten abweichen kann.
-    const zwischenstaende = [schluesselFuerRezept(rid)];
-    const neuSchluessel = formData.get(SCHLUESSEL_FELD);
-    if (neuAngelegt && istNeuSchluessel(neuSchluessel)) zwischenstaende.push(neuSchluessel);
-    tx.delete(schema.rezeptZwischenstand)
-      .where(inArray(schema.rezeptZwischenstand.schluessel, zwischenstaende))
-      .run();
 
     return rid;
     });

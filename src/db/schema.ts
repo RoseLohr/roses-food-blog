@@ -372,9 +372,9 @@ export const recipeLike = sqliteTable(
  * BEWUSSTE AUSNAHME von „keine IDs in JSON" (Kopf dieser Datei): Das Formular
  * enthält Bild- und Taxonomie-Nummern. Es ist aber kein Datenmodell, sondern
  * ein flüchtiger Schnappschuss, der nie gejoint, nie gezählt und nie öffentlich
- * ausgeliefert wird — er lebt bis zum Speichern des Rezepts; die Ablage, das
- * Verwerfen und das Aufräumen nach 30 Tagen folgen in eigenen Schritten. Beim
- * Wiederherstellen
+ * ausgeliefert wird. Noch schreibt und löscht ihn nichts: das Abräumen beim
+ * Speichern des Rezepts, die Ablage, das Verwerfen und das Aufräumen nach 30
+ * Tagen folgen in eigenen Schritten. Beim Wiederherstellen
  * werden Nummern, die es nicht mehr gibt, verworfen (editorAusDaten); der
  * Bild-Orphan-Scan sieht diese Verweise absichtlich NICHT — ein Zwischenstand
  * hält kein Bild am Leben. Die Regeln dazu: src/lib/recipe-zwischenstand.ts.
@@ -382,23 +382,40 @@ export const recipeLike = sqliteTable(
 export const rezeptZwischenstand = sqliteTable(
   "rezept_zwischenstand",
   {
+    /** `rezept:<id>` oder `neu:<uuid>` — höchstens eine Zeile je Schlüssel. */
     schluessel: text("schluessel").primaryKey(),
     /**
      * Gesetzt bei `rezept:<id>` — dann räumt das Löschen des Rezepts mit auf.
-     * Der Wert folgt aus dem Schlüssel (`rezeptnummerAus`), nie umgekehrt.
+     * Der Wert folgt aus dem Schlüssel, nie umgekehrt, und er kann nicht
+     * abweichen: `rezept_zwischenstand_schluessel_check` bindet ihn.
      */
     recipeId: integer("recipe_id").references(() => recipe.id, {
       onDelete: "cascade",
     }),
     /** Das rohe Formular als JSON. */
     formular: text("formular").notNull(),
-    createdAt: now(),
-    /** Zeitpunkt der letzten Sicherung — der Wert, den der Editor anzeigt. */
-    updatedAt: updatedAt(),
+    /**
+     * Die Kennung der Sicherung — der Schutz vor zwei Tabs
+     * (`istFremderStand`). Die Tabelle hält sie nur fest; vergeben muss sie,
+     * wer schreibt: bei jeder Sicherung neu und zufällig. Weder eine Uhrzeit
+     * (eine Uhr kann zurückgestellt werden) noch ein Zähler der Datenbank
+     * (der zählt nach einem zurückgespielten Backup ab dem gesicherten Stand
+     * weiter und fällt bei einem Tabellenumbau zurück).
+     */
+    stand: text("stand").notNull(),
+    /**
+     * Zeitpunkt der Sicherung — Anzeige und Alter der Zeile, nie der
+     * Vergleich zweier Stände.
+     */
+    gesichertAm: integer("gesichert_am", { mode: "timestamp_ms" }).notNull(),
   },
   (t) => [
     index("rezept_zwischenstand_recipe_idx").on(t.recipeId),
-    index("rezept_zwischenstand_updated_idx").on(t.updatedAt),
+    index("rezept_zwischenstand_gesichert_idx").on(t.gesichertAm),
+    check(
+      "rezept_zwischenstand_schluessel_check",
+      sql`(${t.recipeId} IS NULL AND substr(${t.schluessel}, 1, 4) = 'neu:') OR (${t.recipeId} IS NOT NULL AND ${t.schluessel} = 'rezept:' || ${t.recipeId})`,
+    ),
   ],
 );
 

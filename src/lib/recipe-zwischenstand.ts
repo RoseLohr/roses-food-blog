@@ -28,10 +28,9 @@
  * Datei importiert nur einen Typ: Der Editor im Browser soll sie für den
  * Fingerabdruck laden können, ohne die Datenbank oder zod mitzuziehen.
  *
- * Angewendet im Speicherweg (recipe-save.ts räumt den Zwischenstand ab). Noch
- * sichert nichts: Ablage, Endpunkt und Editor folgen in eigenen Schritten. Was
- * die Kommentare unten über sie sagen, ist die Vorgabe für sie, noch kein
- * Verhalten.
+ * Noch ruft nichts diese Regeln auf: Ablage, Endpunkt und Editor folgen in
+ * eigenen Schritten. Was die Kommentare unten über sie sagen, ist die Vorgabe
+ * für sie, noch kein Verhalten.
  */
 import type { RecipeEditorProps } from "@/app/admin/(protected)/rezepte/recipe-editor";
 
@@ -346,28 +345,20 @@ export function rezeptnummerAus(schluessel: string): number | null {
 }
 
 /**
- * Der Schutz vor zwei Tabs: Liegt in der Zeile ein Stand, den dieser Editor
- * nicht kennt? Bekannt ist GENAU der Stand, den die Zeile trägt — alles andere
- * ist fremd, auch ein jüngerer bekannter Stand: Der gehört zu einer Zeile,
- * die es nicht mehr gibt (verworfen oder mit dem Rezept gespeichert und bei
- * zurückgestellter Uhr neu angelegt). Mit „nicht jünger als bekannt" hätte
- * ein Tab die neue Zeile für seine gehalten; mit `zeile > bekannt` kannte ein
- * Editor, der keine Zahl nannte, sogar alles.
+ * Der Schutz vor zwei Tabs: Trägt die Zeile einen Stand, den dieser Editor
+ * nicht kennt? Der Stand ist die Kennung einer Sicherung (Spalte `stand`),
+ * bei jeder Sicherung neu und zufällig vergeben. Bekannt ist GENAU diese
+ * Kennung — jede andere ist fremd, und keine (null) auch.
+ *
+ * Weder Uhrzeit noch Zähler: Der erste Anlauf nahm die Uhrzeit der Sicherung.
+ * Mit `zeile > bekannt` kannte ein Editor, der keine Zahl nannte, alles; mit
+ * Gleichheit blieb, dass eine verworfene und im selben Zeitpunkt neu
+ * angelegte Zeile (zurückgestellte Uhr) den Stand der alten trug. Ein Zähler
+ * der Datenbank hat dieselbe Lücke an anderer Stelle: Nach einem
+ * zurückgespielten Backup zählt er ab dem gesicherten Stand weiter.
  */
-export function istFremderStand(zeile: Date, bekannterStand: number): boolean {
-  return zeile.getTime() !== bekannterStand;
-}
-
-/**
- * Der Stand, unter dem gesichert wird: jetzt — aber immer jünger als der, den
- * er ersetzt. Der Stand ist die Versionsnummer der Zeile; solange sie lebt,
- * darf sich keiner wiederholen. Bliebe er in derselben Millisekunde stehen
- * oder kehrte er mit einer zurückgestellten Uhr auf einen früheren Wert
- * zurück, sähe ein zweiter Tab seinen bekannten Stand und überschriebe, was
- * im ersten getippt wurde.
- */
-export function naechsterStand(jetzt: Date, vorhanden: Date | null): Date {
-  return vorhanden !== null && vorhanden.getTime() >= jetzt.getTime() ? new Date(vorhanden.getTime() + 1) : jetzt;
+export function istFremderStand(zeile: string, bekannterStand: string | null): boolean {
+  return zeile !== bekannterStand;
 }
 
 /**

@@ -392,27 +392,27 @@ Die Regeln, nach denen ein Zwischenstand des Editors (das ROHE Formular als
 `Record<string, string[]>`, eine Zeile je Schlüssel `rezept:<id>` oder
 `neu:<uuid>`) gelesen, verglichen und wiederhergestellt wird, stehen EINMAL in
 `src/lib/recipe-zwischenstand.ts` (rein, im Mutations-Scope). Die Tabelle
-`rezept_zwischenstand` gibt es, und Speichern räumt sie ab. **Noch sichert
-nichts:** Ablage, Endpunkt und Editor folgen in eigenen Schritten. Bis dahin
-beschreibt dieser Abschnitt Regeln, kein Verhalten der Oberfläche.
+`rezept_zwischenstand` gibt es. **Noch sichert nichts:** Ablage, Endpunkt und
+Editor folgen in eigenen Schritten. Bis dahin beschreibt dieser Abschnitt
+Regeln, kein Verhalten der Oberfläche.
 
-- **Warum nicht über den Speicherweg:** Speichern ist Veröffentlichen (Status
-  aus dem Formular), legt halbe Zutatennamen als Zutaten an, fixiert den Slug,
-  setzt `updated_at` und navigiert. Alle drei Minuten wäre das kein Sichern,
-  sondern ein Eingriff. Der Zwischenstand deutet NICHTS; gedeutet wird erst,
-  wenn der Redakteur ihn wiederherstellt und dann speichert. Speichern räumt
-  ihn in DERSELBEN Transaktion ab — sonst hinterließe ein Tick dazwischen
-  eine Zeile, die „jünger als das Rezept" aussähe. Die Kennung eines NEUEN
-  Rezepts gilt dabei nur für das Rezept, das aus ihr entsteht.
-- **Der Stand einer Zeile ist ihre Versionsnummer** — der Schutz vor zwei
-  Tabs (`istFremderStand`, `naechsterStand`). Bekannt ist GENAU der Stand, den
-  die Zeile trägt; alles andere ist „fremd" und wird weder überschrieben noch
-  gelöscht. Nicht „jünger als bekannt": Damit kannte ein Editor, der keine
-  Zahl nannte, alles, und nach Verwerfen plus zurückgestellter Uhr hielt ein
-  Tab die neu angelegte Zeile für seine. Und solange die Zeile lebt,
-  wiederholt sich kein Stand — auch nicht in derselben Millisekunde.
-- **Woran eine Zeile hängt, sagt allein ihr Schlüssel** (`rezeptnummerAus`),
-  nie ein zweiter Wert daneben, der abweichen könnte.
+- **Der Stand einer Zeile ist eine zufällige Kennung je Sicherung** (Spalte
+  `stand`) — der Schutz vor zwei Tabs. Bekannt ist GENAU der Stand, den die
+  Zeile trägt (`istFremderStand`); jeder andere ist „fremd", und keiner auch.
+  Beim Sichern und Verwerfen wird eine fremde Zeile weder überschrieben noch
+  gelöscht. **Weder Uhrzeit noch Zähler:** Der erste Anlauf nahm die Uhrzeit
+  der Sicherung. Eine verworfene und im selben Zeitpunkt neu angelegte Zeile
+  (zurückgestellte Uhr) trug dann den Stand der alten, und ein Tab hielt sie
+  für seine. Ein Zähler der Datenbank (`AUTOINCREMENT`) hat dieselbe Lücke an
+  anderer Stelle: Nach einem zurückgespielten Backup zählt er ab dem
+  gesicherten Stand weiter, und bei einem Tabellenumbau fällt er auf den
+  höchsten Stand zurück, den es noch gibt. `gesichert_am` ist nur Anzeige und
+  Alter.
+- **Woran eine Zeile hängt, sagt ihr Schlüssel** (`rezeptnummerAus`). Die
+  Spalte `recipe_id` gibt es daneben nur für die Cascade, und sie kann nicht
+  abweichen: Ein CHECK bindet sie an den Schlüssel (`rezept:<n>` trägt n,
+  `neu:…` trägt nichts). Ungebunden überlebte eine Zeile das Löschen ihres
+  Rezepts oder verschwand mit einem fremden.
 - **Eine Zeile wird geprüft, bevor sie angeboten wird** (`datenAusJson`): je
   Feld eine Liste von Texten, sonst nichts. Ungeprüft ließ `null` die Liste
   der begonnenen Rezepte werfen, und aus dem Text `"Suppe"` wurde der Titel

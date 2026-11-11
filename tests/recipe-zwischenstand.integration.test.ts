@@ -1,7 +1,7 @@
 /**
- * Der Zwischenstand gegen die echte Datenbank: die Tabelle und die zwei
- * Stellen, an denen der bestehende Speicherweg ihn wieder loswird (Speichern
- * des Rezepts, Löschen des Rezepts per Cascade).
+ * Der Zwischenstand gegen die echte Datenbank: was die Tabelle selbst zusagt
+ * (ein Schlüssel je Zeile, die Rezeptnummer hängt am Schlüssel, Cascade,
+ * Fremdschlüssel).
  */
 import { beforeAll, describe, expect, it } from "vitest";
 import { frischeDb } from "./helfer/frische-db";
@@ -9,10 +9,10 @@ import { adminAnlegen } from "./helfer/saat";
 
 frischeDb("zwischenstand");
 
-const NOW = new Date("2026-10-23T10:00:00Z");
-const SPAETER = new Date(NOW.getTime() + 60_000);
+// Mit Millisekunden: Eine Zeitspalte in Sekunden fiele sonst nicht auf.
+const NOW = new Date("2026-10-23T10:00:00.123Z");
 const NEU = "neu:3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b";
-const ANDERER = "neu:99999999-2222-4333-8444-555555555555";
+const STAND = "5b0c7f1e-9a3d-4c2b-8e6f-1a2b3c4d5e6f";
 let adminId: number;
 
 beforeAll(async () => {
@@ -34,8 +34,13 @@ function rezeptFormular(titel: string, extra: Record<string, string> = {}): Form
 async function lege(schluessel: string, recipeId: number | null): Promise<void> {
   const { db, schema } = await import("@/db");
   db.insert(schema.rezeptZwischenstand)
-    .values({ schluessel, recipeId, formular: '{"titel":["Entwurf"]}', createdAt: NOW, updatedAt: NOW })
+    .values({ schluessel, recipeId, formular: '{"titel":["Entwurf"]}', stand: STAND, gesichertAm: NOW })
     .run();
+}
+
+async function loesche(): Promise<void> {
+  const { db, schema } = await import("@/db");
+  db.delete(schema.rezeptZwischenstand).run();
 }
 
 async function schluesselDerZeilen(): Promise<string[]> {
@@ -48,68 +53,55 @@ async function schluesselDerZeilen(): Promise<string[]> {
     .sort();
 }
 
-describe("Tabelle rezept_zwischenstand und der Speicherweg", () => {
-  it("hängt am Rezept: wird das Rezept gelöscht, verschwindet die Zeile per Cascade", async () => {
+describe("Tabelle rezept_zwischenstand", () => {
+  it("hält höchstens eine Zeile je Schlüssel", async () => {
+    await lege(NEU, null);
+    await expect(lege(NEU, null)).rejects.toThrow();
+    expect(await schluesselDerZeilen()).toEqual([NEU]);
+    await loesche();
+  });
+
+  it("bindet die Rezeptnummer an den Schlüssel — der zweite Wert daneben kann nicht abweichen", async () => {
+    // `recipe_id` gibt es für die Cascade. Wiche sie vom Schlüssel ab, hinge die Zeile am falschen
+    // Rezept oder an keinem: Sie überlebte das Löschen ihres Rezepts oder verschwände mit einem fremden.
+    const { saveRecipeFromForm } = await import("@/lib/recipe-save");
+    const eins = await saveRecipeFromForm(rezeptFormular("Eins"), adminId, NOW);
+    const zwei = await saveRecipeFromForm(rezeptFormular("Zwei"), adminId, NOW);
+    if (!("recipeId" in eins) || !("recipeId" in zwei)) throw new Error("Rezept nicht angelegt");
+    const abweichend: Array<[string, number | null]> = [
+      [`rezept:${eins.recipeId}`, null],
+      [`rezept:${eins.recipeId}`, zwei.recipeId],
+      [`rezept:0${eins.recipeId}`, eins.recipeId],
+      [NEU, eins.recipeId],
+      ["quatsch", null],
+      ["NEU:GROSS", null],
+      ["", null],
+    ];
+    for (const [schluessel, recipeId] of abweichend) {
+      await expect(lege(schluessel, recipeId), `${schluessel} / ${recipeId}`).rejects.toThrow(/CHECK/);
+    }
+    expect(await schluesselDerZeilen()).toEqual([]);
+    // Die beiden Formen, die es gibt:
+    await lege(`rezept:${eins.recipeId}`, eins.recipeId);
+    await lege(NEU, null);
+    expect(await schluesselDerZeilen()).toEqual([NEU, `rezept:${eins.recipeId}`].sort());
+    await loesche();
+  });
+
+  it("hängt am Rezept: wird das Rezept gelöscht, verschwindet die Zeile per Cascade — und nur seine", async () => {
     const { saveRecipeFromForm, deleteRecipeById } = await import("@/lib/recipe-save");
     const res = await saveRecipeFromForm(rezeptFormular("Cascade-Rezept"), adminId, NOW);
     if (!("recipeId" in res)) throw new Error("Rezept nicht angelegt");
     await lege(`rezept:${res.recipeId}`, res.recipeId);
-    expect(await schluesselDerZeilen()).toEqual([`rezept:${res.recipeId}`]);
+    await lege(NEU, null);
+    expect(await schluesselDerZeilen()).toEqual([NEU, `rezept:${res.recipeId}`].sort());
     await deleteRecipeById(res.recipeId);
-    expect(await schluesselDerZeilen()).toEqual([]);
+    expect(await schluesselDerZeilen()).toEqual([NEU]);
+    await loesche();
   });
 
   it("verweist nur auf Rezepte, die es gibt — ein erfundenes bekommt keine Zeile", async () => {
-    await expect(lege("rezept:999999", 999999)).rejects.toThrow();
+    await expect(lege("rezept:999999", 999999)).rejects.toThrow(/FOREIGN KEY/);
     expect(await schluesselDerZeilen()).toEqual([]);
-  });
-
-  it("Speichern des Rezepts räumt seinen Zwischenstand ab — und den des neuen Rezepts, aus dem es entstand", async () => {
-    const { saveRecipeFromForm } = await import("@/lib/recipe-save");
-    const { db, schema } = await import("@/db");
-
-    // Neues Rezept: Der Editor sichert unter der Kennung, das Formular trägt sie.
-    await lege(NEU, null);
-    await lege(ANDERER, null);
-    const neu = await saveRecipeFromForm(rezeptFormular("Aus dem Entwurf", { zwischenstandSchluessel: NEU }), adminId, SPAETER);
-    if (!("recipeId" in neu)) throw new Error("Rezept nicht angelegt");
-    expect(await schluesselDerZeilen()).toEqual([ANDERER]);
-
-    // Bestehendes Rezept: Zwischenstand unter der Rezeptnummer, dann gespeichert.
-    const schluessel = `rezept:${neu.recipeId}`;
-    const id = String(neu.recipeId);
-    await lege(schluessel, neu.recipeId);
-    // Ein Speichern, das scheitert, räumt nichts ab — es wurde nichts gespeichert. Einmal vor der
-    // Transaktion (kein Titel), einmal MITTEN darin: Ein Schrittbild, das es nicht gibt, bricht am
-    // Fremdschlüssel. Räumte das Speichern außerhalb der Transaktion ab, wäre die Zeile hier weg.
-    expect("error" in (await saveRecipeFromForm(rezeptFormular("  ", { id }), adminId))).toBe(true);
-    const schrittbildFehlt = JSON.stringify([{ name: "", ingredients: [], steps: [{ text: "Rühren.", imageId: 999999 }] }]);
-    const fehler = console.error;
-    console.error = () => undefined;
-    try {
-      expect("error" in (await saveRecipeFromForm(rezeptFormular("Aus dem Entwurf", { id, abschnitte: schrittbildFehlt }), adminId))).toBe(true);
-    } finally {
-      console.error = fehler;
-    }
-    expect(await schluesselDerZeilen()).toEqual([ANDERER, schluessel].sort());
-    expect("recipeId" in (await saveRecipeFromForm(rezeptFormular("Aus dem Entwurf", { id }), adminId))).toBe(true);
-    expect(await schluesselDerZeilen()).toEqual([ANDERER]);
-
-    // Die Kennung gilt nur für das neue Rezept, das aus ihr entsteht. Ein BESTEHENDES Rezept,
-    // dessen Formular eine Kennung mitbringt, räumt den begonnenen Entwurf eines anderen nicht ab.
-    await saveRecipeFromForm(rezeptFormular("Aus dem Entwurf", { id, zwischenstandSchluessel: ANDERER }), adminId);
-    expect(await schluesselDerZeilen()).toEqual([ANDERER]);
-    // Und sie ist Nutzereingabe: Als Kennung zählt nur `neu:<uuid>`. Trüge ein NEUES Rezept dort
-    // den Schlüssel eines bestehenden, räumte es sonst dessen Zwischenstand ab.
-    await lege(schluessel, neu.recipeId);
-    await saveRecipeFromForm(rezeptFormular("Noch ein neues", { zwischenstandSchluessel: schluessel }), adminId);
-    expect(await schluesselDerZeilen()).toEqual([ANDERER, schluessel].sort());
-
-    // Ob ein Rezept NEU ist, entscheidet, ob es angelegt wurde — nicht, ob das Formular ein Feld
-    // `id` hatte. Mit einer `id`, die keine Nummer ist, legt der Speicherweg ein neues an.
-    const ausUnsinn = await saveRecipeFromForm(rezeptFormular("Aus Unsinn", { id: "abc", zwischenstandSchluessel: ANDERER }), adminId);
-    expect("recipeId" in ausUnsinn && ausUnsinn.recipeId !== neu.recipeId).toBe(true);
-    expect(await schluesselDerZeilen()).toEqual([schluessel]);
-    db.delete(schema.rezeptZwischenstand).run();
   });
 });
