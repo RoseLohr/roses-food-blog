@@ -345,31 +345,6 @@ export function rezeptnummerAus(schluessel: string): number | null {
 }
 
 /**
- * Der Schutz vor zwei Tabs: Liegt in der Zeile ein Stand, den dieser Editor
- * nicht kennt? Bekannt ist GENAU der Stand, den die Zeile trägt — alles andere
- * ist fremd, auch ein jüngerer bekannter Stand: Der gehört zu einer Zeile,
- * die es nicht mehr gibt (verworfen oder mit dem Rezept gespeichert und bei
- * zurückgestellter Uhr neu angelegt). Mit „nicht jünger als bekannt" hätte
- * ein Tab die neue Zeile für seine gehalten; mit `zeile > bekannt` kannte ein
- * Editor, der keine Zahl nannte, sogar alles.
- */
-export function istFremderStand(zeile: Date, bekannterStand: number): boolean {
-  return zeile.getTime() !== bekannterStand;
-}
-
-/**
- * Der Stand, unter dem gesichert wird: jetzt — aber immer jünger als der, den
- * er ersetzt. Der Stand ist die Versionsnummer der Zeile; solange sie lebt,
- * darf sich keiner wiederholen. Bliebe er in derselben Millisekunde stehen
- * oder kehrte er mit einer zurückgestellten Uhr auf einen früheren Wert
- * zurück, sähe ein zweiter Tab seinen bekannten Stand und überschriebe, was
- * im ersten getippt wurde.
- */
-export function naechsterStand(jetzt: Date, vorhanden: Date | null): Date {
-  return vorhanden !== null && vorhanden.getTime() >= jetzt.getTime() ? new Date(vorhanden.getTime() + 1) : jetzt;
-}
-
-/**
  * Angeboten wird ein Zwischenstand, der nicht älter ist als das gespeicherte
  * Rezept — auch im selben Augenblick entstanden. Ein neues Rezept hat kein
  * Speicherdatum: immer anbieten.

@@ -19,10 +19,8 @@ import {
   editorAusDaten,
   fingerabdruck,
   formularAlsDaten,
-  istFremderStand,
   istNeuSchluessel,
   istZwischenstandSchluessel,
-  naechsterStand,
   nichtAelterAls,
   rezeptnummerAus,
   schluesselAus,
@@ -640,30 +638,7 @@ describe("editorAusDaten — das Formular zurück in die Anfangswerte", () => {
   });
 });
 
-describe("der Stand einer Zeile — der Schutz vor zwei Tabs", () => {
-  const t = new Date("2026-10-23T12:00:00Z");
-
-  it("bekannt ist genau der Stand, den die Zeile trägt — alles andere ist fremd", () => {
-    expect(istFremderStand(t, t.getTime())).toBe(false);
-    expect(istFremderStand(t, t.getTime() - 1)).toBe(true);
-    expect(istFremderStand(t, 0)).toBe(true);
-    // Auch ein JÜNGERER bekannter Stand: Er gehört zu einer Zeile, die es nicht mehr gibt. Wurde
-    // sie verworfen und bei zurückgestellter Uhr neu angelegt, trägt die neue den älteren Stand.
-    expect(istFremderStand(t, t.getTime() + 1)).toBe(true);
-    // Keine Zahl und keine endliche: kein „kennt alles".
-    expect(istFremderStand(t, NaN)).toBe(true);
-    expect(istFremderStand(t, Infinity)).toBe(true);
-  });
-
-  it("der nächste Stand ist jetzt — aber immer jünger als der, den er ersetzt", () => {
-    expect(naechsterStand(t, null)).toEqual(t);
-    // Fünf Sekunden älter, nicht eine Millisekunde: Sonst ergäbe „immer eine hinter der Zeile" zufällig dasselbe.
-    expect(naechsterStand(t, new Date(t.getTime() - 5000))).toEqual(t);
-    // Dieselbe Millisekunde oder eine zurückgestellte Uhr: eine Millisekunde hinter der Zeile.
-    expect(naechsterStand(t, t)).toEqual(new Date(t.getTime() + 1));
-    expect(naechsterStand(t, new Date(t.getTime() + 7000))).toEqual(new Date(t.getTime() + 7001));
-  });
-
+describe("rezeptnummerAus — woran eine Zeile hängt", () => {
   it("die Rezeptnummer steht im Schlüssel — ein neues Rezept hat keine", () => {
     expect(rezeptnummerAus("rezept:12")).toBe(12);
     expect(rezeptnummerAus("rezept:999999999999999")).toBe(999999999999999);
