@@ -392,10 +392,19 @@ Die Regeln, nach denen ein Zwischenstand des Editors (das ROHE Formular als
 `Record<string, string[]>`, eine Zeile je Schlüssel `rezept:<id>` oder
 `neu:<uuid>`) gelesen, verglichen und wiederhergestellt wird, stehen EINMAL in
 `src/lib/recipe-zwischenstand.ts` (rein, im Mutations-Scope). Die Tabelle
-`rezept_zwischenstand` gibt es. **Noch sichert nichts:** Ablage, Endpunkt und
-Editor folgen in eigenen Schritten. Bis dahin beschreibt dieser Abschnitt
-Regeln, kein Verhalten der Oberfläche.
+`rezept_zwischenstand` gibt es, und Speichern des Rezepts räumt dessen Zeile
+ab. **Noch sichert nichts:** Ablage, Endpunkt und Editor folgen in eigenen
+Schritten. Bis dahin beschreibt dieser Abschnitt Regeln, kein Verhalten der
+Oberfläche.
 
+- **Warum nicht über den Speicherweg:** Speichern ist Veröffentlichen (Status
+  aus dem Formular), legt halbe Zutatennamen als Zutaten an, fixiert den Slug,
+  setzt `updated_at` und navigiert. Als regelmäßige Sicherung wäre das ein
+  Eingriff. Der Zwischenstand deutet NICHTS; gedeutet wird erst, wenn der
+  Redakteur ihn wiederherstellt und dann speichert. Speichern räumt die Zeile
+  des Rezepts ab, welchen Stand sie auch trägt, und zwar in DERSELBEN
+  Transaktion: Beides gilt oder keines. Die Kennung eines NEUEN Rezepts gilt
+  dabei nur für das Rezept, das aus ihr entsteht.
 - **Der Stand einer Zeile ist eine zufällige Kennung je Sicherung** (Spalte
   `stand`) — der Schutz vor zwei Tabs. Bekannt ist GENAU der Stand, den die
   Zeile trägt; jeder andere ist „fremd", und keiner auch. Beim Sichern und
