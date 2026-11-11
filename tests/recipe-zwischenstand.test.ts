@@ -4,7 +4,7 @@
  *
  * Ein Zwischenstand ist das ROHE Formular: `new FormData(form)` als
  * `Record<string, string[]>`, nichts gedeutet. Hier steht,
- *  - wie das Formular zu Daten wird,
+ *  - wie das Formular zu Daten wird und wieder zu Editor-Anfangswerten,
  *  - woran der Editor erkennt, dass sich etwas geändert hat (Fingerabdruck),
  *  - welcher Schlüssel eine Zeile adressiert (Rezept oder neues Rezept),
  *  - wann ein Zwischenstand angeboten wird (nicht älter als das Rezept)
@@ -15,6 +15,7 @@ import {
   ZWISCHENSTAND_AUFBEWAHRUNG_MS,
   ZWISCHENSTAND_TAKT_MS,
   aufbewahrungsgrenze,
+  editorAusDaten,
   fingerabdruck,
   formularAlsDaten,
   istNeuSchluessel,
@@ -23,10 +24,39 @@ import {
   schluesselAus,
   schluesselFuerNeu,
   schluesselFuerRezept,
+  type EditorAnfangswerte,
   type ZwischenstandDaten,
 } from "@/lib/recipe-zwischenstand";
 
 const TAG = 24 * 60 * 60 * 1000;
+
+const BASIS: EditorAnfangswerte = {
+  id: null,
+  title: "",
+  slug: "",
+  teaser: "",
+  heroImageId: null,
+  prepMinutes: 0,
+  cookMinutes: 0,
+  servings: 4,
+  difficulty: "leicht",
+  kcal: null,
+  isSeasonal: false,
+  seasonStartWeek: null,
+  seasonEndWeek: null,
+  tips: "",
+  seoTitle: "",
+  seoDescription: "",
+  status: "entwurf",
+  sections: [],
+  notes: [],
+  taxonomySelections: {},
+};
+
+const ERLAUBT = {
+  bildIds: [7, 9],
+  taxonomieIds: { kategorien: [1, 2, 3], schlagwoerter: [10], ernaehrungsformen: [4], kuechen: [5], geraete: [6] },
+};
 
 function formular(eintraege: Array<[string, string]>): FormData {
   const fd = new FormData();
@@ -173,6 +203,227 @@ describe("Schlüssel", () => {
     for (const wert of ["rezept:0", "rezept:05", "rezept:", "rezept:5x", "xrezept:5", ["rezept:5"], "neu:kurz", "", 5, null, undefined]) {
       expect(istZwischenstandSchluessel(wert), String(wert)).toBe(false);
     }
+  });
+});
+
+describe("editorAusDaten — das Formular zurück in die Anfangswerte", () => {
+  const daten = {
+    id: ["12"],
+    titel: ["Linsen-Bolognese"],
+    slug: ["linsen-bolognese"],
+    teaser: ["<p>Herzhaft.</p>"],
+    titelbild: ["9"],
+    vorbereitung: ["15"],
+    kochzeit: ["40"],
+    portionen: ["6"],
+    schwierigkeit: ["mittel"],
+    kcal: ["420"],
+    saisonal: ["ja"],
+    saisonVon: ["44"],
+    saisonBis: ["8"],
+    tipps: ["Mit Parmesan."],
+    seoTitel: ["Linsen"],
+    seoBeschreibung: ["Beschreibung"],
+    status: ["veroeffentlicht"],
+    kategorien: ["2", "1"],
+    schlagwoerter: ["10"],
+    ernaehrungsformen: ["4"],
+    kuechen: ["5"],
+    geraete: ["6"],
+    kategorien__neu: ["Suppe"],
+    geraete__neu: ["Wok"],
+    zwischenstandSchluessel: ["rezept:12"],
+  };
+
+  it("bildet jedes Feld ab — Zahlen als Zahlen, Häkchen als Listen", () => {
+    const ergebnis = editorAusDaten(daten, { ...BASIS, id: 12 }, ERLAUBT);
+    expect(ergebnis).not.toBeNull();
+    expect(ergebnis!.initial).toEqual({
+      id: 12,
+      title: "Linsen-Bolognese",
+      slug: "linsen-bolognese",
+      teaser: "<p>Herzhaft.</p>",
+      heroImageId: 9,
+      prepMinutes: 15,
+      cookMinutes: 40,
+      servings: 6,
+      difficulty: "mittel",
+      kcal: 420,
+      isSeasonal: true,
+      seasonStartWeek: 44,
+      seasonEndWeek: 8,
+      tips: "Mit Parmesan.",
+      seoTitle: "Linsen",
+      seoDescription: "Beschreibung",
+      status: "veroeffentlicht",
+      sections: [],
+      notes: [],
+      taxonomySelections: { kategorien: [2, 1], schlagwoerter: [10], ernaehrungsformen: [4], kuechen: [5], geraete: [6] },
+    });
+    expect(ergebnis!.taxonomiePending).toEqual({ kategorien: ["Suppe"], geraete: ["Wok"] });
+  });
+
+  /**
+   * Eine Basis MIT Werten in JEDEM Feld — gegen die leere Basis oben sind „Basis
+   * bleibt", „geleert" und „nichts gewählt" nicht zu unterscheiden.
+   */
+  const GESPEICHERT: EditorAnfangswerte = {
+    id: 12,
+    title: "Linsen-Bolognese",
+    slug: "linsen-bolognese",
+    teaser: "Herzhaft.",
+    heroImageId: 7,
+    prepMinutes: 15,
+    cookMinutes: 40,
+    servings: 6,
+    difficulty: "schwer",
+    kcal: 300,
+    isSeasonal: true,
+    seasonStartWeek: 12,
+    seasonEndWeek: 20,
+    tips: "Mit Parmesan.",
+    seoTitle: "Linsen vegan",
+    seoDescription: "In 40 Minuten.",
+    status: "veroeffentlicht",
+    sections: [{ name: "Sugo", ingredients: [{ name: "Linsen", amount: "250", unit: "g", note: "" }], steps: [{ text: "Köcheln.", imageId: 9 }] }],
+    notes: [{ text: "Mehr Salz.", isPublic: false }],
+    taxonomySelections: { kategorien: [2, 1], schlagwoerter: [10] },
+  };
+
+  it("fehlende Felder, die der Editor immer schickt, behalten die Basis; die bedingt geschickten nicht; die Rezeptnummer kommt immer aus der Basis", () => {
+    // Das Formular trägt eine FREMDE Nummer: Sie gilt nicht, auch nicht bei einem neuen Rezept.
+    const ergebnis = editorAusDaten({ id: ["99"], titel: ["Nur Titel"] }, GESPEICHERT, ERLAUBT);
+    // Streng: kein Eintrag heißt keiner — auch keiner mit `undefined`, und nicht der der Basis.
+    expect(ergebnis!.initial).toStrictEqual({
+      ...GESPEICHERT,
+      title: "Nur Titel",
+      heroImageId: null,
+      isSeasonal: false,
+      seasonStartWeek: null,
+      seasonEndWeek: null,
+      taxonomySelections: {},
+    });
+    expect(ergebnis!.taxonomiePending).toStrictEqual({});
+    expect(editorAusDaten({ id: ["99"] }, BASIS, ERLAUBT)!.initial.id).toBeNull();
+  });
+
+  it("geleert ist geleert: ein leeres Textfeld bleibt leer — die Basis kommt nicht zurück", () => {
+    const leer = editorAusDaten(
+      { titel: [""], slug: [""], teaser: [""], tipps: [""], seoTitel: [""], seoBeschreibung: [""] },
+      GESPEICHERT,
+      ERLAUBT,
+    )!.initial;
+    expect([leer.title, leer.slug, leer.teaser, leer.tips, leer.seoTitle, leer.seoDescription]).toEqual(["", "", "", "", "", ""]);
+  });
+
+  it("ein vorgemerkter neuer Name zählt auch ohne ein Häkchen im selben Feld", () => {
+    const ergebnis = editorAusDaten({ schlagwoerter__neu: ["Herbst"] }, GESPEICHERT, ERLAUBT)!;
+    expect(ergebnis.taxonomiePending).toStrictEqual({ schlagwoerter: ["Herbst"] });
+    expect(ergebnis.initial.taxonomySelections).toStrictEqual({});
+  });
+
+  it("Felder, die der Editor nur BEDINGT schickt, bedeuten beim Fehlen, was Speichern daraus machte: kein Bild, Saison aus", () => {
+    // Der ImagePicker schreibt für „kein Bild" KEIN verstecktes Feld; die
+    // Saisonwochen stehen nur im Formular, wenn der Schalter an ist. Fehlt das
+    // Feld, hat der Redakteur das Bild entfernt bzw. die Saison abgeschaltet —
+    // die Basis zurückzuholen machte seine Entscheidung still rückgängig.
+    const ohne = editorAusDaten({ titel: ["x"] }, GESPEICHERT, ERLAUBT)!.initial;
+    expect(ohne.heroImageId).toBeNull();
+    expect(ohne.isSeasonal).toBe(false);
+    expect(ohne.seasonStartWeek).toBeNull();
+    expect(ohne.seasonEndWeek).toBeNull();
+    // Immer geschickte Felder behalten dagegen die Basis.
+    expect(ohne.kcal).toBe(300);
+    expect(ohne.prepMinutes).toBe(15);
+
+    const mit = editorAusDaten(
+      { titelbild: ["7"], saisonal: ["ja"], saisonVon: ["5"] },
+      GESPEICHERT,
+      ERLAUBT,
+    )!.initial;
+    expect(mit.heroImageId).toBe(7);
+    expect(mit.isSeasonal).toBe(true);
+    expect(mit.seasonStartWeek).toBe(5);
+    expect(mit.seasonEndWeek).toBeNull();
+    expect(editorAusDaten({ titelbild: [""] }, GESPEICHERT, ERLAUBT)!.initial.heroImageId).toBeNull();
+  });
+
+  it("Zahlen: geleert ist, was Speichern daraus machte (0 bzw. null)", () => {
+    const geleert = editorAusDaten(
+      { vorbereitung: [""], kochzeit: [""], portionen: [""], kcal: [""], saisonal: ["ja"], saisonVon: [""] },
+      GESPEICHERT,
+      ERLAUBT,
+    )!.initial;
+    expect(geleert.prepMinutes).toBe(0);
+    expect(geleert.cookMinutes).toBe(0);
+    // Portionen: wie der Speicherweg nie unter 1 (das Feld trägt min=1) — auch nicht mit einer getippten 0.
+    expect(geleert.servings).toBe(1);
+    expect(editorAusDaten({ portionen: ["0"] }, GESPEICHERT, ERLAUBT)!.initial.servings).toBe(1);
+    expect(geleert.kcal).toBeNull();
+    expect(geleert.seasonStartWeek).toBeNull();
+  });
+
+  it("Zahlen: Was ein Zahlenfeld halten kann, kommt zurück — auch 412,5 kcal oder eine vertippte -5", () => {
+    // Der Browser meldet "412.5", "-5" oder "1e1" als Wert eines Zahlenfeldes; erst das Speichern
+    // weist sie zurück oder rundet. Wer sie beim Wiederherstellen durch den GESPEICHERTEN Wert
+    // ersetzt, zeigt dem Redakteur eine Zahl, die er nicht getippt hat — still.
+    for (const [roh, zahl] of [["7.5", 7.5], ["-5", -5], [".5", 0.5], ["1e1", 10], ["25E-1", 2.5], ["40", 40]] as const) {
+      const e = editorAusDaten({ vorbereitung: [roh], kochzeit: [roh], kcal: [roh], saisonal: ["ja"], saisonVon: [roh], saisonBis: [roh] }, GESPEICHERT, ERLAUBT)!.initial;
+      expect([e.prepMinutes, e.cookMinutes, e.kcal, e.seasonStartWeek, e.seasonEndWeek], roh).toEqual([zahl, zahl, zahl, zahl, zahl]);
+    }
+    expect(editorAusDaten({ portionen: ["1.5"] }, GESPEICHERT, ERLAUBT)!.initial.servings).toBe(1.5);
+  });
+
+  it("Zahlen: Was kein Zahlenfeld halten kann, ist Unsinn und bleibt die Basis", () => {
+    // Auch was `Number()` für sich als Zahl läse (" 5 ", "0x10") oder was keine endliche ist.
+    for (const roh of ["abc", " 5", "5 ", "0x10", "--5", "e", "1e400", "1" + "0".repeat(400), "Infinity", "NaN", "5,5"]) {
+      const e = editorAusDaten(
+        { vorbereitung: [roh], kochzeit: [roh], portionen: [roh], kcal: [roh], saisonal: ["ja"], saisonVon: [roh], saisonBis: [roh] },
+        GESPEICHERT,
+        ERLAUBT,
+      )!.initial;
+      expect([e.prepMinutes, e.cookMinutes, e.servings, e.kcal, e.seasonStartWeek, e.seasonEndWeek], roh.slice(0, 20)).toEqual([15, 40, 6, 300, 12, 20]);
+    }
+  });
+
+  it("Nummern von Bildern und Häkchen sind reine Ziffernfolgen, höchstens 15 Stellen", () => {
+    const erlaubt = { bildIds: [7, 999999999999999, 1000000000000000], taxonomieIds: { kategorien: [1, 999999999999999, 1000000000000000] } };
+    const e = editorAusDaten({ titelbild: ["999999999999999"], kategorien: ["1", "999999999999999", "1000000000000000", "1" + "0".repeat(400)] }, BASIS, erlaubt)!.initial;
+    expect(e.heroImageId).toBe(999999999999999);
+    expect(e.taxonomySelections).toEqual({ kategorien: [1, 999999999999999] });
+    // Ein Titelbild, das keine Nummer ist, ist kein Bild — auch nicht das der Basis.
+    for (const roh of ["1000000000000000", "7.0", " 7", "abc"]) {
+      expect(editorAusDaten({ titelbild: [roh] }, GESPEICHERT, erlaubt)!.initial.heroImageId, roh).toBeNull();
+    }
+  });
+
+  it("deutet nichts: Text bleibt ungetrimmt, und der Saison-Schalter ist nur mit genau `ja` an", () => {
+    const ergebnis = editorAusDaten({ titel: ["  Rand  "], portionen: ["viele"], saisonal: ["nein"] }, BASIS, ERLAUBT);
+    expect(ergebnis!.initial.title).toBe("  Rand  ");
+    expect(ergebnis!.initial.servings).toBe(4);
+    expect(ergebnis!.initial.isSeasonal).toBe(false);
+  });
+
+  it("lässt nur Bilder und Taxonomien durch, die es noch gibt — ein gelöschtes Bild darf nicht zurückkehren", () => {
+    const ergebnis = editorAusDaten({ titelbild: ["99"], kategorien: ["1", "77"] }, BASIS, ERLAUBT);
+    expect(ergebnis!.initial.heroImageId).toBeNull();
+    expect(ergebnis!.initial.taxonomySelections).toEqual({ kategorien: [1] });
+  });
+
+  it("ein Häkchen zählt nur als reine Ziffernfolge — was `Number()` sonst noch als Zahl läse, nicht", () => {
+    // Ohne die Prüfung davor würden " 2 ", "1.0", "0x3", "1e0" und "" zu 2, 1, 3, 1 und 0 —
+    // und kämen als erlaubte Nummern durch.
+    const ergebnis = editorAusDaten(
+      { kategorien: [" 2 ", "1.0", "0x3", "1e0", "", "3"] },
+      BASIS,
+      { bildIds: [], taxonomieIds: { kategorien: [0, 1, 2, 3] } },
+    );
+    expect(ergebnis!.initial.taxonomySelections).toEqual({ kategorien: [3] });
+  });
+
+  it("ein Häkchen-Feld, für das es keine Liste erlaubter Nummern gibt, lässt nichts durch", () => {
+    const ergebnis = editorAusDaten({ kuechen: ["5"] }, BASIS, { bildIds: [], taxonomieIds: {} });
+    expect(ergebnis!.initial.taxonomySelections).toEqual({ kuechen: [] });
   });
 });
 
