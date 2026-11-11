@@ -413,13 +413,13 @@ Regeln, kein Verhalten der Oberfläche.
   abweichen: Ein CHECK lässt als Schlüssel genau die zwei Formen zu und bindet
   sie daran (`rezept:<n>` trägt n, `neu:<uuid>` trägt nichts). Ungebunden
   überlebte eine Zeile das Löschen ihres Rezepts oder verschwand mit einem
-  fremden. **Die Form des Schlüssels steht damit zweimal**, als CHECK in SQL
-  und als Regel für Nutzereingabe (`istZwischenstandSchluessel`); ein Test
-  hält beide zusammen. Auch der Stand hat eine geprüfte Form.
-- **Eine Zeile wird geprüft, bevor sie angeboten wird** (`datenAusJson`): je
-  Feld eine Liste von Texten, sonst nichts. Ungeprüft ließ `null` die Liste
-  der begonnenen Rezepte werfen, und aus dem Text `"Suppe"` wurde der Titel
-  `S`.
+  fremden. **Die Form des Schlüssels steht damit dreimal:** als CHECK in der
+  Migration (der gilt), wortgleich in `src/db/schema.ts` (dort wertet ihn zur
+  Laufzeit nichts aus) und als Regel für Nutzereingabe
+  (`istZwischenstandSchluessel`). Zwei Tests halten sie zusammen: einer
+  vergleicht den Text aus `schema.ts` mit der migrierten Tabelle, einer die
+  Tabelle mit der Regel — an erzeugten Kandidaten, je Stelle ein falsches
+  Zeichen; so weit reicht er. Auch der Stand hat eine geprüfte Form.
 - **Wiederherstellen deutet nicht, aber es prüft:** `editorAusDaten` legt das
   Formular über die Anfangswerte; Text bleibt ungetrimmt, Zahlen nur, wenn sie
   welche sind. Was ein FEHLENDES Feld heißt, hängt davon ab, ob der Editor es

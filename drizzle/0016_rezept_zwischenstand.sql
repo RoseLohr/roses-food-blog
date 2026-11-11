@@ -9,11 +9,6 @@
 --                         Editors als JSON (Record<string, string[]>),
 --                         ungedeutet.
 --
--- WARUM NICHT ÜBER DEN SPEICHERWEG: Speichern ist Veröffentlichen (Status aus
--- dem Formular), legt halbe Zutatennamen als Zutaten an, fixiert den Slug und
--- setzt updated_at — als regelmäßige Sicherung wäre das ein Eingriff. Der
--- Zwischenstand deutet nichts.
---
 -- WARUM JSON, obwohl das Schema sonst keine IDs in JSON kennt (schema.ts,
 -- Kopf): Es ist kein Datenmodell, sondern ein flüchtiger Schnappschuss — nie
 -- gejoint, nie gezählt, nie öffentlich. Wie lange eine Zeile lebt und wer sie
@@ -35,16 +30,18 @@
 -- daran: `rezept:<n>` trägt genau n (eine ganze Zahl von 1 bis 15 Stellen),
 -- `neu:<uuid>` (Kleinschreibung) trägt NULL, anderes gibt es nicht. Ein
 -- zweiter Wert, der vom Schlüssel abweichen könnte, ließe die Cascade am
--- falschen Rezept hängen. Die Form steht ein zweites Mal in
--- src/lib/recipe-zwischenstand.ts (dort als Regel für Nutzereingabe); ein
--- Test hält beide zusammen. Die Fremdschlüssel prüft der Migrator danach
--- (scripts/migrate.mjs, `PRAGMA foreign_key_check`).
+-- falschen Rezept hängen. Die Form steht noch zweimal: wortgleich in
+-- src/db/schema.ts und als Regel für Nutzereingabe in
+-- src/lib/recipe-zwischenstand.ts. Die Fremdschlüssel prüft der Migrator
+-- danach (scripts/migrate.mjs, `PRAGMA foreign_key_check`).
 --
 -- WARUM DIE CHECKS typeof UND DIE LÄNGE IN BYTES PRÜFEN: GLOB allein reicht
 -- nicht. SQLite liest einen Text dort nur bis zum ersten NUL-Zeichen —
 -- `neu:<uuid>`, ein NUL und ein Anhang bestünde das Muster, und `length()`
 -- zählte den Anhang ebenso wenig mit. Die Länge in Bytes zählt ihn. Und eine
--- Spalte nimmt in SQLite auch Bytes statt Text an; `typeof` schließt das aus.
+-- Spalte nimmt in SQLite auch Bytes statt Text an. Ob GLOB Bytes überhaupt
+-- vergleicht, hängt vom SQLite-Build ab (SQLITE_LIKE_DOESNT_MATCH_BLOBS);
+-- `typeof` macht die Prüfung davon unabhängig.
 --
 -- BESTAND: keiner — die Tabelle ist neu und leer.
 CREATE TABLE `rezept_zwischenstand` (

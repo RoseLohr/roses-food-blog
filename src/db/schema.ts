@@ -381,9 +381,10 @@ export const recipeLike = sqliteTable(
  */
 // Die Form einer UUID in Kleinschreibung, als GLOB-Muster für die CHECKs unten:
 // je Zeichen eine Klasse, also genau 8-4-4-4-12 Hex-Zeichen. GLOB allein reicht
-// nicht — SQLite liest einen Text dort nur bis zum ersten NUL-Zeichen, und eine
-// Spalte nimmt auch Bytes statt Text an. Deshalb prüfen die CHECKs zusätzlich
-// `typeof` und die Länge in Bytes.
+// nicht — SQLite liest einen Text dort nur bis zum ersten NUL-Zeichen; deshalb
+// prüfen die CHECKs die Länge in Bytes. Und eine Spalte nimmt auch Bytes statt
+// Text an; ob GLOB die vergleicht, hängt vom SQLite-Build ab, `typeof` nicht.
+// Es GILT der CHECK der Migration; diese Abschrift hält ein Test wortgleich.
 const HEX = "[0-9a-f]";
 const KENNUNG_GLOB = [8, 4, 4, 4, 12].map((n) => HEX.repeat(n)).join("-");
 
@@ -409,10 +410,8 @@ export const rezeptZwischenstand = sqliteTable(
      * Die Kennung der Sicherung — der Schutz vor zwei Tabs: Bekannt ist
      * genau der Stand, den die Zeile trägt. Die Tabelle hält sie nur fest und
      * prüft ihre Form (`rezept_zwischenstand_stand_check`); vergeben muss
-     * sie, wer schreibt: bei jeder Sicherung neu und zufällig. Weder eine
-     * Uhrzeit (eine Uhr kann zurückgestellt werden) noch ein Zähler der
-     * Datenbank (der zählt nach einem zurückgespielten Backup ab dem
-     * gesicherten Stand weiter und fällt bei einem Tabellenumbau zurück).
+     * sie, wer schreibt: bei jeder Sicherung neu und zufällig. Warum weder
+     * Uhrzeit noch Zähler: Kopf von drizzle/0016_rezept_zwischenstand.sql.
      */
     stand: text("stand").notNull(),
     /**
