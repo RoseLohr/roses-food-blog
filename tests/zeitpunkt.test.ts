@@ -11,7 +11,7 @@
  * eine Falle.
  */
 import { describe, expect, it } from "vitest";
-import { alsDatum, alsZeitpunkt } from "@/lib/zeitpunkt";
+import { alsDatum, alsUhrzeit, alsZeitpunkt } from "@/lib/zeitpunkt";
 
 /** 3. Februar 2026, 07:05 Ortszeit — Tag und Monat verschieden, beide einstellig. */
 const FEBRUAR = new Date(2026, 1, 3, 7, 5);
@@ -60,5 +60,15 @@ describe("Tag und Uhrzeit", () => {
 
   it("beginnt mit demselben Datum, das `alsDatum` liefert", () => {
     expect(alsZeitpunkt(FEBRUAR).startsWith(alsDatum(FEBRUAR))).toBe(true);
+  });
+});
+
+describe("Nur die Uhrzeit", () => {
+  it("schreibt Stunde und Minute zweistellig, ohne Datum und ohne Sekunden", () => {
+    // Für eine Zeile, die auf derselben Seite mehrfach am Tag wechselt
+    // („Zwischenstand gesichert um 07:05"): Das Datum stünde dort nur im Weg,
+    // und „7:5" hätte eine andere Breite als „19:42" — die Zeile würde springen.
+    expect(alsUhrzeit(FEBRUAR)).toBe("07:05");
+    expect(alsUhrzeit(FEBRUAR_ABENDS)).toBe("19:42");
   });
 });
