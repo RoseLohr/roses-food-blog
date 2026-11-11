@@ -20,8 +20,8 @@
 -- abräumt, bestimmt die Anwendung, nicht diese Datei.
 --
 -- `stand` ist die Kennung einer Sicherung — der Schutz vor zwei Tabs am selben
--- Rezept. Die Tabelle hält ihn nur fest und prüft seine Form (CHECK: eine
--- UUID in Kleinschreibung). Vergeben muss ihn, wer schreibt: bei jeder
+-- Rezept. Die Tabelle hält ihn nur fest und prüft seine Form (CHECK: Text,
+-- eine UUID in Kleinschreibung). Vergeben muss ihn, wer schreibt: bei jeder
 -- Sicherung neu und zufällig. Mit Absicht ist er weder eine Uhrzeit noch ein
 -- Zähler der Datenbank: Eine Uhr kann zurückgestellt werden, und ein Zähler
 -- (AUTOINCREMENT) zählt nach einem zurückgespielten Backup ab dem gesicherten
@@ -32,12 +32,19 @@
 -- recipe_id ist NULL für neue Rezepte (die haben vor dem ersten Speichern
 -- keine Nummer); gesetzt räumt das Löschen des Rezepts per Cascade mit auf.
 -- Der CHECK am Schlüssel lässt genau zwei Formen zu und bindet die Spalte
--- daran: `rezept:<n>` trägt genau n, `neu:<uuid>` (Kleinschreibung) trägt
--- NULL, anderes gibt es nicht. Ein zweiter Wert, der vom Schlüssel abweichen
--- könnte, ließe die Cascade am falschen Rezept hängen. Die Form steht ein
--- zweites Mal in src/lib/recipe-zwischenstand.ts (dort als Regel für
--- Nutzereingabe); ein Test hält beide zusammen. Die Fremdschlüssel prüft der
--- Migrator danach (scripts/migrate.mjs, `PRAGMA foreign_key_check`).
+-- daran: `rezept:<n>` trägt genau n (eine ganze Zahl von 1 bis 15 Stellen),
+-- `neu:<uuid>` (Kleinschreibung) trägt NULL, anderes gibt es nicht. Ein
+-- zweiter Wert, der vom Schlüssel abweichen könnte, ließe die Cascade am
+-- falschen Rezept hängen. Die Form steht ein zweites Mal in
+-- src/lib/recipe-zwischenstand.ts (dort als Regel für Nutzereingabe); ein
+-- Test hält beide zusammen. Die Fremdschlüssel prüft der Migrator danach
+-- (scripts/migrate.mjs, `PRAGMA foreign_key_check`).
+--
+-- WARUM DIE CHECKS typeof UND DIE LÄNGE IN BYTES PRÜFEN: GLOB allein reicht
+-- nicht. SQLite liest einen Text dort nur bis zum ersten NUL-Zeichen —
+-- `neu:<uuid>`, ein NUL und ein Anhang bestünde das Muster, und `length()`
+-- zählte den Anhang ebenso wenig mit. Die Länge in Bytes zählt ihn. Und eine
+-- Spalte nimmt in SQLite auch Bytes statt Text an; `typeof` schließt das aus.
 --
 -- BESTAND: keiner — die Tabelle ist neu und leer.
 CREATE TABLE `rezept_zwischenstand` (
@@ -47,8 +54,8 @@ CREATE TABLE `rezept_zwischenstand` (
 	`stand` text NOT NULL,
 	`gesichert_am` integer NOT NULL,
 	FOREIGN KEY (`recipe_id`) REFERENCES `recipe`(`id`) ON UPDATE no action ON DELETE cascade,
-	CONSTRAINT "rezept_zwischenstand_schluessel_check" CHECK(("recipe_id" IS NULL AND "schluessel" GLOB 'neu:[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]') OR ("recipe_id" IS NOT NULL AND "schluessel" = 'rezept:' || "recipe_id")),
-	CONSTRAINT "rezept_zwischenstand_stand_check" CHECK("stand" GLOB '[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]')
+	CONSTRAINT "rezept_zwischenstand_schluessel_check" CHECK(typeof("schluessel") = 'text' AND (("recipe_id" IS NULL AND length(CAST("schluessel" AS BLOB)) = 40 AND "schluessel" GLOB 'neu:[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]') OR (typeof("recipe_id") = 'integer' AND "recipe_id" BETWEEN 1 AND 999999999999999 AND "schluessel" = 'rezept:' || "recipe_id"))),
+	CONSTRAINT "rezept_zwischenstand_stand_check" CHECK(typeof("stand") = 'text' AND length(CAST("stand" AS BLOB)) = 36 AND "stand" GLOB '[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]')
 );--> statement-breakpoint
 CREATE INDEX `rezept_zwischenstand_recipe_idx` ON `rezept_zwischenstand` (`recipe_id`);--> statement-breakpoint
 CREATE INDEX `rezept_zwischenstand_gesichert_idx` ON `rezept_zwischenstand` (`gesichert_am`);

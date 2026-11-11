@@ -102,6 +102,9 @@ describe("Tabelle rezept_zwischenstand", () => {
       NEU.replace(/-/g, "_"),
       NEU.replace("3f2a1b4c", "3f2a1b4g"),
       ` ${NEU}`,
+      // Ein NUL-Zeichen und etwas dahinter: SQLites GLOB liest nur bis dorthin.
+      `${NEU}\u0000`,
+      `${NEU}\u0000anhang`,
       // Die Rezeptnummer in einer anderen Schreibweise, mit Rand, zu lang — und sonst etwas:
       `rezept:0${id}`,
       `rezept:${id} `,
@@ -121,12 +124,45 @@ describe("Tabelle rezept_zwischenstand", () => {
     expect(angenommen).toEqual(kandidaten.filter(istZwischenstandSchluessel));
     expect(angenommen).toEqual([NEU, `rezept:${id}`]);
     await loesche();
+
+    // Dasselbe für die Nummer daneben: eine ganze Zahl, wie die Regel sie im Schlüssel zulässt.
+    // Der CHECK lehnt ab, bevor der Fremdschlüssel gefragt wird.
+    const nummern: Array<[string, number]> = [
+      ["rezept:0", 0],
+      ["rezept:-5", -5],
+      ["rezept:5.5", 5.5],
+      ["rezept:1000000000000000", 1_000_000_000_000_000],
+      [`rezept:${id}\u0000anhang`, id],
+    ];
+    for (const [schluessel, recipeId] of nummern) {
+      expect(istZwischenstandSchluessel(schluessel), schluessel).toBe(false);
+      await expect(lege(schluessel, recipeId), schluessel).rejects.toThrow(/CHECK/);
+    }
+    // Und für den Typ: Bytes statt Text oder Zahl sind keine der beiden Formen.
+    const { db } = await import("@/db");
+    const { sql } = await import("drizzle-orm");
+    const roh = (schluessel: unknown, recipeId: unknown, stand: unknown): string => {
+      try {
+        db.run(sql`INSERT INTO rezept_zwischenstand (schluessel, recipe_id, formular, stand, gesichert_am) VALUES (${schluessel}, ${recipeId}, '{}', ${stand}, 0)`);
+      } catch (fehler) {
+        return String((fehler as { cause?: unknown }).cause ?? fehler);
+      }
+      return "angenommen";
+    };
+    expect(roh(Buffer.from(NEU), null, STAND)).toMatch(/CHECK/);
+    expect(roh(`rezept:${id}`, Buffer.from(String(id)), STAND)).toMatch(/CHECK/);
+    expect(roh(NEU, null, Buffer.from(STAND))).toMatch(/CHECK/);
+    // Gegenprobe: Derselbe Weg nimmt eine richtige Zeile an.
+    expect(roh(NEU, null, STAND)).toBe("angenommen");
+    expect(await schluesselDerZeilen()).toEqual([NEU]);
+    await loesche();
   });
 
   it("nimmt als Stand nur an, was die Form einer Kennung hat", async () => {
     // Der Stand ist eine zufällige Kennung. Eine Zeile mit einem anderen Stand könnte kein Editor
     // je als bekannt nennen — sie bliebe für jeden „fremd".
-    for (const stand of ["", "abc", "0", STAND.toUpperCase(), STAND.slice(0, -1), `${STAND}0`, ` ${STAND}`, STAND.replace(/-/g, "")]) {
+    const andere = ["", "abc", "0", STAND.toUpperCase(), STAND.slice(0, -1), `${STAND}0`, ` ${STAND}`, STAND.replace(/-/g, ""), `${STAND}\u0000`, `${STAND}\u0000anhang`];
+    for (const stand of andere) {
       await expect(lege(NEU, null, stand), stand).rejects.toThrow(/CHECK/);
     }
     expect(await schluesselDerZeilen()).toEqual([]);

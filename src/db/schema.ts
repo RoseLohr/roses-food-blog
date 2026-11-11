@@ -380,7 +380,10 @@ export const recipeLike = sqliteTable(
  * hält kein Bild am Leben. Die Regeln dazu: src/lib/recipe-zwischenstand.ts.
  */
 // Die Form einer UUID in Kleinschreibung, als GLOB-Muster für die CHECKs unten:
-// je Zeichen eine Klasse, also genau 8-4-4-4-12 Hex-Zeichen und nichts sonst.
+// je Zeichen eine Klasse, also genau 8-4-4-4-12 Hex-Zeichen. GLOB allein reicht
+// nicht — SQLite liest einen Text dort nur bis zum ersten NUL-Zeichen, und eine
+// Spalte nimmt auch Bytes statt Text an. Deshalb prüfen die CHECKs zusätzlich
+// `typeof` und die Länge in Bytes.
 const HEX = "[0-9a-f]";
 const KENNUNG_GLOB = [8, 4, 4, 4, 12].map((n) => HEX.repeat(n)).join("-");
 
@@ -423,9 +426,12 @@ export const rezeptZwischenstand = sqliteTable(
     index("rezept_zwischenstand_gesichert_idx").on(t.gesichertAm),
     check(
       "rezept_zwischenstand_schluessel_check",
-      sql`(${t.recipeId} IS NULL AND ${t.schluessel} GLOB ${sql.raw(`'neu:${KENNUNG_GLOB}'`)}) OR (${t.recipeId} IS NOT NULL AND ${t.schluessel} = 'rezept:' || ${t.recipeId})`,
+      sql`typeof(${t.schluessel}) = 'text' AND ((${t.recipeId} IS NULL AND length(CAST(${t.schluessel} AS BLOB)) = 40 AND ${t.schluessel} GLOB ${sql.raw(`'neu:${KENNUNG_GLOB}'`)}) OR (typeof(${t.recipeId}) = 'integer' AND ${t.recipeId} BETWEEN 1 AND 999999999999999 AND ${t.schluessel} = 'rezept:' || ${t.recipeId}))`,
     ),
-    check("rezept_zwischenstand_stand_check", sql`${t.stand} GLOB ${sql.raw(`'${KENNUNG_GLOB}'`)}`),
+    check(
+      "rezept_zwischenstand_stand_check",
+      sql`typeof(${t.stand}) = 'text' AND length(CAST(${t.stand} AS BLOB)) = 36 AND ${t.stand} GLOB ${sql.raw(`'${KENNUNG_GLOB}'`)}`,
+    ),
   ],
 );
 
