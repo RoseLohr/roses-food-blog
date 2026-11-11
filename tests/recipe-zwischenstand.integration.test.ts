@@ -1,7 +1,7 @@
 /**
  * Der Zwischenstand gegen die echte Datenbank: was die Tabelle selbst zusagt
- * (ein Schlüssel je Zeile, die Rezeptnummer hängt am Schlüssel, Cascade,
- * Fremdschlüssel).
+ * (ein Schlüssel je Zeile und nur in den zwei Formen, die Rezeptnummer hängt
+ * am Schlüssel, der Stand hat die Form einer Kennung, Cascade, Fremdschlüssel).
  */
 import { beforeAll, describe, expect, it } from "vitest";
 import { frischeDb } from "./helfer/frische-db";
@@ -31,10 +31,10 @@ function rezeptFormular(titel: string, extra: Record<string, string> = {}): Form
 }
 
 /** Eine Zeile unmittelbar in die Tabelle — für alles, was die Tabelle selbst zusagt. */
-async function lege(schluessel: string, recipeId: number | null): Promise<void> {
+async function lege(schluessel: string, recipeId: number | null, stand = STAND): Promise<void> {
   const { db, schema } = await import("@/db");
   db.insert(schema.rezeptZwischenstand)
-    .values({ schluessel, recipeId, formular: '{"titel":["Entwurf"]}', stand: STAND, gesichertAm: NOW })
+    .values({ schluessel, recipeId, formular: '{"titel":["Entwurf"]}', stand, gesichertAm: NOW })
     .run();
 }
 
@@ -71,20 +71,67 @@ describe("Tabelle rezept_zwischenstand", () => {
     const abweichend: Array<[string, number | null]> = [
       [`rezept:${eins.recipeId}`, null],
       [`rezept:${eins.recipeId}`, zwei.recipeId],
-      [`rezept:0${eins.recipeId}`, eins.recipeId],
       [NEU, eins.recipeId],
-      ["quatsch", null],
-      ["NEU:GROSS", null],
-      ["", null],
     ];
     for (const [schluessel, recipeId] of abweichend) {
       await expect(lege(schluessel, recipeId), `${schluessel} / ${recipeId}`).rejects.toThrow(/CHECK/);
     }
     expect(await schluesselDerZeilen()).toEqual([]);
-    // Die beiden Formen, die es gibt:
-    await lege(`rezept:${eins.recipeId}`, eins.recipeId);
-    await lege(NEU, null);
-    expect(await schluesselDerZeilen()).toEqual([NEU, `rezept:${eins.recipeId}`].sort());
+  });
+
+  it("nimmt als Schlüssel genau an, was die Regel einen Schlüssel nennt — die ganze Form, nicht nur den Anfang", async () => {
+    // Der CHECK und `istZwischenstandSchluessel` sagen dasselbe, einmal in SQL und einmal in der
+    // Regeldatei. Dieser Test hält beide zusammen: Wer eine Seite ändert, sieht es hier.
+    const { saveRecipeFromForm } = await import("@/lib/recipe-save");
+    const { istZwischenstandSchluessel, rezeptnummerAus } = await import("@/lib/recipe-zwischenstand");
+    const rezept = await saveRecipeFromForm(rezeptFormular("Schlüssel-Rezept"), adminId, NOW);
+    if (!("recipeId" in rezept)) throw new Error("Rezept nicht angelegt");
+    const id = rezept.recipeId;
+    const kandidaten = [
+      NEU,
+      `rezept:${id}`,
+      // Nur der Anfang stimmt:
+      "neu:",
+      "neu:kein-uuid",
+      `${NEU}0`,
+      NEU.slice(0, -1),
+      `${NEU} `,
+      `${NEU}\n`,
+      NEU.toUpperCase(),
+      NEU.replace("neu:", "NEU:"),
+      NEU.replace(/-/g, "_"),
+      NEU.replace("3f2a1b4c", "3f2a1b4g"),
+      ` ${NEU}`,
+      // Die Rezeptnummer in einer anderen Schreibweise, mit Rand, zu lang — und sonst etwas:
+      `rezept:0${id}`,
+      `rezept:${id} `,
+      `rezept:+${id}`,
+      "rezept:",
+      "rezept:1234567890123456",
+      "quatsch",
+      "",
+    ];
+    const angenommen: string[] = [];
+    for (const schluessel of kandidaten) {
+      await lege(schluessel, rezeptnummerAus(schluessel)).then(
+        () => angenommen.push(schluessel),
+        (fehler: unknown) => expect(String(fehler), schluessel).toMatch(/CHECK/),
+      );
+    }
+    expect(angenommen).toEqual(kandidaten.filter(istZwischenstandSchluessel));
+    expect(angenommen).toEqual([NEU, `rezept:${id}`]);
+    await loesche();
+  });
+
+  it("nimmt als Stand nur an, was die Form einer Kennung hat", async () => {
+    // Der Stand ist eine zufällige Kennung. Eine Zeile mit einem anderen Stand könnte kein Editor
+    // je als bekannt nennen — sie bliebe für jeden „fremd".
+    for (const stand of ["", "abc", "0", STAND.toUpperCase(), STAND.slice(0, -1), `${STAND}0`, ` ${STAND}`, STAND.replace(/-/g, "")]) {
+      await expect(lege(NEU, null, stand), stand).rejects.toThrow(/CHECK/);
+    }
+    expect(await schluesselDerZeilen()).toEqual([]);
+    await lege(NEU, null, "00000000-0000-4000-8000-00000000000a");
+    expect(await schluesselDerZeilen()).toEqual([NEU]);
     await loesche();
   });
 

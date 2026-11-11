@@ -19,7 +19,6 @@ import {
   editorAusDaten,
   fingerabdruck,
   formularAlsDaten,
-  istFremderStand,
   istNeuSchluessel,
   istZwischenstandSchluessel,
   nichtAelterAls,
@@ -635,17 +634,6 @@ describe("editorAusDaten — das Formular zurück in die Anfangswerte", () => {
       { notizen: ["{}"] },
     ] as ZwischenstandDaten[]) {
       expect(editorAusDaten(kaputt, BASIS, ERLAUBT), JSON.stringify(kaputt)).toBeNull();
-    }
-  });
-});
-
-describe("istFremderStand — der Schutz vor zwei Tabs", () => {
-  it("bekannt ist genau der Stand, den die Zeile trägt — alles andere ist fremd, auch keiner", () => {
-    const zeile = "5b0c7f1e-9a3d-4c2b-8e6f-1a2b3c4d5e6f";
-    expect(istFremderStand(zeile, zeile)).toBe(false);
-    // Ein anderer Stand, keiner, ein leerer — und nichts, das nur so ähnlich aussieht.
-    for (const bekannt of ["99999999-2222-4333-8444-555555555555", null, "", zeile.toUpperCase(), ` ${zeile}`, zeile.slice(0, -1)]) {
-      expect(istFremderStand(zeile, bekannt), String(bekannt)).toBe(true);
     }
   });
 });

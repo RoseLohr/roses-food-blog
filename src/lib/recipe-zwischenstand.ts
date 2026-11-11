@@ -345,23 +345,6 @@ export function rezeptnummerAus(schluessel: string): number | null {
 }
 
 /**
- * Der Schutz vor zwei Tabs: Trägt die Zeile einen Stand, den dieser Editor
- * nicht kennt? Der Stand ist die Kennung einer Sicherung (Spalte `stand`),
- * bei jeder Sicherung neu und zufällig vergeben. Bekannt ist GENAU diese
- * Kennung — jede andere ist fremd, und keine (null) auch.
- *
- * Weder Uhrzeit noch Zähler: Der erste Anlauf nahm die Uhrzeit der Sicherung.
- * Mit `zeile > bekannt` kannte ein Editor, der keine Zahl nannte, alles; mit
- * Gleichheit blieb, dass eine verworfene und im selben Zeitpunkt neu
- * angelegte Zeile (zurückgestellte Uhr) den Stand der alten trug. Ein Zähler
- * der Datenbank hat dieselbe Lücke an anderer Stelle: Nach einem
- * zurückgespielten Backup zählt er ab dem gesicherten Stand weiter.
- */
-export function istFremderStand(zeile: string, bekannterStand: string | null): boolean {
-  return zeile !== bekannterStand;
-}
-
-/**
  * Angeboten wird ein Zwischenstand, der nicht älter ist als das gespeicherte
  * Rezept — auch im selben Augenblick entstanden. Ein neues Rezept hat kein
  * Speicherdatum: immer anbieten.

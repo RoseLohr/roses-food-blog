@@ -379,10 +379,18 @@ export const recipeLike = sqliteTable(
  * Bild-Orphan-Scan sieht diese Verweise absichtlich NICHT — ein Zwischenstand
  * hält kein Bild am Leben. Die Regeln dazu: src/lib/recipe-zwischenstand.ts.
  */
+// Die Form einer UUID in Kleinschreibung, als GLOB-Muster für die CHECKs unten:
+// je Zeichen eine Klasse, also genau 8-4-4-4-12 Hex-Zeichen und nichts sonst.
+const HEX = "[0-9a-f]";
+const KENNUNG_GLOB = [8, 4, 4, 4, 12].map((n) => HEX.repeat(n)).join("-");
+
 export const rezeptZwischenstand = sqliteTable(
   "rezept_zwischenstand",
   {
-    /** `rezept:<id>` oder `neu:<uuid>` — höchstens eine Zeile je Schlüssel. */
+    /**
+     * `rezept:<id>` oder `neu:<uuid>` — höchstens eine Zeile je Schlüssel, und
+     * nur in diesen zwei Formen (`rezept_zwischenstand_schluessel_check`).
+     */
     schluessel: text("schluessel").primaryKey(),
     /**
      * Gesetzt bei `rezept:<id>` — dann räumt das Löschen des Rezepts mit auf.
@@ -395,12 +403,13 @@ export const rezeptZwischenstand = sqliteTable(
     /** Das rohe Formular als JSON. */
     formular: text("formular").notNull(),
     /**
-     * Die Kennung der Sicherung — der Schutz vor zwei Tabs
-     * (`istFremderStand`). Die Tabelle hält sie nur fest; vergeben muss sie,
-     * wer schreibt: bei jeder Sicherung neu und zufällig. Weder eine Uhrzeit
-     * (eine Uhr kann zurückgestellt werden) noch ein Zähler der Datenbank
-     * (der zählt nach einem zurückgespielten Backup ab dem gesicherten Stand
-     * weiter und fällt bei einem Tabellenumbau zurück).
+     * Die Kennung der Sicherung — der Schutz vor zwei Tabs: Bekannt ist
+     * genau der Stand, den die Zeile trägt. Die Tabelle hält sie nur fest und
+     * prüft ihre Form (`rezept_zwischenstand_stand_check`); vergeben muss
+     * sie, wer schreibt: bei jeder Sicherung neu und zufällig. Weder eine
+     * Uhrzeit (eine Uhr kann zurückgestellt werden) noch ein Zähler der
+     * Datenbank (der zählt nach einem zurückgespielten Backup ab dem
+     * gesicherten Stand weiter und fällt bei einem Tabellenumbau zurück).
      */
     stand: text("stand").notNull(),
     /**
@@ -414,8 +423,9 @@ export const rezeptZwischenstand = sqliteTable(
     index("rezept_zwischenstand_gesichert_idx").on(t.gesichertAm),
     check(
       "rezept_zwischenstand_schluessel_check",
-      sql`(${t.recipeId} IS NULL AND substr(${t.schluessel}, 1, 4) = 'neu:') OR (${t.recipeId} IS NOT NULL AND ${t.schluessel} = 'rezept:' || ${t.recipeId})`,
+      sql`(${t.recipeId} IS NULL AND ${t.schluessel} GLOB ${sql.raw(`'neu:${KENNUNG_GLOB}'`)}) OR (${t.recipeId} IS NOT NULL AND ${t.schluessel} = 'rezept:' || ${t.recipeId})`,
     ),
+    check("rezept_zwischenstand_stand_check", sql`${t.stand} GLOB ${sql.raw(`'${KENNUNG_GLOB}'`)}`),
   ],
 );
 
