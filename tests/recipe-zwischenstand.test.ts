@@ -534,6 +534,17 @@ describe("editorAusDaten — das Formular zurück in die Anfangswerte", () => {
     }
   });
 
+  it("auch das Bild eines Schritts ist eine Nummer mit höchstens 15 Stellen — JSON rundet sonst auf ein fremdes Bild", () => {
+    // Im JSON steht die Bildnummer als ZAHL. `JSON.parse` liest 9007199254740993 als …992: Gäbe es
+    // dieses Bild, hinge es am Schritt, obwohl das Formular ein anderes nannte. Beim Titelbild und
+    // bei den Häkchen hält die 15-Stellen-Regel das fern; hier lief die Zahl daran vorbei.
+    const erlaubt = { bildIds: [9, 999999999999999, 1000000000000000, 9007199254740992], taxonomieIds: {} };
+    // Die Grenze selbst: 16 Stellen sind schon eine zu viel, 15 gehen durch.
+    const schritte = '[{"text":"a","imageId":9007199254740993},{"text":"b","imageId":9007199254740992},{"text":"c","imageId":1000000000000000},{"text":"d","imageId":999999999999999},{"text":"e","imageId":9}]';
+    const ergebnis = editorAusDaten({ abschnitte: [`[{"name":"","ingredients":[],"steps":${schritte}}]`] }, BASIS, erlaubt)!.initial;
+    expect(ergebnis.sections[0].steps.map((s) => s.imageId)).toEqual([null, null, null, 999999999999999, 9]);
+  });
+
   it("übernimmt nur die geprüften Felder — was das Formular sonst noch mitbringt, kommt nicht in den Editor", () => {
     // Geprüft sind genau die Felder des Editors. Alles andere reichte der erste Anlauf ungeprüft
     // durch; ein tief verschachtelter Fremdwert ließ dann die Seite beim Ausliefern scheitern.

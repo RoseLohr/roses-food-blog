@@ -414,7 +414,9 @@ dahin beschreibt dieser Abschnitt Regeln, kein Verhalten der Oberfläche.
   Schlüssel, Bild, Häkchen) ist eine reine Ziffernfolge mit höchstens 15
   Stellen: `Number()` rundet ab 2^53 und schreibt sich ab 22 Stellen mit
   Exponent — aus der geprüften Folge `9007199254740993` wurde im ersten Anlauf
-  der Schlüssel des Rezepts `…992`. Ein ZAHLENFELD (Zeiten, Portionen, kcal,
+  der Schlüssel des Rezepts `…992`. Das gilt auch, wo die Nummer schon als
+  Zahl ankommt (das Bild eines Schritts im JSON): `JSON.parse` hat dann
+  bereits gerundet. Ein ZAHLENFELD (Zeiten, Portionen, kcal,
   Saisonwochen) kommt dagegen zurück, wie der Browser es hielt, auch `412.5`
   oder eine vertippte `-5`: Zurückweisen und Runden ist Sache des Speicherns.
   Stünde stattdessen der gespeicherte Wert da, sähe der Redakteur eine Zahl,

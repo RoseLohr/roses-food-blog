@@ -184,6 +184,12 @@ function listeAus<T>(roh: string | undefined, passt: (x: unknown) => x is T): T[
  * demselben Grund wie beim Schlüssel: Bis dahin ist sie als Zahl exakt.
  */
 const GANZZAHL = /^\d{1,15}$/;
+/**
+ * Dieselbe Grenze für eine Nummer, die schon als ZAHL ankommt (das Bild eines
+ * Schritts steht so im JSON). `JSON.parse` hat dann bereits gerundet; was
+ * diese Grenze erreicht, kann eine andere Nummer gewesen sein.
+ */
+const NUMMER_GRENZE = 1e15;
 
 /**
  * Die Zeichen, aus denen der Wert eines ZAHLENFELDES besteht. Der Browser
@@ -242,7 +248,8 @@ export function editorAusDaten(
   if (abschnitte === null || notizen === null) return null;
 
   // Mit `null` im Typ: „kein Bild" ist nie in der Menge und bleibt, was es ist.
-  const bilder = new Set<number | null>(erlaubt.bildIds);
+  // Und nur Nummern bis 15 Stellen: Eine längere im Formular wäre gerundet.
+  const bilder = new Set<number | null>([...erlaubt.bildIds].filter((id) => id < NUMMER_GRENZE));
   const feld = (name: string) => daten[name]?.[0];
   const text = (name: string, sonst: string) => feld(name) ?? sonst;
   /** Immer geschickt: fehlt es, bleibt die Basis; geleert ist 0 (wie `intOr`). */
