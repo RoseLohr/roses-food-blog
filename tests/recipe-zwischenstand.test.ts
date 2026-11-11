@@ -15,12 +15,14 @@ import {
   ZWISCHENSTAND_AUFBEWAHRUNG_MS,
   ZWISCHENSTAND_TAKT_MS,
   aufbewahrungsgrenze,
+  datenAusJson,
   editorAusDaten,
   fingerabdruck,
   formularAlsDaten,
   istNeuSchluessel,
   istZwischenstandSchluessel,
   nichtAelterAls,
+  rezeptnummerAus,
   schluesselAus,
   schluesselFuerNeu,
   schluesselFuerRezept,
@@ -121,6 +123,45 @@ describe("formularAlsDaten", () => {
     );
     expect(daten).toEqual({ titel: [" Linsen "], tipps: ["  Rand  \n"] });
     expect(fingerabdruck(daten)).not.toBe(fingerabdruck({ titel: ["Linsen"], tipps: ["Rand"] }));
+  });
+});
+
+describe("datenAusJson — das Formular zurück aus der Ablage", () => {
+  it("liest, was formularAlsDaten geschrieben hat — auch Feldnamen, die jedes Objekt erbt", () => {
+    const daten = formularAlsDaten(
+      formular([
+        ["titel", " Linsen "],
+        ["kategorien", "2"],
+        ["kategorien", "1"],
+        ["__proto__", "a"],
+        ["slug", ""],
+      ]),
+    );
+    const gelesen = datenAusJson(JSON.stringify(daten));
+    expect(gelesen).not.toBeNull();
+    expect(fingerabdruck(gelesen!)).toBe(fingerabdruck(daten));
+    expect(datenAusJson("{}")).toEqual({});
+    expect(datenAusJson('{"leer":[]}')).toEqual({ leer: [] });
+  });
+
+  it("ist null für alles, was nicht diese Form hat: je Feld eine Liste von Texten", () => {
+    for (const roh of [
+      "{kein json",
+      "",
+      "null",
+      "5",
+      '"Suppe"',
+      "[]",
+      '[["titel",["x"]]]',
+      '{"titel":"Suppe"}',
+      '{"titel":null}',
+      '{"titel":{"0":"x"}}',
+      '{"titel":[5]}',
+      '{"titel":["x",null]}',
+      '{"titel":["x"],"slug":"y"}',
+    ]) {
+      expect(datenAusJson(roh), roh).toBeNull();
+    }
   });
 });
 
@@ -593,6 +634,16 @@ describe("editorAusDaten — das Formular zurück in die Anfangswerte", () => {
       { notizen: ["{}"] },
     ] as ZwischenstandDaten[]) {
       expect(editorAusDaten(kaputt, BASIS, ERLAUBT), JSON.stringify(kaputt)).toBeNull();
+    }
+  });
+});
+
+describe("rezeptnummerAus — woran eine Zeile hängt", () => {
+  it("die Rezeptnummer steht im Schlüssel — ein neues Rezept hat keine", () => {
+    expect(rezeptnummerAus("rezept:12")).toBe(12);
+    expect(rezeptnummerAus("rezept:999999999999999")).toBe(999999999999999);
+    for (const schluessel of ["neu:3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b", "rezept:05", "rezept:", "xrezept:5", "rezept:1000000000000000", ""]) {
+      expect(rezeptnummerAus(schluessel), schluessel).toBeNull();
     }
   });
 });

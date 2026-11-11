@@ -79,6 +79,30 @@ export function fingerabdruck(daten: ZwischenstandDaten): string {
   );
 }
 
+/** JSON lesen. Was keins ist, ist `undefined` — das kommt in JSON selbst nicht vor. */
+function jsonAus(roh: string): unknown {
+  try {
+    return JSON.parse(roh);
+  } catch {
+    // Kein JSON: unbrauchbar, nicht reparierbar. Der Aufrufer entscheidet, was das heißt.
+    return undefined;
+  }
+}
+
+/**
+ * Das Formular zurück aus der Ablage — oder null, wenn die Zeile nicht trägt,
+ * was `formularAlsDaten` schreibt: ein Objekt, je Feld eine Liste von Texten.
+ * Die Ablage schreibt nichts anderes; eine andere Zeile kommt von außen
+ * (Wiederherstellung, Handgriff an der Datei). Ohne die Prüfung ließe `null`
+ * jeden Leser werfen, und aus dem Text "Suppe" würde der Titel "S".
+ */
+export function datenAusJson(roh: string): ZwischenstandDaten | null {
+  const wert = jsonAus(roh);
+  if (typeof wert !== "object" || wert === null || Array.isArray(wert)) return null;
+  const listen: unknown[] = Object.values(wert);
+  return listen.every((liste) => Array.isArray(liste) && liste.every(istText)) ? (wert as ZwischenstandDaten) : null;
+}
+
 export function schluesselFuerRezept(id: number): string {
   return `rezept:${id}`;
 }
@@ -169,13 +193,7 @@ function istNotiz(x: unknown): x is Notiz {
  */
 function listeAus<T>(roh: string | undefined, passt: (x: unknown) => x is T): T[] | null | undefined {
   if (roh === undefined) return undefined;
-  let wert: unknown;
-  try {
-    wert = JSON.parse(roh);
-  } catch {
-    // Kein JSON — der Zwischenstand ist unbrauchbar, nicht reparierbar.
-    return null;
-  }
+  const wert = jsonAus(roh);
   return Array.isArray(wert) && wert.every(passt) ? wert : null;
 }
 
@@ -314,6 +332,16 @@ export function editorAusDaten(
     },
     taxonomiePending,
   };
+}
+
+/**
+ * Die Rezeptnummer eines Schlüssels `rezept:<nummer>` — null für ein neues
+ * Rezept und für alles, was kein Schlüssel ist. Woran eine Zeile hängt, sagt
+ * allein ihr Schlüssel; die Ablage führt dafür keinen zweiten Wert, der
+ * abweichen könnte.
+ */
+export function rezeptnummerAus(schluessel: string): number | null {
+  return REZEPT_SCHLUESSEL.test(schluessel) ? Number(schluessel.slice("rezept:".length)) : null;
 }
 
 /**
