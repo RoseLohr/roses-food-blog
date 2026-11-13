@@ -362,6 +362,78 @@ export const recipeLike = sqliteTable(
   (t) => [uniqueIndex("recipe_like_dedup_idx").on(t.recipeId, t.dedupHash)],
 );
 
+/**
+ * Zwischenstand des Rezept-Editors (11/2026): das ROHE Formular, wie es der
+ * Browser alle drei Minuten schicken wird — `FormData` als JSON `Record<string,
+ * string[]>`, nichts gedeutet (kein Slug, keine Zutat, kein Status, kein
+ * updated_at am Rezept). Eine Zeile je Schlüssel: `rezept:<id>` für ein
+ * bestehendes Rezept, `neu:<uuid>` für ein begonnenes neues.
+ *
+ * BEWUSSTE AUSNAHME von „keine IDs in JSON" (Kopf dieser Datei): Das Formular
+ * enthält Bild- und Taxonomie-Nummern. Es ist aber kein Datenmodell, sondern
+ * ein flüchtiger Schnappschuss, der nie gejoint, nie gezählt und nie öffentlich
+ * ausgeliefert wird. Noch schreibt und löscht ihn nichts: das Abräumen beim
+ * Speichern des Rezepts, die Ablage, das Verwerfen und das Aufräumen nach 30
+ * Tagen folgen in eigenen Schritten. Beim Wiederherstellen
+ * werden Nummern, die es nicht mehr gibt, verworfen (editorAusDaten); der
+ * Bild-Orphan-Scan sieht diese Verweise absichtlich NICHT — ein Zwischenstand
+ * hält kein Bild am Leben. Die Regeln dazu: src/lib/recipe-zwischenstand.ts.
+ */
+// Die Form einer UUID in Kleinschreibung, als GLOB-Muster für die CHECKs unten:
+// je Zeichen eine Klasse, also genau 8-4-4-4-12 Hex-Zeichen. GLOB allein reicht
+// nicht — SQLite liest einen Text dort nur bis zum ersten NUL-Zeichen; deshalb
+// prüfen die CHECKs die Länge in Bytes. Und eine Spalte nimmt auch Bytes statt
+// Text an; ob GLOB die vergleicht, hängt vom SQLite-Build ab, `typeof` nicht.
+// Es GILT der CHECK der Migration; diese Abschrift hält ein Test wortgleich.
+const HEX = "[0-9a-f]";
+const KENNUNG_GLOB = [8, 4, 4, 4, 12].map((n) => HEX.repeat(n)).join("-");
+
+export const rezeptZwischenstand = sqliteTable(
+  "rezept_zwischenstand",
+  {
+    /**
+     * `rezept:<id>` oder `neu:<uuid>` — höchstens eine Zeile je Schlüssel, und
+     * nur in diesen zwei Formen (`rezept_zwischenstand_schluessel_check`).
+     */
+    schluessel: text("schluessel").primaryKey(),
+    /**
+     * Gesetzt bei `rezept:<id>` — dann räumt das Löschen des Rezepts mit auf.
+     * Der Wert folgt aus dem Schlüssel, nie umgekehrt, und er kann nicht
+     * abweichen: `rezept_zwischenstand_schluessel_check` bindet ihn.
+     */
+    recipeId: integer("recipe_id").references(() => recipe.id, {
+      onDelete: "cascade",
+    }),
+    /** Das rohe Formular als JSON. */
+    formular: text("formular").notNull(),
+    /**
+     * Die Kennung der Sicherung — der Schutz vor zwei Tabs: Bekannt ist
+     * genau der Stand, den die Zeile trägt. Die Tabelle hält sie nur fest und
+     * prüft ihre Form (`rezept_zwischenstand_stand_check`); vergeben muss
+     * sie, wer schreibt: bei jeder Sicherung neu und zufällig. Warum weder
+     * Uhrzeit noch Zähler: Kopf von drizzle/0016_rezept_zwischenstand.sql.
+     */
+    stand: text("stand").notNull(),
+    /**
+     * Zeitpunkt der Sicherung — Anzeige und Alter der Zeile, nie der
+     * Vergleich zweier Stände.
+     */
+    gesichertAm: integer("gesichert_am", { mode: "timestamp_ms" }).notNull(),
+  },
+  (t) => [
+    index("rezept_zwischenstand_recipe_idx").on(t.recipeId),
+    index("rezept_zwischenstand_gesichert_idx").on(t.gesichertAm),
+    check(
+      "rezept_zwischenstand_schluessel_check",
+      sql`typeof(${t.schluessel}) = 'text' AND ((${t.recipeId} IS NULL AND length(CAST(${t.schluessel} AS BLOB)) = 40 AND ${t.schluessel} GLOB ${sql.raw(`'neu:${KENNUNG_GLOB}'`)}) OR (typeof(${t.recipeId}) = 'integer' AND ${t.recipeId} BETWEEN 1 AND 999999999999999 AND ${t.schluessel} = 'rezept:' || ${t.recipeId}))`,
+    ),
+    check(
+      "rezept_zwischenstand_stand_check",
+      sql`typeof(${t.stand}) = 'text' AND length(CAST(${t.stand} AS BLOB)) = 36 AND ${t.stand} GLOB ${sql.raw(`'${KENNUNG_GLOB}'`)}`,
+    ),
+  ],
+);
+
 // ---------------------------------------------------------------------------
 // Statische Seiten
 // ---------------------------------------------------------------------------

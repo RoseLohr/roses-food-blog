@@ -391,10 +391,35 @@ wird. Wer sie entfernt oder anhebt, lockert ohne Gegengewicht. Gemessen in
 Die Regeln, nach denen ein Zwischenstand des Editors (das ROHE Formular als
 `Record<string, string[]>`, eine Zeile je Schlüssel `rezept:<id>` oder
 `neu:<uuid>`) gelesen, verglichen und wiederhergestellt wird, stehen EINMAL in
-`src/lib/recipe-zwischenstand.ts` (rein, im Mutations-Scope). **Noch ruft sie
-nichts auf:** Ablage, Endpunkt und Editor folgen in eigenen Schritten. Bis
-dahin beschreibt dieser Abschnitt Regeln, kein Verhalten der Oberfläche.
+`src/lib/recipe-zwischenstand.ts` (rein, im Mutations-Scope). Die Tabelle
+`rezept_zwischenstand` gibt es. **Noch sichert nichts:** Ablage, Endpunkt und
+Editor folgen in eigenen Schritten. Bis dahin beschreibt dieser Abschnitt
+Regeln, kein Verhalten der Oberfläche.
 
+- **Der Stand einer Zeile ist eine zufällige Kennung je Sicherung** (Spalte
+  `stand`) — der Schutz vor zwei Tabs. Bekannt ist GENAU der Stand, den die
+  Zeile trägt; jeder andere ist „fremd", und keiner auch. Beim Sichern und
+  Verwerfen wird eine fremde Zeile weder überschrieben noch gelöscht (die
+  Regel dazu folgt mit der Ablage). **Weder Uhrzeit noch Zähler:** Der erste
+  Anlauf nahm die Uhrzeit der Sicherung. Eine verworfene und im selben
+  Zeitpunkt neu angelegte Zeile (zurückgestellte Uhr) trug dann den Stand der
+  alten, und ein Tab hielt sie für seine. Ein Zähler der Datenbank
+  (`AUTOINCREMENT`) hat dieselbe Lücke an anderer Stelle: Nach einem
+  zurückgespielten Backup zählt er ab dem gesicherten Stand weiter, und bei
+  einem Tabellenumbau fällt er auf den höchsten Stand zurück, den es noch
+  gibt. `gesichert_am` ist nur Anzeige und Alter.
+- **Woran eine Zeile hängt, sagt ihr Schlüssel** (`rezeptnummerAus`). Die
+  Spalte `recipe_id` gibt es daneben nur für die Cascade, und sie kann nicht
+  abweichen: Ein CHECK lässt als Schlüssel genau die zwei Formen zu und bindet
+  sie daran (`rezept:<n>` trägt n, `neu:<uuid>` trägt nichts). Ungebunden
+  überlebte eine Zeile das Löschen ihres Rezepts oder verschwand mit einem
+  fremden. **Die Form des Schlüssels steht damit dreimal:** als CHECK in der
+  Migration (der gilt), wortgleich in `src/db/schema.ts` (dort wertet ihn zur
+  Laufzeit nichts aus) und als Regel für Nutzereingabe
+  (`istZwischenstandSchluessel`). Zwei Tests halten sie zusammen: einer
+  vergleicht den Text aus `schema.ts` mit der migrierten Tabelle, einer die
+  Tabelle mit der Regel — an erzeugten Kandidaten, je Stelle ein falsches
+  Zeichen; so weit reicht er. Auch der Stand hat eine geprüfte Form.
 - **Wiederherstellen deutet nicht, aber es prüft:** `editorAusDaten` legt das
   Formular über die Anfangswerte; Text bleibt ungetrimmt, Zahlen nur, wenn sie
   welche sind. Was ein FEHLENDES Feld heißt, hängt davon ab, ob der Editor es
