@@ -898,6 +898,9 @@ export const de = {
       addNote: "Notiz hinzufügen",
       preview: "Vorschau",
       viewPublic: "Öffentliche Seite ansehen",
+      /** Zwischenstand (11/2026): der Hinweis über dem Editor, mit Tag und Uhrzeit dazwischen. */
+      zwischenstandVom: "Zwischenstand vom",
+      zwischenstandWiederhergestellt: "wiederhergestellt — noch nicht gespeichert.",
       internalNotes: "Interne Notizen (nur für Admins sichtbar)",
       previewBanner:
         "Vorschau — dieser Stand ist für Besucher erst nach Veröffentlichung sichtbar.",

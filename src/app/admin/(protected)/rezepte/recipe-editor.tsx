@@ -6,6 +6,7 @@
  * der beim Absenden als JSON in Hidden-Fields serialisiert wird.
  */
 import { startTransition, useActionState, useState } from "react";
+import { ZwischenstandHinweis } from "./zwischenstand-hinweis";
 import { saveRecipeAction, type RecipeFormState } from "./actions";
 import { QuickAddCheckboxes } from "@/components/admin/quick-add-checkboxes";
 import { ImagePicker, type ImageChoice } from "@/components/admin/image-picker";
@@ -155,6 +156,20 @@ export interface RecipeEditorProps {
   taxonomies: Record<string, TaxonomyOption[]>;
   images: ImageOption[];
   ingredientNames: string[];
+  /**
+   * Die Adresse des GESPEICHERTEN Rezepts, solange es veröffentlicht ist —
+   * sonst null. Eine eigene Angabe, nicht aus `initial` gelesen: Stammt der
+   * Inhalt aus einem Zwischenstand, sind Slug und Status darin getippt und
+   * nicht gespeichert.
+   */
+  oeffentlicheSeite: string | null;
+  /** Vorgemerkte, noch nicht angelegte Taxonomienamen je Feld — aus einem wiederhergestellten Zwischenstand. */
+  taxonomiePending?: Record<string, string[]>;
+  /**
+   * `initial` stammt aus einem Zwischenstand, der noch nicht gespeichert ist;
+   * `zeit` sagt, wann er gesichert wurde.
+   */
+  zwischenstandWiederhergestellt?: { zeit: string };
   message?: string | null;
 }
 
@@ -305,6 +320,9 @@ export function RecipeEditor({
   taxonomies,
   images,
   ingredientNames,
+  oeffentlicheSeite,
+  taxonomiePending,
+  zwischenstandWiederhergestellt,
   message,
 }: RecipeEditorProps) {
   const [state, formAction, pending] = useActionState<RecipeFormState, FormData>(
@@ -326,7 +344,7 @@ export function RecipeEditor({
   // verworfenen KI-Vorschlägen verschmutzt.
   const [taxonomyPending, setTaxonomyPending] = useState<
     Record<string, string[]>
-  >({});
+  >(taxonomiePending ?? {});
   const [formKey, setFormKey] = useState(0);
   const [sections, setSections] = useState<KartenAbschnitt[]>(() =>
     form.sections.length ? mitSchluesseln(form.sections) : [emptySection()],
@@ -465,6 +483,7 @@ export function RecipeEditor({
       {/* KI-Assistent nur beim ANLEGEN neuer Rezepte (initial.id === null).
           Bei bestehenden Rezepten ausgeblendet — dort wird nicht neu importiert. */}
       {initial.id === null && <RecipeAiAssistant onApply={applyDraft} />}
+      {zwischenstandWiederhergestellt && <ZwischenstandHinweis zeit={zwischenstandWiederhergestellt.zeit} />}
       <form key={formKey} action={formAction} onSubmit={beimAbsenden} className="flex flex-col gap-6">
       {form.id !== null && <input type="hidden" name="id" value={form.id} />}
       <input
@@ -1056,9 +1075,9 @@ export function RecipeEditor({
             >
               {d.preview}
             </a>
-            {form.slug && form.status === "veroeffentlicht" && (
+            {oeffentlicheSeite && (
               <a
-                href={`/rezepte/${form.slug}`}
+                href={oeffentlicheSeite}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="py-1 text-sm text-leaf underline-offset-2 hover:underline"
