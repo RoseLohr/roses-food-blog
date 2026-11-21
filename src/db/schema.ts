@@ -373,9 +373,9 @@ export const recipeLike = sqliteTable(
  * enthält Bild- und Taxonomie-Nummern. Es ist aber kein Datenmodell, sondern
  * ein flüchtiger Schnappschuss, der nie gejoint, nie gezählt und nie öffentlich
  * ausgeliefert wird. Speichern des Rezepts räumt seine Zeile ab
- * (src/lib/recipe-save.ts). Gelesen wird sie über die Ablage
- * (src/lib/recipe-zwischenstand-store.ts); das Verwerfen und das Aufräumen
- * nach 30 Tagen folgen in eigenen Schritten. Beim Wiederherstellen
+ * (src/lib/recipe-save.ts). Gesichert, gelesen und verworfen wird sie über
+ * die Ablage (src/lib/recipe-zwischenstand-store.ts); das Aufräumen nach
+ * 30 Tagen folgt in einem eigenen Schritt. Beim Wiederherstellen
  * werden Nummern, die es nicht mehr gibt, verworfen (editorAusDaten); der
  * Bild-Orphan-Scan sieht diese Verweise absichtlich NICHT — ein Zwischenstand
  * hält kein Bild am Leben. Die Regeln dazu: src/lib/recipe-zwischenstand.ts.
