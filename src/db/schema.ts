@@ -372,9 +372,9 @@ export const recipeLike = sqliteTable(
  * BEWUSSTE AUSNAHME von „keine IDs in JSON" (Kopf dieser Datei): Das Formular
  * enthält Bild- und Taxonomie-Nummern. Es ist aber kein Datenmodell, sondern
  * ein flüchtiger Schnappschuss, der nie gejoint, nie gezählt und nie öffentlich
- * ausgeliefert wird. Noch schreibt und löscht ihn nichts: das Abräumen beim
- * Speichern des Rezepts, die Ablage, das Verwerfen und das Aufräumen nach 30
- * Tagen folgen in eigenen Schritten. Beim Wiederherstellen
+ * ausgeliefert wird. Speichern des Rezepts räumt seine Zeile ab
+ * (src/lib/recipe-save.ts); die Ablage, das Verwerfen und das Aufräumen nach
+ * 30 Tagen folgen in eigenen Schritten. Beim Wiederherstellen
  * werden Nummern, die es nicht mehr gibt, verworfen (editorAusDaten); der
  * Bild-Orphan-Scan sieht diese Verweise absichtlich NICHT — ein Zwischenstand
  * hält kein Bild am Leben. Die Regeln dazu: src/lib/recipe-zwischenstand.ts.
