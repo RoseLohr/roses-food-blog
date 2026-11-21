@@ -393,9 +393,9 @@ Die Regeln, nach denen ein Zwischenstand des Editors (das ROHE Formular als
 `neu:<uuid>`) gelesen, verglichen und wiederhergestellt wird, stehen EINMAL in
 `src/lib/recipe-zwischenstand.ts` (rein, im Mutations-Scope), die Ablage in
 `src/lib/recipe-zwischenstand-store.ts` (Tabelle `rezept_zwischenstand`): Sie
-lädt; das Sichern folgt. Speichern des Rezepts räumt dessen Zeile ab. **Noch
-sichert nichts:** Endpunkt und Editor folgen in eigenen Schritten. Bis dahin
-beschreibt dieser Abschnitt Regeln und die Ablage, kein Verhalten der
+sichert und lädt. Speichern des Rezepts räumt dessen Zeile ab. **Noch ruft
+nichts die Ablage auf:** Endpunkt und Editor folgen in eigenen Schritten. Bis
+dahin beschreibt dieser Abschnitt Regeln und die Ablage, kein Verhalten der
 Oberfläche.
 
 - **Warum nicht über den Speicherweg:** Speichern ist Veröffentlichen (Status
@@ -409,9 +409,9 @@ Oberfläche.
 - **Der Stand einer Zeile ist eine zufällige Kennung je Sicherung** (Spalte
   `stand`) — der Schutz vor zwei Tabs. Bekannt ist GENAU der Stand, den die
   Zeile trägt; jeder andere ist „fremd", und keiner auch
-  (`istFremderStand`). Beim Sichern und Verwerfen wird eine fremde Zeile
-  weder überschrieben noch gelöscht (`sicherungsurteil`; die Ablage, die das
-  anwendet, folgt). **Weder Uhrzeit noch Zähler:** Der erste
+  (`istFremderStand`). Beim Sichern wird eine fremde Zeile nicht
+  überschrieben; fürs Verwerfen gilt dieselbe Regel, sobald es das gibt.
+  **Weder Uhrzeit noch Zähler:** Der erste
   Anlauf nahm die Uhrzeit der Sicherung. Eine verworfene und im selben
   Zeitpunkt neu angelegte Zeile (zurückgestellte Uhr) trug dann den Stand der
   alten, und ein Tab hielt sie für seine. Ein Zähler der Datenbank
@@ -419,6 +419,17 @@ Oberfläche.
   zurückgespielten Backup zählt er ab dem gesicherten Stand weiter, und bei
   einem Tabellenumbau fällt er auf den höchsten Stand zurück, den es noch
   gibt. `gesichert_am` ist nur Anzeige und Alter.
+- **Wer einen Stand nennt, setzt eine Zeile fort** (`sicherungsurteil`). Gibt
+  es sie nicht mehr (etwa beim Speichern abgeräumt oder mit ihrem Rezept
+  gelöscht), legt die Ablage nichts an und meldet „weg". Sonst legte eine
+  Sicherung, die erst NACH dem Speichern des Rezepts ankommt, die gerade
+  abgeräumte Zeile neu an, mit dem Inhalt von vor dem Speichern; beim neuen
+  Rezept bliebe ein Entwurf liegen, obwohl es das Rezept längst gibt. Wer
+  keinen Stand nennt, beginnt neu — auch dann, wenn seine Sicherung erst nach
+  dem Speichern ankommt: Die kann die Ablage nicht von frischem Tippen
+  unterscheiden. **Vorgabe für den Editor:** Sicherung und Speichern sind nie
+  gleichzeitig unterwegs (kein Takt, solange ein Speichern läuft; kein
+  Speichern, bevor die Antwort einer laufenden Sicherung da ist).
 - **Woran eine Zeile hängt, sagt ihr Schlüssel** (`rezeptnummerAus`). Die
   Spalte `recipe_id` gibt es daneben nur für die Cascade, und sie kann nicht
   abweichen: Ein CHECK lässt als Schlüssel genau die zwei Formen zu und bindet
@@ -430,13 +441,26 @@ Oberfläche.
   (`istZwischenstandSchluessel`). Zwei Tests halten sie zusammen: einer
   vergleicht den Text aus `schema.ts` mit der migrierten Tabelle, einer die
   Tabelle mit der Regel — an erzeugten Kandidaten, je Stelle ein falsches
-  Zeichen; so weit reicht er. Auch der Stand hat eine geprüfte Form.
-- **Eine Zeile wird geprüft, bevor sie angeboten wird** (`ladbareDatenAus`):
-  je Feld eine Liste von Texten (`datenAusJson`), und Abschnitte und Notizen
-  in der Form des Editors — genau das, was `editorAusDaten` übersetzen kann.
-  Ungeprüft ließe `null` eine Liste von Zeilen werfen, und aus dem Text
-  `"Suppe"` würde der Titel `S`. Nicht angeboten heißt nicht still: Die
-  Ablage meldet den Schlüssel — nie den Inhalt.
+  Zeichen; so weit reicht er. Auch der Stand hat eine geprüfte Form. Die
+  Ablage nimmt keine Rezeptnummer entgegen, und was kein Schlüssel ist, legt
+  sie nicht ab.
+- **Geprüft wird nach EINER Regel, bevor abgelegt und bevor angeboten wird**
+  (`istLadbar`, `ladbareDatenAus`): je Feld eine Liste von Texten
+  (`datenAusJson`), und Abschnitte und Notizen in der Form des Editors —
+  genau das, was `editorAusDaten` übersetzen kann. Ungeprüft ließe `null` eine
+  Liste von Zeilen werfen, und aus dem Text `"Suppe"` würde der Titel `S`.
+  Was sich nicht laden ließe, legt die Ablage nicht ab (sie wirft): Sonst
+  quittierte sie einen Stand für eine Zeile, die sie nie anbietet. Der
+  Zwischenstand ist damit strenger als das Speichern: Das nimmt Schritte auch
+  als reinen Text an (das alte Format), der Editor schreibt sie als Objekte.
+  Eine Zeile, die sich nicht laden lässt, kommt deshalb von außen oder aus
+  einer früheren Fassung der Regel. Sie wird nicht angeboten, aber nicht
+  still: Die Ablage meldet den Schlüssel — nie den Inhalt. Und sie sperrt
+  nichts: Eine Zeile, die niemand laden kann, kennt auch niemand; sie wird
+  überschrieben. **Zwei Regeln wären der Fehler:** Fragte die Ablage beim
+  Ablegen nur nach dem Formular, ließe sich eine Zeile mit unbrauchbaren
+  Abschnitten nicht in den Editor legen, und trotzdem sperrte sie als
+  „fremd" das Sichern.
 - **Wiederherstellen deutet nicht, aber es prüft:** `editorAusDaten` legt das
   Formular über die Anfangswerte; Text bleibt ungetrimmt, Zahlen nur, wenn sie
   welche sind. Was ein FEHLENDES Feld heißt, hängt davon ab, ob der Editor es
