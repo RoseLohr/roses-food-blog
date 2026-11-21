@@ -30,9 +30,11 @@
  *
  * Angewendet in der Ablage (recipe-zwischenstand-store.ts), im Endpunkt
  * (src/app/api/admin/rezepte/zwischenstand/route.ts) und im
- * Speicherweg (recipe-save.ts räumt den Zwischenstand ab). Noch ruft nichts
- * den Endpunkt auf: Der Editor folgt in eigenen Schritten. Was die Kommentare
- * unten über ihn sagen, ist die Vorgabe für ihn, noch kein Verhalten.
+ * Speicherweg (recipe-save.ts räumt den Zwischenstand ab). Die
+ * Bearbeiten-Seite stellt eine Zeile wieder her (editorAusDaten). Noch
+ * sichert nichts von selbst: Das Sichern im Editor folgt in eigenen
+ * Schritten. Was die Kommentare unten darüber sagen, ist die Vorgabe dafür,
+ * noch kein Verhalten.
  */
 import type { RecipeEditorProps } from "@/app/admin/(protected)/rezepte/recipe-editor";
 

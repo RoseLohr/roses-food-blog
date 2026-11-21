@@ -1,7 +1,7 @@
 /**
  * Was die Bearbeiten-Seite dem Rezept-Editor über das GESPEICHERTE Rezept
- * sagt, neben den Anfangswerten des Formulars (editor-data.ts) — gegen die
- * echte Datenbank.
+ * sagt, neben den Anfangswerten des Formulars (editor-data.ts) — und was sie
+ * mit `?zwischenstand=1` ausliefert. Gegen die echte Datenbank.
  *
  * Zwei Angaben, die ein wiederhergestellter Zwischenstand braucht und nicht
  * selbst mitbringen darf:
@@ -15,12 +15,23 @@
  *
  * Und was der Editor zeigt, wenn ihm gesagt wird, dass sein Inhalt aus einem
  * Zwischenstand stammt: den Hinweis darüber und die vorgemerkten Namen.
+ *
+ * Die Seite selbst wird gerendert wie auf dem Server. Gemessen wird das HTML,
+ * das der Browser bekäme, also die ganze Kette: Zeile → Ablage →
+ * `erlaubteVerweise` → `editorAusDaten` → Anfangswerte und vorgemerkte Namen
+ * im Editor. In EINEM Fall steht ein Spion an der Stelle der Ablage: Sie
+ * liefert nie, was dort gemessen wird. Was erst im Browser geschieht
+ * (Speichern, mit und ohne Fehler), steht in
+ * tests/e2e/rezept-zwischenstand.spec.ts.
  */
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { frischeDb } from "./helfer/frische-db";
 import { adminAnlegen } from "./helfer/saat";
+
+// Die Seite fragt nach der Sitzung, bevor sie etwas lädt; die ist hier nicht das Thema.
+vi.mock("@/lib/auth", () => ({ requireAdmin: async () => ({ id: 1 }) }));
 
 frischeDb("rezept-bearbeiten-seite");
 
@@ -188,5 +199,132 @@ describe("ein Editor, dessen Inhalt aus einem Zwischenstand stammt", () => {
     expect(mit.wert("kategorien__neu")).toEqual(["Eintopf"]);
     // Beides sagt nichts über die Felder: Die kommen weiter aus den Anfangswerten.
     expect(mit.wert("titel")).toEqual(["Noch nicht fertig"]);
+  });
+});
+
+/** Vor Wochen gesichert: Der Hinweis muss DIESEN Tag nennen, eine Uhrzeit allein läse sich wie heute. */
+const GESICHERT_AM = new Date(2026, 9, 13, 18, 41);
+
+/** Die Zeile des Rezepts: über die Ablage gesichert — oder roh, für das, was die Ablage nie schriebe. */
+async function zeile(rezeptId: number, inhalt: Record<string, string[]> | string | null): Promise<void> {
+  const { db, schema } = await import("@/db");
+  const { eq } = await import("drizzle-orm");
+  const { zwischenstandSichern } = await import("@/lib/recipe-zwischenstand-store");
+  const { schluesselFuerRezept } = await import("@/lib/recipe-zwischenstand");
+  const zeilen = schema.rezeptZwischenstand;
+  const schluessel = schluesselFuerRezept(rezeptId);
+  db.delete(zeilen).where(eq(zeilen.schluessel, schluessel)).run();
+  if (typeof inhalt === "string") {
+    const stand = "5b0c7f1e-9a3d-4c2b-8e6f-1a2b3c4d5e6f";
+    db.insert(zeilen).values({ schluessel, recipeId: rezeptId, formular: inhalt, stand, gesichertAm: GESICHERT_AM }).run();
+  } else if (inhalt) {
+    await zwischenstandSichern({ schluessel, daten: inhalt, jetzt: GESICHERT_AM, bekannterStand: null });
+  }
+}
+
+/** Die Seite, wie der Server sie ausliefert: Überschrift, Eingabefelder, Hinweise und der Link nach vorn. */
+async function seite(rezeptId: number, suchparameter: Record<string, string | string[]> = {}) {
+  const { default: Seite } = await import("@/app/admin/(protected)/rezepte/[id]/page");
+  const html = renderToStaticMarkup(
+    await Seite({ params: Promise.resolve({ id: String(rezeptId) }), searchParams: Promise.resolve(suchparameter) }),
+  );
+  return {
+    ...gelesen(html),
+    ueberschrift: klartext(html.match(/<h1[^>]*>(.*?)<\/h1>/)?.[1] ?? ""),
+    oeffentlich: html.match(/<a [^>]*href="([^"]*)"[^>]*>Öffentliche Seite ansehen<\/a>/)?.[1] ?? null,
+  };
+}
+
+describe("Bearbeiten-Seite mit ?zwischenstand=1", () => {
+  it("legt den Zwischenstand in den Editor — mit Titelbild, Schrittbild, Häkchen und vorgemerkten Namen, soweit es sie noch gibt", async () => {
+    const schritte = [
+      { text: "Mit Foto.", imageId: bild },
+      { text: "Das Foto ist gelöscht.", imageId: geloeschtesBild },
+    ];
+    await zeile(entwurf, {
+      titel: ["Aus dem Zwischenstand"],
+      titelbild: [String(bild)],
+      kategorien: [String(taxonomie.kategorien), String(geloeschteTaxonomie)],
+      kategorien__neu: ["Eintopf"],
+      abschnitte: [JSON.stringify([{ name: "", ingredients: [], steps: schritte }])],
+      notizen: ["[]"],
+    });
+
+    const s = await seite(entwurf, { zwischenstand: "1" });
+    expect(s.wert("titel")).toEqual(["Aus dem Zwischenstand"]);
+    expect(s.wert("titelbild")).toEqual([String(bild)]);
+    expect(s.angehakt("kategorien")).toEqual([String(taxonomie.kategorien)]);
+    expect(s.wert("kategorien__neu")).toEqual(["Eintopf"]);
+    expect(JSON.parse(s.wert("abschnitte")[0])[0].steps).toEqual([schritte[0], { ...schritte[1], imageId: null }]);
+    // Der Hinweis nennt Tag UND Uhrzeit der Sicherung, nicht den Augenblick des Öffnens.
+    expect(s.hinweise).toEqual(["Zwischenstand vom 13.10.2026 um 18:41 wiederhergestellt — noch nicht gespeichert."]);
+
+    // Gegenprobe: Ohne den Parameter steht das gespeicherte Rezept im Editor, ohne Hinweis. Und es
+    // zählt der WERT, nicht die Anwesenheit: Nur genau `1` stellt wieder her — nicht `0`, nicht der
+    // leere Wert (`?zwischenstand`), nicht `1` zweimal (Next liefert dann eine Liste).
+    const andere: Record<string, string | string[]>[] = [{}, { zwischenstand: "0" }, { zwischenstand: "" }, { zwischenstand: ["1", "1"] }];
+    for (const suchparameter of andere) {
+      const fall = JSON.stringify(suchparameter);
+      const ohne = await seite(entwurf, suchparameter);
+      expect(ohne.wert("titel"), fall).toEqual(["Noch nicht fertig"]);
+      expect(ohne.wert("titelbild"), fall).toEqual([]);
+      expect(ohne.angehakt("kategorien"), fall).toEqual([]);
+      expect(ohne.hinweise, fall).toEqual([]);
+    }
+  });
+
+  it("ohne Zeile, und mit einer, die sich nicht laden lässt, bleibt es beim gespeicherten Rezept — ohne Hinweis", async () => {
+    const fehler = console.error;
+    console.error = () => undefined;
+    try {
+      for (const inhalt of [null, "null", '{"titel":["Unbrauchbar"],"abschnitte":["{kein json"],"notizen":["[]"]}']) {
+        await zeile(entwurf, inhalt);
+        const s = await seite(entwurf, { zwischenstand: "1" });
+        expect(s.wert("titel"), String(inhalt)).toEqual(["Noch nicht fertig"]);
+        expect(s.hinweise, String(inhalt)).toEqual([]);
+      }
+    } finally {
+      console.error = fehler;
+    }
+  });
+
+  it("liefert die Ablage doch ein Formular, das sich nicht übersetzen lässt, stellt die SEITE es nicht wieder her", async () => {
+    // Die echte Ablage liefert das nicht (Fall darüber: Sie bietet die Zeile gar nicht an). Ihr Typ
+    // lässt es zu, und die Seite verlässt sich nicht darauf. Deshalb hier, und nur hier, eine
+    // Ablage, die es doch tut: Gemessen wird der Zweig der Seite.
+    const ablage = await import("@/lib/recipe-zwischenstand-store");
+    const { schluesselFuerRezept } = await import("@/lib/recipe-zwischenstand");
+    await zeile(entwurf, null);
+    const laden = vi.spyOn(ablage, "zwischenstandLaden").mockResolvedValue({
+      schluessel: schluesselFuerRezept(entwurf),
+      recipeId: entwurf,
+      daten: { titel: ["Unbrauchbar"], abschnitte: ["{kein json"], notizen: ["[]"] },
+      stand: "5b0c7f1e-9a3d-4c2b-8e6f-1a2b3c4d5e6f",
+      gesichertAm: GESICHERT_AM,
+    });
+    try {
+      const s = await seite(entwurf, { zwischenstand: "1" });
+      // Die Seite hat wirklich DIESE Ablage gefragt — sonst mäße der Fall dasselbe wie der darüber.
+      expect(laden.mock.calls).toEqual([[schluesselFuerRezept(entwurf)]]);
+      expect(s.wert("titel")).toEqual(["Noch nicht fertig"]);
+      expect(s.hinweise).toEqual([]);
+    } finally {
+      laden.mockRestore();
+    }
+  });
+
+  it("Überschrift und Link zur öffentlichen Seite bleiben die des GESPEICHERTEN Rezepts — Titel, Slug und Status im Zwischenstand sind nur getippt", async () => {
+    await zeile(veroeffentlicht, { titel: ["Linsensuppe, neu"], slug: ["noch-nie-gespeichert"], status: ["entwurf"] });
+    const mit = await seite(veroeffentlicht, { zwischenstand: "1" });
+    expect(mit.wert("titel")).toEqual(["Linsensuppe, neu"]);
+    expect(mit.wert("slug")).toEqual(["noch-nie-gespeichert"]);
+    expect(mit.ueberschrift).toBe("Rezept bearbeiten: Linsensuppe");
+    expect(mit.oeffentlich).toBe("/rezepte/linsensuppe");
+
+    await zeile(entwurf, { titel: ["Fast fertig"], slug: ["noch-nie-gespeichert"], status: ["veroeffentlicht"] });
+    const ohne = await seite(entwurf, { zwischenstand: "1" });
+    expect(ohne.wert("titel")).toEqual(["Fast fertig"]);
+    expect(ohne.ueberschrift).toBe("Rezept bearbeiten: Noch nicht fertig");
+    expect(ohne.oeffentlich).toBeNull();
   });
 });
