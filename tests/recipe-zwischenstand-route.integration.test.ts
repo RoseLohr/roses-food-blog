@@ -5,7 +5,8 @@
  * Warum ein Route-Handler und keine Server-Action, steht in der Route selbst;
  * HIER wird gemessen, was der Editor von ihm erwartet: Jede Antwort ist ein
  * Urteil über die Anfrage, auch die abgelaufene Sitzung (401, kein Redirect);
- * eine Störung der Ablage dagegen wird geworfen.
+ * eine Störung der Ablage dagegen wird geworfen. Für Sichern (POST) und
+ * Verwerfen (DELETE).
  */
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
@@ -61,6 +62,11 @@ function formular(felder: Record<string, string>): FormData {
 async function sichern(fd: FormData): Promise<Response> {
   const { POST } = await import("@/app/api/admin/rezepte/zwischenstand/route");
   return POST(new Request(PFAD, { method: "POST", body: fd }));
+}
+
+async function verwerfen(fd: FormData | null): Promise<Response> {
+  const { DELETE } = await import("@/app/api/admin/rezepte/zwischenstand/route");
+  return DELETE(new Request(PFAD, { method: "DELETE", body: fd ?? undefined }));
 }
 
 /** Eine Zeile unmittelbar in die Tabelle, mit der Uhrzeit von FRUEHER. */
@@ -326,6 +332,138 @@ describe("Sicherung über den Route-Handler", () => {
     const spaet = await sichern(formular({ id: String(id), titel: "Getippt", zwischenstandStand: stand }));
     expect(spaet.status).toBe(409);
     expect(await spaet.json()).toEqual({ fehler: "weg" });
+    expect(await zeile(schluessel)).toBeUndefined();
+  });
+});
+
+describe("Verwerfen über den Route-Handler", () => {
+  it("fremde Herkunft: 403, die Sitzung wird nicht gefragt — ohne Sitzung: 401, der Körper wird nicht gelesen; die Zeile bleibt", async () => {
+    // Mit dem RICHTIGEN Stand geschickt: Ohne ihn bliebe die Zeile auch dann, wenn der Handler
+    // weder Herkunft noch Sitzung prüfte — als „fremd".
+    const schluessel = neu(21);
+    await lege(schluessel);
+    const mitStand = () => formular({ schluessel, zwischenstandStand: STAND });
+    schalter.gleicheHerkunft = false;
+    schalter.admin = null;
+    schalter.anlaesse.length = 0;
+    try {
+      const fremd = await verwerfen(mitStand());
+      expect(fremd.status).toBe(403);
+      expect(await fremd.json()).toEqual({ fehler: "herkunft" });
+      expect(schalter.anlaesse).toEqual([]);
+
+      schalter.gleicheHerkunft = true;
+      const { DELETE } = await import("@/app/api/admin/rezepte/zwischenstand/route");
+      const anfrage = new Request(PFAD, { method: "DELETE", body: mitStand() });
+      const ohne = await DELETE(anfrage);
+      expect(ohne.status).toBe(401);
+      expect(ohne.headers.get("location")).toBeNull();
+      expect(await ohne.json()).toEqual({ fehler: "sitzung" });
+      expect(anfrage.bodyUsed).toBe(false);
+      expect(schalter.anlaesse).toEqual(["admin-anfrage"]);
+    } finally {
+      schalter.gleicheHerkunft = true;
+      schalter.admin = { id: 1, email: "e2e@rose.de" };
+    }
+    expect(await zeile(schluessel)).toMatchObject({ stand: STAND });
+  });
+
+  it("kein Formular oder ein Schlüssel, der keiner ist: 400 fehler=ungueltig — nichts wird gelöscht", async () => {
+    const { DELETE } = await import("@/app/api/admin/rezepte/zwischenstand/route");
+    const schluessel = neu(22);
+    await lege(schluessel);
+    const fehler = console.error;
+    console.error = () => undefined;
+    try {
+      const keinFormular = await DELETE(new Request(PFAD, { method: "DELETE", body: "{}", headers: { "content-type": "application/json" } }));
+      expect(keinFormular.status).toBe(400);
+      expect(await keinFormular.json()).toEqual({ fehler: "ungueltig" });
+    } finally {
+      console.error = fehler;
+    }
+    const keine: Record<string, string>[] = [
+      { zwischenstandStand: STAND },
+      { schluessel: "", zwischenstandStand: STAND },
+      { schluessel: "neu:kein-uuid", zwischenstandStand: STAND },
+      { schluessel: "rezept:0", zwischenstandStand: STAND },
+      { schluessel: ` ${schluessel}`, zwischenstandStand: STAND },
+      // Verworfen wird über das Feld `schluessel`. Die Felder, mit denen das FORMULAR seine Zeile
+      // nennt, zählen hier nicht: Wer verwirft, schickt kein Formular.
+      { zwischenstandSchluessel: schluessel, zwischenstandStand: STAND },
+    ];
+    for (const felder of keine) {
+      const res = await verwerfen(formular(felder));
+      expect(res.status, JSON.stringify(felder)).toBe(400);
+      expect(await res.json(), JSON.stringify(felder)).toEqual({ fehler: "ungueltig" });
+    }
+    expect(await zeile(schluessel)).toMatchObject({ stand: STAND });
+  });
+
+  it("ein Stand, den die Zeile nicht trägt, keiner oder einer, der keine Kennung ist: 409 fehler=fremd mit Uhrzeit und Stand der ZEILE — sie bleibt", async () => {
+    const schluessel = neu(23);
+    await lege(schluessel);
+    expect(alsUhrzeit(FRUEHER)).not.toBe(alsUhrzeit(new Date()));
+    for (const stand of [FREMDER_STAND, undefined, "abc", STAND.toUpperCase(), ` ${STAND}`]) {
+      const felder: Record<string, string> = { schluessel };
+      if (stand !== undefined) felder.zwischenstandStand = stand;
+      const res = await verwerfen(formular(felder));
+      expect(res.status, String(stand)).toBe(409);
+      expect(await res.json(), String(stand)).toEqual({ fehler: "fremd", zeit: alsUhrzeit(FRUEHER), stand: STAND });
+    }
+    expect(await zeile(schluessel)).toMatchObject({ stand: STAND, gesichertAm: FRUEHER });
+  });
+
+  it("eine Störung der Ablage wird geworfen, nicht als Antwort ausgegeben — die Zeile bleibt", async () => {
+    const { db } = await import("@/db");
+    const { sql } = await import("drizzle-orm");
+    const schluessel = neu(24);
+    await lege(schluessel);
+    db.run(sql`CREATE TEMP TRIGGER zwischenstand_stoerung BEFORE DELETE ON rezept_zwischenstand BEGIN SELECT RAISE(ABORT, 'Störung'); END`);
+    try {
+      await expect(verwerfen(formular({ schluessel, zwischenstandStand: STAND }))).rejects.toMatchObject({ code: "SQLITE_CONSTRAINT_TRIGGER" });
+    } finally {
+      db.run(sql`DROP TRIGGER zwischenstand_stoerung`);
+    }
+    expect(await zeile(schluessel)).toMatchObject({ stand: STAND });
+  });
+
+  it("löscht genau diese Zeile und antwortet „verworfen“ — auch beim zweiten Mal, wenn es sie nicht mehr gibt", async () => {
+    const schluessel = neu(25);
+    const nachbar = neu(26);
+    await lege(schluessel);
+    await lege(nachbar);
+    for (const mal of [1, 2]) {
+      const res = await verwerfen(formular({ schluessel, zwischenstandStand: STAND }));
+      expect(res.status, String(mal)).toBe(200);
+      expect(await res.json(), String(mal)).toEqual({ verworfen: true });
+      expect(await zeile(schluessel), String(mal)).toBeUndefined();
+    }
+    // Ohne Zeile ist auch ohne Stand nichts falsch: Verwerfen ist idempotent.
+    const ohneStand = await verwerfen(formular({ schluessel }));
+    expect(ohneStand.status).toBe(200);
+    expect(await ohneStand.json()).toEqual({ verworfen: true });
+    // Die Nachbarzeile bleibt.
+    expect(await zeile(nachbar)).toMatchObject({ stand: STAND });
+  });
+
+  it("eine Zeile, die sich nicht laden lässt, kennt niemand: Sie wird ohne Stand verworfen", async () => {
+    const schluessel = neu(27);
+    await lege(schluessel, STAND, "{kein json");
+    const res = await verwerfen(formular({ schluessel }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ verworfen: true });
+    expect(await zeile(schluessel)).toBeUndefined();
+  });
+
+  it("ein BESTEHENDES Rezept: gesichert unter seiner Nummer, verworfen unter seinem Schlüssel", async () => {
+    const id = await rezeptAnlegen("Zum Verwerfen");
+    const schluessel = `rezept:${id}`;
+    const gesichert = await sichern(formular({ id: String(id), titel: "Getippt" }));
+    const { stand } = (await gesichert.json()) as { stand: string };
+    expect(await zeile(schluessel)).toMatchObject({ recipeId: id, stand });
+    const res = await verwerfen(formular({ schluessel, zwischenstandStand: stand }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ verworfen: true });
     expect(await zeile(schluessel)).toBeUndefined();
   });
 });
