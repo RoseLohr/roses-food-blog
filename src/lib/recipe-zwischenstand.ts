@@ -32,7 +32,8 @@
  * (src/app/api/admin/rezepte/zwischenstand/route.ts) und im
  * Speicherweg (recipe-save.ts räumt den Zwischenstand ab). Die
  * Bearbeiten-Seite bietet eine Zeile an und stellt sie wieder her
- * (editorAusDaten). Noch
+ * (editorAusDaten), und der Editor fragt mit dem Fingerabdruck seines
+ * Formulars, ob er Ungespeichertes hält, bevor er es ersetzen lässt. Noch
  * sichert nichts von selbst: Das Sichern im Editor folgt in eigenen
  * Schritten. Was die Kommentare unten darüber sagen, ist die Vorgabe dafür,
  * noch kein Verhalten.

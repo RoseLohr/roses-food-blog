@@ -15,7 +15,9 @@
  * die Abstände selbst (`gap-6`) — wie beim Meldungskasten des Editors; und im
  * Angebot steht eine Handlung. Die ist ein LINK mit Suchparameter, kein
  * Knopf: Die Seite wird mit dem Zwischenstand neu geladen, und der Editor
- * hängt neu ein.
+ * hängt neu ein. Was dort stand, ist danach ersetzt; ob das etwas
+ * Ungespeichertes war, weiß nur der Editor, und er fragt dann vorher
+ * (`beimKlick`).
  */
 import { t } from "@/i18n/de";
 
@@ -27,6 +29,8 @@ export function ZwischenstandHinweis(props: {
   zeit: string;
   /** Adresse zum Wiederherstellen: Mit ihr ist es das Angebot, ohne sie der Hinweis auf den eigenen Inhalt. */
   wiederherstellen?: string;
+  /** Vor dem Folgen des Links: Der Editor fragt hier nach, wenn er Ungespeichertes hält, und kann ablehnen. */
+  beimKlick?: (e: React.MouseEvent<HTMLAnchorElement>) => void;
 }) {
   if (props.wiederherstellen === undefined) {
     return (
@@ -40,7 +44,7 @@ export function ZwischenstandHinweis(props: {
       <span>
         {d.zwischenstandVom} {props.zeit}
       </span>
-      <a href={props.wiederherstellen} className="font-semibold underline-offset-2 hover:underline">
+      <a href={props.wiederherstellen} onClick={props.beimKlick} className="font-semibold underline-offset-2 hover:underline">
         {d.zwischenstandWiederherstellen}
       </a>
     </div>
