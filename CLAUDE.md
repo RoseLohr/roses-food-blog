@@ -463,6 +463,21 @@ Oberfläche.
   Ablage beim Ablegen nur nach dem Formular, ließe sich eine Zeile mit
   unbrauchbaren Abschnitten nicht in den Editor legen, und trotzdem sperrte
   sie als „fremd" Sichern und Verwerfen.
+- **Der bekannte Stand hängt an der Anfrage, er ist kein Feld des Formulars**
+  (`STAND_FELD`, `standAus`): Der Fingerabdruck wird aus dem Formular gebildet;
+  stünde der Stand darin, änderte jede Sicherung ihn. Er ist Nutzereingabe:
+  Nur was die Form einer Kennung hat, zählt; sonst kennt der Editor nichts.
+- **Jede Antwort des Endpunkts wird ein Urteil über die Anfrage sein**
+  (`ZwischenstandAntwort`, `VerwerfenAntwort`): gesichert bzw. verworfen,
+  `fremd`, `weg`, `ungueltig`, `sitzung`, `herkunft`. Eine Störung des Servers
+  ist kein Urteil und steht nicht in der Liste. Den Endpunkt gibt es noch
+  nicht; die Typen sind die Vorgabe für ihn.
+- **Die Sicherung wird ein ROUTE-HANDLER, keine Server-Action**
+  (`ZWISCHENSTAND_PFAD`): Nach einer Action rendert Next die Seite neu; eine
+  abgelaufene Sitzung trüge dann den Redirect zum Login aus, und der Browser
+  verließe den Editor samt Inhalt. Ein Route-Handler rendert nichts; dort ist
+  sie eine Antwort. Unter `/api/admin` gleiten Cookie und Zeile nach
+  derselben Regel.
 - **Wiederherstellen deutet nicht, aber es prüft:** `editorAusDaten` legt das
   Formular über die Anfangswerte; Text bleibt ungetrimmt, Zahlen nur, wenn sie
   welche sind. Was ein FEHLENDES Feld heißt, hängt davon ab, ob der Editor es
