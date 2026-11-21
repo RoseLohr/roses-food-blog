@@ -391,10 +391,11 @@ wird. Wer sie entfernt oder anhebt, lockert ohne Gegengewicht. Gemessen in
 Die Regeln, nach denen ein Zwischenstand des Editors (das ROHE Formular als
 `Record<string, string[]>`, eine Zeile je Schlüssel `rezept:<id>` oder
 `neu:<uuid>`) gelesen, verglichen und wiederhergestellt wird, stehen EINMAL in
-`src/lib/recipe-zwischenstand.ts` (rein, im Mutations-Scope). Die Tabelle
-`rezept_zwischenstand` gibt es, und Speichern des Rezepts räumt dessen Zeile
-ab. **Noch sichert nichts:** Ablage, Endpunkt und Editor folgen in eigenen
-Schritten. Bis dahin beschreibt dieser Abschnitt Regeln, kein Verhalten der
+`src/lib/recipe-zwischenstand.ts` (rein, im Mutations-Scope), die Ablage in
+`src/lib/recipe-zwischenstand-store.ts` (Tabelle `rezept_zwischenstand`): Sie
+lädt; das Sichern folgt. Speichern des Rezepts räumt dessen Zeile ab. **Noch
+sichert nichts:** Endpunkt und Editor folgen in eigenen Schritten. Bis dahin
+beschreibt dieser Abschnitt Regeln und die Ablage, kein Verhalten der
 Oberfläche.
 
 - **Warum nicht über den Speicherweg:** Speichern ist Veröffentlichen (Status
@@ -430,6 +431,12 @@ Oberfläche.
   vergleicht den Text aus `schema.ts` mit der migrierten Tabelle, einer die
   Tabelle mit der Regel — an erzeugten Kandidaten, je Stelle ein falsches
   Zeichen; so weit reicht er. Auch der Stand hat eine geprüfte Form.
+- **Eine Zeile wird geprüft, bevor sie angeboten wird** (`ladbareDatenAus`):
+  je Feld eine Liste von Texten (`datenAusJson`), und Abschnitte und Notizen
+  in der Form des Editors — genau das, was `editorAusDaten` übersetzen kann.
+  Ungeprüft ließe `null` eine Liste von Zeilen werfen, und aus dem Text
+  `"Suppe"` würde der Titel `S`. Nicht angeboten heißt nicht still: Die
+  Ablage meldet den Schlüssel — nie den Inhalt.
 - **Wiederherstellen deutet nicht, aber es prüft:** `editorAusDaten` legt das
   Formular über die Anfangswerte; Text bleibt ungetrimmt, Zahlen nur, wenn sie
   welche sind. Was ein FEHLENDES Feld heißt, hängt davon ab, ob der Editor es
