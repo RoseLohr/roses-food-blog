@@ -17,6 +17,12 @@ import path from "node:path";
  *    Hinweis nicht mehr da.
  *  - Ist Wiederherstellen verlangt und liegt nichts vor, sagt die Seite es —
  *    ohne Umleitung, und nie über einem wiederhergestellten Editor.
+ *    Liegt später doch eine Zeile, wird sie angeboten; der Editor behauptet
+ *    nicht, etwas wiederhergestellt zu haben.
+ *  - Der Weg vom Angebot an: Link, wiederhergestellter Editor, Speichern —
+ *    danach ist die Zeile abgeräumt und der Editor neu eingehängt.
+ *  - Über einem wiederhergestellten Editor wird eine inzwischen ERSETZTE Zeile
+ *    angeboten, neben dem Hinweis auf den eigenen Inhalt.
  *
  * Noch sichert der Editor nicht selbst; das folgt. Die Zeile wird hier deshalb
  * unmittelbar in die Tabelle gelegt, in der Form, in der die Ablage sie
@@ -31,9 +37,11 @@ const session = JSON.parse(
 const PORT = Number(process.env.PW_PORT ?? 3333);
 const GESPEICHERT = "Zwischenstand-Spec: gespeichertes Rezept";
 const IM_ZWEITEN_TAB = "Zwischenstand-Spec: im zweiten Tab gespeichert";
+const AUS_DEM_ZWISCHENSTAND = "Zwischenstand-Spec: aus dem Zwischenstand";
 const WIEDERHERGESTELLT = /Zwischenstand vom \d{1,2}\.\d{1,2}\.\d{4} um \d{2}:\d{2} wiederhergestellt — noch nicht gespeichert\./;
 
 let rezeptId = 0;
+const editor = () => `/admin/rezepte/${rezeptId}`;
 const wiederherstellen = () => `/admin/rezepte/${rezeptId}?zwischenstand=1`;
 const schluessel = () => `rezept:${rezeptId}`;
 
@@ -52,6 +60,7 @@ function tabelle() {
       ),
     rezeptLoeschen: (id: number) => db.prepare("DELETE FROM recipe WHERE id = ?").run(id),
     rezeptTitel: (id: number) => (db.prepare("SELECT title FROM recipe WHERE id = ?").get(id) as { title: string }).title,
+    rezeptSlug: (id: number) => (db.prepare("SELECT slug FROM recipe WHERE id = ?").get(id) as { slug: string }).slug,
     /** Was ein zweiter Tab am gespeicherten Rezept ändert — für den Blick, ob die Seite neu gerendert hat. */
     rezeptUmbenennen: (id: number, titel: string) => db.prepare("UPDATE recipe SET title = ? WHERE id = ?").run(titel, id),
     /** Eine Zeile, wie `zwischenstandSichern` sie schreibt: rohes Formular, zufällige Kennung als Stand. */
@@ -62,6 +71,7 @@ function tabelle() {
         "INSERT OR REPLACE INTO rezept_zwischenstand (schluessel, recipe_id, formular, stand, gesichert_am) VALUES (?, ?, ?, ?, ?)",
       ).run(schluessel(), rezeptId, JSON.stringify(formular), crypto.randomUUID(), Date.now());
     },
+    zeile: () => db.prepare("SELECT stand FROM rezept_zwischenstand WHERE schluessel = ?").get(schluessel()) as { stand: string } | undefined,
     leeren: () => db.prepare("DELETE FROM rezept_zwischenstand WHERE schluessel = ?").run(schluessel()),
     schliessen: () => db.close(),
   };
@@ -72,7 +82,10 @@ async function oeffnen(page: Page, adresse: string) {
   await page.goto(adresse);
 }
 
-const hinweis = (page: Page) => page.getByRole("status").filter({ hasText: "Zwischenstand vom" });
+// Am Schluss des Satzes erkannt: Auch das Angebot beginnt mit „Zwischenstand vom".
+const hinweis = (page: Page) => page.getByRole("status").filter({ hasText: "wiederhergestellt — noch nicht gespeichert" });
+const wiederherstellenLink = (page: Page) => page.getByRole("link", { name: "Wiederherstellen", exact: true });
+const angebot = (page: Page) => page.getByRole("status").filter({ has: wiederherstellenLink(page) });
 const fehlt = (page: Page) => page.getByRole("status").filter({ hasText: "Kein Zwischenstand zum Wiederherstellen vorhanden" });
 const titel = (page: Page) => page.locator('input[name="titel"]');
 const ueberschrift = (page: Page) => page.getByRole("heading", { level: 1 });
@@ -88,6 +101,47 @@ test.afterAll(() => {
   const t = tabelle();
   t.rezeptLoeschen(rezeptId);
   t.schliessen();
+});
+
+test("vom Angebot an: anbieten, wiederherstellen, speichern — danach ist die Zeile abgeräumt und der Editor neu eingehängt", async ({ page }) => {
+  const t = tabelle();
+  const gespeichert = t.rezeptTitel(rezeptId);
+  try {
+    // Der Slug im Zwischenstand ist geleert: Daran zeigt sich nach dem Speichern, dass der Editor
+    // neu eingehängt wurde (das Feld ist unkontrolliert und zeigte sonst weiter den geleerten).
+    t.legen({ titel: AUS_DEM_ZWISCHENSTAND, teaser: "Teaser aus dem Zwischenstand.", slug: "" });
+    await oeffnen(page, editor());
+    // Anbieten heißt nicht übernehmen: Im Editor steht das gespeicherte Rezept.
+    await expect(angebot(page)).toContainText(/Zwischenstand vom \d{1,2}\.\d{1,2}\.\d{4} um \d{2}:\d{2}/);
+    await expect(titel(page)).toHaveValue(gespeichert);
+    await expect(hinweis(page)).toHaveCount(0);
+
+    await wiederherstellenLink(page).click();
+    await expect(page).toHaveURL(new RegExp(`/admin/rezepte/${rezeptId}\\?zwischenstand=1$`));
+    await expect(titel(page)).toHaveValue(AUS_DEM_ZWISCHENSTAND);
+    await expect(page.locator("#f-slug")).toHaveValue("");
+    await expect(hinweis(page)).toHaveText(WIEDERHERGESTELLT);
+    // Dieselbe Zeile wird nicht noch einmal angeboten.
+    await expect(angebot(page)).toHaveCount(0);
+    // Wiederherstellen heißt nicht speichern: Rezept und Zeile sind, wie sie waren.
+    expect(t.rezeptTitel(rezeptId)).toBe(gespeichert);
+    expect(t.zeile()).toBeDefined();
+
+    await speichern(page).click();
+    await expect(page).toHaveURL(new RegExp(`/admin/rezepte/${rezeptId}\\?meldung=`));
+    expect(t.rezeptTitel(rezeptId)).toBe(AUS_DEM_ZWISCHENSTAND);
+    expect(t.zeile()).toBeUndefined();
+    // Neu eingehängt: Das Feld zeigt den gespeicherten Slug, nicht mehr den geleerten.
+    const slug = t.rezeptSlug(rezeptId);
+    expect(slug).not.toBe("");
+    await expect(page.locator("#f-slug")).toHaveValue(slug);
+    await expect(hinweis(page)).toHaveCount(0);
+    await expect(angebot(page)).toHaveCount(0);
+  } finally {
+    t.rezeptUmbenennen(rezeptId, gespeichert);
+    t.leeren();
+    t.schliessen();
+  }
 });
 
 test("Speichern mit Fehler lässt den wiederhergestellten Editor stehen, samt Hinweis — auch wenn die Zeile inzwischen fehlt; erst Speichern mit Erfolg hängt ihn neu ein", async ({ page }) => {
@@ -120,6 +174,7 @@ test("Speichern mit Fehler lässt den wiederhergestellten Editor stehen, samt Hi
     // Die Seite meldet jetzt „nichts vorhanden" (die Zeile fehlt, verlangt war sie). Über diesem
     // Editor steht das nicht: Sein Inhalt IST wiederhergestellt.
     await expect(fehlt(page)).toHaveCount(0);
+    await expect(angebot(page)).toHaveCount(0);
     // Das gescheiterte Speichern hat nichts geschrieben.
     expect(t.rezeptTitel(rezeptId)).toBe(IM_ZWEITEN_TAB);
 
@@ -139,7 +194,7 @@ test("Speichern mit Fehler lässt den wiederhergestellten Editor stehen, samt Hi
   }
 });
 
-test("Wiederherstellen verlangt, aber es liegt nichts vor: Die Seite sagt es und bleibt beim gespeicherten Rezept — auch nach einem Speichern mit Fehler, und nur, solange nichts vorliegt", async ({ page }) => {
+test("Wiederherstellen verlangt, aber es liegt nichts vor: Die Seite sagt es und bleibt beim gespeicherten Rezept — auch nach einem Speichern mit Fehler; liegt später doch eine Zeile, wird sie angeboten", async ({ page }) => {
   // Keine Umleitung auf die Adresse ohne den Parameter: Dieselbe Seite rendert nach einem
   // Speichern mit Fehler neu, und eine Umleitung verließe dann den Editor samt Getipptem.
   const t = tabelle();
@@ -165,9 +220,44 @@ test("Wiederherstellen verlangt, aber es liegt nichts vor: Die Seite sagt es und
     await speichern(page).click();
     await expect(ueberschrift(page)).toContainText(IM_ZWEITEN_TAB);
     await expect(fehlt(page)).toHaveCount(0);
-    // Wiederhergestellt hat dieser Editor nichts, also behauptet er es auch jetzt nicht.
+    // Die Zeile wird jetzt angeboten. Wiederhergestellt hat dieser Editor nichts, also behauptet
+    // er es auch jetzt nicht.
+    await expect(angebot(page)).toBeVisible();
     await expect(hinweis(page)).toHaveCount(0);
     await expect(page.locator("#f-portionen")).toHaveValue("9");
+  } finally {
+    t.rezeptUmbenennen(rezeptId, gespeichert);
+    t.leeren();
+    t.schliessen();
+  }
+});
+
+test("über einem wiederhergestellten Editor wird eine inzwischen ERSETZTE Zeile angeboten — neben dem Hinweis auf den eigenen Inhalt", async ({ page }) => {
+  // Ein zweiter Tab sichert, während dieser Editor seinen wiederhergestellten Stand zeigt: In der
+  // Zeile liegt jetzt etwas anderes, unter anderem Stand. Bliebe sie ungenannt, räumte das nächste
+  // Speichern sie ungesehen ab.
+  const t = tabelle();
+  const gespeichert = t.rezeptTitel(rezeptId);
+  try {
+    t.legen({ titel: "Erste Zeile" });
+    await oeffnen(page, wiederherstellen());
+    await expect(titel(page)).toHaveValue("Erste Zeile");
+    await expect(angebot(page)).toHaveCount(0);
+
+    t.legen({ titel: "Zweite Zeile, aus dem anderen Tab" });
+    t.rezeptUmbenennen(rezeptId, IM_ZWEITEN_TAB);
+    await titel(page).fill("   ");
+    await speichern(page).click();
+    await expect(ueberschrift(page)).toContainText(IM_ZWEITEN_TAB);
+    await expect(titel(page)).toHaveValue("   ");
+    await expect(hinweis(page)).toHaveText(WIEDERHERGESTELLT);
+    await expect(angebot(page)).toBeVisible();
+
+    // Der Link legt die zweite Zeile in den Editor. Danach ist sie die eigene und wird nicht mehr angeboten.
+    await wiederherstellenLink(page).click();
+    await expect(titel(page)).toHaveValue("Zweite Zeile, aus dem anderen Tab");
+    await expect(hinweis(page)).toHaveText(WIEDERHERGESTELLT);
+    await expect(angebot(page)).toHaveCount(0);
   } finally {
     t.rezeptUmbenennen(rezeptId, gespeichert);
     t.leeren();

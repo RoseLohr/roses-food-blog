@@ -29,16 +29,23 @@ export default async function EditRecipePage(props: {
   const message = meldungAus(searchParams);
 
   // `?zwischenstand=1` legt den Zwischenstand des Rezepts in den Editor; ohne
-  // den Parameter steht dort das gespeicherte Rezept. Gespeichert wird dabei
-  // nichts: Das tut erst der Redakteur. Die Ablage liefert nur, was sich laden
-  // lässt (`ladbareDatenAus`, dieselbe Regel wie `editorAusDaten`); der Typ
-  // weiß das nicht, deshalb gilt auch hier: nicht übersetzbar heißt nicht
-  // wiederhergestellt. Nach dem Alter der Zeile fragt niemand: Speichern
-  // räumt sie ab, also ist jede Zeile nach dem letzten Speichern entstanden.
+  // den Parameter steht dort das gespeicherte Rezept, und die Zeile wird nur
+  // angeboten. Gespeichert wird dabei nichts: Das tut erst der Redakteur. Die
+  // Ablage liefert nur, was sich laden lässt (`ladbareDatenAus`, dieselbe
+  // Regel wie `editorAusDaten`); der Typ weiß das nicht, deshalb gilt auch
+  // hier: nicht übersetzbar heißt weder angeboten noch wiederhergestellt.
+  // Geladen wird bei jedem Öffnen: Eine Zeile, die sich nicht laden lässt,
+  // meldet die Ablage damit jedes Mal. Nach dem Alter der Zeile fragt
+  // niemand: Speichern räumt sie ab, also ist jede Zeile nach dem letzten
+  // Speichern entstanden.
   const verlangt = searchParams.zwischenstand === "1";
-  const zwischenstand = verlangt ? await zwischenstandLaden(schluesselFuerRezept(recipeId)) : null;
-  const wiederhergestellt =
+  const zwischenstand = await zwischenstandLaden(schluesselFuerRezept(recipeId));
+  const uebersetzt =
     zwischenstand && editorAusDaten(zwischenstand.daten, editorProps.initial, erlaubteVerweise(editorProps));
+  // Zeitpunkt und Stand der Zeile, die liegt und sich laden lässt.
+  const zeile =
+    zwischenstand && uebersetzt ? { zeit: alsZeitpunkt(zwischenstand.gesichertAm), stand: zwischenstand.stand } : null;
+  const wiederhergestellt = verlangt ? uebersetzt : null;
 
   return (
     <>
@@ -50,7 +57,9 @@ export default async function EditRecipePage(props: {
           deshalb stehen, auch wenn die Zeile inzwischen fehlt und `initial`
           wieder das gespeicherte Rezept ist. Nach erfolgreichem Speichern
           hängt die Umleitung die Seite neu ein: Erst das beendet den Hinweis.
-          Beides gemessen in tests/e2e/rezept-zwischenstand.spec.ts.
+          Das Angebot dagegen folgt jedem Rendern: Es sagt etwas über die
+          ZEILE, nicht über den Inhalt des Editors.
+          Gemessen in tests/e2e/rezept-zwischenstand.spec.ts.
           Überschrift und Adresse der öffentlichen Seite kommen aus
           `editorProps` und bleiben die des gespeicherten Rezepts.
           War Wiederherstellen verlangt und liegt nichts vor, sagt die Seite
@@ -62,12 +71,9 @@ export default async function EditRecipePage(props: {
         {...editorProps}
         initial={wiederhergestellt?.initial ?? editorProps.initial}
         taxonomiePending={wiederhergestellt?.taxonomiePending}
-        zwischenstandWiederhergestellt={
-          zwischenstand && wiederhergestellt
-            ? { zeit: alsZeitpunkt(zwischenstand.gesichertAm), stand: zwischenstand.stand }
-            : undefined
-        }
-        zwischenstandFehlt={verlangt && !wiederhergestellt}
+        zwischenstandWiederhergestellt={(verlangt && zeile) || undefined}
+        zwischenstandAngebot={zeile ? { ...zeile, wiederherstellen: `/admin/rezepte/${recipeId}?zwischenstand=1` } : undefined}
+        zwischenstandFehlt={verlangt && !zeile}
         message={message}
       />
     </>

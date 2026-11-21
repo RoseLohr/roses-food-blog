@@ -396,10 +396,10 @@ Die Regeln, nach denen ein Zwischenstand des Editors (das ROHE Formular als
 sichert, lädt, verwirft, räumt auf und listet die begonnenen neuen Rezepte. Der Endpunkt
 (sichern und verwerfen) steht in
 `src/app/api/admin/rezepte/zwischenstand/route.ts`. Speichern des Rezepts
-räumt dessen Zeile ab. Die Bearbeiten-Seite stellt eine Zeile wieder her
-(`?zwischenstand=1`); angeboten wird sie dort noch nicht. **Noch sichert
-nichts von selbst:** Das Sichern im Editor folgt in eigenen Schritten. Bis
-dahin entsteht im Betrieb keine Zeile.
+räumt dessen Zeile ab. Die Bearbeiten-Seite bietet eine Zeile an und stellt
+sie wieder her. **Noch sichert nichts von selbst:** Das Sichern im Editor
+folgt in eigenen Schritten. Bis dahin entsteht im Betrieb keine Zeile, und
+das Angebot ruht.
 
 - **Warum nicht über den Speicherweg:** Speichern ist Veröffentlichen (Status
   aus dem Formular), legt halbe Zutatennamen als Zutaten an, fixiert den Slug,
@@ -553,6 +553,23 @@ dahin entsteht im Betrieb keine Zeile.
   neu an, und das Rezept hängt wieder an ihr. Gemessen in
   `tests/recipe-zwischenstand-nebenwege.integration.test.ts` (die drei Wege
   und die Folge).
+- **Anbieten heißt nicht übernehmen**
+  (`src/app/admin/(protected)/rezepte/[id]/page.tsx`): Liegt eine Zeile, zeigt
+  die Seite einen Hinweis mit Tag und Uhrzeit ihrer Sicherung und dem Link
+  „Wiederherstellen"; im Editor steht das gespeicherte Rezept. Erst der Link
+  (`?zwischenstand=1`) legt sie in den Editor. Was sich nicht laden lässt,
+  wird nicht angeboten, auch nicht über die Adresse — und die Ablage meldet
+  es bei JEDEM Öffnen der Seite, nicht erst beim Wiederherstellen. **Die
+  Seite sagt, was sie über die ZEILE weiß; was im Editor STEHT, weiß nur der
+  Editor.** Das Angebot folgt deshalb jedem Rendern, der Hinweis
+  „wiederhergestellt" nicht (nächster Punkt). Der erste Anlauf entschied
+  beides je Rendern in der Seite: Ein Editor, der beim Einhängen nichts
+  wiederhergestellt hatte, behauptete es, sobald eine Zeile lag. **Nicht
+  gezeigt wird nur das Angebot der Zeile, aus der der Inhalt stammt** —
+  erkannt am Stand, nicht an der Uhrzeit. Liegt über einem wiederhergestellten
+  Inhalt inzwischen eine ANDERE Zeile (ein zweiter Tab hat gesichert), stehen
+  beide Hinweise; sonst räumte das nächste Speichern sie ungesehen ab.
+  Gemessen wie im nächsten Punkt.
 - **Wiederherstellen heißt nicht speichern**
   (`src/app/admin/(protected)/rezepte/[id]/page.tsx`): `?zwischenstand=1` legt
   die Zeile in den Editor; gespeichert wird erst, wenn der Redakteur
@@ -575,8 +592,8 @@ dahin entsteht im Betrieb keine Zeile.
   neu, und eine Umleitung verließe dann den Editor samt Getipptem.
   Gemessen in `tests/rezept-bearbeiten-seite.integration.test.ts` (das
   ausgelieferte HTML) und `tests/e2e/rezept-zwischenstand.spec.ts` (im
-  Browser: Speichern mit Fehler, danach mit Erfolg; und der Fall, in dem
-  nichts vorliegt).
+  Browser: der Weg vom Angebot bis nach dem Speichern; Speichern mit Fehler,
+  danach mit Erfolg; der Fall, in dem nichts vorliegt; die ersetzte Zeile).
 - **Geprüft wird Text, gerechnet wird mit Zahlen.** Eine NUMMER (Rezept im
   Schlüssel, Bild, Häkchen) ist eine reine Ziffernfolge mit höchstens 15
   Stellen: `Number()` rundet ab 2^53 und schreibt sich ab 22 Stellen mit
