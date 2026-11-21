@@ -1,7 +1,7 @@
 /**
  * Die Ablage des Zwischenstands (Tabelle rezept_zwischenstand) — höchstens
  * eine Zeile je Schlüssel, überschrieben, nie gedeutet. Die Regeln stehen in
- * recipe-zwischenstand.ts; hier wird nur geschrieben und gelesen.
+ * recipe-zwischenstand.ts; hier wird nur geschrieben, gelesen und verworfen.
  * Abgelegt und angeboten wird nach derselben Regel (`istLadbar`): nur, was
  * sich in den Editor laden ließe.
  *
@@ -14,7 +14,7 @@
  * lässt (zeileLesen): Die kennt niemand, sie wird überschrieben. Und nennt er
  * einen Stand, obwohl es KEINE Zeile mehr gibt, wird nichts angelegt („weg"):
  * Die Zeile, die er fortsetzen will, ist fort — etwa beim Speichern
- * abgeräumt oder mit ihrem Rezept gelöscht.
+ * abgeräumt, verworfen oder mit ihrem Rezept gelöscht.
  * Die Entscheidung trifft `sicherungsurteil`. Jede Sicherung bekommt einen
  * neuen, zufälligen Stand, der an keiner Uhr und keinem Zähler hängt. Lesen
  * und Schreiben stehen in einer Transaktion; der Treiber ist synchron, also
@@ -22,9 +22,10 @@
  */
 import "server-only";
 import { randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { asc, desc, eq, isNull } from "drizzle-orm";
 import { db, schema } from "@/db";
 import {
+  istFremderStand,
   istLadbar,
   istZwischenstandSchluessel,
   ladbareDatenAus,
@@ -40,8 +41,8 @@ const zeilen = schema.rezeptZwischenstand;
  * Stand und Zeitpunkt der Zeile zum Schlüssel, und ob sie sich laden lässt
  * (`ladbareDatenAus` — dieselbe Regel, nach der `zwischenstandLaden` anbietet).
  * Eine Zeile, die niemand laden kann, bekommt niemand zu sehen, also kennt
- * niemand ihren Stand: Sie zählt nicht als „fremd" und sperrt das Sichern
- * nicht.
+ * niemand ihren Stand: Sie zählt nicht als „fremd" und sperrt weder das
+ * Sichern noch das Verwerfen.
  */
 function zeileLesen(
   tx: Transaktion,
@@ -125,4 +126,48 @@ function alsZwischenstand(zeile: typeof zeilen.$inferSelect): Zwischenstand | nu
 export async function zwischenstandLaden(schluessel: string): Promise<Zwischenstand | null> {
   const zeile = db.select().from(zeilen).where(eq(zeilen.schluessel, schluessel)).get();
   return zeile ? alsZwischenstand(zeile) : null;
+}
+
+/** „fremd": Stand und Zeitpunkt der Zeile, die geblieben ist. */
+export type Verwerfung = { ergebnis: "verworfen" } | { ergebnis: "fremd"; stand: string; gesichertAm: Date };
+
+/**
+ * Verwerfen löscht nur, was der Aufrufer gesehen hat: Trägt die Zeile einen
+ * anderen Stand als den genannten, bleibt sie — dieselbe Regel wie beim
+ * Sichern, mit derselben Ausnahme: Eine Zeile, die sich nicht laden lässt,
+ * kennt niemand, sie wird ohne Stand weggeräumt. Keine Zeile: nichts zu
+ * vergleichen, nichts zu löschen — kein Fehler, Verwerfen ist idempotent.
+ */
+export async function zwischenstandVerwerfen(eingabe: {
+  schluessel: string;
+  bekannterStand: string | null;
+}): Promise<Verwerfung> {
+  const { schluessel, bekannterStand } = eingabe;
+  return db.transaction((tx): Verwerfung => {
+    const zeile = zeileLesen(tx, schluessel);
+    if (zeile?.ladbar && istFremderStand(zeile.stand, bekannterStand)) {
+      return { ergebnis: "fremd", stand: zeile.stand, gesichertAm: zeile.gesichertAm };
+    }
+    tx.delete(zeilen).where(eq(zeilen.schluessel, schluessel)).run();
+    return { ergebnis: "verworfen" };
+  });
+}
+
+/**
+ * Begonnene NEUE Rezepte (Zeilen ohne Rezeptnummer), jüngste zuerst — zum
+ * Fortsetzen. Was sich nicht laden lässt, fehlt und ist gemeldet, wie beim
+ * Laden. Der Titel roh, wie getippt: Ein Zwischenstand deutet nichts.
+ */
+export async function offeneNeueZwischenstaende(): Promise<
+  Array<{ schluessel: string; titel: string; gesichertAm: Date }>
+> {
+  return db
+    .select()
+    .from(zeilen)
+    .where(isNull(zeilen.recipeId))
+    .orderBy(desc(zeilen.gesichertAm), asc(zeilen.schluessel))
+    .all()
+    .map(alsZwischenstand)
+    .filter((z): z is Zwischenstand => z !== null)
+    .map((z) => ({ schluessel: z.schluessel, titel: z.daten.titel?.[0] ?? "", gesichertAm: z.gesichertAm }));
 }
