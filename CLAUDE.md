@@ -407,9 +407,10 @@ Oberfläche.
   dabei nur für das Rezept, das aus ihr entsteht.
 - **Der Stand einer Zeile ist eine zufällige Kennung je Sicherung** (Spalte
   `stand`) — der Schutz vor zwei Tabs. Bekannt ist GENAU der Stand, den die
-  Zeile trägt; jeder andere ist „fremd", und keiner auch. Beim Sichern und
-  Verwerfen wird eine fremde Zeile weder überschrieben noch gelöscht (die
-  Regel dazu folgt mit der Ablage). **Weder Uhrzeit noch Zähler:** Der erste
+  Zeile trägt; jeder andere ist „fremd", und keiner auch
+  (`istFremderStand`). Beim Sichern und Verwerfen wird eine fremde Zeile
+  weder überschrieben noch gelöscht (`sicherungsurteil`; die Ablage, die das
+  anwendet, folgt). **Weder Uhrzeit noch Zähler:** Der erste
   Anlauf nahm die Uhrzeit der Sicherung. Eine verworfene und im selben
   Zeitpunkt neu angelegte Zeile (zurückgestellte Uhr) trug dann den Stand der
   alten, und ein Tab hielt sie für seine. Ein Zähler der Datenbank
