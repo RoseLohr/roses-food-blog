@@ -3,9 +3,11 @@
  * (ein Schlüssel je Zeile und nur in den zwei Formen, die Rezeptnummer hängt
  * am Schlüssel, der Stand hat die Form einer Kennung, Cascade, Fremdschlüssel)
  * — und dass Migration, schema.ts und Regel dieselbe Form meinen. Dazu: dass
- * Speichern des Rezepts seine Zeile abräumt.
+ * Speichern des Rezepts seine Zeile abräumt, und die Ablage
+ * (src/lib/recipe-zwischenstand-store.ts): laden.
  */
-import { beforeAll, describe, expect, it } from "vitest";
+import { format } from "node:util";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { frischeDb } from "./helfer/frische-db";
 import { adminAnlegen } from "./helfer/saat";
 
@@ -33,12 +35,26 @@ function rezeptFormular(titel: string, extra: Record<string, string> = {}): Form
   return fd;
 }
 
-/** Eine Zeile unmittelbar in die Tabelle — für alles, was die Tabelle selbst zusagt. */
-async function lege(schluessel: string, recipeId: number | null, stand = STAND): Promise<void> {
+/**
+ * Zeilen, die sich nicht laden lassen: ohne Formular (kein JSON, oder gültiges JSON in falscher
+ * Form) — und MIT Formular, dessen Abschnitte oder Notizen nicht die Form des Editors haben. Niemand
+ * könnte sie in den Editor legen; die Ablage bietet sie deshalb gar nicht erst an.
+ */
+const NICHT_LADBAR = [
+  "{kein json",
+  "null",
+  "[]",
+  '"Suppe"',
+  '{"titel":"Suppe"}',
+  '{"titel":[5]}',
+  '{"titel":["Geheim"],"abschnitte":["{kein json"],"notizen":["[]"]}',
+  '{"titel":["Geheim"],"notizen":["[{\\"text\\":5}]"]}',
+];
+
+/** Eine Zeile unmittelbar in die Tabelle. */
+async function lege(schluessel: string, recipeId: number | null, stand = STAND, formular = '{"titel":["Entwurf"]}'): Promise<void> {
   const { db, schema } = await import("@/db");
-  db.insert(schema.rezeptZwischenstand)
-    .values({ schluessel, recipeId, formular: '{"titel":["Entwurf"]}', stand, gesichertAm: NOW })
-    .run();
+  db.insert(schema.rezeptZwischenstand).values({ schluessel, recipeId, formular, stand, gesichertAm: NOW }).run();
 }
 
 async function loesche(): Promise<void> {
@@ -288,5 +304,60 @@ describe("Speichern räumt den Zwischenstand ab", () => {
     expect(titel).toBe("Vorher");
     expect(await schluesselDerZeilen()).toEqual([schluessel]);
     await loesche();
+  });
+});
+
+describe("Zwischenstand-Ablage: laden", () => {
+  afterEach(() => loesche());
+
+  it("lädt, was in der Zeile steht — das Formular roh, mit Stand und Zeitpunkt; ohne Zeile nichts", async () => {
+    const store = await import("@/lib/recipe-zwischenstand-store");
+    const { saveRecipeFromForm } = await import("@/lib/recipe-save");
+    await lege(NEU, null);
+    expect(await store.zwischenstandLaden(NEU)).toEqual({
+      schluessel: NEU,
+      recipeId: null,
+      daten: { titel: ["Entwurf"] },
+      stand: STAND,
+      gesichertAm: NOW,
+    });
+    // Die Zeile eines bestehenden Rezepts trägt seine Nummer.
+    const res = await saveRecipeFromForm(rezeptFormular("Bestehend"), adminId, NOW);
+    if (!("recipeId" in res)) throw new Error("Rezept nicht angelegt");
+    await lege(`rezept:${res.recipeId}`, res.recipeId);
+    expect(await store.zwischenstandLaden(`rezept:${res.recipeId}`)).toEqual({
+      schluessel: `rezept:${res.recipeId}`,
+      recipeId: res.recipeId,
+      daten: { titel: ["Entwurf"] },
+      stand: STAND,
+      gesichertAm: NOW,
+    });
+    expect(await store.zwischenstandLaden(ANDERER)).toBeNull();
+  });
+
+  it("bietet keine Zeile an, die sich nicht laden lässt — und meldet den Schlüssel, nie den Inhalt", async () => {
+    // Drei Arten (NICHT_LADBAR): kein JSON; gültiges JSON in falscher Form — ungeprüft käme der
+    // Text "Suppe" als Formular zurück; und ein Formular, dessen Abschnitte oder Notizen nicht die
+    // Form des Editors haben.
+    const store = await import("@/lib/recipe-zwischenstand-store");
+    const gemeldet: unknown[][] = [];
+    const original = console.error;
+    console.error = (...teile: unknown[]) => void gemeldet.push(teile);
+    try {
+      const schluessel = NICHT_LADBAR.map((_, i) => `neu:eeeeeeee-2222-4333-8444-55555555555${i}`);
+      for (const [i, formular] of NICHT_LADBAR.entries()) await lege(schluessel[i], null, STAND, formular);
+      // Eine gesunde Zeile daneben wird weiter angeboten.
+      await lege(ANDERER, null, STAND, '{"titel":["Gesund"]}');
+      for (const s of schluessel) expect(await store.zwischenstandLaden(s), s).toBeNull();
+      expect((await store.zwischenstandLaden(ANDERER))?.daten).toEqual({ titel: ["Gesund"] });
+      // Nicht still: je Zeile eine Meldung — mit dem Schlüssel, nie mit dem Inhalt. Zusammengesetzt
+      // wie console.error es tut: Auch ein Objekt als Argument stünde ausgeschrieben im Log.
+      expect(gemeldet.length).toBe(NICHT_LADBAR.length);
+      const meldungen = gemeldet.map((teile) => format(...teile));
+      schluessel.forEach((s, i) => expect(meldungen[i]).toContain(s));
+      for (const meldung of meldungen) expect(meldung).not.toMatch(/Suppe|kein json|titel|Geheim/);
+    } finally {
+      console.error = original;
+    }
   });
 });
