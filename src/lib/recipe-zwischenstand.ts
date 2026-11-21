@@ -199,6 +199,36 @@ function listeAus<T>(roh: string | undefined, passt: (x: unknown) => x is T): T[
 }
 
 /**
+ * Abschnitte und Notizen eines Formulars — oder null, wenn eine der beiden
+ * Listen unbrauchbar ist. Dann ist es der ganze Zwischenstand.
+ */
+function listenAus(daten: ZwischenstandDaten): { abschnitte: Abschnitt[] | undefined; notizen: Notiz[] | undefined } | null {
+  const abschnitte = listeAus(daten.abschnitte?.[0], istAbschnitt);
+  const notizen = listeAus(daten.notizen?.[0], istNotiz);
+  return abschnitte === null || notizen === null ? null : { abschnitte, notizen };
+}
+
+/**
+ * Ob sich ein Formular LADEN ließe: Seine Abschnitte und Notizen haben die
+ * Form des Editors oder fehlen — genau das, was `editorAusDaten` in
+ * Anfangswerte übersetzen kann.
+ *
+ * EINE Regel, wer auch fragt. Fragte, wer ablegt, nur nach dem Formular und,
+ * wer anbietet, auch nach den Listen, gäbe es Zeilen, die niemand zu sehen
+ * bekäme und die trotzdem als „fremd" gälten: Sie sperrten Sichern und
+ * Verwerfen.
+ */
+export function istLadbar(daten: ZwischenstandDaten): boolean {
+  return listenAus(daten) !== null;
+}
+
+/** Das Formular einer Zeile, wenn sie sich laden lässt (`datenAusJson` und `istLadbar`) — sonst null. */
+export function ladbareDatenAus(roh: string): ZwischenstandDaten | null {
+  const daten = datenAusJson(roh);
+  return daten !== null && istLadbar(daten) ? daten : null;
+}
+
+/**
  * Eine NUMMER (Bild, Häkchen): reine Ziffernfolge, höchstens 15 Stellen — aus
  * demselben Grund wie beim Schlüssel: Bis dahin ist sie als Zahl exakt.
  */
@@ -262,9 +292,9 @@ export function editorAusDaten(
   basis: EditorAnfangswerte,
   erlaubt: { bildIds: Iterable<number>; taxonomieIds: Record<string, number[]> },
 ): WiederhergestellterEditor | null {
-  const abschnitte = listeAus(daten.abschnitte?.[0], istAbschnitt);
-  const notizen = listeAus(daten.notizen?.[0], istNotiz);
-  if (abschnitte === null || notizen === null) return null;
+  const listen = listenAus(daten);
+  if (listen === null) return null;
+  const { abschnitte, notizen } = listen;
 
   // Mit `null` im Typ: „kein Bild" ist nie in der Menge und bleibt, was es ist.
   // Und nur Nummern bis 15 Stellen: Eine längere im Formular wäre gerundet.
@@ -343,6 +373,45 @@ export function editorAusDaten(
  */
 export function rezeptnummerAus(schluessel: string): number | null {
   return REZEPT_SCHLUESSEL.test(schluessel) ? Number(schluessel.slice("rezept:".length)) : null;
+}
+
+/**
+ * Der Schutz vor zwei Tabs am selben Rezept. Jede Sicherung gibt der Zeile
+ * einen neuen Stand, eine zufällige Kennung; wer sichert oder verwirft, nennt
+ * den Stand, den er zuletzt gesehen hat (null: keinen). Bekannt ist GENAU der
+ * Stand, den die Zeile trägt — jeder andere ist fremd, und keiner auch.
+ *
+ * Weder Uhrzeit noch Zähler: Eine verworfene und im selben Zeitpunkt neu
+ * angelegte Zeile (zurückgestellte Uhr) trüge den Stand der alten; ein Zähler
+ * der Datenbank zählt nach einem zurückgespielten Backup ab dem gesicherten
+ * Stand weiter. Eine zufällige Kennung wiederholt sich nicht.
+ */
+export function istFremderStand(zeile: string, bekannterStand: string | null): boolean {
+  return zeile !== bekannterStand;
+}
+
+/**
+ * Was eine Sicherung mit der Zeile tut, die sie vorfindet:
+ *  - „fremd": Die Zeile trägt einen anderen Stand als den genannten (oder es
+ *    wurde keiner genannt). Nichts wird überschrieben; sonst verschwände
+ *    still, was ein anderer Tab gesichert hat.
+ *  - „weg": Ein Stand wurde genannt, aber es gibt KEINE Zeile mehr. Wer einen
+ *    Stand nennt, setzt eine Zeile fort; ist sie fort (etwa beim Speichern
+ *    abgeräumt, verworfen oder mit ihrem Rezept gelöscht), wird nichts
+ *    angelegt. Sonst legte eine Sicherung, die erst NACH dem Speichern
+ *    ankommt, die gerade abgeräumte Zeile neu an, mit dem Inhalt von vor dem
+ *    Speichern. Was als genannter Stand gilt, entscheidet, wer die Eingabe
+ *    liest; hier ist jeder Text einer, auch der leere.
+ *  - „schreiben": sonst. Auch über eine Zeile, die sich nicht laden lässt
+ *    (`ladbareDatenAus`): Niemand bekommt sie zu sehen, also kennt niemand
+ *    ihren Stand; sie sperrt nichts.
+ */
+export function sicherungsurteil(
+  zeile: { stand: string; ladbar: boolean } | null,
+  bekannterStand: string | null,
+): "schreiben" | "fremd" | "weg" {
+  if (zeile === null) return bekannterStand === null ? "schreiben" : "weg";
+  return zeile.ladbar && istFremderStand(zeile.stand, bekannterStand) ? "fremd" : "schreiben";
 }
 
 /**
