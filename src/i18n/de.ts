@@ -900,6 +900,7 @@ export const de = {
       viewPublic: "Öffentliche Seite ansehen",
       /** Zwischenstand (11/2026): der Hinweis über dem Editor, mit Tag und Uhrzeit dazwischen. */
       zwischenstandVom: "Zwischenstand vom",
+      zwischenstandWiederherstellen: "Wiederherstellen",
       zwischenstandWiederhergestellt: "wiederhergestellt — noch nicht gespeichert.",
       zwischenstandFehlt: "Kein Zwischenstand zum Wiederherstellen vorhanden. Wiederhergestellt wurde nichts.",
       internalNotes: "Interne Notizen (nur für Admins sichtbar)",

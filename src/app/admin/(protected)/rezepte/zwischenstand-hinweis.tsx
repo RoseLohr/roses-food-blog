@@ -1,14 +1,21 @@
 /**
- * Der Hinweis über dem Rezept-Editor, wenn sein Inhalt aus einem Zwischenstand
- * stammt: „Zwischenstand vom 13.10.2026 um 18:41 wiederhergestellt — noch
- * nicht gespeichert."
+ * Die Hinweise auf einen Zwischenstand über dem Rezept-Editor:
+ *  - Es liegt einer: „Zwischenstand vom 13.10.2026 um 18:41" mit dem Link
+ *    „Wiederherstellen" (das Angebot).
+ *  - Der Inhalt des Editors stammt aus einem: „Zwischenstand vom 13.10.2026 um
+ *    18:41 wiederhergestellt — noch nicht gespeichert."
+ * Beide können zugleich stehen: wenn über einem wiederhergestellten Inhalt
+ * inzwischen eine ANDERE Zeile liegt.
  *
  * Tag UND Uhrzeit: Eine Zeile kann über 30 Tage alt sein; eine Uhrzeit allein
  * läse sich wie heute.
  *
- * Nicht `<Meldung>`: Die bringt ihren Abstand nach unten mit (`mb-4`). Der
- * Hinweis steht in der Spalte des Editors, und die setzt die Abstände selbst
- * (`gap-6`) — wie beim Meldungskasten des Editors.
+ * Nicht `<Meldung>`: Die bringt ihren Abstand nach unten mit (`mb-4`) und
+ * trägt nur Text. Der Hinweis steht in der Spalte des Editors, und die setzt
+ * die Abstände selbst (`gap-6`) — wie beim Meldungskasten des Editors; und im
+ * Angebot steht eine Handlung. Die ist ein LINK mit Suchparameter, kein
+ * Knopf: Die Seite wird mit dem Zwischenstand neu geladen, und der Editor
+ * hängt neu ein.
  */
 import { t } from "@/i18n/de";
 
@@ -18,10 +25,24 @@ const KASTEN = "bg-amber-50 p-3 text-sm text-amber-900";
 export function ZwischenstandHinweis(props: {
   /** Wann der Zwischenstand gesichert wurde: „13.10.2026 um 18:41". */
   zeit: string;
+  /** Adresse zum Wiederherstellen: Mit ihr ist es das Angebot, ohne sie der Hinweis auf den eigenen Inhalt. */
+  wiederherstellen?: string;
 }) {
+  if (props.wiederherstellen === undefined) {
+    return (
+      <div role="status" className={KASTEN}>
+        {d.zwischenstandVom} {props.zeit} {d.zwischenstandWiederhergestellt}
+      </div>
+    );
+  }
   return (
-    <div role="status" className={KASTEN}>
-      {d.zwischenstandVom} {props.zeit} {d.zwischenstandWiederhergestellt}
+    <div role="status" className={`flex flex-wrap items-center gap-x-4 gap-y-1 ${KASTEN}`}>
+      <span>
+        {d.zwischenstandVom} {props.zeit}
+      </span>
+      <a href={props.wiederherstellen} className="font-semibold underline-offset-2 hover:underline">
+        {d.zwischenstandWiederherstellen}
+      </a>
     </div>
   );
 }

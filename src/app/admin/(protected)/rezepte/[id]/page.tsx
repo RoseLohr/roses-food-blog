@@ -63,7 +63,9 @@ export default async function EditRecipePage(props: {
         initial={wiederhergestellt?.initial ?? editorProps.initial}
         taxonomiePending={wiederhergestellt?.taxonomiePending}
         zwischenstandWiederhergestellt={
-          zwischenstand && wiederhergestellt ? { zeit: alsZeitpunkt(zwischenstand.gesichertAm) } : undefined
+          zwischenstand && wiederhergestellt
+            ? { zeit: alsZeitpunkt(zwischenstand.gesichertAm), stand: zwischenstand.stand }
+            : undefined
         }
         zwischenstandFehlt={verlangt && !wiederhergestellt}
         message={message}
