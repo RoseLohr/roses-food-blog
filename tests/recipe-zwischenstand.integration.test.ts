@@ -4,8 +4,8 @@
  * am Schlüssel, der Stand hat die Form einer Kennung, Cascade, Fremdschlüssel)
  * — und dass Migration, schema.ts und Regel dieselbe Form meinen. Dazu: dass
  * Speichern des Rezepts seine Zeile abräumt, und die Ablage
- * (src/lib/recipe-zwischenstand-store.ts): sichern, laden, verwerfen und die
- * Liste der begonnenen neuen Rezepte.
+ * (src/lib/recipe-zwischenstand-store.ts): sichern, laden, verwerfen, die
+ * Liste der begonnenen neuen Rezepte und das Aufräumen nach 30 Tagen.
  */
 import { format } from "node:util";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -618,5 +618,62 @@ describe("Zwischenstand-Ablage: verwerfen und die Liste der begonnenen Rezepte",
     await store.zwischenstandSichern({ schluessel: ANDERER, daten: { titel: ["Zuerst gesichert"] }, jetzt: NOW, bekannterStand: null });
     await store.zwischenstandSichern({ schluessel: NEU, daten: { titel: ["Danach gesichert"] }, jetzt: NOW, bekannterStand: null });
     expect((await store.offeneNeueZwischenstaende()).map((z) => z.schluessel)).toEqual([NEU, ANDERER]);
+  });
+});
+
+describe("Zwischenstand-Ablage: aufräumen", () => {
+  afterEach(() => loesche());
+  const TAG = 24 * 60 * 60 * 1000;
+
+  async function legeMitZeit(schluessel: string, recipeId: number | null, gesichertAm: Date, formular = '{"titel":["Entwurf"]}'): Promise<void> {
+    const { db, schema } = await import("@/db");
+    db.insert(schema.rezeptZwischenstand).values({ schluessel, recipeId, formular, stand: STAND, gesichertAm }).run();
+  }
+
+  it("räumt ab, was vor mehr als 30 Tagen zuletzt gesichert wurde — genau 30 Tage bleibt, eine Millisekunde älter geht", async () => {
+    const store = await import("@/lib/recipe-zwischenstand-store");
+    const { saveRecipeFromForm } = await import("@/lib/recipe-save");
+    const res = await saveRecipeFromForm(rezeptFormular("Mit altem Zwischenstand"), adminId, NOW);
+    if (!("recipeId" in res)) throw new Error("Rezept nicht angelegt");
+    const altesRezept = `rezept:${res.recipeId}`;
+    const grenzfall = "neu:11111111-2222-4333-8444-555555555551";
+    const knappDrueber = "neu:11111111-2222-4333-8444-555555555552";
+    const nichtLadbar = "neu:11111111-2222-4333-8444-555555555553";
+    await legeMitZeit(grenzfall, null, new Date(NOW.getTime() - 30 * TAG));
+    await legeMitZeit(knappDrueber, null, new Date(NOW.getTime() - 30 * TAG - 1));
+    // Es trifft Zeilen bestehender wie neuer Rezepte — und auch die, die sich nicht laden ließen.
+    await legeMitZeit(altesRezept, res.recipeId, new Date(NOW.getTime() - 45 * TAG));
+    await legeMitZeit(nichtLadbar, null, new Date(NOW.getTime() - 45 * TAG), "{kein json");
+    await legeMitZeit(NEU, null, NOW);
+
+    expect(await store.zwischenstaendeAufraeumen(NOW)).toBe(3);
+    expect(await schluesselDerZeilen()).toEqual([grenzfall, NEU].sort());
+    // Ein zweiter Lauf findet nichts mehr.
+    expect(await store.zwischenstaendeAufraeumen(NOW)).toBe(0);
+    // Das Rezept selbst bleibt: Aufgeräumt wird der Zwischenstand, nicht, woran er hängt.
+    const { db, schema } = await import("@/db");
+    const { eq } = await import("drizzle-orm");
+    expect(db.select().from(schema.recipe).where(eq(schema.recipe.id, res.recipeId)).get()).toBeDefined();
+  });
+
+  it("es zählt die LETZTE Sicherung, nicht das Anlegen: Eine alte Zeile, die wieder gesichert wurde, bleibt", async () => {
+    const store = await import("@/lib/recipe-zwischenstand-store");
+    await legeMitZeit(NEU, null, new Date(NOW.getTime() - 45 * TAG));
+    const wieder = await store.zwischenstandSichern({ schluessel: NEU, daten: { titel: ["Weiter"] }, jetzt: NOW, bekannterStand: STAND });
+    expect(wieder.ergebnis).toBe("gesichert");
+    expect(await store.zwischenstaendeAufraeumen(SPAETER)).toBe(0);
+    expect(await schluesselDerZeilen()).toEqual([NEU]);
+  });
+
+  it("wer den Stand einer aufgeräumten Zeile noch nennt, bekommt „weg“ — angelegt wird nichts", async () => {
+    const store = await import("@/lib/recipe-zwischenstand-store");
+    await legeMitZeit(NEU, null, new Date(NOW.getTime() - 45 * TAG));
+    expect(await store.zwischenstaendeAufraeumen(NOW)).toBe(1);
+    expect(await store.zwischenstandSichern({ schluessel: NEU, daten: { titel: ["Spät"] }, jetzt: NOW, bekannterStand: STAND })).toEqual({
+      ergebnis: "weg",
+      stand: null,
+      gesichertAm: null,
+    });
+    expect(await schluesselDerZeilen()).toEqual([]);
   });
 });

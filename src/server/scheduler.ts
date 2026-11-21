@@ -1,6 +1,7 @@
 /**
  * Interner Scheduler (node-cron) im App-Prozess: Tracking-Aggregation,
- * E-Mail-Queue-Versand und Sequenz-Planung. Start via instrumentation.ts.
+ * E-Mail-Queue-Versand, Sequenz-Planung, Selbst-Monitor und das Aufräumen
+ * alter Zwischenstände des Rezept-Editors. Start via instrumentation.ts.
  * Guard gegen doppelte Registrierung (Dev-Hot-Reload).
  */
 import cron from "node-cron";
@@ -85,6 +86,24 @@ export function startScheduler(): void {
       running.monitor = false;
     }
   });
+
+  // Täglich 03:10: Zwischenstände des Rezept-Editors, die 30 Tage niemand
+  // mehr gesichert hat (src/lib/recipe-zwischenstand.ts, Aufbewahrung).
+  // Speichern und Verwerfen räumen sofort; das hier ist das Netz darunter.
+  // Kein Überlappungsschutz: ein einzelnes, synchrones DELETE, einmal am Tag.
+  cron.schedule(
+    "10 3 * * *",
+    async () => {
+      try {
+        const { zwischenstaendeAufraeumen } = await import("@/lib/recipe-zwischenstand-store");
+        const anzahl = await zwischenstaendeAufraeumen(new Date());
+        if (anzahl > 0) console.log(`[cron] ${anzahl} Zwischenstand/-stände aufgeräumt.`);
+      } catch (err) {
+        console.error("[cron] Zwischenstand-Aufräumen fehlgeschlagen:", err);
+      }
+    },
+    { timezone: tz },
+  );
 
   console.log("[scheduler] Cron-Jobs registriert.");
 }

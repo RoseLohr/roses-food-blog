@@ -393,7 +393,7 @@ Die Regeln, nach denen ein Zwischenstand des Editors (das ROHE Formular als
 `neu:<uuid>`) gelesen, verglichen und wiederhergestellt wird, stehen EINMAL in
 `src/lib/recipe-zwischenstand.ts` (rein, im Mutations-Scope), die Ablage in
 `src/lib/recipe-zwischenstand-store.ts` (Tabelle `rezept_zwischenstand`): Sie
-sichert, lädt, verwirft und listet die begonnenen neuen Rezepte. Der Endpunkt
+sichert, lädt, verwirft, räumt auf und listet die begonnenen neuen Rezepte. Der Endpunkt
 (sichern und verwerfen) steht in
 `src/app/api/admin/rezepte/zwischenstand/route.ts`. Speichern des Rezepts
 räumt dessen Zeile ab. **Noch ruft nichts den Endpunkt auf:** Der Editor
@@ -421,8 +421,8 @@ dieser Abschnitt beschreibt kein Verhalten der Oberfläche.
   einem Tabellenumbau fällt er auf den höchsten Stand zurück, den es noch
   gibt. `gesichert_am` ist nur Anzeige und Alter.
 - **Wer einen Stand nennt, setzt eine Zeile fort** (`sicherungsurteil`). Gibt
-  es sie nicht mehr (etwa beim Speichern abgeräumt, verworfen oder mit ihrem
-  Rezept gelöscht), legt die Ablage nichts an und meldet „weg". Sonst legte eine
+  es sie nicht mehr (etwa beim Speichern abgeräumt, verworfen, aufgeräumt oder
+  mit ihrem Rezept gelöscht), legt die Ablage nichts an und meldet „weg". Sonst legte eine
   Sicherung, die erst NACH dem Speichern des Rezepts ankommt, die gerade
   abgeräumte Zeile neu an, mit dem Inhalt von vor dem Speichern; beim neuen
   Rezept bliebe ein Entwurf liegen, obwohl es das Rezept längst gibt. Wer
@@ -499,6 +499,15 @@ dieser Abschnitt beschreibt kein Verhalten der Oberfläche.
   Stand trägt als den genannten; 400 `ungueltig`, wenn `schluessel` keine der
   beiden Formen hat. Gemessen in
   `tests/recipe-zwischenstand-route.integration.test.ts`.
+- **Aufgeräumt wird 30 Tage nach der letzten Sicherung**, mit dem nächsten
+  nächtlichen Lauf um 03:10 (`src/server/scheduler.ts`) — es zählt die letzte
+  Sicherung, nicht das Anlegen, und es trifft Zeilen bestehender wie neuer
+  Rezepte. Speichern und Verwerfen räumen sofort; das ist das Netz darunter.
+  Nur deshalb ist die Ausnahme von „keine IDs in JSON" (`src/db/schema.ts`)
+  vertretbar: Ein Zwischenstand ist kein Datenmodell, sondern ein Schnappschuss
+  mit Ablaufdatum. Das Alter ist eine Frage an die Uhr (`gesichert_am`); der
+  Stand einer Zeile ist es nicht. Ein Editor, der den Stand einer aufgeräumten
+  Zeile noch nennt, bekommt „weg"; angelegt wird dabei nichts.
 - **Wiederherstellen deutet nicht, aber es prüft:** `editorAusDaten` legt das
   Formular über die Anfangswerte; Text bleibt ungetrimmt, Zahlen nur, wenn sie
   welche sind. Was ein FEHLENDES Feld heißt, hängt davon ab, ob der Editor es

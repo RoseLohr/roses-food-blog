@@ -73,8 +73,8 @@ export const ZWISCHENSTAND_PFAD = "/api/admin/rezepte/zwischenstand";
  * sind die Uhrzeit der Zeile, nur zur Anzeige.
  *
  * `weg`: Der Editor nannte einen Stand, aber die Zeile gibt es nicht mehr —
- * etwa beim Speichern abgeräumt, verworfen oder mit ihrem Rezept gelöscht.
- * Nichts wurde angelegt (`sicherungsurteil`); der Editor kennt danach keinen
+ * etwa beim Speichern abgeräumt, verworfen, aufgeräumt oder mit ihrem Rezept
+ * gelöscht. Nichts wurde angelegt (`sicherungsurteil`); der Editor kennt danach keinen
  * Stand mehr. Nach dem eigenen Speichern ist das kein Fehler, sonst sichert
  * er ohne Stand neu. Gibt es das Rezept nicht mehr, ist die Antwort auf
  * diese Folgesicherung `ungueltig`.
@@ -468,7 +468,7 @@ export function standAus(roh: string | undefined): string | null {
  *    still, was ein anderer Tab gesichert hat.
  *  - „weg": Ein Stand wurde genannt, aber es gibt KEINE Zeile mehr. Wer einen
  *    Stand nennt, setzt eine Zeile fort; ist sie fort (etwa beim Speichern
- *    abgeräumt, verworfen oder mit ihrem Rezept gelöscht), wird nichts
+ *    abgeräumt, verworfen, aufgeräumt oder mit ihrem Rezept gelöscht), wird nichts
  *    angelegt. Sonst legte eine Sicherung, die erst NACH dem Speichern
  *    ankommt, die gerade abgeräumte Zeile neu an, mit dem Inhalt von vor dem
  *    Speichern. Was als genannter Stand gilt, entscheidet, wer die Eingabe
