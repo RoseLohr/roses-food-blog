@@ -15,6 +15,8 @@ import path from "node:path";
  *    samt Hinweis — auch wenn die Zeile inzwischen fehlt.
  *  - Erst ein Speichern mit Erfolg hängt den Editor neu ein; danach steht der
  *    Hinweis nicht mehr da.
+ *  - Ist Wiederherstellen verlangt und liegt nichts vor, sagt die Seite es —
+ *    ohne Umleitung, und nie über einem wiederhergestellten Editor.
  *
  * Noch sichert der Editor nicht selbst; das folgt. Die Zeile wird hier deshalb
  * unmittelbar in die Tabelle gelegt, in der Form, in der die Ablage sie
@@ -71,6 +73,7 @@ async function oeffnen(page: Page, adresse: string) {
 }
 
 const hinweis = (page: Page) => page.getByRole("status").filter({ hasText: "Zwischenstand vom" });
+const fehlt = (page: Page) => page.getByRole("status").filter({ hasText: "Kein Zwischenstand zum Wiederherstellen vorhanden" });
 const titel = (page: Page) => page.locator('input[name="titel"]');
 const ueberschrift = (page: Page) => page.getByRole("heading", { level: 1 });
 const speichern = (page: Page) => page.getByRole("button", { name: "Speichern", exact: true });
@@ -114,6 +117,9 @@ test("Speichern mit Fehler lässt den wiederhergestellten Editor stehen, samt Hi
     await expect(page.locator("#f-portionen")).toHaveValue("7");
     await expect(page.locator('[name="teaser"]')).toHaveValue("Wiederhergestellter Teaser.");
     await expect(hinweis(page)).toHaveText(WIEDERHERGESTELLT);
+    // Die Seite meldet jetzt „nichts vorhanden" (die Zeile fehlt, verlangt war sie). Über diesem
+    // Editor steht das nicht: Sein Inhalt IST wiederhergestellt.
+    await expect(fehlt(page)).toHaveCount(0);
     // Das gescheiterte Speichern hat nichts geschrieben.
     expect(t.rezeptTitel(rezeptId)).toBe(IM_ZWEITEN_TAB);
 
@@ -126,6 +132,42 @@ test("Speichern mit Fehler lässt den wiederhergestellten Editor stehen, samt Hi
     // Der Editor steht noch da (sonst wäre auch eine leere Seite grün) — der Hinweis nicht mehr.
     await expect(titel(page)).toHaveValue("Jetzt mit Titel");
     await expect(hinweis(page)).toHaveCount(0);
+  } finally {
+    t.rezeptUmbenennen(rezeptId, gespeichert);
+    t.leeren();
+    t.schliessen();
+  }
+});
+
+test("Wiederherstellen verlangt, aber es liegt nichts vor: Die Seite sagt es und bleibt beim gespeicherten Rezept — auch nach einem Speichern mit Fehler, und nur, solange nichts vorliegt", async ({ page }) => {
+  // Keine Umleitung auf die Adresse ohne den Parameter: Dieselbe Seite rendert nach einem
+  // Speichern mit Fehler neu, und eine Umleitung verließe dann den Editor samt Getipptem.
+  const t = tabelle();
+  const gespeichert = t.rezeptTitel(rezeptId);
+  try {
+    t.leeren();
+    await oeffnen(page, wiederherstellen());
+    await expect(fehlt(page)).toBeVisible();
+    await expect(hinweis(page)).toHaveCount(0);
+    await expect(titel(page)).toHaveValue(gespeichert);
+    await page.locator("#f-portionen").fill("9");
+    await titel(page).fill("   ");
+    await speichern(page).click();
+    await expect(page.getByRole("alert").filter({ hasText: /Pflichtfelder/ })).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`/admin/rezepte/${rezeptId}\\?zwischenstand=1$`));
+    await expect(page.locator("#f-portionen")).toHaveValue("9");
+    await expect(fehlt(page)).toBeVisible();
+
+    // Der Satz folgt dem Rendern: Sichert inzwischen ein anderer Tab, liegt etwas vor, und er wäre
+    // falsch. (Die Überschrift ist wieder der Zeuge, dass die Seite neu gerendert hat.)
+    t.legen({ titel: "Inzwischen gesichert" });
+    t.rezeptUmbenennen(rezeptId, IM_ZWEITEN_TAB);
+    await speichern(page).click();
+    await expect(ueberschrift(page)).toContainText(IM_ZWEITEN_TAB);
+    await expect(fehlt(page)).toHaveCount(0);
+    // Wiederhergestellt hat dieser Editor nichts, also behauptet er es auch jetzt nicht.
+    await expect(hinweis(page)).toHaveCount(0);
+    await expect(page.locator("#f-portionen")).toHaveValue("9");
   } finally {
     t.rezeptUmbenennen(rezeptId, gespeichert);
     t.leeren();

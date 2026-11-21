@@ -200,7 +200,25 @@ describe("ein Editor, dessen Inhalt aus einem Zwischenstand stammt", () => {
     // Beides sagt nichts über die Felder: Die kommen weiter aus den Anfangswerten.
     expect(mit.wert("titel")).toEqual(["Noch nicht fertig"]);
   });
+
+  it("sagt es, wenn Wiederherstellen verlangt war und nichts vorlag — aber nie über einem Inhalt, der aus einem Zwischenstand stammt", async () => {
+    const { buildEditorProps } = await editorDaten();
+    const { RecipeEditor } = await import("@/app/admin/(protected)/rezepte/recipe-editor");
+    const props = (await buildEditorProps(entwurf))!;
+    const hinweise = (zusatz: object) => gelesen(renderToStaticMarkup(createElement(RecipeEditor, { ...props, ...zusatz }))).hinweise;
+
+    expect(hinweise({ zwischenstandFehlt: true })).toEqual([FEHLT]);
+    expect(hinweise({ zwischenstandFehlt: false })).toEqual([]);
+    // Beide Angaben zugleich gibt es, sobald die Zeile eines wiederhergestellten Editors fehlt und
+    // die Seite neu rendert. „Wiederhergestellt wurde nichts" wäre dort falsch.
+    expect(hinweise({ zwischenstandFehlt: true, zwischenstandWiederhergestellt: { zeit: "13.10.2026 um 18:41" } })).toEqual([
+      "Zwischenstand vom 13.10.2026 um 18:41 wiederhergestellt — noch nicht gespeichert.",
+    ]);
+  });
 });
+
+/** Wiederherstellen war verlangt, und es liegt nichts vor, was sich laden ließe. */
+const FEHLT = "Kein Zwischenstand zum Wiederherstellen vorhanden. Wiederhergestellt wurde nichts.";
 
 /** Vor Wochen gesichert: Der Hinweis muss DIESEN Tag nennen, eine Uhrzeit allein läse sich wie heute. */
 const GESICHERT_AM = new Date(2026, 9, 13, 18, 41);
@@ -273,22 +291,27 @@ describe("Bearbeiten-Seite mit ?zwischenstand=1", () => {
     }
   });
 
-  it("ohne Zeile, und mit einer, die sich nicht laden lässt, bleibt es beim gespeicherten Rezept — ohne Hinweis", async () => {
+  it("ohne Zeile, und mit einer, die sich nicht laden lässt, bleibt es beim gespeicherten Rezept — und verlangt jemand Wiederherstellen, sagt die Seite, dass nichts wiederhergestellt wurde", async () => {
     const fehler = console.error;
     console.error = () => undefined;
     try {
       for (const inhalt of [null, "null", '{"titel":["Unbrauchbar"],"abschnitte":["{kein json"],"notizen":["[]"]}']) {
         await zeile(entwurf, inhalt);
-        const s = await seite(entwurf, { zwischenstand: "1" });
-        expect(s.wert("titel"), String(inhalt)).toEqual(["Noch nicht fertig"]);
-        expect(s.hinweise, String(inhalt)).toEqual([]);
+        for (const mitParameter of [true, false]) {
+          const fall = `${inhalt}, mitParameter=${mitParameter}`;
+          const s = await seite(entwurf, mitParameter ? { zwischenstand: "1" } : {});
+          expect(s.wert("titel"), fall).toEqual(["Noch nicht fertig"]);
+          // Nicht still, wenn Wiederherstellen verlangt war: Wer dann das gespeicherte Rezept
+          // bekommt, hielte es sonst für den Zwischenstand. Ohne den Parameter fehlt nichts.
+          expect(s.hinweise, fall).toEqual(mitParameter ? [FEHLT] : []);
+        }
       }
     } finally {
       console.error = fehler;
     }
   });
 
-  it("liefert die Ablage doch ein Formular, das sich nicht übersetzen lässt, stellt die SEITE es nicht wieder her", async () => {
+  it("liefert die Ablage doch ein Formular, das sich nicht übersetzen lässt, stellt die SEITE es nicht wieder her — und sagt es", async () => {
     // Die echte Ablage liefert das nicht (Fall darüber: Sie bietet die Zeile gar nicht an). Ihr Typ
     // lässt es zu, und die Seite verlässt sich nicht darauf. Deshalb hier, und nur hier, eine
     // Ablage, die es doch tut: Gemessen wird der Zweig der Seite.
@@ -303,11 +326,13 @@ describe("Bearbeiten-Seite mit ?zwischenstand=1", () => {
       gesichertAm: GESICHERT_AM,
     });
     try {
-      const s = await seite(entwurf, { zwischenstand: "1" });
+      for (const mitParameter of [true, false]) {
+        const s = await seite(entwurf, mitParameter ? { zwischenstand: "1" } : {});
+        expect(s.wert("titel"), String(mitParameter)).toEqual(["Noch nicht fertig"]);
+        expect(s.hinweise, String(mitParameter)).toEqual(mitParameter ? [FEHLT] : []);
+      }
       // Die Seite hat wirklich DIESE Ablage gefragt — sonst mäße der Fall dasselbe wie der darüber.
       expect(laden.mock.calls).toEqual([[schluesselFuerRezept(entwurf)]]);
-      expect(s.wert("titel")).toEqual(["Noch nicht fertig"]);
-      expect(s.hinweise).toEqual([]);
     } finally {
       laden.mockRestore();
     }
