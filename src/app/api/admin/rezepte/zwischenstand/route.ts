@@ -40,6 +40,7 @@ import { isSameOriginRequest } from "@/lib/csrf";
 import {
   STAND_FELD,
   formularAlsDaten,
+  istLadbar,
   schluesselAus,
   standAus,
   type ZwischenstandAntwort,
@@ -79,14 +80,28 @@ export async function POST(req: Request): Promise<NextResponse> {
   // schon beim Schreiben veraltet — die Zeile bekommt mit dieser Sicherung
   // einen neuen.
   const { [STAND_FELD]: standRoh, ...formular } = daten;
+  // Was sich nicht laden ließe, ist ein Urteil über die Eingabe — hier gefällt,
+  // nach derselben Regel wie in der Ablage. Die würfe sonst, und ihr Wurf
+  // gälte als Störung.
+  if (!istLadbar(formular)) return antwort({ fehler: "ungueltig" }, 400);
 
-  // Was die Ablage wirft, wird nicht gefangen (siehe Kopf).
-  const ergebnis = await zwischenstandSichern({
-    schluessel,
-    daten: formular,
-    jetzt: new Date(),
-    bekannterStand: standAus(standRoh?.[0]),
-  });
+  let ergebnis: Awaited<ReturnType<typeof zwischenstandSichern>>;
+  try {
+    ergebnis = await zwischenstandSichern({
+      schluessel,
+      daten: formular,
+      jetzt: new Date(),
+      bekannterStand: standAus(standRoh?.[0]),
+    });
+  } catch (err) {
+    // Genau EIN Fehler der Ablage ist ein Urteil über die Eingabe: das Rezept,
+    // das es nicht (mehr) gibt — der Fremdschlüssel sagt nein. Jeder andere
+    // ist eine Störung und wird geworfen (siehe Kopf). Nennt die Anfrage einen
+    // Stand, kommt es nicht so weit: Ohne Zeile ist das Urteil schon „weg",
+    // und erst die Folgesicherung ohne Stand trifft den Fremdschlüssel.
+    if ((err as { code?: unknown }).code !== "SQLITE_CONSTRAINT_FOREIGNKEY") throw err;
+    return antwort({ fehler: "ungueltig" }, 400);
+  }
   if (ergebnis.ergebnis === "weg") return antwort({ fehler: "weg" }, 409);
   if (ergebnis.ergebnis === "fremd") {
     return antwort(
