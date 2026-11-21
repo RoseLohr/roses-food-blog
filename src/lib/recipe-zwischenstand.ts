@@ -485,15 +485,6 @@ export function sicherungsurteil(
   return zeile.ladbar && istFremderStand(zeile.stand, bekannterStand) ? "fremd" : "schreiben";
 }
 
-/**
- * Angeboten wird ein Zwischenstand, der nicht älter ist als das gespeicherte
- * Rezept — auch im selben Augenblick entstanden. Ein neues Rezept hat kein
- * Speicherdatum: immer anbieten.
- */
-export function nichtAelterAls(zwischenstand: Date, rezeptGespeichert: Date | null): boolean {
-  return rezeptGespeichert === null || zwischenstand.getTime() >= rezeptGespeichert.getTime();
-}
-
 /** Was vor diesem Zeitpunkt zuletzt gesichert wurde, wird aufgeräumt. */
 export function aufbewahrungsgrenze(jetzt: Date): Date {
   return new Date(jetzt.getTime() - ZWISCHENSTAND_AUFBEWAHRUNG_MS);

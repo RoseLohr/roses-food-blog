@@ -29,7 +29,6 @@ import {
   istNeuSchluessel,
   istZwischenstandSchluessel,
   ladbareDatenAus,
-  nichtAelterAls,
   rezeptnummerAus,
   schluesselAus,
   schluesselFuerNeu,
@@ -696,20 +695,6 @@ describe("rezeptnummerAus — woran eine Zeile hängt", () => {
     for (const schluessel of ["neu:3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b", "rezept:05", "rezept:", "xrezept:5", "rezept:1000000000000000", ""]) {
       expect(rezeptnummerAus(schluessel), schluessel).toBeNull();
     }
-  });
-});
-
-describe("nichtAelterAls — wann ein Zwischenstand angeboten wird", () => {
-  const t = new Date("2026-10-23T12:00:00Z");
-  it("ein Zwischenstand, der nach dem letzten Speichern entstand, wird angeboten — auch im selben Augenblick", () => {
-    expect(nichtAelterAls(t, new Date(t.getTime() - 1))).toBe(true);
-    expect(nichtAelterAls(t, t)).toBe(true);
-  });
-  it("ein älterer nicht — das Rezept wurde danach gespeichert, der Stand ist überholt", () => {
-    expect(nichtAelterAls(t, new Date(t.getTime() + 1))).toBe(false);
-  });
-  it("ein neues Rezept hat kein Speicherdatum: immer anbieten", () => {
-    expect(nichtAelterAls(t, null)).toBe(true);
   });
 });
 
