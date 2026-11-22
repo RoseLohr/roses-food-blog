@@ -4,7 +4,8 @@
  * am Schlüssel, der Stand hat die Form einer Kennung, Cascade, Fremdschlüssel)
  * — und dass Migration, schema.ts und Regel dieselbe Form meinen. Dazu: dass
  * Speichern des Rezepts seine Zeile abräumt, und die Ablage
- * (src/lib/recipe-zwischenstand-store.ts): sichern und laden.
+ * (src/lib/recipe-zwischenstand-store.ts): sichern, laden, verwerfen und die
+ * Liste der begonnenen neuen Rezepte.
  */
 import { format } from "node:util";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -514,5 +515,108 @@ describe("Zwischenstand-Ablage: sichern und laden", () => {
       store.zwischenstandSichern({ schluessel: "rezept:999999", daten: { titel: ["x"] }, jetzt: NOW, bekannterStand: null }),
     ).rejects.toMatchObject({ code: "SQLITE_CONSTRAINT_FOREIGNKEY" });
     expect(await schluesselDerZeilen()).toEqual([]);
+  });
+});
+
+describe("Zwischenstand-Ablage: verwerfen und die Liste der begonnenen Rezepte", () => {
+  afterEach(() => loesche());
+
+  it("verwirft genau die Zeile, deren Stand genannt ist — und meldet „verworfen“ auch, wenn es keine gibt", async () => {
+    const store = await import("@/lib/recipe-zwischenstand-store");
+    const eins = await store.zwischenstandSichern({ schluessel: NEU, daten: { titel: ["Eins"] }, jetzt: NOW, bekannterStand: null });
+    await store.zwischenstandSichern({ schluessel: ANDERER, daten: { titel: ["Zwei"] }, jetzt: NOW, bekannterStand: null });
+    expect(await store.zwischenstandVerwerfen({ schluessel: NEU, bekannterStand: eins.stand })).toEqual({ ergebnis: "verworfen" });
+    expect(await schluesselDerZeilen()).toEqual([ANDERER]);
+    // Idempotent: Was schon weg ist, ist weg — mit dem alten Stand, mit einem fremden, ohne einen.
+    for (const bekannterStand of [eins.stand, STAND, null]) {
+      expect(await store.zwischenstandVerwerfen({ schluessel: NEU, bekannterStand }), String(bekannterStand)).toEqual({ ergebnis: "verworfen" });
+    }
+    expect(await schluesselDerZeilen()).toEqual([ANDERER]);
+  });
+
+  it("verwirft nur, was der Aufrufer gesehen hat: Trägt die Zeile einen anderen Stand, oder ist keiner genannt, bleibt sie — „fremd“", async () => {
+    // Der Hinweis im Editor zeigt EINE Sicherung. Hat inzwischen ein anderer Tab gesichert, läge in
+    // der Zeile etwas, das dieser Redakteur nie gesehen hat.
+    const store = await import("@/lib/recipe-zwischenstand-store");
+    const erst = await store.zwischenstandSichern({ schluessel: NEU, daten: { titel: ["Tab A"] }, jetzt: NOW, bekannterStand: null });
+    const dann = await store.zwischenstandSichern({ schluessel: NEU, daten: { titel: ["Tab B"] }, jetzt: SPAETER, bekannterStand: erst.stand });
+    for (const bekannterStand of [erst.stand, STAND, null]) {
+      // „fremd" nennt Stand und Zeitpunkt der Zeile, die geblieben ist.
+      expect(await store.zwischenstandVerwerfen({ schluessel: NEU, bekannterStand }), String(bekannterStand)).toEqual({
+        ergebnis: "fremd",
+        stand: dann.stand,
+        gesichertAm: SPAETER,
+      });
+    }
+    expect((await store.zwischenstandLaden(NEU))?.daten).toEqual({ titel: ["Tab B"] });
+  });
+
+  it("eine Zeile, die sich nicht laden lässt, wird weggeräumt, mit und ohne genannten Stand — sie sperrt auch das Verwerfen nicht", async () => {
+    const store = await import("@/lib/recipe-zwischenstand-store");
+    for (const formular of NICHT_LADBAR) {
+      for (const bekannterStand of [null, STAND, ANDERER.slice("neu:".length)]) {
+        await lege(NEU, null, STAND, formular);
+        expect(await store.zwischenstandVerwerfen({ schluessel: NEU, bekannterStand }), `${formular} / ${bekannterStand}`).toEqual({ ergebnis: "verworfen" });
+        expect(await schluesselDerZeilen(), formular).toEqual([]);
+      }
+    }
+  });
+
+  it("nach dem Verwerfen ist die Zeile fort: Eine Sicherung mit ihrem alten Stand legt nichts an — „weg“", async () => {
+    const store = await import("@/lib/recipe-zwischenstand-store");
+    const erst = await store.zwischenstandSichern({ schluessel: NEU, daten: { titel: ["Entwurf"] }, jetzt: NOW, bekannterStand: null });
+    await store.zwischenstandVerwerfen({ schluessel: NEU, bekannterStand: erst.stand });
+    expect(await store.zwischenstandSichern({ schluessel: NEU, daten: { titel: ["Entwurf"] }, jetzt: SPAETER, bekannterStand: erst.stand })).toEqual({
+      ergebnis: "weg",
+      stand: null,
+      gesichertAm: null,
+    });
+    expect(await schluesselDerZeilen()).toEqual([]);
+    // Ohne Stand beginnt eine neue Zeile — unter einem neuen Stand, nicht dem der verworfenen.
+    const neu = await store.zwischenstandSichern({ schluessel: NEU, daten: { titel: ["Neu"] }, jetzt: NOW, bekannterStand: null });
+    expect(neu.ergebnis).toBe("gesichert");
+    expect(neu.stand).not.toBe(erst.stand);
+  });
+
+  it("listet die begonnenen NEUEN Rezepte — mit rohem Titel und Zeitpunkt, jüngste zuerst; nichts von bestehenden Rezepten, nichts, was sich nicht laden lässt", async () => {
+    const store = await import("@/lib/recipe-zwischenstand-store");
+    const { saveRecipeFromForm } = await import("@/lib/recipe-save");
+    const DRITTER = "neu:77777777-2222-4333-8444-555555555555";
+    const OHNE_TITEL = "neu:66666666-2222-4333-8444-555555555555";
+    const res = await saveRecipeFromForm(rezeptFormular("Bestehend"), adminId, NOW);
+    if (!("recipeId" in res)) throw new Error("Rezept nicht angelegt");
+    const frueher = new Date(NOW.getTime() - 60_000);
+    await store.zwischenstandSichern({ schluessel: NEU, daten: { titel: ["  Suppe  "] }, jetzt: NOW, bekannterStand: null });
+    await store.zwischenstandSichern({ schluessel: ANDERER, daten: { titel: ["Jüngster"] }, jetzt: SPAETER, bekannterStand: null });
+    await store.zwischenstandSichern({ schluessel: OHNE_TITEL, daten: { teaser: ["nur ein Teaser"] }, jetzt: frueher, bekannterStand: null });
+    await store.zwischenstandSichern({ schluessel: `rezept:${res.recipeId}`, daten: { titel: ["Bestehendes Rezept"] }, jetzt: SPAETER, bekannterStand: null });
+    await lege(DRITTER, null, STAND, "null");
+
+    const gemeldet: string[] = [];
+    const fehler = console.error;
+    console.error = (...teile: unknown[]) => void gemeldet.push(format(...teile));
+    try {
+      expect(await store.offeneNeueZwischenstaende()).toEqual([
+        { schluessel: ANDERER, titel: "Jüngster", gesichertAm: SPAETER },
+        // Roh, wie getippt — ein Zwischenstand deutet nichts, auch den Titel nicht.
+        { schluessel: NEU, titel: "  Suppe  ", gesichertAm: NOW },
+        { schluessel: OHNE_TITEL, titel: "", gesichertAm: frueher },
+      ]);
+    } finally {
+      console.error = fehler;
+    }
+    // Die Zeile, die sich nicht laden lässt, fehlt in der Liste — und ist gemeldet, wie beim Laden.
+    expect(gemeldet).toEqual([expect.stringContaining(DRITTER)]);
+  });
+
+  it("bei gleichem Zeitpunkt steht die Liste nach Schlüssel — nicht in der Reihenfolge, in der gesichert wurde", async () => {
+    // Zwei Sicherungen im selben Augenblick: Ohne zweite Ordnung käme die Liste, wie die Tabelle
+    // sie gerade hergibt, und wechselte zwischen zwei Aufrufen die Reihenfolge. Gesichert wird
+    // deshalb GEGEN die Schlüssel-Reihenfolge: erst der größere, dann der kleinere.
+    const store = await import("@/lib/recipe-zwischenstand-store");
+    expect(NEU < ANDERER).toBe(true);
+    await store.zwischenstandSichern({ schluessel: ANDERER, daten: { titel: ["Zuerst gesichert"] }, jetzt: NOW, bekannterStand: null });
+    await store.zwischenstandSichern({ schluessel: NEU, daten: { titel: ["Danach gesichert"] }, jetzt: NOW, bekannterStand: null });
+    expect((await store.offeneNeueZwischenstaende()).map((z) => z.schluessel)).toEqual([NEU, ANDERER]);
   });
 });
