@@ -178,9 +178,8 @@ export async function offeneNeueZwischenstaende(): Promise<
 /**
  * Räumt ab, was vor der Aufbewahrungsgrenze ZULETZT gesichert wurde — Zeilen
  * bestehender wie neuer Rezepte, ladbar oder nicht. Speichern und Verwerfen
- * räumen sofort; das hier ist das Netz darunter. Noch ruft es nichts auf:
- * Der nächtliche Lauf folgt im nächsten Schritt. Liefert die Zahl der
- * gelöschten Zeilen.
+ * räumen sofort; das hier ist das Netz darunter (nächtlich,
+ * src/server/scheduler.ts). Liefert die Zahl der gelöschten Zeilen.
  */
 export async function zwischenstaendeAufraeumen(jetzt: Date): Promise<number> {
   return db.delete(zeilen).where(lt(zeilen.gesichertAm, aufbewahrungsgrenze(jetzt))).run().changes;

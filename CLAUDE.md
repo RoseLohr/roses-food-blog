@@ -499,9 +499,8 @@ dieser Abschnitt beschreibt kein Verhalten der Oberfläche.
   Stand trägt als den genannten; 400 `ungueltig`, wenn `schluessel` keine der
   beiden Formen hat. Gemessen in
   `tests/recipe-zwischenstand-route.integration.test.ts`.
-- **Aufgeräumt wird 30 Tage nach der letzten Sicherung**
-  (`zwischenstaendeAufraeumen` in der Ablage; **noch ruft es nichts auf**, der
-  nächtliche Lauf folgt im nächsten Schritt) — es zählt die letzte
+- **Aufgeräumt wird 30 Tage nach der letzten Sicherung**, mit dem nächsten
+  nächtlichen Lauf um 03:10 (`src/server/scheduler.ts`) — es zählt die letzte
   Sicherung, nicht das Anlegen, und es trifft Zeilen bestehender wie neuer
   Rezepte. Speichern und Verwerfen räumen sofort; das ist das Netz darunter.
   Nur deshalb ist die Ausnahme von „keine IDs in JSON" (`src/db/schema.ts`)
