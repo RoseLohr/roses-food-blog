@@ -901,6 +901,7 @@ export const de = {
       /** Zwischenstand (11/2026): der Hinweis über dem Editor, mit Tag und Uhrzeit dazwischen. */
       zwischenstandVom: "Zwischenstand vom",
       zwischenstandWiederhergestellt: "wiederhergestellt — noch nicht gespeichert.",
+      zwischenstandFehlt: "Kein Zwischenstand zum Wiederherstellen vorhanden. Wiederhergestellt wurde nichts.",
       internalNotes: "Interne Notizen (nur für Admins sichtbar)",
       previewBanner:
         "Vorschau — dieser Stand ist für Besucher erst nach Veröffentlichung sichtbar.",

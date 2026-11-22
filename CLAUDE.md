@@ -570,9 +570,16 @@ dahin entsteht im Betrieb keine Zeile.
   ein. **Was über das GESPEICHERTE Rezept gesagt wird, kommt nicht aus den
   Anfangswerten** (Überschrift, `oeffentlicheSeite`): Titel, Slug und Status
   im Formular sind nach dem Wiederherstellen getippt, nicht gespeichert.
+  **War Wiederherstellen verlangt und liegt nichts vor, sagt die Seite es**
+  (`zwischenstandFehlt`), statt still das gespeicherte Rezept zu zeigen. Der
+  Satz folgt jedem Rendern, weil er von Anfrage und Zeile handelt; über einem
+  wiederhergestellten Inhalt zeigt der Editor ihn nie. **Die Seite leitet
+  dafür nicht um:** Nach einem Speichern mit Fehler rendert dieselbe Seite
+  neu, und eine Umleitung verließe dann den Editor samt Getipptem.
   Gemessen in `tests/rezept-bearbeiten-seite.integration.test.ts` (das
   ausgelieferte HTML) und `tests/e2e/rezept-zwischenstand.spec.ts` (im
-  Browser: Speichern mit Fehler, danach mit Erfolg).
+  Browser: Speichern mit Fehler, danach mit Erfolg; der Fall, in dem nichts
+  vorliegt, im nächsten Schritt).
 - **Geprüft wird Text, gerechnet wird mit Zahlen.** Eine NUMMER (Rezept im
   Schlüssel, Bild, Häkchen) ist eine reine Ziffernfolge mit höchstens 15
   Stellen: `Number()` rundet ab 2^53 und schreibt sich ab 22 Stellen mit

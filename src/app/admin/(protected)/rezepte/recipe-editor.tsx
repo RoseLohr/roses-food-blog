@@ -6,7 +6,7 @@
  * der beim Absenden als JSON in Hidden-Fields serialisiert wird.
  */
 import { startTransition, useActionState, useState } from "react";
-import { ZwischenstandHinweis } from "./zwischenstand-hinweis";
+import { ZwischenstandFehlt, ZwischenstandHinweis } from "./zwischenstand-hinweis";
 import { saveRecipeAction, type RecipeFormState } from "./actions";
 import { QuickAddCheckboxes } from "@/components/admin/quick-add-checkboxes";
 import { ImagePicker, type ImageChoice } from "@/components/admin/image-picker";
@@ -171,6 +171,14 @@ export interface RecipeEditorProps {
    * `initial` nur beim Einhängen: Sie ist eine Aussage über SEINEN Inhalt.
    */
   zwischenstandWiederhergestellt?: { zeit: string };
+  /**
+   * Wiederherstellen war verlangt, und es lag nichts vor. Anders als die Angabe
+   * darüber folgt diese jedem Rendern: Sie sagt etwas über Anfrage und Zeile,
+   * nicht über den Inhalt des Editors. Über einem wiederhergestellten Inhalt
+   * zeigt der Editor sie nie — „wiederhergestellt wurde nichts" wäre dort
+   * falsch, auch wenn die Zeile inzwischen fehlt.
+   */
+  zwischenstandFehlt?: boolean;
   message?: string | null;
 }
 
@@ -324,6 +332,7 @@ export function RecipeEditor({
   oeffentlicheSeite,
   taxonomiePending,
   zwischenstandWiederhergestellt,
+  zwischenstandFehlt,
   message,
 }: RecipeEditorProps) {
   const [state, formAction, pending] = useActionState<RecipeFormState, FormData>(
@@ -489,7 +498,11 @@ export function RecipeEditor({
       {/* KI-Assistent nur beim ANLEGEN neuer Rezepte (initial.id === null).
           Bei bestehenden Rezepten ausgeblendet — dort wird nicht neu importiert. */}
       {initial.id === null && <RecipeAiAssistant onApply={applyDraft} />}
-      {wiederhergestellt && <ZwischenstandHinweis zeit={wiederhergestellt.zeit} />}
+      {wiederhergestellt ? (
+        <ZwischenstandHinweis zeit={wiederhergestellt.zeit} />
+      ) : (
+        zwischenstandFehlt && <ZwischenstandFehlt />
+      )}
       <form key={formKey} action={formAction} onSubmit={beimAbsenden} className="flex flex-col gap-6">
       {form.id !== null && <input type="hidden" name="id" value={form.id} />}
       <input
