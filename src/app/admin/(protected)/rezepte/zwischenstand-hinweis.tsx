@@ -15,9 +15,11 @@
  * die Abstände selbst (`gap-6`) — wie beim Meldungskasten des Editors; und im
  * Angebot steht eine Handlung. Die ist ein LINK mit Suchparameter, kein
  * Knopf: Die Seite wird mit dem Zwischenstand neu geladen, und der Editor
- * hängt neu ein.
+ * hängt neu ein. Bedienbar ist er erst, wenn er eingehängt ist
+ * (wiederherstellen-link.tsx).
  */
 import { t } from "@/i18n/de";
+import { WiederherstellenLink } from "./wiederherstellen-link";
 
 const d = t().admin.recipes;
 const KASTEN = "bg-amber-50 p-3 text-sm text-amber-900";
@@ -40,9 +42,7 @@ export function ZwischenstandHinweis(props: {
       <span>
         {d.zwischenstandVom} {props.zeit}
       </span>
-      <a href={props.wiederherstellen} className="font-semibold underline-offset-2 hover:underline">
-        {d.zwischenstandWiederherstellen}
-      </a>
+      <WiederherstellenLink adresse={props.wiederherstellen}>{d.zwischenstandWiederherstellen}</WiederherstellenLink>
     </div>
   );
 }
