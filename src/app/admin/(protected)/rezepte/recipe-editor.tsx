@@ -176,7 +176,8 @@ export interface RecipeEditorProps {
    * Zum Rezept liegt ein Zwischenstand: anbieten, nicht aufdrängen. Anders als
    * die Angabe darüber eine Aussage über die ZEILE, nicht über den Inhalt des
    * Editors; sie folgt jedem Rendern. Nicht gezeigt wird nur das Angebot der
-   * Zeile, aus der der Inhalt stammt (gleicher Stand).
+   * Zeile, aus der der Inhalt stammt (gleicher Stand). Die Seite reicht die
+   * Angabe erst im nächsten Schritt; bis dahin zeigt sie kein Angebot.
    */
   zwischenstandAngebot?: { zeit: string; stand: string; wiederherstellen: string };
   /**
