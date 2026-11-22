@@ -35,8 +35,8 @@ export default async function EditRecipePage(props: {
   // weiß das nicht, deshalb gilt auch hier: nicht übersetzbar heißt nicht
   // wiederhergestellt. Nach dem Alter der Zeile fragt niemand: Speichern
   // räumt sie ab, also ist jede Zeile nach dem letzten Speichern entstanden.
-  const zwischenstand =
-    searchParams.zwischenstand === "1" ? await zwischenstandLaden(schluesselFuerRezept(recipeId)) : null;
+  const verlangt = searchParams.zwischenstand === "1";
+  const zwischenstand = verlangt ? await zwischenstandLaden(schluesselFuerRezept(recipeId)) : null;
   const wiederhergestellt =
     zwischenstand && editorAusDaten(zwischenstand.daten, editorProps.initial, erlaubteVerweise(editorProps));
 
@@ -52,7 +52,12 @@ export default async function EditRecipePage(props: {
           hängt die Umleitung die Seite neu ein: Erst das beendet den Hinweis.
           Beides gemessen in tests/e2e/rezept-zwischenstand.spec.ts.
           Überschrift und Adresse der öffentlichen Seite kommen aus
-          `editorProps` und bleiben die des gespeicherten Rezepts. */}
+          `editorProps` und bleiben die des gespeicherten Rezepts.
+          War Wiederherstellen verlangt und liegt nichts vor, sagt die Seite
+          es (`zwischenstandFehlt`), statt still das gespeicherte Rezept zu
+          zeigen. Sie leitet dafür NICHT um: Nach einem Speichern mit Fehler
+          rendert dieselbe Seite neu, und eine Umleitung verließe dann den
+          Editor samt Getipptem. */}
       <RecipeEditor
         {...editorProps}
         initial={wiederhergestellt?.initial ?? editorProps.initial}
@@ -60,6 +65,7 @@ export default async function EditRecipePage(props: {
         zwischenstandWiederhergestellt={
           zwischenstand && wiederhergestellt ? { zeit: alsZeitpunkt(zwischenstand.gesichertAm) } : undefined
         }
+        zwischenstandFehlt={verlangt && !wiederhergestellt}
         message={message}
       />
     </>
