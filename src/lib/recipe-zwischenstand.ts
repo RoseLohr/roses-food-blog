@@ -31,7 +31,8 @@
  * Angewendet in der Ablage (recipe-zwischenstand-store.ts), im Endpunkt
  * (src/app/api/admin/rezepte/zwischenstand/route.ts) und im
  * Speicherweg (recipe-save.ts räumt den Zwischenstand ab). Die
- * Bearbeiten-Seite stellt eine Zeile wieder her (editorAusDaten). Noch
+ * Bearbeiten-Seite bietet eine Zeile an und stellt sie wieder her
+ * (editorAusDaten). Noch
  * sichert nichts von selbst: Das Sichern im Editor folgt in eigenen
  * Schritten. Was die Kommentare unten darüber sagen, ist die Vorgabe dafür,
  * noch kein Verhalten.
