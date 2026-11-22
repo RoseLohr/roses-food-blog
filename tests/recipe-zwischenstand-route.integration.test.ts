@@ -5,7 +5,8 @@
  * Warum ein Route-Handler und keine Server-Action, steht in der Route selbst;
  * HIER wird gemessen, was der Editor von ihm erwartet: Jede Antwort ist ein
  * Urteil über die Anfrage, auch die abgelaufene Sitzung (401, kein Redirect);
- * eine Störung der Ablage dagegen wird geworfen.
+ * eine Störung der Ablage dagegen wird geworfen. Für Sichern (POST) und
+ * Verwerfen (DELETE).
  */
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
@@ -61,6 +62,11 @@ function formular(felder: Record<string, string>): FormData {
 async function sichern(fd: FormData): Promise<Response> {
   const { POST } = await import("@/app/api/admin/rezepte/zwischenstand/route");
   return POST(new Request(PFAD, { method: "POST", body: fd }));
+}
+
+async function verwerfen(fd: FormData | null): Promise<Response> {
+  const { DELETE } = await import("@/app/api/admin/rezepte/zwischenstand/route");
+  return DELETE(new Request(PFAD, { method: "DELETE", body: fd ?? undefined }));
 }
 
 /** Eine Zeile unmittelbar in die Tabelle, mit der Uhrzeit von FRUEHER. */
@@ -328,5 +334,57 @@ describe("Sicherung über den Route-Handler", () => {
     expect(spaet.status).toBe(409);
     expect(await spaet.json()).toEqual({ fehler: "weg" });
     expect(await zeile(schluessel)).toBeUndefined();
+  });
+});
+
+describe("Verwerfen über den Route-Handler", () => {
+  it("fremde Herkunft: 403, die Sitzung wird nicht gefragt — ohne Sitzung: 401, der Körper wird nicht gelesen; die Zeile bleibt", async () => {
+    // Mit dem RICHTIGEN Stand geschickt: Ohne ihn bliebe die Zeile auch dann, wenn der Handler
+    // weder Herkunft noch Sitzung prüfte — als „fremd".
+    const schluessel = neu(21);
+    await lege(schluessel);
+    const mitStand = () => formular({ schluessel, zwischenstandStand: STAND });
+    schalter.gleicheHerkunft = false;
+    schalter.admin = null;
+    schalter.anlaesse.length = 0;
+    try {
+      const fremd = await verwerfen(mitStand());
+      expect(fremd.status).toBe(403);
+      expect(await fremd.json()).toEqual({ fehler: "herkunft" });
+      expect(schalter.anlaesse).toEqual([]);
+
+      schalter.gleicheHerkunft = true;
+      const { DELETE } = await import("@/app/api/admin/rezepte/zwischenstand/route");
+      const anfrage = new Request(PFAD, { method: "DELETE", body: mitStand() });
+      const ohne = await DELETE(anfrage);
+      expect(ohne.status).toBe(401);
+      expect(ohne.headers.get("location")).toBeNull();
+      expect(await ohne.json()).toEqual({ fehler: "sitzung" });
+      expect(anfrage.bodyUsed).toBe(false);
+      expect(schalter.anlaesse).toEqual(["admin-anfrage"]);
+    } finally {
+      schalter.gleicheHerkunft = true;
+      schalter.admin = { id: 1, email: "e2e@rose.de" };
+    }
+    expect(await zeile(schluessel)).toMatchObject({ stand: STAND });
+  });
+
+  it("löscht genau diese Zeile und antwortet „verworfen“ — auch beim zweiten Mal, wenn es sie nicht mehr gibt", async () => {
+    const schluessel = neu(25);
+    const nachbar = neu(26);
+    await lege(schluessel);
+    await lege(nachbar);
+    for (const mal of [1, 2]) {
+      const res = await verwerfen(formular({ schluessel, zwischenstandStand: STAND }));
+      expect(res.status, String(mal)).toBe(200);
+      expect(await res.json(), String(mal)).toEqual({ verworfen: true });
+      expect(await zeile(schluessel), String(mal)).toBeUndefined();
+    }
+    // Ohne Zeile ist auch ohne Stand nichts falsch: Verwerfen ist idempotent.
+    const ohneStand = await verwerfen(formular({ schluessel }));
+    expect(ohneStand.status).toBe(200);
+    expect(await ohneStand.json()).toEqual({ verworfen: true });
+    // Die Nachbarzeile bleibt.
+    expect(await zeile(nachbar)).toMatchObject({ stand: STAND });
   });
 });
