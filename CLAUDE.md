@@ -578,8 +578,8 @@ dahin entsteht im Betrieb keine Zeile.
   neu, und eine Umleitung verließe dann den Editor samt Getipptem.
   Gemessen in `tests/rezept-bearbeiten-seite.integration.test.ts` (das
   ausgelieferte HTML) und `tests/e2e/rezept-zwischenstand.spec.ts` (im
-  Browser: Speichern mit Fehler, danach mit Erfolg; der Fall, in dem nichts
-  vorliegt, im nächsten Schritt).
+  Browser: Speichern mit Fehler, danach mit Erfolg; und der Fall, in dem
+  nichts vorliegt).
 - **Geprüft wird Text, gerechnet wird mit Zahlen.** Eine NUMMER (Rezept im
   Schlüssel, Bild, Häkchen) ist eine reine Ziffernfolge mit höchstens 15
   Stellen: `Number()` rundet ab 2^53 und schreibt sich ab 22 Stellen mit
