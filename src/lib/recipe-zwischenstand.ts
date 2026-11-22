@@ -28,10 +28,12 @@
  * Datei importiert nur einen Typ: Der Editor im Browser soll sie für den
  * Fingerabdruck laden können, ohne die Datenbank oder zod mitzuziehen.
  *
- * Angewendet in der Ablage (recipe-zwischenstand-store.ts) und im Speicherweg
- * (recipe-save.ts räumt den Zwischenstand ab). Noch ruft nichts die Ablage
- * auf: Endpunkt und Editor folgen in eigenen Schritten. Was die Kommentare
- * unten über sie sagen, ist die Vorgabe für sie, noch kein Verhalten.
+ * Angewendet in der Ablage (recipe-zwischenstand-store.ts), im Endpunkt der
+ * Sicherung (src/app/api/admin/rezepte/zwischenstand/route.ts) und im
+ * Speicherweg (recipe-save.ts räumt den Zwischenstand ab). Noch ruft nichts
+ * den Endpunkt auf: Verwerfen und Editor folgen in eigenen Schritten. Was die
+ * Kommentare unten über sie sagen, ist die Vorgabe für sie, noch kein
+ * Verhalten.
  */
 import type { RecipeEditorProps } from "@/app/admin/(protected)/rezepte/recipe-editor";
 

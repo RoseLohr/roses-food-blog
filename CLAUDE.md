@@ -393,11 +393,12 @@ Die Regeln, nach denen ein Zwischenstand des Editors (das ROHE Formular als
 `neu:<uuid>`) gelesen, verglichen und wiederhergestellt wird, stehen EINMAL in
 `src/lib/recipe-zwischenstand.ts` (rein, im Mutations-Scope), die Ablage in
 `src/lib/recipe-zwischenstand-store.ts` (Tabelle `rezept_zwischenstand`): Sie
-sichert, lädt, verwirft und listet die begonnenen neuen Rezepte. Speichern
-des Rezepts räumt dessen Zeile ab. **Noch ruft
-nichts die Ablage auf:** Endpunkt und Editor folgen in eigenen Schritten. Bis
-dahin beschreibt dieser Abschnitt Regeln und die Ablage, kein Verhalten der
-Oberfläche.
+sichert, lädt, verwirft und listet die begonnenen neuen Rezepte. Der Endpunkt
+der Sicherung steht in `src/app/api/admin/rezepte/zwischenstand/route.ts`.
+Speichern des Rezepts räumt dessen Zeile ab. **Noch ruft nichts den Endpunkt
+auf:** Verwerfen über den Endpunkt und der Editor folgen in eigenen
+Schritten. Bis dahin entsteht im Betrieb keine Zeile, und dieser Abschnitt
+beschreibt kein Verhalten der Oberfläche.
 
 - **Warum nicht über den Speicherweg:** Speichern ist Veröffentlichen (Status
   aus dem Formular), legt halbe Zutatennamen als Zutaten an, fixiert den Slug,
@@ -469,17 +470,23 @@ Oberfläche.
   (`STAND_FELD`, `standAus`): Der Fingerabdruck wird aus dem Formular gebildet;
   stünde der Stand darin, änderte jede Sicherung ihn. Er ist Nutzereingabe:
   Nur was die Form einer Kennung hat, zählt; sonst kennt der Editor nichts.
-- **Jede Antwort des Endpunkts wird ein Urteil über die Anfrage sein**
-  (`ZwischenstandAntwort`, `VerwerfenAntwort`): gesichert bzw. verworfen,
-  `fremd`, `weg`, `ungueltig`, `sitzung`, `herkunft`. Eine Störung des Servers
-  ist kein Urteil und steht nicht in der Liste. Den Endpunkt gibt es noch
-  nicht; die Typen sind die Vorgabe für ihn.
-- **Die Sicherung wird ein ROUTE-HANDLER, keine Server-Action**
+- **Jede Antwort des Endpunkts ist ein Urteil über die Anfrage**
+  (`ZwischenstandAntwort`): 200, 409 `fremd`, 409 `weg`, 400 `ungueltig`,
+  401 `sitzung`, 403 `herkunft`. Eine Störung des Servers ist kein Urteil und
+  steht nicht in der Liste. Für das Verwerfen (`VerwerfenAntwort`) gibt es
+  den Handler noch nicht; der Typ ist die Vorgabe für ihn.
+- **Die Sicherung ist ein ROUTE-HANDLER, keine Server-Action**
   (`ZWISCHENSTAND_PFAD`): Nach einer Action rendert Next die Seite neu; eine
   abgelaufene Sitzung trüge dann den Redirect zum Login aus, und der Browser
   verließe den Editor samt Inhalt. Ein Route-Handler rendert nichts; dort ist
-  sie eine Antwort. Unter `/api/admin` gleiten Cookie und Zeile nach
-  derselben Regel.
+  sie eine Antwort (401). Unter `/api/admin` gleiten Cookie und Zeile nach
+  derselben Regel. Die Herkunft wird ZUERST geprüft: Eine fremde soll die
+  ZEILE der Sitzung nicht gleiten lassen, die Sitzung wird dann gar nicht
+  erst gefragt. Das Cookie hat der Proxy da schon erneuert — er kennt die
+  Herkunft nicht; ohne gültige Zeile ist es wertlos. Den bekannten Stand
+  nimmt der Handler vor dem Ablegen heraus. Gemessen in
+  `tests/recipe-zwischenstand-route.integration.test.ts` (Herkunft, Sitzung,
+  Eingabe, Sicherung; die Urteile `fremd` und `weg` im nächsten Schritt).
 - **Wiederherstellen deutet nicht, aber es prüft:** `editorAusDaten` legt das
   Formular über die Anfangswerte; Text bleibt ungetrimmt, Zahlen nur, wenn sie
   welche sind. Was ein FEHLENDES Feld heißt, hängt davon ab, ob der Editor es
