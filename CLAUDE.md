@@ -394,11 +394,11 @@ Die Regeln, nach denen ein Zwischenstand des Editors (das ROHE Formular als
 `src/lib/recipe-zwischenstand.ts` (rein, im Mutations-Scope), die Ablage in
 `src/lib/recipe-zwischenstand-store.ts` (Tabelle `rezept_zwischenstand`): Sie
 sichert, lädt, verwirft und listet die begonnenen neuen Rezepte. Der Endpunkt
-der Sicherung steht in `src/app/api/admin/rezepte/zwischenstand/route.ts`.
-Speichern des Rezepts räumt dessen Zeile ab. **Noch ruft nichts den Endpunkt
-auf:** Verwerfen über den Endpunkt und der Editor folgen in eigenen
-Schritten. Bis dahin entsteht im Betrieb keine Zeile, und dieser Abschnitt
-beschreibt kein Verhalten der Oberfläche.
+(sichern und verwerfen) steht in
+`src/app/api/admin/rezepte/zwischenstand/route.ts`. Speichern des Rezepts
+räumt dessen Zeile ab. **Noch ruft nichts den Endpunkt auf:** Der Editor
+folgt in eigenen Schritten. Bis dahin entsteht im Betrieb keine Zeile, und
+dieser Abschnitt beschreibt kein Verhalten der Oberfläche.
 
 - **Warum nicht über den Speicherweg:** Speichern ist Veröffentlichen (Status
   aus dem Formular), legt halbe Zutatennamen als Zutaten an, fixiert den Slug,
@@ -473,8 +473,7 @@ beschreibt kein Verhalten der Oberfläche.
 - **Jede Antwort des Endpunkts ist ein Urteil über die Anfrage**
   (`ZwischenstandAntwort`): 200, 409 `fremd`, 409 `weg`, 400 `ungueltig`,
   401 `sitzung`, 403 `herkunft`. Eine Störung des Servers ist kein Urteil und
-  steht nicht in der Liste. Für das Verwerfen (`VerwerfenAntwort`) gibt es
-  den Handler noch nicht; der Typ ist die Vorgabe für ihn.
+  steht nicht in der Liste.
 - **Die Sicherung ist ein ROUTE-HANDLER, keine Server-Action**
   (`ZWISCHENSTAND_PFAD`): Nach einer Action rendert Next die Seite neu; eine
   abgelaufene Sitzung trüge dann den Redirect zum Login aus, und der Browser
@@ -493,7 +492,12 @@ beschreibt kein Verhalten der Oberfläche.
   — die Ablage würfe sonst, und ihr Wurf gälte als Störung). Genau EIN Fehler
   der Ablage ist ein Urteil über die Eingabe: ein Rezept, das es nicht gibt
   (der Fremdschlüssel, am Fehlercode erkannt) — das aber nur OHNE genannten
-  Stand: Mit einem ist die Antwort schon `weg`. Gemessen in
+  Stand: Mit einem ist die Antwort schon `weg`.
+  „Verwerfen" (DELETE, `VerwerfenAntwort`) aus demselben Grund dort. Es nennt
+  die Zeile beim Namen (Feld `schluessel`) statt ein Formular zu schicken:
+  200 `verworfen`, auch ohne Zeile; 409 `fremd`, wenn die Zeile einen anderen
+  Stand trägt als den genannten; 400 `ungueltig`, wenn `schluessel` keine der
+  beiden Formen hat. Gemessen in
   `tests/recipe-zwischenstand-route.integration.test.ts`.
 - **Wiederherstellen deutet nicht, aber es prüft:** `editorAusDaten` legt das
   Formular über die Anfangswerte; Text bleibt ungetrimmt, Zahlen nur, wenn sie

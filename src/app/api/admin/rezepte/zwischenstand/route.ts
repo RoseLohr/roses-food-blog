@@ -1,5 +1,5 @@
 /**
- * Der Zwischenstand aus dem Rezept-Editor (11/2026) — die Sicherung.
+ * Der Zwischenstand aus dem Rezept-Editor (11/2026) — sichern und verwerfen.
  *
  * Noch ruft nichts diesen Endpunkt auf: Der Editor folgt in eigenen Schritten.
  * Was hier über ihn steht, ist die Vorgabe für ihn, noch kein Verhalten.
@@ -24,15 +24,22 @@
  * harmlose Richtung: Ohne gültige Zeile ist es wertlos.
  *
  * Jede Antwort ist ein Urteil über die Anfrage und steht in
- * `ZwischenstandAntwort`. Eine Störung der Ablage (gesperrte Datenbank,
- * voller Datenträger) ist keines: Sie wird geworfen. Next antwortet dann mit
- * 500 und meldet den Fehler über `onRequestError` (src/instrumentation.ts);
- * navigiert wird auch dabei nicht.
+ * `ZwischenstandAntwort` bzw. `VerwerfenAntwort`. Eine Störung der Ablage
+ * (gesperrte Datenbank, voller Datenträger) ist keines: Sie wird geworfen.
+ * Next antwortet dann mit 500 und meldet den Fehler über `onRequestError`
+ * (src/instrumentation.ts); navigiert wird auch dabei nicht.
  *
  * Was der Handler NICHT erkennt: eine ERSTE Sicherung ohne Stand, die erst
  * nach dem Speichern des Rezepts ankommt. Sie ist von frischem Tippen nicht zu
  * unterscheiden und legt an. Vorgabe für den Editor: Sicherung und Speichern
  * sind nie gleichzeitig unterwegs.
+ *
+ * „Verwerfen" (DELETE) aus demselben Grund hier und nicht als Action: Der
+ * Redakteur, der im Editor einen angebotenen Zwischenstand verwirft, hat oft
+ * schon weitergetippt — eine Action rendert die Seite neu, und mit einer
+ * abgelaufenen Sitzung wäre das Getippte weg. Der Editor wird selbst
+ * entscheiden, ob er danach bleibt oder (nach dem Verwerfen eines
+ * WIEDERHERGESTELLTEN Stands) auf den gespeicherten Stand wechselt.
  */
 import { NextResponse } from "next/server";
 import { getCurrentAdmin } from "@/lib/auth";
@@ -41,17 +48,19 @@ import {
   STAND_FELD,
   formularAlsDaten,
   istLadbar,
+  istZwischenstandSchluessel,
   schluesselAus,
   standAus,
+  type VerwerfenAntwort,
   type ZwischenstandAntwort,
   type ZwischenstandDaten,
 } from "@/lib/recipe-zwischenstand";
-import { zwischenstandSichern } from "@/lib/recipe-zwischenstand-store";
+import { zwischenstandSichern, zwischenstandVerwerfen } from "@/lib/recipe-zwischenstand-store";
 import { alsUhrzeit, alsZeitpunkt } from "@/lib/zeitpunkt";
 
 export const dynamic = "force-dynamic";
 
-function antwort(body: ZwischenstandAntwort, status: number): NextResponse {
+function antwort(body: ZwischenstandAntwort | VerwerfenAntwort, status: number): NextResponse {
   return NextResponse.json(body, { status });
 }
 
@@ -110,4 +119,34 @@ export async function POST(req: Request): Promise<NextResponse> {
     );
   }
   return antwort({ gesichert: alsUhrzeit(ergebnis.gesichertAm), stand: ergebnis.stand }, 200);
+}
+
+export async function DELETE(req: Request): Promise<NextResponse> {
+  if (!isSameOriginRequest(req)) return antwort({ fehler: "herkunft" }, 403);
+  if (!(await getCurrentAdmin("admin-anfrage"))) return antwort({ fehler: "sitzung" }, 401);
+
+  const daten = await formularAus(req);
+  // Wer verwirft, schickt kein Formular des Editors, sondern nennt die Zeile
+  // beim Namen. Nutzereingabe aus dem Browser: Nur eine der beiden Formen
+  // löscht etwas.
+  const schluessel = daten?.schluessel?.[0];
+  if (!istZwischenstandSchluessel(schluessel)) return antwort({ fehler: "ungueltig" }, 400);
+
+  // Verworfen wird nur, was der Redakteur gesehen hat: Der Editor schickt den
+  // Stand mit. Trägt die Zeile einen anderen, hat ein anderer Tab inzwischen
+  // gesichert — sie bleibt. Eine Störung der Ablage wird geworfen (siehe Kopf).
+  // `standAus` ändert hier kein Urteil: Ein Text, der keine Kennung ist,
+  // gleicht keinem Stand einer Zeile (die Tabelle prüft dessen Form). Es
+  // bleibt trotzdem bei EINER Lesart des Feldes, hier wie beim Sichern.
+  const ergebnis = await zwischenstandVerwerfen({
+    schluessel,
+    bekannterStand: standAus(daten?.[STAND_FELD]?.[0]),
+  });
+  if (ergebnis.ergebnis === "fremd") {
+    return antwort(
+      { fehler: "fremd", zeit: alsZeitpunkt(ergebnis.gesichertAm), stand: ergebnis.stand },
+      409,
+    );
+  }
+  return antwort({ verworfen: true }, 200);
 }
