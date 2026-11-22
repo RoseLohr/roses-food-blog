@@ -17,16 +17,33 @@
  * `tests/frische-db-helfer.test.ts`): Kommentare und Lesezugriffe wie
  * `orderBy(desc(schema.recipe.updatedAt))` sind keine Schreiber.
  *
+ * Rohes SQL zählt in jeder Form, die eine bestehende Zeile ändern kann:
+ * UPDATE, REPLACE, und ein Einfügen mit `OR REPLACE` oder `ON CONFLICT … DO
+ * UPDATE` — das Gegenstück zu `onConflictDoUpdate`. Die Tabelle darf dabei
+ * als Einschub stehen (`${schema.recipe}`), so schreibt das Repo sein rohes
+ * SQL selbst. Was unter `scripts/` kein Syntaxbaum liest (Shell), wird als
+ * Text gegen dieselbe Regel gehalten.
+ *
  * Was das NICHT sieht — die Liste ist ein Netz, kein Beweis:
  *  - Die Tabelle wird am NAMEN erkannt (`schema.recipe` oder ein blankes
  *    `recipe`). Unter einem anderen Namen (`const t = schema.recipe`, ein
  *    umbenannter Import) geht ein Schreiber durch.
- *  - SQL, das erst zur Laufzeit zusammengesetzt wird.
+ *  - SQL, das erst zur Laufzeit zusammengesetzt wird — auch eine Anweisung,
+ *    die über mehrere Literale verteilt ist.
+ *  - Alles außerhalb von `src/`, `scripts/` und `drizzle/` (etwa `deploy/`).
+ *  - Was die Datenbank ohne Anweisung auf der Tabelle ändert: Wird ein
+ *    Benutzer gelöscht, setzt der Fremdschlüssel `author_id` auf null. Das
+ *    Datum schreibt das nicht.
+ * Und eine Voraussetzung, die der Test selbst festhält: Von den Spalten, die
+ * ein `.set()` nennt, auf die geschriebenen zu schließen, gilt nur, solange
+ * keine Spalte der Tabelle sich bei einem Update selbst schreibt (`$onUpdate`).
  */
 import fs from "node:fs";
 import path from "node:path";
 import ts from "typescript";
+import { getTableColumns } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
+import * as schema from "@/db/schema";
 
 const WURZEL = process.cwd();
 const SPEICHERN = "src/lib/recipe-save.ts";
@@ -76,7 +93,30 @@ function spalten(set: ts.CallExpression | undefined): string[] | "nicht lesbar" 
 
 type Stelle = { datei: string; weg: string; spalten: string[] | "nicht lesbar" };
 
-const ROHES_SQL = /\b(?:UPDATE(?:\s+OR\s+\w+)?|REPLACE\s+INTO)\s+[`"']?recipe[`"']?(?!\w)/i;
+const TABELLE = "[`\"']?recipe[`\"']?(?!\\w)";
+/** Was eine bestehende Zeile ändern kann: UPDATE, REPLACE — und ein Einfügen mit `OR REPLACE` oder `ON CONFLICT … DO UPDATE`. */
+const ROHES_SQL = new RegExp(
+  `\\b(?:UPDATE(?:\\s+OR\\s+\\w+)?|(?:INSERT\\s+OR\\s+)?REPLACE\\s+INTO)\\s+${TABELLE}` +
+    `|\\bINSERT\\s+(?:OR\\s+\\w+\\s+)?INTO\\s+${TABELLE}[\\s\\S]*?\\bON\\s+CONFLICT\\b[\\s\\S]*?\\bDO\\s+UPDATE\\b`,
+  "i",
+);
+
+/** Der Text eines SQL-Literals; die Tabelle als Einschub (`${schema.recipe}`) steht darin als ihr Name, jeder andere Einschub als `?`. */
+function sqlText(n: ts.StringLiteral | ts.NoSubstitutionTemplateLiteral | ts.TemplateExpression): string {
+  if (!ts.isTemplateExpression(n)) return n.text;
+  return n.head.text + n.templateSpans.map((s) => (istRezepttabelle(s.expression) ? "recipe" : "?") + s.literal.text).join("");
+}
+
+/** Was unter `scripts/` kein Syntaxbaum liest (Shell & Co.). */
+function andereDateien(verzeichnis: string): string[] {
+  const out: string[] = [];
+  for (const eintrag of fs.readdirSync(path.join(WURZEL, verzeichnis), { withFileTypes: true })) {
+    const relativ = `${verzeichnis}/${eintrag.name}`;
+    if (eintrag.isDirectory()) out.push(...andereDateien(relativ));
+    else if (!/\.(ts|tsx|mjs|js)$/.test(eintrag.name)) out.push(relativ);
+  }
+  return out;
+}
 
 /** Jede Stelle in `src/` und `scripts/`, die eine BESTEHENDE Rezeptzeile ändert. */
 function aendererDerRezeptzeile(): Stelle[] {
@@ -95,10 +135,13 @@ function aendererDerRezeptzeile(): Stelle[] {
         }
       }
       const istText = ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n) || ts.isTemplateExpression(n);
-      if (istText && ROHES_SQL.test(n.getText())) out.push({ datei, weg: "rohes SQL", spalten: "nicht lesbar" });
+      if (istText && ROHES_SQL.test(sqlText(n))) out.push({ datei, weg: "rohes SQL", spalten: "nicht lesbar" });
       ts.forEachChild(n, besuche);
     };
     besuche(baum(datei));
+  }
+  for (const datei of andereDateien("scripts").sort()) {
+    if (ROHES_SQL.test(fs.readFileSync(path.join(WURZEL, datei), "utf8"))) out.push({ datei, weg: "rohes SQL", spalten: "nicht lesbar" });
   }
   return out;
 }
@@ -106,7 +149,7 @@ function aendererDerRezeptzeile(): Stelle[] {
 describe("Wer das Änderungsdatum eines bestehenden Rezepts schreibt", () => {
   const stellen = aendererDerRezeptzeile();
 
-  it("die Rezeptzeile ändern genau zwei Stellen: das Speichern und die Likes", () => {
+  it("mit einer Anweisung ändern die Rezeptzeile genau zwei Stellen: das Speichern und die Likes", () => {
     expect(stellen, REGEL).toEqual([
       { datei: "src/app/api/likes/route.ts", weg: "update", spalten: ["likeCount"] },
       // Das Datum steckt in `base` (`updatedAt: now`), ein paar Zeilen darüber.
@@ -121,15 +164,26 @@ describe("Wer das Änderungsdatum eines bestehenden Rezepts schreibt", () => {
     expect(verdaechtig, REGEL).toEqual([]);
   });
 
-  it("keine Migration schreibt das Änderungsdatum (auch kein Trigger)", () => {
+  it("keine Spalte der Rezepttabelle schreibt sich bei einem Update selbst ($onUpdate)", () => {
+    // Sonst schriebe JEDES Update das Datum mit, auch das der Likes — und die Liste oben bliebe wortgleich.
+    const selbstschreiber = Object.entries(getTableColumns(schema.recipe))
+      .filter(([, spalte]) => spalte.onUpdateFn !== undefined)
+      .map(([name]) => name);
+    expect(selbstschreiber, REGEL).toEqual([]);
+  });
+
+  it("keine Migration schreibt das Änderungsdatum (auch kein Trigger, kein Upsert, kein Ersetzen)", () => {
+    const tabelle = "[`\"]?recipe[`\"]?(?!\\w)";
+    const schreibt = new RegExp(
+      `\\bUPDATE(?:\\s+OR\\s+\\w+)?\\s+${tabelle}\\s+SET\\b[^;]*\\bupdated_at\\b` +
+        `|\\b(?:INSERT\\s+OR\\s+)?REPLACE\\s+INTO\\s+${tabelle}` +
+        `|\\bINSERT\\s+(?:OR\\s+\\w+\\s+)?INTO\\s+${tabelle}[^;]*\\bON\\s+CONFLICT\\b[^;]*\\bDO\\s+UPDATE\\s+SET\\b[^;]*\\bupdated_at\\b`,
+      "i",
+    );
     const treffer = fs
       .readdirSync(path.join(WURZEL, "drizzle"))
       .filter((name) => name.endsWith(".sql"))
-      .filter((name) =>
-        /\bUPDATE(?:\s+OR\s+\w+)?\s+[`"]?recipe[`"]?\s+SET\b[^;]*\bupdated_at\b/i.test(
-          fs.readFileSync(path.join(WURZEL, "drizzle", name), "utf8"),
-        ),
-      );
+      .filter((name) => schreibt.test(fs.readFileSync(path.join(WURZEL, "drizzle", name), "utf8")));
     expect(treffer, REGEL).toEqual([]);
   });
 });
