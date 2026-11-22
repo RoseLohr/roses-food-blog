@@ -1,7 +1,8 @@
 /**
  * Die Ablage des Zwischenstands (Tabelle rezept_zwischenstand) — höchstens
  * eine Zeile je Schlüssel, überschrieben, nie gedeutet. Die Regeln stehen in
- * recipe-zwischenstand.ts; hier wird nur geschrieben, gelesen und verworfen.
+ * recipe-zwischenstand.ts; hier wird nur geschrieben, gelesen, verworfen und
+ * aufgeräumt.
  * Abgelegt und angeboten wird nach derselben Regel (`ladbareDatenAus`, am
  * abgelegten Text): nur, was sich in den Editor laden ließe.
  *
@@ -14,7 +15,7 @@
  * lässt (zeileLesen): Die kennt niemand, sie wird überschrieben. Und nennt er
  * einen Stand, obwohl es KEINE Zeile mehr gibt, wird nichts angelegt („weg"):
  * Die Zeile, die er fortsetzen will, ist fort — etwa beim Speichern
- * abgeräumt, verworfen oder mit ihrem Rezept gelöscht.
+ * abgeräumt, verworfen, aufgeräumt oder mit ihrem Rezept gelöscht.
  * Die Entscheidung trifft `sicherungsurteil`. Jede Sicherung bekommt einen
  * neuen, zufälligen Stand, der an keiner Uhr und keinem Zähler hängt. Lesen
  * und Schreiben stehen in einer Transaktion; der Treiber ist synchron, also
@@ -22,9 +23,10 @@
  */
 import "server-only";
 import { randomUUID } from "node:crypto";
-import { asc, desc, eq, isNull } from "drizzle-orm";
+import { asc, desc, eq, isNull, lt } from "drizzle-orm";
 import { db, schema } from "@/db";
 import {
+  aufbewahrungsgrenze,
   istFremderStand,
   istZwischenstandSchluessel,
   ladbareDatenAus,
@@ -171,4 +173,15 @@ export async function offeneNeueZwischenstaende(): Promise<
     .map(alsZwischenstand)
     .filter((z): z is Zwischenstand => z !== null)
     .map((z) => ({ schluessel: z.schluessel, titel: z.daten.titel?.[0] ?? "", gesichertAm: z.gesichertAm }));
+}
+
+/**
+ * Räumt ab, was vor der Aufbewahrungsgrenze ZULETZT gesichert wurde — Zeilen
+ * bestehender wie neuer Rezepte, ladbar oder nicht. Speichern und Verwerfen
+ * räumen sofort; das hier ist das Netz darunter. Noch ruft es nichts auf:
+ * Der nächtliche Lauf folgt im nächsten Schritt. Liefert die Zahl der
+ * gelöschten Zeilen.
+ */
+export async function zwischenstaendeAufraeumen(jetzt: Date): Promise<number> {
+  return db.delete(zeilen).where(lt(zeilen.gesichertAm, aufbewahrungsgrenze(jetzt))).run().changes;
 }
