@@ -45,7 +45,13 @@ export default async function EditRecipePage(props: {
       <h1 className="mb-6 text-2xl font-bold">
         {dict.admin.recipes.editRecipe}: {editorProps.initial.title}
       </h1>
-      {/* Überschrift und Adresse der öffentlichen Seite kommen aus
+      {/* Der Editor liest Anfangswerte und Hinweis nur beim Einhängen. Ein
+          Neu-Rendern unter derselben Adresse (Speichern mit Fehler) lässt ihn
+          deshalb stehen, auch wenn die Zeile inzwischen fehlt und `initial`
+          wieder das gespeicherte Rezept ist. Nach erfolgreichem Speichern
+          hängt die Umleitung die Seite neu ein: Erst das beendet den Hinweis.
+          Beides gemessen in tests/e2e/rezept-zwischenstand.spec.ts.
+          Überschrift und Adresse der öffentlichen Seite kommen aus
           `editorProps` und bleiben die des gespeicherten Rezepts. */}
       <RecipeEditor
         {...editorProps}
