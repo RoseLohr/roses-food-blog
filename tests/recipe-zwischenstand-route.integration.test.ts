@@ -7,11 +7,12 @@
  * Urteil über die Anfrage, auch die abgelaufene Sitzung (401, kein Redirect);
  * eine Störung der Ablage dagegen wird geworfen.
  */
-import { describe, expect, it, vi } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import { frischeDb } from "./helfer/frische-db";
-import { alsUhrzeit } from "@/lib/zeitpunkt";
+import { adminAnlegen } from "./helfer/saat";
+import { alsUhrzeit, alsZeitpunkt } from "@/lib/zeitpunkt";
 
 // Auth und Herkunft des Route-Handlers umschaltbar stubben — mit vi.hoisted,
 // weil vi.mock über die Importe gehoben wird.
@@ -35,7 +36,22 @@ frischeDb("zwischenstand-route");
 
 /** Je Test ein eigener Schlüssel: Kein Test braucht die Zeile eines anderen, jeder läuft auch einzeln. */
 const neu = (nr: number) => `neu:7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b${String(nr).padStart(4, "0")}`;
+/** Der Stand einer Zeile, die ein Test selbst in die Tabelle legt — und eine Kennung, die keine Zeile trägt. */
+const STAND = "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d";
+const FREMDER_STAND = "5b0c7f1e-9a3d-4c2b-8e6f-1a2b3c4d5e6f";
 const PFAD = "http://localhost/api/admin/rezepte/zwischenstand";
+/**
+ * Drei Stunden her: Die Uhrzeit einer so gelegten Zeile ist zu keiner Tageszeit die der Anfrage.
+ * Eine FESTE Uhrzeit träfe die echte Uhr des Laufs einmal am Tag auf die Minute; eine Antwort mit
+ * der Uhrzeit der Anfrage statt der Zeile fiele dann nicht auf.
+ */
+const FRUEHER = new Date(Date.now() - 3 * 60 * 60 * 1000);
+let adminId: number;
+
+beforeAll(async () => {
+  adminId = (await adminAnlegen()).id;
+});
+
 function formular(felder: Record<string, string>): FormData {
   const fd = new FormData();
   for (const [k, v] of Object.entries(felder)) fd.set(k, v);
@@ -47,10 +63,29 @@ async function sichern(fd: FormData): Promise<Response> {
   return POST(new Request(PFAD, { method: "POST", body: fd }));
 }
 
+/** Eine Zeile unmittelbar in die Tabelle, mit der Uhrzeit von FRUEHER. */
+async function lege(schluessel: string, stand = STAND, formularText = '{"titel":["Entwurf"]}'): Promise<void> {
+  const { db, schema } = await import("@/db");
+  const { rezeptnummerAus } = await import("@/lib/recipe-zwischenstand");
+  db.insert(schema.rezeptZwischenstand)
+    .values({ schluessel, recipeId: rezeptnummerAus(schluessel), formular: formularText, stand, gesichertAm: FRUEHER })
+    .run();
+}
+
 async function zeile(schluessel: string) {
   const { db, schema } = await import("@/db");
   const { eq } = await import("drizzle-orm");
   return db.select().from(schema.rezeptZwischenstand).where(eq(schema.rezeptZwischenstand.schluessel, schluessel)).get();
+}
+
+async function rezeptAnlegen(titel: string): Promise<number> {
+  const { saveRecipeFromForm } = await import("@/lib/recipe-save");
+  const res = await saveRecipeFromForm(
+    formular({ titel, portionen: "4", status: "entwurf", abschnitte: "[]", notizen: "[]" }),
+    adminId,
+  );
+  if (!("recipeId" in res)) throw new Error("Rezept nicht angelegt");
+  return res.recipeId;
 }
 
 describe("Sicherung über den Route-Handler", () => {
@@ -152,6 +187,23 @@ describe("Sicherung über den Route-Handler", () => {
     }
   });
 
+  it("ein Stand, den die Zeile nicht trägt: 409 fehler=fremd — die Zeile bleibt, wie sie ist", async () => {
+    const schluessel = neu(5);
+    await lege(schluessel);
+    const vorher = await zeile(schluessel);
+    expect(alsUhrzeit(FRUEHER)).not.toBe(alsUhrzeit(new Date()));
+    for (const stand of [FREMDER_STAND, undefined]) {
+      const felder: Record<string, string> = { zwischenstandSchluessel: schluessel, titel: "Anderer Tab" };
+      if (stand) felder.zwischenstandStand = stand;
+      const res = await sichern(formular(felder));
+      expect(res.status, String(stand)).toBe(409);
+      // Stand und Zeitpunkt der Antwort sind die der ZEILE, nicht die der Anfrage — mit Tag und
+      // Uhrzeit, wie die Seite die Zeile anböte.
+      expect(await res.json(), String(stand)).toEqual({ fehler: "fremd", zeit: alsZeitpunkt(FRUEHER), stand: STAND });
+    }
+    expect(await zeile(schluessel)).toEqual(vorher);
+  });
+
   it("kein Formular oder kein brauchbarer Schlüssel: 400 fehler=ungueltig", async () => {
     const { POST } = await import("@/app/api/admin/rezepte/zwischenstand/route");
     const fehler = console.error;
@@ -170,5 +222,39 @@ describe("Sicherung über den Route-Handler", () => {
       expect(ohne.status, JSON.stringify(felder)).toBe(400);
       expect(await ohne.json(), JSON.stringify(felder)).toEqual({ fehler: "ungueltig" });
     }
+  });
+
+  it("ein Stand, der keine Kennung ist, ist KEINER: ohne Zeile wird angelegt — fortgesetzt wird nur mit einer Kennung", async () => {
+    // Der Stand ist Nutzereingabe (standAus). Reichte der Handler ihn roh an die Ablage, wäre jeder
+    // nichtleere Text ein genannter Stand: ohne Zeile „weg" statt einer Sicherung.
+    for (const [i, stand] of ["abc", FREMDER_STAND.toUpperCase(), ` ${FREMDER_STAND}`].entries()) {
+      const schluessel = `neu:1e5f6a7b-8c9d-4e0f-8a1b-2c3d4e5f6a7${i}`;
+      const res = await sichern(formular({ zwischenstandSchluessel: schluessel, titel: "x", zwischenstandStand: stand }));
+      expect(res.status, stand).toBe(200);
+      expect(await zeile(schluessel), stand).toBeDefined();
+    }
+    // Gegenprobe: dieselbe Lage mit einer Kennung — nichts angelegt.
+    const schluessel = "neu:1e5f6a7b-8c9d-4e0f-8a1b-2c3d4e5f6a79";
+    const res = await sichern(formular({ zwischenstandSchluessel: schluessel, titel: "x", zwischenstandStand: FREMDER_STAND }));
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ fehler: "weg" });
+    expect(await zeile(schluessel)).toBeUndefined();
+  });
+
+  it("ein BESTEHENDES Rezept: gesichert unter seiner Nummer — und nach dem Speichern ist die Zeile „weg“", async () => {
+    const id = await rezeptAnlegen("Bestehend");
+    const schluessel = `rezept:${id}`;
+    const erst = await sichern(formular({ id: String(id), titel: "Getippt" }));
+    expect(erst.status).toBe(200);
+    const { stand } = (await erst.json()) as { stand: string };
+    expect(await zeile(schluessel)).toMatchObject({ recipeId: id, stand });
+
+    // Speichern räumt ab; eine Sicherung, die danach noch mit dem alten Stand ankommt, legt nichts an.
+    const { saveRecipeFromForm } = await import("@/lib/recipe-save");
+    await saveRecipeFromForm(formular({ id: String(id), titel: "Gespeichert", portionen: "4", status: "entwurf", abschnitte: "[]", notizen: "[]" }), adminId);
+    const spaet = await sichern(formular({ id: String(id), titel: "Getippt", zwischenstandStand: stand }));
+    expect(spaet.status).toBe(409);
+    expect(await spaet.json()).toEqual({ fehler: "weg" });
+    expect(await zeile(schluessel)).toBeUndefined();
   });
 });
