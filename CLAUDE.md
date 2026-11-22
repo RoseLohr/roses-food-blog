@@ -484,7 +484,16 @@ beschreibt kein Verhalten der Oberfläche.
   ZEILE der Sitzung nicht gleiten lassen, die Sitzung wird dann gar nicht
   erst gefragt. Das Cookie hat der Proxy da schon erneuert — er kennt die
   Herkunft nicht; ohne gültige Zeile ist es wertlos. Den bekannten Stand
-  nimmt der Handler vor dem Ablegen heraus. Gemessen in
+  nimmt der Handler vor dem Ablegen heraus. **Eine Störung der Ablage wirft er** — der
+  erste Anlauf meldete jeden Fehler der Ablage als `ungueltig`: Eine gesperrte
+  Datenbank galt als Fehler des Redakteurs und erreichte das Fehlerbudget nie.
+  `ungueltig` hat beim Sichern vier Ursachen. Drei entscheidet der Handler
+  selbst, bevor er die Ablage fragt: kein Formular, kein Schlüssel
+  (`schluesselAus`) und ein Formular, das sich nicht laden ließe (`istLadbar`
+  — die Ablage würfe sonst, und ihr Wurf gälte als Störung). Genau EIN Fehler
+  der Ablage ist ein Urteil über die Eingabe: ein Rezept, das es nicht gibt
+  (der Fremdschlüssel, am Fehlercode erkannt) — das aber nur OHNE genannten
+  Stand: Mit einem ist die Antwort schon `weg`. Gemessen in
   `tests/recipe-zwischenstand-route.integration.test.ts`.
 - **Wiederherstellen deutet nicht, aber es prüft:** `editorAusDaten` legt das
   Formular über die Anfangswerte; Text bleibt ungetrimmt, Zahlen nur, wenn sie

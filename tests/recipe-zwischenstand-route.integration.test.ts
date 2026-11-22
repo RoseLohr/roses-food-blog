@@ -204,7 +204,7 @@ describe("Sicherung über den Route-Handler", () => {
     expect(await zeile(schluessel)).toEqual(vorher);
   });
 
-  it("kein Formular oder kein brauchbarer Schlüssel: 400 fehler=ungueltig", async () => {
+  it("kein Formular, kein brauchbarer Schlüssel oder — ohne genannten Stand — ein Rezept, das es nicht gibt: 400 fehler=ungueltig", async () => {
     const { POST } = await import("@/app/api/admin/rezepte/zwischenstand/route");
     const fehler = console.error;
     console.error = () => undefined;
@@ -222,6 +222,62 @@ describe("Sicherung über den Route-Handler", () => {
       expect(ohne.status, JSON.stringify(felder)).toBe(400);
       expect(await ohne.json(), JSON.stringify(felder)).toEqual({ fehler: "ungueltig" });
     }
+
+    // Der Fremdschlüssel sagt nein: Das ist ein Urteil über die Eingabe, kein 500.
+    const keinRezept = await sichern(formular({ id: "999999", titel: "Dieses Rezept gab es nie" }));
+    expect(keinRezept.status).toBe(400);
+    expect(await keinRezept.json()).toEqual({ fehler: "ungueltig" });
+    // Mit einem genannten Stand kommt es nicht bis zum Fremdschlüssel: Ohne Zeile ist das Urteil
+    // schon „weg". Erst die Folgesicherung ohne Stand ist „ungueltig" — die von eben.
+    const mitStand = await sichern(formular({ id: "999999", titel: "Dieses Rezept gab es nie", zwischenstandStand: FREMDER_STAND }));
+    expect(mitStand.status).toBe(409);
+    expect(await mitStand.json()).toEqual({ fehler: "weg" });
+    expect(await zeile("rezept:999999")).toBeUndefined();
+  });
+
+  it("ein Formular, das sich nicht laden ließe: 400 fehler=ungueltig — nichts wird abgelegt, und eine Zeile bleibt, wie sie ist", async () => {
+    // Quittierte der Handler es, läge eine Zeile da, die nie angeboten wird, und ihr Schreiber hielte
+    // einen Stand, den sonst niemand kennt. Dieselbe Regel wie beim Anbieten (istLadbar).
+    const schluessel = "neu:2f6a7b8c-9d0e-4f1a-8b2c-3d4e5f6a7b8c";
+    const nichtLadbar: Record<string, string>[] = [
+      { abschnitte: "{kein json" },
+      { abschnitte: '[{"name":1}]' },
+      // Das alte Format der Schritte (reiner Text) nimmt der Speicherweg noch an. Der Zwischenstand
+      // ist hier strenger als das Speichern; der Editor schickt es nie.
+      { abschnitte: '[{"name":"","ingredients":[],"steps":["Rühren."]}]' },
+      { notizen: '[{"text":5}]' },
+      { notizen: "null" },
+    ];
+    for (const felder of nichtLadbar) {
+      const fall = JSON.stringify(felder);
+      const res = await sichern(formular({ zwischenstandSchluessel: schluessel, titel: "x", ...felder }));
+      expect(res.status, fall).toBe(400);
+      expect(await res.json(), fall).toEqual({ fehler: "ungueltig" });
+      expect(await zeile(schluessel), fall).toBeUndefined();
+    }
+    // Auch mit dem Stand einer bestehenden Zeile: Sie bleibt mit Stand und Inhalt.
+    const bestehend = neu(6);
+    await lege(bestehend);
+    const vorher = await zeile(bestehend);
+    const ueber = await sichern(
+      formular({ zwischenstandSchluessel: bestehend, titel: "x", abschnitte: "{kein json", zwischenstandStand: STAND }),
+    );
+    expect(ueber.status).toBe(400);
+    expect(await zeile(bestehend)).toEqual(vorher);
+
+    // Gegenprobe: Was 200 bekommt, lädt die Ablage — mit genau dem quittierten Stand.
+    const { zwischenstandLaden } = await import("@/lib/recipe-zwischenstand-store");
+    const gut = await sichern(
+      formular({
+        zwischenstandSchluessel: schluessel,
+        titel: "x",
+        abschnitte: '[{"name":"","ingredients":[],"steps":[{"text":"Rühren.","imageId":null}]}]',
+        notizen: "[]",
+      }),
+    );
+    expect(gut.status).toBe(200);
+    const { stand } = (await gut.json()) as { stand: string };
+    expect((await zwischenstandLaden(schluessel))?.stand).toBe(stand);
   });
 
   it("ein Stand, der keine Kennung ist, ist KEINER: ohne Zeile wird angelegt — fortgesetzt wird nur mit einer Kennung", async () => {
@@ -238,6 +294,22 @@ describe("Sicherung über den Route-Handler", () => {
     const res = await sichern(formular({ zwischenstandSchluessel: schluessel, titel: "x", zwischenstandStand: FREMDER_STAND }));
     expect(res.status).toBe(409);
     expect(await res.json()).toEqual({ fehler: "weg" });
+    expect(await zeile(schluessel)).toBeUndefined();
+  });
+
+  it("eine Störung der Ablage ist kein Urteil über die Eingabe: Sie wird geworfen, nicht als ungültige Eingabe gemeldet", async () => {
+    // Ein Trigger lässt das Schreiben scheitern, wie eine volle Platte es täte. Als 400 gemeldet,
+    // gälte das als Fehler des Redakteurs und erreichte das Fehlerbudget nie. Der Code des Triggers
+    // beginnt wie der des Fremdschlüssels: Ein Vergleich nur am Anfang fiele hier auf.
+    const { db } = await import("@/db");
+    const { sql } = await import("drizzle-orm");
+    const schluessel = "neu:9c3d4e5f-6a7b-4c8d-9e0f-1a2b3c4d5e6f";
+    db.run(sql`CREATE TEMP TRIGGER zwischenstand_stoerung BEFORE INSERT ON rezept_zwischenstand BEGIN SELECT RAISE(ABORT, 'Störung'); END`);
+    try {
+      await expect(sichern(formular({ zwischenstandSchluessel: schluessel, titel: "x" }))).rejects.toMatchObject({ code: "SQLITE_CONSTRAINT_TRIGGER" });
+    } finally {
+      db.run(sql`DROP TRIGGER zwischenstand_stoerung`);
+    }
     expect(await zeile(schluessel)).toBeUndefined();
   });
 
