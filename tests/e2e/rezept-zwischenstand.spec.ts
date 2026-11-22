@@ -72,7 +72,8 @@ async function oeffnen(page: Page, adresse: string) {
   await page.goto(adresse);
 }
 
-const hinweis = (page: Page) => page.getByRole("status").filter({ hasText: "Zwischenstand vom" });
+// Am Schluss des Satzes erkannt: Auch das Angebot beginnt mit „Zwischenstand vom".
+const hinweis = (page: Page) => page.getByRole("status").filter({ hasText: "wiederhergestellt — noch nicht gespeichert" });
 const fehlt = (page: Page) => page.getByRole("status").filter({ hasText: "Kein Zwischenstand zum Wiederherstellen vorhanden" });
 const titel = (page: Page) => page.locator('input[name="titel"]');
 const ueberschrift = (page: Page) => page.getByRole("heading", { level: 1 });

@@ -1,7 +1,9 @@
 /**
  * Was die Bearbeiten-Seite dem Rezept-Editor über das GESPEICHERTE Rezept
  * sagt, neben den Anfangswerten des Formulars (editor-data.ts) — und was sie
- * mit `?zwischenstand=1` ausliefert. Gegen die echte Datenbank.
+ * ausliefert, wenn zum Rezept ein Zwischenstand liegt: Ohne Parameter bietet
+ * sie ihn an, mit `?zwischenstand=1` steht er im Editor. Gegen die echte
+ * Datenbank.
  *
  * Zwei Angaben, die ein wiederhergestellter Zwischenstand braucht und nicht
  * selbst mitbringen darf:
@@ -20,10 +22,10 @@
  * das der Browser bekäme, also die ganze Kette: Zeile → Ablage →
  * `erlaubteVerweise` → `editorAusDaten` → Anfangswerte und vorgemerkte Namen
  * im Editor. In EINEM Fall steht ein Spion an der Stelle der Ablage: Sie
- * liefert nie, was dort gemessen wird. Was erst im Browser geschieht
- * (Speichern, mit und ohne Fehler), steht in
- * tests/e2e/rezept-zwischenstand.spec.ts.
+ * liefert nie, was dort gemessen wird. Was erst im Browser geschieht, steht
+ * in tests/e2e/rezept-zwischenstand.spec.ts.
  */
+import { format } from "node:util";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeAll, describe, expect, it, vi } from "vitest";
@@ -298,8 +300,8 @@ async function seite(rezeptId: number, suchparameter: Record<string, string | st
   };
 }
 
-describe("Bearbeiten-Seite mit ?zwischenstand=1", () => {
-  it("legt den Zwischenstand in den Editor — mit Titelbild, Schrittbild, Häkchen und vorgemerkten Namen, soweit es sie noch gibt", async () => {
+describe("Bearbeiten-Seite, wenn zum Rezept ein Zwischenstand liegt", () => {
+  it("mit ?zwischenstand=1 steht er im Editor — mit Titelbild, Schrittbild, Häkchen und vorgemerkten Namen, soweit es sie noch gibt; sonst bietet die Seite ihn an", async () => {
     const schritte = [
       { text: "Mit Foto.", imageId: bild },
       { text: "Das Foto ist gelöscht.", imageId: geloeschtesBild },
@@ -321,10 +323,13 @@ describe("Bearbeiten-Seite mit ?zwischenstand=1", () => {
     expect(JSON.parse(s.wert("abschnitte")[0])[0].steps).toEqual([schritte[0], { ...schritte[1], imageId: null }]);
     // Der Hinweis nennt Tag UND Uhrzeit der Sicherung, nicht den Augenblick des Öffnens.
     expect(s.hinweise).toEqual(["Zwischenstand vom 13.10.2026 um 18:41 wiederhergestellt — noch nicht gespeichert."]);
+    // Wiederhergestellt ist er schon: Dieselbe Zeile wird nicht noch einmal angeboten.
+    expect(s.wiederherstellen).toBeNull();
 
-    // Gegenprobe: Ohne den Parameter steht das gespeicherte Rezept im Editor, ohne Hinweis. Und es
-    // zählt der WERT, nicht die Anwesenheit: Nur genau `1` stellt wieder her — nicht `0`, nicht der
-    // leere Wert (`?zwischenstand`), nicht `1` zweimal (Next liefert dann eine Liste).
+    // Ohne den Parameter bietet die Seite die Zeile an, und im Editor steht das gespeicherte Rezept:
+    // Anbieten heißt nicht übernehmen. Und es zählt der WERT, nicht die Anwesenheit: Nur genau `1`
+    // stellt wieder her — nicht `0`, nicht der leere Wert (`?zwischenstand`), nicht `1` zweimal
+    // (Next liefert dann eine Liste).
     const andere: Record<string, string | string[]>[] = [{}, { zwischenstand: "0" }, { zwischenstand: "" }, { zwischenstand: ["1", "1"] }];
     for (const suchparameter of andere) {
       const fall = JSON.stringify(suchparameter);
@@ -332,23 +337,33 @@ describe("Bearbeiten-Seite mit ?zwischenstand=1", () => {
       expect(ohne.wert("titel"), fall).toEqual(["Noch nicht fertig"]);
       expect(ohne.wert("titelbild"), fall).toEqual([]);
       expect(ohne.angehakt("kategorien"), fall).toEqual([]);
-      expect(ohne.hinweise, fall).toEqual([]);
+      // Auch nicht über den zweiten Kanal: die vorgemerkten Namen der Zeile.
+      expect(ohne.wert("kategorien__neu"), fall).toEqual([]);
+      // Auch das Angebot nennt den Tag.
+      expect(ohne.hinweise, fall).toEqual(["Zwischenstand vom 13.10.2026 um 18:41"]);
+      expect(ohne.wiederherstellen, fall).toBe(`/admin/rezepte/${entwurf}?zwischenstand=1`);
     }
   });
 
-  it("ohne Zeile, und mit einer, die sich nicht laden lässt, bleibt es beim gespeicherten Rezept — und verlangt jemand Wiederherstellen, sagt die Seite, dass nichts wiederhergestellt wurde", async () => {
+  it("ohne Zeile, und mit einer, die sich nicht laden lässt, gibt es kein Angebot — und verlangt jemand trotzdem Wiederherstellen, sagt die Seite, dass nichts wiederhergestellt wurde", async () => {
+    const gemeldet: string[] = [];
     const fehler = console.error;
-    console.error = () => undefined;
+    console.error = (...teile: unknown[]) => void gemeldet.push(format(...teile));
     try {
       for (const inhalt of [null, "null", '{"titel":["Unbrauchbar"],"abschnitte":["{kein json"],"notizen":["[]"]}']) {
         await zeile(entwurf, inhalt);
         for (const mitParameter of [true, false]) {
           const fall = `${inhalt}, mitParameter=${mitParameter}`;
+          gemeldet.length = 0;
           const s = await seite(entwurf, mitParameter ? { zwischenstand: "1" } : {});
           expect(s.wert("titel"), fall).toEqual(["Noch nicht fertig"]);
+          expect(s.wiederherstellen, fall).toBeNull();
           // Nicht still, wenn Wiederherstellen verlangt war: Wer dann das gespeicherte Rezept
           // bekommt, hielte es sonst für den Zwischenstand. Ohne den Parameter fehlt nichts.
           expect(s.hinweise, fall).toEqual(mitParameter ? [FEHLT] : []);
+          // Die Ablage meldet eine Zeile, die sich nicht laden lässt, bei JEDEM Öffnen, mit und
+          // ohne Parameter: genau einmal, mit dem Schlüssel. Ohne Zeile meldet sie nichts.
+          expect(gemeldet, fall).toEqual(inhalt === null ? [] : [expect.stringContaining(`rezept:${entwurf} `)]);
         }
       }
     } finally {
@@ -356,7 +371,7 @@ describe("Bearbeiten-Seite mit ?zwischenstand=1", () => {
     }
   });
 
-  it("liefert die Ablage doch ein Formular, das sich nicht übersetzen lässt, stellt die SEITE es nicht wieder her — und sagt es", async () => {
+  it("liefert die Ablage doch ein Formular, das sich nicht übersetzen lässt, bietet die SEITE es nicht an und stellt es nicht wieder her", async () => {
     // Die echte Ablage liefert das nicht (Fall darüber: Sie bietet die Zeile gar nicht an). Ihr Typ
     // lässt es zu, und die Seite verlässt sich nicht darauf. Deshalb hier, und nur hier, eine
     // Ablage, die es doch tut: Gemessen wird der Zweig der Seite.
@@ -374,10 +389,12 @@ describe("Bearbeiten-Seite mit ?zwischenstand=1", () => {
       for (const mitParameter of [true, false]) {
         const s = await seite(entwurf, mitParameter ? { zwischenstand: "1" } : {});
         expect(s.wert("titel"), String(mitParameter)).toEqual(["Noch nicht fertig"]);
+        expect(s.wiederherstellen, String(mitParameter)).toBeNull();
         expect(s.hinweise, String(mitParameter)).toEqual(mitParameter ? [FEHLT] : []);
       }
       // Die Seite hat wirklich DIESE Ablage gefragt — sonst mäße der Fall dasselbe wie der darüber.
-      expect(laden.mock.calls).toEqual([[schluesselFuerRezept(entwurf)]]);
+      // Und zwar bei jedem Öffnen, mit und ohne Parameter.
+      expect(laden.mock.calls).toEqual([[schluesselFuerRezept(entwurf)], [schluesselFuerRezept(entwurf)]]);
     } finally {
       laden.mockRestore();
     }
