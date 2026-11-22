@@ -14,7 +14,10 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  SCHLUESSEL_FELD,
+  STAND_FELD,
   ZWISCHENSTAND_AUFBEWAHRUNG_MS,
+  ZWISCHENSTAND_PFAD,
   ZWISCHENSTAND_TAKT_MS,
   aufbewahrungsgrenze,
   datenAusJson,
@@ -32,6 +35,7 @@ import {
   schluesselFuerNeu,
   schluesselFuerRezept,
   sicherungsurteil,
+  standAus,
   type EditorAnfangswerte,
   type ZwischenstandDaten,
 } from "@/lib/recipe-zwischenstand";
@@ -761,5 +765,36 @@ describe("sicherungsurteil — was eine Sicherung mit der Zeile tut, die sie vor
     for (const bekannt of [null, S, T]) {
       expect(sicherungsurteil({ stand: S, ladbar: false }, bekannt), String(bekannt)).toBe("schreiben");
     }
+  });
+});
+
+describe("der Leitungsvertrag zwischen Editor und Endpunkt", () => {
+  it("der Pfad liegt unter /api/admin — dort gleiten Cookie und Sitzung mit", () => {
+    expect(ZWISCHENSTAND_PFAD).toBe("/api/admin/rezepte/zwischenstand");
+  });
+
+  it("der bekannte Stand hat ein eigenes Feld — nicht das des Schlüssels", () => {
+    expect(STAND_FELD).toBe("zwischenstandStand");
+    expect(STAND_FELD).not.toBe(SCHLUESSEL_FELD);
+  });
+});
+
+describe("standAus — der bekannte Stand aus der Anfrage ist Nutzereingabe", () => {
+  it("eine Kennung in der Form, in der die Ablage sie vergibt, zählt", () => {
+    expect(standAus(S)).toBe(S);
+    expect(standAus(T)).toBe(T);
+  });
+
+  it("alles andere ist KEIN Stand: Der Editor kennt dann nichts", () => {
+    const keine = [undefined, "", " ", "abc", "0", "1730000000000", S.toUpperCase(), ` ${S}`, `${S} `, `${S}\n`, S.slice(1), `${S}0`, S.replaceAll("-", ""), `neu:${S}`];
+    for (const roh of keine) expect(standAus(roh), JSON.stringify(roh)).toBeNull();
+  });
+
+  it("die Form ist dieselbe wie hinter `neu:` im Schlüssel eines neuen Rezepts — je Stelle ein falsches Zeichen", () => {
+    // Eine Form, zwei Stellen: Wird eine Klasse des Musters an einer von beiden weiter, fällt es hier auf.
+    const kandidaten = [S, ...[...S].flatMap((zeichen, i) =>
+      (zeichen === "-" ? ["0", "a", "_"] : ["/", ":", "`", "g", "A", "F", "-"]).map((ersatz) => S.slice(0, i) + ersatz + S.slice(i + 1)),
+    )];
+    for (const k of kandidaten) expect(standAus(k) !== null, k).toBe(istNeuSchluessel(`neu:${k}`));
   });
 });

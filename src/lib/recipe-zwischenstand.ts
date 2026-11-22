@@ -49,6 +49,69 @@ export const ZWISCHENSTAND_AUFBEWAHRUNG_MS = 30 * 24 * 60 * 60 * 1000;
 
 /** Verstecktes Feld: der Schlüssel eines neuen Rezepts (`neu:<uuid>`). */
 export const SCHLUESSEL_FELD = "zwischenstandSchluessel";
+/**
+ * Feld der ANFRAGE, nicht des Formulars: der Stand, den der Editor zuletzt
+ * gesichert oder geladen hat. Im Formular stünde er dem Fingerabdruck im Weg —
+ * jede Sicherung änderte ihn, und die nächste käme ohne Änderung des Inhalts.
+ */
+export const STAND_FELD = "zwischenstandStand";
+
+/**
+ * Wohin der Editor sichern wird: ein Route-Handler unter /api/admin (Proxy,
+ * Cookie gleitet), KEINE Server-Action. Nach einer Action rendert Next die
+ * Seite neu; eine abgelaufene Sitzung trüge dann den Redirect zum Login aus,
+ * und der Browser verließe den Editor samt Inhalt. Ein Route-Handler rendert
+ * nichts; dort ist sie eine Antwort.
+ */
+export const ZWISCHENSTAND_PFAD = "/api/admin/rezepte/zwischenstand";
+
+/**
+ * Antwort der Sicherung — KEINE Navigation, der Editor zeigt sie an.
+ * `stand` ist die Kennung der Zeile; der Editor schickt ihn beim nächsten Mal
+ * als „bekannten Stand" mit (Schutz vor zwei Tabs). `gesichert` ist die
+ * Uhrzeit dieser Sicherung, nur zur Anzeige.
+ *
+ * `fremd`: In der Zeile liegt ein Stand, den dieser Editor nicht kennt —
+ * nichts wurde überschrieben. `stand` und `zeit` beschreiben DIESE Zeile, und
+ * zwar so, wie die Seite sie anböte: `zeit` mit Tag und Uhrzeit (sie kann
+ * Wochen alt sein). Der Editor kann sie damit selbst anbieten, ohne die Seite
+ * neu zu laden.
+ *
+ * `weg`: Der Editor nannte einen Stand, aber die Zeile gibt es nicht mehr —
+ * etwa beim Speichern abgeräumt, verworfen oder mit ihrem Rezept gelöscht.
+ * Nichts wurde angelegt (`sicherungsurteil`); der Editor kennt danach keinen
+ * Stand mehr. Nach dem eigenen Speichern ist das kein Fehler, sonst sichert
+ * er ohne Stand neu. Gibt es das Rezept nicht mehr, ist die Antwort auf
+ * diese Folgesicherung `ungueltig`.
+ *
+ * `ungueltig` ist auch ein Formular, das sich nicht laden ließe (`istLadbar`):
+ * Es wird nicht abgelegt.
+ *
+ * Jede dieser Antworten ist ein Urteil über die Anfrage. Was nicht in der
+ * Liste steht (ein 5xx), ist eine Störung des Servers, kein Urteil.
+ */
+export type ZwischenstandAntwort =
+  | { gesichert: string; stand: string }
+  | { fehler: "herkunft" }
+  | { fehler: "sitzung" }
+  | { fehler: "fremd"; zeit: string; stand: string }
+  | { fehler: "weg" }
+  | { fehler: "ungueltig" };
+
+/**
+ * Antwort auf „Verwerfen" (DELETE auf denselben Pfad, Felder `schluessel` und
+ * der bekannte Stand). `fremd`: In der Zeile liegt ein anderer Stand, den
+ * dieser Redakteur nie gesehen hat — nichts gelöscht; `stand` und `zeit`
+ * beschreiben sie wie bei der Sicherung (Tag und Uhrzeit). Ohne Zeile ist nichts
+ * zu verwerfen und nichts falsch: `verworfen`. Auch hier ist ein 5xx eine
+ * Störung des Servers, kein Urteil.
+ */
+export type VerwerfenAntwort =
+  | { verworfen: true }
+  | { fehler: "herkunft" }
+  | { fehler: "sitzung" }
+  | { fehler: "fremd"; zeit: string; stand: string }
+  | { fehler: "ungueltig" };
 
 /** Die Taxonomie-Felder des Editors — dieselben Namen wie in recipe-save.ts. */
 const TAXONOMIE_FELDER = ["kategorien", "schlagwoerter", "ernaehrungsformen", "kuechen", "geraete"];
@@ -388,6 +451,20 @@ export function rezeptnummerAus(schluessel: string): number | null {
  */
 export function istFremderStand(zeile: string, bekannterStand: string | null): boolean {
   return zeile !== bekannterStand;
+}
+
+/** Die Form eines Stands: eine Kennung, wie die Ablage sie vergibt — dieselbe wie hinter `neu:` im Schlüssel. */
+const KENNUNG = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/**
+ * Der bekannte Stand aus der Anfrage (`STAND_FELD`). Er ist Nutzereingabe: Nur
+ * was die Form einer Kennung hat, zählt; alles andere ist KEIN Stand (null) —
+ * der Editor kennt dann nichts. Reichte, wer die Anfrage liest, den Text roh
+ * weiter, wäre jeder nichtleere Text ein genannter Stand, und ohne Zeile
+ * hieße das Urteil „weg" statt einer Sicherung.
+ */
+export function standAus(roh: string | undefined): string | null {
+  return roh !== undefined && KENNUNG.test(roh) ? roh : null;
 }
 
 /**
