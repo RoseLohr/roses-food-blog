@@ -485,9 +485,8 @@ beschreibt kein Verhalten der Oberfläche.
   erst gefragt. Das Cookie hat der Proxy da schon erneuert — er kennt die
   Herkunft nicht; ohne gültige Zeile ist es wertlos. Den bekannten Stand
   nimmt der Handler vor dem Ablegen heraus. Gemessen in
-  `tests/recipe-zwischenstand-route.integration.test.ts` (Herkunft und
-  Sitzung; Eingabe, Sicherung und die Urteile `fremd` und `weg` in den
-  nächsten Schritten).
+  `tests/recipe-zwischenstand-route.integration.test.ts` (Herkunft, Sitzung,
+  Eingabe, Sicherung; die Urteile `fremd` und `weg` im nächsten Schritt).
 - **Wiederherstellen deutet nicht, aber es prüft:** `editorAusDaten` legt das
   Formular über die Anfangswerte; Text bleibt ungetrimmt, Zahlen nur, wenn sie
   welche sind. Was ein FEHLENDES Feld heißt, hängt davon ab, ob der Editor es
