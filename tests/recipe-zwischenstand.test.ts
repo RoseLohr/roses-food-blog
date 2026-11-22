@@ -7,7 +7,9 @@
  *  - wie das Formular zu Daten wird und wieder zu Editor-Anfangswerten,
  *  - woran der Editor erkennt, dass sich etwas geändert hat (Fingerabdruck),
  *  - welcher Schlüssel eine Zeile adressiert (Rezept oder neues Rezept),
- *  - wann ein Zwischenstand angeboten wird (nicht älter als das Rezept)
+ *  - wann ein Zwischenstand angeboten wird (nicht älter als das Rezept),
+ *  - was sich laden lässt, wem eine Zeile „fremd" ist und was eine Sicherung
+ *    mit der Zeile tut, die sie vorfindet
  *  - und wann er aufgeräumt wird (30 Tage).
  */
 import { describe, expect, it } from "vitest";
@@ -19,13 +21,17 @@ import {
   editorAusDaten,
   fingerabdruck,
   formularAlsDaten,
+  istFremderStand,
+  istLadbar,
   istNeuSchluessel,
   istZwischenstandSchluessel,
+  ladbareDatenAus,
   nichtAelterAls,
   rezeptnummerAus,
   schluesselAus,
   schluesselFuerNeu,
   schluesselFuerRezept,
+  sicherungsurteil,
   type EditorAnfangswerte,
   type ZwischenstandDaten,
 } from "@/lib/recipe-zwischenstand";
@@ -161,6 +167,47 @@ describe("datenAusJson — das Formular zurück aus der Ablage", () => {
       '{"titel":["x"],"slug":"y"}',
     ]) {
       expect(datenAusJson(roh), roh).toBeNull();
+    }
+  });
+});
+
+describe("istLadbar und ladbareDatenAus — laden lässt sich genau, was sich übersetzen lässt", () => {
+  const abschnitte = JSON.stringify([{ name: "", ingredients: [], steps: [{ text: "Rühren.", imageId: null }] }]);
+  const notizen = JSON.stringify([{ text: "a", isPublic: true }]);
+  const ladbar: ZwischenstandDaten[] = [
+    {},
+    { titel: ["x"] },
+    { abschnitte: [abschnitte], notizen: [notizen] },
+    { abschnitte: ["[]"] },
+    { notizen: ["[]"] },
+  ];
+  const nichtLadbar: ZwischenstandDaten[] = [
+    { titel: ["x"], abschnitte: ["{kein json"], notizen: [notizen] },
+    { titel: ["x"], abschnitte: [abschnitte], notizen: ['[{"text":5}]'] },
+    { abschnitte: ["null"] },
+    { notizen: ['"[]"'] },
+    // Das alte Format der Schritte (reiner Text) nimmt der Speicherweg noch an, der Editor schreibt es nicht.
+    { abschnitte: [JSON.stringify([{ name: "", ingredients: [], steps: ["Rühren."] }])] },
+  ];
+  /** Was in einer Zeile stehen kann, ohne ein Formular zu sein. */
+  const keinFormular = ["{kein json", "null", '"Suppe"', '{"titel":"Suppe"}'];
+
+  it("ein Formular ist ladbar, wenn Abschnitte und Notizen die Form des Editors haben — oder fehlen", () => {
+    for (const daten of ladbar) expect(istLadbar(daten), JSON.stringify(daten)).toBe(true);
+    for (const daten of nichtLadbar) expect(istLadbar(daten), JSON.stringify(daten)).toBe(false);
+  });
+
+  it("aus einer Zeile kommt das Formular, wenn es ladbar ist — sonst null, auch ohne Formular", () => {
+    for (const daten of ladbar) expect(ladbareDatenAus(JSON.stringify(daten)), JSON.stringify(daten)).toEqual(daten);
+    for (const daten of nichtLadbar) expect(ladbareDatenAus(JSON.stringify(daten)), JSON.stringify(daten)).toBeNull();
+    for (const roh of keinFormular) expect(ladbareDatenAus(roh), roh).toBeNull();
+  });
+
+  it("ist dieselbe Regel wie beim Wiederherstellen: Ladbar ist genau, was editorAusDaten übersetzt", () => {
+    // Zwei Regeln wären der Fehler: Eine Zeile, die als ladbar gälte und sich nicht übersetzen
+    // ließe, bekäme niemand zu sehen — und sperrte trotzdem Sichern und Verwerfen.
+    for (const daten of [...ladbar, ...nichtLadbar]) {
+      expect(istLadbar(daten), JSON.stringify(daten)).toBe(editorAusDaten(daten, BASIS, ERLAUBT) !== null);
     }
   });
 });
@@ -666,5 +713,53 @@ describe("aufbewahrungsgrenze", () => {
   it("liegt 30 Tage vor jetzt — was davor gesichert wurde, wird aufgeräumt", () => {
     const jetzt = new Date("2026-10-23T12:00:00Z");
     expect(aufbewahrungsgrenze(jetzt).getTime()).toBe(jetzt.getTime() - 30 * TAG);
+  });
+});
+
+/** Zwei Stände, wie die Ablage sie vergibt: zufällige Kennungen. */
+const S = "5b0c7f1e-9a3d-4c2b-8e6f-1a2b3c4d5e6f";
+const T = "6c1d8a2f-0b4e-4d3c-9f7a-2b3c4d5e6f7a";
+
+describe("istFremderStand — der Schutz vor zwei Tabs", () => {
+  it("bekannt ist genau der Stand, den die Zeile trägt", () => {
+    expect(istFremderStand(S, S)).toBe(false);
+  });
+
+  it("jeder andere Stand ist fremd — und keiner auch", () => {
+    expect(istFremderStand(S, T)).toBe(true);
+    expect(istFremderStand(S, null)).toBe(true);
+    // Kein „enthält" und kein „beginnt mit": verglichen wird der ganze Text.
+    expect(istFremderStand(S, S.slice(0, -1))).toBe(true);
+    expect(istFremderStand(S, `${S} `)).toBe(true);
+    expect(istFremderStand(S, S.toUpperCase())).toBe(true);
+    expect(istFremderStand(S, "")).toBe(true);
+  });
+});
+
+describe("sicherungsurteil — was eine Sicherung mit der Zeile tut, die sie vorfindet", () => {
+  it("ohne Zeile und ohne genannten Stand: schreiben — so beginnt eine Zeile", () => {
+    expect(sicherungsurteil(null, null)).toBe("schreiben");
+  });
+
+  it("ohne Zeile, aber mit genanntem Stand: weg — nichts wird angelegt", () => {
+    // Wer einen Stand nennt, setzt eine Zeile fort. Gibt es sie nicht mehr (beim Speichern
+    // abgeräumt, verworfen, mit ihrem Rezept gelöscht), legte eine späte Sicherung sie sonst neu
+    // an: mit dem Inhalt von vor dem Speichern.
+    expect(sicherungsurteil(null, S)).toBe("weg");
+    // Was als genannter Stand gilt, entscheidet, wer die Eingabe liest. Hier ist jeder Text einer,
+    // auch der leere.
+    expect(sicherungsurteil(null, "")).toBe("weg");
+  });
+
+  it("mit Zeile: geschrieben wird nur über den Stand, den der Aufrufer nennt — jeder andere ist fremd, und keiner auch", () => {
+    expect(sicherungsurteil({ stand: S, ladbar: true }, S)).toBe("schreiben");
+    expect(sicherungsurteil({ stand: S, ladbar: true }, T)).toBe("fremd");
+    expect(sicherungsurteil({ stand: S, ladbar: true }, null)).toBe("fremd");
+  });
+
+  it("eine Zeile, die sich nicht laden lässt, sperrt nichts: Sie wird überschrieben, was der Aufrufer auch nennt", () => {
+    for (const bekannt of [null, S, T]) {
+      expect(sicherungsurteil({ stand: S, ladbar: false }, bekannt), String(bekannt)).toBe("schreiben");
+    }
   });
 });
