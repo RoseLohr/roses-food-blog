@@ -24,6 +24,11 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 let tmp: string;
 let sqlite: Database.Database;
 
+/** Das Journal des Repos — gemeinsam für ALLE Tests, die gleichzeitig laufen. */
+const JOURNAL_DES_REPOS = path.resolve(process.cwd(), "drizzle/meta/_journal.json");
+/** Wann es zuletzt geschrieben wurde, festgehalten, BEVOR hier irgendetwas läuft. */
+const JOURNAL_GESCHRIEBEN = fs.statSync(JOURNAL_DES_REPOS).mtimeMs;
+
 /**
  * Das Journal BIS VOR 0013 — damit lässt sich der Stand davor herstellen.
  *
@@ -35,9 +40,7 @@ let sqlite: Database.Database;
  * Buchführung damit rechnerisch unvollständig.
  */
 function journalBisVor0013(): string {
-  const j = JSON.parse(
-    fs.readFileSync(path.resolve(process.cwd(), "drizzle/meta/_journal.json"), "utf8"),
-  );
+  const j = JSON.parse(fs.readFileSync(JOURNAL_DES_REPOS, "utf8"));
   const ab = j.entries.findIndex(
     (e: { tag: string }) => e.tag === "0013_bildgruppe_und_einzelbild",
   );
@@ -46,63 +49,80 @@ function journalBisVor0013(): string {
   return JSON.stringify(j, null, 2);
 }
 
+/**
+ * Der Migrator liest `./drizzle` relativ zum ARBEITSVERZEICHNIS. Er läuft hier
+ * deshalb im Wegwerf-Verzeichnis, gegen eine KOPIE der Migrationen: Nur dort
+ * wird das Journal gekürzt. Das Journal des Repos teilen sich alle Tests, die
+ * gleichzeitig laufen (siehe „der Aufbau dieses Tests").
+ */
+const MIGRATOR = path.resolve(process.cwd(), "scripts/migrate.mjs");
+function migrieren() {
+  execFileSync("node", [MIGRATOR], {
+    cwd: tmp,
+    env: { ...process.env, DATA_DIR: tmp },
+    stdio: "pipe",
+  });
+}
+
 beforeAll(() => {
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), "roses-0013-"));
-  const journal = path.resolve(process.cwd(), "drizzle/meta/_journal.json");
+  fs.cpSync(path.resolve(process.cwd(), "drizzle"), path.join(tmp, "drizzle"), { recursive: true });
+  const journal = path.join(tmp, "drizzle/meta/_journal.json");
   const echt = fs.readFileSync(journal, "utf8");
 
-  try {
-    // 1. Auf den Stand VOR 0013 migrieren.
-    fs.writeFileSync(journal, journalBisVor0013());
-    execFileSync("node", ["scripts/migrate.mjs"], {
-      env: { ...process.env, DATA_DIR: tmp },
-      stdio: "pipe",
-    });
+  // 1. Auf den Stand VOR 0013 migrieren.
+  fs.writeFileSync(journal, journalBisVor0013());
+  migrieren();
 
-    // 2. Ein Muster mit bekannten Läufen anlegen — über ZWEI Berichte, damit
-    //    die Marken auch über Berichtsgrenzen hinweg eindeutig sein müssen.
-    const db = new Database(path.join(tmp, "app.db"));
-    const jetzt = Date.now();
+  // 2. Ein Muster mit bekannten Läufen anlegen — über ZWEI Berichte, damit
+  //    die Marken auch über Berichtsgrenzen hinweg eindeutig sein müssen.
+  const db = new Database(path.join(tmp, "app.db"));
+  const jetzt = Date.now();
+  db.prepare(
+    "INSERT INTO media_image (file_key, original_name, width, height, size_bytes, created_at) VALUES (?,?,?,?,?,?)",
+  ).run("f1", "f1.jpg", 800, 600, 100, jetzt);
+  const img = (db.prepare("SELECT id FROM media_image").get() as { id: number }).id;
+  const muster: Array<[string, string[]]> = [
+    ["a", ["text", "bild", "bild", "text", "bild", "bild", "bild"]],
+    ["b", ["bild", "text", "bild"]],
+  ];
+  for (const [slug, folge] of muster) {
     db.prepare(
-      "INSERT INTO media_image (file_key, original_name, width, height, size_bytes, created_at) VALUES (?,?,?,?,?,?)",
-    ).run("f1", "f1.jpg", 800, 600, 100, jetzt);
-    const img = (db.prepare("SELECT id FROM media_image").get() as { id: number }).id;
-    const muster: Array<[string, string[]]> = [
-      ["a", ["text", "bild", "bild", "text", "bild", "bild", "bild"]],
-      ["b", ["bild", "text", "bild"]],
-    ];
-    for (const [slug, folge] of muster) {
-      db.prepare(
-        "INSERT INTO travel_post (title, slug, status, created_at, updated_at) VALUES (?,?,?,?,?)",
-      ).run(slug, slug, "entwurf", jetzt, jetzt);
-      const post = (
-        db.prepare("SELECT id FROM travel_post WHERE slug = ?").get(slug) as { id: number }
-      ).id;
-      folge.forEach((t, i) =>
-        db
-          .prepare(
-            "INSERT INTO travel_block (travel_post_id, sort_order, type, markdown, image_id) VALUES (?,?,?,?,?)",
-          )
-          .run(post, i, t, t === "text" ? `Text ${i}` : "", t === "bild" ? img : null),
-      );
-    }
-    db.close();
-
-    // 3. 0013 (und alles danach) anwenden.
-    fs.writeFileSync(journal, echt);
-    execFileSync("node", ["scripts/migrate.mjs"], {
-      env: { ...process.env, DATA_DIR: tmp },
-      stdio: "pipe",
-    });
-  } finally {
-    fs.writeFileSync(journal, echt);
+      "INSERT INTO travel_post (title, slug, status, created_at, updated_at) VALUES (?,?,?,?,?)",
+    ).run(slug, slug, "entwurf", jetzt, jetzt);
+    const post = (
+      db.prepare("SELECT id FROM travel_post WHERE slug = ?").get(slug) as { id: number }
+    ).id;
+    folge.forEach((t, i) =>
+      db
+        .prepare(
+          "INSERT INTO travel_block (travel_post_id, sort_order, type, markdown, image_id) VALUES (?,?,?,?,?)",
+        )
+        .run(post, i, t, t === "text" ? `Text ${i}` : "", t === "bild" ? img : null),
+    );
   }
+  db.close();
+
+  // 3. 0013 (und alles danach) anwenden.
+  fs.writeFileSync(journal, echt);
+  migrieren();
   sqlite = new Database(path.join(tmp, "app.db"));
 });
 
 afterAll(() => {
   sqlite?.close();
   fs.rmSync(tmp, { recursive: true, force: true });
+});
+
+describe("der Aufbau dieses Tests", () => {
+  it("schreibt nicht in das Journal des Repos", () => {
+    // Vitest fährt die Testdateien nebeneinander. Bis 11/2026 schrieb dieser Aufbau das gekürzte
+    // Journal in `drizzle/meta/_journal.json` selbst und stellte es danach zurück. Solange es
+    // gekürzt dalag, sah JEDER andere Test, der den Migrator ruft, nur 13 Migrationen — und brach
+    // mit „Die Buchführung hat 17 Zeile(n), unter dem Wasserstand liegen aber 13" ab. Gemessen am
+    // Zeitpunkt des letzten Schreibens: Der Inhalt stimmte nach dem Zurückstellen ja wieder.
+    expect(fs.statSync(JOURNAL_DES_REPOS).mtimeMs).toBe(JOURNAL_GESCHRIEBEN);
+  });
 });
 
 interface Zeile {
