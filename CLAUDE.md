@@ -574,9 +574,7 @@ das Angebot ruht.
   beide Hinweise; sonst räumte das nächste Speichern sie ungesehen ab.
   **Noch ohne Rückfrage:** Der Link ersetzt auch Ungespeichertes; sie folgt,
   bevor der Editor selbst sichert und das Angebot im Betrieb erscheint.
-  Gemessen am ausgelieferten HTML
-  (`tests/rezept-bearbeiten-seite.integration.test.ts`); im Browser im
-  nächsten Schritt.
+  Gemessen wie im nächsten Punkt.
 - **Wiederherstellen heißt nicht speichern**
   (`src/app/admin/(protected)/rezepte/[id]/page.tsx`): `?zwischenstand=1` legt
   die Zeile in den Editor; gespeichert wird erst, wenn der Redakteur
@@ -599,8 +597,8 @@ das Angebot ruht.
   neu, und eine Umleitung verließe dann den Editor samt Getipptem.
   Gemessen in `tests/rezept-bearbeiten-seite.integration.test.ts` (das
   ausgelieferte HTML) und `tests/e2e/rezept-zwischenstand.spec.ts` (im
-  Browser: Speichern mit Fehler, danach mit Erfolg; und der Fall, in dem
-  nichts vorliegt).
+  Browser: der Weg vom Angebot bis nach dem Speichern; Speichern mit Fehler,
+  danach mit Erfolg; der Fall, in dem nichts vorliegt; die ersetzte Zeile).
 - **Geprüft wird Text, gerechnet wird mit Zahlen.** Eine NUMMER (Rezept im
   Schlüssel, Bild, Häkchen) ist eine reine Ziffernfolge mit höchstens 15
   Stellen: `Number()` rundet ab 2^53 und schreibt sich ab 22 Stellen mit
