@@ -572,6 +572,13 @@ das Angebot ruht.
   erkannt am Stand, nicht an der Uhrzeit. Liegt über einem wiederhergestellten
   Inhalt inzwischen eine ANDERE Zeile (ein zweiter Tab hat gesichert), stehen
   beide Hinweise; sonst räumte das nächste Speichern sie ungesehen ab.
+  **Der Link ist erst bedienbar, wenn er eingehängt ist** (`inert` bis dahin,
+  `wiederherstellen-link.tsx`): Der Server liefert nur den Anker, die Felder
+  sind aber schon vorher bedienbar. Ein Klick in diesem Fenster lüde die Seite
+  mit dem Zwischenstand neu, bevor der Editor etwas dazu sagen könnte — was
+  er an den Klick hängt, hängt erst mit dem Skript daran. Gemessen in
+  `tests/e2e/rezept-zwischenstand-ohne-skript.spec.ts`: Ein Browser ohne
+  Skript zeigt genau das ausgelieferte HTML.
   **Noch ohne Rückfrage:** Der Link ersetzt auch Ungespeichertes; sie folgt,
   bevor der Editor selbst sichert und das Angebot im Betrieb erscheint.
   Gemessen wie im nächsten Punkt.
