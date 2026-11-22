@@ -9,6 +9,24 @@ import { taxonomiesByType } from "@/lib/taxonomies";
 import { getFullRecipe } from "@/lib/recipes";
 import type { RecipeEditorProps } from "./recipe-editor";
 
+/**
+ * Worauf ein wiederhergestellter Zwischenstand verweisen darf: die Bilder und,
+ * je Feld, die Taxonomien, die der Editor gerade zur Auswahl hat. Alles andere
+ * kommt nicht zurück (`editorAusDaten`): ein inzwischen gelöschter Eintrag so
+ * wenig wie einer, der in ein anderes Feld gehört.
+ */
+export function erlaubteVerweise(props: RecipeEditorProps): {
+  bildIds: number[];
+  taxonomieIds: Record<string, number[]>;
+} {
+  return {
+    bildIds: props.images.map((b) => b.id),
+    taxonomieIds: Object.fromEntries(
+      Object.entries(props.taxonomies).map(([feld, optionen]) => [feld, optionen.map((o) => o.id)]),
+    ),
+  };
+}
+
 export async function buildEditorProps(
   recipeId: number | null,
 ): Promise<RecipeEditorProps | null> {
@@ -59,6 +77,7 @@ export async function buildEditorProps(
     taxonomies,
     images,
     ingredientNames: ingredients.map((i) => i.name),
+    oeffentlicheSeite: null,
   };
 
   if (recipeId === null) return base;
@@ -68,6 +87,12 @@ export async function buildEditorProps(
 
   return {
     ...base,
+    // Wo das GESPEICHERTE Rezept öffentlich steht. Der Editor liest das nicht
+    // aus seinen Anfangswerten: Die können aus einem Zwischenstand stammen.
+    oeffentlicheSeite:
+      full.recipe.slug && full.recipe.status === schema.VEROEFFENTLICHT
+        ? `/rezepte/${full.recipe.slug}`
+        : null,
     initial: {
       id: full.recipe.id,
       title: full.recipe.title,

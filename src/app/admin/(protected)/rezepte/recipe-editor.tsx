@@ -155,6 +155,13 @@ export interface RecipeEditorProps {
   taxonomies: Record<string, TaxonomyOption[]>;
   images: ImageOption[];
   ingredientNames: string[];
+  /**
+   * Die Adresse des GESPEICHERTEN Rezepts, solange es veröffentlicht ist —
+   * sonst null. Eine eigene Angabe, nicht aus `initial` gelesen: Stammt der
+   * Inhalt aus einem Zwischenstand, sind Slug und Status darin getippt und
+   * nicht gespeichert.
+   */
+  oeffentlicheSeite: string | null;
   message?: string | null;
 }
 
@@ -305,6 +312,7 @@ export function RecipeEditor({
   taxonomies,
   images,
   ingredientNames,
+  oeffentlicheSeite,
   message,
 }: RecipeEditorProps) {
   const [state, formAction, pending] = useActionState<RecipeFormState, FormData>(
@@ -1056,9 +1064,9 @@ export function RecipeEditor({
             >
               {d.preview}
             </a>
-            {form.slug && form.status === "veroeffentlicht" && (
+            {oeffentlicheSeite && (
               <a
-                href={`/rezepte/${form.slug}`}
+                href={oeffentlicheSeite}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="py-1 text-sm text-leaf underline-offset-2 hover:underline"
