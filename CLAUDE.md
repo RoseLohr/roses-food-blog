@@ -542,6 +542,16 @@ dieser Abschnitt beschreibt kein Verhalten der Oberfläche.
   ihren Spalten. Ein Netz, kein Beweis: Er erkennt die Tabelle am Namen
   (`schema.recipe`), und SQL, das erst zur Laufzeit zusammengesetzt wird,
   sieht er nicht.
+  Es gibt Wege, die ein gespeichertes Rezept ändern, OHNE das Datum zu
+  schreiben: Zutaten zusammenführen oder umbenennen, einen Taxonomie-Eintrag
+  löschen. Sie lassen die Zeile stehen, und der Zeitvergleich hätte keinen
+  davon gesehen. Was dann gilt, steht schon da: Verweise auf gelöschte
+  Taxonomien verwirft das Wiederherstellen; ein Zutatenname ist im
+  Zwischenstand Text und wird erst beim Speichern gedeutet. Die Folge: Wer
+  nach dem Zusammenführen wiederherstellt und speichert, legt die alte Zutat
+  neu an, und das Rezept hängt wieder an ihr. Gemessen in
+  `tests/recipe-zwischenstand-nebenwege.integration.test.ts` (die drei Wege
+  und die Folge).
 - **Geprüft wird Text, gerechnet wird mit Zahlen.** Eine NUMMER (Rezept im
   Schlüssel, Bild, Häkchen) ist eine reine Ziffernfolge mit höchstens 15
   Stellen: `Number()` rundet ab 2^53 und schreibt sich ab 22 Stellen mit

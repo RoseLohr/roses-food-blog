@@ -5,8 +5,9 @@
  * den Zwischenstand in derselben Transaktion ab. Wer es auf einem anderen Weg
  * schreibt, räumt ebenfalls ab.
  *
- * Einen Test, der einzelne Wege aufruft, kann ein weiterer Weg umgehen: Er
- * kennt nur die, die er aufruft.
+ * `tests/recipe-zwischenstand-nebenwege.integration.test.ts` hält drei
+ * benannte Wege fest, die das Datum NICHT schreiben. Einen vierten, der es
+ * schreibt, sähe jener Test nicht: Er kennt nur die Wege, die er aufruft.
  * Deshalb steht hier die Liste der Stellen in `src/` und `scripts/`, die eine
  * bestehende Rezeptzeile ändern, mit den Spalten, die sie nennen — soweit der
  * Test sie ERKENNT (siehe unten). Eine Positivliste: Wer eine neue Stelle
