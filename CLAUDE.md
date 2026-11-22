@@ -579,8 +579,12 @@ das Angebot ruht.
   er an den Klick hängt, hängt erst mit dem Skript daran. Gemessen in
   `tests/e2e/rezept-zwischenstand-ohne-skript.spec.ts`: Ein Browser ohne
   Skript zeigt genau das ausgelieferte HTML.
-  **Noch ohne Rückfrage:** Der Link ersetzt auch Ungespeichertes; sie folgt,
-  bevor der Editor selbst sichert und das Angebot im Betrieb erscheint.
+  **Wiederherstellen ersetzt, was im Editor steht — hält er Ungespeichertes,
+  fragt er vorher.** Ungespeichert ist, was von dem abweicht, was der Server
+  ausgeliefert hat, und JEDER wiederhergestellte Inhalt, auch unberührt.
+  **Nicht behoben** ist, was vor dem Einhängen in ein Feld ohne Namen getippt
+  wird (`ausgelieferterAbdruck` im Editor); der ausführliche Punkt und die
+  Messung am gespeicherten Rezept folgen im nächsten Schritt.
   Gemessen wie im nächsten Punkt.
 - **Wiederherstellen heißt nicht speichern**
   (`src/app/admin/(protected)/rezepte/[id]/page.tsx`): `?zwischenstand=1` legt
@@ -604,8 +608,9 @@ das Angebot ruht.
   neu, und eine Umleitung verließe dann den Editor samt Getipptem.
   Gemessen in `tests/rezept-bearbeiten-seite.integration.test.ts` (das
   ausgelieferte HTML) und `tests/e2e/rezept-zwischenstand.spec.ts` (im
-  Browser: der Weg vom Angebot bis nach dem Speichern; Speichern mit Fehler,
-  danach mit Erfolg; der Fall, in dem nichts vorliegt; die ersetzte Zeile).
+  Browser: der Weg vom Angebot bis nach dem Speichern, mit der Rückfrage;
+  Speichern mit Fehler, danach mit Erfolg; der Fall, in dem nichts vorliegt;
+  die ersetzte Zeile).
 - **Geprüft wird Text, gerechnet wird mit Zahlen.** Eine NUMMER (Rezept im
   Schlüssel, Bild, Häkchen) ist eine reine Ziffernfolge mit höchstens 15
   Stellen: `Number()` rundet ab 2^53 und schreibt sich ab 22 Stellen mit
