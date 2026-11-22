@@ -163,7 +163,7 @@ describe("oeffentlicheSeite — die Adresse des GESPEICHERTEN Rezepts", () => {
 const ENTITAETEN: Record<string, string> = { "&quot;": '"', "&#x27;": "'", "&lt;": "<", "&gt;": ">", "&amp;": "&" };
 const klartext = (html: string) => html.replace(/<[^>]*>/g, "").replace(/&quot;|&#x27;|&lt;|&gt;|&amp;/g, (e) => ENTITAETEN[e]);
 
-/** Was im ausgelieferten HTML steht: die Eingabefelder (je Feld die Attribute) und die Hinweise. */
+/** Was im ausgelieferten HTML steht: die Eingabefelder (je Feld die Attribute), die Hinweise und der Link zum Wiederherstellen. */
 function gelesen(html: string) {
   const eingaben = [...html.matchAll(/<input\b([^>]*)>/g)].map(([, attribute]) =>
     Object.fromEntries([...attribute.matchAll(/([\w-]+)(?:="([^"]*)")?/g)].map(([, name, wert]) => [name, klartext(wert ?? "")])),
@@ -171,9 +171,14 @@ function gelesen(html: string) {
   return {
     wert: (name: string) => eingaben.filter((e) => e.name === name && e.type !== "checkbox").map((e) => e.value),
     angehakt: (name: string) => eingaben.filter((e) => e.name === name && e.type === "checkbox" && "checked" in e).map((e) => e.value),
-    hinweise: [...html.matchAll(/<div role="status"[^>]*>(.*?)<\/div>/g)].map(([, inhalt]) => klartext(inhalt)),
+    hinweise: [...html.matchAll(/<div role="status"[^>]*>(.*?)<\/div>/g)].map(([, inhalt]) => klartext(inhalt.replace(/<a\b.*?<\/a>/g, ""))),
+    wiederherstellen: html.match(/<a [^>]*href="([^"]*)"[^>]*>Wiederherstellen<\/a>/)?.[1] ?? null,
   };
 }
+
+/** Der Stand einer Zeile, und der einer anderen. */
+const STAND = "5b0c7f1e-9a3d-4c2b-8e6f-1a2b3c4d5e6f";
+const ANDERER_STAND = "6c1d8a2f-0b4e-4d3c-9f7a-2b3c4d5e6f7a";
 
 describe("ein Editor, dessen Inhalt aus einem Zwischenstand stammt", () => {
   it("zeigt den Hinweis mit Tag und Uhrzeit der Sicherung und trägt die vorgemerkten Namen im Formular — ohne die Angaben nichts davon", async () => {
@@ -190,7 +195,7 @@ describe("ein Editor, dessen Inhalt aus einem Zwischenstand stammt", () => {
         createElement(RecipeEditor, {
           ...props,
           taxonomiePending: { kategorien: ["Eintopf"] },
-          zwischenstandWiederhergestellt: { zeit: "13.10.2026 um 18:41" },
+          zwischenstandWiederhergestellt: { zeit: "13.10.2026 um 18:41", stand: STAND },
         }),
       ),
     );
@@ -211,9 +216,50 @@ describe("ein Editor, dessen Inhalt aus einem Zwischenstand stammt", () => {
     expect(hinweise({ zwischenstandFehlt: false })).toEqual([]);
     // Beide Angaben zugleich gibt es, sobald die Zeile eines wiederhergestellten Editors fehlt und
     // die Seite neu rendert. „Wiederhergestellt wurde nichts" wäre dort falsch.
-    expect(hinweise({ zwischenstandFehlt: true, zwischenstandWiederhergestellt: { zeit: "13.10.2026 um 18:41" } })).toEqual([
+    expect(hinweise({ zwischenstandFehlt: true, zwischenstandWiederhergestellt: { zeit: "13.10.2026 um 18:41", stand: STAND } })).toEqual([
       "Zwischenstand vom 13.10.2026 um 18:41 wiederhergestellt — noch nicht gespeichert.",
     ]);
+  });
+});
+
+describe("das Angebot über dem Editor", () => {
+  it("steht da, solange der Inhalt nicht aus DIESER Zeile stammt — erkannt am Stand, nicht an der Uhrzeit", async () => {
+    const { buildEditorProps } = await editorDaten();
+    const { RecipeEditor } = await import("@/app/admin/(protected)/rezepte/recipe-editor");
+    const props = (await buildEditorProps(entwurf))!;
+    const lesen = (zusatz: object) => gelesen(renderToStaticMarkup(createElement(RecipeEditor, { ...props, ...zusatz })));
+    const zeit = "13.10.2026 um 18:41";
+    const wiederherstellen = "/admin/rezepte/7?zwischenstand=1";
+    const WIEDERHERGESTELLT = `Zwischenstand vom ${zeit} wiederhergestellt — noch nicht gespeichert.`;
+    const ANGEBOT = `Zwischenstand vom ${zeit}`;
+
+    // Ohne die Angabe: nichts.
+    expect(lesen({}).hinweise).toEqual([]);
+    expect(lesen({}).wiederherstellen).toBeNull();
+
+    // Nichts wiederhergestellt: das Angebot, mit Tag und Uhrzeit — wie alt die Zeile ist, entscheidet
+    // mit, ob man sie will. Im Formular steht weiter, was die Anfangswerte sagen.
+    const offen = lesen({ zwischenstandAngebot: { zeit, stand: STAND, wiederherstellen } });
+    expect(offen.hinweise).toEqual([ANGEBOT]);
+    expect(offen.wiederherstellen).toBe(wiederherstellen);
+    expect(offen.wert("titel")).toEqual(["Noch nicht fertig"]);
+
+    // Aus dieser Zeile wiederhergestellt: Der Weg dorthin wird nicht noch einmal angeboten.
+    const dieselbe = lesen({
+      zwischenstandWiederhergestellt: { zeit, stand: STAND },
+      zwischenstandAngebot: { zeit, stand: STAND, wiederherstellen },
+    });
+    expect(dieselbe.hinweise).toEqual([WIEDERHERGESTELLT]);
+    expect(dieselbe.wiederherstellen).toBeNull();
+
+    // Inzwischen liegt eine ANDERE Zeile (ein zweiter Tab hat gesichert) — hier sogar zur selben
+    // Minute: Sie wird angeboten, neben dem Hinweis auf den eigenen Inhalt.
+    const ersetzt = lesen({
+      zwischenstandWiederhergestellt: { zeit, stand: STAND },
+      zwischenstandAngebot: { zeit, stand: ANDERER_STAND, wiederherstellen },
+    });
+    expect(ersetzt.hinweise).toEqual([WIEDERHERGESTELLT, ANGEBOT]);
+    expect(ersetzt.wiederherstellen).toBe(wiederherstellen);
   });
 });
 
@@ -233,8 +279,7 @@ async function zeile(rezeptId: number, inhalt: Record<string, string[]> | string
   const schluessel = schluesselFuerRezept(rezeptId);
   db.delete(zeilen).where(eq(zeilen.schluessel, schluessel)).run();
   if (typeof inhalt === "string") {
-    const stand = "5b0c7f1e-9a3d-4c2b-8e6f-1a2b3c4d5e6f";
-    db.insert(zeilen).values({ schluessel, recipeId: rezeptId, formular: inhalt, stand, gesichertAm: GESICHERT_AM }).run();
+    db.insert(zeilen).values({ schluessel, recipeId: rezeptId, formular: inhalt, stand: STAND, gesichertAm: GESICHERT_AM }).run();
   } else if (inhalt) {
     await zwischenstandSichern({ schluessel, daten: inhalt, jetzt: GESICHERT_AM, bekannterStand: null });
   }
@@ -322,7 +367,7 @@ describe("Bearbeiten-Seite mit ?zwischenstand=1", () => {
       schluessel: schluesselFuerRezept(entwurf),
       recipeId: entwurf,
       daten: { titel: ["Unbrauchbar"], abschnitte: ["{kein json"], notizen: ["[]"] },
-      stand: "5b0c7f1e-9a3d-4c2b-8e6f-1a2b3c4d5e6f",
+      stand: STAND,
       gesichertAm: GESICHERT_AM,
     });
     try {

@@ -167,14 +167,24 @@ export interface RecipeEditorProps {
   taxonomiePending?: Record<string, string[]>;
   /**
    * `initial` stammt aus einem Zwischenstand, der noch nicht gespeichert ist;
-   * `zeit` sagt, wann er gesichert wurde. Der Editor liest die Angabe wie
-   * `initial` nur beim Einhängen: Sie ist eine Aussage über SEINEN Inhalt.
+   * `zeit` sagt, wann er gesichert wurde, `stand` ist die Kennung der Zeile,
+   * aus der er kam. Der Editor liest die Angabe wie `initial` nur beim
+   * Einhängen: Sie ist eine Aussage über SEINEN Inhalt.
    */
-  zwischenstandWiederhergestellt?: { zeit: string };
+  zwischenstandWiederhergestellt?: { zeit: string; stand: string };
   /**
-   * Wiederherstellen war verlangt, und es lag nichts vor. Anders als die Angabe
-   * darüber folgt diese jedem Rendern: Sie sagt etwas über Anfrage und Zeile,
-   * nicht über den Inhalt des Editors. Über einem wiederhergestellten Inhalt
+   * Zum Rezept liegt ein Zwischenstand: anbieten, nicht aufdrängen. Anders als
+   * die Angabe darüber eine Aussage über die ZEILE, nicht über den Inhalt des
+   * Editors; sie folgt jedem Rendern. Nicht gezeigt wird nur das Angebot der
+   * Zeile, aus der der Inhalt stammt (gleicher Stand). Die Seite reicht die
+   * Angabe erst im nächsten Schritt; bis dahin zeigt sie kein Angebot.
+   */
+  zwischenstandAngebot?: { zeit: string; stand: string; wiederherstellen: string };
+  /**
+   * Wiederherstellen war verlangt, und es lag nichts vor. Wie das Angebot und
+   * anders als `zwischenstandWiederhergestellt` folgt diese Angabe jedem
+   * Rendern: Sie sagt etwas über Anfrage und Zeile, nicht über den Inhalt des
+   * Editors. Über einem wiederhergestellten Inhalt
    * zeigt der Editor sie nie — „wiederhergestellt wurde nichts" wäre dort
    * falsch, auch wenn die Zeile inzwischen fehlt.
    */
@@ -332,6 +342,7 @@ export function RecipeEditor({
   oeffentlicheSeite,
   taxonomiePending,
   zwischenstandWiederhergestellt,
+  zwischenstandAngebot,
   zwischenstandFehlt,
   message,
 }: RecipeEditorProps) {
@@ -348,6 +359,11 @@ export function RecipeEditor({
   // verschwände er nach einem Speichern mit Fehler, sobald die Zeile fehlt —
   // über einem Editor, der den ungespeicherten Zwischenstand weiter zeigt.
   const [wiederhergestellt] = useState(zwischenstandWiederhergestellt);
+  // Welche Zeile liegt, weiß die Seite; aus welcher der Inhalt stammt, weiß nur
+  // der Editor. Verglichen wird der Stand, nicht die Uhrzeit: Zwei Sicherungen
+  // können in dieselbe Minute fallen.
+  const angebot =
+    zwischenstandAngebot && zwischenstandAngebot.stand !== wiederhergestellt?.stand ? zwischenstandAngebot : null;
   // Kein useState: Der Setzer wurde nie gerufen, der Wert also nie geändert.
   // Als Zustand gehalten hätte er die Prop beim ersten Rendern EINGEFROREN —
   // eine spätere Änderung von `taxonomies` wäre nie angekommen. Als
@@ -498,11 +514,9 @@ export function RecipeEditor({
       {/* KI-Assistent nur beim ANLEGEN neuer Rezepte (initial.id === null).
           Bei bestehenden Rezepten ausgeblendet — dort wird nicht neu importiert. */}
       {initial.id === null && <RecipeAiAssistant onApply={applyDraft} />}
-      {wiederhergestellt ? (
-        <ZwischenstandHinweis zeit={wiederhergestellt.zeit} />
-      ) : (
-        zwischenstandFehlt && <ZwischenstandFehlt />
-      )}
+      {wiederhergestellt && <ZwischenstandHinweis zeit={wiederhergestellt.zeit} />}
+      {angebot && <ZwischenstandHinweis zeit={angebot.zeit} wiederherstellen={angebot.wiederherstellen} />}
+      {!wiederhergestellt && zwischenstandFehlt && <ZwischenstandFehlt />}
       <form key={formKey} action={formAction} onSubmit={beimAbsenden} className="flex flex-col gap-6">
       {form.id !== null && <input type="hidden" name="id" value={form.id} />}
       <input

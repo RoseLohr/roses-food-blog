@@ -57,13 +57,18 @@ export default async function EditRecipePage(props: {
           es (`zwischenstandFehlt`), statt still das gespeicherte Rezept zu
           zeigen. Sie leitet dafür NICHT um: Nach einem Speichern mit Fehler
           rendert dieselbe Seite neu, und eine Umleitung verließe dann den
-          Editor samt Getipptem. */}
+          Editor samt Getipptem.
+          Ein ANGEBOT (`zwischenstandAngebot`) reicht die Seite erst im
+          nächsten Schritt: Bis dahin zeigt ein gewöhnlicher Aufruf keines,
+          auch wenn eine Zeile liegt. */}
       <RecipeEditor
         {...editorProps}
         initial={wiederhergestellt?.initial ?? editorProps.initial}
         taxonomiePending={wiederhergestellt?.taxonomiePending}
         zwischenstandWiederhergestellt={
-          zwischenstand && wiederhergestellt ? { zeit: alsZeitpunkt(zwischenstand.gesichertAm) } : undefined
+          zwischenstand && wiederhergestellt
+            ? { zeit: alsZeitpunkt(zwischenstand.gesichertAm), stand: zwischenstand.stand }
+            : undefined
         }
         zwischenstandFehlt={verlangt && !wiederhergestellt}
         message={message}
