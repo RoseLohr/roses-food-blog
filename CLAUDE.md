@@ -541,7 +541,10 @@ dieser Abschnitt beschreibt kein Verhalten der Oberfläche.
   Stellen, die er als Änderer einer bestehenden Rezeptzeile erkennt, mit
   ihren Spalten. Ein Netz, kein Beweis: Er erkennt die Tabelle am Namen
   (`schema.recipe`), und SQL, das erst zur Laufzeit zusammengesetzt wird,
-  sieht er nicht.
+  sieht er nicht; ebenso wenig, was außerhalb von `src/`, `scripts/` und
+  `drizzle/` liegt. Dass keine Spalte der Tabelle sich bei einem Update
+  selbst schreibt (`$onUpdate`), hält er eigens fest: Nur dann sagen die
+  Spalten, die eine Stelle nennt, was sie schreibt.
   Es gibt Wege, die ein gespeichertes Rezept ändern, OHNE das Datum zu
   schreiben: Zutaten zusammenführen oder umbenennen, einen Taxonomie-Eintrag
   löschen. Sie lassen die Zeile stehen, und der Zeitvergleich hätte keinen
