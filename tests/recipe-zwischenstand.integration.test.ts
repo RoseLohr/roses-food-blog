@@ -439,6 +439,42 @@ describe("Zwischenstand-Ablage: sichern und laden", () => {
     }
   });
 
+  it("legt nicht ab, was sich nicht laden ließe: Sie wirft, es entsteht keine Zeile, und eine bestehende bleibt", async () => {
+    // Legte sie es ab, quittierte sie einen Stand für eine Zeile, die sie selbst nie anbietet.
+    const store = await import("@/lib/recipe-zwischenstand-store");
+    const nichtLadbar: Record<string, string[]>[] = [
+      { titel: ["x"], abschnitte: ["{kein json"] },
+      { titel: ["x"], abschnitte: ['[{"name":1}]'] },
+      // Das alte Format der Schritte (reiner Text) nimmt der Speicherweg noch an; der Zwischenstand
+      // ist hier strenger, der Editor schreibt es nie.
+      { titel: ["x"], abschnitte: ['[{"name":"","ingredients":[],"steps":["Rühren."]}]'] },
+      { titel: ["x"], notizen: ['[{"text":5}]'] },
+    ];
+    for (const daten of nichtLadbar) {
+      await expect(
+        store.zwischenstandSichern({ schluessel: NEU, daten, jetzt: NOW, bekannterStand: null }),
+        JSON.stringify(daten),
+      ).rejects.toThrow("ließe sich nicht laden");
+    }
+    // Und was gar kein Formular IST, auch wenn der Typ es verspricht: Die Ablage prüft den TEXT,
+    // den sie schriebe, nach der Regel, nach der sie anbietet — nicht nur, was der Übersetzer glaubt.
+    const keinFormular: unknown[] = [{ titel: "Suppe" }, { titel: [5] }, { titel: null }, [], "Suppe", null, { titel: new Array<string>(1) }];
+    for (const daten of keinFormular) {
+      await expect(
+        store.zwischenstandSichern({ schluessel: NEU, daten: daten as Record<string, string[]>, jetzt: NOW, bekannterStand: null }),
+        JSON.stringify(daten),
+      ).rejects.toThrow("ließe sich nicht laden");
+    }
+    expect(await schluesselDerZeilen()).toEqual([]);
+
+    const erst = await store.zwischenstandSichern({ schluessel: NEU, daten: { titel: ["Bleibt"] }, jetzt: NOW, bekannterStand: null });
+    await expect(
+      store.zwischenstandSichern({ schluessel: NEU, daten: nichtLadbar[0], jetzt: NOW, bekannterStand: erst.stand }),
+    ).rejects.toThrow("ließe sich nicht laden");
+    // Gegenprobe zugleich: Was sie quittiert hat, lädt sie — mit genau dem quittierten Stand.
+    expect(await store.zwischenstandLaden(NEU)).toMatchObject({ daten: { titel: ["Bleibt"] }, stand: erst.stand });
+  });
+
   it("wer einen Stand nennt, dessen Zeile es nicht mehr gibt, legt nichts an: „weg“ — ohne Stand beginnt eine neue", async () => {
     // Eine Sicherung, die erst NACH dem Speichern des Rezepts ankommt, legte die gerade abgeräumte
     // Zeile sonst neu an: mit dem Inhalt von vor dem Speichern.

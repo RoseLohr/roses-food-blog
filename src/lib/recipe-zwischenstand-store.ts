@@ -2,8 +2,8 @@
  * Die Ablage des Zwischenstands (Tabelle rezept_zwischenstand) — höchstens
  * eine Zeile je Schlüssel, überschrieben, nie gedeutet. Die Regeln stehen in
  * recipe-zwischenstand.ts; hier wird nur geschrieben und gelesen.
- * Angeboten wird nur, was sich in den Editor laden ließe (`ladbareDatenAus`).
- * Dass auch nur das abgelegt wird, prüft die Ablage noch nicht; das folgt.
+ * Abgelegt und angeboten wird nach derselben Regel (`ladbareDatenAus`, am
+ * abgelegten Text): nur, was sich in den Editor laden ließe.
  *
  * `bekannterStand` ist der Schutz vor zwei Tabs am selben Rezept: Der Aufrufer
  * nennt den Stand, den er zuletzt gesichert oder geladen hat (null: keinen).
@@ -82,7 +82,13 @@ export async function zwischenstandSichern(eingabe: {
   // Woran die Zeile hängt, sagt ihr Schlüssel. Was keiner ist, wird nicht als
   // „neues Rezept" abgelegt.
   if (!istZwischenstandSchluessel(schluessel)) throw new Error("Zwischenstand: kein gültiger Schlüssel.");
+  // Abgelegt wird nur, was sich laden ließe — geprüft am TEXT, der geschrieben
+  // wird, mit der Funktion, nach der angeboten wird (`ladbareDatenAus`). Sonst
+  // bekäme der Aufrufer einen Stand für eine Zeile, die niemand zu sehen
+  // bekommt und die jeder andere ohne Stand überschreibt. Der Typ allein
+  // sagt es nicht: Er verspricht ein Formular, prüft aber keines.
   const formular = JSON.stringify(daten);
+  if (ladbareDatenAus(formular) === null) throw new Error("Zwischenstand: Das Formular ließe sich nicht laden.");
   return db.transaction((tx): Sicherung => {
     const zeile = zeileLesen(tx, schluessel);
     const urteil = sicherungsurteil(zeile, bekannterStand);
@@ -100,9 +106,11 @@ export async function zwischenstandSichern(eingabe: {
 function alsZwischenstand(zeile: typeof zeilen.$inferSelect): Zwischenstand | null {
   const daten = ladbareDatenAus(zeile.formular);
   if (daten === null) {
-    // Kein Formular, oder eines, das der Editor nicht aufnehmen kann. Die
-    // Zeile wird nicht angeboten, aber auch nicht still: Der Betrieb soll es
-    // sehen. Der Inhalt bleibt aus dem Log; er kann alles sein.
+    // Kein Formular, oder eines, das der Editor nicht aufnehmen kann: Die
+    // Ablage legt beides nicht ab — die Zeile kommt von außen oder aus einer
+    // früheren Fassung der Regel. Sie wird nicht angeboten, aber auch nicht
+    // still: Der Betrieb soll es sehen. Der Inhalt bleibt aus dem Log; er
+    // kann alles sein.
     console.error(`[zwischenstand] Zeile ${zeile.schluessel} lässt sich nicht laden und wird nicht angeboten.`);
     return null;
   }

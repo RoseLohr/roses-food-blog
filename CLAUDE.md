@@ -444,14 +444,25 @@ Oberfläche.
   Zeichen; so weit reicht er. Auch der Stand hat eine geprüfte Form. Die
   Ablage nimmt keine Rezeptnummer entgegen, und was kein Schlüssel ist, legt
   sie nicht ab.
-- **Eine Zeile wird geprüft, bevor sie angeboten wird** (`ladbareDatenAus`):
-  je Feld eine Liste von Texten (`datenAusJson`), und Abschnitte und Notizen
-  in der Form des Editors — genau das, was `editorAusDaten` übersetzen kann.
-  Ungeprüft ließe `null` eine Liste von Zeilen werfen, und aus dem Text
-  `"Suppe"` würde der Titel `S`. Nicht angeboten heißt nicht still: Die
-  Ablage meldet den Schlüssel — nie den Inhalt. Und eine solche Zeile sperrt
+- **Geprüft wird nach EINER Regel, bevor abgelegt und bevor angeboten wird**
+  (`ladbareDatenAus`, beide Male am abgelegten Text): je Feld eine Liste von Texten
+  (`datenAusJson`), und Abschnitte und Notizen in der Form des Editors —
+  genau das, was `editorAusDaten` übersetzen kann. Ungeprüft ließe `null` eine
+  Liste von Zeilen werfen, und aus dem Text `"Suppe"` würde der Titel `S`.
+  Was sich nicht laden ließe, legt die Ablage nicht ab (sie wirft): Sonst
+  quittierte sie einen Stand für eine Zeile, die sie nie anbietet. Sie fragt
+  dafür den Text, den sie schriebe, nicht den Typ ihres Arguments: Der
+  verspricht ein Formular, prüft aber keines. Der
+  Zwischenstand ist damit strenger als das Speichern: Das nimmt Schritte auch
+  als reinen Text an (das alte Format), der Editor schreibt sie als Objekte.
+  Eine Zeile, die sich nicht laden lässt, kommt deshalb von außen oder aus
+  einer früheren Fassung der Regel. Sie wird nicht angeboten, aber nicht
+  still: Die Ablage meldet den Schlüssel — nie den Inhalt. Und sie sperrt
   nichts: Eine Zeile, die niemand laden kann, kennt auch niemand; sie wird
-  überschrieben.
+  überschrieben. **Zwei Regeln wären der Fehler:** Fragte die Ablage beim
+  Ablegen nur nach dem Formular, ließe sich eine Zeile mit unbrauchbaren
+  Abschnitten nicht in den Editor legen, und trotzdem sperrte sie als
+  „fremd" das Sichern.
 - **Wiederherstellen deutet nicht, aber es prüft:** `editorAusDaten` legt das
   Formular über die Anfangswerte; Text bleibt ungetrimmt, Zahlen nur, wenn sie
   welche sind. Was ein FEHLENDES Feld heißt, hängt davon ab, ob der Editor es
