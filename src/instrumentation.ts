@@ -1,7 +1,8 @@
 /**
  * Next.js-Instrumentation: startet den internen Scheduler
- * (Tracking-Aggregation, Mail-Queue, Sequenzen, Selbst-Monitor) beim
- * Serverstart und meldet Server-Fehler strukturiert (B-03/A-24).
+ * (Tracking-Aggregation, Mail-Queue, Sequenzen, Selbst-Monitor, Aufräumen
+ * alter Zwischenstände des Rezept-Editors) beim Serverstart und meldet
+ * Server-Fehler strukturiert (B-03/A-24).
  */
 export async function register(): Promise<void> {
   if (process.env.NEXT_RUNTIME === "nodejs") {

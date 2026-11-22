@@ -374,8 +374,9 @@ export const recipeLike = sqliteTable(
  * ein flüchtiger Schnappschuss, der nie gejoint, nie gezählt und nie öffentlich
  * ausgeliefert wird. Speichern des Rezepts räumt seine Zeile ab
  * (src/lib/recipe-save.ts). Gesichert, gelesen und verworfen wird sie über
- * die Ablage (src/lib/recipe-zwischenstand-store.ts); das Aufräumen nach
- * 30 Tagen folgt in einem eigenen Schritt. Beim Wiederherstellen
+ * die Ablage (src/lib/recipe-zwischenstand-store.ts), und was 30 Tage
+ * niemand mehr gesichert hat, räumt der Scheduler ab
+ * (src/server/scheduler.ts). Beim Wiederherstellen
  * werden Nummern, die es nicht mehr gibt, verworfen (editorAusDaten); der
  * Bild-Orphan-Scan sieht diese Verweise absichtlich NICHT — ein Zwischenstand
  * hält kein Bild am Leben. Die Regeln dazu: src/lib/recipe-zwischenstand.ts.
