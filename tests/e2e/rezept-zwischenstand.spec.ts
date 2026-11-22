@@ -23,6 +23,8 @@ import path from "node:path";
  *    danach ist die Zeile abgeräumt und der Editor neu eingehängt.
  *  - Über einem wiederhergestellten Editor wird eine inzwischen ERSETZTE Zeile
  *    angeboten, neben dem Hinweis auf den eigenen Inhalt.
+ *  - „Wiederherstellen" fragt nach, bevor es Ungespeichertes im Editor
+ *    ersetzt — und nur dann.
  *
  * Noch sichert der Editor nicht selbst; das folgt. Die Zeile wird hier deshalb
  * unmittelbar in die Tabelle gelegt, in der Form, in der die Ablage sie
@@ -88,8 +90,30 @@ const wiederherstellenLink = (page: Page) => page.getByRole("link", { name: "Wie
 const angebot = (page: Page) => page.getByRole("status").filter({ has: wiederherstellenLink(page) });
 const fehlt = (page: Page) => page.getByRole("status").filter({ hasText: "Kein Zwischenstand zum Wiederherstellen vorhanden" });
 const titel = (page: Page) => page.locator('input[name="titel"]');
+const teaserFeld = (page: Page) => page.locator('div:has(> textarea[name="teaser"]) [contenteditable="true"]');
+/**
+ * Wartet, bis der Editor eingehängt ist: Erst dann hängt die Rückfrage am Link. Erkannt an etwas,
+ * das man sieht — das Rich-Text-Feld füllt sich in einem Effekt nach dem Einhängen (der Teaser ist
+ * in diesem Spec nie leer).
+ */
+const eingehaengt = (page: Page) => expect(teaserFeld(page)).not.toBeEmpty();
 const ueberschrift = (page: Page) => page.getByRole("heading", { level: 1 });
 const speichern = (page: Page) => page.getByRole("button", { name: "Speichern", exact: true });
+
+/**
+ * Schreibt mit, wonach der Browser fragt, und antwortet wie vorgegeben. Ohne das lehnt Playwright
+ * eine Rückfrage still ab — ein Test sähe dann nur „nichts passiert", nicht warum.
+ */
+function rueckfragen(page: Page) {
+  const gestellt: string[] = [];
+  const stand = { annehmen: false };
+  page.on("dialog", (dialog) => {
+    gestellt.push(`${dialog.type()}: ${dialog.message()}`);
+    void (stand.annehmen ? dialog.accept() : dialog.dismiss());
+  });
+  return { gestellt, stand };
+}
+const RUECKFRAGE = [expect.stringMatching(/^confirm: .*ersetzt, was gerade im Editor steht/)];
 
 test.beforeAll(() => {
   const t = tabelle();
@@ -116,8 +140,34 @@ test("vom Angebot an: anbieten, wiederherstellen, speichern — danach ist die Z
     await expect(titel(page)).toHaveValue(gespeichert);
     await expect(hinweis(page)).toHaveCount(0);
 
+    // Steht Ungespeichertes im Editor, fragt der Link nach — irgendein Feld genügt, auch eines
+    // der Rich-Text-Felder. Abgelehnt, bleibt alles, wie es ist.
+    const fragen = rueckfragen(page);
+    await eingehaengt(page);
+    await teaserFeld(page).click();
+    await page.keyboard.type("Getippt. ");
+    await wiederherstellenLink(page).click();
+    expect(fragen.gestellt).toEqual(RUECKFRAGE);
+    await expect(page.locator('[name="teaser"]')).toHaveValue(/Getippt\./);
+    await page.reload();
+    await eingehaengt(page);
+    fragen.gestellt.length = 0;
+
+    const portionen = await page.locator("#f-portionen").inputValue();
+    await page.locator("#f-portionen").fill("11");
+    await wiederherstellenLink(page).click();
+    expect(fragen.gestellt).toEqual(RUECKFRAGE);
+    await expect(page).toHaveURL(new RegExp(`/admin/rezepte/${rezeptId}$`));
+    await expect(page.locator("#f-portionen")).toHaveValue("11");
+    await expect(titel(page)).toHaveValue(gespeichert);
+    // Zurückgenommen ist nicht getippt: Verglichen wird der Inhalt, kein „angefasst"-Merker. Über
+    // einem Editor, der das gespeicherte Rezept zeigt, fragt der Link nicht.
+    await page.locator("#f-portionen").fill(portionen);
+    fragen.gestellt.length = 0;
+
     await wiederherstellenLink(page).click();
     await expect(page).toHaveURL(new RegExp(`/admin/rezepte/${rezeptId}\\?zwischenstand=1$`));
+    expect(fragen.gestellt).toEqual([]);
     await expect(titel(page)).toHaveValue(AUS_DEM_ZWISCHENSTAND);
     await expect(page.locator("#f-slug")).toHaveValue("");
     await expect(hinweis(page)).toHaveText(WIEDERHERGESTELLT);
@@ -239,21 +289,33 @@ test("über einem wiederhergestellten Editor wird eine inzwischen ERSETZTE Zeile
   const t = tabelle();
   const gespeichert = t.rezeptTitel(rezeptId);
   try {
-    t.legen({ titel: "Erste Zeile" });
+    // Der Titel der ersten Zeile besteht `required` und scheitert am Server: So kommt es zum
+    // Neu-Rendern, ohne dass in diesem Editor getippt wird.
+    t.legen({ titel: "   ", teaser: "Erste Zeile" });
     await oeffnen(page, wiederherstellen());
-    await expect(titel(page)).toHaveValue("Erste Zeile");
+    await expect(page.locator('[name="teaser"]')).toHaveValue("Erste Zeile");
     await expect(angebot(page)).toHaveCount(0);
 
     t.legen({ titel: "Zweite Zeile, aus dem anderen Tab" });
     t.rezeptUmbenennen(rezeptId, IM_ZWEITEN_TAB);
-    await titel(page).fill("   ");
     await speichern(page).click();
     await expect(ueberschrift(page)).toContainText(IM_ZWEITEN_TAB);
     await expect(titel(page)).toHaveValue("   ");
     await expect(hinweis(page)).toHaveText(WIEDERHERGESTELLT);
     await expect(angebot(page)).toBeVisible();
 
-    // Der Link legt die zweite Zeile in den Editor. Danach ist sie die eigene und wird nicht mehr angeboten.
+    // Der wiederhergestellte Inhalt ist ungespeichert, auch unberührt — und seine Zeile gibt es
+    // nicht mehr: Der Link fragt nach. Abgelehnt, bleibt er stehen.
+    const fragen = rueckfragen(page);
+    await eingehaengt(page);
+    await wiederherstellenLink(page).click();
+    expect(fragen.gestellt).toEqual(RUECKFRAGE);
+    await expect(page.locator('[name="teaser"]')).toHaveValue("Erste Zeile");
+    await expect(angebot(page)).toBeVisible();
+
+    // Angenommen, legt der Link die zweite Zeile in den Editor. Danach ist sie die eigene und wird
+    // nicht mehr angeboten.
+    fragen.stand.annehmen = true;
     await wiederherstellenLink(page).click();
     await expect(titel(page)).toHaveValue("Zweite Zeile, aus dem anderen Tab");
     await expect(hinweis(page)).toHaveText(WIEDERHERGESTELLT);

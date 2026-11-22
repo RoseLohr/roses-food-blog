@@ -5,7 +5,7 @@
  * Strukturen (Abschnitte mit Zutaten/Schritten, Notizen) als React-State,
  * der beim Absenden als JSON in Hidden-Fields serialisiert wird.
  */
-import { startTransition, useActionState, useState } from "react";
+import { startTransition, useActionState, useEffect, useRef, useState } from "react";
 import { ZwischenstandFehlt, ZwischenstandHinweis } from "./zwischenstand-hinweis";
 import { saveRecipeAction, type RecipeFormState } from "./actions";
 import { QuickAddCheckboxes } from "@/components/admin/quick-add-checkboxes";
@@ -22,6 +22,7 @@ import { btnSecondary } from "@/components/admin/knopf-stil";
 import { RichTextEditor } from "@/components/admin/rich-text-editor";
 import { RecipeAiAssistant } from "@/components/admin/recipe-ai-assistant";
 import type { RecipeDraft } from "@/lib/ai-recipe";
+import { fingerabdruck, formularAlsDaten } from "@/lib/recipe-zwischenstand";
 import { t } from "@/i18n/de";
 
 const dict = t();
@@ -333,6 +334,36 @@ function SeasonFields({
   );
 }
 
+/** Der Fingerabdruck dessen, was das Formular gerade trägt (`fingerabdruck`, dieselbe Regel wie für den Zwischenstand). */
+function formularAbdruck(form: HTMLFormElement | null): string | null {
+  return form ? fingerabdruck(formularAlsDaten(new FormData(form))) : null;
+}
+
+/**
+ * Der Fingerabdruck dessen, was der SERVER ausgeliefert hat: eine Kopie des
+ * Formulars, auf ihre Vorgabewerte zurückgesetzt. Nicht das Formular selbst,
+ * wie es beim Einhängen dasteht — die Felder sind bedienbar, bevor das Skript
+ * da ist, und was jemand bis dahin tippt oder anhakt, stünde sonst schon im
+ * Vergleichswert und gälte als gespeichert. Das gilt für jedes BENANNTE Feld,
+ * auch für die Häkchen der Taxonomien: Sie sind unkontrolliert, React lässt
+ * beim Einhängen stehen, was angehakt ist, und erst `reset()` stellt sie in
+ * der Kopie zurück. Was der Editor im Zustand führt, steht im Formular nur
+ * als verstecktes Feld (Abschnitte, Notizen, Bilder); das ändert vor dem
+ * Einhängen niemand, und es steht in der Kopie, wie es ist.
+ *
+ * NICHT erfasst sind die sichtbaren Felder hinter dem Zustand (Abschnittsname,
+ * Zutaten, Notizen): Sie tragen keinen Namen. Was dort vor dem Einhängen
+ * getippt wird, erfährt der Zustand nie — es steht in keinem Formularwert,
+ * Speichern speicherte es nicht, und der Link fragt nicht danach (CLAUDE.md,
+ * „Nicht behoben").
+ */
+function ausgelieferterAbdruck(form: HTMLFormElement | null): string | null {
+  if (!form) return null;
+  const kopie = form.cloneNode(true) as HTMLFormElement;
+  kopie.reset();
+  return formularAbdruck(kopie);
+}
+
 export function RecipeEditor({
   initial,
   taxonomies,
@@ -363,6 +394,25 @@ export function RecipeEditor({
   // können in dieselbe Minute fallen.
   const angebot =
     zwischenstandAngebot && zwischenstandAngebot.stand !== wiederhergestellt?.stand ? zwischenstandAngebot : null;
+  // „Wiederherstellen" ersetzt, was im Editor steht. Ob das ungespeichert ist,
+  // weiß nur der Editor — also fragt er, bevor der Link die Seite neu lädt.
+  // Ungespeichert ist, was von dem abweicht, was der Server ausgeliefert hat:
+  // Verglichen wird der Inhalt, kein „angefasst"-Merker; wer zurücknimmt, was
+  // er getippt hat, wird nicht gefragt. Und ungespeichert ist JEDER
+  // wiederhergestellte Inhalt, auch unberührt: Er steht in keinem Rezept, und
+  // seine Zeile kann inzwischen ersetzt sein.
+  const formular = useRef<HTMLFormElement>(null);
+  const ausgeliefert = useRef<string | null>(null);
+  useEffect(() => {
+    ausgeliefert.current = ausgelieferterAbdruck(formular.current);
+  }, []);
+  const vorDemWiederherstellen = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    // Öffnet der Klick woanders (neuer Tab, neues Fenster, Herunterladen),
+    // wird hier nichts ersetzt: nichts zu fragen.
+    if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+    const ungespeichert = wiederhergestellt !== undefined || formularAbdruck(formular.current) !== ausgeliefert.current;
+    if (ungespeichert && !window.confirm(d.zwischenstandErsetztGetipptes)) e.preventDefault();
+  };
   // Kein useState: Der Setzer wurde nie gerufen, der Wert also nie geändert.
   // Als Zustand gehalten hätte er die Prop beim ersten Rendern EINGEFROREN —
   // eine spätere Änderung von `taxonomies` wäre nie angekommen. Als
@@ -514,9 +564,11 @@ export function RecipeEditor({
           Bei bestehenden Rezepten ausgeblendet — dort wird nicht neu importiert. */}
       {initial.id === null && <RecipeAiAssistant onApply={applyDraft} />}
       {wiederhergestellt && <ZwischenstandHinweis zeit={wiederhergestellt.zeit} />}
-      {angebot && <ZwischenstandHinweis zeit={angebot.zeit} wiederherstellen={angebot.wiederherstellen} />}
+      {angebot && (
+        <ZwischenstandHinweis zeit={angebot.zeit} wiederherstellen={angebot.wiederherstellen} beimKlick={vorDemWiederherstellen} />
+      )}
       {!wiederhergestellt && zwischenstandFehlt && <ZwischenstandFehlt />}
-      <form key={formKey} action={formAction} onSubmit={beimAbsenden} className="flex flex-col gap-6">
+      <form ref={formular} key={formKey} action={formAction} onSubmit={beimAbsenden} className="flex flex-col gap-6">
       {form.id !== null && <input type="hidden" name="id" value={form.id} />}
       <input
         type="hidden"

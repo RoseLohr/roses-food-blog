@@ -572,9 +572,29 @@ das Angebot ruht.
   erkannt am Stand, nicht an der Uhrzeit. Liegt über einem wiederhergestellten
   Inhalt inzwischen eine ANDERE Zeile (ein zweiter Tab hat gesichert), stehen
   beide Hinweise; sonst räumte das nächste Speichern sie ungesehen ab.
-  **Noch ohne Rückfrage:** Der Link ersetzt auch Ungespeichertes; sie folgt,
-  bevor der Editor selbst sichert und das Angebot im Betrieb erscheint.
-  Gemessen wie im nächsten Punkt.
+  **Wiederherstellen ersetzt, was im Editor steht — hält er Ungespeichertes,
+  fragt er vorher.** Ungespeichert ist, was von dem abweicht, was der Server
+  ausgeliefert hat: Verglichen wird der Inhalt, kein „angefasst"-Merker; wer
+  zurücknimmt, was er getippt hat, wird nicht gefragt. Und ungespeichert ist
+  JEDER wiederhergestellte Inhalt, auch unberührt: Er steht in keinem Rezept,
+  und seine Zeile kann inzwischen ersetzt sein. **Der Vergleichswert ist
+  nicht das Formular, wie es beim Einhängen dasteht:** Die Felder sind
+  bedienbar, bevor das Skript da ist, und der erste Anlauf hielt das früh
+  Getippte für gespeichert — der Link ersetzte es ohne Rückfrage. Verglichen
+  wird mit einer Kopie des Formulars, auf ihre Vorgabewerte zurückgesetzt.
+  Das deckt jedes BENANNTE Feld (Titel, Zahlen, Auswahlfelder, Häkchen der
+  Taxonomien). **Nicht behoben, und älter als der Zwischenstand:** Was vor dem
+  Einhängen in ein Feld hinter dem Zustand getippt wird (Abschnittsname,
+  Zutaten, Notizen — ohne Namen), erfährt der Zustand nie: Es steht in keinem
+  Formularwert, Speichern speichert es nicht, und der Link fragt nicht danach.
+  Und ein Rich-Text-Feld (Teaser, Tipps, Schritt), in das jemand vor dem
+  Einhängen klickt, bleibt leer; beim Verlassen ist sein Inhalt im Formular
+  gelöscht (`src/components/admin/rich-text-editor.tsx`, der Wächter gegen das
+  Neubefüllen greift schon beim ersten Befüllen). Beides am echten Editor in
+  jsdom nachgestellt, nicht im Browser gemessen; im Repo steht dafür kein Test.
+  Öffnet der Klick woanders (Strg, Umschalt, neuer Tab), wird hier nichts
+  ersetzt und nichts gefragt. Gemessen wie im nächsten Punkt; das früh
+  Getippte und der Klick in einen neuen Tab im nächsten Schritt.
 - **Wiederherstellen heißt nicht speichern**
   (`src/app/admin/(protected)/rezepte/[id]/page.tsx`): `?zwischenstand=1` legt
   die Zeile in den Editor; gespeichert wird erst, wenn der Redakteur
@@ -597,8 +617,9 @@ das Angebot ruht.
   neu, und eine Umleitung verließe dann den Editor samt Getipptem.
   Gemessen in `tests/rezept-bearbeiten-seite.integration.test.ts` (das
   ausgelieferte HTML) und `tests/e2e/rezept-zwischenstand.spec.ts` (im
-  Browser: der Weg vom Angebot bis nach dem Speichern; Speichern mit Fehler,
-  danach mit Erfolg; der Fall, in dem nichts vorliegt; die ersetzte Zeile).
+  Browser: der Weg vom Angebot bis nach dem Speichern, mit der Rückfrage;
+  Speichern mit Fehler, danach mit Erfolg; der Fall, in dem nichts vorliegt;
+  die ersetzte Zeile).
 - **Geprüft wird Text, gerechnet wird mit Zahlen.** Eine NUMMER (Rezept im
   Schlüssel, Bild, Häkchen) ist eine reine Ziffernfolge mit höchstens 15
   Stellen: `Number()` rundet ab 2^53 und schreibt sich ab 22 Stellen mit
