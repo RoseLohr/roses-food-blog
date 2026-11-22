@@ -561,15 +561,18 @@ dahin entsteht im Betrieb keine Zeile.
   die Zeile in den Editor; gespeichert wird erst, wenn der Redakteur
   speichert. Nur genau dieser Wert stellt wieder her. Der Hinweis darüber
   nennt Tag UND Uhrzeit der Sicherung: Eine Zeile kann über 30 Tage alt sein,
-  eine Uhrzeit allein läse sich wie heute. **Noch nicht:** Der Hinweis folgt
-  der Angabe der Seite; nach einem Speichern mit Fehler verschwindet er,
-  wenn die Zeile inzwischen fehlt — über einem Editor, der den
-  ungespeicherten Stand weiter zeigt. Das folgt im nächsten Schritt.
-  **Was über das GESPEICHERTE Rezept gesagt wird, kommt nicht aus den
+  eine Uhrzeit allein läse sich wie heute. **Der Editor liest Anfangswerte
+  und Hinweis nur beim Einhängen:** Beide sind Aussagen über SEINEN Inhalt,
+  und Speichern mit Fehler lässt beides stehen, auch wenn die Zeile
+  inzwischen fehlt. Der erste Anlauf ließ den Hinweis der Zeile folgen: Er
+  verschwand über einem Editor, der den ungespeicherten Stand weiter zeigte.
+  Erst Speichern mit Erfolg beendet ihn: Die Umleitung hängt die Seite neu
+  ein. **Was über das GESPEICHERTE Rezept gesagt wird, kommt nicht aus den
   Anfangswerten** (Überschrift, `oeffentlicheSeite`): Titel, Slug und Status
   im Formular sind nach dem Wiederherstellen getippt, nicht gespeichert.
   Gemessen in `tests/rezept-bearbeiten-seite.integration.test.ts` (das
-  ausgelieferte HTML).
+  ausgelieferte HTML) und `tests/e2e/rezept-zwischenstand.spec.ts` (im
+  Browser: Speichern mit Fehler, danach mit Erfolg).
 - **Geprüft wird Text, gerechnet wird mit Zahlen.** Eine NUMMER (Rezept im
   Schlüssel, Bild, Häkchen) ist eine reine Ziffernfolge mit höchstens 15
   Stellen: `Number()` rundet ab 2^53 und schreibt sich ab 22 Stellen mit

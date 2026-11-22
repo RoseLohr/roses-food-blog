@@ -21,7 +21,8 @@
  * `erlaubteVerweise` → `editorAusDaten` → Anfangswerte und vorgemerkte Namen
  * im Editor. In EINEM Fall steht ein Spion an der Stelle der Ablage: Sie
  * liefert nie, was dort gemessen wird. Was erst im Browser geschieht
- * (Speichern, mit und ohne Fehler), wird im nächsten Schritt gemessen.
+ * (Speichern, mit und ohne Fehler), steht in
+ * tests/e2e/rezept-zwischenstand.spec.ts.
  */
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";

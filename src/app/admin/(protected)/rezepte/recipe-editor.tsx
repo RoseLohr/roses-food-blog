@@ -167,7 +167,8 @@ export interface RecipeEditorProps {
   taxonomiePending?: Record<string, string[]>;
   /**
    * `initial` stammt aus einem Zwischenstand, der noch nicht gespeichert ist;
-   * `zeit` sagt, wann er gesichert wurde.
+   * `zeit` sagt, wann er gesichert wurde. Der Editor liest die Angabe wie
+   * `initial` nur beim Einhängen: Sie ist eine Aussage über SEINEN Inhalt.
    */
   zwischenstandWiederhergestellt?: { zeit: string };
   message?: string | null;
@@ -333,6 +334,11 @@ export function RecipeEditor({
   // der KI-Assistent sie befüllen kann. Die unkontrollierten Felder lesen ihren
   // defaultValue neu, wenn das Formular via formKey neu gemountet wird.
   const [form, setForm] = useState(initial);
+  // Im selben Augenblick festgehalten wie `form`, und aus demselben Grund: Der
+  // Hinweis sagt, woher der Inhalt DIESES Editors stammt. Folgte er der Prop,
+  // verschwände er nach einem Speichern mit Fehler, sobald die Zeile fehlt —
+  // über einem Editor, der den ungespeicherten Zwischenstand weiter zeigt.
+  const [wiederhergestellt] = useState(zwischenstandWiederhergestellt);
   // Kein useState: Der Setzer wurde nie gerufen, der Wert also nie geändert.
   // Als Zustand gehalten hätte er die Prop beim ersten Rendern EINGEFROREN —
   // eine spätere Änderung von `taxonomies` wäre nie angekommen. Als
@@ -483,7 +489,7 @@ export function RecipeEditor({
       {/* KI-Assistent nur beim ANLEGEN neuer Rezepte (initial.id === null).
           Bei bestehenden Rezepten ausgeblendet — dort wird nicht neu importiert. */}
       {initial.id === null && <RecipeAiAssistant onApply={applyDraft} />}
-      {zwischenstandWiederhergestellt && <ZwischenstandHinweis zeit={zwischenstandWiederhergestellt.zeit} />}
+      {wiederhergestellt && <ZwischenstandHinweis zeit={wiederhergestellt.zeit} />}
       <form key={formKey} action={formAction} onSubmit={beimAbsenden} className="flex flex-col gap-6">
       {form.id !== null && <input type="hidden" name="id" value={form.id} />}
       <input
