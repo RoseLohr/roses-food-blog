@@ -12,6 +12,9 @@
  *  2. Wo die öffentliche Seite steht (`oeffentlicheSeite`). Die Anfangswerte
  *     taugen dafür nicht mehr, sobald sie aus einem Zwischenstand stammen:
  *     Slug und Status darin sind getippt, nicht gespeichert.
+ *
+ * Und was der Editor zeigt, wenn ihm gesagt wird, dass sein Inhalt aus einem
+ * Zwischenstand stammt: den Hinweis darüber und die vorgemerkten Namen.
  */
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -143,5 +146,47 @@ describe("oeffentlicheSeite — die Adresse des GESPEICHERTEN Rezepts", () => {
     const ohne = (await buildEditorProps(entwurf))!;
     const vorgegriffen = { ...ohne.initial, slug: "noch-nie-gespeichert", status: "veroeffentlicht" };
     expect(link(renderToStaticMarkup(createElement(RecipeEditor, { ...ohne, initial: vorgegriffen })))).toBeNull();
+  });
+});
+
+const ENTITAETEN: Record<string, string> = { "&quot;": '"', "&#x27;": "'", "&lt;": "<", "&gt;": ">", "&amp;": "&" };
+const klartext = (html: string) => html.replace(/<[^>]*>/g, "").replace(/&quot;|&#x27;|&lt;|&gt;|&amp;/g, (e) => ENTITAETEN[e]);
+
+/** Was im ausgelieferten HTML steht: die Eingabefelder (je Feld die Attribute) und die Hinweise. */
+function gelesen(html: string) {
+  const eingaben = [...html.matchAll(/<input\b([^>]*)>/g)].map(([, attribute]) =>
+    Object.fromEntries([...attribute.matchAll(/([\w-]+)(?:="([^"]*)")?/g)].map(([, name, wert]) => [name, klartext(wert ?? "")])),
+  );
+  return {
+    wert: (name: string) => eingaben.filter((e) => e.name === name && e.type !== "checkbox").map((e) => e.value),
+    angehakt: (name: string) => eingaben.filter((e) => e.name === name && e.type === "checkbox" && "checked" in e).map((e) => e.value),
+    hinweise: [...html.matchAll(/<div role="status"[^>]*>(.*?)<\/div>/g)].map(([, inhalt]) => klartext(inhalt)),
+  };
+}
+
+describe("ein Editor, dessen Inhalt aus einem Zwischenstand stammt", () => {
+  it("zeigt den Hinweis mit Tag und Uhrzeit der Sicherung und trägt die vorgemerkten Namen im Formular — ohne die Angaben nichts davon", async () => {
+    const { buildEditorProps } = await editorDaten();
+    const { RecipeEditor } = await import("@/app/admin/(protected)/rezepte/recipe-editor");
+    const props = (await buildEditorProps(entwurf))!;
+
+    const ohne = gelesen(renderToStaticMarkup(createElement(RecipeEditor, props)));
+    expect(ohne.hinweise).toEqual([]);
+    expect(ohne.wert("kategorien__neu")).toEqual([]);
+
+    const mit = gelesen(
+      renderToStaticMarkup(
+        createElement(RecipeEditor, {
+          ...props,
+          taxonomiePending: { kategorien: ["Eintopf"] },
+          zwischenstandWiederhergestellt: { zeit: "13.10.2026 um 18:41" },
+        }),
+      ),
+    );
+    // Tag UND Uhrzeit: Eine Zeile kann über 30 Tage alt sein.
+    expect(mit.hinweise).toEqual(["Zwischenstand vom 13.10.2026 um 18:41 wiederhergestellt — noch nicht gespeichert."]);
+    expect(mit.wert("kategorien__neu")).toEqual(["Eintopf"]);
+    // Beides sagt nichts über die Felder: Die kommen weiter aus den Anfangswerten.
+    expect(mit.wert("titel")).toEqual(["Noch nicht fertig"]);
   });
 });

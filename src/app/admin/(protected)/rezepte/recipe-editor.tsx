@@ -6,6 +6,7 @@
  * der beim Absenden als JSON in Hidden-Fields serialisiert wird.
  */
 import { startTransition, useActionState, useState } from "react";
+import { ZwischenstandHinweis } from "./zwischenstand-hinweis";
 import { saveRecipeAction, type RecipeFormState } from "./actions";
 import { QuickAddCheckboxes } from "@/components/admin/quick-add-checkboxes";
 import { ImagePicker, type ImageChoice } from "@/components/admin/image-picker";
@@ -162,6 +163,13 @@ export interface RecipeEditorProps {
    * nicht gespeichert.
    */
   oeffentlicheSeite: string | null;
+  /** Vorgemerkte, noch nicht angelegte Taxonomienamen je Feld — aus einem wiederhergestellten Zwischenstand. */
+  taxonomiePending?: Record<string, string[]>;
+  /**
+   * `initial` stammt aus einem Zwischenstand, der noch nicht gespeichert ist;
+   * `zeit` sagt, wann er gesichert wurde.
+   */
+  zwischenstandWiederhergestellt?: { zeit: string };
   message?: string | null;
 }
 
@@ -313,6 +321,8 @@ export function RecipeEditor({
   images,
   ingredientNames,
   oeffentlicheSeite,
+  taxonomiePending,
+  zwischenstandWiederhergestellt,
   message,
 }: RecipeEditorProps) {
   const [state, formAction, pending] = useActionState<RecipeFormState, FormData>(
@@ -334,7 +344,7 @@ export function RecipeEditor({
   // verworfenen KI-Vorschlägen verschmutzt.
   const [taxonomyPending, setTaxonomyPending] = useState<
     Record<string, string[]>
-  >({});
+  >(taxonomiePending ?? {});
   const [formKey, setFormKey] = useState(0);
   const [sections, setSections] = useState<KartenAbschnitt[]>(() =>
     form.sections.length ? mitSchluesseln(form.sections) : [emptySection()],
@@ -473,6 +483,7 @@ export function RecipeEditor({
       {/* KI-Assistent nur beim ANLEGEN neuer Rezepte (initial.id === null).
           Bei bestehenden Rezepten ausgeblendet — dort wird nicht neu importiert. */}
       {initial.id === null && <RecipeAiAssistant onApply={applyDraft} />}
+      {zwischenstandWiederhergestellt && <ZwischenstandHinweis zeit={zwischenstandWiederhergestellt.zeit} />}
       <form key={formKey} action={formAction} onSubmit={beimAbsenden} className="flex flex-col gap-6">
       {form.id !== null && <input type="hidden" name="id" value={form.id} />}
       <input
