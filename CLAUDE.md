@@ -396,9 +396,10 @@ Die Regeln, nach denen ein Zwischenstand des Editors (das ROHE Formular als
 sichert, lädt, verwirft, räumt auf und listet die begonnenen neuen Rezepte. Der Endpunkt
 (sichern und verwerfen) steht in
 `src/app/api/admin/rezepte/zwischenstand/route.ts`. Speichern des Rezepts
-räumt dessen Zeile ab. **Noch ruft nichts den Endpunkt auf:** Der Editor
-folgt in eigenen Schritten. Bis dahin entsteht im Betrieb keine Zeile, und
-dieser Abschnitt beschreibt kein Verhalten der Oberfläche.
+räumt dessen Zeile ab. Die Bearbeiten-Seite stellt eine Zeile wieder her
+(`?zwischenstand=1`); angeboten wird sie dort noch nicht. **Noch sichert
+nichts von selbst:** Das Sichern im Editor folgt in eigenen Schritten. Bis
+dahin entsteht im Betrieb keine Zeile.
 
 - **Warum nicht über den Speicherweg:** Speichern ist Veröffentlichen (Status
   aus dem Formular), legt halbe Zutatennamen als Zutaten an, fixiert den Slug,
@@ -555,6 +556,20 @@ dieser Abschnitt beschreibt kein Verhalten der Oberfläche.
   neu an, und das Rezept hängt wieder an ihr. Gemessen in
   `tests/recipe-zwischenstand-nebenwege.integration.test.ts` (die drei Wege
   und die Folge).
+- **Wiederherstellen heißt nicht speichern**
+  (`src/app/admin/(protected)/rezepte/[id]/page.tsx`): `?zwischenstand=1` legt
+  die Zeile in den Editor; gespeichert wird erst, wenn der Redakteur
+  speichert. Nur genau dieser Wert stellt wieder her. Der Hinweis darüber
+  nennt Tag UND Uhrzeit der Sicherung: Eine Zeile kann über 30 Tage alt sein,
+  eine Uhrzeit allein läse sich wie heute. **Noch nicht:** Der Hinweis folgt
+  der Angabe der Seite; nach einem Speichern mit Fehler verschwindet er,
+  wenn die Zeile inzwischen fehlt — über einem Editor, der den
+  ungespeicherten Stand weiter zeigt. Das folgt im nächsten Schritt.
+  **Was über das GESPEICHERTE Rezept gesagt wird, kommt nicht aus den
+  Anfangswerten** (Überschrift, `oeffentlicheSeite`): Titel, Slug und Status
+  im Formular sind nach dem Wiederherstellen getippt, nicht gespeichert.
+  Gemessen in `tests/rezept-bearbeiten-seite.integration.test.ts` (das
+  ausgelieferte HTML).
 - **Geprüft wird Text, gerechnet wird mit Zahlen.** Eine NUMMER (Rezept im
   Schlüssel, Bild, Häkchen) ist eine reine Ziffernfolge mit höchstens 15
   Stellen: `Number()` rundet ab 2^53 und schreibt sich ab 22 Stellen mit

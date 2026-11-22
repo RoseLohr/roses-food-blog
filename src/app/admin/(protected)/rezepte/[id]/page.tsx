@@ -2,9 +2,12 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { requireAdmin } from "@/lib/auth";
 import { t } from "@/i18n/de";
-import { buildEditorProps } from "../editor-data";
+import { buildEditorProps, erlaubteVerweise } from "../editor-data";
 import { RecipeEditor } from "../recipe-editor";
 import { meldungAus } from "@/components/admin/meldung";
+import { editorAusDaten, schluesselFuerRezept } from "@/lib/recipe-zwischenstand";
+import { zwischenstandLaden } from "@/lib/recipe-zwischenstand-store";
+import { alsZeitpunkt } from "@/lib/zeitpunkt";
 
 const dict = t();
 
@@ -25,12 +28,34 @@ export default async function EditRecipePage(props: {
 
   const message = meldungAus(searchParams);
 
+  // `?zwischenstand=1` legt den Zwischenstand des Rezepts in den Editor; ohne
+  // den Parameter steht dort das gespeicherte Rezept. Gespeichert wird dabei
+  // nichts: Das tut erst der Redakteur. Die Ablage liefert nur, was sich laden
+  // lässt (`ladbareDatenAus`, dieselbe Regel wie `editorAusDaten`); der Typ
+  // weiß das nicht, deshalb gilt auch hier: nicht übersetzbar heißt nicht
+  // wiederhergestellt. Nach dem Alter der Zeile fragt niemand: Speichern
+  // räumt sie ab, also ist jede Zeile nach dem letzten Speichern entstanden.
+  const zwischenstand =
+    searchParams.zwischenstand === "1" ? await zwischenstandLaden(schluesselFuerRezept(recipeId)) : null;
+  const wiederhergestellt =
+    zwischenstand && editorAusDaten(zwischenstand.daten, editorProps.initial, erlaubteVerweise(editorProps));
+
   return (
     <>
       <h1 className="mb-6 text-2xl font-bold">
         {dict.admin.recipes.editRecipe}: {editorProps.initial.title}
       </h1>
-      <RecipeEditor {...editorProps} message={message} />
+      {/* Überschrift und Adresse der öffentlichen Seite kommen aus
+          `editorProps` und bleiben die des gespeicherten Rezepts. */}
+      <RecipeEditor
+        {...editorProps}
+        initial={wiederhergestellt?.initial ?? editorProps.initial}
+        taxonomiePending={wiederhergestellt?.taxonomiePending}
+        zwischenstandWiederhergestellt={
+          zwischenstand && wiederhergestellt ? { zeit: alsZeitpunkt(zwischenstand.gesichertAm) } : undefined
+        }
+        message={message}
+      />
     </>
   );
 }
