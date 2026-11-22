@@ -521,8 +521,27 @@ dieser Abschnitt beschreibt kein Verhalten der Oberfläche.
   bleibt. Ein geleertes Zahlenfeld ist, was Speichern daraus machte (0 bzw.
   null). Verweise auf gelöschte Bilder und Taxonomien werden verworfen
   (sonst bräche beim Speichern der Fremdschlüssel), unbrauchbares JSON macht
-  den ganzen Stand unbrauchbar — er wird dann gar nicht angeboten. Angeboten
-  wird nur, was nicht älter ist als das gespeicherte Rezept.
+  den ganzen Stand unbrauchbar — er wird dann gar nicht angeboten.
+- **Nach dem Alter einer Zeile fragt beim Anbieten niemand.** Das
+  Änderungsdatum eines bestehenden Rezepts schreibt allein das Speichern, und
+  das räumt die Zeile in derselben Transaktion ab: Jede Zeile, die es gibt,
+  ist nach dem letzten Speichern entstanden. Der erste Anlauf verglich
+  trotzdem die Uhrzeiten („nicht älter als das gespeicherte Rezept"). Der
+  Vergleich griff nur, wo das Datum des Rezepts nach der Sicherung liegt,
+  obwohl die Zeile später entstand: bei verstellter Uhr, oder bei einem
+  importierten Rezept, dessen Datum der Uhr hier vorausliegt (der Import
+  übernimmt `updated_at` aus der Datei). Er hätte dann eine gültige Zeile
+  versteckt: Die Seite hätte dem Editor ihren Stand nicht gereicht, und seine
+  Sicherung ohne Stand wäre „fremd" — gegen eine Zeile, die er nie zu sehen
+  bekam. Dieselbe Klasse wie die Uhrzeit als Stand. **Wer das Änderungsdatum
+  eines bestehenden Rezepts (`recipe.updated_at`) auf einem anderen Weg als
+  `saveRecipeFromForm` schreibt, räumt den Zwischenstand in derselben
+  Transaktion ab.** Dass es heute keinen zweiten Schreiber gibt, hält
+  `tests/recipe-aenderungsdatum-schreiber.test.ts` am Quelltext fest: die
+  Stellen, die er als Änderer einer bestehenden Rezeptzeile erkennt, mit
+  ihren Spalten. Ein Netz, kein Beweis: Er erkennt die Tabelle am Namen
+  (`schema.recipe`), und SQL, das erst zur Laufzeit zusammengesetzt wird,
+  sieht er nicht.
 - **Geprüft wird Text, gerechnet wird mit Zahlen.** Eine NUMMER (Rezept im
   Schlüssel, Bild, Häkchen) ist eine reine Ziffernfolge mit höchstens 15
   Stellen: `Number()` rundet ab 2^53 und schreibt sich ab 22 Stellen mit
