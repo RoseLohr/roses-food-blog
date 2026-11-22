@@ -393,9 +393,9 @@ Die Regeln, nach denen ein Zwischenstand des Editors (das ROHE Formular als
 `neu:<uuid>`) gelesen, verglichen und wiederhergestellt wird, stehen EINMAL in
 `src/lib/recipe-zwischenstand.ts` (rein, im Mutations-Scope), die Ablage in
 `src/lib/recipe-zwischenstand-store.ts` (Tabelle `rezept_zwischenstand`): Sie
-lädt; das Sichern folgt. Speichern des Rezepts räumt dessen Zeile ab. **Noch
-sichert nichts:** Endpunkt und Editor folgen in eigenen Schritten. Bis dahin
-beschreibt dieser Abschnitt Regeln und die Ablage, kein Verhalten der
+sichert und lädt. Speichern des Rezepts räumt dessen Zeile ab. **Noch ruft
+nichts die Ablage auf:** Endpunkt und Editor folgen in eigenen Schritten. Bis
+dahin beschreibt dieser Abschnitt Regeln und die Ablage, kein Verhalten der
 Oberfläche.
 
 - **Warum nicht über den Speicherweg:** Speichern ist Veröffentlichen (Status
@@ -410,8 +410,8 @@ Oberfläche.
   `stand`) — der Schutz vor zwei Tabs. Bekannt ist GENAU der Stand, den die
   Zeile trägt; jeder andere ist „fremd", und keiner auch
   (`istFremderStand`). Beim Sichern und Verwerfen wird eine fremde Zeile
-  weder überschrieben noch gelöscht (`sicherungsurteil`; die Ablage, die das
-  anwendet, folgt). **Weder Uhrzeit noch Zähler:** Der erste
+  weder überschrieben noch gelöscht (`sicherungsurteil`; die Ablage wendet
+  das noch nicht an — das folgt). **Weder Uhrzeit noch Zähler:** Der erste
   Anlauf nahm die Uhrzeit der Sicherung. Eine verworfene und im selben
   Zeitpunkt neu angelegte Zeile (zurückgestellte Uhr) trug dann den Stand der
   alten, und ein Tab hielt sie für seine. Ein Zähler der Datenbank
@@ -430,7 +430,9 @@ Oberfläche.
   (`istZwischenstandSchluessel`). Zwei Tests halten sie zusammen: einer
   vergleicht den Text aus `schema.ts` mit der migrierten Tabelle, einer die
   Tabelle mit der Regel — an erzeugten Kandidaten, je Stelle ein falsches
-  Zeichen; so weit reicht er. Auch der Stand hat eine geprüfte Form.
+  Zeichen; so weit reicht er. Auch der Stand hat eine geprüfte Form. Die
+  Ablage nimmt keine Rezeptnummer entgegen, und was kein Schlüssel ist, legt
+  sie nicht ab.
 - **Eine Zeile wird geprüft, bevor sie angeboten wird** (`ladbareDatenAus`):
   je Feld eine Liste von Texten (`datenAusJson`), und Abschnitte und Notizen
   in der Form des Editors — genau das, was `editorAusDaten` übersetzen kann.

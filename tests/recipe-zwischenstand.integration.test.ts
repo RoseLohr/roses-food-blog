@@ -4,7 +4,7 @@
  * am Schlüssel, der Stand hat die Form einer Kennung, Cascade, Fremdschlüssel)
  * — und dass Migration, schema.ts und Regel dieselbe Form meinen. Dazu: dass
  * Speichern des Rezepts seine Zeile abräumt, und die Ablage
- * (src/lib/recipe-zwischenstand-store.ts): laden.
+ * (src/lib/recipe-zwischenstand-store.ts): sichern und laden.
  */
 import { format } from "node:util";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -51,10 +51,17 @@ const NICHT_LADBAR = [
   '{"titel":["Geheim"],"notizen":["[{\\"text\\":5}]"]}',
 ];
 
-/** Eine Zeile unmittelbar in die Tabelle. */
+/** Eine Zeile unmittelbar in die Tabelle — für alles, was die Tabelle selbst zusagt, und für Zeilen, die die Ablage nie schriebe. */
 async function lege(schluessel: string, recipeId: number | null, stand = STAND, formular = '{"titel":["Entwurf"]}'): Promise<void> {
   const { db, schema } = await import("@/db");
   db.insert(schema.rezeptZwischenstand).values({ schluessel, recipeId, formular, stand, gesichertAm: NOW }).run();
+}
+
+/** Die Zeile, wie sie in der Tabelle steht. */
+async function zeile(schluessel: string) {
+  const { db, schema } = await import("@/db");
+  const { eq } = await import("drizzle-orm");
+  return db.select().from(schema.rezeptZwischenstand).where(eq(schema.rezeptZwischenstand.schluessel, schluessel)).get();
 }
 
 async function loesche(): Promise<void> {
@@ -307,7 +314,7 @@ describe("Speichern räumt den Zwischenstand ab", () => {
   });
 });
 
-describe("Zwischenstand-Ablage: laden", () => {
+describe("Zwischenstand-Ablage: sichern und laden", () => {
   afterEach(() => loesche());
 
   it("lädt, was in der Zeile steht — das Formular roh, mit Stand und Zeitpunkt; ohne Zeile nichts", async () => {
@@ -336,9 +343,10 @@ describe("Zwischenstand-Ablage: laden", () => {
   });
 
   it("bietet keine Zeile an, die sich nicht laden lässt — und meldet den Schlüssel, nie den Inhalt", async () => {
-    // Drei Arten (NICHT_LADBAR): kein JSON; gültiges JSON in falscher Form — ungeprüft käme der
-    // Text "Suppe" als Formular zurück; und ein Formular, dessen Abschnitte oder Notizen nicht die
-    // Form des Editors haben.
+    // Die Ablage legt solche Zeilen nicht ab (Test darunter); sie kommen von außen oder aus einer
+    // früheren Fassung der Regel. Drei Arten (NICHT_LADBAR): kein JSON; gültiges JSON in falscher
+    // Form — ungeprüft käme der Text "Suppe" als Formular zurück; und ein Formular, dessen
+    // Abschnitte oder Notizen nicht die Form des Editors haben.
     const store = await import("@/lib/recipe-zwischenstand-store");
     const gemeldet: unknown[][] = [];
     const original = console.error;
@@ -359,5 +367,51 @@ describe("Zwischenstand-Ablage: laden", () => {
     } finally {
       console.error = original;
     }
+  });
+
+  it("sichert eine Zeile je Schlüssel und überschreibt sie beim nächsten Mal — nichts wird gedeutet", async () => {
+    const store = await import("@/lib/recipe-zwischenstand-store");
+    // Roh, wie getippt: Leerraum, ein Titel, der beim Speichern scheiterte, mehrere Werte je Feld.
+    const daten = { titel: ["  "], kategorien: ["3", "1"], slug: ["Nicht Bereinigt!"] };
+    const erst = await store.zwischenstandSichern({ schluessel: NEU, daten, jetzt: NOW });
+    expect(erst).toEqual({ ergebnis: "gesichert", stand: expect.any(String), gesichertAm: NOW });
+    expect(await zeile(NEU)).toEqual({ schluessel: NEU, recipeId: null, formular: JSON.stringify(daten), stand: erst.stand, gesichertAm: NOW });
+    expect(await store.zwischenstandLaden(NEU)).toEqual({ schluessel: NEU, recipeId: null, daten, stand: erst.stand, gesichertAm: NOW });
+
+    // Die nächste Sicherung überschreibt: weiter EINE Zeile.
+    const dann = await store.zwischenstandSichern({ schluessel: NEU, daten: { titel: ["Suppe"] }, jetzt: SPAETER });
+    expect(dann).toEqual({ ergebnis: "gesichert", stand: expect.any(String), gesichertAm: SPAETER });
+    expect(await schluesselDerZeilen()).toEqual([NEU]);
+    expect(await store.zwischenstandLaden(NEU)).toEqual({ schluessel: NEU, recipeId: null, daten: { titel: ["Suppe"] }, stand: dann.stand, gesichertAm: SPAETER });
+  });
+
+  it("jede Sicherung bekommt einen neuen Stand in der Form einer Kennung — auch im selben Zeitpunkt, auch nach dem Löschen der Zeile", async () => {
+    // Weder Uhrzeit noch Zähler: Zwei Sicherungen im selben Augenblick tragen verschiedene Stände,
+    // und eine gelöschte und neu angelegte Zeile trägt nicht den Stand der alten.
+    const store = await import("@/lib/recipe-zwischenstand-store");
+    const { istNeuSchluessel } = await import("@/lib/recipe-zwischenstand");
+    const staende: string[] = [];
+    for (let i = 0; i < 5; i++) {
+      staende.push((await store.zwischenstandSichern({ schluessel: NEU, daten: { titel: ["x"] }, jetzt: NOW })).stand);
+    }
+    await loesche();
+    staende.push((await store.zwischenstandSichern({ schluessel: NEU, daten: { titel: ["x"] }, jetzt: NOW })).stand);
+    expect(new Set(staende).size).toBe(staende.length);
+    // Die Form einer Kennung: dieselbe, die der Schlüssel eines neuen Rezepts hinter `neu:` trägt.
+    for (const stand of staende) expect(istNeuSchluessel(`neu:${stand}`), stand).toBe(true);
+  });
+
+  it("woran die Zeile hängt, sagt ihr Schlüssel: Was keiner ist, legt die Ablage nicht ab — und ein Rezept, das es nicht gibt, lehnt der Fremdschlüssel ab", async () => {
+    const store = await import("@/lib/recipe-zwischenstand-store");
+    for (const schluessel of ["", "quatsch", "neu:", "rezept:0", "rezept:1 ", `${NEU} `, "rezept:9007199254740993"]) {
+      await expect(
+        store.zwischenstandSichern({ schluessel, daten: { titel: ["x"] }, jetzt: NOW }),
+        JSON.stringify(schluessel),
+      ).rejects.toThrow("kein gültiger Schlüssel");
+    }
+    await expect(
+      store.zwischenstandSichern({ schluessel: "rezept:999999", daten: { titel: ["x"] }, jetzt: NOW }),
+    ).rejects.toMatchObject({ code: "SQLITE_CONSTRAINT_FOREIGNKEY" });
+    expect(await schluesselDerZeilen()).toEqual([]);
   });
 });
